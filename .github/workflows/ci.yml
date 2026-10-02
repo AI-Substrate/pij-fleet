@@ -52,7 +52,7 @@ jobs:
       # the watchdog smoke) need the debug pij-rs binary; build it here and make
       # its presence REQUIRED so a missing binary fails loud instead of skipping.
       - name: Install pinned Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked -p pij-cli --bin pij-rs
       # npm test includes the integration suites that drive the real pij-rs
@@ -76,7 +76,7 @@ jobs:
       # Installs exactly what rust-toolchain.toml pins, including rustfmt and
       # clippy, so local and CI toolchains cannot drift.
       - name: Install pinned Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           cache: false
 
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install pinned Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           cache: false
 
