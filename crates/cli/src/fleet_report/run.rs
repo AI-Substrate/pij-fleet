@@ -156,6 +156,7 @@ pub async fn run(mut args: FleetArgs, state_dir: &Path) -> Envelope<Value> {
                 Err(error) => facts.warnings.push(format!("no pij messages ({error})")),
             }
             corpus.primes = store.primes;
+            corpus.prime_projects = store.prime_projects;
             let relevant = relevant_seats(
                 store.seats.clone(),
                 &corpus,

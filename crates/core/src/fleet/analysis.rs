@@ -727,7 +727,13 @@ fn graph(ix: &Indexed<'_>, corpus: &Corpus) -> Graph {
             node.local = true;
             node.role = seat.role.clone();
             node.harness = Some(seat.harness.clone());
+            node.folder = Some(seat.folder.clone()).filter(|f| !f.is_empty());
         }
+        node.projects = corpus
+            .prime_projects
+            .get(&node.id)
+            .cloned()
+            .unwrap_or_default();
         node.prime = primes.contains(node.id.as_str())
             || node
                 .role

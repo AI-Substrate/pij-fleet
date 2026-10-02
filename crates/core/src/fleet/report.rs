@@ -231,6 +231,10 @@ pub struct GraphNode {
     pub seated: bool,
     /// A project's prime (or the machine's designated prime): a hub.
     pub prime: bool,
+    /// Where the seat works (its registered folder), when pij knows it.
+    pub folder: Option<String>,
+    /// The projects it is prime of.
+    pub projects: Vec<String>,
     /// A seat of this machine's pij store; false for another machine's seat.
     pub local: bool,
     /// pij messages it sent in the window.

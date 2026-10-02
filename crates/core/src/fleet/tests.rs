@@ -552,6 +552,7 @@ fn the_message_graph_keeps_pairs_touching_the_scope_and_marks_primes_and_remotes
             pair("pij-x", "pij-y", 9),
         ],
         primes: vec!["pij-boss".into()],
+        prime_projects: [("pij-boss".to_string(), vec!["demo".to_string()])].into(),
         ..Corpus::default()
     };
     let report = analyze(&corpus, window(), &PriceTable::default());
@@ -565,6 +566,12 @@ fn the_message_graph_keeps_pairs_touching_the_scope_and_marks_primes_and_remotes
             .unwrap_or_else(|| panic!("{id}"))
     };
     assert!(node("pij-boss").prime && node("pij-boss").local);
+    assert_eq!(
+        node("pij-boss").folder.as_deref(),
+        Some("/work/demo"),
+        "where it works"
+    );
+    assert_eq!(node("pij-boss").projects, ["demo"], "what it is prime for");
     assert!(!node("pij-far-otter").local, "another machine's seat");
     assert!(!node("pij-worker-a").prime);
     assert_eq!(

@@ -157,6 +157,8 @@ pub fn anonymise_corpus(corpus: &mut Corpus) {
         m.to = name(&m.to);
     }
     corpus.primes = corpus.primes.iter().map(|id| name(id)).collect();
+    // A project slug names the project.
+    corpus.prime_projects.clear();
     for event in &mut corpus.events {
         event.source = source(&event.source);
         // A reset notice names the operator's timezone.
@@ -175,6 +177,22 @@ mod tests {
         assert_eq!(safe_model("github-copilot/gpt-5.6-luna"), "gpt-5.6-luna");
         assert_eq!(safe_model("opys"), "other");
         assert_eq!(safe_model("claude-my private note"), "other");
+    }
+
+    /// Project slugs name projects: they are dropped, not renamed.
+    #[test]
+    fn prime_projects_are_dropped() {
+        let mut corpus = Corpus {
+            primes: vec!["pij-boss".into()],
+            prime_projects: [("pij-boss".to_string(), vec!["zebra-project".to_string()])].into(),
+            ..Corpus::default()
+        };
+        anonymise_corpus(&mut corpus);
+        assert!(
+            corpus.prime_projects.is_empty(),
+            "{:?}",
+            corpus.prime_projects
+        );
     }
 
     #[test]

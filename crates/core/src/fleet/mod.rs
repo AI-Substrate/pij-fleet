@@ -312,6 +312,8 @@ pub struct Corpus {
     pub messages: Vec<MessageCount>,
     /// Seats that are a project's prime.
     pub primes: Vec<String>,
+    /// The projects each prime governs, by prime seat id.
+    pub prime_projects: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// The report's window and the clock its buckets are read on.

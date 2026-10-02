@@ -500,6 +500,9 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
 
   // ---- Hub graph: primes as hubs; hover a seat or a link, search, declutter.
   const HUB_MAX = 70;
+  // What a seat works on: the projects it is prime of, else the tail of its folder.
+  const tail = f => (f || "").split("/").filter(Boolean).slice(-2).join("/");
+  const where = n => (n.projects && n.projects.length ? n.projects.join(", ") : tail(n.folder));
   function hubData() {
     const g = R.graph, vol = n => n.sent + n.received;
     let nodes = g.nodes.filter(n => vol(n) > 0);
@@ -558,7 +561,7 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
         const [x, y] = pos[n.id], r = Math.max(n.prime ? 9 : 3.5, 3.5 + 15 * Math.sqrt(spend(n) / maxS));
         const role = (n.role || "").toLowerCase();
         const fill = !n.local ? "var(--paper)" : n.prime ? "var(--amber)" : /^pa\b|^pa[^a-z]/.test(role) ? "var(--violet)" : "var(--ink)";
-        out.push(`<g class="hub-n" data-id="${esc(n.id)}"><circle class="dotn" data-r="${r.toFixed(1)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}" stroke="var(--ink)" stroke-width="${n.local ? 0.6 : 1.4}"/><text x="${(x + r + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" class="ax${n.prime ? " ax-day" : ""}">${esc(n.id.replace(/^pij-/, ""))}${n.prime ? " · prime" : ""}</text><circle class="hit" data-i="${i}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.max(r, 9).toFixed(1)}" fill="transparent"/></g>`);
+        out.push(`<g class="hub-n" data-id="${esc(n.id)}"><circle class="dotn" data-r="${r.toFixed(1)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}" stroke="var(--ink)" stroke-width="${n.local ? 0.6 : 1.4}"/><text x="${(x + r + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" class="ax${n.prime ? " ax-day" : ""}">${esc(n.id.replace(/^pij-/, ""))}${n.prime ? ` · prime${where(n) ? " · " + esc(where(n)) : ""}` : ""}</text><circle class="hit" data-i="${i}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.max(r, 9).toFixed(1)}" fill="transparent"/></g>`);
       });
       out.push("</svg>");
       return out.join("");
@@ -569,6 +572,7 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
       const suffered = I.suffered.reduce((a, e) => a + price(e.tokens), 0), sufferedCold = I.suffered.reduce((a, e) => a + e.cold, 0);
       return `<b>${esc(n.id)}</b>${n.role ? ` · ${esc(n.role)}` : ""}${n.prime ? " · <b>prime</b>" : ""}
         <div>${n.local ? esc(n.harness || "local seat") : `<span class="warn">not a seat on this machine</span>`} · ${pct(I.share)} of all messages</div>
+        ${n.projects && n.projects.length ? `<div>prime of <b>${esc(n.projects.join(", "))}</b></div>` : ""}${n.folder ? `<div class="mono">${esc(n.folder)}</div>` : ""}
         <div class="big">${num(n.sent)} → · ← ${num(n.received)}</div>
         <div>${num(I.partners)} partners, ${num(I.twoWay)} both ways</div>
         <div class="cols"><div><div class="sub">sends most to</div>${top(I.out, "to")}</div><div><div class="sub">hears most from</div>${top(I.inn, "from")}</div></div>

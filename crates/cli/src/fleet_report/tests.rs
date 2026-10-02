@@ -283,6 +283,11 @@ fn secret_corpus() -> Corpus {
             },
         ],
         primes: vec!["pij-hidden-boss".into(), "pij-other-prime-kestrel".into()],
+        prime_projects: [(
+            "pij-hidden-boss".to_string(),
+            vec!["zebra-secret-project".to_string()],
+        )]
+        .into(),
     }
 }
 
@@ -362,6 +367,7 @@ fn anonymised_output_leaks_no_name_path_id_or_content() {
             "walrus",
             "opys",
             "mongoose",
+            "zebra",
             "kestrel",
             "boom",
         ] {

@@ -36,6 +36,8 @@ pub struct FleetSeats {
     pub schema_version: u32,
     /// Seats that are a project's prime (or the machine's designated prime).
     pub primes: Vec<String>,
+    /// The projects each prime governs, by prime seat id.
+    pub prime_projects: BTreeMap<String, Vec<String>>,
 }
 
 fn adapter(message: String) -> PijError {
@@ -100,15 +102,22 @@ async fn read(conn: &mut SqliteConnection) -> Result<FleetSeats> {
             .map_err(fail)?
             .into_iter()
             .collect();
+    let mut prime_projects: BTreeMap<String, Vec<String>> = BTreeMap::new();
     if schema_version >= 14 {
-        primes.extend(
-            sqlx::query_scalar::<_, String>(
-                "SELECT prime_id FROM projects WHERE prime_id IS NOT NULL",
-            )
-            .fetch_all(&mut *conn)
-            .await
-            .map_err(fail)?,
-        );
+        for row in sqlx::query(
+            "SELECT slug, prime_id FROM projects WHERE prime_id IS NOT NULL ORDER BY slug",
+        )
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(fail)?
+        {
+            let prime: String = row.get("prime_id");
+            prime_projects
+                .entry(prime.clone())
+                .or_default()
+                .push(row.get("slug"));
+            primes.insert(prime);
+        }
     }
     let primes: Vec<String> = primes.into_iter().collect();
     let roles: BTreeMap<String, String> = sqlx::query("SELECT seat, role FROM seat_roles")
@@ -189,6 +198,7 @@ async fn read(conn: &mut SqliteConnection) -> Result<FleetSeats> {
             .collect(),
         schema_version,
         primes,
+        prime_projects,
     })
 }
 
@@ -330,6 +340,11 @@ mod tests {
         let store = seeded().await;
         let read = read_seats(Path::new(&store.path())).await.expect("read");
         assert_eq!(read.primes, ["pij-boss"]);
+        assert_eq!(
+            read.prime_projects["pij-boss"],
+            ["demo"],
+            "what it is prime for"
+        );
     }
 
     #[tokio::test]
