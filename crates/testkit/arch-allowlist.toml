@@ -148,9 +148,12 @@ why = "Composition root #1: wires Arc<dyn Port> from config, serves HTTP, runs t
 # The second composition root. It depends on the daemon because it SHIPS the
 # daemon: one artifact, so a stale CLI can never meet a newer daemon on one
 # machine.
-internal = ["pij-core", "pij-daemon", "pij-harnesses", "pij-store@dev", "pij-testkit@dev"]
+# `pij-store` and `pij-unisphere` are shipped for `fleet-report` (plan 162): the
+# report reads seats read-only from the store and folds transcripts in-process,
+# with no daemon round trip, so it works with the daemon down and never writes.
+internal = ["pij-core", "pij-daemon", "pij-harnesses", "pij-store", "pij-testkit@dev", "pij-unisphere"]
 external = ["axum@dev", "clap", "nix", "reqwest", "serde", "serde_json", "time", "tokio", "uuid"]
-why = "Composition root #2 and the workspace's only binary (pij-rs). Ships the daemon in the same artifact so CLI and daemon versions cannot skew; reuses the exact-pid liveness adapter so bounce never signals a recycled pid; nix safely redirects daemon output at the descriptor boundary and time formats RFC3339 log prefixes; dev-only store and axum edges prove the shipped CLI through the real registry and authenticated router."
+why = "Composition root #2 and the workspace's only binary (pij-rs). Ships the daemon in the same artifact so CLI and daemon versions cannot skew; reuses the exact-pid liveness adapter so bounce never signals a recycled pid; nix safely redirects daemon output at the descriptor boundary and time formats RFC3339 log prefixes; dev-only axum proves the shipped CLI through the authenticated router; the store (read-only) and unisphere edges serve fleet-report, which reads facts without a daemon."
 
 # testkit depends on core and store so its fakes implement the real ports and
 # its FreshStore drives the real schema. It is a DEV dependency everywhere it is

@@ -188,6 +188,50 @@ enum Command {
     },
     /// Print derived git commit trailers; unavailable values are diagnosed on stderr.
     CommitTrailers,
+    /// Write a project's Context Tax report: report.json, a static page and the tables.
+    ///
+    /// Folds the transcripts in-process and reads pij's seats read-only; it never
+    /// contacts the daemon. The output folder holds names and paths unless
+    /// `--anonymise`; never commit it.
+    FleetReport {
+        /// The project root; sessions working inside it are in scope.
+        folder: PathBuf,
+        /// Add every path from `git worktree list --porcelain` of FOLDER.
+        #[arg(long)]
+        with_worktrees: bool,
+        /// Window start: RFC 3339, a local YYYY-MM-DD, or a span ago (7d, 36h). Default 7d.
+        #[arg(long)]
+        since: Option<String>,
+        /// Window end, same forms. Default now.
+        #[arg(long)]
+        until: Option<String>,
+        /// Harnesses to read, comma-separated (claude-code, omp, codex, copilot). Default all.
+        #[arg(long)]
+        harness: Option<String>,
+        /// Output folder: new, empty, or a previous fleet report (anything else is
+        /// refused). Default ~/.pij-rs/fleet-reports/<folder>-<UTC stamp>.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Table format: jsonl or csv (parquet is not shipped yet).
+        #[arg(long, default_value = "jsonl")]
+        format: String,
+        /// Keep turn-opener heads in the tables. Local use only.
+        #[arg(long)]
+        include_content: bool,
+        /// Replace seat names with roles and letters; drop paths, ids, content and
+        /// free-text model names. Times and the UTC offset remain.
+        #[arg(long)]
+        anonymise: bool,
+        /// Reuse a Unisphere prep folder (not supported yet).
+        #[arg(long)]
+        prep_target: Option<PathBuf>,
+        /// The report clock as +HH:MM. Default the machine's offset.
+        #[arg(long)]
+        utc_offset: Option<String>,
+        /// Fold threads, 1 to 8 (C12: the machine is shared).
+        #[arg(long, default_value_t = 4)]
+        threads: usize,
+    },
     /// Confirm the binding `adopt` already made.
     Phonehome {
         /// Asserted seat id. Defaults to `$PIJ_SESSION_ID`.
@@ -870,6 +914,43 @@ async fn run(cli: Cli) -> ExitCode {
         };
     }
 
+    if let Command::FleetReport {
+        folder,
+        with_worktrees,
+        since,
+        until,
+        harness,
+        out,
+        format,
+        include_content,
+        anonymise,
+        prep_target,
+        utc_offset,
+        threads,
+    } = &cli.command
+    {
+        let args = pij_cli::fleet_report::FleetArgs {
+            folder: folder.clone(),
+            with_worktrees: *with_worktrees,
+            since: since.clone(),
+            until: until.clone(),
+            harness: harness.clone(),
+            out: out.clone(),
+            format: format.clone(),
+            include_content: *include_content,
+            anonymise: *anonymise,
+            prep_target: prep_target.clone(),
+            utc_offset: utc_offset.clone(),
+            threads: *threads,
+        };
+        let response = pij_cli::fleet_report::run(args, &state_dir).await;
+        if cli.json || !response.ok {
+            return emit(&response, cli.json);
+        }
+        println!("{}", render_fleet_report(&response));
+        return ExitCode::from(exit_code(&response));
+    }
+
     if let Command::Doctor { action } = &cli.command {
         return match action {
             DoctorAction::Inbound => run_claude_inbound_doctor(cli.json),
@@ -909,6 +990,9 @@ async fn run(cli: Cli) -> ExitCode {
     match cli.command {
         Command::Daemon { .. } => unreachable!("daemon returned before client construction"),
         Command::Doctor { .. } => unreachable!("doctor returned before client construction"),
+        Command::FleetReport { .. } => {
+            unreachable!("fleet-report returned before client construction")
+        }
         Command::SpawnChild { .. } => {
             unreachable!("spawn child returned before client construction")
         }
@@ -2069,6 +2153,36 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
     ExitCode::from(exit_code(envelope))
 }
 
+/// The human summary of a written fleet report.
+fn render_fleet_report(envelope: &Envelope<Value>) -> String {
+    let data = envelope.data.clone().unwrap_or_default();
+    let num = |key: &str| data[key].as_f64().unwrap_or(0.0);
+    let mut text = format!(
+        "pij fleet-report: wrote {}\n  open {}\n  {} calls, {} turns, {} sessions ({} unseated) over {} folder(s)\n  \
+         ${:.0} at list price; cached reads {:.1}%, status turns {:.1}%; {} of {} idle cold wakes avoidable",
+        data["out"].as_str().unwrap_or_default(),
+        data["page"].as_str().unwrap_or_default(),
+        num("calls"),
+        num("turns"),
+        num("sessions"),
+        num("unseated_sessions"),
+        num("folders"),
+        num("total_usd"),
+        num("reads_share"),
+        num("status_share"),
+        num("avoidable_cold_wakes"),
+        num("idle_cold_wakes"),
+    );
+    for warning in data["warnings"].as_array().into_iter().flatten() {
+        let _ = write!(
+            text,
+            "\n  warning: {}",
+            warning.as_str().unwrap_or_default()
+        );
+    }
+    text
+}
+
 fn render_whoami(envelope: &Envelope<pij_core::model::SeatDescriptor>) -> String {
     let mut output = render(envelope, false);
     if envelope.ok
@@ -2483,6 +2597,7 @@ impl Command {
             Command::FyiRead { .. } => "pij fyi-read",
             Command::Activity { .. } => "pij activity",
             Command::CommitTrailers => "pij commit-trailers",
+            Command::FleetReport { .. } => "pij fleet-report",
             Command::Phonehome { .. } => "pij phonehome",
             Command::Send { .. } => "pij send",
             Command::CompactSelf => "pij compact-self",
@@ -2695,7 +2810,7 @@ mod tests {
                 // Adding a verb to this roster is meant to be a DELIBERATE act
                 // that fails this test first — which is exactly what it did for
                 // `report` (u-report), adopt/whoami/phonehome (u-identity) and
-                // `state` (u-readback) and `doctor` (plan 126).
+                // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162).
                 "daemon",
                 "ping",
                 "doctor",
@@ -2703,6 +2818,7 @@ mod tests {
                 "adopt",
                 "whoami",
                 "commit-trailers",
+                "fleet-report",
                 "phonehome",
                 "spawn",
                 "revive",

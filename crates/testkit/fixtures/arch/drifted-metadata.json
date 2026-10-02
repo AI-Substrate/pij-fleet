@@ -399,6 +399,14 @@
           "kind": null
         },
         {
+          "name": "pij-store",
+          "kind": null
+        },
+        {
+          "name": "pij-unisphere",
+          "kind": null
+        },
+        {
           "name": "reqwest",
           "kind": null
         },
@@ -424,10 +432,6 @@
         },
         {
           "name": "axum",
-          "kind": "dev"
-        },
-        {
-          "name": "pij-store",
           "kind": "dev"
         },
         {

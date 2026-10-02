@@ -12,6 +12,8 @@
 //! concurrent `pij state` for the same seat waits and then uses the latest
 //! cursor, rather than handing the SDK a spent one that would refold cold.
 
+pub mod fleet;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -30,15 +32,15 @@ use unisphere_sdk::status::{
     StatusService, StatusTarget,
 };
 
-const ADAPTER: &str = "unisphere/session-status";
+pub(crate) const ADAPTER: &str = "unisphere/session-status";
 /// Unisphere's adapter id for Claude Code transcripts.
-const CLAUDE_CODE: &str = "claude-code";
+pub(crate) const CLAUDE_CODE: &str = "claude-code";
 /// Unisphere's adapter id for Oh My Pi (pij `omp`) session files.
-const OH_MY_PI: &str = "oh-my-pi";
+pub(crate) const OH_MY_PI: &str = "oh-my-pi";
 /// Unisphere's adapter id for Codex rollouts.
-const CODEX: &str = "codex";
+pub(crate) const CODEX: &str = "codex";
 /// Unisphere's adapter id for Copilot CLI event logs.
-const COPILOT_CLI: &str = "copilot-cli";
+pub(crate) const COPILOT_CLI: &str = "copilot-cli";
 
 /// Where each readable harness keeps its sessions.
 #[derive(Clone, Debug, Default)]
@@ -73,58 +75,67 @@ impl UnisphereSessionStatus {
 
     /// A source over every readable harness's session directories.
     pub fn with_roots(roots: SessionRoots) -> Self {
-        let SessionRoots {
-            claude_homes,
-            omp_sessions,
-            codex_sessions,
-            copilot_sessions,
-        } = roots;
-        let mut roots: Vec<PrepSourceSet> = claude_homes
-            .into_iter()
-            .enumerate()
-            .map(|(index, home)| {
-                let root = home.join("projects");
-                // The catalogue label for the first home, a derived one for the
-                // rest: the label is part of every source key and must not repeat.
-                if index == 0 {
-                    default_set(CLAUDE_CODE, root)
-                } else {
-                    PrepSourceSet {
-                        harness: CLAUDE_CODE.to_string(),
-                        label: derived_root_label(&root),
-                        root,
-                    }
-                }
-            })
-            .collect();
-        roots.extend(omp_sessions.map(|root| default_set(OH_MY_PI, root)));
-        roots.extend(codex_sessions.map(|root| default_set(CODEX, root)));
-        roots.extend(copilot_sessions.map(|root| default_set(COPILOT_CLI, root)));
-        let bindings = vec![
-            PrepBinding {
-                fold: Arc::new(unisphere_adapter_claude::ClaudePrepFold),
-                loader: Arc::new(unisphere_loader_jsonl::FileSessionLoader),
-            },
-            PrepBinding {
-                fold: Arc::new(unisphere_adapter_omp::OmpPrepFold),
-                loader: Arc::new(unisphere_loader_jsonl::FileSessionLoader),
-            },
-            PrepBinding {
-                fold: Arc::new(unisphere_adapter_codex::CodexPrepFold),
-                loader: Arc::new(unisphere_loader_jsonl::FileSessionLoader),
-            },
-            // The events.jsonl fold only: the legacy `<session>.json` fold needs
-            // loader-snapshot, which pulls rusqlite (see the workspace Cargo.toml).
-            PrepBinding {
-                fold: Arc::new(unisphere_adapter_copilot_cli::CopilotCliPrepFold),
-                loader: Arc::new(unisphere_loader_jsonl::FileSessionLoader),
-            },
-        ];
         Self {
-            service: Arc::new(StatusService::new(bindings, roots)),
+            service: Arc::new(StatusService::new(bindings(), source_sets(roots))),
             cursors: Mutex::new(HashMap::new()),
         }
     }
+}
+
+/// One discovery root per readable harness directory.
+pub(crate) fn source_sets(roots: SessionRoots) -> Vec<PrepSourceSet> {
+    let SessionRoots {
+        claude_homes,
+        omp_sessions,
+        codex_sessions,
+        copilot_sessions,
+    } = roots;
+    let mut sets: Vec<PrepSourceSet> = claude_homes
+        .into_iter()
+        .enumerate()
+        .map(|(index, home)| {
+            let root = home.join("projects");
+            // The catalogue label for the first home, a derived one for the
+            // rest: the label is part of every source key and must not repeat.
+            if index == 0 {
+                default_set(CLAUDE_CODE, root)
+            } else {
+                PrepSourceSet {
+                    harness: CLAUDE_CODE.to_string(),
+                    label: derived_root_label(&root),
+                    root,
+                }
+            }
+        })
+        .collect();
+    sets.extend(omp_sessions.map(|root| default_set(OH_MY_PI, root)));
+    sets.extend(codex_sessions.map(|root| default_set(CODEX, root)));
+    sets.extend(copilot_sessions.map(|root| default_set(COPILOT_CLI, root)));
+    sets
+}
+
+/// The fold and loader of every readable harness.
+pub(crate) fn bindings() -> Vec<PrepBinding> {
+    vec![
+        PrepBinding {
+            fold: Arc::new(unisphere_adapter_claude::ClaudePrepFold),
+            loader: Arc::new(unisphere_loader_jsonl::FileSessionLoader),
+        },
+        PrepBinding {
+            fold: Arc::new(unisphere_adapter_omp::OmpPrepFold),
+            loader: Arc::new(unisphere_loader_jsonl::FileSessionLoader),
+        },
+        PrepBinding {
+            fold: Arc::new(unisphere_adapter_codex::CodexPrepFold),
+            loader: Arc::new(unisphere_loader_jsonl::FileSessionLoader),
+        },
+        // The events.jsonl fold only: the legacy `<session>.json` fold needs
+        // loader-snapshot, which pulls rusqlite (see the workspace Cargo.toml).
+        PrepBinding {
+            fold: Arc::new(unisphere_adapter_copilot_cli::CopilotCliPrepFold),
+            loader: Arc::new(unisphere_loader_jsonl::FileSessionLoader),
+        },
+    ]
 }
 
 /// Unisphere's adapter id for a pij harness, when the SDK can read it.

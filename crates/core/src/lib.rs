@@ -20,6 +20,7 @@ pub mod decisions;
 pub mod delivery;
 pub mod error;
 pub mod events;
+pub mod fleet;
 pub mod framing;
 pub mod fyi;
 pub mod liveness;

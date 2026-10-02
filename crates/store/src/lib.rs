@@ -9,6 +9,7 @@
 pub mod background;
 pub mod decisions;
 pub mod dispatch;
+pub mod fleet;
 pub mod governance;
 pub mod migrate;
 pub mod orchestration;

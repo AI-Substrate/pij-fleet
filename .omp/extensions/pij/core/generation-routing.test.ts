@@ -238,6 +238,13 @@ describe("explicit generation forcing", () => {
 			row: { nativeCommand: "commit-trailers" },
 		});
 	});
+
+	it("native fleet-report needs no daemon: it folds transcripts and reads the store itself", () => {
+		expect(pre({ verb: "fleet-report", rsLive: false })).toMatchObject({
+			kind: "try-rs",
+			row: { nativeCommand: "fleet-report" },
+		});
+	});
 });
 
 describe("local refusals use named v2 envelopes", () => {
