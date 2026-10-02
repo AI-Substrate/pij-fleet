@@ -1,0 +1,19 @@
+# Toolchain pin — workshop 001 R6a as amended by R6a-AMEND-1 (2026-08-28).
+#
+# EXACT version, never `stable`: `stable` is a moving target, so two seats (or the
+# same seat two weeks apart) silently compile different code from the same commit.
+# Tenet 10 — the shared global toolchain is the one parallel hazard with no
+# edit-time signal: a unit that upgrades it invalidates its siblings retroactively
+# and invisibly (they stay green and become wrong).
+#
+# This file is a RUSTUP mechanism. A cargo that is not a rustup shim (e.g.
+# Homebrew's, which shadowed rustup on this machine's PATH at plan-108 time)
+# IGNORES it without a word. That is why the pin is not trusted on its own: the
+# gate's first stage asserts `rustc --version` equals the version below and fails
+# loudly otherwise, and the gate wrapper invokes cargo through the rustup shim by
+# absolute path rather than depending on PATH order.
+#
+# No unit may change this file; every done-receipt carries the version it observed.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]

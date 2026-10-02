@@ -1,0 +1,2498 @@
+{
+  "baton_notice_cases": [
+    {
+      "id": "idle-live-pi",
+      "harness": "pi",
+      "state": "idle",
+      "evidence": "active",
+      "notice": "queued",
+      "send_calls": 1,
+      "persisted_messages": 1
+    },
+    {
+      "id": "working-live-pi",
+      "harness": "pi",
+      "state": "working",
+      "evidence": "active",
+      "notice": "queued",
+      "send_calls": 1,
+      "persisted_messages": 1
+    },
+    {
+      "id": "fresh-live-control-plane",
+      "harness": "codex",
+      "state": "idle",
+      "evidence": "active",
+      "notice": "queued",
+      "send_calls": 1,
+      "persisted_messages": 1
+    },
+    {
+      "id": "stale-live-control-plane",
+      "harness": "copilot",
+      "state": "idle",
+      "evidence": "recycled",
+      "notice": "unverified",
+      "send_calls": 1,
+      "persisted_messages": 1
+    },
+    {
+      "id": "dead-keeper",
+      "harness": "pi",
+      "state": "idle",
+      "evidence": "dead",
+      "notice": "unverified",
+      "send_calls": 1,
+      "persisted_messages": 1
+    },
+    {
+      "id": "missing-keeper",
+      "harness": "pi",
+      "state": "idle",
+      "evidence": "missing",
+      "notice": null,
+      "send_calls": 0,
+      "persisted_messages": 0
+    },
+    {
+      "id": "dissolved-pull-keeper",
+      "harness": "copilot",
+      "state": "idle",
+      "evidence": "dissolved",
+      "notice": null,
+      "send_calls": 0,
+      "persisted_messages": 0
+    },
+    {
+      "id": "live-bound-pull-keeper",
+      "harness": "copilot",
+      "state": "idle",
+      "evidence": "active",
+      "notice": "queued",
+      "send_calls": 1,
+      "persisted_messages": 1
+    }
+  ],
+  "baton_notice_body_template": "[pij orchestration] baton '{baton}' requested by {requester}: {purpose} (request {request_id})",
+  "death_notice_body_template": "[pij] seat {id} died ({reason}) — pane {pane} absent, pid {pid} gone at {iso}. It was your child; revive with `pij-rs revive {id}` or leave it.",
+  "baton_notice_invariants": [
+    "baton.request persists its request and publishes baton.requested before using the existing DeliveryService.send once, from requester to definition.created_by, with the legacy request notice body.",
+    "Missing or dissolved keeper returns notice:null without a delivery admission; the committed request and event remain.",
+    "Use actual receipt strength: idle or working Pi/Omp extension-stream admission is queued until ReaderRead (#374 honest-receipt rule); confirmed socket/native injection may report delivered.",
+    "Unverified uses only existing core::liveness::alive Dead/Recycled process-incarnation evidence; native stale-external witness is a recycled binding, never a restored heartbeat-age threshold.",
+    "Send error, Held or Refused does not erase the committed request; E-RS-PARTIAL carries committed=true, event_published=true, request and seq. Publication failure occurs before any send.",
+    "Self-send still goes through existing delivery refusal; no special self-send bypass or second sender."
+  ],
+  "contract_version": 1,
+  "plan": 139,
+  "status": "frozen-at-u0-commit",
+  "sources": [
+    "crates/core/src/model.rs",
+    "crates/core/src/orchestration/governance.rs",
+    "crates/daemon/src/http/identity.rs",
+    ".pi/extensions/pij/core/platform/types.ts",
+    ".pi/extensions/pij/core/cli.ts",
+    ".pi/extensions/pij/core/orchestration/cli.ts"
+  ],
+  "ownership_ruling": "pij-minor-unicorn consolidated rulings 2026-09-07; later u6 adapter + spine scope approvals",
+  "fixture_context": {
+    "at_ms": 1788739200000,
+    "parent": "pij-parent",
+    "worker": "pij-worker",
+    "outsider": "pij-outsider",
+    "panes": {
+      "%10": "pij-parent",
+      "%11": "pij-worker",
+      "%12": "pij-outsider"
+    },
+    "records": {
+      "project": {
+        "slug": "governance-port",
+        "description": "Governance port",
+        "repo": "/work/project",
+        "plan_path": "docs/plans/139-rs-governance-port/plan.dd.json",
+        "prime_id": "pij-parent",
+        "created_by": "pij-parent",
+        "created_at": 1788739200000
+      },
+      "stream": {
+        "id": "governance-port:contracts",
+        "project": "governance-port",
+        "ordinal": 139,
+        "slug": "contracts",
+        "branch": "s139/contracts",
+        "worktree": "/work/project/s139-contracts",
+        "base_ref": "main",
+        "created_by": "pij-parent",
+        "created_at": 1788739200000,
+        "state": "created"
+      },
+      "fence": {
+        "id": "fence-governance-port-contracts",
+        "stream": "governance-port:contracts",
+        "paths": [
+          "crates/core/**"
+        ],
+        "shared": [
+          "crates/core/src/lib.rs"
+        ],
+        "declared_by": "pij-parent",
+        "declared_at": 1788739200000
+      },
+      "role": {
+        "seat": "pij-worker",
+        "role": "reviewer",
+        "assigned_by": "pij-parent",
+        "assigned_at": 1788739200000
+      },
+      "dispatch": {
+        "id": "dispatch-139-proof",
+        "from": "pij-parent",
+        "to": "pij-worker",
+        "packet_path": "/work/packet.dd.md",
+        "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "msg_id": "dispatch-139-proof",
+        "state": "queued",
+        "created_at": 1788739200000,
+        "delivered_at": null,
+        "acknowledged_at": null
+      },
+      "task": {
+        "id": "assignment-139-proof",
+        "node_id": "pij-worker",
+        "task": "Implement governance unit",
+        "project": "governance-port",
+        "opened_by": "pij-parent",
+        "opened_at": 1788739200000,
+        "closed_at": null,
+        "close_reason": null
+      },
+      "attestation": {
+        "seat": "pij-worker",
+        "plan_id": "139",
+        "attested_by": "pij-parent",
+        "attested_at": 1788739200000
+      },
+      "baton": {
+        "name": "merge",
+        "description": "branch:main",
+        "resource": "branch:main",
+        "probe": null,
+        "repo": "/work/project",
+        "created_by": "pij-parent",
+        "created_at": 1788739200000
+      },
+      "baton_request": {
+        "id": "request-139-proof",
+        "baton": "merge",
+        "requester": "pij-worker",
+        "purpose": "Integrate reviewed unit",
+        "pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "evidence": "unit gate receipt",
+        "requested_at": 1788739200000,
+        "state": "requested"
+      },
+      "baton_lease": {
+        "baton": "merge",
+        "holder": "pij-worker",
+        "lease_id": "lease-139-proof",
+        "request_id": "request-139-proof",
+        "acquired_at": 1788739200000
+      },
+      "prime": {
+        "seat": "pij-parent",
+        "designated_by": "pij-parent",
+        "designated_at": 1788739200000,
+        "state": "current"
+      },
+      "decision": {
+        "id": "decision-139-proof",
+        "asked_by": "pij-worker",
+        "parent": "pij-parent",
+        "question": "Which branch owns the shared migration?",
+        "state": "open",
+        "asked_at": 1788739200000,
+        "question_seq": 101,
+        "answer": null,
+        "answered_by": null,
+        "answered_at": null,
+        "answer_msg_id": null
+      }
+    }
+  },
+  "wire_invariants": [
+    "Envelope<T> v=2, error is the existing snake_case ErrorKind string; structured refusal code is details.code, human line in meta. Never introduce a different nested error envelope.",
+    "Every /v1 route is bearer-authenticated. Bearer proves machine access, not seat identity; resolve CallerContext through daemon identity service.",
+    "Use argv+caller family parser already established by /v1/report. Native CLI and legacy shim must not implement independent semantic parsers. Typed role/close/answer/reap shapes and shim argv converge on same operation.",
+    "CLI --json of each ported governance command is byte-identical between pij and pij-rs when run against equivalent fixture state; forward original v2 envelope intact, no data-only unwrap or rewrapping.",
+    "Omitted optional field means unsaid; preserve null vs omission semantics on existing identity routes.",
+    "--actor may not forge attribution; when accepted it must match resolved caller, otherwise named ownership refusal.",
+    "Unknown verb/leaf/flag and unported semantics refuse decodably, never drop a value or fall through to legacy.",
+    "Generated ids/timestamps/sequences in examples are fixture values. Tests inject deterministic providers or bind and assert dynamic fields and relationships; never strip fields that embody ownership/order/receipt state."
+  ],
+  "migration_owners": {
+    "0014": "u3: governance/project metadata/fence/canary/attestation/task/baton lifecycle and dispatch message linkage/state",
+    "0015": "u4: decisions",
+    "0016": "u5 only if necessary; none otherwise"
+  },
+  "composition_ownership": {
+    "PM": [
+      "crates/daemon/src/http/mod.rs route wiring",
+      "crates/daemon/src/lib.rs shared service wiring",
+      "crates/cli/src/main.rs verb wiring",
+      "crates/core/src/lib.rs module exports",
+      "crates/store/src/lib.rs shared module/migration registration"
+    ],
+    "u2": "Use existing assign_role; do not edit orchestration.rs alongside u3 without PM merge recipe.",
+    "u6_extra_fence": [
+      ".pi/extensions/pij/adapters/generation-router.ts",
+      "associated tests"
+    ]
+  },
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/v1/project",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "project-create",
+          "request": {
+            "argv": [
+              "project",
+              "create",
+              "Governance port"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij project",
+            "v": 2,
+            "data": {
+              "project": {
+                "slug": "governance-port",
+                "description": "Governance port",
+                "repo": "/work/project",
+                "plan_path": null,
+                "prime_id": null,
+                "created_by": "pij-parent",
+                "created_at": 1788739200000
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "project-list",
+          "request": {
+            "argv": [
+              "project",
+              "list"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij project",
+            "v": 2,
+            "data": {
+              "projects": [
+                {
+                  "slug": "governance-port",
+                  "description": "Governance port",
+                  "repo": "/work/project",
+                  "plan_path": "docs/plans/139-rs-governance-port/plan.dd.json",
+                  "prime_id": "pij-parent",
+                  "created_by": "pij-parent",
+                  "created_at": 1788739200000
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "project-show",
+          "request": {
+            "argv": [
+              "project",
+              "show",
+              "governance-port"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij project",
+            "v": 2,
+            "data": {
+              "project": {
+                "slug": "governance-port",
+                "description": "Governance port",
+                "repo": "/work/project",
+                "plan_path": "docs/plans/139-rs-governance-port/plan.dd.json",
+                "prime_id": "pij-parent",
+                "created_by": "pij-parent",
+                "created_at": 1788739200000
+              }
+            }
+          }
+        },
+        {
+          "id": "project-set",
+          "request": {
+            "argv": [
+              "project",
+              "set",
+              "governance-port",
+              "--plan",
+              "docs/plans/139-rs-governance-port/plan.dd.json",
+              "--prime",
+              "pij-parent"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij project",
+            "v": 2,
+            "data": {
+              "project": {
+                "slug": "governance-port",
+                "description": "Governance port",
+                "repo": "/work/project",
+                "plan_path": "docs/plans/139-rs-governance-port/plan.dd.json",
+                "prime_id": "pij-parent",
+                "created_by": "pij-parent",
+                "created_at": 1788739200000
+              },
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Derive slug using existing project naming rules; persist description, repo, plan linkage and prime. Do not silently discard supported metadata."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/stream",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "stream-create",
+          "request": {
+            "argv": [
+              "stream",
+              "create",
+              "--project",
+              "governance-port",
+              "--slug",
+              "contracts",
+              "--base",
+              "main",
+              "--ordinal",
+              "139"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij stream",
+            "v": 2,
+            "data": {
+              "stream": {
+                "id": "governance-port:contracts",
+                "project": "governance-port",
+                "ordinal": 139,
+                "slug": "contracts",
+                "branch": "s139/contracts",
+                "worktree": "/work/project/s139-contracts",
+                "base_ref": "main",
+                "created_by": "pij-parent",
+                "created_at": 1788739200000,
+                "state": "created"
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "stream-list",
+          "request": {
+            "argv": [
+              "stream",
+              "list",
+              "--project",
+              "governance-port"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij stream",
+            "v": 2,
+            "data": {
+              "streams": [
+                {
+                  "id": "governance-port:contracts",
+                  "project": "governance-port",
+                  "ordinal": 139,
+                  "slug": "contracts",
+                  "branch": "s139/contracts",
+                  "worktree": "/work/project/s139-contracts",
+                  "base_ref": "main",
+                  "created_by": "pij-parent",
+                  "created_at": 1788739200000,
+                  "state": "created"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "stream-show",
+          "request": {
+            "argv": [
+              "stream",
+              "show",
+              "governance-port:contracts"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij stream",
+            "v": 2,
+            "data": {
+              "stream": {
+                "id": "governance-port:contracts",
+                "project": "governance-port",
+                "ordinal": 139,
+                "slug": "contracts",
+                "branch": "s139/contracts",
+                "worktree": "/work/project/s139-contracts",
+                "base_ref": "main",
+                "created_by": "pij-parent",
+                "created_at": 1788739200000,
+                "state": "created"
+              }
+            }
+          }
+        },
+        {
+          "id": "stream-close",
+          "request": {
+            "argv": [
+              "stream",
+              "close",
+              "governance-port:contracts"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij stream",
+            "v": 2,
+            "data": {
+              "stream": {
+                "id": "governance-port:contracts",
+                "project": "governance-port",
+                "ordinal": 139,
+                "slug": "contracts",
+                "branch": "s139/contracts",
+                "worktree": "/work/project/s139-contracts",
+                "base_ref": "main",
+                "created_by": "pij-parent",
+                "created_at": 1788739200000,
+                "state": "closed"
+              },
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Use existing RepoService/inventory reservation flow. A created row must not falsely claim an uncreated worktree; errors are named and durable reservations remain inspectable. Close changes governance state; it does not delete a worktree."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/fence",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "fence-set",
+          "request": {
+            "argv": [
+              "fence",
+              "set",
+              "governance-port:contracts",
+              "--paths",
+              "crates/core/**",
+              "--shared",
+              "crates/core/src/lib.rs"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij fence",
+            "v": 2,
+            "data": {
+              "fence": {
+                "id": "fence-governance-port-contracts",
+                "stream": "governance-port:contracts",
+                "paths": [
+                  "crates/core/**"
+                ],
+                "shared": [
+                  "crates/core/src/lib.rs"
+                ],
+                "declared_by": "pij-parent",
+                "declared_at": 1788739200000
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "fence-show",
+          "request": {
+            "argv": [
+              "fence",
+              "show",
+              "--path",
+              "crates/core/src/lib.rs"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij fence",
+            "v": 2,
+            "data": {
+              "fences": [
+                {
+                  "id": "fence-governance-port-contracts",
+                  "stream": "governance-port:contracts",
+                  "paths": [
+                    "crates/core/**"
+                  ],
+                  "shared": [
+                    "crates/core/src/lib.rs"
+                  ],
+                  "declared_by": "pij-parent",
+                  "declared_at": 1788739200000
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Fences describe write intent, not authorization; --path filters matching declared paths without widening."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/dispatch",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "dispatch-create",
+          "request": {
+            "argv": [
+              "dispatch",
+              "pij-worker",
+              "--packet",
+              "/work/packet.dd.md"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij dispatch",
+            "v": 2,
+            "data": {
+              "dispatch": {
+                "id": "dispatch-139-proof",
+                "from": "pij-parent",
+                "to": "pij-worker",
+                "packet_path": "/work/packet.dd.md",
+                "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "msg_id": "dispatch-139-proof",
+                "state": "queued",
+                "created_at": 1788739200000,
+                "delivered_at": null,
+                "acknowledged_at": null
+              },
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Read packet bytes and hash in daemon with argv path resolved against caller.cwd. Persist dispatch before delivery; invoke existing DeliveryService, never a second queue or transport.",
+        "msg_id is stable linkage into existing delivery receipts. State queued -> delivered -> acked; an accepted queue is not delivered. Acknowledgement wins over delayed delivered updates. Read and event projections reflect real receipt state.",
+        "Optional --wait[=MS] observes bounded progress; timeout returns the truthful current row, never fabricates delivered/acked."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ack",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "dispatch-ack",
+          "request": {
+            "argv": [
+              "ack",
+              "dispatch-139-proof",
+              "--packet-sha",
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "caller": {
+              "TMUX_PANE": "%11",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij ack",
+            "v": 2,
+            "data": {
+              "dispatch": {
+                "id": "dispatch-139-proof",
+                "from": "pij-parent",
+                "to": "pij-worker",
+                "packet_path": "/work/packet.dd.md",
+                "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "msg_id": "dispatch-139-proof",
+                "state": "acked",
+                "created_at": 1788739200000,
+                "delivered_at": 1788739200001,
+                "acknowledged_at": 1788739200002,
+                "ack": {
+                  "seat": "pij-worker",
+                  "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "at": 1788739200002
+                }
+              },
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Only resolved recipient may acknowledge. Packet SHA must match the persisted digest; mismatch refuses before changing row or spine.",
+        "Repeated identical acknowledgement is idempotent; a different packet or unrelated caller never rewrites prior acknowledgement."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/canary",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "canary-verified",
+          "request": {
+            "argv": [
+              "canary",
+              "pij-worker",
+              "--expect-model",
+              "github-copilot/gpt-6-astra-1m",
+              "--wait=5000"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij canary",
+            "v": 2,
+            "data": {
+              "dispatch": {
+                "id": "dispatch-139-proof",
+                "from": "pij-parent",
+                "to": "pij-worker",
+                "packet_path": "/work/packet.dd.md",
+                "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "msg_id": "dispatch-139-proof",
+                "state": "acked",
+                "created_at": 1788739200000,
+                "delivered_at": 1788739200001,
+                "acknowledged_at": 1788739200002,
+                "ack": {
+                  "seat": "pij-worker",
+                  "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "at": 1788739200002
+                },
+                "canary": {
+                  "nonce": "nonce-139-proof",
+                  "model": "github-copilot/gpt-6-astra-1m",
+                  "passed_at": 1788739200003,
+                  "evaluator": "pij-parent"
+                }
+              },
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Real nonce-bearing dispatch + pushed receipt instruction + recipient ack + descriptor/process/session/model verification. Never return a synthetic pass from descriptor presence alone.",
+        "No ack or mismatched observed model yields a decodable refusal/pending result carrying dispatch id and evidence. Canary passes only after actual nonce-correlated receipt."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/attest",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "attest-plan",
+          "request": {
+            "argv": [
+              "attest",
+              "pij-worker",
+              "--plan-id",
+              "139"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij attest",
+            "v": 2,
+            "data": {
+              "attestation": {
+                "seat": "pij-worker",
+                "plan_id": "139",
+                "attested_by": "pij-parent",
+                "attested_at": 1788739200000
+              },
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Persist and expose plan linkage in node show; this is not native_extension_delivery attestation and must not set that security-sensitive flag."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/task",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "task-set",
+          "request": {
+            "argv": [
+              "task",
+              "set",
+              "pij-worker",
+              "Implement governance unit",
+              "--project",
+              "governance-port"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij task",
+            "v": 2,
+            "data": {
+              "task": {
+                "id": "assignment-139-proof",
+                "node_id": "pij-worker",
+                "task": "Implement governance unit",
+                "project": "governance-port",
+                "opened_by": "pij-parent",
+                "opened_at": 1788739200000,
+                "closed_at": null,
+                "close_reason": null
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "task-close",
+          "request": {
+            "argv": [
+              "task",
+              "close",
+              "assignment-139-proof",
+              "--reason",
+              "done"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij task",
+            "v": 2,
+            "data": {
+              "task": {
+                "id": "assignment-139-proof",
+                "node_id": "pij-worker",
+                "task": "Implement governance unit",
+                "project": "governance-port",
+                "opened_by": "pij-parent",
+                "opened_at": 1788739200000,
+                "closed_at": 1788739200001,
+                "close_reason": "done"
+              },
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Task close records the reason done|cancelled|failed|superseded. It never substitutes for parent verification of a done claim."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/node",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "node-show",
+          "request": {
+            "argv": [
+              "node",
+              "show",
+              "pij-worker"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij node",
+            "v": 2,
+            "data": {
+              "node": {
+                "id": "pij-worker",
+                "parent": "pij-parent",
+                "role": "reviewer",
+                "plan_id": "139",
+                "state": null,
+                "children": [],
+                "assignments": [
+                  {
+                    "id": "assignment-139-proof",
+                    "node_id": "pij-worker",
+                    "task": "Implement governance unit",
+                    "project": "governance-port",
+                    "opened_by": "pij-parent",
+                    "opened_at": 1788739200000,
+                    "closed_at": null,
+                    "close_reason": null
+                  }
+                ],
+                "dispatches": [
+                  {
+                    "id": "dispatch-139-proof",
+                    "from": "pij-parent",
+                    "to": "pij-worker",
+                    "packet_path": "/work/packet.dd.md",
+                    "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "msg_id": "dispatch-139-proof",
+                    "state": "queued",
+                    "created_at": 1788739200000,
+                    "delivered_at": null,
+                    "acknowledged_at": null
+                  }
+                ]
+              },
+              "cursor": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Render tree and linked records from rs only; no legacy registry or filesystem ledger reads. Missing nodes refuse rather than returning empty success."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/orchestration",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "baton-define",
+          "request": {
+            "argv": [
+              "orchestration",
+              "baton",
+              "define",
+              "merge",
+              "--resource",
+              "branch:main",
+              "--repo",
+              "/work/project"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "baton": {
+                "name": "merge",
+                "description": "branch:main",
+                "resource": "branch:main",
+                "probe": null,
+                "repo": "/work/project",
+                "created_by": "pij-parent",
+                "created_at": 1788739200000
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "baton-list",
+          "request": {
+            "argv": [
+              "orchestration",
+              "baton",
+              "list"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "batons": [
+                {
+                  "name": "merge",
+                  "description": "branch:main",
+                  "resource": "branch:main",
+                  "probe": null,
+                  "repo": "/work/project",
+                  "created_by": "pij-parent",
+                  "created_at": 1788739200000
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "baton-show",
+          "request": {
+            "argv": [
+              "orchestration",
+              "baton",
+              "show",
+              "merge"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "baton": {
+                "name": "merge",
+                "description": "branch:main",
+                "resource": "branch:main",
+                "probe": null,
+                "repo": "/work/project",
+                "created_by": "pij-parent",
+                "created_at": 1788739200000
+              },
+              "lease": {
+                "baton": "merge",
+                "holder": "pij-worker",
+                "lease_id": "lease-139-proof",
+                "request_id": "request-139-proof",
+                "acquired_at": 1788739200000
+              },
+              "requests": [
+                {
+                  "id": "request-139-proof",
+                  "baton": "merge",
+                  "requester": "pij-worker",
+                  "purpose": "Integrate reviewed unit",
+                  "pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "evidence": "unit gate receipt",
+                  "requested_at": 1788739200000,
+                  "state": "requested"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "baton-request",
+          "request": {
+            "argv": [
+              "orchestration",
+              "baton",
+              "request",
+              "merge",
+              "--purpose",
+              "Integrate reviewed unit",
+              "--pin",
+              "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "--evidence",
+              "unit gate receipt"
+            ],
+            "caller": {
+              "TMUX_PANE": "%11",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "request": {
+                "id": "request-139-proof",
+                "baton": "merge",
+                "requester": "pij-worker",
+                "purpose": "Integrate reviewed unit",
+                "pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "evidence": "unit gate receipt",
+                "requested_at": 1788739200000,
+                "state": "requested"
+              },
+              "notice": "queued",
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "baton-grant",
+          "request": {
+            "argv": [
+              "orchestration",
+              "baton",
+              "grant",
+              "merge",
+              "--to",
+              "request-139-proof"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "lease": {
+                "baton": "merge",
+                "holder": "pij-worker",
+                "lease_id": "lease-139-proof",
+                "request_id": "request-139-proof",
+                "acquired_at": 1788739200000
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "baton-return",
+          "request": {
+            "argv": [
+              "orchestration",
+              "baton",
+              "return",
+              "merge",
+              "--lease-id",
+              "lease-139-proof",
+              "--evidence",
+              "integration complete"
+            ],
+            "caller": {
+              "TMUX_PANE": "%11",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "baton": "merge",
+              "released": true,
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "baton-reclaim",
+          "request": {
+            "argv": [
+              "orchestration",
+              "baton",
+              "reclaim",
+              "merge",
+              "--lease-id",
+              "lease-139-proof",
+              "--evidence",
+              "holder confirmed gone"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "baton": "merge",
+              "released": true,
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "prime-set",
+          "request": {
+            "argv": [
+              "orchestration",
+              "prime",
+              "set",
+              "pij-parent"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "prime": {
+                "seat": "pij-parent",
+                "designated_by": "pij-parent",
+                "designated_at": 1788739200000,
+                "state": "current"
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "prime-retire",
+          "request": {
+            "argv": [
+              "orchestration",
+              "prime",
+              "retire",
+              "pij-parent"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "prime": {
+                "seat": "pij-parent",
+                "designated_by": "pij-parent",
+                "designated_at": 1788739200000,
+                "state": "retired"
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "prime-unset",
+          "request": {
+            "argv": [
+              "orchestration",
+              "prime",
+              "unset",
+              "pij-parent"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "prime": null,
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "orchestration-role-set",
+          "request": {
+            "argv": [
+              "orchestration",
+              "role",
+              "set",
+              "pij-worker",
+              "worker"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "role": {
+                "seat": "pij-worker",
+                "role": "worker",
+                "assigned_by": "pij-parent",
+                "assigned_at": 1788739200000
+              },
+              "seq": 101
+            }
+          }
+        },
+        {
+          "id": "role-unset",
+          "request": {
+            "argv": [
+              "orchestration",
+              "role",
+              "unset",
+              "pij-worker"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij orchestration",
+            "v": 2,
+            "data": {
+              "role": {
+                "seat": "pij-worker",
+                "role": null,
+                "assigned_by": "pij-parent",
+                "assigned_at": 1788739200000
+              },
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Use existing lease store invariants; exactly one holder, stale lease cannot release newer holder. Preserve legacy request/grant/return/reclaim authorization and pin checks, not a renamed claim/release approximation.",
+        "Role assertion alone grants no orchestration authority. Prime designation is a separate row, not inferred from display role."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/role",
+      "owner": "u2",
+      "cases": [
+        {
+          "id": "role-set",
+          "request": {
+            "seat": "pij-worker",
+            "role": "reviewer",
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "shim_request": {
+            "argv": [
+              "role",
+              "pij-worker",
+              "reviewer"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij role",
+            "v": 2,
+            "data": {
+              "seat": "pij-worker",
+              "role": "reviewer",
+              "assigned_by": "pij-parent",
+              "assigned_at": 1788739200000,
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Resolve caller through existing daemon identity service, never trust body actor/assigned_by.",
+        "Target defaults to self only when absent. Self or current recorded parent may mutate; third seat refuses E-RS-OWNERSHIP.",
+        "Role is an asserted nonempty string or explicit null for unset, never inferred. Persist in seat_roles and join /v1/seats and StateCard; no stale descriptor.role override."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/report",
+      "owner": "u4",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "report-question",
+          "request": {
+            "argv": [
+              "report",
+              "question",
+              "Which branch owns the shared migration?"
+            ],
+            "caller": {
+              "TMUX_PANE": "%11",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij report",
+            "v": 2,
+            "data": {
+              "seat": "pij-worker",
+              "seq": 101,
+              "assignment_id": null,
+              "refs": [],
+              "decision": {
+                "id": "decision-139-proof",
+                "asked_by": "pij-worker",
+                "parent": "pij-parent",
+                "question": "Which branch owns the shared migration?",
+                "state": "open",
+                "asked_at": 1788739200000,
+                "question_seq": 101,
+                "answer": null,
+                "answered_by": null,
+                "answered_at": null,
+                "answer_msg_id": null
+              },
+              "line": "question recorded: decision-139-proof"
+            }
+          }
+        },
+        {
+          "id": "report-verify",
+          "request": {
+            "argv": [
+              "report",
+              "verify",
+              "pij-worker"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij report",
+            "v": 2,
+            "data": {
+              "seat": "pij-worker",
+              "verified_by": "pij-parent",
+              "done_seq": 100,
+              "seq": 101,
+              "line": "verified pij-worker done at spine 100"
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "State declarations retain assignment_id and refs additively (plan 145); old report.state records default to null and [].",
+        "Question persists a durable decision; clearing card/state does not silently answer or delete the decision. Distinct questions remain independently answerable.",
+        "Verify requires the current recorded parent, never self-verification or unrelated actors. Tie receipt to specific latest done seq; later done declarations reopen unverified-done.",
+        "Keep existing assignment/project filters meaningful once supported, and refuse unsupported flags explicitly rather than ignoring them."
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/anomalies",
+      "owner": "u4",
+      "query_fields": [
+        "here",
+        "project",
+        "seat"
+      ],
+      "cases": [
+        {
+          "id": "anomalies-list",
+          "request": null,
+          "response": {
+            "ok": true,
+            "command": "pij anomalies",
+            "v": 2,
+            "data": {
+              "anomalies": [
+                {
+                  "kind": "status-stale",
+                  "nodeId": "pij-worker",
+                  "detail": "'pij-worker' has been working for 30min since its card was last updated (threshold 30min) \u2014 consumers render now/next as CURRENT, so a stale card actively misinforms. If 'pij-worker' is waiting on something with no known end, it should declare a parked state: pij report state waiting|hold|blocked|question (parked seats never flag). Otherwise it should update its card: pij report now \"<what I just did>\" \"<what's next>\" \u2014 note that refreshing a card resets this timer WITHOUT changing the wait, so a parked seat that reports instead of declaring will be asked again every threshold.",
+                  "evidence": [
+                    100
+                  ],
+                  "ageMs": 1800001,
+                  "relay": "\u26a0\ufe0f anomaly status-stale on pij-worker: 'pij-worker' has been working for 30min since its card was last updated (threshold 30min) \u2014 consumers render now/next as CURRENT, so a stale card actively misinforms. If 'pij-worker' is waiting on something with no known end, it should declare a parked state: pij report state waiting|hold|blocked|question (parked seats never flag). Otherwise it should update its card: pij report now \"<what I just did>\" \"<what's next>\" \u2014 note that refreshing a card resets this timer WITHOUT changing the wait, so a parked seat that reports instead of declaring will be asked again every threshold. \u2014 evidence: spine 100"
+                },
+                {
+                  "kind": "unverified-done",
+                  "nodeId": "pij-worker",
+                  "assignmentId": "assignment-139-proof",
+                  "detail": "assignment 'assignment-139-proof' declared done by pij-worker with no verify \u2014 done is a claim until verified",
+                  "evidence": [
+                    100
+                  ],
+                  "relay": "\u26a0\ufe0f anomaly unverified-done on pij-worker (assignment assignment-139-proof): assignment 'assignment-139-proof' declared done by pij-worker with no verify \u2014 done is a claim until verified \u2014 evidence: spine 100"
+                },
+                {
+                  "kind": "open-question",
+                  "nodeId": "pij-parent",
+                  "detail": "decision 'decision-139-proof' asked by pij-worker is unanswered",
+                  "evidence": [
+                    101
+                  ],
+                  "recordRef": "decision:decision-139-proof",
+                  "ageMs": 1,
+                  "relay": "\u26a0\ufe0f anomaly open-question on pij-parent: decision 'decision-139-proof' asked by pij-worker is unanswered \u2014 evidence: spine 101"
+                },
+                {
+                  "kind": "delivered-unacked-stale",
+                  "nodeId": "pij-worker",
+                  "detail": "dispatch:dispatch-139-proof remains delivered-unacked \u2014 delivery landed but no durable brief ack followed",
+                  "evidence": [
+                    100
+                  ],
+                  "recordRef": "dispatch:dispatch-139-proof",
+                  "ageMs": 900001,
+                  "relay": "\u26a0\ufe0f anomaly delivered-unacked-stale on pij-worker: dispatch:dispatch-139-proof remains delivered-unacked \u2014 delivery landed but no durable brief ack followed \u2014 evidence: spine 100"
+                },
+                {
+                  "kind": "dead-seat",
+                  "nodeId": "pij-worker",
+                  "detail": "recorded process incarnation is dead; inspect with pij-rs reap --dry-run",
+                  "evidence": [
+                    100
+                  ],
+                  "relay": "\u26a0\ufe0f anomaly dead-seat on pij-worker: recorded process incarnation is dead; inspect with pij-rs reap --dry-run \u2014 evidence: spine 100"
+                }
+              ],
+              "cursor": 101
+            }
+          }
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/anomalies",
+      "owner": "u4",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "anomalies-argv",
+          "request": {
+            "argv": [
+              "anomalies"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij anomalies",
+            "v": 2,
+            "data": {
+              "anomalies": [
+                {
+                  "kind": "status-stale",
+                  "nodeId": "pij-worker",
+                  "detail": "'pij-worker' has been working for 30min since its card was last updated (threshold 30min) \u2014 consumers render now/next as CURRENT, so a stale card actively misinforms. If 'pij-worker' is waiting on something with no known end, it should declare a parked state: pij report state waiting|hold|blocked|question (parked seats never flag). Otherwise it should update its card: pij report now \"<what I just did>\" \"<what's next>\" \u2014 note that refreshing a card resets this timer WITHOUT changing the wait, so a parked seat that reports instead of declaring will be asked again every threshold.",
+                  "evidence": [
+                    100
+                  ],
+                  "ageMs": 1800001,
+                  "relay": "\u26a0\ufe0f anomaly status-stale on pij-worker: 'pij-worker' has been working for 30min since its card was last updated (threshold 30min) \u2014 consumers render now/next as CURRENT, so a stale card actively misinforms. If 'pij-worker' is waiting on something with no known end, it should declare a parked state: pij report state waiting|hold|blocked|question (parked seats never flag). Otherwise it should update its card: pij report now \"<what I just did>\" \"<what's next>\" \u2014 note that refreshing a card resets this timer WITHOUT changing the wait, so a parked seat that reports instead of declaring will be asked again every threshold. \u2014 evidence: spine 100"
+                },
+                {
+                  "kind": "unverified-done",
+                  "nodeId": "pij-worker",
+                  "assignmentId": "assignment-139-proof",
+                  "detail": "assignment 'assignment-139-proof' declared done by pij-worker with no verify \u2014 done is a claim until verified",
+                  "evidence": [
+                    100
+                  ],
+                  "relay": "\u26a0\ufe0f anomaly unverified-done on pij-worker (assignment assignment-139-proof): assignment 'assignment-139-proof' declared done by pij-worker with no verify \u2014 done is a claim until verified \u2014 evidence: spine 100"
+                },
+                {
+                  "kind": "open-question",
+                  "nodeId": "pij-parent",
+                  "detail": "decision 'decision-139-proof' asked by pij-worker is unanswered",
+                  "evidence": [
+                    101
+                  ],
+                  "recordRef": "decision:decision-139-proof",
+                  "ageMs": 1,
+                  "relay": "\u26a0\ufe0f anomaly open-question on pij-parent: decision 'decision-139-proof' asked by pij-worker is unanswered \u2014 evidence: spine 101"
+                },
+                {
+                  "kind": "delivered-unacked-stale",
+                  "nodeId": "pij-worker",
+                  "detail": "dispatch:dispatch-139-proof remains delivered-unacked \u2014 delivery landed but no durable brief ack followed",
+                  "evidence": [
+                    100
+                  ],
+                  "recordRef": "dispatch:dispatch-139-proof",
+                  "ageMs": 900001,
+                  "relay": "\u26a0\ufe0f anomaly delivered-unacked-stale on pij-worker: dispatch:dispatch-139-proof remains delivered-unacked \u2014 delivery landed but no durable brief ack followed \u2014 evidence: spine 100"
+                },
+                {
+                  "kind": "dead-seat",
+                  "nodeId": "pij-worker",
+                  "detail": "recorded process incarnation is dead; inspect with pij-rs reap --dry-run",
+                  "evidence": [
+                    100
+                  ],
+                  "relay": "\u26a0\ufe0f anomaly dead-seat on pij-worker: recorded process incarnation is dead; inspect with pij-rs reap --dry-run \u2014 evidence: spine 100"
+                }
+              ],
+              "cursor": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "POST argv/caller and GET query read variants invoke one shared parser/projection. All filters survive the shim; unknown filters refuse.",
+        "GET here=<absolute-path> scopes explicitly; bare here=true refuses without guessing daemon cwd. POST --here resolves caller scope. Scope errors explain that status-stale is node-keyed and should be queried unscoped; valid filters remain valid, with an optional advisory only.",
+        "Project membership comes from real assignment.project associations; do not invent a project for a node-only anomaly.",
+        "Rows are computed only from rs records and spine. No stored anomaly table or legacy filesystem reads."
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/decisions",
+      "owner": "u4",
+      "query_fields": [
+        "state",
+        "asked_by",
+        "parent"
+      ],
+      "cases": [
+        {
+          "id": "decisions-list",
+          "request": null,
+          "response": {
+            "ok": true,
+            "command": "pij decisions",
+            "v": 2,
+            "data": {
+              "decisions": [
+                {
+                  "id": "decision-139-proof",
+                  "asked_by": "pij-worker",
+                  "parent": "pij-parent",
+                  "question": "Which branch owns the shared migration?",
+                  "state": "open",
+                  "asked_at": 1788739200000,
+                  "question_seq": 101,
+                  "answer": null,
+                  "answered_by": null,
+                  "answered_at": null,
+                  "answer_msg_id": null
+                }
+              ],
+              "cursor": 101
+            }
+          }
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/decisions",
+      "owner": "u4",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "decisions-argv",
+          "request": {
+            "argv": [
+              "decisions"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij decisions",
+            "v": 2,
+            "data": {
+              "decisions": [
+                {
+                  "id": "decision-139-proof",
+                  "asked_by": "pij-worker",
+                  "parent": "pij-parent",
+                  "question": "Which branch owns the shared migration?",
+                  "state": "open",
+                  "asked_at": 1788739200000,
+                  "question_seq": 101,
+                  "answer": null,
+                  "answered_by": null,
+                  "answered_at": null,
+                  "answer_msg_id": null
+                }
+              ],
+              "cursor": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Default lists open decisions fleet-wide; explicit state=all includes answered. Parent filter enables responsible-seat view; empty list is distinct from error."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/answer",
+      "owner": "u4",
+      "cases": [
+        {
+          "id": "decision-answer",
+          "request": {
+            "decision": "decision-139-proof",
+            "answer": "u3 owns migration 0014",
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "shim_request": {
+            "argv": [
+              "answer",
+              "decision-139-proof",
+              "u3 owns migration 0014"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij answer",
+            "v": 2,
+            "data": {
+              "decision": {
+                "id": "decision-139-proof",
+                "asked_by": "pij-worker",
+                "parent": "pij-parent",
+                "question": "Which branch owns the shared migration?",
+                "state": "answered",
+                "asked_at": 1788739200000,
+                "question_seq": 101,
+                "answer": "u3 owns migration 0014",
+                "answered_by": "pij-parent",
+                "answered_at": 1788739200005,
+                "answer_msg_id": "decision-139-proof-answer"
+              },
+              "seq": 102
+            }
+          }
+        },
+        {
+          "id": "decision-answer-supersede",
+          "request": {
+            "decision": "decision-139-proof",
+            "answer": "u4 owns recovery; u3 retains migration 0014",
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            },
+            "supersede": true
+          },
+          "shim_request": {
+            "argv": [
+              "answer",
+              "--supersede",
+              "decision-139-proof",
+              "u4 owns recovery; u3 retains migration 0014"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij answer",
+            "v": 2,
+            "data": {
+              "decision": {
+                "id": "decision-139-proof",
+                "asked_by": "pij-worker",
+                "parent": "pij-previous-parent",
+                "question": "Which branch owns the shared migration?",
+                "state": "answered",
+                "asked_at": 1788739200000,
+                "question_seq": 101,
+                "answer": "u4 owns recovery; u3 retains migration 0014",
+                "answered_by": "pij-parent",
+                "answered_at": 1788739200006,
+                "answer_msg_id": "decision-139-proof-answer-102"
+              },
+              "seq": 103
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Answer permission is asker or current recorded parent of asker; root question visibility may fall back to current prime without granting new answer authority.",
+        "Live decisions/anomalies and parent filters project the current recorded parent; decision.opened preserves parent-at-ask. Reads never rewrite the durable question or invent a second parent field.",
+        "Question creation commits decision row plus decision.opened first, atomically, with question_seq equal to the allocated event seq. Retain report.question semantic publication afterward outside the bus lock; second-step failure explicitly names the durable decision rather than losing it.",
+        "For another seat answer, persist answer/outbound linkage before delivering through existing DeliveryService to asked_by; do not route to parent instead. Use stable answer_msg_id.",
+        "Non-self answer closes only after durable delivery acceptance; rejection leaves an inspectable open decision/refusal. Self-answer closes with resolved answerer and decision.answered, answer_msg_id=null, and no redundant push. The existing /v1/send self-send refusal remains unchanged.",
+        "Repeated identical answer must not duplicate push; conflicting answer on an answered row refuses. No custom retries or new transport.",
+        "Only the current recorded parent may use answer --supersede <decision> <answer> (typed supersede=true); the asker, former parent and unrelated seats cannot supersede.",
+        "Supersede is restricted to a terminal non-delivered answer: failed/no-queue prepared intent or an already-recorded terminal expired-unknown outcome. Never use elapsed time to infer expiry.",
+        "An answer in transit cannot be withdrawn; wait for its terminal outcome. Pending/running jobs and direct-delivery reservations refuse E-RS-ANSWER-IN-TRANSIT with old answer_msg_id and job_state; delivered/acked answers refuse E-RS-ANSWER-DELIVERED.",
+        "Existing delivery claim expiry returns to pending, not terminal expired-unknown, and therefore remains refused. No queue cancellation, withdrawal, new transport, or custom retry is introduced.",
+        "The decision.answer-superseded event and fresh open prepared row commit atomically. The event retains the old answer_msg_id, answered_by and answer under superseded. A new answer_msg_id derives from the actual allocated supersession event seq, never MAX/COUNT guesses.",
+        "Ordinary identical retry uses the newly persisted answer_msg_id. Final closure verifies that exact msg id; an obsolete completion cannot close the replacement answer.",
+        "Delivery proof includes durable delivery.outcome history and done queue rows after bounded delivered-id eviction. A surviving pre-injection reservation with no completed audit is conservatively in transit.",
+        "DeliveryOutcome::Refused is terminal (core/model.rs); its completed audit permits explicit replacement even if the old pre-injection marker remains. DeliveryOutcome::Held is pending and vetoes supersede even after marker eviction. Every replacement still passes ordinary DeliveryService acceptance and may itself be refused.",
+        "Explicit supersede requires queue=real and spine=real with the composition root guaranteeing that queue, decision store and event bus use the same SQLite pool (persistent in production). Adapter labels alone are not proof of shared authority.",
+        "After current-parent authorization and before any replacement, mixed/fake backends refuse HTTP409 E-RS-ANSWER-AUTHORITY-SPLIT, naming both queue_backend and spine_backend. They do not append a supersession event, mutate the old decision, cancel old work, or admit a replacement.",
+        "Ordinary question, answer, identical retry and self-answer behavior remains available for all supported queue/spine configurations."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/close",
+      "owner": "u5",
+      "cases": [
+        {
+          "id": "seat-close",
+          "request": {
+            "seat": "pij-worker",
+            "reason": "owner-close",
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "shim_request": {
+            "argv": [
+              "close",
+              "pij-worker"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij close",
+            "v": 2,
+            "data": {
+              "seat": "pij-worker",
+              "tombstoned_at": 1788739200000,
+              "reason": "owner-close",
+              "seq": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Self or recorded parent may tombstone. This operation does not signal a process or kill a tmux pane.",
+        "Emit stamped seat.tombstone through the sole event bus; active /v1/seats excludes it. Keep tombstone evidence for history/revive.",
+        "Unknown target refuses. A parent repeat-close returns the existing tombstone/event without inventing an incarnation. A retired self retry retains universal identity refusal, with the tombstone seq named in its decodable evidence; no authentication exception."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/reap",
+      "owner": "u5",
+      "cases": [
+        {
+          "id": "reap-dry-run",
+          "request": {
+            "dry_run": true,
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "shim_request": {
+            "argv": [
+              "reap",
+              "--dry-run"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij reap",
+            "v": 2,
+            "data": {
+              "dry_run": true,
+              "before": 3,
+              "after": 3,
+              "candidates": [
+                {
+                  "seat": "pij-worker",
+                  "process": "dead",
+                  "pane": "absent",
+                  "reason": "process-dead-and-pane-absent"
+                }
+              ],
+              "reaped": [],
+              "unverifiable": [
+                {
+                  "seat": "pij-outsider",
+                  "reason": "process-identity-unavailable"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Decision: known proc dead OR proc_start mismatch, AND recorded pane confirmed absent. Paneless records require only confirmed dead/mismatched proc.",
+        "Unknown process or pane evidence is a brake: removing this check reaps the same set or more. Unknown rows are reported unverifiable and never tombstoned.",
+        "Never signal a recycled/live process. This is stale-record reconciliation, not process termination or retention policy; no age-based deletion.",
+        "Dry-run is entirely read-only including spine; actual run on same observations reports same candidates and before/after counts plus reaped rows/sequences.",
+        "Re-observe/validate descriptor identity before tombstoning so a concurrently revived incarnation cannot be removed using stale evidence."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/spine",
+      "owner": "u3",
+      "request_contract": "argv + caller; same daemon parser serves native CLI and legacy shim",
+      "cases": [
+        {
+          "id": "spine-append",
+          "request": {
+            "argv": [
+              "spine",
+              "append",
+              "--kind",
+              "plan139.control",
+              "--refs",
+              "plan:139"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij spine",
+            "v": 2,
+            "data": {
+              "seq": 101,
+              "event": {
+                "v": 1,
+                "at": 1788739200000,
+                "kind": "plan139.control",
+                "seat": "pij-parent",
+                "payload": "{\"refs\":[\"plan:139\"],\"actor\":\"pij-parent\"}"
+              }
+            }
+          }
+        },
+        {
+          "id": "spine-events",
+          "request": {
+            "argv": [
+              "spine",
+              "events",
+              "--since",
+              "100"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij spine",
+            "v": 2,
+            "data": {
+              "events": [
+                {
+                  "seq": 101,
+                  "v": 1,
+                  "at": 1788739200000,
+                  "kind": "plan139.control",
+                  "seat": "pij-parent",
+                  "payload": "{\"refs\":[\"plan:139\"],\"actor\":\"pij-parent\"}"
+                }
+              ],
+              "cursor": 101
+            }
+          }
+        },
+        {
+          "id": "spine-render",
+          "request": {
+            "argv": [
+              "spine",
+              "render"
+            ],
+            "caller": {
+              "TMUX_PANE": "%10",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij spine",
+            "v": 2,
+            "data": {
+              "text": "101 plan139.control pij-parent",
+              "cursor": 101
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Caller-supplied kind is literal with no allowlist; attribution is daemon-resolved. Every append goes through EventBus and reaches both subscribers.",
+        "since is exclusive per-machine local seq, matching /v1/events replay semantics. --peer/--project filter rs evidence, never legacy records.",
+        "render returns an rs textual projection only. Never write legacy spine.md or any legacy ledger file."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/adopt",
+      "owner": "u2",
+      "cases": [
+        {
+          "id": "adopt-with-role",
+          "request": {
+            "argv": [
+              "adopt",
+              "%11",
+              "--harness",
+              "omp",
+              "--parent",
+              "pij-parent",
+              "--role",
+              "reviewer"
+            ],
+            "caller": {
+              "TMUX_PANE": "%11",
+              "cwd": "/work/project"
+            }
+          },
+          "response": {
+            "ok": true,
+            "command": "pij adopt",
+            "v": 2,
+            "data": {
+              "id": "pij-worker",
+              "harness": "omp",
+              "session": null,
+              "pane": "%11",
+              "proc": {
+                "pid": 12345,
+                "proc_start": 20260907090000
+              },
+              "folder": "/work/rs-governance-port",
+              "state": "idle",
+              "semantic_state": null,
+              "role": "reviewer",
+              "parent": "pij-parent",
+              "relay": false,
+              "native_extension_delivery": false
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Add --role without changing omitted-parent merge semantics. Omitted role preserves existing role; fresh omitted role remains null."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/register",
+      "owner": "u2",
+      "cases": [
+        {
+          "id": "register-with-role",
+          "request": {
+            "id": "pij-worker",
+            "harness": "omp",
+            "folder": "/work/rs-governance-port",
+            "pane": "%11",
+            "pid": 12345,
+            "proc_start": 20260907090000,
+            "parent": "pij-parent",
+            "role": "reviewer"
+          },
+          "response": {
+            "ok": true,
+            "command": "pij register",
+            "v": 2,
+            "data": {
+              "id": "pij-worker",
+              "harness": "omp",
+              "session": null,
+              "pane": "%11",
+              "proc": {
+                "pid": 12345,
+                "proc_start": 20260907090000
+              },
+              "folder": "/work/rs-governance-port",
+              "state": "idle",
+              "semantic_state": null,
+              "role": "reviewer",
+              "parent": "pij-parent",
+              "relay": false,
+              "native_extension_delivery": false
+            }
+          }
+        }
+      ],
+      "invariants": [
+        "Existing verified registration admission remains intact. Role assignment is coupled to successful admission, never committed on rejected register."
+      ]
+    }
+  ],
+  "rows": {
+    "decision": {
+      "id": "decision-139-proof",
+      "asked_by": "pij-worker",
+      "parent": "pij-parent",
+      "question": "Which branch owns the shared migration?",
+      "state": "open",
+      "asked_at": 1788739200000,
+      "question_seq": 101,
+      "answer": null,
+      "answered_by": null,
+      "answered_at": null,
+      "answer_msg_id": null
+    },
+    "anomalies": [
+      {
+        "kind": "status-stale",
+        "nodeId": "pij-worker",
+        "detail": "'pij-worker' has been working for 30min since its card was last updated (threshold 30min) \u2014 consumers render now/next as CURRENT, so a stale card actively misinforms. If 'pij-worker' is waiting on something with no known end, it should declare a parked state: pij report state waiting|hold|blocked|question (parked seats never flag). Otherwise it should update its card: pij report now \"<what I just did>\" \"<what's next>\" \u2014 note that refreshing a card resets this timer WITHOUT changing the wait, so a parked seat that reports instead of declaring will be asked again every threshold.",
+        "evidence": [
+          100
+        ],
+        "ageMs": 1800001,
+        "relay": "\u26a0\ufe0f anomaly status-stale on pij-worker: 'pij-worker' has been working for 30min since its card was last updated (threshold 30min) \u2014 consumers render now/next as CURRENT, so a stale card actively misinforms. If 'pij-worker' is waiting on something with no known end, it should declare a parked state: pij report state waiting|hold|blocked|question (parked seats never flag). Otherwise it should update its card: pij report now \"<what I just did>\" \"<what's next>\" \u2014 note that refreshing a card resets this timer WITHOUT changing the wait, so a parked seat that reports instead of declaring will be asked again every threshold. \u2014 evidence: spine 100"
+      },
+      {
+        "kind": "unverified-done",
+        "nodeId": "pij-worker",
+        "assignmentId": "assignment-139-proof",
+        "detail": "assignment 'assignment-139-proof' declared done by pij-worker with no verify \u2014 done is a claim until verified",
+        "evidence": [
+          100
+        ],
+        "relay": "\u26a0\ufe0f anomaly unverified-done on pij-worker (assignment assignment-139-proof): assignment 'assignment-139-proof' declared done by pij-worker with no verify \u2014 done is a claim until verified \u2014 evidence: spine 100"
+      },
+      {
+        "kind": "open-question",
+        "nodeId": "pij-parent",
+        "detail": "decision 'decision-139-proof' asked by pij-worker is unanswered",
+        "evidence": [
+          101
+        ],
+        "recordRef": "decision:decision-139-proof",
+        "ageMs": 1,
+        "relay": "\u26a0\ufe0f anomaly open-question on pij-parent: decision 'decision-139-proof' asked by pij-worker is unanswered \u2014 evidence: spine 101"
+      },
+      {
+        "kind": "delivered-unacked-stale",
+        "nodeId": "pij-worker",
+        "detail": "dispatch:dispatch-139-proof remains delivered-unacked \u2014 delivery landed but no durable brief ack followed",
+        "evidence": [
+          100
+        ],
+        "recordRef": "dispatch:dispatch-139-proof",
+        "ageMs": 900001,
+        "relay": "\u26a0\ufe0f anomaly delivered-unacked-stale on pij-worker: dispatch:dispatch-139-proof remains delivered-unacked \u2014 delivery landed but no durable brief ack followed \u2014 evidence: spine 100"
+      },
+      {
+        "kind": "dead-seat",
+        "nodeId": "pij-worker",
+        "detail": "recorded process incarnation is dead; inspect with pij-rs reap --dry-run",
+        "evidence": [
+          100
+        ],
+        "relay": "\u26a0\ufe0f anomaly dead-seat on pij-worker: recorded process incarnation is dead; inspect with pij-rs reap --dry-run \u2014 evidence: spine 100"
+      }
+    ]
+  },
+  "refusals": {
+    "ownership": {
+      "http_status": 403,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij role",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-OWNERSHIP role: pij-outsider is neither pij-worker nor its recorded parent",
+        "details": {
+          "code": "E-RS-OWNERSHIP",
+          "operation": "role",
+          "caller": "pij-outsider",
+          "seat": "pij-worker",
+          "parent": "pij-parent"
+        }
+      }
+    },
+    "unported": {
+      "http_status": 400,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij watchdog",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-UNPORTED watchdog: not ported to pij-rs; see docs/how/pij-rs-api.md#unsupported-status",
+        "details": {
+          "code": "E-RS-UNPORTED",
+          "verb": "watchdog",
+          "ledger_item": "docs/how/pij-rs-api.md#unsupported-status"
+        }
+      }
+    },
+    "lease_stale": {
+      "http_status": 409,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij orchestration",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-LEASE-STALE: current lease is lease-139-current; read baton show and retry with --lease-id <observed lease>",
+        "details": {
+          "code": "E-RS-LEASE-STALE",
+          "baton": "merge",
+          "current_lease": "lease-139-current",
+          "supplied_lease": "lease-139-proof"
+        }
+      }
+    },
+    "packet_sha": {
+      "http_status": 400,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij ack",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-PACKET-SHA ack: packet digest does not match dispatch",
+        "details": {
+          "code": "E-RS-PACKET-SHA",
+          "dispatch": "dispatch-139-proof"
+        }
+      }
+    },
+    "answer_in_transit_pending": {
+      "http_status": 409,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij answer",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-ANSWER-IN-TRANSIT an answer in transit cannot be withdrawn; wait for its terminal outcome",
+        "details": {
+          "decision": "decision-139-proof",
+          "answer_msg_id": "decision-139-proof-answer",
+          "job_state": "pending",
+          "code": "E-RS-ANSWER-IN-TRANSIT"
+        }
+      }
+    },
+    "answer_in_transit_claimed": {
+      "http_status": 409,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij answer",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-ANSWER-IN-TRANSIT an answer in transit cannot be withdrawn; wait for its terminal outcome",
+        "details": {
+          "decision": "decision-139-proof",
+          "answer_msg_id": "decision-139-proof-answer",
+          "job_state": "running",
+          "code": "E-RS-ANSWER-IN-TRANSIT"
+        }
+      }
+    },
+    "answer_delivered": {
+      "http_status": 409,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij answer",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-ANSWER-DELIVERED a delivered or acknowledged answer cannot be superseded",
+        "details": {
+          "decision": "decision-139-proof",
+          "answer_msg_id": "decision-139-proof-answer",
+          "job_state": "delivered",
+          "code": "E-RS-ANSWER-DELIVERED"
+        }
+      }
+    },
+    "answer_authority_split_real_fake": {
+      "http_status": 409,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij answer",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\"decision\":\"decision-139-proof\",\"queue_backend\":\"real\",\"spine_backend\":\"fake\"}",
+        "details": {
+          "decision": "decision-139-proof",
+          "queue_backend": "real",
+          "spine_backend": "fake",
+          "code": "E-RS-ANSWER-AUTHORITY-SPLIT"
+        }
+      }
+    },
+    "answer_authority_split_fake_real": {
+      "http_status": 409,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij answer",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\"decision\":\"decision-139-proof\",\"queue_backend\":\"fake\",\"spine_backend\":\"real\"}",
+        "details": {
+          "decision": "decision-139-proof",
+          "queue_backend": "fake",
+          "spine_backend": "real",
+          "code": "E-RS-ANSWER-AUTHORITY-SPLIT"
+        }
+      }
+    },
+    "answer_authority_split_fake_fake": {
+      "http_status": 409,
+      "cli_exit_nonzero": true,
+      "response": {
+        "ok": false,
+        "command": "pij answer",
+        "v": 2,
+        "error": "refused",
+        "meta": "E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\"decision\":\"decision-139-proof\",\"queue_backend\":\"fake\",\"spine_backend\":\"fake\"}",
+        "details": {
+          "decision": "decision-139-proof",
+          "queue_backend": "fake",
+          "spine_backend": "fake",
+          "code": "E-RS-ANSWER-AUTHORITY-SPLIT"
+        }
+      }
+    }
+  },
+  "anomaly_rules": {
+    "status_stale_ms": 1800000,
+    "parked_suppression": true,
+    "stderr_nudge_ms": 600000,
+    "threshold_owner": "One named constant in crates/core; 30min anomaly threshold is distinct from 10min per-command stderr nudge",
+    "boundary": "Fire only when driftMs > status_stale_ms; equality does not flag",
+    "unacked_dispatch_stale_ms": 900000,
+    "relay_template": "\u26a0\ufe0f anomaly {kind} on {nodeId}{assignment_suffix}: {detail} \u2014 evidence: spine {evidence_csv_or_none}",
+    "evidence": "real rs seqs only; never guessed counts or legacy timestamps",
+    "decision_parent_age": "An open decision older than status_stale_ms produces status-stale for its CURRENT responsible parent even when that parent recently reported. Include decision ref; ordinary open-question remains visible. Historical parent-at-ask stays in decision.opened, not the live responsibility projection.",
+    "verification": "A receipt only verifies its referenced done_seq; newer done remains unverified."
+  },
+  "isolation": {
+    "resources": [
+      "private bind port",
+      "private --state-dir",
+      "private HOME",
+      "private CLAUDE_CONFIG_DIR",
+      "private XDG_CONFIG_HOME",
+      "private tmux socket for daemon AND all fixture clients"
+    ],
+    "ports": {
+      "pm": 17461,
+      "u1": 17462,
+      "u2": 17463,
+      "u3": 17464,
+      "u4": 17465,
+      "u5": 17466,
+      "u6": 17467,
+      "review": 17468
+    },
+    "prerequisites": [
+      "Build this worktree with CARGO_TARGET_DIR=$WORKTREE/target cargo build --locked -p pij-cli.",
+      "Allocate $RUN_DIR, $PORT and unique $TMUX_LABEL; never use 7461.",
+      "Start private tmux with tmux -L \"$TMUX_LABEL\"; obtain actual socket with tmux -L \"$TMUX_LABEL\" display-message -p \"#{socket_path}\". Use a supervised tmux server/process, never detach a service without ownership."
+    ],
+    "environment": {
+      "HOME": "$RUN_DIR/home",
+      "CLAUDE_CONFIG_DIR": "$RUN_DIR/home/.claude",
+      "XDG_CONFIG_HOME": "$RUN_DIR/home/.config",
+      "PIJ_RS_STATE_DIR": "$RUN_DIR/state",
+      "PIJ_RS_ADDR": "127.0.0.1:$PORT",
+      "PIJ_RS_BIND": "127.0.0.1:$PORT",
+      "TMUX": "$PRIVATE_SOCKET,$PRIVATE_SERVER_PID,0",
+      "TMUX_PANE": "$PRIVATE_PANE"
+    },
+    "daemon_argv": [
+      "$WORKTREE/target/debug/pij-rs",
+      "--state-dir",
+      "$RUN_DIR/state",
+      "daemon",
+      "--bind",
+      "127.0.0.1:$PORT"
+    ],
+    "client_argv_prefix": [
+      "$WORKTREE/target/debug/pij-rs",
+      "--state-dir",
+      "$RUN_DIR/state",
+      "--addr",
+      "127.0.0.1:$PORT"
+    ],
+    "readiness": [
+      "Require listening banner and TCP health, then pij-rs ping reports healthy/offline=false.",
+      "Confirm observer logs contain no foreign shared-server panes; private socket is mandatory, environment isolation alone is insufficient."
+    ],
+    "backend_pairing": "Real Registry requires Real Spine; refuse Real Registry + Fake Spine before store open/migrate, naming the one-writer constraint. Real-spine mode shares the existing real pool. Fake event/governance persistence is explicitly ONE shared in-memory SqliteSpine, with host adapters still fake and no disk/production promotion; a configured real queue may use its separate real pool. Fake Registry + Real Spine remains valid.",
+    "forbidden": [
+      "flowspace3 daemon in any form",
+      "main checkout writes",
+      "main node_modules writes",
+      "npm install or npm ci in main",
+      "global links or settings writes",
+      "production daemon bounce/restart",
+      "port 7461 for fixtures",
+      "omp update",
+      "shared tmux taps"
+    ],
+    "teardown": [
+      "Stop only supervised processes and tmux socket created by this unit.",
+      "Rescue .harness/temp buffers before removing any worktree.",
+      "Never unlink a foreign tap; only a byte-matching marker in this run directory identifies an owned tap."
+    ],
+    "dependency_proof": "A private APFS clone of main node_modules restored typecheck without main writes. Running main tsc by absolute path alone did not resolve worktree types. Do not install/update shared dependencies.",
+    "followup": "Explicit daemon PIJ_TMUX_SOCKET/refuse guard is outside plan 139 per prime ruling."
+  },
+  "toolchain": {
+    "cargo": "1.98.0",
+    "rustc": "1.98.0",
+    "invocation": "~/.cargo/bin/cargo; use the installed rustup shim, never PATH Homebrew cargo",
+    "u0_path_observation": "Homebrew cargo/rustc 1.95.0 were observed at baseline; rust-toolchain.toml is authoritative and installed rustup1.98.0 is the validation toolchain",
+    "omp": "18.0.10",
+    "harness": "0.14.0"
+  },
+  "handoff": "PM supplies isolated proofs + SHA + rescued buffers. Production/chainglass AC2/AC3/AC7/AC9 remain pending prime deploy; prime closes them."
+}

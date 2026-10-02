@@ -1,0 +1,58 @@
+
+  For s03: the hook goes right after the play.sqlite rebuild in wow collect pull, never fails the pull, and prints the old → new line whenever the model changes. I've asked them to
+  set the off switch in their collect tests so those tests don't read Jordan's real play data.
+
+  Once s03 lands the hook, o-prime said to park until Jordan asks for something.
+
+✻ Sautéed for 2m 28s · done 3:50 am
+
+› Message from @pij-noisy-tsarina: [pij-rs from pij-noisy-tsarina] (ctrl+o to expand)
+
+  Ran 1 shell command
+
+⏺ The death model now refits itself after every wow collect pull that brings in new kills or deaths. s03 added the hook (8d2f5db, on origin), and I checked it's in collect.py. When
+  the model changes, the pull prints the old and new values with the sample size. If the refit fails, the pull warns and carries on.
+
+  That was the last item, so I've told o-prime and I'm parked until Jordan asks for something.
+
+  The whole brief is done:
+
+  - Mob-level data (wow moblevel): the current version is c071a60f, built from canonical 4693b2e1 and backed up.
+  - Map layer: mob levels are a layer in the app. You can pick a side, compare against your own level, or show monsters only.
+  - Danger rule in routing and the solver: the regression is in wow route block check. Level 10, Brill → Sepulcher goes from 510 dangerous yards with danger off to none with it on,
+    for 2.2% more walking.
+  - Objective risk:
+    - wow moblevel camps scores the camp around each quest target, and the solver uses it.
+    - The hard gate sends quest 447 (the Silverpine spider camp) to level 14, where Jordan died three times at 13.
+    - The death model is fitted on only 3 combat deaths in 196 fights, so treat it as provisional. It now improves by itself as Jordan plays.
+
+  Left for later:
+  - Roaming mobs like Krethis, the level-15 rare at the spider camp, need their own risk term. The model under-predicts that camp without it.
+  - Crowding: a busy beta means more players, so more pulls and adds per fight.
+
+  Both wait until the logged deaths show they matter.
+
+✻ Cooked for 12s · done 3:52 am
+
+※ recap: I built a mob-level map for WoW Forever route planning so low-level characters stay away from high-level mobs. It's done: the map layer, safer routing and quest risk
+  scoring. Everything's pushed and I'm parked until you ask for more.
+
+› Message from @pij-hungry-lambert: [pij-rs from pij-hungry-lambert] (ctrl+o to expand)
+
+  Ran 2 shell commands
+
+⏺ My status card now shows Hold, with the note "parked; auto-recalibration live" → "wait for Jordan".
+
+  pij report state accepts only the state word, not the message too, so I set Hold first and posted the note as a separate report.
+
+✻ Baked for 14s · done 9:13 am
+
+※ recap: I built the mob-level heatmap, the app layer and the danger-aware routing, and the death model now refits itself after each collect pull. I'm parked on Hold; the next step
+  is whatever you ask for next.
+                                                                                                                                            new task? /clear to save 431.3k tokens
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── level-name ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  43% eldenring ⎇ main rs ⛓ pij-yucky-nenneke • Opus 5.5 • high • 430k/1.0M
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent
+%495 2 53 57 180

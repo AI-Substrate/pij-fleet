@@ -1,0 +1,24 @@
+[package]
+name = "pij-unisphere"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The one crate that knows Unisphere exists. It implements pij-core's
+# SessionStatusPort with the in-process `unisphere-sdk`, and no Unisphere type
+# crosses its public API.
+[dependencies]
+async-trait = { workspace = true }
+pij-core = { workspace = true }
+# The SDK is synchronous and a cold fold reads a whole transcript, so reads run
+# on tokio's blocking pool rather than on a reactor worker.
+tokio = { workspace = true }
+unisphere-sdk = { workspace = true }
+unisphere-loader-jsonl = { workspace = true }
+unisphere-adapter-claude = { workspace = true }
+unisphere-adapter-omp = { workspace = true }
+unisphere-adapter-codex = { workspace = true }
+unisphere-adapter-copilot-cli = { workspace = true }

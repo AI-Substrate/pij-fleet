@@ -1,0 +1,1 @@
+{"ok":true,"command":"pij ping","v":1,"data":{"status":"healthy","build":"pij-rs 0.1.0","offline":false,"machine":"workstation"}}

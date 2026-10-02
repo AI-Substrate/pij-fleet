@@ -1,0 +1,947 @@
+{
+  "contract_version": 1,
+  "plan": 139,
+  "status": "frozen-at-u0-commit",
+  "hello": {
+    "build": "pij-rs 0.1.0",
+    "hello": true,
+    "v": 1
+  },
+  "stream_invariants": [
+    "GET /v1/events is NDJSON, not SSE. First line is Hello {build,hello:true,v:1}, not a type=hello frame.",
+    "StreamFrame::Event shape is unchanged: type,event,machine,cursor. Event v=1, at=epoch milliseconds, kind literal, seat optional, payload a JSON STRING. Event.seq is not serialized inside frame.",
+    "No since means live-only. since is a JSON object mapping machine alias to exclusive cursor; integer since is refused. Cursors are machine-scoped.",
+    "Every successful publication appends through the sole store spine writer then broadcasts the returned seq. After admission an owned task retains the common ordering lock through commit and broadcast despite caller cancellation; shutdown joins producers then flushes admitted writes. All producers share one EventBus.",
+    "Concurrent publishers must not emit a later seq before an earlier committed event, and replay/live handoff cannot duplicate or skip its boundary row. Never move a subscriber cursor past an unemitted row.",
+    "seat.put payload decodes directly to the exact persisted SeatDescriptor; at is real. seat.tombstone payload decodes to an object with reason; at is real. No rewrite of historical at=0 rows.",
+    "Destructive governance mutations, including role assert/unset, baton return/reclaim, prime unset and tombstones, atomically commit state plus spine event or neither through the shared publication seam. Partial-failure refusal is permitted only for non-destructive idempotent operations whose surviving row reconstructs the event; never report success after lost publication.",
+    "Payload objects for new governance event kinds contain actor,action,record. Existing report.now/state payloads stay unchanged. All request attribution is daemon-derived."
+  ],
+  "name_sources": {
+    "legacy_platform_literals": ".pi/extensions/pij/core/platform/types.ts:217-256; tests at types.test.ts pin literals",
+    "legacy_report_kinds": "Existing rs report.now/report.state remain as shipped; do not rename to TS status/state-set.",
+    "new_kinds": "Legacy baton used private log.ndjson, and attest only rewrote a descriptor. baton.* and attest.plan are new rs spine kinds; not claimed to be legacy spellings. decision.* is new plan-139 state.",
+    "no_allowlist": "User spine append kinds remain open strings, not restricted to this catalog."
+  },
+  "events": [
+    {
+      "id": "seat-put",
+      "owner": "u1",
+      "decoded_payload": {
+        "id": "pij-worker",
+        "harness": "omp",
+        "session": null,
+        "extension_build": null,
+        "extension_path": null,
+        "pane": "%11",
+        "proc": {
+          "pid": 12345,
+          "proc_start": 20260907090000
+        },
+        "folder": "/work/rs-governance-port",
+        "state": "idle",
+        "semantic_state": null,
+        "role": "reviewer",
+        "parent": "pij-parent",
+        "relay": false,
+        "native_extension_delivery": false
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "seat.put",
+          "seat": "pij-worker",
+          "payload": "{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"extension_build\":null,\"extension_path\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}"
+        }
+      }
+    },
+    {
+      "id": "seat-tombstone",
+      "owner": "u1/u5",
+      "decoded_payload": {
+        "reason": "owner-close"
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "seat.tombstone",
+          "seat": "pij-worker",
+          "payload": "{\"reason\":\"owner-close\"}"
+        }
+      }
+    },
+    {
+      "id": "report-now",
+      "owner": "u1",
+      "decoded_payload": {
+        "did": "Implemented governance unit",
+        "next": "Wait for review"
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "report.now",
+          "seat": "pij-worker",
+          "payload": "{\"did\":\"Implemented governance unit\",\"next\":\"Wait for review\"}"
+        }
+      }
+    },
+    {
+      "id": "report-state",
+      "owner": "u1",
+      "decoded_payload": {
+        "state": "done",
+        "note": null,
+        "assignment_id": null,
+        "refs": [],
+        "registry_seq": 100
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "report.state",
+          "seat": "pij-worker",
+          "payload": "{\"state\":\"done\",\"note\":null,\"assignment_id\":null,\"refs\":[],\"registry_seq\":100}"
+        }
+      }
+    },
+    {
+      "id": "project-create",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "created",
+        "record": {
+          "slug": "governance-port",
+          "description": "Governance port",
+          "repo": "/work/project",
+          "plan_path": null,
+          "prime_id": null,
+          "created_by": "pij-parent",
+          "created_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "project-created",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"created\",\"record\":{\"slug\":\"governance-port\",\"description\":\"Governance port\",\"repo\":\"/work/project\",\"plan_path\":null,\"prime_id\":null,\"created_by\":\"pij-parent\",\"created_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "project-set",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "updated",
+        "record": {
+          "slug": "governance-port",
+          "description": "Governance port",
+          "repo": "/work/project",
+          "plan_path": "docs/plans/139-rs-governance-port/plan.dd.json",
+          "prime_id": "pij-parent",
+          "created_by": "pij-parent",
+          "created_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "project-set",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"updated\",\"record\":{\"slug\":\"governance-port\",\"description\":\"Governance port\",\"repo\":\"/work/project\",\"plan_path\":\"docs/plans/139-rs-governance-port/plan.dd.json\",\"prime_id\":\"pij-parent\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "stream-create",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "created",
+        "record": {
+          "id": "governance-port:contracts",
+          "project": "governance-port",
+          "ordinal": 139,
+          "slug": "contracts",
+          "branch": "s139/contracts",
+          "worktree": "/work/project/s139-contracts",
+          "base_ref": "main",
+          "created_by": "pij-parent",
+          "created_at": 1788739200000,
+          "state": "created"
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "allocation",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"created\",\"record\":{\"id\":\"governance-port:contracts\",\"project\":\"governance-port\",\"ordinal\":139,\"slug\":\"contracts\",\"branch\":\"s139/contracts\",\"worktree\":\"/work/project/s139-contracts\",\"base_ref\":\"main\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000,\"state\":\"created\"}}"
+        }
+      }
+    },
+    {
+      "id": "stream-close",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "closed",
+        "record": {
+          "id": "governance-port:contracts",
+          "project": "governance-port",
+          "ordinal": 139,
+          "slug": "contracts",
+          "branch": "s139/contracts",
+          "worktree": "/work/project/s139-contracts",
+          "base_ref": "main",
+          "created_by": "pij-parent",
+          "created_at": 1788739200000,
+          "state": "closed"
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "allocation",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"closed\",\"record\":{\"id\":\"governance-port:contracts\",\"project\":\"governance-port\",\"ordinal\":139,\"slug\":\"contracts\",\"branch\":\"s139/contracts\",\"worktree\":\"/work/project/s139-contracts\",\"base_ref\":\"main\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000,\"state\":\"closed\"}}"
+        }
+      }
+    },
+    {
+      "id": "fence-set",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "declared",
+        "record": {
+          "id": "fence-governance-port-contracts",
+          "stream": "governance-port:contracts",
+          "paths": [
+            "crates/core/**"
+          ],
+          "shared": [
+            "crates/core/src/lib.rs"
+          ],
+          "declared_by": "pij-parent",
+          "declared_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "fence",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"declared\",\"record\":{\"id\":\"fence-governance-port-contracts\",\"stream\":\"governance-port:contracts\",\"paths\":[\"crates/core/**\"],\"shared\":[\"crates/core/src/lib.rs\"],\"declared_by\":\"pij-parent\",\"declared_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "dispatch-queued",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "queued",
+        "record": {
+          "id": "dispatch-139-proof",
+          "from": "pij-parent",
+          "to": "pij-worker",
+          "packet_path": "/work/packet.dd.md",
+          "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "msg_id": "dispatch-139-proof",
+          "state": "queued",
+          "created_at": 1788739200000,
+          "delivered_at": null,
+          "acknowledged_at": null
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "dispatch",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"queued\",\"record\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"queued\",\"created_at\":1788739200000,\"delivered_at\":null,\"acknowledged_at\":null}}"
+        }
+      }
+    },
+    {
+      "id": "task-set",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "opened",
+        "record": {
+          "id": "assignment-139-proof",
+          "node_id": "pij-worker",
+          "task": "Implement governance unit",
+          "project": "governance-port",
+          "opened_by": "pij-parent",
+          "opened_at": 1788739200000,
+          "closed_at": null,
+          "close_reason": null
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "task-set",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"opened\",\"record\":{\"id\":\"assignment-139-proof\",\"node_id\":\"pij-worker\",\"task\":\"Implement governance unit\",\"project\":\"governance-port\",\"opened_by\":\"pij-parent\",\"opened_at\":1788739200000,\"closed_at\":null,\"close_reason\":null}}"
+        }
+      }
+    },
+    {
+      "id": "task-close",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "closed",
+        "record": {
+          "id": "assignment-139-proof",
+          "node_id": "pij-worker",
+          "task": "Implement governance unit",
+          "project": "governance-port",
+          "opened_by": "pij-parent",
+          "opened_at": 1788739200000,
+          "closed_at": 1788739200001,
+          "close_reason": "done"
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "task-close",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"closed\",\"record\":{\"id\":\"assignment-139-proof\",\"node_id\":\"pij-worker\",\"task\":\"Implement governance unit\",\"project\":\"governance-port\",\"opened_by\":\"pij-parent\",\"opened_at\":1788739200000,\"closed_at\":1788739200001,\"close_reason\":\"done\"}}"
+        }
+      }
+    },
+    {
+      "id": "role-set",
+      "owner": "u2",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "assigned",
+        "record": {
+          "seat": "pij-worker",
+          "role": "reviewer",
+          "assigned_by": "pij-parent",
+          "assigned_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "role-set",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"assigned\",\"record\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "prime-set",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "designated",
+        "record": {
+          "seat": "pij-parent",
+          "designated_by": "pij-parent",
+          "designated_at": 1788739200000,
+          "state": "current"
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "prime-set",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"designated\",\"record\":{\"seat\":\"pij-parent\",\"designated_by\":\"pij-parent\",\"designated_at\":1788739200000,\"state\":\"current\"}}"
+        }
+      }
+    },
+    {
+      "id": "attest-plan",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "attested",
+        "record": {
+          "seat": "pij-worker",
+          "plan_id": "139",
+          "attested_by": "pij-parent",
+          "attested_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "attest.plan",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"attested\",\"record\":{\"seat\":\"pij-worker\",\"plan_id\":\"139\",\"attested_by\":\"pij-parent\",\"attested_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "baton-define",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "defined",
+        "record": {
+          "name": "merge",
+          "description": "branch:main",
+          "resource": "branch:main",
+          "probe": null,
+          "repo": "/work/project",
+          "created_by": "pij-parent",
+          "created_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "baton.defined",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"defined\",\"record\":{\"name\":\"merge\",\"description\":\"branch:main\",\"resource\":\"branch:main\",\"probe\":null,\"repo\":\"/work/project\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "baton-request",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-worker",
+        "action": "requested",
+        "record": {
+          "id": "request-139-proof",
+          "baton": "merge",
+          "requester": "pij-worker",
+          "purpose": "Integrate reviewed unit",
+          "pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "evidence": "unit gate receipt",
+          "requested_at": 1788739200000,
+          "state": "requested"
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "baton.requested",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-worker\",\"action\":\"requested\",\"record\":{\"id\":\"request-139-proof\",\"baton\":\"merge\",\"requester\":\"pij-worker\",\"purpose\":\"Integrate reviewed unit\",\"pin\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"evidence\":\"unit gate receipt\",\"requested_at\":1788739200000,\"state\":\"requested\"}}"
+        }
+      }
+    },
+    {
+      "id": "baton-grant",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "granted",
+        "record": {
+          "baton": "merge",
+          "holder": "pij-worker",
+          "lease_id": "lease-139-proof",
+          "request_id": "request-139-proof",
+          "acquired_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "baton.granted",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"granted\",\"record\":{\"baton\":\"merge\",\"holder\":\"pij-worker\",\"lease_id\":\"lease-139-proof\",\"request_id\":\"request-139-proof\",\"acquired_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "baton-return",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-worker",
+        "action": "returned",
+        "record": {
+          "baton": "merge",
+          "holder": "pij-worker",
+          "lease_id": "lease-139-proof",
+          "request_id": "request-139-proof",
+          "acquired_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "baton.returned",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-worker\",\"action\":\"returned\",\"record\":{\"baton\":\"merge\",\"holder\":\"pij-worker\",\"lease_id\":\"lease-139-proof\",\"request_id\":\"request-139-proof\",\"acquired_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "baton-reclaim",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "reclaimed",
+        "record": {
+          "baton": "merge",
+          "holder": "pij-worker",
+          "lease_id": "lease-139-proof",
+          "request_id": "request-139-proof",
+          "acquired_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "baton.reclaimed",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"reclaimed\",\"record\":{\"baton\":\"merge\",\"holder\":\"pij-worker\",\"lease_id\":\"lease-139-proof\",\"request_id\":\"request-139-proof\",\"acquired_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "decision-open",
+      "owner": "u4",
+      "decoded_payload": {
+        "actor": "pij-worker",
+        "action": "opened",
+        "record": {
+          "id": "decision-139-proof",
+          "asked_by": "pij-worker",
+          "parent": "pij-parent",
+          "question": "Which branch owns the shared migration?",
+          "state": "open",
+          "asked_at": 1788739200000,
+          "question_seq": 101,
+          "answer": null,
+          "answered_by": null,
+          "answered_at": null,
+          "answer_msg_id": null
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "decision.opened",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-worker\",\"action\":\"opened\",\"record\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"open\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":null,\"answered_by\":null,\"answered_at\":null,\"answer_msg_id\":null}}"
+        }
+      }
+    },
+    {
+      "id": "dispatch-delivered",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "delivered",
+        "record": {
+          "id": "dispatch-139-proof",
+          "from": "pij-parent",
+          "to": "pij-worker",
+          "packet_path": "/work/packet.dd.md",
+          "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "msg_id": "dispatch-139-proof",
+          "state": "delivered",
+          "created_at": 1788739200000,
+          "delivered_at": 1788739200001,
+          "acknowledged_at": null
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "dispatch",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"delivered\",\"record\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"delivered\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":null}}"
+        }
+      }
+    },
+    {
+      "id": "dispatch-acked",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-worker",
+        "action": "acked",
+        "record": {
+          "id": "dispatch-139-proof",
+          "from": "pij-parent",
+          "to": "pij-worker",
+          "packet_path": "/work/packet.dd.md",
+          "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "msg_id": "dispatch-139-proof",
+          "state": "acked",
+          "created_at": 1788739200000,
+          "delivered_at": 1788739200001,
+          "acknowledged_at": 1788739200002,
+          "ack": {
+            "seat": "pij-worker",
+            "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "at": 1788739200002
+          }
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "dispatch",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-worker\",\"action\":\"acked\",\"record\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"acked\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":1788739200002,\"ack\":{\"seat\":\"pij-worker\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"at\":1788739200002}}}"
+        }
+      }
+    },
+    {
+      "id": "dispatch-canary-passed",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "canary-passed",
+        "record": {
+          "id": "dispatch-139-proof",
+          "from": "pij-parent",
+          "to": "pij-worker",
+          "packet_path": "/work/packet.dd.md",
+          "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "msg_id": "dispatch-139-proof",
+          "state": "acked",
+          "created_at": 1788739200000,
+          "delivered_at": 1788739200001,
+          "acknowledged_at": 1788739200002,
+          "ack": {
+            "seat": "pij-worker",
+            "packet_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "at": 1788739200002
+          },
+          "canary": {
+            "nonce": "nonce-139-proof",
+            "model": "github-copilot/gpt-6-astra-1m",
+            "passed_at": 1788739200003,
+            "evaluator": "pij-parent"
+          }
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "dispatch",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"canary-passed\",\"record\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"acked\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":1788739200002,\"ack\":{\"seat\":\"pij-worker\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"at\":1788739200002},\"canary\":{\"nonce\":\"nonce-139-proof\",\"model\":\"github-copilot/gpt-6-astra-1m\",\"passed_at\":1788739200003,\"evaluator\":\"pij-parent\"}}}"
+        }
+      }
+    },
+    {
+      "id": "role-unset",
+      "owner": "u2",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "unassigned",
+        "record": {
+          "seat": "pij-worker",
+          "role": null,
+          "assigned_by": "pij-parent",
+          "assigned_at": 1788739200000
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "role-set",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"unassigned\",\"record\":{\"seat\":\"pij-worker\",\"role\":null,\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000}}"
+        }
+      }
+    },
+    {
+      "id": "prime-retired",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "retired",
+        "record": {
+          "seat": "pij-parent",
+          "designated_by": "pij-parent",
+          "designated_at": 1788739200000,
+          "state": "retired"
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "prime-set",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"retired\",\"record\":{\"seat\":\"pij-parent\",\"designated_by\":\"pij-parent\",\"designated_at\":1788739200000,\"state\":\"retired\"}}"
+        }
+      }
+    },
+    {
+      "id": "prime-unset",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "unset",
+        "record": null
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "prime-set",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"unset\",\"record\":null}"
+        }
+      }
+    },
+    {
+      "id": "state-verified",
+      "owner": "u4",
+      "decoded_payload": {
+        "seat": "pij-worker",
+        "verified_by": "pij-parent",
+        "done_seq": 100
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "state-verified",
+          "seat": "pij-worker",
+          "payload": "{\"seat\":\"pij-worker\",\"verified_by\":\"pij-parent\",\"done_seq\":100}"
+        }
+      }
+    },
+    {
+      "id": "decision-answer",
+      "owner": "u4",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "answered",
+        "record": {
+          "id": "decision-139-proof",
+          "asked_by": "pij-worker",
+          "parent": "pij-parent",
+          "question": "Which branch owns the shared migration?",
+          "state": "answered",
+          "asked_at": 1788739200000,
+          "question_seq": 101,
+          "answer": "u3 owns migration 0014",
+          "answered_by": "pij-parent",
+          "answered_at": 1788739200005,
+          "answer_msg_id": "decision-139-proof-answer"
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "decision.answered",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"answered\",\"record\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"answered\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":\"u3 owns migration 0014\",\"answered_by\":\"pij-parent\",\"answered_at\":1788739200005,\"answer_msg_id\":\"decision-139-proof-answer\"}}"
+        }
+      }
+    },
+    {
+      "id": "spine-append",
+      "owner": "u3",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "refs": [
+          "plan:139"
+        ]
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 101,
+        "event": {
+          "v": 1,
+          "at": 1788739200000,
+          "kind": "plan139.control",
+          "seat": "pij-parent",
+          "payload": "{\"actor\":\"pij-parent\",\"refs\":[\"plan:139\"]}"
+        }
+      }
+    },
+    {
+      "id": "decision-answer-superseded",
+      "owner": "u4",
+      "decoded_payload": {
+        "actor": "pij-parent",
+        "action": "answer-superseded",
+        "record": {
+          "id": "decision-139-proof",
+          "asked_by": "pij-worker",
+          "parent": "pij-previous-parent",
+          "question": "Which branch owns the shared migration?",
+          "state": "open",
+          "asked_at": 1788739200000,
+          "question_seq": 101,
+          "answer": "u4 owns recovery; u3 retains migration 0014",
+          "answered_by": "pij-parent",
+          "answered_at": null,
+          "answer_msg_id": "decision-139-proof-answer-102"
+        },
+        "superseded": {
+          "answer_msg_id": "decision-139-proof-answer",
+          "answered_by": "pij-previous-parent",
+          "answer": "u3 owns migration 0014"
+        }
+      },
+      "frame": {
+        "type": "event",
+        "machine": "fixture-machine",
+        "cursor": 102,
+        "event": {
+          "v": 1,
+          "at": 1788739200005,
+          "kind": "decision.answer-superseded",
+          "seat": "pij-worker",
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"answer-superseded\",\"record\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-previous-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"open\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":\"u4 owns recovery; u3 retains migration 0014\",\"answered_by\":\"pij-parent\",\"answered_at\":null,\"answer_msg_id\":\"decision-139-proof-answer-102\"},\"superseded\":{\"answer_msg_id\":\"decision-139-proof-answer\",\"answered_by\":\"pij-previous-parent\",\"answer\":\"u3 owns migration 0014\"}}"
+        }
+      }
+    }
+  ],
+  "positive_control": {
+    "receipt": "baseline-fanout-red.json",
+    "since": 6,
+    "written_but_unemitted": [
+      {
+        "seq": 7,
+        "kind": "seat.put",
+        "at": 0
+      },
+      {
+        "seq": 8,
+        "kind": "report.now"
+      }
+    ],
+    "emitted_to_both": [
+      {
+        "seq": 9,
+        "kind": "message.pushed"
+      },
+      {
+        "seq": 10,
+        "kind": "delivery.outcome"
+      }
+    ],
+    "green_requirement": "Same two hello-confirmed subscribers see new adopt and report rows before the later messaging rows; every seen cursor is contiguous for this unfiltered local fixture."
+  }
+}

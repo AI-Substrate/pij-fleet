@@ -1,0 +1,14 @@
+ - Receipt sent to PM:
+   docs/plans/108-rust-port/assets/reports/done-u-watchdog.md
+
+ 2026-08-29 10:27:12  ⤵ 345  ⤴ 286  💾 136K  ⏱ 3.9s  ⚡ 60.5/s
+
+ ※ recap: u-watchdog wave 2 is complete, mutation-proven, gated, committed,
+ pushed, and reported to the PM. Next action: PM merges commit 55a9b747 into
+ the composed wave branch.
+
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+ ◫ 34.0%/400K ⟲ · Implement u-watchdog wave 2
+pij-cloudy-caribou

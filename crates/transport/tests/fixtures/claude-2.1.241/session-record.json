@@ -1,0 +1,21 @@
+{
+  "pid": 75005,
+  "sessionId": "<redacted>",
+  "cwd": "/Users/jordanknight/substrate/chainglass",
+  "startedAt": 1787531240709,
+  "procStart": "Mon Aug 24 00:27:19 2026",
+  "version": "2.1.241",
+  "peerProtocol": 1,
+  "peerFeatures": [
+    "notify_idle"
+  ],
+  "kind": "interactive",
+  "entrypoint": "cli",
+  "tmux": "chainglass:@8.%8",
+  "messagingSocketPath": "/tmp/cc-socks/75005.sock",
+  "name": "prime",
+  "nameSince": 1787531242445,
+  "updatedAt": 1788571852316,
+  "status": "busy",
+  "statusUpdatedAt": 1788571852316
+}

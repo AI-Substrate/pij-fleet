@@ -1,0 +1,30 @@
+[package]
+name = "pij-testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# `serde`/`serde_json` read `cargo metadata`; `toml` reads the allow-list;
+# `thiserror` types the check's own failure modes so "the instrument broke" is
+# never confused with "the graph is wrong". Each is named in this crate's
+# allow-list row with the same rationale.
+[dependencies]
+async-trait = { workspace = true }
+pij-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+
+# The architecture gate. `cargo run -p pij-testkit --bin pij-arch-check`.
+[[bin]]
+name = "pij-arch-check"
+path = "src/bin/arch_check.rs"
+
+# The one command (ac-0007): toolchain -> fmt -> clippy -> test -> arch.
+[[bin]]
+name = "pij-gate"
+path = "src/bin/gate.rs"

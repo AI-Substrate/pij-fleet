@@ -1,0 +1,3 @@
+{"hello":true,"v":1,"build":"pij-rs 0.1.0"}
+{"machine":"workstation","cursor":41,"event":{"v":1,"at":1788048000000,"kind":"future.kind","seat":"pij-test-seat","payload":"{\"opaque\":true}"}}
+{"machine":"workstation","cursor":42,"event":{"v":1,"at":1788048000001,"kind":"message.pushed","seat":"pij-test-seat","payload":"{\"msg_id\":\"m-1\",\"from\":\"pij-sender\",\"body\":\"hello\"}"}}

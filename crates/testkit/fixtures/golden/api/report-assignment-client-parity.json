@@ -1,0 +1,103 @@
+{
+  "plan": "145-report-state-assignment",
+  "scope": "isolated real daemon, not production; actual native/shim captures",
+  "address": "127.0.0.1:62148",
+  "binary_sha256": "6d681c262f613e11cdd385d75d77375369acd4f9bc3239a6fa087b77a42d6b5e",
+  "pairs": [
+    {
+      "argv": [
+        "node",
+        "show",
+        "pij-145-worker"
+      ],
+      "caller": "pij-145-worker",
+      "method": "same-daemon-byte-equality",
+      "results": [
+        {
+          "client": "native",
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij node\",\"v\":2,\"data\":{\"cursor\":17,\"node\":{\"assignments\":[{\"close_reason\":null,\"closed_at\":null,\"id\":\"assignment-4b910e8ee38db4888e1029b1f6acf4e2\",\"node_id\":\"pij-145-worker\",\"opened_at\":1788999889223,\"opened_by\":\"pij-145-parent\",\"project\":null,\"task\":\"prove assignment reporting\"}],\"children\":[],\"dispatches\":[],\"id\":\"pij-145-worker\",\"parent\":\"pij-145-parent\",\"plan_id\":null,\"role\":null,\"state\":{\"assignment_id\":\"assignment-4b910e8ee38db4888e1029b1f6acf4e2\",\"note\":null,\"refs\":[],\"registry_seq\":15,\"state\":\"done\"}}}}\n",
+          "stderr": ""
+        },
+        {
+          "client": "shim",
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij node\",\"v\":2,\"data\":{\"cursor\":17,\"node\":{\"assignments\":[{\"close_reason\":null,\"closed_at\":null,\"id\":\"assignment-4b910e8ee38db4888e1029b1f6acf4e2\",\"node_id\":\"pij-145-worker\",\"opened_at\":1788999889223,\"opened_by\":\"pij-145-parent\",\"project\":null,\"task\":\"prove assignment reporting\"}],\"children\":[],\"dispatches\":[],\"id\":\"pij-145-worker\",\"parent\":\"pij-145-parent\",\"plan_id\":null,\"role\":null,\"state\":{\"assignment_id\":\"assignment-4b910e8ee38db4888e1029b1f6acf4e2\",\"note\":null,\"refs\":[],\"registry_seq\":15,\"state\":\"done\"}}}}\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "argv": [
+        "state",
+        "pij-145-worker"
+      ],
+      "caller": "pij-145-worker",
+      "method": "same-daemon-byte-equality",
+      "results": [
+        {
+          "client": "native",
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij state\",\"v\":2,\"data\":{\"id\":\"pij-145-worker\",\"state\":\"idle\",\"liveness\":\"active\",\"pid\":1719,\"procStart\":20260910102436,\"cwd\":\"/tmp/pij-145-proof-yDPONJ\",\"harness\":\"omp\",\"extension_build\":null,\"extension_path\":null,\"role\":null,\"parent\":\"pij-145-parent\",\"boundModel\":null,\"effort\":null,\"pane\":\"%1\",\"provider\":null,\"semanticState\":\"done\",\"machine\":\"JordansacStudio.localdomain\",\"tombstonedAt\":null,\"tombstoneReason\":null,\"statusPrev\":null,\"statusNext\":null,\"statusAt\":null,\"statusSeq\":null,\"statusStale\":null,\"stateNote\":null,\"assignment_id\":\"assignment-4b910e8ee38db4888e1029b1f6acf4e2\",\"refs\":[],\"held\":[],\"unsupported\":[{\"field\":\"lifecycle\",\"why\":\"rs seats have no pending/bound/dissolved lifecycle field; binding evidence lives in `proc` and is reported through `liveness`\"},{\"field\":\"activity\",\"why\":\"the done-vs-idle split needs `lastEventAt`, which the rs descriptor does not carry; `state` reports the working/idle half\"},{\"field\":\"lastEventAt\",\"why\":\"not on the rs descriptor \u2014 deriving it needs a full spine scan per read\"},{\"field\":\"ageMs\",\"why\":\"derived from `lastEventAt`, which rs does not carry\"},{\"field\":\"liveness:stale\",\"why\":\"TS reports `stale` for a seat that claims to be working and has gone quiet; that needs event age. An rs `active` therefore covers BOTH the TS `active` and the TS `stale` case \u2014 it is a weaker claim, not the same one\"},{\"field\":\"daemonLastTickAt\",\"why\":\"no per-seat daemon tick is recorded in the rs store\"},{\"field\":\"daemonTickAgeMs\",\"why\":\"derived from the tick rs does not record\"},{\"field\":\"daemonTickStale\",\"why\":\"derived from the tick rs does not record\"},{\"field\":\"failureReason\",\"why\":\"rs records no per-seat failure reason on the descriptor\"},{\"field\":\"bindHealth\",\"why\":\"the TS pre-bind health classifier has no rs counterpart\"},{\"field\":\"degraded\",\"why\":\"derived from `bindHealth`\"},{\"field\":\"degradedReason\",\"why\":\"derived from `bindHealth`\"},{\"field\":\"terminal\",\"why\":\"rs records termination as `tombstonedAt` + `tombstoneReason`, which this card DOES carry \u2014 a different shape, not a missing fact\"},{\"field\":\"watchdog\",\"why\":\"rs has no watchdog block on the seat row\"}],\"session\":null,\"generation\":\"rs\"}}\n",
+          "stderr": ""
+        },
+        {
+          "client": "shim",
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij state\",\"v\":2,\"data\":{\"id\":\"pij-145-worker\",\"state\":\"idle\",\"liveness\":\"active\",\"pid\":1719,\"procStart\":20260910102436,\"cwd\":\"/tmp/pij-145-proof-yDPONJ\",\"harness\":\"omp\",\"extension_build\":null,\"extension_path\":null,\"role\":null,\"parent\":\"pij-145-parent\",\"boundModel\":null,\"effort\":null,\"pane\":\"%1\",\"provider\":null,\"semanticState\":\"done\",\"machine\":\"JordansacStudio.localdomain\",\"tombstonedAt\":null,\"tombstoneReason\":null,\"statusPrev\":null,\"statusNext\":null,\"statusAt\":null,\"statusSeq\":null,\"statusStale\":null,\"stateNote\":null,\"assignment_id\":\"assignment-4b910e8ee38db4888e1029b1f6acf4e2\",\"refs\":[],\"held\":[],\"unsupported\":[{\"field\":\"lifecycle\",\"why\":\"rs seats have no pending/bound/dissolved lifecycle field; binding evidence lives in `proc` and is reported through `liveness`\"},{\"field\":\"activity\",\"why\":\"the done-vs-idle split needs `lastEventAt`, which the rs descriptor does not carry; `state` reports the working/idle half\"},{\"field\":\"lastEventAt\",\"why\":\"not on the rs descriptor \u2014 deriving it needs a full spine scan per read\"},{\"field\":\"ageMs\",\"why\":\"derived from `lastEventAt`, which rs does not carry\"},{\"field\":\"liveness:stale\",\"why\":\"TS reports `stale` for a seat that claims to be working and has gone quiet; that needs event age. An rs `active` therefore covers BOTH the TS `active` and the TS `stale` case \u2014 it is a weaker claim, not the same one\"},{\"field\":\"daemonLastTickAt\",\"why\":\"no per-seat daemon tick is recorded in the rs store\"},{\"field\":\"daemonTickAgeMs\",\"why\":\"derived from the tick rs does not record\"},{\"field\":\"daemonTickStale\",\"why\":\"derived from the tick rs does not record\"},{\"field\":\"failureReason\",\"why\":\"rs records no per-seat failure reason on the descriptor\"},{\"field\":\"bindHealth\",\"why\":\"the TS pre-bind health classifier has no rs counterpart\"},{\"field\":\"degraded\",\"why\":\"derived from `bindHealth`\"},{\"field\":\"degradedReason\",\"why\":\"derived from `bindHealth`\"},{\"field\":\"terminal\",\"why\":\"rs records termination as `tombstonedAt` + `tombstoneReason`, which this card DOES carry \u2014 a different shape, not a missing fact\"},{\"field\":\"watchdog\",\"why\":\"rs has no watchdog block on the seat row\"}],\"session\":null,\"generation\":\"rs\"}}\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "argv": [
+        "report",
+        "state",
+        "waiting",
+        "--assignment",
+        "assignment-4b910e8ee38db4888e1029b1f6acf4e2"
+      ],
+      "caller": "pij-145-other",
+      "method": "same-daemon-byte-equality; existing native=2/shim=4 refusal exit policy retained",
+      "results": [
+        {
+          "client": "native",
+          "exit": 2,
+          "stdout": "{\"ok\":false,\"command\":\"pij report\",\"v\":2,\"meta\":\"E-RS-ASSIGNMENT-NOT-YOURS assignment assignment-4b910e8ee38db4888e1029b1f6acf4e2 belongs to pij-145-worker, not pij-145-other\",\"error\":\"refused\",\"details\":{\"assignment_id\":\"assignment-4b910e8ee38db4888e1029b1f6acf4e2\",\"caller\":\"pij-145-other\",\"code\":\"E-RS-ASSIGNMENT-NOT-YOURS\",\"owner\":\"pij-145-worker\"}}\n",
+          "stderr": ""
+        },
+        {
+          "client": "shim",
+          "exit": 4,
+          "stdout": "{\"ok\":false,\"command\":\"pij report\",\"v\":2,\"meta\":\"E-RS-ASSIGNMENT-NOT-YOURS assignment assignment-4b910e8ee38db4888e1029b1f6acf4e2 belongs to pij-145-worker, not pij-145-other\",\"error\":\"refused\",\"details\":{\"assignment_id\":\"assignment-4b910e8ee38db4888e1029b1f6acf4e2\",\"caller\":\"pij-145-other\",\"code\":\"E-RS-ASSIGNMENT-NOT-YOURS\",\"owner\":\"pij-145-worker\"}}\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "argv": [
+        "report",
+        "question",
+        "which task?",
+        "--assignment",
+        "assignment-missing"
+      ],
+      "caller": "pij-145-worker",
+      "method": "same-daemon-byte-equality; existing native=2/shim=4 refusal exit policy retained",
+      "results": [
+        {
+          "client": "native",
+          "exit": 2,
+          "stdout": "{\"ok\":false,\"command\":\"pij report\",\"v\":2,\"meta\":\"E-RS-ASSIGNMENT-UNKNOWN no task assignment assignment-missing\",\"error\":\"refused\",\"details\":{\"assignment_id\":\"assignment-missing\",\"code\":\"E-RS-ASSIGNMENT-UNKNOWN\"}}\n",
+          "stderr": ""
+        },
+        {
+          "client": "shim",
+          "exit": 4,
+          "stdout": "{\"ok\":false,\"command\":\"pij report\",\"v\":2,\"meta\":\"E-RS-ASSIGNMENT-UNKNOWN no task assignment assignment-missing\",\"error\":\"refused\",\"details\":{\"assignment_id\":\"assignment-missing\",\"code\":\"E-RS-ASSIGNMENT-UNKNOWN\"}}\n",
+          "stderr": ""
+        }
+      ]
+    }
+  ]
+}

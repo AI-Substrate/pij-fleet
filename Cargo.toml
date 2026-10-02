@@ -1,0 +1,112 @@
+# pij Rust port — workspace root (plan 108, wave 0 "the mold").
+#
+# The TS pij CLI/daemon continues to live at its own paths in this repo; the two
+# coexist. Everything Rust hangs off this manifest.
+#
+# The 8 ratified crates of workshop 001 R2. Direction between them is enforced
+# mechanically by the arch allowlist (tk-3a93), not by this list — membership only
+# says "build me", never "you may depend on me".
+#
+# `exclude = ["pocs"]` keeps the spike lane (R6c) out of the workspace on purpose:
+# a POC has its own bare `[workspace]`, is not built by `cargo build --workspace`,
+# and sits outside the gate — its evidence is captured output, never a green gate.
+[workspace]
+resolver = "3"
+members = [
+  "crates/core",
+  "crates/store",
+  "crates/tmux",
+  "crates/harnesses",
+  "crates/transport",
+  "crates/sidecars",
+  "crates/daemon",
+  "crates/cli",
+  "crates/testkit",
+  "crates/unisphere",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/AI-Substrate/pij-fleet"
+
+# Internal path table: a crate depends on a sibling as `pij-core.workspace = true`,
+# so the graph is declared in ONE place and the allowlist has one file to read.
+[workspace.dependencies]
+pij-core = { path = "crates/core" }
+pij-store = { path = "crates/store" }
+pij-tmux = { path = "crates/tmux" }
+pij-harnesses = { path = "crates/harnesses" }
+pij-transport = { path = "crates/transport" }
+pij-sidecars = { path = "crates/sidecars" }
+pij-daemon = { path = "crates/daemon" }
+pij-cli = { path = "crates/cli" }
+pij-testkit = { path = "crates/testkit" }
+pij-unisphere = { path = "crates/unisphere" }
+
+# External versions are pinned in ONE place so two crates can never resolve
+# different majors of the same dependency. Membership here is not permission:
+# the arch allow-list decides which crate may use which.
+# `async-trait`: object-safe async port traits (workshop 001 R3-AMEND-2).
+async-trait = "0.1"
+# Session facts for `pij state` (plan 157), linked in-process by pij-unisphere only.
+# Pinned by `rev` to Unisphere main (PR #10, 029 merged) on github.com/AI-Substrate/Unisphere. Only these six (Claude, OMP, Codex and Copilot CLI folds): loader-query/loader-snapshot pull
+# rusqlite, whose libsqlite3-sys `links` would collide with sqlx's.
+unisphere-sdk = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
+unisphere-loader-jsonl = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
+unisphere-adapter-claude = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
+unisphere-adapter-omp = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
+unisphere-adapter-codex = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
+unisphere-adapter-copilot-cli = { git = "https://github.com/AI-Substrate/Unisphere.git", rev = "0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+# Fence matching uses a pinned standard glob engine, never a reduced custom matcher.
+globset = "=0.4.20"
+thiserror = "2"
+toml = "0.9"
+# The store, per workshop 001 R1: SQLite through sqlx, with embedded migrations
+# and the `_sqlx_migrations` checksum table. rustls rather than native-tls so the
+# build stays `cargo build` on every platform.
+sqlx = { version = "0.8", default-features = false, features = [
+  "runtime-tokio-rustls",
+  "sqlite",
+  "macros",
+  "migrate",
+] }
+# The daemon's reactor. Named here so every crate that needs one resolves the
+# same version; the allow-list decides WHICH crates may.
+# The HTTP surface. rustls by way of the workspace's other choices; axum brings
+# tower's middleware model, which is how auth covers the WHOLE router rather than
+# each handler remembering.
+axum = "0.8"
+# The server loop axum::serve hides, so the daemon can set an idle-connection
+# (header read) timeout; axum already depends on it, so nothing new is fetched.
+hyper-util = { version = "0.1", features = ["server-auto", "server-graceful", "tokio", "service", "http1"] }
+clap = { version = "4", features = ["derive"] }
+# rustls, not native-tls: the build stays `cargo build` on every platform, and the
+# CLI only ever talks to loopback anyway.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+# OS randomness for the per-boot bearer key: no PRNG state, no seed, no extra
+# dependency tree — each boot asks the operating system for 256 bits.
+getrandom = "0.3"
+# Portable hostname lookup for the federation machine alias default. Reading
+# environment variables is not equivalent on Windows and can be unset on Unix.
+hostname = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "time", "net", "signal", "test-util"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+time = { version = "0.3", default-features = false, features = ["formatting"] }
+nix = { version = "0.30", default-features = false, features = ["fs", "resource"] }
+uuid = { version = "1", features = ["v7"] }
+
+# Warnings are errors in the gate (`clippy -D warnings`); this keeps a plain
+# `cargo build` honest about the same lints rather than deferring them to CI.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.dev]
+# The mold is built and rebuilt by agents on a shared machine: incremental
+# artifacts are pure cost here (CARGO_INCREMENTAL=0 is the fleet rule) and the
+# debug-info default dominates target/ size.
+debug = "line-tables-only"

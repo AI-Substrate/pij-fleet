@@ -1,0 +1,1985 @@
+{
+  "schema": "pij/governance-client-parity/v2",
+  "comparison": "Original UTF-8 stdout, no normalization; final LF only when absent; exit policies remain distinct",
+  "scripted_pairs": [
+    {
+      "id": "project-create",
+      "argv": [
+        "project",
+        "create",
+        "Governance port"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/project",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"project\":{\"slug\":\"governance-port\",\"description\":\"Governance port\",\"repo\":\"/work/project\",\"plan_path\":null,\"prime_id\":null,\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"project\":{\"slug\":\"governance-port\",\"description\":\"Governance port\",\"repo\":\"/work/project\",\"plan_path\":null,\"prime_id\":null,\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "4337d37b7713174871bf72ecc31348c7de116df110a714696c488d552aa5980e"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"project\":{\"slug\":\"governance-port\",\"description\":\"Governance port\",\"repo\":\"/work/project\",\"plan_path\":null,\"prime_id\":null,\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "4337d37b7713174871bf72ecc31348c7de116df110a714696c488d552aa5980e"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "project-set",
+      "argv": [
+        "project",
+        "set",
+        "governance-port",
+        "--plan",
+        "docs/plans/139-rs-governance-port/plan.dd.json",
+        "--prime",
+        "pij-parent"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/project",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"project\":{\"slug\":\"governance-port\",\"description\":\"Governance port\",\"repo\":\"/work/project\",\"plan_path\":\"docs/plans/139-rs-governance-port/plan.dd.json\",\"prime_id\":\"pij-parent\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"project\":{\"slug\":\"governance-port\",\"description\":\"Governance port\",\"repo\":\"/work/project\",\"plan_path\":\"docs/plans/139-rs-governance-port/plan.dd.json\",\"prime_id\":\"pij-parent\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "d38dd349dfde38319d89cbca18d78189a094ffe312e88c5960f40f59c6c99e9c"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"project\":{\"slug\":\"governance-port\",\"description\":\"Governance port\",\"repo\":\"/work/project\",\"plan_path\":\"docs/plans/139-rs-governance-port/plan.dd.json\",\"prime_id\":\"pij-parent\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "d38dd349dfde38319d89cbca18d78189a094ffe312e88c5960f40f59c6c99e9c"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "stream-create",
+      "argv": [
+        "stream",
+        "create",
+        "--project",
+        "governance-port",
+        "--slug",
+        "contracts",
+        "--base",
+        "main",
+        "--ordinal",
+        "139"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/stream",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"stream\":{\"id\":\"governance-port:contracts\",\"project\":\"governance-port\",\"ordinal\":139,\"slug\":\"contracts\",\"branch\":\"s139/contracts\",\"worktree\":\"/work/project/s139-contracts\",\"base_ref\":\"main\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000,\"state\":\"created\"},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"stream\":{\"id\":\"governance-port:contracts\",\"project\":\"governance-port\",\"ordinal\":139,\"slug\":\"contracts\",\"branch\":\"s139/contracts\",\"worktree\":\"/work/project/s139-contracts\",\"base_ref\":\"main\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000,\"state\":\"created\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "1dceb9d239c60fa974965e2c949afe3b73fa8908821a3e5b4b8567bbc5d54aa6"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"stream\":{\"id\":\"governance-port:contracts\",\"project\":\"governance-port\",\"ordinal\":139,\"slug\":\"contracts\",\"branch\":\"s139/contracts\",\"worktree\":\"/work/project/s139-contracts\",\"base_ref\":\"main\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000,\"state\":\"created\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "1dceb9d239c60fa974965e2c949afe3b73fa8908821a3e5b4b8567bbc5d54aa6"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "stream-close",
+      "argv": [
+        "stream",
+        "close",
+        "governance-port:contracts"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/stream",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"stream\":{\"id\":\"governance-port:contracts\",\"project\":\"governance-port\",\"ordinal\":139,\"slug\":\"contracts\",\"branch\":\"s139/contracts\",\"worktree\":\"/work/project/s139-contracts\",\"base_ref\":\"main\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000,\"state\":\"closed\"},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"stream\":{\"id\":\"governance-port:contracts\",\"project\":\"governance-port\",\"ordinal\":139,\"slug\":\"contracts\",\"branch\":\"s139/contracts\",\"worktree\":\"/work/project/s139-contracts\",\"base_ref\":\"main\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000,\"state\":\"closed\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "290a6ecb83bd10784c2fba19a9af44ccec8eed173cd0d36dc7224ba98b91824c"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"stream\":{\"id\":\"governance-port:contracts\",\"project\":\"governance-port\",\"ordinal\":139,\"slug\":\"contracts\",\"branch\":\"s139/contracts\",\"worktree\":\"/work/project/s139-contracts\",\"base_ref\":\"main\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000,\"state\":\"closed\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "290a6ecb83bd10784c2fba19a9af44ccec8eed173cd0d36dc7224ba98b91824c"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "fence-set",
+      "argv": [
+        "fence",
+        "set",
+        "governance-port:contracts",
+        "--paths",
+        "crates/core/**",
+        "--shared",
+        "crates/core/src/lib.rs"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/fence",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij fence\",\"v\":2,\"data\":{\"fence\":{\"id\":\"fence-governance-port-contracts\",\"stream\":\"governance-port:contracts\",\"paths\":[\"crates/core/**\"],\"shared\":[\"crates/core/src/lib.rs\"],\"declared_by\":\"pij-parent\",\"declared_at\":1788739200000},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij fence\",\"v\":2,\"data\":{\"fence\":{\"id\":\"fence-governance-port-contracts\",\"stream\":\"governance-port:contracts\",\"paths\":[\"crates/core/**\"],\"shared\":[\"crates/core/src/lib.rs\"],\"declared_by\":\"pij-parent\",\"declared_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "42a8a889d38fd88c7ccb82f373d8d72c1842c81ac8ddae50791f2c8896f82304"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij fence\",\"v\":2,\"data\":{\"fence\":{\"id\":\"fence-governance-port-contracts\",\"stream\":\"governance-port:contracts\",\"paths\":[\"crates/core/**\"],\"shared\":[\"crates/core/src/lib.rs\"],\"declared_by\":\"pij-parent\",\"declared_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "42a8a889d38fd88c7ccb82f373d8d72c1842c81ac8ddae50791f2c8896f82304"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "dispatch-create",
+      "argv": [
+        "dispatch",
+        "pij-worker",
+        "--packet",
+        "/work/packet.dd.md"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/dispatch",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij dispatch\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"queued\",\"created_at\":1788739200000,\"delivered_at\":null,\"acknowledged_at\":null},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij dispatch\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"queued\",\"created_at\":1788739200000,\"delivered_at\":null,\"acknowledged_at\":null},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "676a0f78bbf8575ee642d8ec24e922688a1907d1d7b742f4ee88b8748ab0f3ba"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij dispatch\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"queued\",\"created_at\":1788739200000,\"delivered_at\":null,\"acknowledged_at\":null},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "676a0f78bbf8575ee642d8ec24e922688a1907d1d7b742f4ee88b8748ab0f3ba"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "dispatch-ack",
+      "argv": [
+        "ack",
+        "dispatch-139-proof",
+        "--packet-sha",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/ack",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij ack\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"acked\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":1788739200002,\"ack\":{\"seat\":\"pij-worker\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"at\":1788739200002}},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij ack\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"acked\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":1788739200002,\"ack\":{\"seat\":\"pij-worker\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"at\":1788739200002}},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "21a4b619fb6e13691f7ed08e16003c147c8567a7f4f862c2b9f5e8f9d33ed98d"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij ack\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"acked\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":1788739200002,\"ack\":{\"seat\":\"pij-worker\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"at\":1788739200002}},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "21a4b619fb6e13691f7ed08e16003c147c8567a7f4f862c2b9f5e8f9d33ed98d"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "canary-verified",
+      "argv": [
+        "canary",
+        "pij-worker",
+        "--expect-model",
+        "github-copilot/gpt-6-astra-1m",
+        "--wait=5000"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/canary",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij canary\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"acked\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":1788739200002,\"ack\":{\"seat\":\"pij-worker\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"at\":1788739200002},\"canary\":{\"nonce\":\"nonce-139-proof\",\"model\":\"github-copilot/gpt-6-astra-1m\",\"passed_at\":1788739200003,\"evaluator\":\"pij-parent\"}},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij canary\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"acked\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":1788739200002,\"ack\":{\"seat\":\"pij-worker\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"at\":1788739200002},\"canary\":{\"nonce\":\"nonce-139-proof\",\"model\":\"github-copilot/gpt-6-astra-1m\",\"passed_at\":1788739200003,\"evaluator\":\"pij-parent\"}},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "e82b62840897cf67d3a0fb09de41bca4ce90141c5929af294911779705eb5a6e"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij canary\",\"v\":2,\"data\":{\"dispatch\":{\"id\":\"dispatch-139-proof\",\"from\":\"pij-parent\",\"to\":\"pij-worker\",\"packet_path\":\"/work/packet.dd.md\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"msg_id\":\"dispatch-139-proof\",\"state\":\"acked\",\"created_at\":1788739200000,\"delivered_at\":1788739200001,\"acknowledged_at\":1788739200002,\"ack\":{\"seat\":\"pij-worker\",\"packet_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"at\":1788739200002},\"canary\":{\"nonce\":\"nonce-139-proof\",\"model\":\"github-copilot/gpt-6-astra-1m\",\"passed_at\":1788739200003,\"evaluator\":\"pij-parent\"}},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "e82b62840897cf67d3a0fb09de41bca4ce90141c5929af294911779705eb5a6e"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "attest-plan",
+      "argv": [
+        "attest",
+        "pij-worker",
+        "--plan-id",
+        "139"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/attest",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij attest\",\"v\":2,\"data\":{\"attestation\":{\"seat\":\"pij-worker\",\"plan_id\":\"139\",\"attested_by\":\"pij-parent\",\"attested_at\":1788739200000},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij attest\",\"v\":2,\"data\":{\"attestation\":{\"seat\":\"pij-worker\",\"plan_id\":\"139\",\"attested_by\":\"pij-parent\",\"attested_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "37ebdc3f2f3dbacb305e8f30a40748245672a39ced0c1e4bde4eb7fd0c7967a8"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij attest\",\"v\":2,\"data\":{\"attestation\":{\"seat\":\"pij-worker\",\"plan_id\":\"139\",\"attested_by\":\"pij-parent\",\"attested_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "37ebdc3f2f3dbacb305e8f30a40748245672a39ced0c1e4bde4eb7fd0c7967a8"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "task-set",
+      "argv": [
+        "task",
+        "set",
+        "pij-worker",
+        "Implement governance unit",
+        "--project",
+        "governance-port"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/task",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij task\",\"v\":2,\"data\":{\"task\":{\"id\":\"assignment-139-proof\",\"node_id\":\"pij-worker\",\"task\":\"Implement governance unit\",\"project\":\"governance-port\",\"opened_by\":\"pij-parent\",\"opened_at\":1788739200000,\"closed_at\":null,\"close_reason\":null},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij task\",\"v\":2,\"data\":{\"task\":{\"id\":\"assignment-139-proof\",\"node_id\":\"pij-worker\",\"task\":\"Implement governance unit\",\"project\":\"governance-port\",\"opened_by\":\"pij-parent\",\"opened_at\":1788739200000,\"closed_at\":null,\"close_reason\":null},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "c4f60d891709b99ad8a29c1dcaa944bf7059aa3f5c7c12b4d53e0da53140742d"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij task\",\"v\":2,\"data\":{\"task\":{\"id\":\"assignment-139-proof\",\"node_id\":\"pij-worker\",\"task\":\"Implement governance unit\",\"project\":\"governance-port\",\"opened_by\":\"pij-parent\",\"opened_at\":1788739200000,\"closed_at\":null,\"close_reason\":null},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "c4f60d891709b99ad8a29c1dcaa944bf7059aa3f5c7c12b4d53e0da53140742d"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "task-close",
+      "argv": [
+        "task",
+        "close",
+        "assignment-139-proof",
+        "--reason",
+        "done"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/task",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij task\",\"v\":2,\"data\":{\"task\":{\"id\":\"assignment-139-proof\",\"node_id\":\"pij-worker\",\"task\":\"Implement governance unit\",\"project\":\"governance-port\",\"opened_by\":\"pij-parent\",\"opened_at\":1788739200000,\"closed_at\":1788739200001,\"close_reason\":\"done\"},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij task\",\"v\":2,\"data\":{\"task\":{\"id\":\"assignment-139-proof\",\"node_id\":\"pij-worker\",\"task\":\"Implement governance unit\",\"project\":\"governance-port\",\"opened_by\":\"pij-parent\",\"opened_at\":1788739200000,\"closed_at\":1788739200001,\"close_reason\":\"done\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "74f6d36760effc13b16ca62c62face14dcaf7a8007c92d81640d8a56cc37271f"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij task\",\"v\":2,\"data\":{\"task\":{\"id\":\"assignment-139-proof\",\"node_id\":\"pij-worker\",\"task\":\"Implement governance unit\",\"project\":\"governance-port\",\"opened_by\":\"pij-parent\",\"opened_at\":1788739200000,\"closed_at\":1788739200001,\"close_reason\":\"done\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "74f6d36760effc13b16ca62c62face14dcaf7a8007c92d81640d8a56cc37271f"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "baton-define",
+      "argv": [
+        "orchestration",
+        "baton",
+        "define",
+        "merge",
+        "--resource",
+        "branch:main",
+        "--repo",
+        "/work/project"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":{\"name\":\"merge\",\"description\":\"branch:main\",\"resource\":\"branch:main\",\"probe\":null,\"repo\":\"/work/project\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":{\"name\":\"merge\",\"description\":\"branch:main\",\"resource\":\"branch:main\",\"probe\":null,\"repo\":\"/work/project\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "7f761482b175c692eeefbd17ea01302d000df96051c4b8fb03b23bda70b49094"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":{\"name\":\"merge\",\"description\":\"branch:main\",\"resource\":\"branch:main\",\"probe\":null,\"repo\":\"/work/project\",\"created_by\":\"pij-parent\",\"created_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "7f761482b175c692eeefbd17ea01302d000df96051c4b8fb03b23bda70b49094"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "baton-request",
+      "argv": [
+        "orchestration",
+        "baton",
+        "request",
+        "merge",
+        "--purpose",
+        "Integrate reviewed unit",
+        "--pin",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "--evidence",
+        "unit gate receipt"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"request\":{\"id\":\"request-139-proof\",\"baton\":\"merge\",\"requester\":\"pij-worker\",\"purpose\":\"Integrate reviewed unit\",\"pin\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"evidence\":\"unit gate receipt\",\"requested_at\":1788739200000,\"state\":\"requested\"},\"notice\":\"queued\",\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"request\":{\"id\":\"request-139-proof\",\"baton\":\"merge\",\"requester\":\"pij-worker\",\"purpose\":\"Integrate reviewed unit\",\"pin\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"evidence\":\"unit gate receipt\",\"requested_at\":1788739200000,\"state\":\"requested\"},\"notice\":\"queued\",\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "c451ba19b6942a5890803dca488759ce60a2e2c940cb2aff15d75cdc88757424"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"request\":{\"id\":\"request-139-proof\",\"baton\":\"merge\",\"requester\":\"pij-worker\",\"purpose\":\"Integrate reviewed unit\",\"pin\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"evidence\":\"unit gate receipt\",\"requested_at\":1788739200000,\"state\":\"requested\"},\"notice\":\"queued\",\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "c451ba19b6942a5890803dca488759ce60a2e2c940cb2aff15d75cdc88757424"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "baton-grant",
+      "argv": [
+        "orchestration",
+        "baton",
+        "grant",
+        "merge",
+        "--to",
+        "request-139-proof"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"lease\":{\"baton\":\"merge\",\"holder\":\"pij-worker\",\"lease_id\":\"lease-139-proof\",\"request_id\":\"request-139-proof\",\"acquired_at\":1788739200000},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"lease\":{\"baton\":\"merge\",\"holder\":\"pij-worker\",\"lease_id\":\"lease-139-proof\",\"request_id\":\"request-139-proof\",\"acquired_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "d28f2a221e2892761cdb57ede5ace8241c2de490e6beea047950a393d5088669"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"lease\":{\"baton\":\"merge\",\"holder\":\"pij-worker\",\"lease_id\":\"lease-139-proof\",\"request_id\":\"request-139-proof\",\"acquired_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "d28f2a221e2892761cdb57ede5ace8241c2de490e6beea047950a393d5088669"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "baton-return",
+      "argv": [
+        "orchestration",
+        "baton",
+        "return",
+        "merge",
+        "--lease-id",
+        "lease-139-proof",
+        "--evidence",
+        "integration complete"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":\"merge\",\"released\":true,\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":\"merge\",\"released\":true,\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "e43eae8c2b492968ed1df90ecbfab53ae1246bab6565d410a7cc6e9e8b6fac16"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":\"merge\",\"released\":true,\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "e43eae8c2b492968ed1df90ecbfab53ae1246bab6565d410a7cc6e9e8b6fac16"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "baton-reclaim",
+      "argv": [
+        "orchestration",
+        "baton",
+        "reclaim",
+        "merge",
+        "--lease-id",
+        "lease-139-proof",
+        "--evidence",
+        "holder confirmed gone"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":\"merge\",\"released\":true,\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":\"merge\",\"released\":true,\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "e43eae8c2b492968ed1df90ecbfab53ae1246bab6565d410a7cc6e9e8b6fac16"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":\"merge\",\"released\":true,\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "e43eae8c2b492968ed1df90ecbfab53ae1246bab6565d410a7cc6e9e8b6fac16"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "prime-set",
+      "argv": [
+        "orchestration",
+        "prime",
+        "set",
+        "pij-parent"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":{\"seat\":\"pij-parent\",\"designated_by\":\"pij-parent\",\"designated_at\":1788739200000,\"state\":\"current\"},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":{\"seat\":\"pij-parent\",\"designated_by\":\"pij-parent\",\"designated_at\":1788739200000,\"state\":\"current\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "cc1441b460f62a134644c93beb02814ec4461b62c74d7a26b70adc5395b36150"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":{\"seat\":\"pij-parent\",\"designated_by\":\"pij-parent\",\"designated_at\":1788739200000,\"state\":\"current\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "cc1441b460f62a134644c93beb02814ec4461b62c74d7a26b70adc5395b36150"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "prime-retire",
+      "argv": [
+        "orchestration",
+        "prime",
+        "retire",
+        "pij-parent"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":{\"seat\":\"pij-parent\",\"designated_by\":\"pij-parent\",\"designated_at\":1788739200000,\"state\":\"retired\"},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":{\"seat\":\"pij-parent\",\"designated_by\":\"pij-parent\",\"designated_at\":1788739200000,\"state\":\"retired\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "1c7a46c4ffd99ae5a529148270428dfc67f8ee8057c7a6ebc51151160d2f0d5d"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":{\"seat\":\"pij-parent\",\"designated_by\":\"pij-parent\",\"designated_at\":1788739200000,\"state\":\"retired\"},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "1c7a46c4ffd99ae5a529148270428dfc67f8ee8057c7a6ebc51151160d2f0d5d"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "prime-unset",
+      "argv": [
+        "orchestration",
+        "prime",
+        "unset",
+        "pij-parent"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":null,\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":null,\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "9db42c4ca0f7321a356b2c192123df8e59bca750a160b840976b7ed13eda2c8b"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"prime\":null,\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "9db42c4ca0f7321a356b2c192123df8e59bca750a160b840976b7ed13eda2c8b"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "orchestration-role-set",
+      "argv": [
+        "orchestration",
+        "role",
+        "set",
+        "pij-worker",
+        "worker"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"role\":{\"seat\":\"pij-worker\",\"role\":\"worker\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"role\":{\"seat\":\"pij-worker\",\"role\":\"worker\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "cd597e25d05dd2fdb6f2d1aa88ae14e121d133acdcc70c9b8b5633e03d37d964"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"role\":{\"seat\":\"pij-worker\",\"role\":\"worker\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "cd597e25d05dd2fdb6f2d1aa88ae14e121d133acdcc70c9b8b5633e03d37d964"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "role-unset",
+      "argv": [
+        "orchestration",
+        "role",
+        "unset",
+        "pij-worker"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"role\":{\"seat\":\"pij-worker\",\"role\":null,\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000},\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"role\":{\"seat\":\"pij-worker\",\"role\":null,\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "9b0d18688cc913509e82bd8bf28ec4f153a68ef4477c3102d2da3317abb94a55"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"role\":{\"seat\":\"pij-worker\",\"role\":null,\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000},\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "9b0d18688cc913509e82bd8bf28ec4f153a68ef4477c3102d2da3317abb94a55"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "role-set",
+      "argv": [
+        "role",
+        "pij-worker",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/role",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "418590c0cdb0699a95867a8c405e7c9bff7e431cbf8a6678bd243885c3a9f89f"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "418590c0cdb0699a95867a8c405e7c9bff7e431cbf8a6678bd243885c3a9f89f"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "report-question",
+      "argv": [
+        "report",
+        "question",
+        "Which branch owns the shared migration?"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/report",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij report\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"seq\":101,\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"open\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":null,\"answered_by\":null,\"answered_at\":null,\"answer_msg_id\":null},\"line\":\"question recorded: decision-139-proof\"}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij report\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"seq\":101,\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"open\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":null,\"answered_by\":null,\"answered_at\":null,\"answer_msg_id\":null},\"line\":\"question recorded: decision-139-proof\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "bd6c7e2aabdac19e0a7731219a6a9263e0182ac19a3d3ba209aad77e5bcc5a15"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij report\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"seq\":101,\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"open\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":null,\"answered_by\":null,\"answered_at\":null,\"answer_msg_id\":null},\"line\":\"question recorded: decision-139-proof\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "bd6c7e2aabdac19e0a7731219a6a9263e0182ac19a3d3ba209aad77e5bcc5a15"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "report-verify",
+      "argv": [
+        "report",
+        "verify",
+        "pij-worker"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/report",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij report\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"verified_by\":\"pij-parent\",\"done_seq\":100,\"seq\":101,\"line\":\"verified pij-worker done at spine 100\"}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij report\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"verified_by\":\"pij-parent\",\"done_seq\":100,\"seq\":101,\"line\":\"verified pij-worker done at spine 100\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "512ef99890f12520791c8f41692191969a1220194a8f4abf047d2b53a3ac2da1"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij report\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"verified_by\":\"pij-parent\",\"done_seq\":100,\"seq\":101,\"line\":\"verified pij-worker done at spine 100\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "512ef99890f12520791c8f41692191969a1220194a8f4abf047d2b53a3ac2da1"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "decision-answer",
+      "argv": [
+        "answer",
+        "decision-139-proof",
+        "u3 owns migration 0014"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/answer",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij answer\",\"v\":2,\"data\":{\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"answered\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":\"u3 owns migration 0014\",\"answered_by\":\"pij-parent\",\"answered_at\":1788739200005,\"answer_msg_id\":\"decision-139-proof-answer\"},\"seq\":102}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij answer\",\"v\":2,\"data\":{\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"answered\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":\"u3 owns migration 0014\",\"answered_by\":\"pij-parent\",\"answered_at\":1788739200005,\"answer_msg_id\":\"decision-139-proof-answer\"},\"seq\":102}}\n",
+        "stderr": "",
+        "stdout_sha256": "d400e663ad5b2506973537e161996da07908869bc42ce2a581d2d3ef4a14364b"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij answer\",\"v\":2,\"data\":{\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"answered\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":\"u3 owns migration 0014\",\"answered_by\":\"pij-parent\",\"answered_at\":1788739200005,\"answer_msg_id\":\"decision-139-proof-answer\"},\"seq\":102}}\n",
+        "stderr": "",
+        "stdout_sha256": "d400e663ad5b2506973537e161996da07908869bc42ce2a581d2d3ef4a14364b"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "decision-answer-supersede",
+      "argv": [
+        "answer",
+        "--supersede",
+        "decision-139-proof",
+        "u4 owns recovery; u3 retains migration 0014"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/answer",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij answer\",\"v\":2,\"data\":{\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-previous-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"answered\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":\"u4 owns recovery; u3 retains migration 0014\",\"answered_by\":\"pij-parent\",\"answered_at\":1788739200006,\"answer_msg_id\":\"decision-139-proof-answer-102\"},\"seq\":103}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij answer\",\"v\":2,\"data\":{\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-previous-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"answered\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":\"u4 owns recovery; u3 retains migration 0014\",\"answered_by\":\"pij-parent\",\"answered_at\":1788739200006,\"answer_msg_id\":\"decision-139-proof-answer-102\"},\"seq\":103}}\n",
+        "stderr": "",
+        "stdout_sha256": "2cafb20c3950438572232e3dd12fb9903bbcb5e689b0e49e6e718b81194ae6ac"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij answer\",\"v\":2,\"data\":{\"decision\":{\"id\":\"decision-139-proof\",\"asked_by\":\"pij-worker\",\"parent\":\"pij-previous-parent\",\"question\":\"Which branch owns the shared migration?\",\"state\":\"answered\",\"asked_at\":1788739200000,\"question_seq\":101,\"answer\":\"u4 owns recovery; u3 retains migration 0014\",\"answered_by\":\"pij-parent\",\"answered_at\":1788739200006,\"answer_msg_id\":\"decision-139-proof-answer-102\"},\"seq\":103}}\n",
+        "stderr": "",
+        "stdout_sha256": "2cafb20c3950438572232e3dd12fb9903bbcb5e689b0e49e6e718b81194ae6ac"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "seat-close",
+      "argv": [
+        "close",
+        "pij-worker"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/close",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij close\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"tombstoned_at\":1788739200000,\"reason\":\"owner-close\",\"seq\":101}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij close\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"tombstoned_at\":1788739200000,\"reason\":\"owner-close\",\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "02db73c36a9ee33a9be4b1f49eea40ae2d9fb2d3ead4574a034db678a5e50dc4"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij close\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"tombstoned_at\":1788739200000,\"reason\":\"owner-close\",\"seq\":101}}\n",
+        "stderr": "",
+        "stdout_sha256": "02db73c36a9ee33a9be4b1f49eea40ae2d9fb2d3ead4574a034db678a5e50dc4"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "spine-append",
+      "argv": [
+        "spine",
+        "append",
+        "--kind",
+        "plan139.control",
+        "--refs",
+        "plan:139"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/spine",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij spine\",\"v\":2,\"data\":{\"seq\":101,\"event\":{\"v\":1,\"at\":1788739200000,\"kind\":\"plan139.control\",\"seat\":\"pij-parent\",\"payload\":\"{\\\"refs\\\":[\\\"plan:139\\\"],\\\"actor\\\":\\\"pij-parent\\\"}\"}}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij spine\",\"v\":2,\"data\":{\"seq\":101,\"event\":{\"v\":1,\"at\":1788739200000,\"kind\":\"plan139.control\",\"seat\":\"pij-parent\",\"payload\":\"{\\\"refs\\\":[\\\"plan:139\\\"],\\\"actor\\\":\\\"pij-parent\\\"}\"}}}\n",
+        "stderr": "",
+        "stdout_sha256": "5e018dfe145b45f6975ed63398a3246e2cccb6d7e4c701ff0000fd1828eece41"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij spine\",\"v\":2,\"data\":{\"seq\":101,\"event\":{\"v\":1,\"at\":1788739200000,\"kind\":\"plan139.control\",\"seat\":\"pij-parent\",\"payload\":\"{\\\"refs\\\":[\\\"plan:139\\\"],\\\"actor\\\":\\\"pij-parent\\\"}\"}}}\n",
+        "stderr": "",
+        "stdout_sha256": "5e018dfe145b45f6975ed63398a3246e2cccb6d7e4c701ff0000fd1828eece41"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "adopt-with-role",
+      "argv": [
+        "adopt",
+        "%11",
+        "--harness",
+        "omp",
+        "--parent",
+        "pij-parent",
+        "--role",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/adopt",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
+        "stderr": "",
+        "stdout_sha256": "2a0029c05c44c913919a088312256dc0985d5bbce0228322d8339a6e24ac3400"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
+        "stderr": "",
+        "stdout_sha256": "2a0029c05c44c913919a088312256dc0985d5bbce0228322d8339a6e24ac3400"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "refusal-ownership",
+      "argv": [
+        "close",
+        "pij-worker"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/close",
+      "http_status": 403,
+      "wire_response": "{\"ok\":false,\"command\":\"pij role\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-OWNERSHIP role: pij-outsider is neither pij-worker nor its recorded parent\",\"details\":{\"code\":\"E-RS-OWNERSHIP\",\"operation\":\"role\",\"caller\":\"pij-outsider\",\"seat\":\"pij-worker\",\"parent\":\"pij-parent\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij role\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-OWNERSHIP role: pij-outsider is neither pij-worker nor its recorded parent\",\"details\":{\"code\":\"E-RS-OWNERSHIP\",\"operation\":\"role\",\"caller\":\"pij-outsider\",\"seat\":\"pij-worker\",\"parent\":\"pij-parent\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "6635299b7565839c1f5c187574d9340d2b96cf630546f741890f81ea668b814c"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij role\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-OWNERSHIP role: pij-outsider is neither pij-worker nor its recorded parent\",\"details\":{\"code\":\"E-RS-OWNERSHIP\",\"operation\":\"role\",\"caller\":\"pij-outsider\",\"seat\":\"pij-worker\",\"parent\":\"pij-parent\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "6635299b7565839c1f5c187574d9340d2b96cf630546f741890f81ea668b814c"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "refusal-lease_stale",
+      "argv": [
+        "orchestration",
+        "baton",
+        "return",
+        "merge",
+        "--lease-id",
+        "lease-139-proof",
+        "--evidence",
+        "integration complete"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/orchestration",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij orchestration\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-LEASE-STALE: current lease is lease-139-current; read baton show and retry with --lease-id <observed lease>\",\"details\":{\"code\":\"E-RS-LEASE-STALE\",\"baton\":\"merge\",\"current_lease\":\"lease-139-current\",\"supplied_lease\":\"lease-139-proof\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij orchestration\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-LEASE-STALE: current lease is lease-139-current; read baton show and retry with --lease-id <observed lease>\",\"details\":{\"code\":\"E-RS-LEASE-STALE\",\"baton\":\"merge\",\"current_lease\":\"lease-139-current\",\"supplied_lease\":\"lease-139-proof\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "19b1073cc0416015b3399488e33ecf8b8e9794305abded46554366da22df8c7d"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij orchestration\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-LEASE-STALE: current lease is lease-139-current; read baton show and retry with --lease-id <observed lease>\",\"details\":{\"code\":\"E-RS-LEASE-STALE\",\"baton\":\"merge\",\"current_lease\":\"lease-139-current\",\"supplied_lease\":\"lease-139-proof\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "19b1073cc0416015b3399488e33ecf8b8e9794305abded46554366da22df8c7d"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "refusal-packet_sha",
+      "argv": [
+        "ack",
+        "dispatch-139-proof",
+        "--packet-sha",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/ack",
+      "http_status": 400,
+      "wire_response": "{\"ok\":false,\"command\":\"pij ack\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-PACKET-SHA ack: packet digest does not match dispatch\",\"details\":{\"code\":\"E-RS-PACKET-SHA\",\"dispatch\":\"dispatch-139-proof\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij ack\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-PACKET-SHA ack: packet digest does not match dispatch\",\"details\":{\"code\":\"E-RS-PACKET-SHA\",\"dispatch\":\"dispatch-139-proof\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "6eded12a3d4e1c16140148145e92f4180ee1ae5ec68f96d41eb15896a7fc4ccd"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij ack\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-PACKET-SHA ack: packet digest does not match dispatch\",\"details\":{\"code\":\"E-RS-PACKET-SHA\",\"dispatch\":\"dispatch-139-proof\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "6eded12a3d4e1c16140148145e92f4180ee1ae5ec68f96d41eb15896a7fc4ccd"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "refusal-answer_in_transit_pending",
+      "argv": [
+        "answer",
+        "--supersede",
+        "decision-139-proof",
+        "u4 owns recovery; u3 retains migration 0014"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/answer",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-IN-TRANSIT an answer in transit cannot be withdrawn; wait for its terminal outcome\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"pending\",\"code\":\"E-RS-ANSWER-IN-TRANSIT\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-IN-TRANSIT an answer in transit cannot be withdrawn; wait for its terminal outcome\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"pending\",\"code\":\"E-RS-ANSWER-IN-TRANSIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "8997085d1d683aa5108201d5a2f33c016721668eced5ff3216b0d7e2a9df36df"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-IN-TRANSIT an answer in transit cannot be withdrawn; wait for its terminal outcome\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"pending\",\"code\":\"E-RS-ANSWER-IN-TRANSIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "8997085d1d683aa5108201d5a2f33c016721668eced5ff3216b0d7e2a9df36df"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "refusal-answer_in_transit_claimed",
+      "argv": [
+        "answer",
+        "--supersede",
+        "decision-139-proof",
+        "u4 owns recovery; u3 retains migration 0014"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/answer",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-IN-TRANSIT an answer in transit cannot be withdrawn; wait for its terminal outcome\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"running\",\"code\":\"E-RS-ANSWER-IN-TRANSIT\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-IN-TRANSIT an answer in transit cannot be withdrawn; wait for its terminal outcome\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"running\",\"code\":\"E-RS-ANSWER-IN-TRANSIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "5f1349a9ffb850c167e39292bd9cee5fac64cde31a085a66805c5cdd0f2d3abb"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-IN-TRANSIT an answer in transit cannot be withdrawn; wait for its terminal outcome\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"running\",\"code\":\"E-RS-ANSWER-IN-TRANSIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "5f1349a9ffb850c167e39292bd9cee5fac64cde31a085a66805c5cdd0f2d3abb"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "refusal-answer_delivered",
+      "argv": [
+        "answer",
+        "--supersede",
+        "decision-139-proof",
+        "u4 owns recovery; u3 retains migration 0014"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/answer",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-DELIVERED a delivered or acknowledged answer cannot be superseded\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"delivered\",\"code\":\"E-RS-ANSWER-DELIVERED\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-DELIVERED a delivered or acknowledged answer cannot be superseded\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"delivered\",\"code\":\"E-RS-ANSWER-DELIVERED\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "9b0dca5b331e0dac5edbe500c221fcc37a8e3f04fa3b80bd1b2b6138a3fb381c"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-DELIVERED a delivered or acknowledged answer cannot be superseded\",\"details\":{\"decision\":\"decision-139-proof\",\"answer_msg_id\":\"decision-139-proof-answer\",\"job_state\":\"delivered\",\"code\":\"E-RS-ANSWER-DELIVERED\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "9b0dca5b331e0dac5edbe500c221fcc37a8e3f04fa3b80bd1b2b6138a3fb381c"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "refusal-answer_authority_split_real_fake",
+      "argv": [
+        "answer",
+        "--supersede",
+        "decision-139-proof",
+        "u4 owns recovery; u3 retains migration 0014"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/answer",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"real\\\",\\\"spine_backend\\\":\\\"fake\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"real\",\"spine_backend\":\"fake\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"real\\\",\\\"spine_backend\\\":\\\"fake\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"real\",\"spine_backend\":\"fake\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "d05a674a026bfb21663f046319e033d31af8ae58007a2162e741232f254dc833"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"real\\\",\\\"spine_backend\\\":\\\"fake\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"real\",\"spine_backend\":\"fake\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "d05a674a026bfb21663f046319e033d31af8ae58007a2162e741232f254dc833"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "refusal-answer_authority_split_fake_real",
+      "argv": [
+        "answer",
+        "--supersede",
+        "decision-139-proof",
+        "u4 owns recovery; u3 retains migration 0014"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/answer",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"fake\\\",\\\"spine_backend\\\":\\\"real\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"fake\",\"spine_backend\":\"real\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"fake\\\",\\\"spine_backend\\\":\\\"real\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"fake\",\"spine_backend\":\"real\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "5616890bccfff04961c174d776424fe15b08175b2c1ec9249629504b3b0b1d23"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"fake\\\",\\\"spine_backend\\\":\\\"real\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"fake\",\"spine_backend\":\"real\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "5616890bccfff04961c174d776424fe15b08175b2c1ec9249629504b3b0b1d23"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "refusal-answer_authority_split_fake_fake",
+      "argv": [
+        "answer",
+        "--supersede",
+        "decision-139-proof",
+        "u4 owns recovery; u3 retains migration 0014"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/answer",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"fake\\\",\\\"spine_backend\\\":\\\"fake\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"fake\",\"spine_backend\":\"fake\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"fake\\\",\\\"spine_backend\\\":\\\"fake\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"fake\",\"spine_backend\":\"fake\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "c2032d40912cd7162f538d90ca0c81b61a9265b928b2d4c75ebc0075993fa97f"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij answer\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-ANSWER-AUTHORITY-SPLIT answer supersession requires shared SQLite queue and spine authority: {\\\"decision\\\":\\\"decision-139-proof\\\",\\\"queue_backend\\\":\\\"fake\\\",\\\"spine_backend\\\":\\\"fake\\\"}\",\"details\":{\"decision\":\"decision-139-proof\",\"queue_backend\":\"fake\",\"spine_backend\":\"fake\",\"code\":\"E-RS-ANSWER-AUTHORITY-SPLIT\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "c2032d40912cd7162f538d90ca0c81b61a9265b928b2d4c75ebc0075993fa97f"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    }
+  ],
+  "live_pairs": [
+    {
+      "id": "project-list",
+      "argv": [
+        "project",
+        "list"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"projects\":[{\"created_at\":1788789114059,\"created_by\":\"pij-polite-eva\",\"description\":\"Governance port\",\"plan_path\":null,\"prime_id\":null,\"repo\":\"/private/tmp/p139-8tKAXQ/repo\",\"slug\":\"governance-port\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "5b0f371843d0a0052aa5cb1b1ed9acbe9ad7b77c04f3f08ebd65118c9101ac7b"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"projects\":[{\"created_at\":1788789114059,\"created_by\":\"pij-polite-eva\",\"description\":\"Governance port\",\"plan_path\":null,\"prime_id\":null,\"repo\":\"/private/tmp/p139-8tKAXQ/repo\",\"slug\":\"governance-port\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "5b0f371843d0a0052aa5cb1b1ed9acbe9ad7b77c04f3f08ebd65118c9101ac7b"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "project-show",
+      "argv": [
+        "project",
+        "show",
+        "governance-port"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"project\":{\"created_at\":1788789114059,\"created_by\":\"pij-polite-eva\",\"description\":\"Governance port\",\"plan_path\":null,\"prime_id\":null,\"repo\":\"/private/tmp/p139-8tKAXQ/repo\",\"slug\":\"governance-port\"}}}\n",
+        "stderr": "",
+        "stdout_sha256": "310f4170d355eacd122819e95599626694ef2fa3b32dc93937ff1e2bf5137c79"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij project\",\"v\":2,\"data\":{\"project\":{\"created_at\":1788789114059,\"created_by\":\"pij-polite-eva\",\"description\":\"Governance port\",\"plan_path\":null,\"prime_id\":null,\"repo\":\"/private/tmp/p139-8tKAXQ/repo\",\"slug\":\"governance-port\"}}}\n",
+        "stderr": "",
+        "stdout_sha256": "310f4170d355eacd122819e95599626694ef2fa3b32dc93937ff1e2bf5137c79"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "stream-list",
+      "argv": [
+        "stream",
+        "list",
+        "--project",
+        "governance-port"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"streams\":[{\"base_ref\":\"main\",\"branch\":\"s139/contracts\",\"created_at\":1788789114065,\"created_by\":\"pij-polite-eva\",\"id\":\"governance-port:contracts\",\"ordinal\":139,\"project\":\"governance-port\",\"slug\":\"contracts\",\"state\":\"created\",\"worktree\":\"/private/tmp/p139-8tKAXQ/repo/s139-contracts\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "b1617ec9bcafb40404d9faf107ea3e27e0428bf3a7638363e5384dcec7511185"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"streams\":[{\"base_ref\":\"main\",\"branch\":\"s139/contracts\",\"created_at\":1788789114065,\"created_by\":\"pij-polite-eva\",\"id\":\"governance-port:contracts\",\"ordinal\":139,\"project\":\"governance-port\",\"slug\":\"contracts\",\"state\":\"created\",\"worktree\":\"/private/tmp/p139-8tKAXQ/repo/s139-contracts\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "b1617ec9bcafb40404d9faf107ea3e27e0428bf3a7638363e5384dcec7511185"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "stream-show",
+      "argv": [
+        "stream",
+        "show",
+        "governance-port:contracts"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"stream\":{\"base_ref\":\"main\",\"branch\":\"s139/contracts\",\"created_at\":1788789114065,\"created_by\":\"pij-polite-eva\",\"id\":\"governance-port:contracts\",\"ordinal\":139,\"project\":\"governance-port\",\"slug\":\"contracts\",\"state\":\"created\",\"worktree\":\"/private/tmp/p139-8tKAXQ/repo/s139-contracts\"}}}\n",
+        "stderr": "",
+        "stdout_sha256": "b6083c4e34bebf7005edee1dad2dfeb2ee95ea41d012f805694de9c0da39f339"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij stream\",\"v\":2,\"data\":{\"stream\":{\"base_ref\":\"main\",\"branch\":\"s139/contracts\",\"created_at\":1788789114065,\"created_by\":\"pij-polite-eva\",\"id\":\"governance-port:contracts\",\"ordinal\":139,\"project\":\"governance-port\",\"slug\":\"contracts\",\"state\":\"created\",\"worktree\":\"/private/tmp/p139-8tKAXQ/repo/s139-contracts\"}}}\n",
+        "stderr": "",
+        "stdout_sha256": "b6083c4e34bebf7005edee1dad2dfeb2ee95ea41d012f805694de9c0da39f339"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "fence-show",
+      "argv": [
+        "fence",
+        "show",
+        "--path",
+        "crates/core/src/lib.rs"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij fence\",\"v\":2,\"data\":{\"fences\":[{\"declared_at\":1788789114119,\"declared_by\":\"pij-polite-eva\",\"id\":\"fence-1af7fcc5d651f10fdd7b70a88f6f56c5\",\"paths\":[\"crates/core/**\"],\"shared\":[\"crates/core/src/lib.rs\"],\"stream\":\"governance-port:contracts\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "42f70b9c64e64598d4c9dc8614ed7ac83bd11757e6fb197bdc0f1e0ed6b6d73b"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij fence\",\"v\":2,\"data\":{\"fences\":[{\"declared_at\":1788789114119,\"declared_by\":\"pij-polite-eva\",\"id\":\"fence-1af7fcc5d651f10fdd7b70a88f6f56c5\",\"paths\":[\"crates/core/**\"],\"shared\":[\"crates/core/src/lib.rs\"],\"stream\":\"governance-port:contracts\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "42f70b9c64e64598d4c9dc8614ed7ac83bd11757e6fb197bdc0f1e0ed6b6d73b"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "node-show",
+      "argv": [
+        "node",
+        "show",
+        "pij-polite-eva"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij node\",\"v\":2,\"data\":{\"cursor\":9,\"node\":{\"assignments\":[],\"children\":[],\"dispatches\":[],\"id\":\"pij-polite-eva\",\"parent\":null,\"plan_id\":null,\"role\":\"prime\"}}}\n",
+        "stderr": "",
+        "stdout_sha256": "cf05a025a938dc5528b6e359856489c8fd23e5889d7473f3557a7b0ba07e9932"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij node\",\"v\":2,\"data\":{\"cursor\":9,\"node\":{\"assignments\":[],\"children\":[],\"dispatches\":[],\"id\":\"pij-polite-eva\",\"parent\":null,\"plan_id\":null,\"role\":\"prime\"}}}\n",
+        "stderr": "",
+        "stdout_sha256": "cf05a025a938dc5528b6e359856489c8fd23e5889d7473f3557a7b0ba07e9932"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "baton-list",
+      "argv": [
+        "orchestration",
+        "baton",
+        "list"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"batons\":[{\"created_at\":1788789114125,\"created_by\":\"pij-polite-eva\",\"description\":\"branch:main\",\"name\":\"merge\",\"probe\":null,\"repo\":\"/tmp/p139-8tKAXQ/repo\",\"resource\":\"branch:main\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "ec3510e756adcf12061e6159ddb1dbfdda74434bef9431fc282a677d18e292a8"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"batons\":[{\"created_at\":1788789114125,\"created_by\":\"pij-polite-eva\",\"description\":\"branch:main\",\"name\":\"merge\",\"probe\":null,\"repo\":\"/tmp/p139-8tKAXQ/repo\",\"resource\":\"branch:main\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "ec3510e756adcf12061e6159ddb1dbfdda74434bef9431fc282a677d18e292a8"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "baton-show",
+      "argv": [
+        "orchestration",
+        "baton",
+        "show",
+        "merge"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":{\"created_at\":1788789114125,\"created_by\":\"pij-polite-eva\",\"description\":\"branch:main\",\"name\":\"merge\",\"probe\":null,\"repo\":\"/tmp/p139-8tKAXQ/repo\",\"resource\":\"branch:main\"},\"lease\":null,\"requests\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "5ee2b6ff5f4427e3bfc1b18775c958a689532e1dce666935f66a088a31cb1528"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij orchestration\",\"v\":2,\"data\":{\"baton\":{\"created_at\":1788789114125,\"created_by\":\"pij-polite-eva\",\"description\":\"branch:main\",\"name\":\"merge\",\"probe\":null,\"repo\":\"/tmp/p139-8tKAXQ/repo\",\"resource\":\"branch:main\"},\"lease\":null,\"requests\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "5ee2b6ff5f4427e3bfc1b18775c958a689532e1dce666935f66a088a31cb1528"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "anomalies-argv",
+      "argv": [
+        "anomalies"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij anomalies\",\"v\":2,\"data\":{\"anomalies\":[],\"cursor\":9}}\n",
+        "stderr": "",
+        "stdout_sha256": "a826cebc439cc184ee7709e658c3a3246ba22181d6b347d54b40886269c566f5"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij anomalies\",\"v\":2,\"data\":{\"anomalies\":[],\"cursor\":9}}\n",
+        "stderr": "",
+        "stdout_sha256": "a826cebc439cc184ee7709e658c3a3246ba22181d6b347d54b40886269c566f5"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "decisions-argv",
+      "argv": [
+        "decisions"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij decisions\",\"v\":2,\"data\":{\"cursor\":9,\"decisions\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "9b16af242939199847c6c03d8dfcd390fab1d92aa13dccab72d2105893267228"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij decisions\",\"v\":2,\"data\":{\"cursor\":9,\"decisions\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "9b16af242939199847c6c03d8dfcd390fab1d92aa13dccab72d2105893267228"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "reap-dry-run",
+      "argv": [
+        "reap",
+        "--dry-run"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij reap\",\"v\":2,\"data\":{\"dry_run\":true,\"before\":1,\"after\":1,\"candidates\":[],\"reaped\":[],\"unverifiable\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "0c8d92bba8a59695e71f2c079536783c919200f31931b3f5be248a57049a2f74"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij reap\",\"v\":2,\"data\":{\"dry_run\":true,\"before\":1,\"after\":1,\"candidates\":[],\"reaped\":[],\"unverifiable\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "0c8d92bba8a59695e71f2c079536783c919200f31931b3f5be248a57049a2f74"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "spine-events",
+      "argv": [
+        "spine",
+        "events",
+        "--since",
+        "100"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij spine\",\"v\":2,\"meta\":\"E-RS-CURSOR --since is beyond the local spine\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-CURSOR\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "88b468bfc9dd76fae0107f4c2a8e6aa543fade002e465a40ebe80dcf6be3ea22"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij spine\",\"v\":2,\"meta\":\"E-RS-CURSOR --since is beyond the local spine\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-CURSOR\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "88b468bfc9dd76fae0107f4c2a8e6aa543fade002e465a40ebe80dcf6be3ea22"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "spine-render",
+      "argv": [
+        "spine",
+        "render"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij spine\",\"v\":2,\"data\":{\"cursor\":9,\"text\":\"1 config.claude-inbound-ensured -\\n2 config.claude-hook-ensured -\\n3 config.claude-statusline-ensured -\\n4 seat.put pij-polite-eva\\n5 role-set pij-polite-eva\\n6 project-created pij-polite-eva\\n7 allocation pij-polite-eva\\n8 fence pij-polite-eva\\n9 baton.defined pij-polite-eva\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "7ff745a45e7a895d54e4f9d8e01a762ae86a8be2954e34e89d81dc1c5ef88dc7"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij spine\",\"v\":2,\"data\":{\"cursor\":9,\"text\":\"1 config.claude-inbound-ensured -\\n2 config.claude-hook-ensured -\\n3 config.claude-statusline-ensured -\\n4 seat.put pij-polite-eva\\n5 role-set pij-polite-eva\\n6 project-created pij-polite-eva\\n7 allocation pij-polite-eva\\n8 fence pij-polite-eva\\n9 baton.defined pij-polite-eva\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "7ff745a45e7a895d54e4f9d8e01a762ae86a8be2954e34e89d81dc1c5ef88dc7"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "spine-events-live-success",
+      "argv": [
+        "spine",
+        "events",
+        "--since",
+        "0"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij spine\",\"v\":2,\"data\":{\"cursor\":9,\"events\":[{\"at\":1788789113861,\"kind\":\"config.claude-inbound-ensured\",\"payload\":\"{\\\"after\\\":\\\"accept\\\",\\\"before\\\":null,\\\"home\\\":\\\"/tmp/p139-8tKAXQ/home/.claude\\\"}\",\"seat\":null,\"seq\":1,\"v\":1},{\"at\":1788789113863,\"kind\":\"config.claude-hook-ensured\",\"payload\":\"{\\\"after\\\":\\\"/tmp/p139-8tKAXQ/home/.pij-rs/claude-session-start-pij.sh\\\",\\\"before\\\":null,\\\"home\\\":\\\"/tmp/p139-8tKAXQ/home/.claude\\\"}\",\"seat\":null,\"seq\":2,\"v\":1},{\"at\":1788789113865,\"kind\":\"config.claude-statusline-ensured\",\"payload\":\"{\\\"after\\\":\\\"/tmp/p139-8tKAXQ/home/.pij-rs/claude-statusline-pij.sh\\\",\\\"before\\\":null,\\\"home\\\":\\\"/tmp/p139-8tKAXQ/home/.claude\\\"}\",\"seat\":null,\"seq\":3,\"v\":1},{\"at\":1788789114018,\"kind\":\"seat.put\",\"payload\":\"{\\\"id\\\":\\\"pij-polite-eva\\\",\\\"harness\\\":\\\"omp\\\",\\\"session\\\":null,\\\"pane\\\":\\\"%0\\\",\\\"proc\\\":{\\\"pid\\\":57179,\\\"proc_start\\\":20260907235152},\\\"folder\\\":\\\"/private/tmp/p139-8tKAXQ/repo\\\",\\\"state\\\":\\\"idle\\\",\\\"semantic_state\\\":null,\\\"role\\\":null,\\\"parent\\\":null,\\\"relay\\\":false,\\\"native_extension_delivery\\\":false}\",\"seat\":\"pij-polite-eva\",\"seq\":4,\"v\":1},{\"at\":1788789114019,\"kind\":\"role-set\",\"payload\":\"{\\\"action\\\":\\\"assigned\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"assigned_at\\\":1788789114019,\\\"assigned_by\\\":\\\"pij-polite-eva\\\",\\\"role\\\":\\\"prime\\\",\\\"seat\\\":\\\"pij-polite-eva\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":5,\"v\":1},{\"at\":1788789114059,\"kind\":\"project-created\",\"payload\":\"{\\\"action\\\":\\\"created\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"created_at\\\":1788789114059,\\\"created_by\\\":\\\"pij-polite-eva\\\",\\\"description\\\":\\\"Governance port\\\",\\\"plan_path\\\":null,\\\"prime_id\\\":null,\\\"repo\\\":\\\"/private/tmp/p139-8tKAXQ/repo\\\",\\\"slug\\\":\\\"governance-port\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":6,\"v\":1},{\"at\":1788789114065,\"kind\":\"allocation\",\"payload\":\"{\\\"action\\\":\\\"created\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"base_ref\\\":\\\"main\\\",\\\"branch\\\":\\\"s139/contracts\\\",\\\"created_at\\\":1788789114065,\\\"created_by\\\":\\\"pij-polite-eva\\\",\\\"id\\\":\\\"governance-port:contracts\\\",\\\"ordinal\\\":139,\\\"project\\\":\\\"governance-port\\\",\\\"slug\\\":\\\"contracts\\\",\\\"state\\\":\\\"created\\\",\\\"worktree\\\":\\\"/private/tmp/p139-8tKAXQ/repo/s139-contracts\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":7,\"v\":1},{\"at\":1788789114119,\"kind\":\"fence\",\"payload\":\"{\\\"action\\\":\\\"declared\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"declared_at\\\":1788789114119,\\\"declared_by\\\":\\\"pij-polite-eva\\\",\\\"id\\\":\\\"fence-1af7fcc5d651f10fdd7b70a88f6f56c5\\\",\\\"paths\\\":[\\\"crates/core/**\\\"],\\\"shared\\\":[\\\"crates/core/src/lib.rs\\\"],\\\"stream\\\":\\\"governance-port:contracts\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":8,\"v\":1},{\"at\":1788789114125,\"kind\":\"baton.defined\",\"payload\":\"{\\\"action\\\":\\\"defined\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"created_at\\\":1788789114125,\\\"created_by\\\":\\\"pij-polite-eva\\\",\\\"description\\\":\\\"branch:main\\\",\\\"name\\\":\\\"merge\\\",\\\"probe\\\":null,\\\"repo\\\":\\\"/tmp/p139-8tKAXQ/repo\\\",\\\"resource\\\":\\\"branch:main\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":9,\"v\":1}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "e0fe9780411d294ec5b05c5c8be32531b1226bad7731c2abc88074a9045bc092"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij spine\",\"v\":2,\"data\":{\"cursor\":9,\"events\":[{\"at\":1788789113861,\"kind\":\"config.claude-inbound-ensured\",\"payload\":\"{\\\"after\\\":\\\"accept\\\",\\\"before\\\":null,\\\"home\\\":\\\"/tmp/p139-8tKAXQ/home/.claude\\\"}\",\"seat\":null,\"seq\":1,\"v\":1},{\"at\":1788789113863,\"kind\":\"config.claude-hook-ensured\",\"payload\":\"{\\\"after\\\":\\\"/tmp/p139-8tKAXQ/home/.pij-rs/claude-session-start-pij.sh\\\",\\\"before\\\":null,\\\"home\\\":\\\"/tmp/p139-8tKAXQ/home/.claude\\\"}\",\"seat\":null,\"seq\":2,\"v\":1},{\"at\":1788789113865,\"kind\":\"config.claude-statusline-ensured\",\"payload\":\"{\\\"after\\\":\\\"/tmp/p139-8tKAXQ/home/.pij-rs/claude-statusline-pij.sh\\\",\\\"before\\\":null,\\\"home\\\":\\\"/tmp/p139-8tKAXQ/home/.claude\\\"}\",\"seat\":null,\"seq\":3,\"v\":1},{\"at\":1788789114018,\"kind\":\"seat.put\",\"payload\":\"{\\\"id\\\":\\\"pij-polite-eva\\\",\\\"harness\\\":\\\"omp\\\",\\\"session\\\":null,\\\"pane\\\":\\\"%0\\\",\\\"proc\\\":{\\\"pid\\\":57179,\\\"proc_start\\\":20260907235152},\\\"folder\\\":\\\"/private/tmp/p139-8tKAXQ/repo\\\",\\\"state\\\":\\\"idle\\\",\\\"semantic_state\\\":null,\\\"role\\\":null,\\\"parent\\\":null,\\\"relay\\\":false,\\\"native_extension_delivery\\\":false}\",\"seat\":\"pij-polite-eva\",\"seq\":4,\"v\":1},{\"at\":1788789114019,\"kind\":\"role-set\",\"payload\":\"{\\\"action\\\":\\\"assigned\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"assigned_at\\\":1788789114019,\\\"assigned_by\\\":\\\"pij-polite-eva\\\",\\\"role\\\":\\\"prime\\\",\\\"seat\\\":\\\"pij-polite-eva\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":5,\"v\":1},{\"at\":1788789114059,\"kind\":\"project-created\",\"payload\":\"{\\\"action\\\":\\\"created\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"created_at\\\":1788789114059,\\\"created_by\\\":\\\"pij-polite-eva\\\",\\\"description\\\":\\\"Governance port\\\",\\\"plan_path\\\":null,\\\"prime_id\\\":null,\\\"repo\\\":\\\"/private/tmp/p139-8tKAXQ/repo\\\",\\\"slug\\\":\\\"governance-port\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":6,\"v\":1},{\"at\":1788789114065,\"kind\":\"allocation\",\"payload\":\"{\\\"action\\\":\\\"created\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"base_ref\\\":\\\"main\\\",\\\"branch\\\":\\\"s139/contracts\\\",\\\"created_at\\\":1788789114065,\\\"created_by\\\":\\\"pij-polite-eva\\\",\\\"id\\\":\\\"governance-port:contracts\\\",\\\"ordinal\\\":139,\\\"project\\\":\\\"governance-port\\\",\\\"slug\\\":\\\"contracts\\\",\\\"state\\\":\\\"created\\\",\\\"worktree\\\":\\\"/private/tmp/p139-8tKAXQ/repo/s139-contracts\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":7,\"v\":1},{\"at\":1788789114119,\"kind\":\"fence\",\"payload\":\"{\\\"action\\\":\\\"declared\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"declared_at\\\":1788789114119,\\\"declared_by\\\":\\\"pij-polite-eva\\\",\\\"id\\\":\\\"fence-1af7fcc5d651f10fdd7b70a88f6f56c5\\\",\\\"paths\\\":[\\\"crates/core/**\\\"],\\\"shared\\\":[\\\"crates/core/src/lib.rs\\\"],\\\"stream\\\":\\\"governance-port:contracts\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":8,\"v\":1},{\"at\":1788789114125,\"kind\":\"baton.defined\",\"payload\":\"{\\\"action\\\":\\\"defined\\\",\\\"actor\\\":\\\"pij-polite-eva\\\",\\\"record\\\":{\\\"created_at\\\":1788789114125,\\\"created_by\\\":\\\"pij-polite-eva\\\",\\\"description\\\":\\\"branch:main\\\",\\\"name\\\":\\\"merge\\\",\\\"probe\\\":null,\\\"repo\\\":\\\"/tmp/p139-8tKAXQ/repo\\\",\\\"resource\\\":\\\"branch:main\\\"}}\",\"seat\":\"pij-polite-eva\",\"seq\":9,\"v\":1}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "e0fe9780411d294ec5b05c5c8be32531b1226bad7731c2abc88074a9045bc092"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "list-live",
+      "argv": [
+        "list"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-polite-eva\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%0\",\"proc\":{\"pid\":57179,\"proc_start\":20260907235152},\"folder\":\"/private/tmp/p139-8tKAXQ/repo\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"prime\",\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "c3e337401d9b0fc2ea4bc9a3b1af0a87c0c67bf5d18492f88975f809d4cfc253"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-polite-eva\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%0\",\"proc\":{\"pid\":57179,\"proc_start\":20260907235152},\"folder\":\"/private/tmp/p139-8tKAXQ/repo\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"prime\",\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "c3e337401d9b0fc2ea4bc9a3b1af0a87c0c67bf5d18492f88975f809d4cfc253"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "whoami-live",
+      "argv": [
+        "whoami"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij whoami\",\"v\":2,\"data\":{\"id\":\"pij-polite-eva\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%0\",\"proc\":{\"pid\":57179,\"proc_start\":20260907235152},\"folder\":\"/private/tmp/p139-8tKAXQ/repo\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"prime\",\"parent\":null,\"relay\":false,\"native_extension_delivery\":false}}\n",
+        "stderr": "",
+        "stdout_sha256": "d94355ecc815b7bd7b3683f5439840f80af6d31f61e009d88e4347e25aae6a27"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij whoami\",\"v\":2,\"data\":{\"id\":\"pij-polite-eva\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%0\",\"proc\":{\"pid\":57179,\"proc_start\":20260907235152},\"folder\":\"/private/tmp/p139-8tKAXQ/repo\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"prime\",\"parent\":null,\"relay\":false,\"native_extension_delivery\":false}}\n",
+        "stderr": "",
+        "stdout_sha256": "d94355ecc815b7bd7b3683f5439840f80af6d31f61e009d88e4347e25aae6a27"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "state-live",
+      "argv": [
+        "state",
+        "pij-polite-eva"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij state\",\"v\":2,\"data\":{\"id\":\"pij-polite-eva\",\"state\":\"idle\",\"liveness\":\"active\",\"pid\":57179,\"procStart\":20260907235152,\"cwd\":\"/private/tmp/p139-8tKAXQ/repo\",\"harness\":\"omp\",\"role\":\"prime\",\"parent\":null,\"boundModel\":null,\"effort\":null,\"pane\":\"%0\",\"provider\":null,\"semanticState\":null,\"machine\":\"JordansacStudio.localdomain\",\"tombstonedAt\":null,\"tombstoneReason\":null,\"statusPrev\":null,\"statusNext\":null,\"statusAt\":null,\"statusSeq\":null,\"statusStale\":null,\"stateNote\":null,\"held\":[],\"unsupported\":[{\"field\":\"lifecycle\",\"why\":\"rs seats have no pending/bound/dissolved lifecycle field; binding evidence lives in `proc` and is reported through `liveness`\"},{\"field\":\"activity\",\"why\":\"the done-vs-idle split needs `lastEventAt`, which the rs descriptor does not carry; `state` reports the working/idle half\"},{\"field\":\"lastEventAt\",\"why\":\"not on the rs descriptor — deriving it needs a full spine scan per read\"},{\"field\":\"ageMs\",\"why\":\"derived from `lastEventAt`, which rs does not carry\"},{\"field\":\"liveness:stale\",\"why\":\"TS reports `stale` for a seat that claims to be working and has gone quiet; that needs event age. An rs `active` therefore covers BOTH the TS `active` and the TS `stale` case — it is a weaker claim, not the same one\"},{\"field\":\"daemonLastTickAt\",\"why\":\"no per-seat daemon tick is recorded in the rs store\"},{\"field\":\"daemonTickAgeMs\",\"why\":\"derived from the tick rs does not record\"},{\"field\":\"daemonTickStale\",\"why\":\"derived from the tick rs does not record\"},{\"field\":\"failureReason\",\"why\":\"rs records no per-seat failure reason on the descriptor\"},{\"field\":\"bindHealth\",\"why\":\"the TS pre-bind health classifier has no rs counterpart\"},{\"field\":\"degraded\",\"why\":\"derived from `bindHealth`\"},{\"field\":\"degradedReason\",\"why\":\"derived from `bindHealth`\"},{\"field\":\"terminal\",\"why\":\"rs records termination as `tombstonedAt` + `tombstoneReason`, which this card DOES carry — a different shape, not a missing fact\"},{\"field\":\"watchdog\",\"why\":\"rs has no watchdog block on the seat row\"}],\"session\":null,\"generation\":\"rs\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "531c8df1caed375ed4b64eaf36b4f9cc1b291bd22b7fc82be3d8272aaa9abe56"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij state\",\"v\":2,\"data\":{\"id\":\"pij-polite-eva\",\"state\":\"idle\",\"liveness\":\"active\",\"pid\":57179,\"procStart\":20260907235152,\"cwd\":\"/private/tmp/p139-8tKAXQ/repo\",\"harness\":\"omp\",\"role\":\"prime\",\"parent\":null,\"boundModel\":null,\"effort\":null,\"pane\":\"%0\",\"provider\":null,\"semanticState\":null,\"machine\":\"JordansacStudio.localdomain\",\"tombstonedAt\":null,\"tombstoneReason\":null,\"statusPrev\":null,\"statusNext\":null,\"statusAt\":null,\"statusSeq\":null,\"statusStale\":null,\"stateNote\":null,\"held\":[],\"unsupported\":[{\"field\":\"lifecycle\",\"why\":\"rs seats have no pending/bound/dissolved lifecycle field; binding evidence lives in `proc` and is reported through `liveness`\"},{\"field\":\"activity\",\"why\":\"the done-vs-idle split needs `lastEventAt`, which the rs descriptor does not carry; `state` reports the working/idle half\"},{\"field\":\"lastEventAt\",\"why\":\"not on the rs descriptor — deriving it needs a full spine scan per read\"},{\"field\":\"ageMs\",\"why\":\"derived from `lastEventAt`, which rs does not carry\"},{\"field\":\"liveness:stale\",\"why\":\"TS reports `stale` for a seat that claims to be working and has gone quiet; that needs event age. An rs `active` therefore covers BOTH the TS `active` and the TS `stale` case — it is a weaker claim, not the same one\"},{\"field\":\"daemonLastTickAt\",\"why\":\"no per-seat daemon tick is recorded in the rs store\"},{\"field\":\"daemonTickAgeMs\",\"why\":\"derived from the tick rs does not record\"},{\"field\":\"daemonTickStale\",\"why\":\"derived from the tick rs does not record\"},{\"field\":\"failureReason\",\"why\":\"rs records no per-seat failure reason on the descriptor\"},{\"field\":\"bindHealth\",\"why\":\"the TS pre-bind health classifier has no rs counterpart\"},{\"field\":\"degraded\",\"why\":\"derived from `bindHealth`\"},{\"field\":\"degradedReason\",\"why\":\"derived from `bindHealth`\"},{\"field\":\"terminal\",\"why\":\"rs records termination as `tombstonedAt` + `tombstoneReason`, which this card DOES carry — a different shape, not a missing fact\"},{\"field\":\"watchdog\",\"why\":\"rs has no watchdog block on the seat row\"}],\"session\":null,\"generation\":\"rs\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "531c8df1caed375ed4b64eaf36b4f9cc1b291bd22b7fc82be3d8272aaa9abe56"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "commit-trailers-live",
+      "argv": [
+        "commit-trailers"
+      ],
+      "method": "live-same-daemon",
+      "native": {
+        "exit": 0,
+        "stdout": "Pij-Prime: pij-polite-eva\n",
+        "stderr": "# Pij-Prime derivation: role=prime\n",
+        "stdout_sha256": "f363e99fa370cce3d861800f94bbdccacb42abc73a910ffe12994f2fa34b42dc"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "Pij-Prime: pij-polite-eva\n",
+        "stderr": "# Pij-Prime derivation: role=prime\n",
+        "stdout_sha256": "f363e99fa370cce3d861800f94bbdccacb42abc73a910ffe12994f2fa34b42dc"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    }
+  ],
+  "http_pairs": [
+    {
+      "id": "sessions-live-http",
+      "path": "/v1/shim/sessions",
+      "argv": [
+        "sessions"
+      ],
+      "method": "live-http-vs-shim",
+      "http": {
+        "status": 200,
+        "body": "{\"ok\":true,\"command\":\"pij sessions\",\"v\":2,\"data\":{\"rows\":[{\"pijId\":\"pij-polite-eva\",\"harness\":\"omp\",\"harnessSessionId\":null,\"gitCommonDir\":\"/private/tmp/p139-8tKAXQ/repo/.git\",\"lifecycle\":null,\"boundModel\":null,\"spawnedBy\":null,\"transcriptPath\":null,\"generation\":\"rs\"}]}}"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij sessions\",\"v\":2,\"data\":{\"rows\":[{\"pijId\":\"pij-polite-eva\",\"harness\":\"omp\",\"harnessSessionId\":null,\"gitCommonDir\":\"/private/tmp/p139-8tKAXQ/repo/.git\",\"lifecycle\":null,\"boundModel\":null,\"spawnedBy\":null,\"transcriptPath\":null,\"generation\":\"rs\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "d94016f542756da01026b0da4e621566e5b089af901c6f7a32bf01384c4a5836"
+      },
+      "byte_equal": true
+    },
+    {
+      "id": "list-live-filters",
+      "path": "/v1/seats?harness=omp&scope=local",
+      "argv": [
+        "list",
+        "--harness",
+        "omp",
+        "--scope",
+        "local"
+      ],
+      "method": "live-http-vs-shim",
+      "http": {
+        "status": 200,
+        "body": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-polite-eva\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%0\",\"proc\":{\"pid\":57179,\"proc_start\":20260907235152},\"folder\":\"/private/tmp/p139-8tKAXQ/repo\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"prime\",\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-polite-eva\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%0\",\"proc\":{\"pid\":57179,\"proc_start\":20260907235152},\"folder\":\"/private/tmp/p139-8tKAXQ/repo\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"prime\",\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "c3e337401d9b0fc2ea4bc9a3b1af0a87c0c67bf5d18492f88975f809d4cfc253"
+      },
+      "byte_equal": true
+    },
+    {
+      "id": "anomalies-live-get",
+      "path": "/v1/anomalies",
+      "argv": [
+        "anomalies"
+      ],
+      "method": "live-http-vs-shim",
+      "http": {
+        "status": 200,
+        "body": "{\"ok\":true,\"command\":\"pij anomalies\",\"v\":2,\"data\":{\"anomalies\":[],\"cursor\":9}}"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij anomalies\",\"v\":2,\"data\":{\"anomalies\":[],\"cursor\":9}}\n",
+        "stderr": "",
+        "stdout_sha256": "a826cebc439cc184ee7709e658c3a3246ba22181d6b347d54b40886269c566f5"
+      },
+      "byte_equal": true
+    },
+    {
+      "id": "decisions-live-get",
+      "path": "/v1/decisions",
+      "argv": [
+        "decisions"
+      ],
+      "method": "live-http-vs-shim",
+      "http": {
+        "status": 200,
+        "body": "{\"ok\":true,\"command\":\"pij decisions\",\"v\":2,\"data\":{\"cursor\":9,\"decisions\":[]}}"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij decisions\",\"v\":2,\"data\":{\"cursor\":9,\"decisions\":[]}}\n",
+        "stderr": "",
+        "stdout_sha256": "9b16af242939199847c6c03d8dfcd390fab1d92aa13dccab72d2105893267228"
+      },
+      "byte_equal": true
+    }
+  ],
+  "exit_policy_pairs": [
+    {
+      "id": "exit-refused",
+      "argv": [
+        "role",
+        "pij-worker",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/role",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij role\",\"v\":2,\"meta\":\"E-RS-OWNERSHIP role: pij-outsider is neither pij-worker nor its recorded parent\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-OWNERSHIP\",\"operation\":\"role\",\"target\":\"pij-worker\",\"actor\":\"pij-outsider\"}}",
+      "native": {
+        "exit": 2,
+        "stdout": "{\"ok\":false,\"command\":\"pij role\",\"v\":2,\"meta\":\"E-RS-OWNERSHIP role: pij-outsider is neither pij-worker nor its recorded parent\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-OWNERSHIP\",\"operation\":\"role\",\"target\":\"pij-worker\",\"actor\":\"pij-outsider\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "271cd0e25b97e18c92e27cec4e2764416d2ddc7d9abe45862a65ee9f15ff7baf"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij role\",\"v\":2,\"meta\":\"E-RS-OWNERSHIP role: pij-outsider is neither pij-worker nor its recorded parent\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-OWNERSHIP\",\"operation\":\"role\",\"target\":\"pij-worker\",\"actor\":\"pij-outsider\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "271cd0e25b97e18c92e27cec4e2764416d2ddc7d9abe45862a65ee9f15ff7baf"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "exit-not_found",
+      "argv": [
+        "role",
+        "pij-worker",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/role",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij state\",\"v\":2,\"meta\":\"seat pij-absent does not exist\",\"error\":\"not_found\"}",
+      "native": {
+        "exit": 3,
+        "stdout": "{\"ok\":false,\"command\":\"pij state\",\"v\":2,\"meta\":\"seat pij-absent does not exist\",\"error\":\"not_found\"}\n",
+        "stderr": "",
+        "stdout_sha256": "1e87cfeb72a284d506b042940f7aaad9b78c4bd18b7fa00414ad76025b93f8b4"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij state\",\"v\":2,\"meta\":\"seat pij-absent does not exist\",\"error\":\"not_found\"}\n",
+        "stderr": "",
+        "stdout_sha256": "1e87cfeb72a284d506b042940f7aaad9b78c4bd18b7fa00414ad76025b93f8b4"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "exit-auth",
+      "argv": [
+        "role",
+        "pij-worker",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/role",
+      "http_status": 401,
+      "wire_response": "{\"ok\":false,\"command\":\"pij whoami\",\"v\":2,\"meta\":\"missing or wrong bearer token\",\"error\":\"auth\"}",
+      "native": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij whoami\",\"v\":2,\"meta\":\"missing or wrong bearer token\",\"error\":\"auth\"}\n",
+        "stderr": "",
+        "stdout_sha256": "8b0dda8580d45c45575e85dec8621904e89b6b559f5564c89adaaa05a89f16e7"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij whoami\",\"v\":2,\"meta\":\"missing or wrong bearer token\",\"error\":\"auth\"}\n",
+        "stderr": "",
+        "stdout_sha256": "8b0dda8580d45c45575e85dec8621904e89b6b559f5564c89adaaa05a89f16e7"
+      },
+      "byte_equal": true,
+      "exit_equal": true
+    },
+    {
+      "id": "exit-skew",
+      "argv": [
+        "role",
+        "pij-worker",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/role",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij events\",\"v\":2,\"meta\":\"unsupported envelope version\",\"error\":\"skew\"}",
+      "native": {
+        "exit": 1,
+        "stdout": "{\"ok\":false,\"command\":\"pij events\",\"v\":2,\"meta\":\"unsupported envelope version\",\"error\":\"skew\"}\n",
+        "stderr": "",
+        "stdout_sha256": "9610b42e1cf46796ace9603ae759e40ad9d3ee6aaf6fdb228a1233877447b302"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij events\",\"v\":2,\"meta\":\"unsupported envelope version\",\"error\":\"skew\"}\n",
+        "stderr": "",
+        "stdout_sha256": "9610b42e1cf46796ace9603ae759e40ad9d3ee6aaf6fdb228a1233877447b302"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "exit-cursor_reset",
+      "argv": [
+        "role",
+        "pij-worker",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/role",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij events\",\"v\":2,\"data\":{\"requested\":7,\"newest\":2},\"meta\":\"cursor 7 is beyond spine 2\",\"error\":\"cursor_reset\"}",
+      "native": {
+        "exit": 5,
+        "stdout": "{\"ok\":false,\"command\":\"pij events\",\"v\":2,\"data\":{\"requested\":7,\"newest\":2},\"meta\":\"cursor 7 is beyond spine 2\",\"error\":\"cursor_reset\"}\n",
+        "stderr": "",
+        "stdout_sha256": "ef39b97a3e007f9641a1cdd4bfd390f5e461b4cba18a110db98dc9742417f2ef"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij events\",\"v\":2,\"data\":{\"requested\":7,\"newest\":2},\"meta\":\"cursor 7 is beyond spine 2\",\"error\":\"cursor_reset\"}\n",
+        "stderr": "",
+        "stdout_sha256": "ef39b97a3e007f9641a1cdd4bfd390f5e461b4cba18a110db98dc9742417f2ef"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    },
+    {
+      "id": "exit-adapter",
+      "argv": [
+        "role",
+        "pij-worker",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/role",
+      "http_status": 409,
+      "wire_response": "{\"ok\":false,\"command\":\"pij spawn\",\"v\":2,\"meta\":\"tmux adapter unavailable\",\"error\":\"adapter\"}",
+      "native": {
+        "exit": 1,
+        "stdout": "{\"ok\":false,\"command\":\"pij spawn\",\"v\":2,\"meta\":\"tmux adapter unavailable\",\"error\":\"adapter\"}\n",
+        "stderr": "",
+        "stdout_sha256": "74b824756a6ab84b1605fceb4769ba0660201eb4ef5fd4dd3f3d5ef7840bcd24"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij spawn\",\"v\":2,\"meta\":\"tmux adapter unavailable\",\"error\":\"adapter\"}\n",
+        "stderr": "",
+        "stdout_sha256": "74b824756a6ab84b1605fceb4769ba0660201eb4ef5fd4dd3f3d5ef7840bcd24"
+      },
+      "byte_equal": true,
+      "exit_equal": false
+    }
+  ],
+  "capability_probes": [
+    {
+      "id": "sessions-native-command-absent",
+      "argv": [
+        "sessions"
+      ],
+      "method": "declared-nonshared-capability",
+      "native": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "error: unrecognized subcommand 'sessions'\n\n  tip: a similar subcommand exists: 'decisions'\n\nUsage: pij-rs [OPTIONS] <COMMAND>\n\nFor more information, try '--help'.\n",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shim": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij sessions\",\"v\":2,\"data\":{\"rows\":[{\"pijId\":\"pij-polite-eva\",\"harness\":\"omp\",\"harnessSessionId\":null,\"gitCommonDir\":\"/private/tmp/p139-8tKAXQ/repo/.git\",\"lifecycle\":null,\"boundModel\":null,\"spawnedBy\":null,\"transcriptPath\":null,\"generation\":\"rs\"}]}}\n",
+        "stderr": "",
+        "stdout_sha256": "d94016f542756da01026b0da4e621566e5b089af901c6f7a32bf01384c4a5836"
+      },
+      "byte_equal": false,
+      "exit_equal": false
+    },
+    {
+      "id": "register-with-role",
+      "argv": [
+        "register",
+        "pij-worker",
+        "--harness",
+        "omp",
+        "--folder",
+        "/work/rs-governance-port",
+        "--pane",
+        "%11",
+        "--pid",
+        "12345",
+        "--proc-start",
+        "20260907090000",
+        "--parent",
+        "pij-parent",
+        "--role",
+        "reviewer"
+      ],
+      "method": "identical-scripted-http-response",
+      "path": "/v1/register",
+      "http_status": 200,
+      "wire_response": "{\"ok\":true,\"command\":\"pij register\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}",
+      "native": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"command\":\"pij register\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
+        "stderr": "",
+        "stdout_sha256": "834b57625118df767385d1c9d5936857bf26ec60e1cb047e7dffd6bfacfb9fa2"
+      },
+      "shim": {
+        "exit": 4,
+        "stdout": "{\"ok\":false,\"command\":\"pij register\",\"v\":2,\"error\":\"refused\",\"meta\":\"E-RS-UNPORTED register: unknown command register pij-worker; see docs/how/pij-rs-api.md#unsupported-status (rs at 127.0.0.1:56133)\",\"details\":{\"code\":\"E-RS-UNPORTED\",\"verb\":\"register\",\"ledger_item\":\"docs/how/pij-rs-api.md#unsupported-status\"}}\n",
+        "stderr": "",
+        "stdout_sha256": "ec28543d9cd7eae8efe088f6d0aad0aedc2cbedcfb6ee380d701a1dd509896ae"
+      },
+      "byte_equal": false,
+      "exit_equal": false
+    }
+  ],
+  "native_binary_sha256": "43ca12839d2db6fa8398db2a0a0d061dca2936c53fbe0a00cf65245c6135a15a",
+  "scope": {
+    "mutations": "Client boundary only: identical deterministic responses, not domain execution",
+    "reads": "Same real isolated Rust daemon; empty anomaly/decision collections declared",
+    "sessions": "Live HTTP baseline; native subcommand absent by ruling",
+    "register": "Native/HTTP-only; generic shim refuses by name",
+    "did_evidence": "Separate real CLI workflow, native keeper-notice persistence/delivery and paneless smoke; authenticated OMP canary is separate",
+    "production": "Unclaimed, prime-owned"
+  },
+  "counts": {
+    "shared_mutations": 29,
+    "named_refusals": 9,
+    "same_daemon_cli_pairs": 18,
+    "live_http_pairs": 4,
+    "shared_error_exit_pairs": 6,
+    "matched_pairs": 66,
+    "non_shared_capability_probes": 2
+  },
+  "teardown": {
+    "verified": true,
+    "fixture_root": "/tmp/p139-8tKAXQ",
+    "contract": "Owned clients/daemon/tmux stopped, private socket/root removed, listener absent; fixture.close completed"
+  },
+  "source_snapshot": {
+    ".pi/extensions/pij/acceptance-sweep.test.ts": "ea5092ee0b26b606d78184f6cb3e694a5c0c3881dd699d18d38931cbb03aefe4",
+    ".pi/extensions/pij/adapters/generation-router.test.ts": "a9ff619de24c4551271fe88a6ed4926090a0da68d3c22cb31584c9898e55cb85",
+    ".pi/extensions/pij/adapters/generation-router.ts": "6e0de175d82da70fa92705702c6f41bd2fd2a0ce3bb3712ec397d6e39ebeed79",
+    ".pi/extensions/pij/adapters/generation-seam.test.ts": "6dc7a112ae0f38eeaae7d5559154ee67eaa343ce6c47730a9cadedfacbcc3ab7",
+    ".pi/extensions/pij/cli.inbox.integration.test.ts": "0f1af7977a207da28e6ed33b0e214c61f81e8b5848fcbea81b0ef0bd604a414a",
+    ".pi/extensions/pij/cli.ts": "8fbbc344d5c8508a297cb201f926e144c533ee507d44325de45a6cfeee425be4",
+    ".pi/extensions/pij/core/chores/drive.test.ts": "b9408b5858b7c53139a38ae05185e3c44c3c58a381d4216c5869eb034b9f9d27",
+    ".pi/extensions/pij/core/cli.test.ts": "b9915531ea925d245ab7f38fc8428633bfa7f300694c416da60cfd806e7cf402",
+    ".pi/extensions/pij/core/daemon-wire.ts": "795ffd8c814cbedc5586592d847b2c44e2b2ccbc1acbdc128f43e26cce0d507a",
+    ".pi/extensions/pij/core/generation-routing.test.ts": "f991ef95f1881031d0281399fce830e9a5a1ef52cc7bafc09642580223b30d0b",
+    ".pi/extensions/pij/core/generation-routing.ts": "a27a9b6a470bba411f3841821c5489b5e1ee7def208e2ac4b349aa93f487c105",
+    ".pi/extensions/pij/core/liveness-cost.test.ts": "f97cb04196b01f6fb4297ab1465b1ca79c6b6ff927904177b1f97e81950fff48",
+    ".pi/extensions/pij/daemon.bootstrap.test.ts": "c613290441318b49f434f574984685c3f6d77fcb9b58a2a281820a74639b4c88",
+    ".pi/extensions/pij/orchestration-notice.integration.test.ts": "518eb21375fc0d25069ffe35868b129f964d10e56661fe76b7ead3a0aab9e521",
+    "crates/cli/src/client.rs": "9daf8f2c138d1dcb56ea84737e2b2965770b1fdb26359d83c7a31fab91750391",
+    "crates/daemon/src/delivery/mod.rs": "49230e30683d2dad5739e031452fb4031a0be94eccb8af67326924f3357077d0",
+    "crates/daemon/src/http/governance.rs": "30807635a5fd399bc14fe83521b58640157512aff0a9f704dd3e81e03df33651",
+    "crates/daemon/src/http/mod.rs": "ba900aa3cb0ff499ba235863896ae1d8c054db47ff078001de170321a7e4fa8b",
+    "crates/daemon/src/http/native_tests.rs": "a218e5fdf5e00583de7175dc630ae9f2661d6656035cb69356b4ad72b3624990",
+    "crates/daemon/src/http/shim.rs": "7423a5def2e37d9a8dd1378da7019758e6d95cadd2382664a6fc7c8413caf6d7",
+    "crates/daemon/src/http/tests.rs": "953892c7258cb3a1ef26f4b661cce31d1b4afc7b1f6ea8c80b9f3d6a8b175c2d",
+    "crates/daemon/src/http/types.rs": "6faf7624d02935310240311c7a1e7bb735859e0386df230f3dfb955e58bd14e0",
+    "crates/daemon/src/registration.rs": "55724ab8e3317e84858bd38650a2c4222b5825c3687a1901b482602dccac3fff",
+    "crates/daemon/tests/governance_notices.rs": "09978de27bb1f286ba9ee60a5a4e8547e0544587b7ab6f8761b77a62bd0a02ae",
+    "crates/daemon/tests/shim_http.rs": "a7fbd6ef2fee582214c38b45938467b40c4f95176fb154a611f01ece85658137",
+    "harness/driver/governance-external.ts": "bb66a2e3c5831e0507549f02767fead45d2a19e8a2c5bcea89bd4f221f527141",
+    "harness/driver/governance-fixture.ts": "7418cb650040674581610863b4ec563d3df894e7192187d586d9235245532f9a",
+    "harness/driver/governance-host.mjs": "0287092210334c11fd8ddbb1db5722370ad99183a0c31c7e4e0fec2b15a3ad47",
+    "harness/scripts/smoke.test.ts": "49201e1c005b0dcb7c5b9688a28cb222e01b419abd3a542b00dabf56aa853dd9",
+    "harness/scripts/smoke.ts": "1bdbd87461e1296b3d827c9fb3ce560d2ed255676b944ab7086d17ec1bc38551"
+  },
+  "history": {
+    "previous_capture_commit": "78531a0ba2f22469ab72289ba9ff6c1635e863e7",
+    "previous_corpus_sha256": "acc298253130983221f5995a459ec8406cef0e9c50fe9d635aad873be6469370",
+    "refreshed_for": "Verified paneless admission and required honest keeper notice behavior, including current baton-request notice field"
+  },
+  "list_here_capture": {
+    "captured_at": "2026-09-08T12:07:58.113202+10:00",
+    "method": "same-private-real-daemon-native-vs-shim",
+    "daemon": "http://127.0.0.1:62902",
+    "cwd": "/private/tmp/pij-list-here-smoke.uIGZo2/here",
+    "adapters": "real; isolated HOME and SQLite; only owned observed process registrations",
+    "production_touched": false,
+    "binary_sha256": "4041804e87fab0c366ad8b6aedf675dac286ef61d600511780095d34ec1cb7e2",
+    "pairs": [
+      {
+        "argv": [
+          "list",
+          "--here",
+          "--json"
+        ],
+        "native": {
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-smoke-here\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":57666,\"proc_start\":20260908120535},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/here\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+          "stderr": "",
+          "stdout_sha256": "7527e508d1ddb5e642bafa6f802d340f5e96a1a3095e7ba891bd817c95d57f45"
+        },
+        "shim": {
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-smoke-here\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":57666,\"proc_start\":20260908120535},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/here\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+          "stderr": "",
+          "stdout_sha256": "7527e508d1ddb5e642bafa6f802d340f5e96a1a3095e7ba891bd817c95d57f45"
+        },
+        "byte_equal": true,
+        "ids": [
+          "pij-smoke-here"
+        ]
+      },
+      {
+        "argv": [
+          "list",
+          "--here=true",
+          "--json"
+        ],
+        "native": {
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-smoke-here\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":57666,\"proc_start\":20260908120535},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/here\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+          "stderr": "",
+          "stdout_sha256": "7527e508d1ddb5e642bafa6f802d340f5e96a1a3095e7ba891bd817c95d57f45"
+        },
+        "shim": {
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-smoke-here\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":57666,\"proc_start\":20260908120535},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/here\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+          "stderr": "",
+          "stdout_sha256": "7527e508d1ddb5e642bafa6f802d340f5e96a1a3095e7ba891bd817c95d57f45"
+        },
+        "byte_equal": true,
+        "ids": [
+          "pij-smoke-here"
+        ]
+      },
+      {
+        "argv": [
+          "list",
+          "--here=false",
+          "--json"
+        ],
+        "native": {
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-smoke-away\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":15646,\"proc_start\":20260908120647},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/away\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"},{\"id\":\"pij-smoke-here\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":57666,\"proc_start\":20260908120535},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/here\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+          "stderr": "",
+          "stdout_sha256": "c039e5ecc4ef931f7d0f0b523f2250d21263470bebf5341a9e9f853392a80d72"
+        },
+        "shim": {
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-smoke-away\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":15646,\"proc_start\":20260908120647},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/away\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"},{\"id\":\"pij-smoke-here\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":57666,\"proc_start\":20260908120535},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/here\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+          "stderr": "",
+          "stdout_sha256": "c039e5ecc4ef931f7d0f0b523f2250d21263470bebf5341a9e9f853392a80d72"
+        },
+        "byte_equal": true,
+        "ids": [
+          "pij-smoke-away",
+          "pij-smoke-here"
+        ]
+      },
+      {
+        "argv": [
+          "list",
+          "--json"
+        ],
+        "native": {
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-smoke-away\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":15646,\"proc_start\":20260908120647},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/away\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"},{\"id\":\"pij-smoke-here\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":57666,\"proc_start\":20260908120535},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/here\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+          "stderr": "",
+          "stdout_sha256": "c039e5ecc4ef931f7d0f0b523f2250d21263470bebf5341a9e9f853392a80d72"
+        },
+        "shim": {
+          "exit": 0,
+          "stdout": "{\"ok\":true,\"command\":\"pij seats\",\"v\":2,\"data\":{\"seats\":[{\"id\":\"pij-smoke-away\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":15646,\"proc_start\":20260908120647},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/away\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"},{\"id\":\"pij-smoke-here\",\"machine\":\"JordansacStudio.localdomain\",\"harness\":\"omp\",\"session\":null,\"pane\":null,\"proc\":{\"pid\":57666,\"proc_start\":20260908120535},\"folder\":\"/private/tmp/pij-list-here-smoke.uIGZo2/here\",\"state\":\"idle\",\"semantic_state\":null,\"role\":null,\"parent\":null,\"relay\":false,\"native_extension_delivery\":false,\"generation\":\"rs\"}],\"unavailable\":[]}}\n",
+          "stderr": "",
+          "stdout_sha256": "c039e5ecc4ef931f7d0f0b523f2250d21263470bebf5341a9e9f853392a80d72"
+        },
+        "byte_equal": true,
+        "ids": [
+          "pij-smoke-away",
+          "pij-smoke-here"
+        ]
+      }
+    ],
+    "refusals": [
+      {
+        "argv": [
+          "list",
+          "--here=/elsewhere",
+          "--json"
+        ],
+        "native": {
+          "exit": 2,
+          "stdout": "{\"ok\":false,\"command\":\"pij seats\",\"v\":2,\"meta\":\"E-RS-ARG --here is a boolean; scope comes from caller cwd\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-ARG\"}}\n",
+          "stderr": "",
+          "stdout_sha256": "21554f6a3bcfbd65abb4b2de1247364ba546bd7736f9f221c1333c57929f1c38"
+        }
+      },
+      {
+        "argv": [
+          "list",
+          "--here",
+          "relative",
+          "--json"
+        ],
+        "native": {
+          "exit": 2,
+          "stdout": "{\"ok\":false,\"command\":\"pij seats\",\"v\":2,\"meta\":\"E-RS-ARG unexpected argument relative\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-ARG\"}}\n",
+          "stderr": "",
+          "stdout_sha256": "4fdede9b5d1907bb3abe6826fddedb65f98f6596cf65c24c0c017ebef39d3484"
+        }
+      },
+      {
+        "path": "/v1/seats?here=relative",
+        "http": {
+          "status": 400,
+          "body": "{\"ok\":false,\"command\":\"pij seats\",\"v\":2,\"meta\":\"E-RS-ARG here requires an absolute path, never bare true or daemon cwd\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-ARG\"}}"
+        }
+      },
+      {
+        "path": "/v1/seats?here=true",
+        "http": {
+          "status": 400,
+          "body": "{\"ok\":false,\"command\":\"pij seats\",\"v\":2,\"meta\":\"E-RS-ARG here requires an absolute path, never bare true or daemon cwd\",\"error\":\"refused\",\"details\":{\"code\":\"E-RS-ARG\"}}"
+        }
+      }
+    ]
+  }
+}

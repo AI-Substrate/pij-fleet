@@ -1,0 +1,16 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "flow-pair/delegation",
+	"title": "DelegationRecord",
+	"type": "object",
+	"required": ["delegationId", "runId", "taskRef", "packetPath", "createdAt", "status"],
+	"properties": {
+		"delegationId": { "type": "string", "pattern": "^dlg-\\d{4}$" },
+		"runId": { "type": "string" },
+		"taskRef": { "type": "string" },
+		"packetPath": { "type": "string" },
+		"createdAt": { "type": "string", "format": "date-time" },
+		"status": { "type": "string", "enum": ["pending", "accepted", "fix_required"] }
+	},
+	"additionalProperties": false
+}

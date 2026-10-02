@@ -1,0 +1,36 @@
+[package]
+name = "pij-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The client half. `clap` is the verb surface; `reqwest` talks to the daemon over
+# loopback; `tokio` is the runtime both halves share.
+[dependencies]
+clap = { workspace = true }
+nix = { workspace = true }
+pij-core = { workspace = true }
+pij-daemon = { workspace = true }
+pij-harnesses = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+axum = { workspace = true }
+pij-store = { workspace = true }
+pij-testkit = { workspace = true }
+time = { workspace = true, features = ["parsing"] }
+
+# The workspace's ONLY binary. `daemon` and `cli` are two composition roots inside
+# it (plan 108 R2): one artifact ships both, so a stale CLI can never meet a newer
+# daemon on the same machine.
+[[bin]]
+name = "pij-rs"
+path = "src/main.rs"

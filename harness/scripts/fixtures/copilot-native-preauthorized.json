@@ -1,0 +1,329 @@
+{
+	"source": {
+		"receipt": "docs/plans/137-copilot-native-extension/assets/evidence/pm-native-spawned-probe-01.json",
+		"source_commit": "51973efc42a1beb5435764d8a57437b1bb3d1f3d",
+		"run": "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-copilot-native-SHK7Zg",
+		"native_events": "home/.copilot/session-state/3f04db77-de4c-4992-991d-9f59600fecce/events.jsonl",
+		"jobs": "daemon/pij.sqlite:jobs:2",
+		"timing": "Retained receipt frame plus subsequently read native log and durable job; not an atomic snapshot",
+		"grade": "Actual local-fixture probe, not real inference or simulated human approval"
+	},
+	"launch": {
+		"seat": {
+			"id": "pij-dreadful-orangutan",
+			"machine": "JordansacStudio.localdomain",
+			"harness": "copilot",
+			"session": "3f04db77-de4c-4992-991d-9f59600fecce",
+			"pane": "%3",
+			"proc": {
+				"pid": 19472,
+				"proc_start": 20260905141304
+			},
+			"folder": "/private/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-copilot-native-SHK7Zg/workspace",
+			"state": "idle",
+			"semantic_state": null,
+			"role": null,
+			"parent": null,
+			"relay": false,
+			"cross_session_inbound_accept": false,
+			"native_extension_delivery": true,
+			"spawn_id": "s-2a657691f02f69a97eabe4d95b025f5e",
+			"generation": "rs"
+		},
+		"process": "19472 19429 Sat  5 Sep 14:13:04 2026     /Users/jordanknight/.npm-global/lib/node_modules/@github/copilot/node_modules/@github/copilot-darwin-arm64/copilot --no-custom-instructions --disable-builtin-mcps --no-remote --no-auto-update --allow-tool=pij_send --yolo"
+	},
+	"expected": {
+		"pane": "%3",
+		"to": "pij-scrawny-tochee",
+		"message": "PIJ_NATIVE_a98c2511-77ec-4de8-b4c2-c8c7f2098974"
+	},
+	"incoming_event_id": "fd52bfdc-03e0-47b8-a5c2-3673127ebca1",
+	"native_events": [
+		{
+			"type": "session.start",
+			"data": {
+				"sessionId": "3f04db77-de4c-4992-991d-9f59600fecce",
+				"version": 1,
+				"producer": "copilot-agent",
+				"copilotVersion": "1.0.84-0",
+				"startTime": "2026-09-05T04:13:05.169Z",
+				"selectedModel": "pij-native-fixture",
+				"contextTier": null,
+				"context": {
+					"cwd": "/private/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-copilot-native-SHK7Zg/workspace"
+				},
+				"alreadyInUse": false,
+				"remoteSteerable": false
+			},
+			"id": "58175fb4-5515-4651-ad33-708903caff2b",
+			"timestamp": "2026-09-05T04:13:05.183Z",
+			"parentId": null
+		},
+		{
+			"type": "session.permissions_changed",
+			"data": {
+				"previousAllowAllPermissions": false,
+				"allowAllPermissions": true,
+				"previousAllowAllPermissionMode": "off",
+				"allowAllPermissionMode": "on"
+			},
+			"id": "71402756-8727-49e6-92f2-f898a6c0155b",
+			"timestamp": "2026-09-05T04:13:05.185Z",
+			"parentId": "58175fb4-5515-4651-ad33-708903caff2b"
+		},
+		{
+			"type": "session.model_change",
+			"data": {
+				"source": "startup",
+				"contextTier": null,
+				"newModel": "pij-native-fixture",
+				"previousModel": "pij-native-fixture",
+				"reasoningEffort": null
+			},
+			"id": "9400554d-b678-482c-b259-9fb9583f1fec",
+			"timestamp": "2026-09-05T04:13:05.277Z",
+			"parentId": "71402756-8727-49e6-92f2-f898a6c0155b"
+		},
+		{
+			"type": "user.message",
+			"data": {
+				"content": "[pij from \"pij-scrawny-tochee\"; msg_id=\"4226e0d2-d56f-4164-a11b-9e02435055db\"]\nNative transport smoke. Call the pij_send tool exactly once with the following JSON, then say PIJ_NATIVE_DONE. Do not call other tools.\nPIJ_NATIVE_SEND:{\"to\":\"pij-scrawny-tochee\",\"message\":\"PIJ_NATIVE_a98c2511-77ec-4de8-b4c2-c8c7f2098974\"}",
+				"transformedContent": "<current_datetime>2026-09-05T14:13:05.646+10:00</current_datetime>\n\n[pij from \"pij-scrawny-tochee\"; msg_id=\"4226e0d2-d56f-4164-a11b-9e02435055db\"]\nNative transport smoke. Call the pij_send tool exactly once with the following JSON, then say PIJ_NATIVE_DONE. Do not call other tools.\nPIJ_NATIVE_SEND:{\"to\":\"pij-scrawny-tochee\",\"message\":\"PIJ_NATIVE_a98c2511-77ec-4de8-b4c2-c8c7f2098974\"}",
+				"messageId": "738265f2-a3a9-4e05-96b1-c83f36884f6e",
+				"supportedNativeDocumentMimeTypes": [],
+				"delivery": "idle",
+				"interactionId": "79e1681b-d55a-4bd2-83fb-78ffba465f9d",
+				"turnId": "0",
+				"parentAgentTaskId": "016d37bf-2fbc-4fad-b05c-8d1187c96e42"
+			},
+			"id": "fd52bfdc-03e0-47b8-a5c2-3673127ebca1",
+			"timestamp": "2026-09-05T04:13:05.646Z",
+			"parentId": "9400554d-b678-482c-b259-9fb9583f1fec"
+		},
+		{
+			"type": "system.message",
+			"data": {
+				"role": "system",
+				"content": "[Copilot CLI system prompt redacted from fixture]",
+				"interactionId": "79e1681b-d55a-4bd2-83fb-78ffba465f9d"
+			},
+			"id": "6989e160-71bc-4aa6-9125-2a31845d7b93",
+			"timestamp": "2026-09-05T04:13:05.650Z",
+			"parentId": "fd52bfdc-03e0-47b8-a5c2-3673127ebca1"
+		},
+		{
+			"type": "assistant.turn_start",
+			"data": {
+				"turnId": "0",
+				"interactionId": "79e1681b-d55a-4bd2-83fb-78ffba465f9d"
+			},
+			"id": "2a42e556-1417-436e-bbd7-82f4c57f9464",
+			"timestamp": "2026-09-05T04:13:05.651Z",
+			"parentId": "6989e160-71bc-4aa6-9125-2a31845d7b93"
+		},
+		{
+			"type": "assistant.message",
+			"data": {
+				"messageId": "91547de9-3763-4002-b67e-791cef7c03ff",
+				"model": "pij-native-fixture",
+				"content": "",
+				"toolRequests": [
+					{
+						"toolCallId": "call_1dac4317-481f-4cd3-9eb7-ef00b498c958",
+						"name": "pij_send",
+						"arguments": {
+							"to": "pij-scrawny-tochee",
+							"message": "PIJ_NATIVE_a98c2511-77ec-4de8-b4c2-c8c7f2098974"
+						},
+						"type": "function"
+					}
+				],
+				"interactionId": "79e1681b-d55a-4bd2-83fb-78ffba465f9d",
+				"turnId": "0",
+				"rte": false,
+				"apiCallId": "chatcmpl-a0b9b2ef-cd43-4828-ac2e-0ff400c5749a"
+			},
+			"id": "4ef34b8d-b69b-4b12-8088-6396e18ab265",
+			"timestamp": "2026-09-05T04:13:05.672Z",
+			"parentId": "2a42e556-1417-436e-bbd7-82f4c57f9464"
+		},
+		{
+			"type": "tool.execution_start",
+			"data": {
+				"toolCallId": "call_1dac4317-481f-4cd3-9eb7-ef00b498c958",
+				"toolName": "pij_send",
+				"arguments": {
+					"to": "pij-scrawny-tochee",
+					"message": "PIJ_NATIVE_a98c2511-77ec-4de8-b4c2-c8c7f2098974"
+				},
+				"turnId": "0",
+				"model": "pij-native-fixture"
+			},
+			"id": "4e151616-c99c-4c0b-ae1d-3172abb5d2d9",
+			"timestamp": "2026-09-05T04:13:05.672Z",
+			"parentId": "4ef34b8d-b69b-4b12-8088-6396e18ab265"
+		},
+		{
+			"type": "external_tool.requested",
+			"data": {
+				"requestId": "f13ea7ca-1f36-416f-a043-c6200b21a631",
+				"sessionId": "3f04db77-de4c-4992-991d-9f59600fecce",
+				"toolCallId": "call_1dac4317-481f-4cd3-9eb7-ef00b498c958",
+				"toolName": "pij_send",
+				"arguments": {
+					"to": "pij-scrawny-tochee",
+					"message": "PIJ_NATIVE_a98c2511-77ec-4de8-b4c2-c8c7f2098974"
+				},
+				"workingDirectory": "/private/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-copilot-native-SHK7Zg/workspace"
+			},
+			"id": "fce7e381-063c-4445-a661-617f557ed60f",
+			"timestamp": "2026-09-05T04:13:05.673Z",
+			"parentId": "4e151616-c99c-4c0b-ae1d-3172abb5d2d9"
+		},
+		{
+			"type": "external_tool.completed",
+			"data": {
+				"requestId": "f13ea7ca-1f36-416f-a043-c6200b21a631"
+			},
+			"id": "f9a29ffa-eff0-4c0a-b992-2ae96d089734",
+			"timestamp": "2026-09-05T04:13:05.678Z",
+			"parentId": "fce7e381-063c-4445-a661-617f557ed60f"
+		},
+		{
+			"type": "tool.execution_complete",
+			"data": {
+				"toolCallId": "call_1dac4317-481f-4cd3-9eb7-ef00b498c958",
+				"model": "pij-native-fixture",
+				"interactionId": "79e1681b-d55a-4bd2-83fb-78ffba465f9d",
+				"turnId": "0",
+				"rte": false,
+				"success": true,
+				"result": {
+					"content": "{\"ok\":true,\"receipt\":{\"msg_id\":\"51a3a718-76c5-417b-a0f4-9f20d8f5c133\",\"outcome\":{\"outcome\":\"queued\",\"reason\":\"extension-stream\",\"next_retry_at\":0},\"at\":1788581585676},\"grade\":\"pij-receipt-not-model-complete\"}",
+					"detailedContent": "{\"ok\":true,\"receipt\":{\"msg_id\":\"51a3a718-76c5-417b-a0f4-9f20d8f5c133\",\"outcome\":{\"outcome\":\"queued\",\"reason\":\"extension-stream\",\"next_retry_at\":0},\"at\":1788581585676},\"grade\":\"pij-receipt-not-model-complete\"}"
+				},
+				"toolTelemetry": {}
+			},
+			"id": "97e4d963-75ec-4b54-b525-0b9561b807b2",
+			"timestamp": "2026-09-05T04:13:05.678Z",
+			"parentId": "f9a29ffa-eff0-4c0a-b992-2ae96d089734"
+		},
+		{
+			"type": "assistant.turn_end",
+			"data": {
+				"turnId": "0"
+			},
+			"id": "42aea1c9-e877-4010-ab5d-777cd157bec2",
+			"timestamp": "2026-09-05T04:13:05.679Z",
+			"parentId": "97e4d963-75ec-4b54-b525-0b9561b807b2"
+		},
+		{
+			"type": "assistant.turn_start",
+			"data": {
+				"turnId": "1",
+				"interactionId": "79e1681b-d55a-4bd2-83fb-78ffba465f9d"
+			},
+			"id": "70d11106-15f2-4d2e-a104-fda3810437f7",
+			"timestamp": "2026-09-05T04:13:05.679Z",
+			"parentId": "42aea1c9-e877-4010-ab5d-777cd157bec2"
+		},
+		{
+			"type": "assistant.message",
+			"data": {
+				"messageId": "d4416b5d-0beb-43e8-96cf-f806ea2decca",
+				"model": "pij-native-fixture",
+				"content": "PIJ_NATIVE_DONE",
+				"toolRequests": [],
+				"interactionId": "79e1681b-d55a-4bd2-83fb-78ffba465f9d",
+				"turnId": "1",
+				"rte": false,
+				"apiCallId": "chatcmpl-829a2c89-a804-43d9-9c72-58f340b0e255"
+			},
+			"id": "ea773d31-cb28-4e88-9812-c12f76f33807",
+			"timestamp": "2026-09-05T04:13:05.696Z",
+			"parentId": "70d11106-15f2-4d2e-a104-fda3810437f7"
+		},
+		{
+			"type": "assistant.turn_end",
+			"data": {
+				"turnId": "1"
+			},
+			"id": "b89834a5-dc6b-412a-a57f-75d3881eae4b",
+			"timestamp": "2026-09-05T04:13:05.696Z",
+			"parentId": "ea773d31-cb28-4e88-9812-c12f76f33807"
+		},
+		{
+			"type": "session.shutdown",
+			"data": {
+				"shutdownType": "routine",
+				"totalPremiumRequests": 0,
+				"totalNanoAiu": 0,
+				"totalApiDurationMs": 4,
+				"sessionStartTime": 1788581585169,
+				"eventsFileSizeBytes": 36053,
+				"codeChanges": {
+					"linesAdded": 0,
+					"linesRemoved": 0,
+					"filesModified": []
+				},
+				"modelMetrics": {
+					"pij-native-fixture": {
+						"requests": {
+							"count": 2,
+							"cost": 0
+						},
+						"usage": {
+							"inputTokens": 2,
+							"outputTokens": 2,
+							"cacheReadTokens": 0,
+							"cacheWriteTokens": 0,
+							"reasoningTokens": 0
+						},
+						"totalNanoAiu": 0
+					}
+				},
+				"agentMetrics": {
+					"main": {
+						"totalApiDurationMs": 4,
+						"totalNanoAiu": 0,
+						"modelMetrics": {
+							"pij-native-fixture": {
+								"requests": {
+									"count": 2,
+									"cost": 0
+								},
+								"usage": {
+									"inputTokens": 2,
+									"outputTokens": 2,
+									"cacheReadTokens": 0,
+									"cacheWriteTokens": 0,
+									"reasoningTokens": 0
+								},
+								"totalNanoAiu": 0
+							}
+						}
+					}
+				},
+				"currentModel": "pij-native-fixture",
+				"currentTokens": 16927,
+				"systemTokens": 6281,
+				"conversationTokens": 336,
+				"toolDefinitionsTokens": 10307
+			},
+			"id": "0cd40209-7a1c-497d-a61d-8944a9242619",
+			"timestamp": "2026-09-05T04:14:35.969Z",
+			"parentId": "b89834a5-dc6b-412a-a57f-75d3881eae4b"
+		}
+	],
+	"jobs": [
+		{
+			"id": 2,
+			"kind": "delivery:pij-scrawny-tochee",
+			"state": "done",
+			"serial_key": "pij-scrawny-tochee",
+			"dedupe_key": "51a3a718-76c5-417b-a0f4-9f20d8f5c133",
+			"payload": "{\"from\":\"pij-dreadful-orangutan\",\"to\":\"pij-scrawny-tochee\",\"body\":\"PIJ_NATIVE_a98c2511-77ec-4de8-b4c2-c8c7f2098974\",\"msg_id\":\"51a3a718-76c5-417b-a0f4-9f20d8f5c133\",\"native_target_session\":\"a07d2f8d-69b8-4a93-a733-3cf5c08e8c34\"}"
+		}
+	],
+	"terminal": "Current   Sessions   Issues   Pull requests   Gists \n\n  ╭─╮╭─╮\n  ╰─╯╰─╯  Copilot v1.0.84-0 uses AI.\n  █ ▘▝ █  /experimental\n   ▔▔▔▔ \n\n ! Model \"pij-native-fixture\" is not in the built-in catalog. Using defaults for: prompt tokens (COPILOT_PROVIDER_MAX_PROMPT_TOKENS), output tokens \n   (COPILOT_PROVIDER_MAX_OUTPUT_TOKENS). Run  copilot help providers  for configuration details.\n\n ● Tip: /model\n   └ Select the AI model for this session (use 'auto' to let Copilot pick automatically). Use /config model to set the user default, '--repo'/'--local' to set\n     the repo default, or 'plan'/'--plan' to set the plan-mode model.\n ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n  ❯ [pij from \"pij-scrawny-tochee\"; msg_id=\"4226e0d2-d56f-4164-a11b-9e02435055db\"]                                                                     14:13  \n    Native transport smoke. Call the pij_send tool exactly once with the following JSON, then say PIJ_NATIVE_DONE. Do not call other tools.                   \n    PIJ_NATIVE_SEND:{\"to\":\"pij-scrawny-tochee\",\"message\":\"PIJ_NATIVE_a98c2511-77ec-4de8-b4c2-c8c7f2098974\"}                                                   \n ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n ● pij_send to: \"pij-scrawny-tochee\", message: \"PIJ_NATIVE_a98c2511-77ec-4de… {\"ok\":true,\"receipt\":{\"msg_id\":\"51a3a718-76c5-417b-a0f4-9f20d8f5c133\",\"outcom...\n\n ● PIJ_NATIVE_DONE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n /private/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-copilot-native-SHK7Zg/workspace\n╻▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n┃  \n╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n ← open sidebar · / commands · ? help · tab next tab                                                                                         pij-native-fixture"
+}

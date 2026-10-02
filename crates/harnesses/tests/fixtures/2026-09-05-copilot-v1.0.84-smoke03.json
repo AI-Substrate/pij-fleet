@@ -1,0 +1,26 @@
+{
+  "source": {
+    "receipt": "docs/plans/137-copilot-native-extension/assets/evidence/pm-native-local-03.json",
+    "capture_pointer": "/final_pane_captures/1/terminal",
+    "matching_capture_pointer": "/witnesses/2/pane",
+    "pane": "%2",
+    "copilot_version": "1.0.84-0",
+    "provider": "deterministic-local-fixture-not-real-inference",
+    "receipt_started": "2026-09-05T00:40:06.290Z",
+    "receipt_finished": "2026-09-05T00:41:46.340Z",
+    "sanitization": "Only the workspace path in terminal is replaced by <workspace>; all other capture bytes are unchanged."
+  },
+  "cursor": null,
+  "cursor_note": "The receipt does not record cursor_x or cursor_y for this capture. No snapshot cursor is synthesized.",
+  "retained_terminal_output": {
+    "source": "<run>/daemon/pane-signals/_2.raw",
+    "run_pointer": "/run in the source receipt",
+    "raw": "\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m╴╶\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m  \u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m╴╶\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m▘▝\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m╴╶\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m  \u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m╴╶\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m▘▝\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m╴╶\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m  \u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m╴╶\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h\u001b[?25l\u001b[5;5H\u001b[38;2;95;237;131m▘▝\u001b[38;2;133;52;243m \u001b[m\u001b[46;3H\u001b[?25h",
+    "last_cursor_position_sequence": "\u001b[46;3H",
+    "cursor_x_zero_based": 2,
+    "cursor_y_zero_based": 45,
+    "note": "Coordinates decoded from the retained terminal cursor-position sequence, not a timestamp-paired tmux cursor observation for the capture."
+  },
+  "proof_limit": "The direct test proves footer recognition only. Snapshot cursor metadata is absent, so this fixture does not establish whole-composer recognition or native message delivery.",
+  "terminal": "Current   Sessions   Issues   Pull requests   Gists \n\n  ╭─╮╭─╮\n  ╰─╯╰─╯  Copilot v1.0.84-0 uses AI.\n  █ ▘▝ █  /experimental\n   ▔▔▔▔ \n\n ! Model \"pij-native-fixture\" is not in the built-in catalog. Using defaults for: prompt tokens (COPILOT_PROVIDER_MAX_PROMPT_TOKENS), output tokens \n   (COPILOT_PROVIDER_MAX_OUTPUT_TOKENS). Run  copilot help providers  for configuration details.\n\n ● Tip: /mcp\n   └ Manage MCP server configuration\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n <workspace>\n╻▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n┃  \n╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n ← open sidebar · / commands · ? help · tab next tab                                                                                         pij-native-fixture"
+}

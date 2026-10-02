@@ -1,0 +1,457 @@
+{
+  "packages": [
+    {
+      "name": "pij-core",
+      "id": "path+file:///workspace/pij/crates/core#pij-core@0.1.0",
+      "dependencies": [
+        {
+          "name": "async-trait",
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "thiserror",
+          "kind": null
+        },
+        {
+          "name": "pij-testkit",
+          "kind": "dev"
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        }
+      ]
+    },
+    {
+      "name": "pij-testkit",
+      "id": "path+file:///workspace/pij/crates/testkit#pij-testkit@0.1.0",
+      "dependencies": [
+        {
+          "name": "async-trait",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "thiserror",
+          "kind": null
+        },
+        {
+          "name": "toml",
+          "kind": null
+        }
+      ]
+    },
+    {
+      "name": "pij-store",
+      "id": "path+file:///workspace/pij/crates/store#pij-store@0.1.0",
+      "dependencies": [
+        {
+          "name": "async-trait",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "sqlx",
+          "kind": null
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        },
+        {
+          "name": "pij-testkit",
+          "kind": "dev"
+        },
+        {
+          "name": "mockall",
+          "kind": "dev"
+        }
+      ]
+    },
+    {
+      "name": "pij-tmux",
+      "id": "path+file:///workspace/pij/crates/tmux#pij-tmux@0.1.0",
+      "dependencies": [
+        {
+          "name": "async-trait",
+          "kind": null
+        },
+        {
+          "name": "getrandom",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        },
+        {
+          "name": "pij-testkit",
+          "kind": "dev"
+        }
+      ]
+    },
+    {
+      "name": "pij-harnesses",
+      "id": "path+file:///workspace/pij/crates/harnesses#pij-harnesses@0.1.0",
+      "dependencies": [
+        {
+          "name": "async-trait",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "sha2",
+          "kind": null
+        },
+        {
+          "name": "pij-testkit",
+          "kind": "dev"
+        }
+      ]
+    },
+    {
+      "name": "pij-transport",
+      "id": "path+file:///workspace/pij/crates/transport#pij-transport@0.1.0",
+      "dependencies": [
+        {
+          "name": "async-trait",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        }
+      ]
+    },
+    {
+      "name": "pij-sidecars",
+      "id": "path+file:///workspace/pij/crates/sidecars#pij-sidecars@0.1.0",
+      "dependencies": [
+        {
+          "name": "nix",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "reqwest",
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        },
+        {
+          "name": "async-trait",
+          "kind": "dev"
+        },
+        {
+          "name": "axum",
+          "kind": "dev"
+        },
+        {
+          "name": "pij-store",
+          "kind": "dev"
+        },
+        {
+          "name": "pij-testkit",
+          "kind": "dev"
+        }
+      ]
+    },
+    {
+      "name": "pij-daemon",
+      "id": "path+file:///workspace/pij/crates/daemon#pij-daemon@0.1.0",
+      "dependencies": [
+        {
+          "name": "async-trait",
+          "kind": null
+        },
+        {
+          "name": "axum",
+          "kind": null
+        },
+        {
+          "name": "getrandom",
+          "kind": null
+        },
+        {
+          "name": "globset",
+          "kind": null
+        },
+        {
+          "name": "hostname",
+          "kind": null
+        },
+        {
+          "name": "hyper-util",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "pij-harnesses",
+          "kind": null
+        },
+        {
+          "name": "pij-sidecars",
+          "kind": null
+        },
+        {
+          "name": "pij-store",
+          "kind": null
+        },
+        {
+          "name": "pij-testkit",
+          "kind": null
+        },
+        {
+          "name": "pij-tmux",
+          "kind": null
+        },
+        {
+          "name": "pij-transport",
+          "kind": null
+        },
+        {
+          "name": "pij-unisphere",
+          "kind": null
+        },
+        {
+          "name": "reqwest",
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "sha2",
+          "kind": null
+        },
+        {
+          "name": "time",
+          "kind": null
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        },
+        {
+          "name": "tokio-stream",
+          "kind": null
+        },
+        {
+          "name": "pij-store",
+          "kind": "dev"
+        },
+        {
+          "name": "pij-tmux",
+          "kind": "dev"
+        },
+        {
+          "name": "pij-transport",
+          "kind": "dev"
+        },
+        {
+          "name": "sqlx",
+          "kind": "dev"
+        },
+        {
+          "name": "tokio-stream",
+          "kind": "dev"
+        }
+      ]
+    },
+    {
+      "name": "pij-unisphere",
+      "id": "path+file:///workspace/pij/crates/unisphere#pij-unisphere@0.1.0",
+      "dependencies": [
+        {
+          "name": "async-trait",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        },
+        {
+          "name": "unisphere-adapter-claude",
+          "kind": null
+        },
+        {
+          "name": "unisphere-adapter-codex",
+          "kind": null
+        },
+        {
+          "name": "unisphere-adapter-copilot-cli",
+          "kind": null
+        },
+        {
+          "name": "unisphere-adapter-omp",
+          "kind": null
+        },
+        {
+          "name": "unisphere-loader-jsonl",
+          "kind": null
+        },
+        {
+          "name": "unisphere-sdk",
+          "kind": null
+        }
+      ]
+    },
+    {
+      "name": "pij-cli",
+      "id": "path+file:///workspace/pij/crates/cli#pij-cli@0.1.0",
+      "dependencies": [
+        {
+          "name": "clap",
+          "kind": null
+        },
+        {
+          "name": "nix",
+          "kind": null
+        },
+        {
+          "name": "pij-core",
+          "kind": null
+        },
+        {
+          "name": "pij-daemon",
+          "kind": null
+        },
+        {
+          "name": "pij-harnesses",
+          "kind": null
+        },
+        {
+          "name": "reqwest",
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "serde_json",
+          "kind": null
+        },
+        {
+          "name": "time",
+          "kind": null
+        },
+        {
+          "name": "tokio",
+          "kind": null
+        },
+        {
+          "name": "uuid",
+          "kind": null
+        },
+        {
+          "name": "axum",
+          "kind": "dev"
+        },
+        {
+          "name": "pij-store",
+          "kind": "dev"
+        },
+        {
+          "name": "pij-testkit",
+          "kind": "dev"
+        },
+        {
+          "name": "time",
+          "kind": "dev"
+        }
+      ]
+    }
+  ],
+  "workspace_members": [
+    "path+file:///workspace/pij/crates/core#pij-core@0.1.0",
+    "path+file:///workspace/pij/crates/testkit#pij-testkit@0.1.0",
+    "path+file:///workspace/pij/crates/store#pij-store@0.1.0",
+    "path+file:///workspace/pij/crates/tmux#pij-tmux@0.1.0",
+    "path+file:///workspace/pij/crates/harnesses#pij-harnesses@0.1.0",
+    "path+file:///workspace/pij/crates/transport#pij-transport@0.1.0",
+    "path+file:///workspace/pij/crates/sidecars#pij-sidecars@0.1.0",
+    "path+file:///workspace/pij/crates/daemon#pij-daemon@0.1.0",
+    "path+file:///workspace/pij/crates/unisphere#pij-unisphere@0.1.0",
+    "path+file:///workspace/pij/crates/cli#pij-cli@0.1.0"
+  ],
+  "version": 1
+}

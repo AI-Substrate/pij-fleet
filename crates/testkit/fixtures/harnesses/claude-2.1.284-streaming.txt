@@ -1,0 +1,70 @@
+
+ ▐▛███▛█   Claude Code v2.1.284
+▝▜██████▀  Sonnet 5.5 · Claude Max
+ ▝▝   ▝▝   /private/tmp/p157f/proj
+
+
+❯ Write a detailed 3000-word essay about volcanoes, in plain text, no tools.
+
+⏺ Fire Mountains: An Essay on Volcanoes
+
+  Introduction
+
+  Few natural features command as much awe, fear, and fascination as the volcano. A volcano is at once a mountain and a wound, a construction site and a demolition, a place where the interior of the planet reaches the
+  surface and briefly reveals what lies beneath the ground we walk on. For most of human history, volcanoes were explained through myth. The Romans imagined the forge of Vulcan beneath Etna and the islands of the
+  Mediterranean. Polynesian peoples told of Pele, the goddess who shaped and reshaped the Hawaiian Islands with lava. In Iceland, medieval writers described eruptions as the gateways to hell. Today we understand
+  volcanoes through the language of plate tectonics, geochemistry, and physics, yet the sense of wonder has not diminished. If anything, deeper knowledge has made volcanoes more remarkable, because it shows how
+  intimately they are tied to the workings of the entire Earth: its internal heat, the composition of its atmosphere, the history of its climate, and the fortunes of the life that lives on it.
+
+  This essay explores volcanoes from several angles: what they are and how they form, the different styles of eruption, the landforms they build, the hazards they pose, the ways scientists study and forecast them, their
+  influence on climate and life, their role in human history and culture, and the volcanic worlds beyond Earth. Together these themes show that volcanoes are not merely dramatic accidents of geology but central actors in
+  the story of our planet.
+
+  What a Volcano Is
+
+  At its simplest, a volcano is an opening in the crust of a planet through which molten rock, hot gases, and fragments of solid material escape onto the surface. The molten rock is called magma while it is underground
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  0% proj ⎇ main ⛓ registering… • Sonnet 5.5 • medium • 0/1.0M
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent

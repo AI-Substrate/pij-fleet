@@ -1,0 +1,4 @@
+Also, 2 FYIs were queued for you:
+1. [from pij-x, 14:02] build is green on main
+2. [from pij-y, 14:10] reviewer is idle
+   second line of the note

@@ -1,0 +1,53 @@
+{
+  "created": {
+    "id": "pij-fixture-135",
+    "harness": "omp",
+    "session": null,
+    "pane": null,
+    "proc": { "pid": 34915, "proc_start": 20260905092238 },
+    "folder": "/Users/jordanknight/pi-hacking/fs3-rs-boot-announce",
+    "state": "idle",
+    "semantic_state": null,
+    "role": null,
+    "parent": null,
+    "relay": false,
+    "model": "github-copilot/gpt-6-astra-1m",
+    "provider": "github-copilot",
+    "effort": "high",
+    "binding": "created"
+  },
+  "rebound": {
+    "id": "pij-fixture-135",
+    "harness": "omp",
+    "session": null,
+    "pane": null,
+    "proc": { "pid": 41080, "proc_start": 20260905092248 },
+    "folder": "/Users/jordanknight/pi-hacking/fs3-rs-boot-announce",
+    "state": "idle",
+    "semantic_state": null,
+    "role": null,
+    "parent": null,
+    "relay": false,
+    "model": "github-copilot/gpt-6-astra-1m",
+    "provider": "github-copilot",
+    "effort": "high",
+    "binding": "rebound"
+  },
+  "same": {
+    "id": "pij-fixture-135",
+    "harness": "omp",
+    "session": null,
+    "pane": null,
+    "proc": { "pid": 41080, "proc_start": 20260905092248 },
+    "folder": "/Users/jordanknight/pi-hacking/fs3-rs-boot-announce",
+    "state": "idle",
+    "semantic_state": null,
+    "role": null,
+    "parent": null,
+    "relay": false,
+    "model": "github-copilot/gpt-6-astra-1m",
+    "provider": "github-copilot",
+    "effort": "high",
+    "binding": "same"
+  }
+}

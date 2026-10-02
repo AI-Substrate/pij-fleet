@@ -1,0 +1,137 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Supersede in-flight runs for the same ref. Merging a queue of N PRs one by one
+# starts N full runs on main, and only the last tests the tree anyone ships —
+# the other N-1 verify intermediate states that exist for seconds. Measured:
+# five sequential merges burned five runs (3 matrix jobs each) where one was
+# needed.
+#
+# Safe here because every PR is already green on its own head before it merges,
+# so a main run re-verifies the MERGE RESULT rather than the change. The cost is
+# bisect precision: if commit 3 of 5 is what actually broke main, its run is
+# cancelled and only commit 5 reports red. That still says "main is broken",
+# which is the signal this run exists to produce; the culprit is then one
+# `gh run rerun` away.
+# Least privilege for a public repo: fork PRs get a read-only token.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # `just` is required by tests that exercise the repo's own recipes
+      # (e.g. the pij-bin-shape check). CI runs npm scripts directly, so install
+      # just explicitly rather than assume it on the runner.
+      - uses: extractions/setup-just@v2
+      - run: npm ci --min-release-age=null
+      # Lockfile source-host allowlist: every `resolved` URL must be an allowed
+      # registry host — a tampered lockfile fails LOUD, here, before anything is
+      # built. Tamper-detection, not silent install-time redirection.
+      - run: node_modules/.bin/tsx harness/scripts/lockfile-allowlist.ts
+      - run: npm run typecheck
+      - run: npm run lint
+      # Integration suites that drive a private Rust daemon (cli.inbox.integration,
+      # the watchdog smoke) need the debug pij-rs binary; build it here and make
+      # its presence REQUIRED so a missing binary fails loud instead of skipping.
+      - name: Install pinned Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked -p pij-cli --bin pij-rs
+      # npm test includes the integration suites that drive the real pij-rs
+      # binary built above, deterministic and in-CI.
+      - run: npm test
+        env:
+          PIJ_RS_BIN_REQUIRED: '1'
+      # Native extension contracts use node:test, outside Vitest's TS include.
+      - run: just copilot-native-test
+      # Dependency audit is a hard gate: the tree has no known high findings.
+      - run: npm audit --audit-level=high
+      # The live tmux Driver smoke (`just smoke`) stays local-only: it needs tmux
+      # and an OMP binary, which hosted runners do not have.
+
+  rust-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs exactly what rust-toolchain.toml pins, including rustfmt and
+      # clippy, so local and CI toolchains cannot drift.
+      - name: Install pinned Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: toolchain matches the pin
+        run: |
+          rustc --version
+          test "$(rustc --version | cut -d' ' -f2)" = "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+
+      # Run the cheap lockfile check before compilation. Plain cargo commands may
+      # update a stale Cargo.lock and hide a later --locked release failure.
+      - name: lockfile is current
+        run: cargo metadata --locked --format-version 1
+
+      - name: fmt
+        run: cargo fmt --all --check
+
+      - name: clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+  rust-test:
+    runs-on: ubuntu-latest
+    # Backstop only. nextest's per-test clock (.config/nextest.toml, profile
+    # `ci`) names a test at 30s and kills it at 60s, so a hung test fails the
+    # job in about a minute with its name in the log.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: build tests
+        run: cargo nextest run --locked --workspace --profile ci --no-run
+
+      # nextest does not run doctests.
+      - name: doctests
+        run: cargo test --locked --workspace --doc
+
+      - name: test
+        run: cargo nextest run --locked --workspace --profile ci
+
+      - name: upload the JUnit list of tests that ran
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-linux
+          path: target/nextest/ci/junit.xml
+

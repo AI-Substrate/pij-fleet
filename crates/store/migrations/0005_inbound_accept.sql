@@ -1,0 +1,12 @@
+-- The precondition for socket delivery, stamped at spawn.
+--
+-- NULL means UNKNOWN and unknown is treated as closed. It is a persisted seat
+-- fact rather than transport-local state because the alternative offered was a
+-- capability map inside the transport, and hidden parallel state about a seat is
+-- state no other surface can audit — `pij list` could not show it, and a stale
+-- entry would be invisible.
+--
+-- Measured, not assumed (u-uds, Claude 2.1.251): an authenticated frame to a seat
+-- without this setting is held behind a five-minute approval dialog and the
+-- socket returns nothing at all.
+ALTER TABLE seats ADD COLUMN cross_session_inbound_accept INTEGER;

@@ -1,0 +1,22 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "flow-pair/run",
+	"title": "RunRecord",
+	"type": "object",
+	"required": ["runId", "repoId", "runDir", "createdAt", "status"],
+	"properties": {
+		"runId": { "type": "string", "description": "Unique run identifier: <ISO-ts>-<repoId[0:20]>" },
+		"repoId": {
+			"type": "string",
+			"description": "Derived repo identity (host-owner-repo or basename-hash)"
+		},
+		"runDir": {
+			"type": "string",
+			"description": "Path to run directory (relative or absolute depending on ledgerRoot)"
+		},
+		"createdAt": { "type": "string", "format": "date-time" },
+		"status": { "type": "string", "enum": ["open", "closed"] },
+		"closedAt": { "type": "string", "format": "date-time" }
+	},
+	"additionalProperties": false
+}

@@ -1,0 +1,46 @@
+
+  Ran 1 shell command                                                                                                                                 
+
+❯ [pij from pij-extensive-echidna] ACK objection: u-gate cannot compile the required public permits_injection_fresh independently while               
+  composer_region/ComposerRegion are absent and my fence forbids their module. A test-only double cannot satisfy the non-test pij-gate build; a       
+  production stub would violate the no-placeholder/one-parser contract. Please provide the intended temporary compile seam or land u-observer's       
+  interface first. Also initial report failed before this seat was adopted; self is now pij-extensive-echidna.                                        
+
+⏺ Real seam objection from the u-gate coder — valid, and it exposes a wrong assumption in the fan-out. Answering it, then relaying.                   
+
+  Ran 1 shell command 
+
+❯ [pij from pij-scrawny-crawdad] ack clean. Extraction contract v2 understood; will preserve PendingClear and cursor clipping, use live-recorded      
+  fixtures, and prove Unrecognized red-first. Start card delay was identity bootstrap: adopted this OMP pane as pij-scrawny-crawdad.                  
+
+  Ran 3 shell commands                                                                                                                                
+
+⏺ Both coders ACKed. One was seam-touching and I ruled on it rather than absorbing it.
+                                                                                                                                                      
+  u-gate (pij-extensive-echidna) — objection accepted. It falsifies the impl-guide's fan-out rationale: "neither reads the other's unfinished code" is
+  true, but it assumed u-gate could compile without the seam. It can't — permits_injection_fresh is a non-test public method, and a test-only double
+  can't satisfy the pij-gate build. The coder refused to invent a production stub and asked for the intended seam, which was the right call.          
+                                                                                                                                                      
+  I refused to hand it one. A composer_region returning Unrecognized is a fleet-wide conservative veto that would turn no test red if the real      
+  extraction never landed — green-that-lies with a gate attached. Instead:                                                                            
+                                                                                                                                                      
+  - u-gate splits at the seam: idle expiry + self-echo start now, carrying ac-1111 (including the red-first parked-draft witness), ac-1112, ac-1113   
+    and both mutation proofs — the entire proof-heavy half.                                                                                 
+  - u-observer (pij-scrawny-crawdad, ack clean) lands the real extracted composer_region as its first push, ahead of its rewire and fixtures. I merge
+    it to s111/anti-step-on and release u-gate's blocked third.                                                                                    
+                                                                                                                                                      
+  I also warned u-observer to keep both sides runnable before the original rendered_composer is deleted — splitting its push makes it easy to         
+  characterise the new code against a git-reconstructed copy of itself.                                                                               
+                                                                                                                                                     
+  Recorded durably in assets/findings.md (3b37f187 + follow-up), because my context will compact before composition: the o-prime's trust-modal smoke 
+  trap (F-1111), the fresh-path staleness and cost limits (F-1112/1113), the fan-out compile error (F-1115), and F-1114 — both omp coders failed their
+  first pij report now and had to adopt their pane first. Two for two on fresh omp seats today; that looks like req-0003's third face, relayed to the
+  o-prime as data points rather than diagnosed by us.                                                                                               
+                                                                                                                                                      
+✻ Cooked for 2m 5s · done 7:04 pm                                                                                                                     
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ chase the coders for their part A reports                                                                                         
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  13% s111-anti-step-on ⎇ s111/anti-step-on ⛓ pij-middle-piranha • Opus 5 • medium • 130k/1.0M • 27% ↻20:30                                      /rc
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent   

@@ -1,0 +1,23 @@
+[package]
+name = "pij-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# `sqlx` is the store (workshop 001 R1): embedded migrations with a checksum
+# table, and an async-only API — which is why the ports are async (R3-AMEND-2).
+# `tokio` ships here because the connection pool needs a reactor; core stays
+# free of it, which is the line the arch gate actually defends.
+[dependencies]
+async-trait = { workspace = true }
+pij-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+pij-testkit = { workspace = true }

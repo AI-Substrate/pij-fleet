@@ -1,0 +1,4 @@
+# Ignore everything in .fs2/ except config.yaml
+*
+!.gitignore
+!config.yaml

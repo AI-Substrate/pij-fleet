@@ -1,0 +1,1 @@
+{"type":"control","action":"peer_message_status","status":"denied","reason":"The recipient user declined your message; it was not delivered to their Claude session.","from":"uds:/tmp/cc-socks/4242.sock","msgV":1,"msg_id":"3814ccc2-2f9e-494f-ac92-3468e8db541f"}

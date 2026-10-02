@@ -1,0 +1,70 @@
+
+  Introduction
+
+  A glacier is one of the slowest-moving forces on Earth, and it is also one of the most powerful. It forms where more snow falls in winter than melts in summer, year after year, until the accumulated weight transforms
+  the lowest layers into ice that begins to flow under its own mass. Glaciers currently cover about ten percent of the planet's land surface. They hold roughly two-thirds of the world's fresh water. They have carved some
+  of the most dramatic landscapes on Earth, including the fjords of Norway, the Great Lakes of North America, and the U-shaped valleys of the Alps. They also record the history of the atmosphere in their layers. Today
+  they are retreating, and their retreat is one of the clearest physical signals of a warming climate. This essay looks at how glaciers form, how they move, how they shape land, what they reveal about the past, and what
+  their decline means for the future.
+
+  How Glaciers Form
+
+  Every glacier begins as snow. When fresh snow falls, it is light and full of air, with a density of perhaps fifty to a hundred kilograms per cubic meter. In regions where summer melt does not remove the previous
+  winter's snowfall, layers accumulate. The weight of the upper layers compresses the lower ones, and the delicate six-sided snowflakes break down into rounded grains. Snow that survives at least one summer is called
+  firn, a granular material intermediate between snow and ice, with a density around four hundred to eight hundred kilograms per cubic meter.
+
+  As burial continues, the firn is squeezed further. Air passages between the grains close off, trapping tiny bubbles of ancient atmosphere. Eventually the material reaches a density of about 830 kilograms per cubic
+  meter and becomes glacial ice. The time this takes varies enormously. In a warm, wet maritime setting such as the coast of Alaska or New Zealand's Southern Alps, the transformation may take only a few years. In the
+  cold, dry interior of Antarctica, where snowfall is scant, it can take several thousand years and require burial under a hundred meters or more of overlying snow.
+
+  Glaciologists divide a glacier into two broad zones. The accumulation zone, usually at higher elevation, is where snowfall exceeds melting. The ablation zone, at lower elevation, is where melting, evaporation,
+  sublimation, and calving of icebergs exceed new snowfall. The boundary between them is called the equilibrium line. A glacier's health is judged by its mass balance, the difference between what
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ Run this bash command exactly, nothing else: sleep 40 && echo done
+
+  Ran 1 shell command
+
+⏺ The harness blocked the foreground sleep. I'll run the same command in the background, which is the option the block message suggests.
+
+  Ran 1 shell command
+
+⏺ The harness blocked the foreground sleep 40 && echo done, so I started the same command in the background. Its ID is bzcjqw0tn. I'll be notified when it finishes, and it should print "done" after about 40 seconds.
+
+✻ Brewed for 11s · done 11:32 pm
+
+⏺ Background command "sleep 40 && echo done" completed (exit code 0)
+
+⏺ The background command finished with exit code 0, so it should have printed "done". I didn't open the output file to check.
+
+✻ Worked for 2s · done 11:32 pm
+
+❯ Use the Write tool to create the file /tmp/p157f/proj/a.txt containing the word hi. Nothing else.
+
+⏺ Write(/tmp/p157f/proj/a.txt)
+  ⎿  User rejected write to ../../../../tmp/p157f/proj/a.txt
+      1 hi
+
+✻ Worked for 2s · done 11:34 pm
+
+❯ Run this exact bash command in the foreground (not background): python3 -c 'import time; time.sleep(45)'
+
+  Running python3 -c 'import time; time.sleep(45)'
+  ⎿  $ python3 -c 'import time; time.sleep(45)'
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command
+ Tip: auto mode handles these prompts for you — choose "switch to auto mode" below
+
+   python3 -c 'import time; time.sleep(45)'
+   Run shell command
+
+ This command requires approval
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don’t ask again for: python3 *
+   3. Yes, and switch to auto mode · auto mode handles these prompts for you
+   4. No
+
+ Esc to cancel · Tab to amend

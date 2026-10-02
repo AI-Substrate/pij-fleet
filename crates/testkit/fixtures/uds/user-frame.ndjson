@@ -1,0 +1,1 @@
+{"msgV":1,"msg_id":"msg-uds-001","type":"user","message":{"role":"user","content":"<cross-session-message from=\"uds:/tmp/cc-socks/pij-uds-fixture.sock\" from-name=\"pij-sender\">\n[pij-rs from pij-sender]\nfirst line\nsecond line\n[/pij]\n</cross-session-message>"},"priority":"next","from":"uds:/tmp/cc-socks/pij-uds-fixture.sock"}

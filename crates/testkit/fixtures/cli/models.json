@@ -1,0 +1,135 @@
+[
+  {
+    "id": "bartowski/deepreinforce-ai_Ornith-1.0-35B-GGUF:Q4_K_L",
+    "name": "Ornith 1.0 35B (Local)",
+    "provider": "local",
+    "runtime": "pi",
+    "selector": "local/bartowski/deepreinforce-ai_Ornith-1.0-35B-GGUF:Q4_K_L",
+    "requestModelId": "bartowski/deepreinforce-ai_Ornith-1.0-35B-GGUF:Q4_K_L",
+    "verified": true,
+    "reasoning": true,
+    "levels": [],
+    "contextWindow": 131072
+  },
+  {
+    "id": "claude-fable-5",
+    "name": "Claude Fable 5",
+    "provider": "claude",
+    "runtime": "claude",
+    "selector": "claude-fable-5",
+    "requestModelId": "claude-fable-5",
+    "verified": false
+  },
+  {
+    "id": "claude-opus-5",
+    "name": "Claude Opus 5",
+    "provider": "claude",
+    "runtime": "claude",
+    "selector": "claude-opus-5",
+    "requestModelId": "claude-opus-5",
+    "verified": false
+  },
+  {
+    "id": "fugu",
+    "name": "Sakana Fugu",
+    "provider": "sakana",
+    "runtime": "pi",
+    "selector": "sakana/fugu",
+    "requestModelId": "fugu",
+    "verified": true,
+    "reasoning": true,
+    "levels": [
+      "high",
+      "xhigh"
+    ],
+    "contextWindow": 1000000
+  },
+  {
+    "id": "gpt-5.4",
+    "name": "GPT-5.4",
+    "provider": "openai-codex",
+    "runtime": "omp",
+    "selector": "openai-codex/gpt-5.4",
+    "requestModelId": "gpt-5.4",
+    "verified": true,
+    "reasoning": true,
+    "levels": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "contextWindow": 1000000
+  },
+  {
+    "id": "gpt-5.5",
+    "name": "GPT-5.5 Long Context (Copilot)",
+    "provider": "github-copilot",
+    "runtime": "pi",
+    "selector": "github-copilot/gpt-5.5",
+    "requestModelId": "gpt-5.5",
+    "verified": true,
+    "reasoning": false,
+    "levels": [],
+    "contextWindow": 1050000
+  },
+  {
+    "id": "gpt-5.6-sol",
+    "name": "gpt-5.6-sol",
+    "provider": "codex",
+    "runtime": "codex",
+    "selector": "gpt-5.6-sol",
+    "requestModelId": "gpt-5.6-sol",
+    "verified": false,
+    "reasoning": true,
+    "levels": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  },
+  {
+    "id": "text-only-code-1",
+    "name": "Text-Only Code 1 (Copilot)",
+    "provider": "github-copilot",
+    "runtime": "pi",
+    "selector": "github-copilot/text-only-code-1",
+    "requestModelId": "text-only-code-1",
+    "verified": true,
+    "reasoning": true,
+    "levels": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "contextWindow": 256000
+  },
+  {
+    "id": "moonshotai/kimi-k3",
+    "name": "Kimi K3 (OpenRouter)",
+    "provider": "openrouter",
+    "runtime": "pi",
+    "selector": "openrouter/moonshotai/kimi-k3",
+    "requestModelId": "moonshotai/kimi-k3",
+    "verified": true,
+    "reasoning": true,
+    "levels": [
+      "xhigh"
+    ],
+    "contextWindow": 1048576
+  },
+  {
+    "id": "text-embedding-nomic-embed-text-v1.5",
+    "name": "text-embedding-nomic-embed-text-v1.5",
+    "provider": "lm-studio",
+    "runtime": "omp",
+    "selector": "lm-studio/text-embedding-nomic-embed-text-v1.5",
+    "requestModelId": "text-embedding-nomic-embed-text-v1.5",
+    "verified": true,
+    "reasoning": false,
+    "levels": [],
+    "contextWindow": 2048
+  }
+]

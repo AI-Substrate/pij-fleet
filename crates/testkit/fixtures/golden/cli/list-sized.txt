@@ -1,0 +1,6 @@
+  SEAT             HARNESS  STATE    CTX   IDLE  CACHE
+❄ pij-cold-claude  claude   idle     720k  2h    cold 1h
+  pij-warm-omp     omp      working  57k   3m    warm
+  pij-copilot      copilot  idle     ?     14m   warm
+  pij-far@laptop   claude   idle     -     -     -
+unavailable: nas (connection refused)

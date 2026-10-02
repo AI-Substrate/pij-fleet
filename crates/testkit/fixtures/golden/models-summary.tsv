@@ -1,0 +1,10 @@
+claude	claude	claude-fable-5	claude-fable-5	<none>
+claude	claude	claude-opus-5	claude-opus-5	<none>
+codex	codex	gpt-5.6-sol	gpt-5.6-sol	minimal/low/medium/high/xhigh
+omp	lm-studio	lm-studio/text-embedding-nomic-embed-text-v1.5	text-embedding-nomic-embed-text-v1.5	<none>
+omp	openai-codex	openai-codex/gpt-5.4	gpt-5.4	low/medium/high/xhigh
+pi	github-copilot	github-copilot/gpt-5.5	gpt-5.5	<none>
+pi	github-copilot	github-copilot/text-only-code-1	text-only-code-1	low/medium/high
+pi	local	local/bartowski/deepreinforce-ai_Ornith-1.0-35B-GGUF:Q4_K_L	bartowski/deepreinforce-ai_Ornith-1.0-35B-GGUF:Q4_K_L	<none>
+pi	openrouter	openrouter/moonshotai/kimi-k3	moonshotai/kimi-k3	xhigh
+pi	sakana	sakana/fugu	fugu	high/xhigh

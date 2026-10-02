@@ -1,0 +1,9 @@
+{
+  "seats": [
+    {"id": "pij-cold-claude", "machine": "studio", "harness": "claude", "state": "idle", "contextUsed": 720000, "idleMs": 7200000, "coldWake": {"wouldRefuse": true, "estimateUsd": 6.44889}, "sizeColumns": ["720k", "2h", "cold 1h", "❄"]},
+    {"id": "pij-warm-omp", "machine": "studio", "harness": "omp", "state": "working", "contextUsed": 57092, "idleMs": 180000, "coldWake": {"wouldRefuse": false}, "sizeColumns": ["57k", "3m", "warm", ""]},
+    {"id": "pij-copilot", "machine": "studio", "harness": "copilot", "state": "idle", "coldWake": {"wouldRefuse": false}, "sizeColumns": ["?", "14m", "warm", ""]},
+    {"id": "pij-far", "machine": "laptop", "harness": "claude", "state": "idle"}
+  ],
+  "unavailable": [{"machine": "nas", "reason": "connection refused"}]
+}

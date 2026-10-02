@@ -1,0 +1,51 @@
+[package]
+name = "pij-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# Composition root: it is the crate allowed to know about every adapter, which is
+# why the allow-list gives it the widest internal row in the workspace.
+# `pij-testkit` is NOT dev-only here — the fakes are the DEFAULT wiring, so the
+# shipped binary must contain them (offline-first, workshop 001 R2).
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+hyper-util = { workspace = true }
+getrandom = { workspace = true }
+globset = { workspace = true }
+hostname = { workspace = true }
+pij-core = { workspace = true }
+# Wired at wave-1 composition: the real LivenessPort adapter (u-liveness).
+pij-harnesses = { workspace = true }
+pij-sidecars = { workspace = true }
+pij-store = { workspace = true }
+# Wired at wave-1 composition: the real TmuxPort adapter (u-tmux).
+pij-tmux = { workspace = true }
+pij-transport = { workspace = true }
+pij-testkit = { workspace = true }
+# Wired for plan 157: the real SessionStatusPort adapter over unisphere-sdk.
+pij-unisphere = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
+tokio-stream = { workspace = true }
+
+# The end-to-end tests speak HTTP to the daemon over loopback, and use FreshStore
+# when they make the store real.
+[dev-dependencies]
+# first light drives the bus's public Stream contract.
+tokio-stream = { workspace = true }
+# The review regressions drive a real store and a real socket: the findings they
+# lock in were all invisible to unit-level doubles.
+pij-store = { workspace = true }
+# Wired at wave-1 composition: the real TmuxPort adapter (u-tmux).
+pij-tmux = { workspace = true }
+pij-transport = { workspace = true }
+sqlx = { workspace = true }

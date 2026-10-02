@@ -1,0 +1,51 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "flow-pair/review",
+	"title": "ReviewRecord",
+	"type": "object",
+	"required": ["reviewId", "runId", "delegationId", "verdict", "findings", "createdAt"],
+	"properties": {
+		"reviewId": {
+			"type": "string",
+			"pattern": "^rev-\\d{4}$"
+		},
+		"runId": {
+			"type": "string"
+		},
+		"delegationId": {
+			"type": "string"
+		},
+		"verdict": {
+			"type": "string",
+			"enum": ["APPROVE", "APPROVE_WITH_NOTES", "FIX_REQUIRED"]
+		},
+		"findings": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dimension", "severity", "message"],
+				"properties": {
+					"dimension": {
+						"type": "string"
+					},
+					"severity": {
+						"type": "string",
+						"enum": ["critical", "high", "medium", "low", "info"]
+					},
+					"message": {
+						"type": "string"
+					},
+					"file": {
+						"type": "string"
+					}
+				},
+				"additionalProperties": false
+			}
+		},
+		"createdAt": {
+			"type": "string",
+			"format": "date-time"
+		}
+	},
+	"additionalProperties": false
+}

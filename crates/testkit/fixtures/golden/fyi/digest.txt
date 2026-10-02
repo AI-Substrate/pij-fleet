@@ -1,0 +1,6 @@
+Also, 7 FYIs were queued for you: 4 from pij-x, 3 from pij-y. The newest 3:
+5. [from pij-x, 14:06] note 5
+6. [from pij-y, 14:07] note 6
+7. [from pij-x, 14:08] note 7
+   second line
+All 7 were delivered; read them in full with: pij-rs fyi-read --seat pij-r --claimed-at 1790690940000

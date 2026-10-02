@@ -1,0 +1,299 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "flow-pair/event",
+	"title": "LedgerEvent",
+	"description": "One line in events.jsonl \u2014 discriminated by the 'type' field.",
+	"oneOf": [
+		{
+			"title": "run.started",
+			"type": "object",
+			"required": ["type", "runId", "repoId", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "run.started"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"repoId": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"title": "run.closed",
+			"type": "object",
+			"required": ["type", "runId", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "run.closed"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"title": "delegation.created",
+			"type": "object",
+			"required": ["type", "runId", "delegationId", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "delegation.created"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"title": "prompt_trial.created",
+			"type": "object",
+			"required": ["type", "runId", "delegationId", "trialId", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "prompt_trial.created"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"trialId": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"title": "review.created",
+			"type": "object",
+			"required": ["type", "runId", "delegationId", "reviewId", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "review.created"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"reviewId": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"title": "learning.created",
+			"type": "object",
+			"required": ["type", "runId", "delegationId", "learningId", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "learning.created"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"learningId": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"title": "context_pack.created",
+			"type": "object",
+			"required": ["type", "runId", "delegationId", "packId", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "context_pack.created"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"packId": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"title": "packet.written",
+			"type": "object",
+			"required": ["type", "runId", "delegationId", "packetPath", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "packet.written"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"packetPath": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"title": "files.changed",
+			"type": "object",
+			"required": ["type", "runId", "delegationId", "diffId", "changedFiles", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "files.changed"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"diffId": {
+					"type": "string"
+				},
+				"changedFiles": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"required": ["type", "runId", "delegationId", "reviewId", "verdict", "at"],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "review.recorded"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"reviewId": {
+					"type": "string"
+				},
+				"verdict": {
+					"type": "string"
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"required": [
+				"type",
+				"runId",
+				"delegationId",
+				"reviewId",
+				"fixPacketId",
+				"fixPacketPath",
+				"allowedFiles",
+				"at"
+			],
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "fix_packet.written"
+				},
+				"runId": {
+					"type": "string"
+				},
+				"delegationId": {
+					"type": "string"
+				},
+				"reviewId": {
+					"type": "string"
+				},
+				"fixPacketId": {
+					"type": "string"
+				},
+				"fixPacketPath": {
+					"type": "string"
+				},
+				"allowedFiles": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				},
+				"at": {
+					"type": "string",
+					"format": "date-time"
+				}
+			},
+			"additionalProperties": false
+		}
+	]
+}

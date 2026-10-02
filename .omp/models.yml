@@ -1,0 +1,33 @@
+providers:
+  github-copilot:
+    # OMP 18.3.2 resolves --model before Copilot discovery loads, and its
+    # bundled catalog lacks claude-sonnet-5.5, so the selector silently
+    # degrades to claude-sonnet-5. A static entry keeps it resolvable; custom
+    # models require a provider baseUrl + auth (this machine's Copilot host).
+    baseUrl: https://api.enterprise.githubcopilot.com
+    auth: oauth
+    models:
+      - id: claude-sonnet-5.5
+        name: Claude Sonnet 5.5 1M (Copilot)
+        api: anthropic-messages
+        reasoning: true
+        input:
+          - text
+          - image
+        contextWindow: 1000000
+        maxTokens: 128000
+        compat:
+          forceAdaptiveThinking: true
+    modelOverrides:
+      claude-opus-5:
+        name: Claude Opus 5 1M (Copilot)
+        reasoning: true
+        contextWindow: 1000000
+        maxTokens: 64000
+        compat:
+          forceAdaptiveThinking: true
+      gemini-3.6-flash:
+        name: Gemini 3.6 Flash 1M (Copilot)
+        reasoning: true
+        contextWindow: 1000000
+        maxTokens: 64000

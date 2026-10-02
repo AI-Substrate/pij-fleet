@@ -1,0 +1,52 @@
+{
+	"name": "pij",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"bin": {
+		"pij": "harness/scripts/pij-cli.cjs",
+		"flow-pair": "skills/flow-pair/lib/cli.ts"
+	},
+	"description": "pij — a cross-harness control plane that lets coding agents (OMP, Claude Code, Copilot CLI, Codex) message, spawn and govern each other.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/AI-Substrate/pij-fleet.git"
+	},
+	"bugs": {
+		"url": "https://github.com/AI-Substrate/pij-fleet/issues"
+	},
+	"homepage": "https://github.com/AI-Substrate/pij-fleet#readme",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"smoke": "tsx harness/scripts/smoke.ts",
+		"link": "tsx harness/scripts/link-global.ts"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*",
+		"@github/copilot-sdk": "*",
+		"typebox": "*"
+	},
+	"peerDependenciesMeta": {
+		"@github/copilot-sdk": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.0.0",
+		"@types/node": "^22.0.0",
+		"tsx": "^4.23.0",
+		"typescript": "^5.9.0",
+		"vitest": "^4.1.10"
+	},
+	"engines": {
+		"node": ">=24",
+		"npm": ">=11"
+	}
+}

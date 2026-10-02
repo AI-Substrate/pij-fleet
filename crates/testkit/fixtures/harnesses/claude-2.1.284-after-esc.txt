@@ -1,0 +1,70 @@
+
+ ▐▛███▛█   Claude Code v2.1.284
+▝▜██████▀  Sonnet 5.5 · Claude Max
+ ▝▝   ▝▝   /private/tmp/p157f/proj
+
+
+❯ Write a detailed 3000-word essay about rivers, in plain text, no tools.
+
+⏺ The Life of Rivers: Arteries of the Earth
+
+  Introduction
+
+  A river is one of the simplest ideas humans have ever had, and one of the hardest to pin down. We point at a line of moving water and say "the Nile" or "the Mississippi," as if the name referred to a single, fixed
+  thing. It doesn't. The water in a river is never the same from one hour to the next. The channel shifts across decades. Its banks erode and rebuild. Its floods and droughts follow rhythms older than any human record. A
+  river is less an object than a process: a continuous conversation between gravity, water, rock, and life.
+
+  Rivers have shaped the planet's surface more than almost any other force. They have carved canyons, built deltas, and moved mountains, one grain of sediment at a time, to the sea. They have also shaped human history.
+  Cities, empires, religions, and languages have grown along their banks. This essay looks at rivers from several angles: how they form and work physically, how they support ecosystems, how civilizations have depended on
+  them, how we have altered them, and what their future may hold.
+
+  The Physical Anatomy of a River
+
+  Every river begins with rain or melting snow. Precipitation falls on land and follows gravity downhill. Some of it soaks into the ground and re-emerges later as springs. Some runs across the surface in thin sheets,
+  gathering into rivulets, then streams. Where these streams converge, they form a river. The wh
+  ⎿  Interrupted · What should Claude do instead?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4% proj ⎇ main rs ⛓ pij-adverse-maexxna • Sonnet 5.5 • medium • 40k/1.0M • 0% ↻04:00
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent

@@ -1,0 +1,26 @@
+[package]
+name = "pij-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# Three dependencies, each a codec or a macro — never IO. `serde` is the wire
+# shape of the domain; `thiserror` types the error taxonomy; `async-trait` makes
+# the port traits object-safe and async (workshop 001 R3-AMEND-2: sqlx has no
+# sync API, and async-trait is a proc macro, so core stays tokio-free).
+[dependencies]
+async-trait = { workspace = true }
+serde = { workspace = true }
+# A pure value codec, not IO: the envelope's `data` is open by contract, so the
+# wire module needs a JSON value type. This is not permission for core to speak
+# HTTP — the arch gate still refuses every client and server crate here.
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# Test substrate only: the shared fakes and the hand-rolled executor. `@dev` is
+# what keeps it out of the shipped crate, and the arch gate enforces the suffix.
+[dev-dependencies]
+pij-testkit = { workspace = true }

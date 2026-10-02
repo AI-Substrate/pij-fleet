@@ -1,0 +1,15 @@
+{
+  "description": "Designed native-extension registration contract example, not a captured runtime receipt. Kept in testkit so plan archival cannot break the executable tests.",
+  "registration": {
+    "request_example": {
+      "id": "pij-copilot-fixture",
+      "harness": "copilot",
+      "harness_session": "00000000-0000-4000-8000-000000000137",
+      "folder": "/isolated/worktree",
+      "pid": 13700,
+      "proc_start": 20260905120000,
+      "relay": false,
+      "native_extension_delivery": true
+    }
+  }
+}

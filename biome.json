@@ -1,0 +1,50 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
+	"files": {
+		"includes": [
+			"**",
+			"!node_modules",
+			"!dist",
+			"!.flow-pair",
+			"!**/*.template",
+			"!agents",
+			"!docs/plans",
+			"!scratch",
+			"!.harness",
+			"!**/prime-flow.json",
+			"!crates",
+			"!target",
+			"!**/target",
+			"!.claude/settings.local.json"
+		]
+	},
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 100
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"semicolons": "always",
+			"trailingCommas": "all"
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"suspicious": {
+				"noExplicitAny": "error"
+			},
+			"complexity": {
+				"noForEach": "off"
+			}
+		}
+	}
+}

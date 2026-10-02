@@ -1,0 +1,40 @@
+  accidents of geology but central
+  actors in the story of our planet.
+
+  What a Volcano Is
+
+  At its simplest, a volcano is an
+  opening in the crust of a planet
+  through which molten rock, hot
+  gases, and fragments of solid
+  material escape onto the surface.
+  The molten rock is called magma
+  while it is underground and lava
+  once it erupts. The word "volcano"
+  itself comes from Vulcano, a
+  small island north of Sicily,
+  named for the Roman god of
+  ⎿  Interrupte· What should Claude
+
+❯ Run this exact bash command in
+  the foreground (not background):
+  python3 -c 'import time;
+  time.sleep(40)'
+
+  Sleeping for 40 seconds · 11s
+  ⎿  $ python3 -c 'import time;
+     time.sleep(40)' (9s)
+     (ctrl+b ctrl+b (twice) to run
+     in background)
+
+✶ Fiddle-faddling… (12s)
+  ⎿  Tip: Hit shift+tab to cycle
+     between manual mode,
+     auto-accept edit mode, and plan
+     mode
+
+────────────────────────────────────
+❯ 
+────────────────────────────────────
+  4% proj ⎇ main rs ⛓ pij-inheren…
+  ⏵⏵ auto mode on (shift+tab to  ·

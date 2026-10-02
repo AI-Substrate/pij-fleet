@@ -1,0 +1,162 @@
+# The pij crate graph of workshop 001 (R2), as data.
+#
+# This is an ALLOW-LIST, not a deny-list: any direct dependency edge not named
+# here is architecture drift and fails the check. Adding a dependency therefore
+# costs one deliberate, reviewed line — which is the point (tenet 7: structure
+# over trust, enforcement over documentation).
+#
+# Entries are KIND-AWARE, because the shipped/test distinction IS architecture:
+#
+#   "serde"      may be declared in [dependencies] — and, being the more
+#                privileged table, in [dev-dependencies] too.
+#   "tokio@dev"  may be declared ONLY in [dev-dependencies]. Promoting it to
+#                [dependencies] ships it, and the check says so by name.
+#   "cc@build"   may be declared ONLY in [build-dependencies].
+#
+# Every crate entry carries a REQUIRED `why`: an allow-list without rationale
+# decays into a list of whatever happened to get added.
+#
+# Run it: `cargo run -p pij-testkit --bin pij-arch-check`
+# Negative proof: `crates/testkit/tests/arch_drift.rs` judges a committed
+# drifted-metadata fixture and asserts RED — re-runnable, not a ritual.
+#
+#   crates/core/       domain types, config, errors, ports, pure logic.  -> nothing
+#   crates/store/      sqlx/SQLite: registry, spine, queue.              -> core
+#   crates/tmux/       every tmux syscall in the workspace.              -> core
+#   crates/harnesses/  per-harness detect/bind/readiness/models quirks.  -> core, tmux
+#   crates/transport/  UDS and friends behind the Transport port.        -> core
+#   crates/unisphere/  unisphere-sdk behind the SessionStatus port.      -> core
+#   crates/daemon/     HTTP, tick loop, workers. COMPOSITION ROOT.       -> all adapters
+#   crates/cli/        the `pij-rs` binary. COMPOSITION ROOT.            -> core, daemon
+#   crates/testkit/    fakes, fixtures, gate binaries. Never a prod dep. -> core, store
+
+# Refused workspace-wide (tenet 5: fakes over mocks). Reported with a distinct
+# message so a review can cite the rule by name rather than argue taste.
+banned_everywhere = [
+  "mockall",
+  "mockito",
+  "wiremock",
+  "faux",
+  "double",
+  "mock_derive",
+  "mock-it",
+  "simulacrum",
+]
+
+# ---------------------------------------------------------------------------
+# The functional core (R2). The forbidden set here IS the architecture's spine:
+# no tokio, no sqlx, no HTTP client, no web framework, no tmux. Core decides;
+# it never reaches. That is what lets every core test run with zero doubles.
+#
+# Empty at tk-3a93 by construction — core has no code yet. Each addition is a
+# reviewed row: serde/thiserror arrive with the domain model at tk-ddf1, and the
+# review question for each is "is this a codec, or is this IO wearing a codec's
+# clothes?".
+[crates.pij-core]
+# `pij-testkit@dev`: core's own tests run the shared fakes and the hand-rolled
+# executor, and the `@dev` suffix is what keeps that substrate out of the shipped
+# crate. Cargo permits the dev-only cycle core -> testkit -> core; a shipped one
+# would not build, which is a second, mechanical guarantee.
+internal = ["pij-testkit@dev"]
+# `async-trait` is a proc macro that desugars `async fn` in traits — it pulls in
+# NO runtime, so "core has no tokio" survives it. It is here by ruling
+# (workshop 001 R3-AMEND-2): sqlx has no synchronous API, so a sync `Registry`
+# would force `block_on` inside the store adapter and deadlock on a tokio worker.
+# `serde` is the wire shape of the domain and `thiserror` types the taxonomy;
+# both are codecs, and neither is permission for core to perform IO.
+external = ["async-trait", "serde", "serde_json", "thiserror"]
+why = "Pure domain: types, config, errors, the seven frozen ports, and the logic over them. No IO, no tokio, no SQL, no HTTP — enforced here rather than asserted in a doc comment."
+
+[crates.pij-store]
+# `pij-testkit@dev`: the store runs the SHARED contract suites and FreshStore, and
+# the `@dev` suffix keeps that substrate out of the shipped crate.
+internal = ["pij-core", "pij-testkit@dev"]
+# `sqlx` is the store (R1) and `tokio` is the reactor its pool needs — shipped
+# here, and ONLY here among the leaf crates, so "core has no tokio" stays a line
+# the gate defends rather than a habit. `serde` encodes governance rows and
+# `serde_json` types opaque payload columns.
+external = ["async-trait", "serde", "serde_json", "sqlx", "tokio"]
+why = "Persistence behind Registry/Spine/Queue: SQLite via sqlx with embedded migrations, boot self-migration and directional skew refusal. The only crate permitted to speak SQL."
+
+[crates.pij-tmux]
+# `pij-testkit@dev` supplies the identical contract suite used by the fake and
+# real adapter without shipping test support. `async-trait` implements the
+# frozen async port; `pij-core` is the port and pane model.
+internal = ["pij-core", "pij-testkit@dev"]
+external = ["async-trait", "getrandom", "tokio"]
+why = "Every tmux syscall in the workspace lives here; getrandom mints non-recycled pane-transaction identities directly from OS entropy, tokio's timer yields bounded staged writes and effect convergence instead of blocking a runtime worker, and testkit remains dev-only shared contract proof."
+
+[crates.pij-harnesses]
+internal = ["pij-core", "pij-testkit@dev"]
+external = ["async-trait", "serde_json", "sha2"]
+why = "Per-harness adapters plus exact-pid process liveness. pij-core supplies the frozen ports, async-trait implements them, sha2 fingerprints human drafts without storing their text, and testkit@dev supplies only the executor used by adapter tests."
+
+[crates.pij-transport]
+internal = ["pij-core"]
+external = ["async-trait", "serde", "serde_json", "tokio"]
+why = "Claude UDS transport behind the frozen Transport port: async Unix socket IO plus serde codecs for Claude session records, peer keys, frames and negative acknowledgements."
+
+[crates.pij-unisphere]
+internal = ["pij-core"]
+# `unisphere-sdk` is the whole point of the crate: the in-process session-status
+# fold (plan 157), named nowhere else, so no Unisphere type reaches core or the
+# daemon. `unisphere-loader-jsonl` plus `unisphere-adapter-claude`,
+# `unisphere-adapter-omp`, `unisphere-adapter-codex` and
+# `unisphere-adapter-copilot-cli` are the bindings it composes (Claude
+# transcripts, OMP sessions, Codex rollouts, Copilot CLI event logs; all pure
+# JSONL folds); loader-query/loader-snapshot are
+# deliberately absent because they pull rusqlite, whose libsqlite3-sys `links`
+# collides with sqlx's. The SDK is synchronous, so `tokio` supplies the blocking
+# pool that keeps a cold whole-transcript read off the reactor. `async-trait`
+# implements the port.
+external = ["async-trait", "tokio", "unisphere-adapter-claude", "unisphere-adapter-codex", "unisphere-adapter-copilot-cli", "unisphere-adapter-omp", "unisphere-loader-jsonl", "unisphere-sdk"]
+why = "Session facts behind SessionStatusPort (R3-AMEND-10): per-seat transcript read positions over the in-process Unisphere SDK, mapped into pij-core's SeatStatus."
+
+[crates.pij-sidecars]
+internal = ["pij-core", "pij-store@dev", "pij-testkit@dev"]
+external = ["async-trait@dev", "axum@dev", "nix", "reqwest", "serde", "serde_json", "tokio"]
+why = "Queue consumers over the seven frozen ports plus concrete Telegram HTTP, process-group, and shell/file adapters; store, testkit, async-trait, and axum remain dev-only proof dependencies."
+
+[crates.pij-daemon]
+# The widest row in the workspace, and deliberately so: a composition root is the
+# ONE place allowed to know every adapter. `pij-testkit` is a SHIPPED edge here,
+# not `@dev`, because the fakes are the default wiring — offline-first means the
+# binary must contain them.
+internal = [
+  "pij-core",
+  "pij-harnesses",
+  "pij-sidecars",
+  "pij-store",
+  "pij-testkit",
+  "pij-tmux",
+  "pij-transport",
+  "pij-unisphere",
+]
+# `axum` is the server; `getrandom` is the per-boot bearer key (OS entropy, no
+# PRNG state to seed or leak); `reqwest` is the one-request peer forwarding
+# primitive; `hostname` resolves the portable default machine alias; `tokio` is
+# the reactor; `tokio-stream` adapts the bounded broadcast receiver to the public
+# Stream contract (u-events). `async-trait` implements the published Spine port;
+# `sha2` hashes packet bytes; pinned `globset` preserves supported fence grammar.
+# `time` formats death-notice UTC timestamps only (plan 140); no clock or parsing features.
+# `hyper-util` is the accept loop axum::serve hides, so an idle keep-alive
+# connection can be closed (header read timeout); axum already depends on it.
+external = ["async-trait", "axum", "getrandom", "globset", "hostname", "hyper-util", "reqwest", "serde", "serde_json", "sha2", "sqlx@dev", "time", "tokio", "tokio-stream"]
+why = "Composition root #1: wires Arc<dyn Port> from config, serves HTTP, runs tick loops and job workers; cryptographic packet digests and standard fence matching support governance boundaries."
+
+[crates.pij-cli]
+# The second composition root. It depends on the daemon because it SHIPS the
+# daemon: one artifact, so a stale CLI can never meet a newer daemon on one
+# machine.
+internal = ["pij-core", "pij-daemon", "pij-harnesses", "pij-store@dev", "pij-testkit@dev"]
+external = ["axum@dev", "clap", "nix", "reqwest", "serde", "serde_json", "time", "tokio", "uuid"]
+why = "Composition root #2 and the workspace's only binary (pij-rs). Ships the daemon in the same artifact so CLI and daemon versions cannot skew; reuses the exact-pid liveness adapter so bounce never signals a recycled pid; nix safely redirects daemon output at the descriptor boundary and time formats RFC3339 log prefixes; dev-only store and axum edges prove the shipped CLI through the real registry and authenticated router."
+
+# testkit depends on core and store so its fakes implement the real ports and
+# its FreshStore drives the real schema. It is a DEV dependency everywhere it is
+# used — a fake that ships inside a production crate is how doubles leak into a
+# release, and the `@dev` suffix on the consuming side is what stops it.
+[crates.pij-testkit]
+internal = ["pij-core"]
+external = ["async-trait", "serde", "serde_json", "thiserror", "toml"]
+why = "Test substrate shipped as a crate, not copied per unit: fakes for every port, the addressable fixture corpus, FreshStore, and the gate binaries. serde/serde_json read `cargo metadata`; toml reads this file; thiserror types the check's own failure modes."

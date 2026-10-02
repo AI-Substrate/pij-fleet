@@ -1,0 +1,8 @@
+{
+  "kind": "prime-flow",
+  "extends": "flow-core",
+  "schema_version": 1,
+  "description": "The o-prime's OUTER flow — the project work portfolio, one level above the builder's per-plan flight-plans. Nodes are portfolio work items, not plan phases: each `work-item` is a whole plan-sized piece of work whose INNER life is a normal builder flight-plan in its own plan folder (local repo or worktree — the item's artifacts/comments carry the plan-dir + cwd pointers). The o-prime is the single guided writer, mutating only via `harness flow` (same rule streams follow for the-flow.json). Statuses are the intake→delivery lifecycle proven in run-01: proposed (named by the human, unexamined) → deciding (being scoped/judged, may never leave) → preparing (allocated: ordinal + folder + fences reserved in the government spine, stream not yet live) → in_flight (a stream orchestrator owns it, inner flight-plan running) → done (shipped) | folded (absorbed into another item — s019's real fate, distinct from dropped) | dropped (rejected). `blocked` = stalled with cause in a comment (e.g. machine-restart suspension). Node types: work-item (a plan-sized deliverable); decision (a pending human ruling the portfolio waits on — prime never invents features, so undecided intake sits here); milestone (a portfolio-level marker, e.g. run boundaries). Rail zones: proposed/deciding items sit preflight, in_flight rides flight, done/folded/dropped land postflight.",
+  "statuses": ["proposed", "deciding", "preparing", "in_flight", "done", "folded", "dropped", "blocked"],
+  "nodeTypes": ["work-item", "decision", "milestone"]
+}

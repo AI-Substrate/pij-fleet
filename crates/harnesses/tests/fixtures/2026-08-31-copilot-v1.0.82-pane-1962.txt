@@ -1,0 +1,46 @@
+  Current   Sessions   Issues   Pull requests   Gists 
+
+  ╭─╮╭─╮
+  ╰─╯╰─╯  Copilot v1.0.82-0 uses AI.                                                                                                                  
+  █ ▘▝ █  Check for mistakes.
+   ▔▔▔▔                                                                                                                                               
+
+ ● No copilot-instructions.md found. Run /init to generate.    
+
+ ! Failed to load 1 skill. Run /skills for more details.                     
+
+ ● Tip: /plugin                                                                                                                                       
+   └ Manage plugins and plugin marketplaces
+
+ ! Failed to load 1 skill. Run /skills for more details.
+
+ ● MCP Servers reloaded: 3 servers connected                                                                                                         
+
+ ● MCP Servers reloaded: 3 servers connected                                                                                                         
+
+                                                                                                                                                     
+
+
+
+
+
+                                                                                                                                                     
+
+
+
+                                                                                                                                                     
+
+
+
+
+
+
+
+
+
+ ~/github/home-improvement [⎇ main*%]                                                                                             Session: 0 AIC used
+╻▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+┃                                                                                                                                              
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ v1.0.82 downloaded · run /restart to apply · ← open sidebar · / commands · ? help · tab next tab                          Claude Opus 5 · 1M context
+0% home-improvement ⎇ main • claude-opus-5 · xhigh · 1M context • xhigh • 0/1.0M • 0 AIU • 0m

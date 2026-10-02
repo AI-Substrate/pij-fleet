@@ -1,0 +1,54 @@
+[
+  {
+    "ok": false,
+    "command": "pij role",
+    "v": 2,
+    "meta": "E-RS-OWNERSHIP role: pij-outsider is neither pij-worker nor its recorded parent",
+    "error": "refused",
+    "details": {
+      "code": "E-RS-OWNERSHIP",
+      "operation": "role",
+      "target": "pij-worker",
+      "actor": "pij-outsider"
+    }
+  },
+  {
+    "ok": false,
+    "command": "pij state",
+    "v": 2,
+    "meta": "seat pij-absent does not exist",
+    "error": "not_found"
+  },
+  {
+    "ok": false,
+    "command": "pij whoami",
+    "v": 2,
+    "meta": "missing or wrong bearer token",
+    "error": "auth"
+  },
+  {
+    "ok": false,
+    "command": "pij events",
+    "v": 2,
+    "meta": "unsupported envelope version",
+    "error": "skew"
+  },
+  {
+    "ok": false,
+    "command": "pij events",
+    "v": 2,
+    "data": {
+      "requested": 7,
+      "newest": 2
+    },
+    "meta": "cursor 7 is beyond spine 2",
+    "error": "cursor_reset"
+  },
+  {
+    "ok": false,
+    "command": "pij spawn",
+    "v": 2,
+    "meta": "tmux adapter unavailable",
+    "error": "adapter"
+  }
+]

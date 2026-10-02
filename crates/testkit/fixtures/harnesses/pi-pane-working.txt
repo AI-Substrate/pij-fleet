@@ -1,0 +1,12 @@
+│ pathlib.Path("crates/testkit/fixtures/harnesses/pi-pane-working.txt").write_text(raw)                                                              │
+│ print(raw[-400:])                                                                                                                                  │
+│ PY                                                                                                                                                 │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ 2026-08-29 10:31:31  ⤵ 1.2K  ⤴ 341  💾 689K  ⏱ 4.0s  ⚡ 25.7/s
+
+ ⠹ Capturing a real pi pane fixture ⟦esc⟧
+
+╭── ◫ 69.0%/1M ⟲ > Prepare wave 1 coder dispatch > ⬢ Opus 5 1M (Copilot) · ◑ med > ⑂ s108/rust-port > S110.00 ★ 55 ▶─────────────────────────────────╮
+╰─                                                                                                                                                  ─╯
+pij-revolutionary-lungfish

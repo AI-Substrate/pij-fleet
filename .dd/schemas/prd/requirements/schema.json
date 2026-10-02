@@ -1,0 +1,38 @@
+{
+	"dd_schema": 1,
+	"description": "A product requirements register: numbered requirements as rows, each with a completed state and provenance notes. Amendments edit the row and say so; rows are never deleted.",
+	"sections": {
+		"meta": {
+			"required": true,
+			"shape": {
+				"type": "object",
+				"required": ["title"],
+				"fields": {
+					"title": { "type": "string" },
+					"status": { "type": "string" },
+					"updated": { "type": "string" },
+					"source": { "type": "string" }
+				}
+			}
+		},
+		"requirements": {
+			"required": true,
+			"shape": {
+				"type": "array",
+				"items": {
+					"type": "object",
+					"required": ["id", "num", "title", "requirement"],
+					"fields": {
+						"id": { "type": "string" },
+						"num": { "type": "number" },
+						"title": { "type": "string" },
+						"requirement": { "type": "text" },
+						"state": { "type": "state" },
+						"completed_evidence": { "type": "string" },
+						"note": { "type": "string" }
+					}
+				}
+			}
+		}
+	}
+}

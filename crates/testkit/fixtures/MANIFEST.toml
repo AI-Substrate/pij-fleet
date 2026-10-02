@@ -1,0 +1,536 @@
+# The addressable fixture corpus (workshop 001 R6b).
+#
+# Real captured pij traffic, malformed cases INCLUDED, with a known answer for
+# each — so a packet can cite a fixture by path and a reviewer can check the
+# claim without re-capturing anything.
+#
+# Rule: a fixture is only useful with its EXPECTATION. `answer` is what a correct
+# implementation must DO with the bytes — not a description of them.
+#
+# TWO FAMILIES, and the split is load-bearing:
+#
+#   malformed/rs/  the Rust v1 wire shape {v, at, kind, seat, payload}. The
+#                  decoder in pij-core/src/wire.rs is judged against these.
+#   malformed/ts/  the LIVE TypeScript daemon's shape {seq, timestamp, type,
+#                  data}. Captured, not invented — and NOT what v1 speaks. These
+#                  belong to the migration/parity reader of wave 3+.
+#
+# The split exists because the first draft of the wire tests read TS captures
+# with the v1 decoder and failed: the two schemas genuinely differ, and pretending
+# otherwise would have meant bending one of them to hide it.
+
+version = 1
+
+
+[[fixture]]
+path = "cli/models.json"
+sha256 = "48754ee5e8a24a955e95400970dab611983a7629ce1c0131302c3ebafadd8459"
+bytes = 3155
+note = "pij models --json, 2026-08-28 (one Copilot model id later renamed to text-only-code-1 for publication), one row per provider plus rows covering every observed `levels` encoding. The live catalog is TIME-VARYING (599 rows at 05:05, 125 at 05:15 as the openrouter list shrank 479->5), so a byte-golden against the live binary would flap; the golden runs against these committed bytes."
+answer = "10 rows, 8 providers. TWO encodings of 'no thinking levels' appear in real output \u2014 \"levels\": [] and the key ABSENT (claude rows) \u2014 and NEITHER is the null services.dd.json assumed. u-models must fold both to one fact and must not invent a third."
+
+[[fixture]]
+path = "cli/list.json"
+sha256 = "18ec5f2ad30583e4be37c2e28ceda0499e7a2fc3baca3d29ba878120da886242"
+bytes = 7261
+note = "pij list --json, 2026-08-28, one seat per liveness class (active, stale, dead) plus a seat carrying a terminal record."
+answer = "liveness is active|stale|dead; terminal.disposition reads 'unrequested-by-pij', which is an OBSERVATION of absence, never a cause of death."
+
+[[fixture]]
+path = "cli/whoami.json"
+sha256 = "1aebf71f48dcffa1fbd8b8d94720554d5e3b7768d9f44bb9954e7566ddd21eca"
+bytes = 1475
+note = "pij whoami --json from the PM seat, 2026-08-28."
+answer = "carries folder, dataDir, and the per-verb capability map; a reader must not assume folder == cwd."
+
+[[fixture]]
+path = "wire/events.ndjson"
+sha256 = "4b4ced47a3ddf26f22e0bfbc51c742e5afa841825562b6341195567051562fed"
+bytes = 1766
+note = "8 real spine events from ~/.pij/pij-revolutionary-lungfish/events.ndjson, one per (type, data.type) pair. TS SHAPE: {seq,timestamp,type,data}."
+answer = "seq is monotonic and every line is one complete JSON object \u2014 but the field names are the TS daemon's, NOT the Rust v1 event shape. A reader of this file is a MIGRATION reader (wave 3+), never the v1 decoder."
+
+[[fixture]]
+path = "wire/health-v1.json"
+sha256 = "8e28fcef47e8d8929510103154cfba78c60f56e5408a32253835c0fcafe9f2f8"
+bytes = 130
+note = "Recorded pij-rs authenticated GET /health response used by the in-process extension generation probe."
+answer = "MUST select the Rust HTTP wire: v=1 is supported and the health payload names the answering build and machine."
+
+[[fixture]]
+path = "wire/health-future.json"
+sha256 = "d34a3784f4f84cdcc92299bbcb8e645d594b7f49247df5bb4767d4479e454cbd"
+bytes = 130
+note = "A health envelope from a daemon one wire generation newer than this extension."
+answer = "MUST refuse the payload whole as PIJ_WIRE_SKEW with structured found=2 and supported=1 fields; never branch on prose."
+
+[[fixture]]
+path = "wire/register-v1.json"
+sha256 = "4eca3595039191f6ad1a5ae27e721acca8fd009c9c1659f7b2f47170187d6ee8"
+bytes = 355
+note = "Recorded pij-rs POST /v1/register success envelope carrying the authority's accepted descriptor."
+answer = "MUST read the accepted descriptor from data and preserve the complete proc identity (pid, proc_start) plus spawn_id."
+
+[[fixture]]
+path = "wire/events-v1.ndjson"
+sha256 = "c1670f670d9cd519a3774ea62a8dbced4924ca302c610e63fa19440e41841be9"
+bytes = 387
+note = "pij-rs event stream corpus: Hello, an unknown framed event, then a message.pushed turn."
+answer = "MUST require Hello first, forward the unknown event unchanged, continue reading, and inject the pushed turn for its recipient."
+
+
+[[fixture]]
+path = "malformed/rs/truncated-event.ndjson"
+sha256 = "82fcf0f44de70d0f4f65c594e4f63f30d1db3e9a726ec4d3845680f60bba80ea"
+bytes = 39
+note = "A Rust-v1 event line cut mid-object \u2014 the shape a crashed writer leaves."
+answer = "MUST fail to parse as NotJson, and the failure MUST name the line number."
+
+[[fixture]]
+path = "malformed/rs/unknown-event-kind.ndjson"
+sha256 = "f21b9158ac9d8a85ca58f5923ac2d3b13d03d716e9b07e0cca58a338f1d79b2a"
+bytes = 183
+note = "A Rust-v1 event whose kind this build has never heard of, followed by a known one."
+answer = "MUST decode as WireEvent::Unknown keeping the raw bytes, and MUST NOT abort the stream: the known line still arrives. An event is a fact that happened whether or not this build knows the word for it."
+
+[[fixture]]
+path = "malformed/rs/not-json.ndjson"
+sha256 = "b66cdc925e6c68310c5215bbc6041956c742a017958daaca651db75d968a7fac"
+bytes = 104
+note = "A stray human-readable warning printed into a machine stream \u2014 the class that bricked a pi boot ('Warning: Set a purpose first.')."
+answer = "The bad line is reported with its number; every other line still decodes. One bad line must never cost the reader the rest of the stream."
+
+[[fixture]]
+path = "malformed/rs/no-kind.ndjson"
+sha256 = "e342a0f160bdb4f1b67b3464b86a22add41bfd1b5b178e93dd6ed8837056b972"
+bytes = 54
+note = "A Rust-v1 event object with no `kind` field."
+answer = "MUST be WrongShape, NOT Unknown: 'I do not recognise this kind' and 'this is not an event' are different facts with different recoveries."
+
+[[fixture]]
+path = "malformed/rs/empty.ndjson"
+sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+bytes = 0
+note = "Zero bytes."
+answer = "An empty stream is EMPTY, not an error."
+
+[[fixture]]
+path = "malformed/rs/future-envelope.json"
+sha256 = "ef29c521ed87b10adf2e40a1dd33872e4fb9086fdf00913c5ec2399bf50c9b14"
+bytes = 113
+note = "An envelope with v=99."
+answer = "MUST be refused whole, before the payload is typed. Note the deliberate ASYMMETRY with unknown events: an envelope is a contract this build must satisfy, so a future one is refused; an event is a fact, so a future one is kept."
+
+[[fixture]]
+path = "malformed/ts/truncated-event.ndjson"
+sha256 = "8775b9c173f5d83662d687a8f9d128d46503d7bc8a5feacbc8b5648fd5eea9ae"
+bytes = 87
+note = "TS-shaped event line cut mid-object."
+answer = "For the wave-3+ migration reader only. Same rule as its rs/ sibling: fail, naming the line."
+
+[[fixture]]
+path = "malformed/ts/unknown-event-kind.ndjson"
+sha256 = "f061b0f8e9456879e162b863ff2589a193641b6abedb154b3cc557b43149ae70"
+bytes = 198
+note = "TS-shaped stream carrying an unknown `type`, followed by a known one."
+answer = "For the migration reader: forward the unknown, keep reading. The v1 decoder is NOT expected to read TS field names."
+
+[[fixture]]
+path = "malformed/ts/not-json.ndjson"
+sha256 = "3895474b6d1080352db59f11be39ddb080389238c95489e80a1d894b98d10ee4"
+bytes = 124
+note = "TS-shaped stream with a stray human line first."
+answer = "For the migration reader: report line 1, still deliver line 2."
+
+[[fixture]]
+path = "malformed/ts/empty.ndjson"
+sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+bytes = 0
+note = "Zero bytes."
+answer = "An empty stream is EMPTY, not an error \u2014 true for both readers."
+
+[[fixture]]
+path = "malformed/ts/models-missing-request-id.json"
+sha256 = "b67fd5207e73fbd14d44f41a586c8dc826fdd74c39a5f3c48a1872f45d5a1167"
+bytes = 184
+note = "A model row with no requestModelId."
+answer = "Whole-inventory failure: one malformed row invalidates the catalog rather than silently yielding a model nobody can request (s106 semantics)."
+
+[[fixture]]
+path = "malformed/ts/models-levels-empty-list.json"
+sha256 = "93aa2a309613c16472451c7057589f2d93fbccb3201f5e96cb993ea8b11d4f29"
+bytes = 212
+note = "A model row with `levels: []`."
+answer = "MUST fold to the same 'no levels' fact as an absent key \u2014 see cli/models.json; it must NOT be read as 'levels exist and none work'."
+
+[[fixture]]
+path = "malformed/ts/whoami-missing-folder.json"
+sha256 = "d7bc0e9e82aa647fa9127439d1aab8e627ba112cda73b6dcf38f88c7a471b47a"
+bytes = 105
+note = "A whoami envelope with no folder."
+answer = "MUST fail: absent is not the empty string, and a seat with no folder would resolve relative paths against the wrong tree."
+
+[[fixture]]
+path = "golden/models-summary.tsv"
+sha256 = "42f9de617ceb6ea2be2b701e18afb46378aa1faec2190088ae4462983e4b5109"
+bytes = 715
+note = "The byte-golden of the production catalog fold (runtime, provider, selector, requestModelId, normalized thinking levels) computed from cli/models.json."
+answer = "Must match production ModelRow output exactly: raw absent, null, and [] all become <none>; non-empty levels preserve order. The separate corpus assertion retains the raw absent-vs-empty evidence."
+
+[[fixture]]
+path = "tmux/list-panes-empty-title.txt"
+sha256 = "133ee2c107822a841285093589f7c61b9e238a389f0cda5d9d3a91c8c80a1fbd"
+bytes = 34
+note = "Captured from entropy-named detached session pij-w1-fixture-c84a1 with allow-rename disabled; pipe-delimited list-panes fields and an explicitly empty pane title."
+answer = "Exactly one Pane: id %320, session pij-w1-fixture-c84a1, window normal, and title present as the empty string. Empty is not absent."
+
+[[fixture]]
+path = "tmux/list-panes-hostile-title.txt"
+sha256 = "113f30efcc4dec510c968509f3ca6ac9e06765f38916693d1aa394f69278b723"
+bytes = 57
+note = "Same isolated capture after setting the user-controlled pane title to `human · title | nested`, including the list-panes field separator."
+answer = "Exactly one Pane whose complete title is `human · title | nested`; splitting stops after the three structural separators so the title's pipe is data, not a fifth field."
+
+[[fixture]]
+path = "harnesses/claude-ready.txt"
+sha256 = "43b17308b5175ac6bbc4ee3085d69e012335d9d1cd5742d2be18838057f09506"
+bytes = 120
+note = "Captured Claude narrow-pane readiness shape copied from the live-capture TS regression corpus; no synthetic environment or session-id line is appended."
+answer = "Claude is Ready from the persistent bypass-permissions footer; cwd and Opus 4.8 remain pane-observed facts, while native session id must come from caller transcript discovery."
+
+[[fixture]]
+path = "harnesses/claude-2.1.284-streaming.txt"
+sha256 = "f7b4c42730f65a3e193f38d22de99c9e051008141d88eccf18623c795453e23d"
+bytes = 3543
+note = "Live Claude Code 2.1.284, auto mode, captured about 7 s into a streaming text reply. Plan 157 re-review 3."
+answer = "Known limit: no spinner row shows while text streams, so HarnessPort::idle reads true. The cold-wake guard must not correct on this frame alone; it requires the working fact to be older than COLD_IDLE_MS."
+
+[[fixture]]
+path = "harnesses/claude-2.1.284-permission-dialog.txt"
+sha256 = "7782dda89485277476e7735b0de5d6fb2287b9f9e14f89d9fa9151ab1ddf3a5d"
+bytes = 4866
+note = "Live Claude Code 2.1.284, manual permission mode, a Bash permission dialog ('Do you want to proceed?', 'Esc to cancel · Tab to amend'). Plan 157 re-review 3."
+answer = "Not idle: the dialog replaces the composer and footer, so HarnessPort::idle is false and the seat's working state stands."
+
+[[fixture]]
+path = "harnesses/claude-2.1.284-after-esc-manual-mode.txt"
+sha256 = "001803c8d5767088e0d09117b32e834a78bb15d9107e71e6bfb141ee54a99d08"
+bytes = 4359
+note = "Live Claude Code 2.1.284 in manual permission mode, captured after an Esc interrupt; the footer reads 'manual mode on'. Plan 157 re-review 3."
+answer = "Not idle evidence: the footer carries none of Claude's ready anchors, so HarnessPort::idle is false and the guard trusts working."
+
+
+
+
+
+
+
+
+[[fixture]]
+path = "harnesses/copilot-ready.txt"
+sha256 = "d15a4c76b79ded5fe8557143acd1abeab2e7471b434e01679447ed5519b105d2"
+bytes = 482
+note = "Captured Copilot composer and status-footer shape copied from the live-capture TS regression corpus; no synthetic environment or session-id line is appended."
+answer = "Copilot is Ready only when the stable '? help' and 'tab next tab' footer is present; model is GPT-5.5, while native session id must come from caller planned-session evidence."
+
+[[fixture]]
+path = "harnesses/codex-rotated-placeholder-ready.txt"
+sha256 = "0afc30bc9542d84ed9dde8f93e03e332604d628ba581bc397d1e917f8edd4453"
+bytes = 139
+note = "Live Codex v0.142.3 shape from the TS readiness incident: the placeholder rotated away from Use /skills while the model/effort/cwd footer persisted; no synthetic session-id line is appended."
+answer = "Ready from the persistent middot-plus-cwd footer. The rotating 'Find and fix' placeholder contributes no readiness evidence; native id comes from caller rollout discovery."
+
+[[fixture]]
+path = "harnesses/codex-placeholder-only.txt"
+sha256 = "74a06baa204c606f3eef3a2fda2884e380656db21ed21837efa309ac7712c037"
+bytes = 454
+note = "Captured Codex boot banner with one rotating Use /skills placeholder but no interactive composer footer."
+answer = "NotYet, retaining the observed placeholder in diagnostics. Treating the placeholder as Ready reproduces the codex never-bind incident."
+
+[[fixture]]
+path = "harnesses/omp-working.txt"
+sha256 = "e4c9d1ad69ef4bea6cd8e38267a88f3a9cddd98a1168911c3ba3c969bd441699"
+bytes = 471
+note = "Exact working-spinner/header/composer excerpt from .pi/extensions/pij/core/daemon/__fixtures__/pane-signals/live_omp_blank_padded.txt; no synthetic cwd or session-id line is appended."
+answer = "Omp is Busy because the spinner row carries the esc interaction marker even though the persistent header and padded composer are visible."
+
+[[fixture]]
+path = "harnesses/pi-pane-ready.txt"
+sha256 = "484254392e095ddc2a53215e0228c56b20f4cc182a76d28995b7689667f9c8fb"
+bytes = 1620
+note = "A REAL upstream-pi pane at rest: captured 2026-08-29 from a throwaway seat the PM spawned, let settle, captured and closed \u2014 no live fleet seat was touched. Home path replaced with /Users/USER. RE-CAPTURED after the first attempt committed 16 blank lines: the pane is taller than its content, so a naive tail() grabs the empty rows BELOW the prompt. u-harness caught the contradiction between the manifest's answer and the bytes."
+answer = "The readiness anchor is the prompt row plus the status footer (context/model/branch), NOT the absence of a spinner \u2014 a pane can be quiet mid-turn. Compare with pi-pane-working.txt, which carries the SAME footer: the footer alone therefore cannot mean ready. Blank rows follow the footer in a real capture, so an anchor matcher that reads the last line finds nothing."
+
+[[fixture]]
+path = "harnesses/pi-pane-working.txt"
+sha256 = "0a990c53f27ee1b46c5b355e369058e3fc8e984ad78b869e5858bcb05945654f"
+bytes = 1466
+note = "A REAL upstream-pi pane MID-TURN, captured 2026-08-29 from the PM's own seat while it was running a command."
+answer = "Must classify as busy/working, never Ready. The discriminator is the spinner row with its label; the status footer is present in BOTH this fixture and the ready one, which is exactly why the footer alone cannot mean ready."
+
+[[fixture]]
+path = "harnesses/omp-pane-ready.txt"
+sha256 = "aa0d5b6f031b9c06831f6b7558c83a73b336cc859520f91e197c63a6ff92b982"
+bytes = 898
+note = "A REAL OMP pane AT REST, captured 2026-08-29 from one of the PM's own wave-2 coder seats after it finished its unit \u2014 capture only, the seat was neither driven nor disturbed. Home paths replaced with /Users/USER. Non-blank content asserted before writing."
+answer = "Must classify as READY. Pair it with the repo's live_omp_blank_padded.txt, which shows the same chrome carrying '\u280b Working\u2026 \u27e6esc\u27e7' and must classify as BUSY. The discriminator is the spinner row, not the footer and not the prompt \u2014 both fixtures have those."
+
+[[fixture]]
+path = "harnesses/omp-18-0-10-footer.txt"
+sha256 = "ba541cc9a2198c72c785596d35c2f2d6c42e901589ac86c53fa86e0a42bfbade"
+bytes = 59
+note = "Real OMP18.0.10 footer quoted from owned coder pij-written-lansra pane3865 during plan139 canary. Only footer bytes are captured, not a fabricated full pane."
+answer = "The model field ends before the dot-separated effort/status fields. Resolve the display label through the real model catalog; a footer alone is not a readiness or binding proof."
+
+[[fixture]]
+path = "harnesses/omp-18-1-11-no-model-footer.txt"
+sha256 = "bedcdfd1d61799dd61d39134fe78987324b14bcdbceb8f4a23b220c5cef6f22d"
+bytes = 74
+note = "Real historical OMP18.1.11 footer from rs spawn.failed spine14828 payload.last_output on2026-09-06; corroborated by14832/14838 and prime ledger. Runtime literally printed no-model."
+answer = "Treat no-model as explicit absence; never infer the requested model or fall back to an earlier quoted model. Readiness chrome does not establish valid model binding."
+
+
+[[fixture]]
+path = "uds/claude-2.1.251-session.json"
+sha256 = "8b45b273b1ccab52b4f7ecffbfc5de535c59190df73278ec5b934d7d059d78e9"
+bytes = 445
+note = "Sanitized from the session record written by an isolated Claude Code 2.1.251 probe on 2026-08-30; pid, session id, paths, tmux coordinates and name replaced while field presence and value shapes were preserved."
+answer = "Discovery accepts this record only with the identity-matching peer key; descriptor pid is tried first, then a record whose tmux value ends in the descriptor pane id."
+
+[[fixture]]
+path = "uds/4242.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.key"
+sha256 = "c732738d3aa98c5bccb94e3c6bc55de6df463d3dd953311073774b419cbb794c"
+bytes = 97
+note = "Sanitized companion peer key from the same isolated Claude Code 2.1.251 probe; the real token and key hash were replaced."
+answer = "Authentication capability requires a unique existing peer key with matching procStart and a non-empty peerToken. pidDomain is optional: absence on BOTH key and session is equal and yields capability when the other requirements hold; one-sided absence or differing present domains refuses. No valid matching key, malformed-only keys, or multiple matching keys means no capability."
+
+[[fixture]]
+path = "../../transport/tests/fixtures/claude-2.1.241/session-record.json"
+sha256 = "7525d76ea36899af522b2bbd9ceed0089a492984edb252536d486af513bb3fe4"
+bytes = 527
+note = "Captured by prime on 2026-09-05 from live seat pij-lonely-antelope, Claude 2.1.241, pid 75005; tokens and session ids redacted while field presence was preserved. Exact bytes from commit 5b0d6243, docs/plans/135-rs-boot-announce/assets/inputs/claude-2.1.241-shapes/session-record.json. Transport owns the fixture; this corpus-relative address indexes it without copying or moving it."
+answer = "Decode pid 75005 and human C-locale UTC procStart Mon Aug 24 00:27:19 2026 (packed 20260824002719); absent pidDomain is valid, not malformed. With the companion peer-key.json also lacking pidDomain, a non-empty token, a matching live pid/start and a non-empty messagingSocketPath, discovery must yield capability without probing the socket. One-sided domain absence, mismatched identity, a dead process or ambiguous matching keys must refuse."
+
+[[fixture]]
+path = "../../transport/tests/fixtures/claude-2.1.241/peer-key.json"
+sha256 = "ddc5c0a74b06572908d67e3d59af0f9f68326bafecc70c52a74c71fceeda8948"
+bytes = 74
+note = "Captured by prime on 2026-09-05 from live seat pij-lonely-antelope, Claude 2.1.241, pid 75005; peerToken redacted and pidDomain genuinely absent. Exact bytes from commit 5b0d6243, docs/plans/135-rs-boot-announce/assets/inputs/claude-2.1.241-shapes/peer-key.json. Transport owns the fixture; this corpus-relative address indexes it without copying or moving it."
+answer = "Decode the non-empty redacted peerToken and human-string procStart without requiring pidDomain. Paired with the live identity-matching session-record.json, absent pidDomain on BOTH sides is equal and yields capability; one-sided absence still refuses. Differing present domains, differing procStart, an empty token or more than one valid matching peer key must not yield capability. Missing pidDomain is not a missing key file."
+
+[[fixture]]
+path = "uds/user-frame.ndjson"
+sha256 = "af2656728d4da0291852c86cb25e8718ee6bcdd67bd69bd9e623fd141b8a78f6"
+bytes = 334
+note = "Byte-exact frame the transport emits, with the reply address that the recipient CLI must connect back to; sender, message id and body are stable fixture values and the socket path is a fixture path."
+answer = "Exactly one newline-terminated JSON user frame carrying a ROUTABLE uds: reply address in from=, the sender name, and the pij-rs body wrapper closed by [/pij]; no invented from-mode assertion."
+
+[[fixture]]
+path = "uds/status-dropped.ndjson"
+sha256 = "9f7caad93d79e126910bd91953591d432d2c918150e96f3782788fa88736b5e6"
+bytes = 145
+note = "Documented Claude peer_message_status drop shape from GH #311. Still UNRECORDED: no drop was observed across the plan 110 arms, so the path it exercises remains unproven against a live build."
+answer = "A dropped_msg_ids entry equal to our msg_id overrides the timer and returns Queued; unrelated ids do not. Evidence class remains documented-not-measured, and refusing to upgrade an unknown status is the honest default."
+
+[[fixture]]
+path = "uds/status-held.ndjson"
+sha256 = "7efab77e1d1c00c4525dbf79cead318eca50805e2e79ef9d7a22162b8eec1484"
+bytes = 291
+note = "RECORDING, not a construction: a peer_message_status held line captured off the wire from Claude 2.1.250 on 2026-08-31 (plan 110). Only the recipient socket path is sanitized; shape, field set, wording and the fresh-uuid msg_id are as emitted. Supersedes the invented GH #311 shape, which was never emitted across five measured arms."
+answer = "type=control with action=peer_message_status and status=held maps to Held. It carries NO orig_msg_id and NO wereHeld, so the decoder must not consult a correlation id: the private reply address is what correlates, which is why exactly one message may be in flight per connection."
+
+[[fixture]]
+path = "golden/cli/register-envelope.json"
+sha256 = "bdb5562e942196ea644bd780eabd9888359d6832a2cf9c280a85c4342fe4a391"
+bytes = 490
+note = "Computed pij register success envelope rendered by u-cli from the accepted SeatDescriptor; editorial text is deliberately absent."
+answer = "Must match render(Envelope::ok(\"pij register\", descriptor), true) byte-for-byte, including reported extension_build/path, envelope v2, explicit session:null when unknown, native_extension_delivery:false for a non-native consumer, absent optional fields staying absent, and error staying absent on success."
+
+[[fixture]]
+path = "golden/cli/send-envelope.json"
+sha256 = "17434b8cd61cb9ed6b3df75697f93e8e4ba9229b7cea1d1ea0ad710437147498"
+bytes = 117
+note = "Computed pij send success envelope rendered by u-cli from a durable queued Receipt."
+answer = "Must emit envelope v2 and preserve msg_id, the tagged queued outcome, and at exactly; the CLI must not upgrade queued into delivered."
+
+[[fixture]]
+path = "golden/cli/list-envelope.json"
+sha256 = "e8e1d5ee869c456970c74f3ce544d2a4a86cb4c9b41f1d396e48016b4c0552ff"
+bytes = 749
+note = "Computed pij list success envelope rendered by u-cli from two daemon-owned SeatDescriptors."
+answer = "Must emit envelope v2, preserve registry order, retain reported extension_build/path and explicit nulls for a pre-144 row, carry explicit session:null and native_extension_delivery:false when not attested, and preserve absent fields including a paneless relay; the CLI relays descriptors rather than recomputing liveness or state."
+
+[[fixture]]
+path = "uds/status-denied.ndjson"
+sha256 = "34072695e7df669322c01766bf94a4437f8b4acec36f95faf28252bb40d309f4"
+bytes = 261
+note = "RECORDING captured off the wire from Claude 2.1.250 on 2026-08-31 (plan 110) when the recipient operator clicked Deny; only the recipient socket path is sanitized. The click is an INPUT, the line is the observation."
+answer = "type=control with action=peer_message_status and status=denied means the recipient refused and the message was NOT delivered. It must never be reported as success, and it is uncorrelatable to its own hold — two denials and two holds were byte-identical but for their uuids."
+
+[[fixture]]
+path = "uds/README.md"
+sha256 = "af215a661d581c1c7196c9e5ffd4ebde2bdf64e4d6243890b1573277876dfacc"
+bytes = 1030
+note = "Provenance note for the uds fixtures: which lines are recordings, which remain unrecorded, and why the distinction is load-bearing here."
+answer = "A fixture authored by its own consumer proves nothing about the wire; the previously invented status shapes kept the suite green over a decoder production could never satisfy."
+
+[[fixture]]
+path = "delivery/hold-events.json"
+sha256 = "4412d2bf3bb450ca6772845fe64286b2e043fe9a5787205797efde89000f45f9"
+bytes = 14822
+note = "The frozen wire contract for plan 136 (typing grace gate), authored before fan-out and amended six times on coder evidence. Moved here from docs/plans/136-typing-grace-gate/assets/contracts/ at composition: four suites read it — crates/harnesses/src/interaction.rs, crates/daemon/src/http/tests.rs, .pi/extensions/pij/core/hold-queue.test.ts and .pi/extensions/pij/adapters/rust-runtime.test.ts — and post-flight archives plan folders, so a fixture living in one is a test suite with an expiry date."
+answer = "Byte-compare against it, never restate it. delivery.held/delivery.released payloads, the /v1/hold and /v1/release bodies (both carrying job_id), the register response field typing_grace_ms, and the Queue::defer / Queue::release_deferred outcomes are what the daemon must emit and the extension must send. The grace has exactly ONE definition — DEFAULT_TYPING_GRACE_MS in crates/core/src/delivery.rs — and the TS 60000 is a fallback used only when the daemon omits the field."
+
+[[fixture]]
+path = "register-response.json"
+sha256 = "52a9f41c5e76432bf67430c1b3b274219967b9966589868ce36c2e2a93f4f139"
+bytes = 1416
+note = "Three REAL /v1/register response descriptors captured 2026-09-05 from the live rs daemon (127.0.0.1:7461, build pij-rs 0.1.0) with two genuinely live processes so the liveness guard accepted the claims: `created` (no row existed, proc 34915), `rebound` (same id, different process 41080), `same` (same id, same process). The `binding` key is the ONLY field added to the captured bodies. Plan 135; vocabulary note in docs/plans/archive/135-rs-boot-announce/assets/contracts/README.md. It lives HERE rather than in the plan folder because post-flight archives plan folders and two live suites read this file at test time."
+answer = "The daemon must serialize `binding` as created|rebound|same on the register response, and the extension must derive fresh := binding !== 'same' (absent binding preserves the pre-daemon inference). BOTH suites READ this file — crates/daemon/src/http/tests.rs compares parsed serde_json::Value against it, .pi/extensions/pij/adapters/rust-runtime.test.ts parses it for its fake client — and NEITHER may restate its literals: a restated fixture is two contracts wearing one name. The material fact it records: `rebound` and `same` were INDISTINGUISHABLE on the pre-fix wire, which is why the extension could not know a boot was fresh."
+
+[[fixture]]
+path = "native-extension-contract.json"
+sha256 = "5e5d62f18226a50c6c3dceb2e5ed320da3d9f5c11b02889e03ba159435be2d12"
+bytes = 520
+note = "DESIGNED native Copilot registration example, not a wire recording. Promoted from plan 137 into the durable testkit corpus so plan archival cannot break executable native contract tests."
+answer = "Names harness copilot, a native session, a complete nonzero process tuple, relay false and native_extension_delivery true. Tests substitute independently observed or explicitly fake process facts as appropriate; this fixture itself proves no real SDK or model behavior."
+
+[[fixture]]
+path = "golden/cli/bg-create-envelope.json"
+sha256 = "8d16dc97e96306cf6f7ce119d57fe7ff87ee3c5d2b2c24c230ad8a0373a47754"
+bytes = 295
+note = "DESIGNED deterministic bg create v2 response, shared by native executable and legacy shim tests; not a live process recording."
+answer = "Both CLI surfaces emit these exact complete envelope bytes with --json; human output is data.line. Caller evidence and argv travel unchanged in the request, never an asserted owner."
+
+[[fixture]]
+path = "golden/cli/bg-list-envelope.json"
+sha256 = "75fbde9c3cf9a0a92a17fa11f8b6389845a8efa12fdcb385c0261b4f042d887b"
+bytes = 405
+note = "DESIGNED deterministic bg list v2 response, shared by native executable and legacy shim tests; not a live process recording."
+answer = "Both CLI surfaces emit these exact complete envelope bytes with --json; human output is data.line. Caller evidence and argv travel unchanged in the request, never an asserted owner."
+
+[[fixture]]
+path = "golden/cli/bg-tail-envelope.json"
+sha256 = "6a822a656371ca6c138037589154ab4ca9619869daa852ebbec1efc8fd629f80"
+bytes = 131
+note = "DESIGNED deterministic bg tail v2 response, shared by native executable and legacy shim tests; not a live process recording."
+answer = "Both CLI surfaces emit these exact complete envelope bytes with --json; human output is data.line. Caller evidence and argv travel unchanged in the request, never an asserted owner."
+
+[[fixture]]
+path = "golden/cli/bg-kill-envelope.json"
+sha256 = "b95d9bfe619c950a372894328a1e2ab9dd6c73a4f31df6b9ecbe3989449eb3cb"
+bytes = 137
+note = "DESIGNED deterministic bg kill v2 response, shared by native executable and legacy shim tests; not a live process recording."
+answer = "Both CLI surfaces emit these exact complete envelope bytes with --json; human output is data.line. Caller evidence and argv travel unchanged in the request, never an asserted owner."
+
+[[fixture]]
+path = "golden/api/governance-routes.json"
+sha256 = "aee1eca986d65cf7a60f2bfaa951beea465c7a88d718b0c718a6d06c91a729f6"
+bytes = 89016
+note = "DESIGNED merged governance route contract promoted from plan 139 at e22833b0d0caf00d95346008dab1587005d0173d, not a runtime capture. Historical originals remain unchanged; unsupported guidance uses docs/how/pij-rs-api.md#unsupported-status and ErrorKind retains its existing snake_case wire. Plan 145 adds selected-node state and report assignment_id/refs defaults without changing verification or answer authority."
+answer = "Permanent readers consume stable complete v2 envelopes, daemon-owned attribution and role joins, observed lease-id requirements, and terminal-only answer supersede. Preserve E-RS-ANSWER-AUTHORITY-SPLIT for mixed persistence. Reports retain assignment_id and refs; the selected node exposes its latest state record, null before any declaration. Unsupported commands point to the stable ledger."
+
+[[fixture]]
+path = "golden/api/governance-events.json"
+sha256 = "a650137717eba301eeaa7735e9ff241adc0a8ce5a170bbd61ccc3c7d4f3c90cc"
+bytes = 34210
+note = "DESIGNED governance event contract promoted from plan 139 at e22833b0d0caf00d95346008dab1587005d0173d. Plan 144 adds unknown extension_build/path on seat.put; plan 145 adds assignment_id:null and refs:[] on unscoped report.state. Historical originals remain unchanged; this is not a new runtime capture."
+answer = "Consume shared Hello and event cases: Event retains JSON-string payload and machine-scoped cursor; since is exclusive. Shared publication prevents skipped or duplicate replay/live boundaries. Preserve superseded answers and canonical report assignment_id/refs, with serde defaults for older report.state records."
+
+[[fixture]]
+path = "golden/api/error-envelopes.json"
+sha256 = "6a8de7d3aecc5a634c0786b5e79ba0bfae977fbcb992305fb5b5b2108d1a2102"
+bytes = 1056
+note = "DESIGNED complete v2 refusal envelopes covering the actual native ErrorKind vocabulary, not a runtime capture. Prime retained the existing snake_case wire after checking crates/core/src/model.rs; historical kebab-case prose is not a wire authority. Shared by crates/core/tests/envelope_wire.rs and .pi/extensions/pij/core/daemon-wire.test.ts. The exhaustive native variant match requires enum additions to update this corpus; TypeScript reads these cases instead of restating a vocabulary list."
+answer = "Every native ErrorKind emits exactly its complete shared refusal envelope, including present data/details and absent optional fields. The TypeScript decoder recognizes every case as DaemonRefusalError with the original command, error kind and human message; aliases derived by replacing underscores with hyphens remain unknown protocol values, not daemon-owned refusals. A genuine not_found envelope must not be mistaken for an unserved HTTP route."
+
+[[fixture]]
+path = "golden/api/governance-client-parity.json"
+sha256 = "42435fadff05fd6f3cf7831b9894a22b3e4c3bd34937d37c3aa91751021a79a9"
+bytes = 122528
+note = "EXECUTED actual native binary and TS CLI captures after main integration: 29 shared mutations and 9 refusals against identical scripted HTTP responses, 18 same-daemon CLI pairs, 4 live HTTP/shim pairs, and 6 shared error-policy pairs. The additive list_here_capture records 4 native/shim byte-equal pairs plus 4 native/HTTP argument refusals against an isolated real-adapter daemon. Each record declares its method; mutation fixtures are client-boundary proof, not domain execution or production acceptance. Native binary and source snapshot hashes are retained."
+answer = "The original 66 shared comparisons preserve original stdout bytes with only the declared final-newline contract and no normalization. The additional list_here_capture proves bare/true cwd scoping and false/unfiltered roster parity, with path-valued CLI and relative/bare-true HTTP scopes refused as E-RS-ARG. Preserve distinct refusal exit policies. Sessions uses its real Rust HTTP baseline; native/HTTP-only register and missing native sessions remain explicit capability probes, never failed comparisons hidden by fallback. Real workflow/fanout/OMP canary receipts separately defend domain effects."
+
+[[fixture]]
+path = "golden/api/inbox-recovery.json"
+sha256 = "c8edc151c55707a86f109f4aa1b35101d45ce60b209b11ba1301032d09b462c9"
+bytes = 1010
+note = "DESIGNED OMP/Pi inbox recovery contract, exercised by Rust HTTP regressions against SQLite; not a production capture. Native release remains distinct from extension typing release."
+answer = "Heartbeat reports running, done or failed for a recipient-owned extension body; only running renews claimed_at, without ReaderRead or lease-expiration spending. Terminal observations do not mutate. Live working seats renew at expiry; three silent unprotected leases or bounded swallowed resends park failed rows. Peek lists live head before parked rows. delivery.parked is sender-addressed and names its recipient, message, job, outcome and reason. Native operator release requires authoritative prime or recorded parent and explicit evidence."
+
+[[fixture]]
+path = "golden/api/report-state-record.json"
+sha256 = "2e822685af6dcea9d32b2ff5717842cfe16fb3ddfb4b08c450d060e8ad24638f"
+bytes = 133
+note = "GENERATED with UPDATE_GOLDENS=1 from ReportService assignment_state_round_trips_and_clear_drops_its_metadata, plan 145. Deterministic injected registry/spine, not live deployment proof."
+answer = "Assignment-scoped state history round-trips canonical assignment_id and refs through the spine. Clearing removes both; old records deserialize with empty metadata."
+
+[[fixture]]
+path = "golden/api/report-assignment-client-parity.json"
+sha256 = "72102f00f8aa590642052db34609666a86dd9509f1d3b29b2da216a2389ac385"
+bytes = 9524
+note = "EXECUTED plan 145 native/shim captures against one private real daemon and private tmux server; binary SHA retained. Two read pairs and two assignment refusal pairs, not production acceptance."
+answer = "Node/state readers expose canonical assignment_id and refs identically in both clients. Assignment ownership and unknown-id refusal stdout is byte-equal; existing native exit 2 and shim exit 4 policies remain distinct."
+
+[[fixture]]
+path = "golden/fyi/block.txt"
+sha256 = "11f4e9a209b67ddbe833258b4629a60db5f18c0edc83ad3d1b691724e2897a1c"
+bytes = 146
+note = "Plan 158: the ONE definition of the held-FYI block. pij_core::fyi::render_block produces it, the daemon appends it after a message body or returns it from /v1/fyi/claim, and the Claude hook, the Pi/OMP extension and the Copilot extension each pass it through byte-for-byte."
+answer = "Two FYIs, oldest first, at UTC offset 0 and held at 14:02 and 14:10 UTC: the header `Also, 2 FYIs were queued for you:`, lines `N. [from <sender>, HH:MM] <body>`, continuation lines of a multi-line body indented 3 spaces, and no trailing newline."
+
+[[fixture]]
+path = "golden/fyi/digest.txt"
+sha256 = "9bb52408637fb40d13595174abb61ea0343dacdb3419adcceb4c23700b47c8a5"
+bytes = 282
+note = "Plan 159: the digest form of the held-FYI block, rendered by pij_core::fyi::render_block when more than DIGEST_ABOVE (5) FYIs are delivered at once. Seven FYIs a minute apart from 14:02 UTC, four from pij-x and three from pij-y, claimed at 1790690940000."
+answer = "The header gives the total and a count per sender (most first, then by name) and ends `The newest 3:`. The newest three follow in full, numbered by their place in the pile (5-7), with continuation lines indented 3 spaces. The last line names the command that reads all of them: `pij-rs fyi-read --seat <recipient> --claimed-at <claim ms>`. No trailing newline."
+
+[[fixture]]
+path = "harnesses/claude-2.1.284-idle.txt"
+sha256 = "2aeba82a2d582b23d4fcf80cf4fd86aa926fd0c2ff6f127036ee45130ce8fd58"
+bytes = 1692
+note = "Live Claude Code 2.1.284, --permission-mode auto, 220-col tmux pane, fresh session at its prompt (placeholder composer text, NBSP after the chevron). Captured for plan 157 re-review 3."
+answer = "Not busy: HarnessPort::busy is false and readiness is Ready (ready footer, composer between rules, no spinner row). Positive idle evidence: HarnessPort::idle is true."
+
+[[fixture]]
+path = "harnesses/claude-2.1.284-after-esc.txt"
+sha256 = "2b964681824b05dceed93c6a59f00d1bd3534a52c6c6b8a53211c68402aff305"
+bytes = 3269
+note = "Live Claude Code 2.1.284, auto mode, captured 3 s after an Esc interrupted a streaming reply ('Interrupted · What should Claude do instead?'). No Claude hook fired. Plan 157 re-review 3."
+answer = "Not busy: HarnessPort::busy is false and readiness is Ready; the interrupted turn left no spinner row. Positive idle evidence: HarnessPort::idle is true; this is the frame the cold-wake guard corrects a stale working state from."
+
+[[fixture]]
+path = "harnesses/claude-2.1.284-tool-run.txt"
+sha256 = "ed2024d93675a4f008a1bf6391445a2c8371636dd0e945b8f880c6b9c36c6c68"
+bytes = 4140
+note = "Live Claude Code 2.1.284, auto mode, 220-col pane, 12 s into a foreground python sleep tool call. Plan 157 re-review 3."
+answer = "Busy: the spinner row 'Fiddle-faddling… (11s · ↓ 120 tokens)' is a turn in progress, so HarnessPort::busy is true and readiness is Busy even though the ready footer and composer are visible."
+
+[[fixture]]
+path = "harnesses/claude-2.1.284-tool-run-narrow.txt"
+sha256 = "d7ec1567128c7dac360ab6fa154288edb09f20122cbc36995d8c6df9cfa6a63b"
+bytes = 1213
+note = "The same live tool call after resizing the pane to 36 columns: the spinner row truncates to 'Fiddle-faddling… (12s)' and the footer is cut short. Plan 157 re-review 3."
+answer = "Busy: a truncated spinner row still marks a turn in progress; HarnessPort::busy is true."
+
+[[fixture]]
+path = "golden/cold-wake/refusal.txt"
+sha256 = "726464d75adbfbe2ef295823cfc5480b547e040edd24c15136c4b220316d5445"
+bytes = 280
+note = "Plan 160: the E-RS-COLD-WAKE refusal, rendered by pij_core::cold_wake::refusal for a 720k-token Claude Opus 5.5 seat idle 1h52m."
+answer = "Header `❄ <seat> is cold (<ctx>, idle <dur>). Options:`, then one aligned row per option (`--fyi` hold for its next turn, $0 now; `--force --reason` wake on its current model, ~$ estimate), then the estimate basis line. No trailing newline."
+
+[[fixture]]
+path = "golden/cli/list-sized.json"
+sha256 = "954e25c03e6d92bf7d178ef314977e27d1c43e94f7d1c927379b7fc62f82165b"
+bytes = 782
+note = "Plan 160: a /v1/seats?sizes=true payload. A cold Claude seat, a warm working OMP seat, a Copilot seat with unknown context, a remote seat without size columns, and an unavailable peer."
+answer = "Input for pij list's human table: both the Rust CLI (pij_cli::roster::render_table) and the TS shim (renderRosterTable) must render list-sized.txt from it."
+
+[[fixture]]
+path = "golden/cli/list-sized.txt"
+sha256 = "359b3b78e2eef53919518e737bee61cdde158cc1922cf9d9f933e8cef5c81420"
+bytes = 310
+note = "Plan 160: pij list's human table rendered from list-sized.json."
+answer = "Columns SEAT, HARNESS, STATE, CTX, IDLE, CACHE padded two spaces apart. ❄ marks a row the guard would refuse. A remote seat shows `id@machine` and `-` sizes. Unavailable peers are listed after the rows. No trailing newline."

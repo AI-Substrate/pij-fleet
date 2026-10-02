@@ -1,0 +1,1 @@
+{"ok":true,"command":"pij bg create","v":2,"data":{"job":"bg-golden","line":"bg started — shell output (job bg-golden, pid 4242); result will arrive as an injected turn from pij-bg; full output at /state/bg/bg-golden.log","outPath":"/state/bg/bg-golden.log","pid":4242,"title":"shell output"}}

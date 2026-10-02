@@ -1,0 +1,5 @@
+╭────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.142.3)                     │
+│ permissions: YOLO mode                          │
+╰────────────────────────────────────────────────╯
+› Use /skills to list available skills

@@ -1,0 +1,1 @@
+{"ok":true,"command":"pij register","v":1,"data":{"id":"pij-test-seat","harness":"omp","pane":"%42","proc":{"pid":4242,"proc_start":20260829103052},"folder":"/abs/tree","state":"idle","semantic_state":null,"role":null,"parent":null,"relay":false,"spawn_id":"spawn-1","model":"github-copilot/gpt-5.6-sol-fast","provider":"github-copilot","effort":"high"}}

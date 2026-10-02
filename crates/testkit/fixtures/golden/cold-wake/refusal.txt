@@ -1,0 +1,4 @@
+E-RS-COLD-WAKE: ❄ pij-x is cold (720k, idle 1h52m). Options:
+  --fyi                  hold for its next turn          $0 now
+  --force --reason "…"   wake on its current model       ~$6.45
+Estimates at list price: a 1-hour cache write of the whole context, plus about 5 calls.

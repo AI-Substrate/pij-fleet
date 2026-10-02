@@ -1,0 +1,16 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "flow-pair/prompt-trial",
+	"title": "PromptTrialRecord",
+	"type": "object",
+	"required": ["trialId", "runId", "delegationId", "templateRef", "promptHash", "createdAt"],
+	"properties": {
+		"trialId": { "type": "string", "pattern": "^trial-\\d{4}$" },
+		"runId": { "type": "string" },
+		"delegationId": { "type": "string" },
+		"templateRef": { "type": "string" },
+		"promptHash": { "type": "string" },
+		"createdAt": { "type": "string", "format": "date-time" }
+	},
+	"additionalProperties": false
+}

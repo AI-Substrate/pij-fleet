@@ -1,0 +1,26 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "flow-pair/learning",
+	"title": "LearningRecord",
+	"type": "object",
+	"required": ["learningId", "runId", "delegationId", "cluster", "candidatePath", "createdAt"],
+	"properties": {
+		"learningId": { "type": "string", "pattern": "^learn-\\d{4}$" },
+		"runId": { "type": "string" },
+		"delegationId": { "type": "string" },
+		"cluster": {
+			"type": "string",
+			"enum": [
+				"implement-code",
+				"fix-code",
+				"review-code",
+				"docs-writing",
+				"codebase-research",
+				"validation-runner"
+			]
+		},
+		"candidatePath": { "type": "string" },
+		"createdAt": { "type": "string", "format": "date-time" }
+	},
+	"additionalProperties": false
+}

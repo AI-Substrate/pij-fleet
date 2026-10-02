@@ -1,0 +1,69 @@
+# fs2 project configuration
+# Full docs: https://github.com/AI-Substrate/flow_squared
+#
+# Provider settings (LLM, embeddings) go in your global config:
+#   ~/.config/fs2/config.yaml
+
+scan:
+  scan_paths:
+    - "."
+  ignore_patterns:
+    - "node_modules"
+    - ".venv"
+    - "*.pyc"
+    - "__pycache__"
+  respect_gitignore: true
+  max_file_size_kb: 500
+  follow_symlinks: false
+
+# ─── Graph (optional — defaults shown) ─────────────────────────────
+# Path to the code graph pickle file. Defaults to .fs2/graph.pickle relative
+# to the project root. Override with the --graph-file CLI flag for one-off
+# scans, or set FS2_GRAPH__GRAPH_PATH env var.
+#
+# Commented out so a global `graph:` setting (in ~/.config/fs2/config.yaml)
+# is not silently overridden by this project file. Uncomment to override
+# per-project.
+# graph:
+#   graph_path: ".fs2/graph.pickle"
+
+# ─── LLM (for smart content) ───────────────────────────────────────
+# Smart content generates AI summaries for every code node.
+# Configure your LLM provider in ~/.config/fs2/config.yaml (global),
+# or uncomment below to set per-project:
+#
+# llm:
+#   provider: local
+#   base_url: http://localhost:11434
+#   model: qwen2.5-coder:7b
+
+# ─── Smart Content (AI summaries for code nodes) ──────────────────
+# Controls AI summary generation. Requires LLM provider.
+# smart_content:
+#   max_input_tokens: 50000
+#   enabled_categories: ["file"]
+
+# ─── Embedding (for semantic search) ──────────────────────────────
+# Configure in ~/.config/fs2/config.yaml (global), or uncomment below:
+# embedding:
+#   mode: local
+#   dimensions: 384
+
+# ─── Cross-File Relationships (SCIP-powered) ─────────────────────
+# cross_file_rels:
+#   enabled: true
+
+# ─── Other Graphs (multi-graph) ───────────────────────────────────
+# Reference graphs from other repos. Query via:
+#   fs2 --graph-name <name> <command>
+# or in MCP: tree(..., graph_name="<name>")
+other_graphs:
+  graphs:
+    - name: pi-mono
+      path: ~/pi-hacking/pi-fork/.fs2/graph.pickle
+      description: Pi agent harness monorepo (jakkaj fork)
+      source_url: https://github.com/jakkaj/pi-mono
+    - name: minih
+      path: ~/substrate/minih/.fs2/graph.pickle
+      description: minih — standalone minih agent runner (harness measurement branch)
+      source_url: https://github.com/AI-Substrate/minih
