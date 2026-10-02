@@ -799,12 +799,22 @@ fn lanes(ix: &Indexed<'_>, corpus: &Corpus, events: &[&Event]) -> Vec<Lane> {
         .into_iter()
         .map(|(source, _)| {
             let seat = ix.label(source);
+            let role = roles
+                .get(seat.as_str())
+                .copied()
+                .flatten()
+                .map(str::to_string);
             let mut lane = Lane {
-                role: roles
-                    .get(seat.as_str())
-                    .copied()
-                    .flatten()
-                    .map(str::to_string),
+                prime: corpus.primes.contains(&seat)
+                    || role
+                        .as_deref()
+                        .is_some_and(|r| r.to_ascii_lowercase().contains("prime")),
+                projects: corpus
+                    .prime_projects
+                    .get(&seat)
+                    .cloned()
+                    .unwrap_or_default(),
+                role,
                 seat,
                 ..Lane::default()
             };

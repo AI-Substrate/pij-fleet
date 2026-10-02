@@ -579,6 +579,36 @@ fn the_message_graph_keeps_pairs_touching_the_scope_and_marks_primes_and_remotes
         (2, 6)
     );
     assert!(g.nodes.iter().all(|n| n.id != "pij-x"));
+    // A prime's own lane says so, and what it is prime of.
+    let lane = |seat: &str| report.lanes.iter().find(|l| l.seat == seat);
+    assert!(lane("pij-worker-a").is_some_and(|l| !l.prime));
+}
+
+/// A prime's context lane carries a badge: prime, and the projects it governs.
+#[test]
+fn a_primes_lane_is_marked_with_its_projects() {
+    let corpus = Corpus {
+        sessions: vec![session("a", "sa")],
+        calls: number(vec![call("a", T0 + HOUR, None, 1, tokens(0, 30_000, 0, 1))]),
+        turns: vec![turn("a", 1, "human", None)],
+        seats: vec![Seat {
+            id: "pij-boss".into(),
+            harness: "claude".into(),
+            role: None,
+            folder: "/work/demo".into(),
+            parent: None,
+            spawned_ms: None,
+            ended_ms: None,
+            sessions: vec!["sa".into()],
+        }],
+        primes: vec!["pij-boss".into()],
+        prime_projects: [("pij-boss".to_string(), vec!["demo".to_string()])].into(),
+        ..Corpus::default()
+    };
+    let report = analyze(&corpus, window(), &PriceTable::default());
+    let lane = &report.lanes[0];
+    assert!(lane.prime);
+    assert_eq!(lane.projects, ["demo"]);
 }
 
 /// A typed turn is the user's, whoever the user is: no operator name in a report.

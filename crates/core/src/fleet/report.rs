@@ -269,6 +269,10 @@ pub struct Lane {
     pub seat: String,
     /// The seat's role, when pij knows it.
     pub role: Option<String>,
+    /// The seat is a prime (a project's, or the machine's designated one).
+    pub prime: bool,
+    /// The projects it is prime of.
+    pub projects: Vec<String>,
     /// Tokens by class.
     pub tokens: Tokens,
     /// Calls.
