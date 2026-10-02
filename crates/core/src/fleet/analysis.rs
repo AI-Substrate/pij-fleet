@@ -15,7 +15,7 @@ use super::{
 /// The RCA's trigger groups, in display order.
 pub(super) const GROUPS: [&str; 7] = [
     "peer message",
-    "Jordan (typed)",
+    "user typed",
     "background task done",
     "subagent",
     "limit reset resume",
@@ -27,7 +27,7 @@ pub(super) const GROUPS: [&str; 7] = [
 pub(super) fn group(origin: &str) -> &'static str {
     match origin {
         "peer" => "peer message",
-        "human" => "Jordan (typed)",
+        "human" => "user typed",
         "task-notification" => "background task done",
         "subagent-task" | "coordinator" => "subagent",
         "auto-continuation" => "limit reset resume",

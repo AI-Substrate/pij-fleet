@@ -197,7 +197,7 @@ fn status_turns_and_their_avoidable_cold_wakes() {
     let wake = tokens(0, 100_000, 0, 50);
     let warm = tokens(0, 500, 100_000, 50);
     let calls = number(vec![
-        // turn 1: Jordan, warm work
+        // turn 1: typed by the user, warm work
         call("a", T0 + HOUR, None, 1, tokens(0, 100_000, 0, 10)),
         call("a", T0 + HOUR + 1_000, Some(1_000), 1, warm),
         // turn 2: a peer ack after 2 h idle: a status turn and an avoidable cold wake
@@ -572,4 +572,11 @@ fn the_message_graph_keeps_pairs_touching_the_scope_and_marks_primes_and_remotes
         (2, 6)
     );
     assert!(g.nodes.iter().all(|n| n.id != "pij-x"));
+}
+
+/// A typed turn is the user's, whoever the user is: no operator name in a report.
+#[test]
+fn a_typed_turn_is_labelled_user_typed() {
+    assert_eq!(super::analysis::group("human"), "user typed");
+    assert!(super::analysis::GROUPS.contains(&"user typed"));
 }
