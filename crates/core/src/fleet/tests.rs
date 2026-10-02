@@ -401,3 +401,66 @@ fn an_empty_corpus_is_a_report_of_zeros_not_a_panic() {
     assert_eq!(report.key_figures.total_usd, 0.0);
     assert_eq!(report.version, REPORT_VERSION);
 }
+
+/// A growth run carries what the page needs to explain it on hover: who, when,
+/// what it cost, its turns, status turns and cold wakes, markers where they
+/// happened, and the same run replayed without its status turns.
+#[test]
+fn a_growth_run_carries_its_story_for_the_hover() {
+    let mut calls = Vec::new();
+    let mut ctx = 2_000u64;
+    let mut ts = T0 + HOUR;
+    let warm = |ctx: u64| tokens(0, 2_000, ctx - 2_000, 300);
+    // turn 1: typed work from 2k to 250k
+    calls.push(call("r", ts, None, 1, tokens(0, ctx, 0, 300)));
+    while ctx < 250_000 {
+        ctx += 2_000;
+        ts += 1_000;
+        calls.push(call("r", ts, Some(1_000), 1, warm(ctx)));
+    }
+    // turn 2: a warm ack a minute later (a status turn, drawn as a dot)
+    ts += 60_000;
+    ctx += 2_000;
+    calls.push(call("r", ts, Some(60_000), 2, warm(ctx)));
+    // turn 3: an ack two hours later wakes the seat cold (avoidable; a red
+    // triangle, not also a dot, as the RCA draws it)
+    ts += 2 * HOUR;
+    calls.push(call("r", ts, Some(2 * HOUR), 3, tokens(0, ctx, 0, 50)));
+    // turn 4: real work by message, on to 500k
+    while ctx < 500_000 {
+        ctx += 2_000;
+        ts += 1_000;
+        calls.push(call("r", ts, Some(1_000), 4, warm(ctx)));
+    }
+    let corpus = Corpus {
+        sessions: vec![session("r", "s")],
+        calls: number(calls),
+        turns: vec![
+            turn("r", 1, "human", None),
+            turn("r", 2, "peer", Some("pij-boss")),
+            turn("r", 3, "peer", Some("pij-boss")),
+            turn("r", 4, "peer", Some("pij-boss")),
+        ],
+        ..Corpus::default()
+    };
+    let report = analyze(&corpus, window(), &PriceTable::default());
+    let run = &report.context_cost.runs[0];
+    assert_eq!(run.seat, "session s");
+    assert_eq!((run.start_ms, run.end_ms), (T0 + HOUR, ts));
+    assert_eq!((run.turns, run.message_turns, run.status_turns), (4, 3, 2));
+    assert_eq!((run.cold_wakes, run.avoidable_cold_wakes), (1, 1));
+    let kinds: Vec<&str> = run.markers.iter().map(|m| m.kind.as_str()).collect();
+    assert_eq!(kinds, ["status", "cold_avoidable"]);
+    let with = run.points.last().unwrap()[1];
+    let without = run.replay.last().unwrap()[1];
+    assert!(
+        without < with,
+        "the replay without the ack is cheaper: {without} vs {with}"
+    );
+    assert!((run.usd - with).abs() < 1e-9);
+    let model = &report.context_cost.model;
+    assert!(
+        model.len() > 10 && model.windows(2).all(|w| w[1][1] >= w[0][1]),
+        "{model:?}"
+    );
+}

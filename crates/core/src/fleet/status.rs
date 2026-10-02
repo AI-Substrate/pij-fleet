@@ -21,7 +21,7 @@ fn turn_of<'a>(ix: &'a Indexed<'_>, call: &Call) -> Option<&'a TurnAgg> {
     ix.turns.get(&(call.source.clone(), call.turn_no))
 }
 
-fn status_call(ix: &Indexed<'_>, call: &Call) -> bool {
+pub(super) fn status_call(ix: &Indexed<'_>, call: &Call) -> bool {
     turn_of(ix, call).is_some_and(TurnAgg::status)
 }
 
@@ -61,7 +61,7 @@ pub(super) fn status_turns(ix: &Indexed<'_>) -> StatusTurns {
 
     let mut replay_total = 0.0;
     for calls in by_source(ix, false).values() {
-        for (call, usd_after) in replay(ix, calls, p) {
+        for (call, _, usd_after) in replay(ix, calls, p) {
             replay_total += usd_after;
             let recorded = call.tokens.usd(p);
             if !call.cold()
@@ -78,10 +78,14 @@ pub(super) fn status_turns(ix: &Indexed<'_>) -> StatusTurns {
 }
 
 /// One transcript replayed without its status turns: each kept call with its
-/// re-priced cost. A dropped call removes the context it added (its step over
+/// context after the removal and its re-priced cost. A dropped call removes the context it added (its step over
 /// the previous call's output, plus its own output) from every later call until
 /// the next compaction; a kept call whose idle gap now outlives the cache goes cold.
-fn replay<'a>(ix: &Indexed<'_>, calls: &[&'a Call], p: &Prices) -> Vec<(&'a Call, f64)> {
+pub(super) fn replay<'a>(
+    ix: &Indexed<'_>,
+    calls: &[&'a Call],
+    p: &Prices,
+) -> Vec<(&'a Call, u64, f64)> {
     let mut out = Vec::new();
     let mut removed: u64 = 0;
     let mut prev_kept_ts: Option<i64> = None;
@@ -124,7 +128,7 @@ fn replay<'a>(ix: &Indexed<'_>, calls: &[&'a Call], p: &Prices) -> Vec<(&'a Call
                 + write_usd
                 + out_usd
         };
-        out.push((*call, usd));
+        out.push((*call, kept_ctx, usd));
         prev_kept_ts = Some(call.ts_ms);
         prev_ctx = Some(ctx);
         prev_out = call.tokens.output;

@@ -359,6 +359,8 @@ pub struct ContextCost {
     pub fit: Fit,
     /// Growth runs: cumulative cost against the context the run has grown to.
     pub runs: Vec<RunCurve>,
+    /// The square-law model: `[peak context, cumulative list USD]` of an average run.
+    pub model: Vec<[f64; 2]>,
 }
 
 /// Warm calls of one 25k context bin.
@@ -394,8 +396,51 @@ pub struct Fit {
 pub struct RunCurve {
     /// The seat (or unseated session) label.
     pub seat: String,
+    /// The seat's role, when pij knows it.
+    pub role: Option<String>,
+    /// First call, UTC ms.
+    pub start_ms: i64,
+    /// Last call, UTC ms.
+    pub end_ms: i64,
+    /// Calls in the run.
+    pub calls: u64,
+    /// Turns in the run.
+    pub turns: u64,
+    /// Of those, opened by an agent message.
+    pub message_turns: u64,
+    /// Of those, status turns (three calls or fewer).
+    pub status_turns: u64,
+    /// Idle cold wakes in the run.
+    pub cold_wakes: u64,
+    /// Of those, opened by a status turn.
+    pub avoidable_cold_wakes: u64,
+    /// List USD of the run.
+    pub usd: f64,
+    /// USD with cached reads free.
+    pub usd_reads_free: f64,
+    /// Largest context.
+    pub peak_context: u64,
     /// `[context, cumulative list USD, cumulative reads-free USD]` at each new peak.
     pub points: Vec<[f64; 3]>,
+    /// Status turns and cold wakes, where they happened on the curve.
+    pub markers: Vec<RunMarker>,
+    /// `[context, cumulative list USD]` of the same run replayed without its status turns.
+    pub replay: Vec<[f64; 2]>,
+}
+
+/// A status turn or cold wake on a growth curve.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct RunMarker {
+    /// The context the run had reached.
+    pub context: f64,
+    /// Cumulative list USD at the marker.
+    pub usd: f64,
+    /// Cumulative reads-free USD at the marker.
+    pub usd_reads_free: f64,
+    /// `status`, `cold` (opened by real work) or `cold_avoidable` (opened by a status turn).
+    pub kind: String,
+    /// When, UTC ms.
+    pub ts_ms: i64,
 }
 
 /// Growth runs on main seats, split by cost part.

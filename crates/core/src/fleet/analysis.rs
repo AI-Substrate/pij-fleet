@@ -91,6 +91,8 @@ pub(super) struct Indexed<'a> {
     pub turn_origin: HashMap<(&'a str, i64), (&'a str, Option<&'a str>)>,
     /// Turns keyed by (source, turn number), in call order.
     pub turns: BTreeMap<(String, i64), TurnAgg>,
+    /// Seat roles by seat id.
+    pub roles: HashMap<String, String>,
 }
 
 impl<'a> Indexed<'a> {
@@ -192,6 +194,11 @@ fn index<'a>(corpus: &'a Corpus, window: Window, prices: &PriceTable) -> Indexed
         labels,
         turn_origin,
         turns: BTreeMap::new(),
+        roles: corpus
+            .seats
+            .iter()
+            .filter_map(|s| s.role.clone().map(|role| (s.id.clone(), role)))
+            .collect(),
     };
     let mut turns: BTreeMap<(String, i64), TurnAgg> = BTreeMap::new();
     for call in &indexed.calls {

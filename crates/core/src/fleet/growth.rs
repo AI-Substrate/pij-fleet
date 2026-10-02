@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use super::analysis::{Indexed, median};
-use super::{Call, ContextCost, CostBin, Fit, Milestone, RunCurve, SquareRule};
+use super::status::{replay, status_call};
+use super::{Call, ContextCost, CostBin, Fit, Milestone, Prices, RunCurve, RunMarker, SquareRule};
 
 /// Context bins of the per-call cost chart.
 const BIN: u64 = 25_000;
@@ -51,6 +52,141 @@ pub(super) fn runs<'a>(calls: &[&'a Call]) -> Vec<Vec<&'a Call>> {
         runs.push(current);
     }
     runs
+}
+
+/// Keeps one point per [`CURVE_STEP`] of new peak context, plus the last.
+struct Thin<const N: usize> {
+    points: Vec<[f64; N]>,
+    last_kept: Option<f64>,
+    pending: Option<[f64; N]>,
+    top: f64,
+}
+
+impl<const N: usize> Thin<N> {
+    fn new() -> Self {
+        Self {
+            points: Vec::new(),
+            last_kept: None,
+            pending: None,
+            top: f64::MIN,
+        }
+    }
+
+    /// Offer a point; only a new peak (`point[0]`) can be kept.
+    fn offer(&mut self, point: [f64; N]) {
+        if point[0] < self.top {
+            return;
+        }
+        self.top = point[0];
+        if self
+            .last_kept
+            .is_none_or(|kept| point[0] >= kept + CURVE_STEP as f64)
+        {
+            self.points.push(point);
+            self.last_kept = Some(point[0]);
+            self.pending = None;
+        } else {
+            self.pending = Some(point);
+        }
+    }
+
+    fn finish(mut self) -> Vec<[f64; N]> {
+        self.points.extend(self.pending);
+        self.points
+    }
+}
+
+/// One growth run as the page draws it: its curve, its story and its replay
+/// without status turns.
+fn run_curve(ix: &Indexed<'_>, source: &str, run: &[&Call], peak: u64) -> RunCurve {
+    let p = &ix.prices;
+    let seat = ix.label(source);
+    let mut curve = RunCurve {
+        role: ix.roles.get(seat.as_str()).cloned(),
+        seat,
+        start_ms: run[0].ts_ms,
+        end_ms: run[run.len() - 1].ts_ms,
+        calls: run.len() as u64,
+        peak_context: peak,
+        ..RunCurve::default()
+    };
+    let (mut acc, mut acc_rf, mut top) = (0.0, 0.0, 0u64);
+    let mut thin = Thin::<3>::new();
+    let mut last_turn = None;
+    let mut status_turns = std::collections::BTreeSet::new();
+    for call in run {
+        acc += call.tokens.usd(p);
+        acc_rf += call.tokens.usd_reads_free(p);
+        top = top.max(call.context());
+        thin.offer([call.context() as f64, acc, acc_rf]);
+        let status = status_call(ix, call);
+        if last_turn != Some(call.turn_no) {
+            last_turn = Some(call.turn_no);
+            curve.turns += 1;
+            curve.message_turns += u64::from(ix.origin(call).0 == "peer");
+            if status {
+                status_turns.insert(call.turn_no);
+            }
+        }
+        let marker = |kind: &str| RunMarker {
+            context: top as f64,
+            usd: acc,
+            usd_reads_free: acc_rf,
+            kind: kind.to_string(),
+            ts_ms: call.ts_ms,
+        };
+        if call.cold() && call.idle() {
+            curve.cold_wakes += 1;
+            curve.avoidable_cold_wakes += u64::from(status);
+            curve
+                .markers
+                .push(marker(if status { "cold_avoidable" } else { "cold" }));
+        } else if status && call.call_in_turn == 1 {
+            curve.markers.push(marker("status"));
+        }
+    }
+    curve.status_turns = status_turns.len() as u64;
+    curve.usd = acc;
+    curve.usd_reads_free = acc_rf;
+    curve.points = thin.finish();
+    let mut thin = Thin::<2>::new();
+    let mut acc = 0.0;
+    for (_, context, usd) in replay(ix, run, p) {
+        acc += usd;
+        thin.offer([context as f64, acc]);
+    }
+    curve.replay = thin.finish();
+    curve
+}
+
+/// The square law of an average run: it starts at the median start context and
+/// grows by the median growth per call; each call reads what it carries and adds
+/// the mean warm write and output cost.
+fn square_law_model(
+    warm: &[&Call],
+    p: &Prices,
+    starts: &mut [f64],
+    growths: &mut [f64],
+) -> Vec<[f64; 2]> {
+    if warm.is_empty() || starts.is_empty() {
+        return Vec::new();
+    }
+    let extra = warm
+        .iter()
+        .map(|c| c.tokens.usd(p) - c.tokens.cache_read as f64 * p.read / 1e6)
+        .sum::<f64>()
+        / warm.len() as f64;
+    let (c0, g) = (median(starts), median(growths));
+    if g <= 0.0 {
+        return Vec::new();
+    }
+    (0..=40)
+        .map(|i| {
+            let cmax = i as f64 * 25_000.0;
+            let n = ((cmax - c0) / g).max(0.0);
+            [cmax, p.read / 1e6 * (n * c0 + g * n * n / 2.0) + n * extra]
+        })
+        .collect()
 }
 
 /// `sorted[min(n - 1, p * n)]`, the RCA's quantile.
@@ -106,47 +242,23 @@ pub(super) fn context_cost(ix: &Indexed<'_>) -> ContextCost {
     out.fit = fit(&warm, p);
 
     let mut curves = Vec::new();
+    let mut starts = Vec::new();
+    let mut growths = Vec::new();
     for (source, calls) in by_source(ix, true) {
         for run in runs(&calls) {
             let peak = run.iter().map(|c| c.context()).max().unwrap_or(0);
             if run[0].context() >= RUN_START_MAX || peak <= RUN_PEAK_MIN {
                 continue;
             }
-            let (mut acc, mut acc_rf, mut top) = (0.0, 0.0, 0);
-            let mut points: Vec<[f64; 3]> = Vec::new();
-            let mut last_kept: Option<u64> = None;
-            let mut pending = None;
-            for call in &run {
-                acc += call.tokens.usd(p);
-                acc_rf += call.tokens.usd_reads_free(p);
-                if call.context() >= top {
-                    top = call.context();
-                    let point = [top as f64, acc, acc_rf];
-                    if last_kept.is_none_or(|kept| top >= kept + CURVE_STEP) {
-                        points.push(point);
-                        last_kept = Some(top);
-                        pending = None;
-                    } else {
-                        pending = Some(point);
-                    }
-                }
-            }
-            points.extend(pending);
-            curves.push((
-                acc,
-                RunCurve {
-                    seat: ix.label(source),
-                    points,
-                },
-            ));
+            starts.push(run[0].context() as f64);
+            growths.push((peak - run[0].context()) as f64 / run.len() as f64);
+            curves.push(run_curve(ix, source, &run, peak));
         }
     }
-    curves.sort_by(|a, b| b.0.total_cmp(&a.0));
-    out.runs = curves
-        .into_iter()
-        .take(MAX_CURVES)
-        .map(|(_, curve)| curve)
-        .collect();
+    out.model = square_law_model(&warm, p, &mut starts, &mut growths);
+    curves.sort_by(|a, b| b.usd.total_cmp(&a.usd));
+    curves.truncate(MAX_CURVES);
+    out.runs = curves;
     out
 }
 

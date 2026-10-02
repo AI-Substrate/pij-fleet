@@ -47,6 +47,14 @@ select{font:inherit}
 svg text{font-family:var(--mono);fill:var(--ink)}
 .ax{font-size:11px;fill:var(--ink2)}.ax-day{font-size:12px;font-weight:600}
 .legend{font:12.5px/1.9 var(--mono);color:var(--ink2);margin:6px 0 0}
+.runs-wrap{position:relative}
+#runs-svg .hit{cursor:pointer}
+.tip{position:absolute;pointer-events:none;background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:8px 10px;font:12.5px/1.5 var(--mono);box-shadow:0 4px 14px rgba(0,0,0,.12);max-width:260px;z-index:2}
+.modal{position:fixed;inset:0;background:rgba(10,16,18,.45);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:4vh 16px;z-index:10}
+.modal[hidden]{display:none}
+.modal-card{position:relative;background:var(--paper);border-radius:10px;max-width:980px;width:100%;padding:22px 24px 12px;box-shadow:0 18px 50px rgba(0,0,0,.3)}
+.modal-card h3{margin:0 0 10px}
+.modal .close{position:absolute;top:10px;right:14px;border:0;background:none;font:28px/1 var(--display);color:var(--ink2);cursor:pointer}
 .lk{display:inline-flex;align-items:center;gap:6px;margin:0 16px 0 0;white-space:nowrap}
 .key{display:inline-block;width:14px;height:10px;margin:0 6px 0 14px;vertical-align:middle}.key:first-child{margin-left:0}
 .scroll{overflow-x:auto}
@@ -70,6 +78,7 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
 <p class="dek" id="missing" hidden>No report found. Keep <code>report.js</code> next to this page, or serve the folder over http so the page can fetch <code>report.json</code>.</p></header>
 <main id="app"></main>
 <footer id="foot"></footer>
+<div id="modal" class="modal" hidden></div>
 <script src="report.js"></script>
 <script>
 "use strict";
@@ -162,20 +171,102 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
     return `<div class="lane"><h4>${esc(l.seat)}</h4><p class="note">${esc(l.role || "no role")} · ${usd(price(l.tokens))} · ${num(l.calls)} calls · ${l.peer_turns} message turns · ${l.human_turns} typed</p>${out.join("")}</div>`;
   }
 
+  // Growth runs: every run faint; hover highlights one, click opens its detail.
+  const RUN_COL = "#1B7F79";
+  function runFrame(runs, W, H, col) {
+    const x0 = 64, x1 = W - 10, y0 = 14, y1 = H - 40, XMAX = 1e6;
+    const ymax = Math.max(1, ...runs.map(r => r.points.length ? r.points[r.points.length - 1][col] : 0)) * 1.04;
+    const X = v => x0 + (x1 - x0) * Math.min(v, XMAX) / XMAX, Y = v => y1 - (y1 - y0) * v / ymax;
+    const axes = [];
+    for (let i = 0; i <= 4; i++) { const v = ymax * i / 4; axes.push(`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--rule)" stroke-width=".6"/><text x="${x0 - 6}" y="${Y(v) + 4}" class="ax" text-anchor="end">${usd(v)}</text>`); }
+    for (let v = 0; v <= XMAX; v += 2e5) axes.push(`<text x="${X(v)}" y="${y1 + 18}" class="ax" text-anchor="middle">${v / 1e3}k</text>`);
+    axes.push(`<text x="${(x0 + x1) / 2}" y="${y1 + 36}" class="ax ax-day" text-anchor="middle">context the session has grown to (tokens)</text>`);
+    return {X, Y, axes: axes.join("")};
+  }
+  const poly = (pts, f) => pts.map(p => f(p)).join(" ");
+  function runOverlay(r, X, Y, col, big) {
+    const line = poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1));
+    const out = [];
+    if (!state.free && r.replay.length) out.push(`<polyline fill="none" stroke="${RUN_COL}" stroke-width="${big ? 2 : 1.6}" stroke-dasharray="5 4" opacity=".8" points="${poly(r.replay, p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1))}"/>`);
+    out.push(`<polyline fill="none" stroke="${RUN_COL}" stroke-width="${big ? 3 : 2.6}" points="${line}"/>`);
+    for (const m of r.markers) {
+      const x = X(m.context), y = Y(state.free ? m.usd_reads_free : m.usd), s = big ? 6 : 5;
+      const tip = `<title>${esc(local(m.ts_ms))}: ${m.kind === "status" ? "status turn" : m.kind === "cold" ? "cold wake opened by real work" : "cold wake opened by a no-action message (avoidable)"}</title>`;
+      out.push(m.kind === "status"
+        ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${big ? 3.6 : 3}" fill="var(--red)">${tip}</circle>`
+        : `<path d="M${x.toFixed(1)},${(y - s).toFixed(1)} l${s * .8},${s * 1.5} h${-s * 1.6} z" fill="${m.kind === "cold" ? "var(--cold)" : "var(--red)"}" stroke="var(--paper)" stroke-width=".6">${tip}</path>`);
+    }
+    return out.join("");
+  }
+  const runKey = () => `<p class="legend">${[
+    ['<line x1="1" y1="6" x2="17" y2="6" stroke="var(--ink)" stroke-width="1.4" opacity=".35"/>', "one growth run (from under 150k to past 400k)"],
+    ...(state.free ? [] : [['<line x1="1" y1="6" x2="17" y2="6" stroke="var(--amber)" stroke-width="3"/>', "average, square-law model"]]),
+    [`<line x1="1" y1="6" x2="17" y2="6" stroke="${RUN_COL}" stroke-width="2.6"/>`, "highlighted run"],
+    ...(state.free ? [] : [[`<line x1="1" y1="6" x2="17" y2="6" stroke="${RUN_COL}" stroke-width="1.6" stroke-dasharray="4 3"/>`, "same run without its status turns (modelled)"]]),
+    ['<circle cx="9" cy="6" r="3.4" fill="var(--red)"/>', "status turn"],
+    ['<path d="M9,2 l5,9 h-10 z" fill="var(--red)"/>', "cold wake opened by a no-action message (avoidable)"],
+    ['<path d="M9,2 l5,9 h-10 z" fill="var(--cold)"/>', "cold wake opened by real work"],
+  ].map(([svg, label]) => `<span class="lk"><svg width="18" height="12" viewBox="0 0 18 12" aria-hidden="true">${svg}</svg>${label}</span>`).join("")}</p>`;
+  function runFacts(r) {
+    const rf = state.free;
+    return table(["", ""], [
+      ["seat", esc(r.seat) + (r.role ? ` <span class="read">${esc(r.role)}</span>` : "")],
+      ["from", esc(local(r.start_ms))],
+      ["to", esc(local(r.end_ms))],
+      ["cost", `<b>${usd(rf ? r.usd_reads_free : r.usd, 2)}</b> ${rf ? "with cached reads free" : `at ${esc(R.prices.default)} list price`}${!rf && r.replay.length ? ` · ${usd(r.replay[r.replay.length - 1][1], 2)} without its status turns` : ""}`],
+      ["peak context", `${mtok(r.peak_context)} tokens`],
+      ["calls", num(r.calls)],
+      ["turns", `${num(r.turns)} (${num(r.message_turns)} opened by agent messages)`],
+      ["status turns", num(r.status_turns)],
+      ["cold wakes", `${num(r.cold_wakes)} (${num(r.avoidable_cold_wakes)} avoidable)`],
+      ["FYI messages", `<span class="read">arrive with pij's message records (plan 162 P2)</span>`],
+    ]);
+  }
   function curves() {
     const runs = R.context_cost.runs;
     if (!runs.length) return `<p class="note">No growth run started under 150k and passed 400k in this window.</p>`;
-    const W = 1100, H = 420, x0 = 64, x1 = W - 10, y0 = 14, y1 = H - 40, XMAX = 1e6;
-    const col = state.free ? 2 : 1;
-    const YMAX = Math.max(1, ...runs.map(r => r.points.length ? r.points[r.points.length - 1][col] : 0)) * 1.04;
-    const X = v => x0 + (x1 - x0) * Math.min(v, XMAX) / XMAX, Y = v => y1 - (y1 - y0) * v / YMAX;
-    const out = [`<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative cost of growth runs against context">`];
-    for (let i = 0; i <= 4; i++) { const v = YMAX * i / 4; out.push(`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--rule)" stroke-width=".6"/><text x="${x0 - 6}" y="${Y(v) + 4}" class="ax" text-anchor="end">${usd(v)}</text>`); }
-    for (let v = 0; v <= XMAX; v += 2e5) out.push(`<text x="${X(v)}" y="${y1 + 18}" class="ax" text-anchor="middle">${v / 1e3}k</text>`);
-    out.push(`<text x="${(x0 + x1) / 2}" y="${y1 + 36}" class="ax ax-day" text-anchor="middle">context the session has grown to (tokens)</text>`);
-    for (const r of runs) out.push(`<polyline fill="none" stroke="var(--ink)" stroke-width=".8" opacity=".28" points="${r.points.map(p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1)).join(" ")}"><title>${esc(r.seat)}</title></polyline>`);
-    out.push("</svg>");
-    return out.join("") + `<p class="note">Each line is one growth run on a main seat, from under 150k context to past 400k, ${state.free ? "with cached reads free" : `at ${esc(R.prices.default)} list price`}. These curves are precomputed at the report's own prices.</p>`;
+    const col = state.free ? 2 : 1, W = 1100, H = 440;
+    const {X, Y, axes} = runFrame(runs, W, H, col);
+    const out = [`<div class="runs-wrap"><svg class="fig" id="runs-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative cost of growth runs against context; hover a line for its story, click for detail">`, axes];
+    for (const r of runs) out.push(`<polyline fill="none" stroke="var(--ink)" stroke-width=".8" opacity=".22" points="${poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1))}"/>`);
+    if (!state.free && R.context_cost.model.length) out.push(`<polyline fill="none" stroke="var(--amber)" stroke-width="3" points="${poly(R.context_cost.model, p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1))}"/>`);
+    out.push(`<g id="runs-hi"></g>`);
+    runs.forEach((r, i) => out.push(`<polyline class="hit" data-i="${i}" fill="none" stroke="transparent" stroke-width="9" points="${poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1))}"/>`));
+    out.push(`</svg><div id="runs-tip" class="tip" hidden></div></div>`);
+    return out.join("") + runKey() + `<p class="note">Hover a line to highlight it; click it for its detail. ${state.free ? "With cached reads free every curve is close to a straight line: the square rule is the cached reads." : `At ${esc(R.prices.default)} list price. The orange line is the square-law model of an average run; the dashed line replays the highlighted run without its status turns.`}</p>`;
+  }
+  function wireRuns() {
+    const svg = document.getElementById("runs-svg");
+    if (!svg || !svg.getBoundingClientRect) return;
+    const runs = R.context_cost.runs, col = state.free ? 2 : 1;
+    const {X, Y} = runFrame(runs, 1100, 440, col);
+    const hi = document.getElementById("runs-hi"), tip = document.getElementById("runs-tip");
+    const show = (i, e) => {
+      const r = runs[i];
+      hi.innerHTML = runOverlay(r, X, Y, col, false);
+      tip.innerHTML = `<b>${esc(r.seat)}</b>${r.role ? ` · ${esc(r.role)}` : ""}<br>${esc(local(r.start_ms))} → ${esc(local(r.end_ms))}<br>${usd(state.free ? r.usd_reads_free : r.usd, 2)} · peak ${mtok(r.peak_context)} · ${num(r.turns)} turns<br>${num(r.status_turns)} status turns · ${num(r.cold_wakes)} cold wakes (${num(r.avoidable_cold_wakes)} avoidable)<br><span class="read">click for detail</span>`;
+      const box = svg.getBoundingClientRect();
+      tip.style.left = Math.min(e.clientX - box.left + 14, box.width - 260) + "px";
+      tip.style.top = (e.clientY - box.top + 14) + "px";
+      tip.hidden = false;
+    };
+    svg.onmousemove = e => { const i = e.target.getAttribute && e.target.getAttribute("data-i"); if (i !== null && i !== undefined) show(+i, e); };
+    svg.onmouseleave = () => { hi.innerHTML = ""; tip.hidden = true; };
+    svg.onclick = e => { const i = e.target.getAttribute && e.target.getAttribute("data-i"); if (i !== null && i !== undefined) openRun(+i); };
+  }
+  function openRun(i) {
+    const r = R.context_cost.runs[i], col = state.free ? 2 : 1;
+    const {X, Y, axes} = runFrame([r], 900, 420, col);
+    const m = document.getElementById("modal");
+    m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" aria-label="Growth run detail"><button class="close" aria-label="Close" id="modal-x">×</button>
+      <h3>${esc(r.seat)}${r.role ? ` · ${esc(r.role)}` : ""}</h3>
+      <svg class="fig" viewBox="0 0 900 420" role="img" aria-label="This run's cumulative cost against context">${axes}${!state.free && R.context_cost.model.length ? `<polyline fill="none" stroke="var(--amber)" stroke-width="2" opacity=".7" points="${poly(R.context_cost.model, p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1))}"/>` : ""}${runOverlay(r, X, Y, col, true)}</svg>
+      ${runKey()}${runFacts(r)}</div>`;
+    m.hidden = false;
+    const close = () => { m.hidden = true; m.innerHTML = ""; };
+    document.getElementById("modal-x").onclick = close;
+    m.onclick = e => { if (e.target === m) close(); };
+    document.onkeydown = e => { if (e.key === "Escape") close(); };
   }
 
   // ---------------------------------------------------------------- sections
@@ -280,6 +371,7 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
         return [mtok(r.context), r.calls, ...models.map(m => r.by_model[m] == null ? "won't fit" : usd(r.by_model[m], 2)), usd(r.switch_back, 2), a != null && b != null ? usd(a - b - co.follow_rate * r.switch_back, 2) : "–"];
       }), [0, 1, ...models.map(() => 1), 1, 1]) + `<p class="note">List prices from the report's price table (${models.map(m => `${esc(m)}: write ${R.prices.models[m].write_1h}/M, read ${R.prices.models[m].read}/M, output ${R.prices.models[m].output}/M`).join("; ")}). Expected net = default-model cost − alternative cost − follow-up rate × switch-back.</p>`));
     document.getElementById("app").innerHTML = out.join("");
+    wireRuns();
     document.getElementById("foot").innerHTML = `Generated by <code>pij fleet-report</code> · report v${R.version} · window ${esc(since)} – ${esc(until)} (UTC${R.window.utc_offset_min >= 0 ? "+" : "−"}${String(Math.floor(Math.abs(R.window.utc_offset_min) / 60)).padStart(2, "0")}:${String(Math.abs(R.window.utc_offset_min) % 60).padStart(2, "0")}). Transcript facts by Unisphere; seats by pij. Per-row detail is in <code>tables/</code>; versions and row counts in <code>manifest.json</code>.`;
   }
 
