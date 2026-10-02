@@ -80,6 +80,8 @@ function fixture(t, { consume = true, claims = true, boundary = false } = {}) {
 		history: [],
 		lease: { state: "live", lease_ms: 60000, renew_after_ms: 20000 },
 		claims: 0,
+		// Real SDK tail cursors count ephemeral events; includeEphemeral:false reads do not.
+		ephemeral: 0,
 	};
 	let observer;
 	const cursor = (index) => `opaque-forward:${state.generation}:${index}`;
@@ -105,11 +107,22 @@ function fixture(t, { consume = true, claims = true, boundary = false } = {}) {
 			eventLog: {
 				async tail() {
 					calls.push("eventLog.tail");
-					return { cursor: forward(state.history.length) };
+					const durable = forward(state.history.length);
+					if (!state.ephemeral) return { cursor: durable };
+					const value = `${durable}+ephemeral:${state.ephemeral}`;
+					cursors.set(value, cursors.get(durable));
+					return { cursor: value };
 				},
 				async read(input) {
 					calls.push("eventLog.read");
 					reads.push(input);
+					if (input.direction === "backward" && input.max === 1)
+						return {
+							events: state.history.slice(-1),
+							cursor: "opaque-backward:anchor",
+							hasMore: state.history.length > 1,
+							cursorStatus: "ok",
+						};
 					assert.equal(input.max, 128);
 					assert.equal(input.includeEphemeral, false);
 					if (input.direction === "backward")
@@ -460,6 +473,39 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 			{ direction: "backward", max: 128, includeEphemeral: false },
 		);
 		assert.doesNotMatch(JSON.stringify(f.reports), /PRIVATE_BODY|PRIVATE_RESPONSE/);
+		f.bridge.stop();
+		await run;
+	});
+
+	test("AC2 H3: mid-turn steering with only ephemeral tail progress delivers after the turn instead of holding", async (t) => {
+		// Observed on Copilot ab7ead89: an immediate send while busy is persisted as
+		// user.message only at the next model call, while ephemeral events (e.g.
+		// pending_messages.modified) advance the SDK tail cursor at once.
+		const f = fixture(t, { consume: false });
+		const prior = [
+			{ type: "assistant.turn_start", id: "busy-turn", data: { interactionId: "busy" } },
+			{ type: "tool.execution_start", id: "busy-tool", parentId: "busy-turn", data: {} },
+		];
+		f.state.history.push(...prior);
+		const run = f.bridge.run();
+		await flush();
+		assert.equal(f.sends.length, 1);
+		f.state.ephemeral++;
+		await pump(f);
+		f.state.ephemeral++;
+		await pump(f);
+		assert.deepEqual(held(f), [], "ephemeral-only tail progress is not a durable gap");
+		assert.equal(f.acks.length, 0, "consumption is not yet proven");
+		f.state.history.push(user, ...terminal);
+		await pump(f);
+		assert.deepEqual(held(f), []);
+		assert.equal(f.acks.length, 1, "the held message is acknowledged once consumed");
+		assert.equal(f.sends.length, 1, "no reinjection");
+		assert.equal(
+			f.reports.find((event) => event.kind === "native-completed")?.eventId,
+			"owned-end",
+		);
+		assert.equal(f.state.claims, 2, "terminal evidence unlocks the next daemon claim");
 		f.bridge.stop();
 		await run;
 	});

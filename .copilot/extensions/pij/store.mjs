@@ -1287,7 +1287,23 @@ export class NativeBridge {
 		throwIfStopped(this.receiverController.signal);
 		if (typeof tail?.cursor !== "string")
 			throw new NativeError("Native incremental history baseline is malformed; receiving held");
-		return new NativeCompletion(msgId, tail.cursor, replay, jobId);
+		const completion = new NativeCompletion(msgId, tail.cursor, replay, jobId);
+		if (!replay) {
+			// The SDK tail cursor also counts ephemeral events, which includeEphemeral:false
+			// reads never return. Anchor the baseline to the newest durable event so the
+			// progress probe can tell ephemeral-only tail movement from a real durable gap.
+			// Read after tail: any event between the two precedes our send either way.
+			const page = await this.nativeRpc("eventLog.read", () =>
+				this.native.rpc.eventLog.read({ direction: "backward", max: 1, includeEphemeral: false }),
+			);
+			throwIfStopped(this.receiverController.signal);
+			if (!Array.isArray(page?.events) || page.events.length > 1 || page.cursorStatus !== "ok")
+				throw new NativeError(
+					"Native incremental history baseline anchor is malformed; receiving held",
+				);
+			if (nonempty(page.events[0]?.id)) completion.lastEventId = page.events[0].id;
+		}
+		return completion;
 	}
 	async enqueue(message, completion) {
 		const signal = this.receiverController.signal;
