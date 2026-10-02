@@ -2808,7 +2808,7 @@ mod tests {
                 // Adding a verb to this roster is meant to be a DELIBERATE act
                 // that fails this test first — which is exactly what it did for
                 // `report` (u-report), adopt/whoami/phonehome (u-identity) and
-                // `state` (u-readback) and `doctor` (plan 126).
+                // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162).
                 "daemon",
                 "ping",
                 "doctor",
@@ -2816,6 +2816,7 @@ mod tests {
                 "adopt",
                 "whoami",
                 "commit-trailers",
+                "fleet-report",
                 "phonehome",
                 "spawn",
                 "revive",
