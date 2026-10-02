@@ -47,6 +47,7 @@ select{font:inherit}
 svg text{font-family:var(--mono);fill:var(--ink)}
 .ax{font-size:11px;fill:var(--ink2)}.ax-day{font-size:12px;font-weight:600}
 .legend{font:12.5px/1.9 var(--mono);color:var(--ink2);margin:6px 0 0}
+.lk{display:inline-flex;align-items:center;gap:6px;margin:0 16px 0 0;white-space:nowrap}
 .key{display:inline-block;width:14px;height:10px;margin:0 6px 0 14px;vertical-align:middle}.key:first-child{margin-left:0}
 .scroll{overflow-x:auto}
 table{border-collapse:collapse;font:13px/1.45 var(--mono);margin:8px 0 18px;min-width:min(100%,560px)}
@@ -251,7 +252,15 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
       `<p>Each row is one sender → recipient pair: the turns the sender's messages opened in the recipient's main session, and what those turns cost. Messages that never opened a turn (FYIs, held deliveries, refusals) arrive with pij's message records.</p>` +
       table(["from", "to", "recipient role", "turns", "spend", "cold"], R.graph.edges.slice(0, 40).map(e => [esc(e.from), esc(e.to), esc((nodes[e.to] || {}).role || ""), num(e.turns), usd(price(e.tokens)), num(e.cold)]), [0, 0, 0, 1, 1, 1]) +
       `<p class="note">${R.graph.nodes.length} seats and sessions, ${R.graph.edges.length} pairs${R.graph.edges.length > 40 ? "; the 40 costliest shown (all are in report.json)" : ""}.</p>`));
-    out.push(sec("Seats", "Context per seat", `<p>The costliest main sessions: peak context per five minutes (dotted line at 500k). A line that climbs for hours without a compaction is a seat paying more for every call it makes. Triangles are cold wakes (red when a no-action message opened them); violet dots are compactions.</p><div class="lanes">${R.lanes.map(lane).join("")}</div>`));
+    const ico = (svg, label) => `<span class="lk"><svg width="18" height="12" viewBox="0 0 18 12" aria-hidden="true">${svg}</svg>${label}</span>`;
+    const laneKey = `<p class="legend">${[
+      ico('<line x1="1" y1="9" x2="17" y2="3" stroke="var(--ink)" stroke-width="1.6"/>', "peak context (5-minute steps)"),
+      ico('<line x1="1" y1="6" x2="17" y2="6" stroke="var(--rule)" stroke-width="1.4" stroke-dasharray="2 3"/>', "500k tokens"),
+      ico('<path d="M9,2 l5,9 h-10 z" fill="var(--cold)"/>', "cold wake, opened by real work"),
+      ico('<path d="M9,2 l5,9 h-10 z" fill="var(--red)"/>', "cold wake, opened by a no-action message (avoidable)"),
+      ico('<circle cx="9" cy="6" r="3.4" fill="var(--violet)"/>', "compaction"),
+    ].join("")}</p>`;
+    out.push(sec("Seats", "Context per seat", `<p>The costliest main sessions, each on the same time axis as the report window and a 0–1M token scale. A line that climbs for hours without a compaction is a seat paying more for every call it makes; a drop is a compaction or a fresh start. Hover a shape for its time and cost.</p>${laneKey}<div class="lanes">${R.lanes.map(lane).join("")}</div>`));
     const cc = R.context_cost;
     out.push(sec("Context", "Cost and context size",
       `<p>Why big contexts are expensive. A warm call costs about <b>${usd(cc.fit.slope * 1e5, 3)}</b> more per 100k of context it carries (linear fit over ${num(cc.warm_calls)} warm calls, r² ${cc.fit.r2.toFixed(2)}). Contexts grow by a median <b>${num(cc.growth_median)}</b> tokens a call, so a session's cumulative reads grow with the square of its context.</p>` + curves() +
