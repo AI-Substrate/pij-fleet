@@ -434,6 +434,7 @@ pub fn analyze(corpus: &Corpus, window: Window, prices: &PriceTable) -> Report {
     Report {
         version: REPORT_VERSION,
         window: Some(window),
+        scope: None,
         prices: prices.clone(),
         totals,
         components: split,

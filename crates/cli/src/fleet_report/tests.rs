@@ -292,6 +292,14 @@ fn anonymised_output_leaks_no_name_path_id_or_content() {
             "{format}: roles and letters replace names"
         );
         assert!(all.contains("Worker A"), "{format}");
+        let report: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("report.json")).unwrap())
+                .unwrap();
+        assert!(
+            report["scope"]["folder"].is_null(),
+            "{format}: the folder is a path"
+        );
+        assert_eq!(report["scope"]["folders"], 1, "{format}: the count stays");
         let _ = std::fs::remove_dir_all(dir);
     }
 }
@@ -302,6 +310,11 @@ fn anonymised_output_leaks_no_name_path_id_or_content() {
 fn the_unanonymised_control_carries_the_names() {
     let (dir, all) = written(false, false, "jsonl");
     assert!(all.contains("pij-secret-stoat"));
+    // The page's header names what the report covers; it reads report.json only.
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("report.json")).unwrap()).unwrap();
+    assert_eq!(report["scope"]["folder"], "/Users/secret/proj");
+    assert_eq!(report["scope"]["folders"], 1);
     assert!(
         !all.contains("TOP SECRET"),
         "content needs --include-content"

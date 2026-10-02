@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Context Tax</title>
+<title>pij fleet report</title>
 <style>
 :root{--paper:#EEF1F0;--ink:#172024;--ink2:#4A585D;--rule:#C9D1D2;--amber:#D8962B;--cold:#2C63D6;--moss:#58764A;
 --violet:#7651C4;--lilac:#B7A6E0;--grey:#9FAAAD;--red:#C42B3B;--chip:#E1E6E6;
@@ -19,6 +19,13 @@ code{font:.82em var(--mono);background:var(--chip);padding:.08em .35em;border-ra
 h1{font:600 48px/1 var(--display);letter-spacing:-.01em;margin:0 0 22px;text-transform:uppercase}
 h1 .big{font-size:min(120px,22vw);letter-spacing:-.03em;display:inline-block;border-bottom:10px solid var(--amber);line-height:.9;padding-bottom:4px}
 .dek{max-width:760px;font-size:20px;line-height:1.5;margin:0 0 22px}
+h1.title{font:600 34px/1.15 var(--display);text-transform:none;letter-spacing:0;margin:0 0 6px;word-break:break-all}
+h1.title .sub{color:var(--ink2);font-weight:500;white-space:nowrap}
+.period{font:14px/1.5 var(--mono);color:var(--ink2);margin:0 0 4px}
+table.summary{font:14px/1.5 var(--body);width:100%}
+table.summary td{white-space:normal;vertical-align:top;padding:8px 14px 8px 0}
+table.summary td.n{font-family:var(--mono);white-space:nowrap}
+.read{color:var(--ink2);font-size:13.5px}
 main{max-width:1180px;margin:0 auto;padding:0 16px 64px}
 section{display:grid;grid-template-columns:150px minmax(0,1fr);column-gap:40px;padding:48px 0 8px;border-top:1px solid var(--rule)}
 section>.rail{grid-column:1}section>.body{grid-column:2;min-width:0}
@@ -52,7 +59,7 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
 </style>
 </head>
 <body>
-<header class="hero" id="hero"><p class="kicker">Context Tax</p><h1>Loading the report…</h1>
+<header class="hero" id="hero"><p class="kicker">pij fleet report</p><h1 class="title">Loading…</h1>
 <p class="dek" id="missing" hidden>No report found. Keep <code>report.js</code> next to this page, or serve the folder over http so the page can fetch <code>report.json</code>.</p></header>
 <main id="app"></main>
 <footer id="foot"></footer>
@@ -171,47 +178,72 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
     const parts = STACK.map(k => [k, price(comp[k])]);
     const grand = parts.reduce((a, p) => a + p[1], 0) || 1;
     const since = local(R.window.since_ms), until = local(R.window.until_ms);
+    const tz = () => { const m = R.window.utc_offset_min; return `UTC${m >= 0 ? "+" : "−"}${String(Math.floor(Math.abs(m) / 60)).padStart(2, "0")}:${String(Math.abs(m) % 60).padStart(2, "0")}`; };
+    const share = v => pct(100 * v / (total || 1));
+    const sc = R.scope || {};
+    const where = sc.folder ? esc(sc.folder) : "an anonymised project";
+    const extra = (sc.folders || 1) > 1 ? ` <span class="sub">+ ${sc.folders - 1} worktree${sc.folders > 2 ? "s" : ""}</span>` : "";
+    const peer = R.key_figures.peer_turns, typed = R.key_figures.human_turns;
+    const st = R.status_turns, cw = R.cold_wakes;
     const hero = document.getElementById("hero");
-    hero.innerHTML = `<p class="kicker">Context Tax · ${num(T.calls)} calls · ${num(T.main_sessions)} main sessions · ${esc(since)} – ${esc(until)}</p>
-      <h1><span class="big">${usd(total)}</span><br>to carry the context</h1>
-      <p class="dek">Every call re-sends the conversation. Cached reads were <b>${pct(100 * price({input:0,cw_1h:0,cw_5m:0,cache_read:T.tokens.cache_read,output:0}) / (total || 1))}</b> of this, cold rewrites <b>${pct(100 * price(comp.cold_rewrite) / (total || 1))}</b>. <b>${num(K.status_turns)}</b> no-action message turns cost <b>${pct(K.status_share)}</b> at list price, and <b>${K.avoidable_cold_wakes} of ${K.idle_cold_wakes}</b> idle cold wakes were opened by one. The mean call carried <b>${mtok(T.mean_context)}</b> tokens.</p>
+    hero.innerHTML = `<p class="kicker">pij fleet report</p>
+      <h1 class="title">${where}${extra}</h1>
+      <p class="period">${esc(since)} – ${esc(until)} (${tz()}) · priced at ${esc(state.model)} API list prices${state.free ? ", cached reads free" : ""}</p>
       <div class="controls"><label>Price at <select id="model">${Object.keys(R.prices.models).map(m => `<option ${m === state.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></label>
       <label><input type="checkbox" id="free" ${state.free ? "checked" : ""}> cached reads free</label></div>`;
     document.getElementById("model").onchange = e => { state.model = e.target.value; render(); };
     document.getElementById("free").onchange = e => { state.free = e.target.checked; render(); };
 
+    const row = (metric, value, read) => [`<b>${esc(metric)}</b>`, value, `<span class="read">${read}</span>`];
     const out = [];
-    out.push(sec("The bill", "Where the spend went",
-      `<div class="stats">${[["calls", num(T.calls)], ["turns", num(T.turns)], ["sessions", `${num(T.main_sessions)} main`], ["unseated", `${num(T.unseated_sessions)} sessions`], ["seats", num(T.seats)], ["cold calls", num(T.cold_calls)]].map(s => `<div class="stat"><b>${s[1]}</b><span>${esc(s[0])}</span></div>`).join("")}</div>` +
-      table(["part", "spend", "share", ""], parts.map(([k, v]) => [`<span class="key" style="background:${C[k]};margin:0 8px 0 0"></span>${esc(LABEL[k])}`, usd(v), pct(100 * v / grand), `<span class="bar" style="width:${Math.round(240 * v / grand)}px;background:${C[k]}"></span>`]), [0, 1, 1, 0]) +
-      priceNote() + `<p class="note">Compactions and recaps are not recorded as calls; they are simulated from the context they re-read. ${num(R.compactions.count)} compactions (${R.compactions.manual} manual, ${R.compactions.cold} on a cold cache), median ${mtok(R.compactions.median_pre)} before.</p>`));
-    out.push(sec("Hour by hour", "Spend per hour", stackedBars(R.hourly) + legend(STACK) +
+    out.push(sec("Summary", "Summary",
+      `<div class="scroll"><table class="summary"><thead><tr><th>measure</th><th class="n">value</th><th>how to read it</th></tr></thead><tbody>${[
+        row("Calls", num(T.calls), "One deduplicated model API call. Every call re-sends the whole conversation so far, so its cost tracks the context it carries, not the work it does."),
+        row("Turns", `${num(T.turns)}<br><span class="read">${num(peer)} opened by agent messages · ${num(typed)} typed</span>`, "A turn is everything a seat does in answer to one prompt. Turns opened by another agent's message are the fleet's own traffic."),
+        row("Sessions", `${num(T.main_sessions)} main · ${num(T.sessions - T.main_sessions)} subagent<br><span class="read">${num(T.seats)} pij seats · ${num(T.unseated_sessions)} unseated</span>`, "A main session is one seat's conversation. Unseated sessions were started by hand, outside pij."),
+        row("Tokens", `${mtok(T.tokens.output)} output<br>${mtok(T.tokens.cache_read)} cached reads<br>${mtok(T.tokens.cw_1h + T.tokens.cw_5m)} cache writes<br>${mtok(T.tokens.input)} uncached input`, "Cached reads are context the model re-reads from its cache on every call. They usually dwarf output by orders of magnitude."),
+        row("Cost", `<b>${usd(total)}</b>`, "All calls at the selected price. Use the control above to switch models or to treat cached reads as free (closer to a subscription's accounting)."),
+        row("· cached reads", `${usd(price(comp.warm_reads))} · ${share(price(comp.warm_reads))}`, "The cost of carrying context. It grows with the square of a session's context, so the lever is smaller contexts: compact, hand off, or start fresh."),
+        row("· cold rewrites", `${usd(price(comp.cold_rewrite))} · ${share(price(comp.cold_rewrite))}`, "Writing a whole context back into the cache after it expired (over an hour idle) or after a compaction. Waking a big idle seat pays this in one call."),
+        row("· incremental writes", `${usd(price(comp.incremental_writes))} · ${share(price(comp.incremental_writes))}`, "Caching what each call adds: tool results and replies."),
+        row("· output and input", `${usd(price(comp.output_cost))} · ${share(price(comp.output_cost))}`, "What the seats actually wrote, plus uncached input. The closest thing to the cost of the work itself."),
+        row("Cold wakes", `${num(cw.idle)} idle · ${num(cw.rebuild)} rebuilds`, `A seat woken after its cache expired rewrites its whole context. <b>${num(st.avoidable_cold_wakes)}</b> of the idle ones were opened by a message that needed no action (${usd(price(st.cold_tokens))}).`),
+        row("Status turns", `${num(st.turns)} · ${pct(st.share)} of spend`, `Agent messages that needed no action (an ack, an FYI, a status ping), seen as message-opened turns of three calls or fewer. Each still re-read the recipient's whole context. Replaying the sessions without them saves ${pct(st.replay_saving_share)}.`),
+        row("Compactions", `${num(R.compactions.count)} (${num(R.compactions.manual)} manual)`, `Median ${mtok(R.compactions.median_pre)} tokens before. A compaction shrinks the context every later call carries; it costs one re-read.`),
+        row("Mean context", `${mtok(T.mean_context)} tokens`, "What the average call carried. Halving it roughly halves the cached-read bill."),
+        row("pij messages", "—", "Sent, held (FYI), flushed and refused counts arrive with pij's message records (plan 162 P2). Until then, message traffic shows as the turns it opened."),
+      ].map(r => `<tr><td>${r[0]}</td><td class="n">${r[1]}</td><td>${r[2]}</td></tr>`).join("")}</tbody></table></div>` +
+      `<h3>Why this matters</h3><p>On an agent fleet, most of the bill is not the work: it is the context each call carries. A seat at 400k tokens pays for those 400k tokens on every call, so the same task costs several times more late in a long session than early in a short one, and every message that opens a turn on a big seat buys a full re-read. Read the cost split first: if cached reads dominate, contexts are too big; if cold rewrites are large, idle seats are being woken; if status turns are a visible share, agents are messaging each other for no action. The sections below show where each of those came from.</p>` + priceNote()));
+    out.push(sec("Spend", "Spend by part",
+      `<p>Every call splits into mutually exclusive parts. Compactions and idle recaps are not recorded as calls; they are estimated from the context they re-read.</p>` +
+      table(["part", "spend", "share", ""], parts.map(([k, v]) => [`<span class="key" style="background:${C[k]};margin:0 8px 0 0"></span>${esc(LABEL[k])}`, usd(v), pct(100 * v / grand), `<span class="bar" style="width:${Math.round(240 * v / grand)}px;background:${C[k]}"></span>`]), [0, 1, 1, 0])));
+    out.push(sec("Time", "Spend per hour", `<p>Spikes line up with bursts of agent messages and with mornings when idle seats are woken on expired caches. Look for tall amber (re-reads of big contexts) and tall blue (cold rewrites).</p>` + stackedBars(R.hourly) + legend(STACK) +
       table(["day", "calls", "sessions", "cold", "message turns", "typed turns", "compactions", "spend"], R.daily.map(d => [esc(d.key), num(d.calls), num(d.sessions), num(d.cold), num(d.peer_turns), num(d.human_turns), num(d.compactions), usd(STACK.reduce((a, k) => a + price(d.components[k]), 0))]), [0, 1, 1, 1, 1, 1, 1, 1])));
-    out.push(sec("The meter", "Cumulative spend", meter() + `<p class="note">Cumulative share of the window's call spend, in ten-minute steps. Red dashed lines are usage-limit notices the harness wrote.</p>`));
-    out.push(sec("Triggers", "What opened the turns",
+    out.push(sec("Time", "Cumulative spend", `<p>How fast the window's spend accumulated: a steep stretch is when the fleet burned budget fastest. Red dashed lines are usage-limit notices the harness wrote.</p>` + meter()));
+    out.push(sec("Turns", "What opened the turns",
+      `<p>Who prompted the work. A high share for agent messages with a low median of calls per turn means many short turns, each paying a full re-read.</p>` +
       table(["opened by", "turns", "calls", "spend", "share", "cold wakes", "cold spend", "median calls/turn"], R.triggers.map(t => [esc(t.trigger), num(t.turns), num(t.calls), usd(price(t.tokens)), pct(100 * price(t.tokens) / (total || 1)), num(t.cold_wakes), usd(price(t.cold_tokens)), t.median_calls_per_turn]), [0, 1, 1, 1, 1, 1, 1, 1]) +
-      "<h3>Who woke whom</h3>" + table(["sender", "turns opened", "recipients", "spend", "cold wakes", "≤3-call turns"], R.senders.map(s => [esc(s.sender), num(s.turns), num(s.recipients), usd(price(s.tokens)), num(s.cold_wakes), num(s.short_turns)]), [0, 1, 1, 1, 1, 1])));
+      "<h3>Who woke whom</h3><p>Seats ranked by the spend their messages caused in others. A sender with many short turns and cold wakes is a candidate for <code>--fyi</code>.</p>" + table(["sender", "turns opened", "recipients", "spend", "cold wakes", "≤3-call turns"], R.senders.map(s => [esc(s.sender), num(s.turns), num(s.recipients), usd(price(s.tokens)), num(s.cold_wakes), num(s.short_turns)]), [0, 1, 1, 1, 1, 1])));
     const nodes = Object.fromEntries(R.graph.nodes.map(n => [n.id, n]));
-    out.push(sec("Messages", "The message graph",
-      `<p>Each row is one sender → recipient pair: the turns the sender's messages opened in the recipient's main session, and what those turns cost. Message counts that never opened a turn (FYIs, held deliveries, refusals) arrive with pij's message records.</p>` +
+    out.push(sec("Messages", "Messages between seats",
+      `<p>Each row is one sender → recipient pair: the turns the sender's messages opened in the recipient's main session, and what those turns cost. Messages that never opened a turn (FYIs, held deliveries, refusals) arrive with pij's message records.</p>` +
       table(["from", "to", "recipient role", "turns", "spend", "cold"], R.graph.edges.slice(0, 40).map(e => [esc(e.from), esc(e.to), esc((nodes[e.to] || {}).role || ""), num(e.turns), usd(price(e.tokens)), num(e.cold)]), [0, 0, 0, 1, 1, 1]) +
-      `<p class="note">${R.graph.nodes.length} nodes, ${R.graph.edges.length} edges${R.graph.edges.length > 40 ? "; the 40 costliest shown (all are in report.json)" : ""}.</p>`));
-    out.push(sec("Seats", "Context lanes", `<p>The costliest main sessions: peak context per five minutes (the dotted line is 500k), cold wakes as triangles (red when a no-action message opened them), compactions as violet dots.</p><div class="lanes">${R.lanes.map(lane).join("")}</div>`));
+      `<p class="note">${R.graph.nodes.length} seats and sessions, ${R.graph.edges.length} pairs${R.graph.edges.length > 40 ? "; the 40 costliest shown (all are in report.json)" : ""}.</p>`));
+    out.push(sec("Seats", "Context per seat", `<p>The costliest main sessions: peak context per five minutes (dotted line at 500k). A line that climbs for hours without a compaction is a seat paying more for every call it makes. Triangles are cold wakes (red when a no-action message opened them); violet dots are compactions.</p><div class="lanes">${R.lanes.map(lane).join("")}</div>`));
     const cc = R.context_cost;
-    out.push(sec("Context cost", "The square rule",
-      `<p>A warm call costs about <b>${usd(cc.fit.slope * 1e5, 3)}</b> more per 100k of context it carries (linear fit over ${num(cc.warm_calls)} warm calls, r² ${cc.fit.r2.toFixed(2)}). Contexts grow by a median <b>${num(cc.growth_median)}</b> tokens a call, so a session's cumulative reads grow with the square of its context.</p>` + curves() +
+    out.push(sec("Context", "Cost and context size",
+      `<p>Why big contexts are expensive. A warm call costs about <b>${usd(cc.fit.slope * 1e5, 3)}</b> more per 100k of context it carries (linear fit over ${num(cc.warm_calls)} warm calls, r² ${cc.fit.r2.toFixed(2)}). Contexts grow by a median <b>${num(cc.growth_median)}</b> tokens a call, so a session's cumulative reads grow with the square of its context.</p>` + curves() +
       "<h3>Which costs follow the square rule</h3>" + (R.square_rule.milestones.length ? table(["context", "runs", "total", "reads", "writes", "cold", "output", "input", "reads share"], R.square_rule.milestones.map(m => [mtok(m.context), num(m.runs), usd(m.total, 2), usd(m.reads, 2), usd(m.writes, 2), usd(m.cold, 2), usd(m.output, 2), usd(m.input, 2), pct(100 * m.reads_share)]), [0, 1, 1, 1, 1, 1, 1, 1, 1]) +
         `<p>Growth exponent from 200k to 600k (2 is the square rule, 1 is linear): ${Object.entries(R.square_rule.exponents).map(([k, v]) => `${esc(k.replace("_", " "))} <b>${v.toFixed(2)}</b>`).join(", ")}. ${num(R.square_rule.runs)} growth runs; median growth ${num(R.square_rule.median_growth)} tokens and output ${num(R.square_rule.median_output)} tokens per call; a call's reads outweigh its writes and output past about <b>${mtok(R.square_rule.crossover_context)}</b>.</p>` : `<p class="note">Fewer than five growth runs reached 200k and 600k; no exponent.</p>`) + fixedNote()));
-    const st = R.status_turns, cw = R.cold_wakes;
-    out.push(sec("Status turns", "What no-action messages cost",
+    out.push(sec("Status turns", "Status turns and cold wakes",
       `<div class="stats">${[["status turns", num(st.turns)], ["of list spend", pct(st.share)], ["without their cold wakes", pct(st.share_no_cold)], ["with reads free", pct(st.share_reads_free)], ["avoidable cold wakes", `${st.avoidable_cold_wakes} of ${st.idle_cold_wakes}`], ["replay saves", pct(st.replay_saving_share)]].map(s => `<div class="stat"><b>${s[1]}</b><span>${esc(s[0])}</span></div>`).join("")}</div>` +
       `<p>A status turn is a turn opened by an agent message that needed no action (an ack, an FYI, a status ping): in practice a message-opened turn of three calls or fewer. ${st.avoidable_cold_wakes} of the ${st.idle_cold_wakes} idle cold wakes were opened by one; the other ${st.work_cold_wakes} were real work (${usd(price(st.work_cold_tokens))} of rewrites). Replaying every session without its status turns, with the context they added and the caches they kept warm, saves ${pct(st.replay_saving_share)} of list spend (${st.replay_new_cold} calls go cold once nothing keeps their cache warm).</p>` + fixedNote() +
       "<h3>Cold wakes</h3>" + `<p>${num(cw.idle)} idle cold wakes (${usd(price(cw.idle_tokens))}), ${num(cw.idle_peer)} of them opened by a message; ${num(cw.rebuild)} rebuilds inside the cache lifetime (${usd(price(cw.rebuild_tokens))}).</p>` +
       table(["when", "seat", "rewrote", "cost", "idle", "kind", "opened by", "status"], cw.top.map(c => [esc(local(c.ts_ms)), esc(c.seat), mtok(c.tokens.cw_1h + c.tokens.cw_5m), usd(price(c.tokens), 2), c.gap_min < 0 ? "–" : num(c.gap_min) + " min", esc(c.kind), esc(c.trigger + (c.sender ? " · " + c.sender : "")), c.status ? "avoidable" : ""]), [0, 0, 1, 1, 1, 0, 0, 0])));
     const co = R.consult, models = Object.keys(R.prices.models);
     const alt = models.includes("sonnet-5.5") && R.prices.default !== "sonnet-5.5" ? "sonnet-5.5" : models.find(m => m !== R.prices.default);
-    out.push(sec("Cold seats", "What a consult costs",
-      `<p>A consult is a few calls on a seat whose cache expired: the first call writes the whole context, later calls read it and add a little. Per call this window measured <b>${num(co.output_per_call)}</b> output and <b>${num(co.new_per_call)}</b> new tokens (means over ${num(co.wake_turns)} wake turns of 3–7 calls), and <b>${pct(100 * co.follow_rate)}</b> of re-opened seats called again within the hour, when a switch back costs a second full write.</p>` +
+    out.push(sec("Cold seats", "Consulting a cold seat",
+      `<p>What it costs to ask an idle seat a question, by model. A consult is a few calls on a seat whose cache expired: the first call writes the whole context, later calls read it and add a little. Per call this window measured <b>${num(co.output_per_call)}</b> output and <b>${num(co.new_per_call)}</b> new tokens (means over ${num(co.wake_turns)} wake turns of 3–7 calls), and <b>${pct(100 * co.follow_rate)}</b> of re-opened seats called again within the hour, when a switch back costs a second full write.</p>` +
       table(["context", "calls", ...models, "switch back", `expected net (${esc(alt || "")})`], co.rows.map(r => {
         const a = r.by_model[R.prices.default], b = alt ? r.by_model[alt] : null;
         return [mtok(r.context), r.calls, ...models.map(m => r.by_model[m] == null ? "won't fit" : usd(r.by_model[m], 2)), usd(r.switch_back, 2), a != null && b != null ? usd(a - b - co.follow_rate * r.switch_back, 2) : "–"];

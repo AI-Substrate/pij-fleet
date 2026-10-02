@@ -46,6 +46,8 @@ pub struct Report {
     pub version: u32,
     /// The window the aggregates cover.
     pub window: Option<Window>,
+    /// What the report covers, filled in by the writer.
+    pub scope: Option<Scope>,
     /// The price table to price [`Tokens`] with.
     pub prices: PriceTable,
     /// Counts over the window.
@@ -82,6 +84,15 @@ pub struct Report {
     pub consult: Consult,
     /// List-price headline figures, for prose and for checking against a reference.
     pub key_figures: KeyFigures,
+}
+
+/// The folders a report covers.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Scope {
+    /// The project root; `None` when anonymised (a path names a project).
+    pub folder: Option<String>,
+    /// Folders in scope, the root and its worktrees.
+    pub folders: u64,
 }
 
 /// Counts over the window.

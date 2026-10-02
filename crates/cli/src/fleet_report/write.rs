@@ -5,7 +5,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use pij_core::fleet::{Corpus, REPORT_VERSION, Report, Tokens, source_labels};
+use pij_core::fleet::{Corpus, REPORT_VERSION, Report, Scope, Tokens, source_labels};
 use serde_json::{Value, json};
 
 use super::{Facts, Format, Plan};
@@ -421,13 +421,18 @@ pub fn write_output(
         counts.insert(table.name, table.rows.len());
         written.push(write_table(&dir.join("tables"), plan.format, &table)?);
     }
-    let json = serde_json::to_string(report).map_err(io::Error::other)?;
+    let mut report = report.clone();
+    report.scope = Some(Scope {
+        folder: (!plan.anonymise).then(|| plan.folder.display().to_string()),
+        folders: plan.folders.len() as u64,
+    });
+    let json = serde_json::to_string(&report).map_err(io::Error::other)?;
     fs::write(dir.join("report.json"), &json)?;
     fs::write(
         dir.join("report.js"),
         format!("window.FLEET_REPORT = {json};\n"),
     )?;
-    let manifest = manifest(plan, corpus, report, facts, &counts);
+    let manifest = manifest(plan, corpus, &report, facts, &counts);
     fs::write(
         dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest).map_err(io::Error::other)?,
