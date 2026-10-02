@@ -15,16 +15,18 @@ nix = { workspace = true }
 pij-core = { workspace = true }
 pij-daemon = { workspace = true }
 pij-harnesses = { workspace = true }
+# fleet-report (plan 162): seats read-only from the store, transcripts folded in-process.
+pij-store = { workspace = true }
+pij-unisphere = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-time = { workspace = true }
+time = { workspace = true, features = ["parsing"] }
 tokio = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }
-pij-store = { workspace = true }
 pij-testkit = { workspace = true }
 time = { workspace = true, features = ["parsing"] }
 

@@ -409,23 +409,9 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     // it is composed once here and shared by every request.
     let session_status: Arc<dyn SessionStatusPort> = match config.adapters.session_status {
         AdapterChoice::Fake => Arc::new(FakeSessionStatus::new()),
-        AdapterChoice::Real => {
-            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-            Arc::new(pij_unisphere::UnisphereSessionStatus::with_roots(
-                pij_unisphere::SessionRoots {
-                    claude_homes: pij_harnesses::claude_homes(),
-                    // OMP keeps every session under its agent dir, keyed by project.
-                    omp_sessions: home.as_ref().map(|home| home.join(".omp/agent/sessions")),
-                    codex_sessions: std::env::var_os("CODEX_HOME")
-                        .map(std::path::PathBuf::from)
-                        .or_else(|| home.as_ref().map(|home| home.join(".codex")))
-                        .map(|codex| codex.join("sessions")),
-                    copilot_sessions: home
-                        .as_ref()
-                        .map(|home| home.join(".copilot/session-state")),
-                },
-            ))
-        }
+        AdapterChoice::Real => Arc::new(pij_unisphere::UnisphereSessionStatus::with_roots(
+            session_roots(),
+        )),
     };
 
     let orchestration = Arc::new(OrchestrationService::new());
@@ -890,6 +876,24 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         governance_observer,
         session_warmup,
     })
+}
+
+/// Where every readable harness keeps its sessions on this machine: the one
+/// definition `pij state` (the session-status port) and `pij fleet-report` share.
+pub fn session_roots() -> pij_unisphere::SessionRoots {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    pij_unisphere::SessionRoots {
+        claude_homes: pij_harnesses::claude_homes(),
+        // OMP keeps every session under its agent dir, keyed by project.
+        omp_sessions: home.as_ref().map(|home| home.join(".omp/agent/sessions")),
+        codex_sessions: std::env::var_os("CODEX_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| home.as_ref().map(|home| home.join(".codex")))
+            .map(|codex| codex.join("sessions")),
+        copilot_sessions: home
+            .as_ref()
+            .map(|home| home.join(".copilot/session-state")),
+    }
 }
 
 #[cfg(test)]

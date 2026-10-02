@@ -24,7 +24,7 @@ export interface RsHttpRoute extends RouteIdentity {
 
 export interface RsNativeRoute extends RouteIdentity {
 	/** Native stdout/stderr/exit are the contract, not a JSON envelope. */
-	readonly nativeCommand: "commit-trailers";
+	readonly nativeCommand: "commit-trailers" | "fleet-report";
 }
 
 export interface RsUnportedRoute extends RouteIdentity {
@@ -279,6 +279,7 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		nativeCommand: "commit-trailers",
 		why: "Forward the native trailer-only stdout, stderr and exit contract",
 	},
+	{ verb: "fleet-report", nativeCommand: "fleet-report", why: "Forward the native report writer" },
 	{
 		verb: "spawn",
 		unported: "shim spawn grammar is not native spawn grammar; use pij-rs spawn --help",

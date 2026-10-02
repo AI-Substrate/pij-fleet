@@ -13,6 +13,7 @@ pub mod anomalies;
 pub mod bounce;
 pub mod client;
 pub mod decisions;
+pub mod fleet_report;
 pub mod governance;
 pub mod lifecycle;
 pub mod role;

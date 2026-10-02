@@ -118,14 +118,15 @@ fn short(id: &str) -> &str {
     }
 }
 
-fn index<'a>(corpus: &'a Corpus, window: Window, prices: &PriceTable) -> Indexed<'a> {
+/// Each transcript's label: its seat (by harness session id), or `session <id8>`.
+fn labels(corpus: &Corpus) -> HashMap<&str, Label> {
     let mut seat_of: HashMap<&str, &str> = HashMap::new();
     for seat in &corpus.seats {
         for session in &seat.sessions {
             seat_of.entry(session.as_str()).or_insert(seat.id.as_str());
         }
     }
-    let labels = corpus
+    corpus
         .sessions
         .iter()
         .map(|session| {
@@ -148,7 +149,19 @@ fn index<'a>(corpus: &'a Corpus, window: Window, prices: &PriceTable) -> Indexed
             };
             (session.source.as_str(), label)
         })
-        .collect();
+        .collect()
+}
+
+/// Each transcript's label, as every table and chart of the report names it.
+pub fn source_labels(corpus: &Corpus) -> HashMap<String, String> {
+    labels(corpus)
+        .into_iter()
+        .map(|(source, label)| (source.to_string(), label.name))
+        .collect()
+}
+
+fn index<'a>(corpus: &'a Corpus, window: Window, prices: &PriceTable) -> Indexed<'a> {
+    let labels = labels(corpus);
     let turn_origin = corpus
         .turns
         .iter()

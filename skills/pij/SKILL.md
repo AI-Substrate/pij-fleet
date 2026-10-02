@@ -46,6 +46,7 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 | `phonehome` `reap` `close` | ops / peer routes — rs binding, conservative reconciliation, self-or-parent tombstone |
 | `models` | § Shared conventions C4 — `E-RS-UNPORTED` |
 | `commit-trailers` | § Shared conventions C11 — narrow native CLI forwarding; trailer-only stdout, native stderr and exit status |
+| `fleet-report` | native forward (plan 162) — writes a project's Context Tax folder (`report.json`, static page, tables); no daemon, store read read-only; `--anonymise` before sharing |
 | `bg` (`create/list/tail/kill`) | § Shared conventions C7 — shipped rs detached jobs; result injected from `pij-bg` |
 | `watch` `unwatch` `chore` `watchdog` `focus` | § Shared conventions / peer route — named `E-RS-UNPORTED`; no legacy escape |
 | `orchestration` (`baton`/`prime`/`role`) | prime route — rs; destructive baton return/reclaim require observed `--lease-id` |

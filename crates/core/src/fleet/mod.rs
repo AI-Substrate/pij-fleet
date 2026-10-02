@@ -25,7 +25,7 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 
-pub use analysis::analyze;
+pub use analysis::{analyze, source_labels};
 pub use civil::{bucket_key, day_key};
 pub use report::*;
 
