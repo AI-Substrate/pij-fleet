@@ -47,9 +47,28 @@ select{font:inherit}
 svg text{font-family:var(--mono);fill:var(--ink)}
 .ax{font-size:11px;fill:var(--ink2)}.ax-day{font-size:12px;font-weight:600}
 .legend{font:12.5px/1.9 var(--mono);color:var(--ink2);margin:6px 0 0}
-.runs-wrap{position:relative}
+.runs-wrap,.chart-wrap{position:relative}
+figure.chart{position:relative;margin:8px 0 6px}
+.expand{position:absolute;top:2px;right:2px;z-index:3;border:1px solid var(--rule);background:var(--paper);color:var(--ink2);border-radius:6px;font:16px/1 var(--mono);padding:4px 7px;cursor:zoom-in;opacity:.65}
+.expand:hover,.expand:focus-visible{opacity:1;color:var(--ink)}
+.chart-wrap .hit{cursor:crosshair}.hub .hit,.chart-wrap polyline.hit{cursor:pointer}
+.zoom svg{cursor:grab;background:var(--paper)}.zoom svg.panning{cursor:grabbing}
+.zoom .ax{font-size:calc(11px / var(--z, 1))}.zoom .ax-day{font-size:calc(12px / var(--z, 1))}
+.zoom line,.zoom polyline,.zoom path{vector-effect:non-scaling-stroke}
+.modal-card.wide{max-width:1640px}
+.zbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:0 0 10px;font:13px var(--mono)}
+.zbar b{font:600 18px var(--display);text-transform:uppercase;letter-spacing:.03em;margin-right:6px}
+.zhint{color:var(--ink2)}.zbtns{margin-left:auto;display:flex;gap:6px}
+.zbtns button{font:600 16px/1 var(--mono);width:32px;height:30px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--ink);cursor:pointer}
+.ztool{display:flex;gap:6px;align-items:center;color:var(--ink2)}.ztool input[type=search]{font:inherit;padding:3px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--paper);color:var(--ink)}
+kbd{font:11px var(--mono);border:1px solid var(--rule);border-radius:3px;padding:0 4px}
+.tip .big{font:600 22px/1.2 var(--display);margin:4px 0 2px}.tip .sep{border-top:1px solid var(--rule);margin-top:6px;padding-top:6px}
+.tip .row{display:flex;gap:8px;align-items:center}.tip .row span:last-child{margin-left:auto;padding-left:10px}
+.tip .dot{display:inline-block;width:8px;height:8px;border-radius:2px}.tip .warn{color:var(--red)}.tip .mono{font:11.5px var(--mono);color:var(--ink2)}
+.tip .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}.tip .sub{font-size:11px;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em}
+.mini{display:flex;height:8px;border-radius:2px;overflow:hidden;margin:6px 0}.mini i{display:block;height:100%}
 #runs-svg .hit{cursor:pointer}
-.tip{position:absolute;pointer-events:none;background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:8px 10px;font:12.5px/1.5 var(--mono);box-shadow:0 4px 14px rgba(0,0,0,.12);max-width:260px;z-index:2}
+.tip{position:absolute;pointer-events:none;background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;font:12.5px/1.5 var(--mono);box-shadow:0 6px 22px rgba(0,0,0,.16);width:max-content;max-width:340px;z-index:5}
 .modal{position:fixed;inset:0;background:rgba(10,16,18,.45);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:4vh 16px;z-index:10}
 .modal[hidden]{display:none}
 .modal-card{position:relative;background:var(--paper);border-radius:10px;max-width:980px;width:100%;padding:22px 24px 12px;box-shadow:0 18px 50px rgba(0,0,0,.3)}
@@ -111,67 +130,268 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
   const priceNote = () => `<p class="note">Priced at ${esc(state.model)} API list prices${state.free ? ", with cached reads free" : ""}. Change it in the header.</p>`;
   const fixedNote = () => `<p class="note">Medians and exponents are computed at ${esc(R.prices.default)} list price and do not follow the header's price control.</p>`;
 
-  // ---------------------------------------------------------------- figures
-  function stackedBars(buckets, h) {
-    const W = 1100, H = h || 300, x0 = 56, x1 = W - 10, y0 = 14, y1 = H - 34;
-    const vals = buckets.map(b => STACK.map(k => price(b.components[k])));
-    const max = Math.max(1e-9, ...vals.map(v => v.reduce((a, b) => a + b, 0)));
-    const bw = (x1 - x0) / Math.max(1, buckets.length);
-    const out = [`<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spend per hour by part">`];
-    for (let i = 0; i <= 4; i++) {
-      const v = max * i / 4, y = y1 - (y1 - y0) * i / 4;
-      out.push(`<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="var(--rule)" stroke-width=".6"/><text x="${x0 - 6}" y="${y + 4}" class="ax" text-anchor="end">${usd(v)}</text>`);
+  // ---------------------------------------------------------------- charts
+  // Every chart is a spec: build(W, H, big) -> svg, wire(wrap, big, zoom) for
+  // hover. chart() draws it inline with a ⤢ that opens it larger in a modal,
+  // where wheel, pinch, drag, + − 0 and arrow keys zoom and pan.
+  const CHARTS = {};
+  let chartSeq = 0;
+  const has = (el, a) => el && el.getAttribute && el.getAttribute(a) !== null;
+  const attr = (el, a) => (el && el.getAttribute ? el.getAttribute(a) : null);
+  function chart(spec) {
+    const id = "c" + chartSeq++;
+    CHARTS[id] = spec;
+    return `<figure class="chart" data-chart="${id}"><button class="expand" data-open="${id}" title="Open larger to zoom and explore" aria-label="Open ${esc(spec.title)} larger">⤢</button><div class="chart-wrap">${spec.build(spec.w || 1100, spec.h || 300, false)}<div class="tip" hidden></div></div></figure>`;
+  }
+  function wireCharts() {
+    if (!document.querySelector) return;
+    for (const [id, spec] of Object.entries(CHARTS)) {
+      const fig = document.querySelector(`figure[data-chart="${id}"]`);
+      if (!fig) continue;
+      if (spec.wire) spec.wire(fig.querySelector(".chart-wrap"), false, null);
+      fig.querySelector(".expand").onclick = () => openChart(id);
     }
-    buckets.forEach((b, i) => {
-      let y = y1;
-      const x = x0 + i * bw;
-      STACK.forEach((k, j) => {
-        const hh = (y1 - y0) * vals[i][j] / max;
-        if (hh > 0) out.push(`<rect x="${x.toFixed(1)}" y="${(y - hh).toFixed(1)}" width="${Math.max(0.6, bw - 0.6).toFixed(1)}" height="${hh.toFixed(1)}" fill="${C[k]}"><title>${esc(b.key)} ${esc(LABEL[k])}: ${usd(vals[i][j], 2)}</title></rect>`);
-        y -= hh;
-      });
-      if (b.key.endsWith("T00")) out.push(`<line x1="${x}" x2="${x}" y1="${y1}" y2="${y1 + 6}" stroke="var(--ink)"/><text x="${x + 3}" y="${y1 + 20}" class="ax ax-day">${esc(b.key.slice(5, 10))}</text>`);
+  }
+  function showTip(wrap, html, ev) {
+    const tip = wrap.querySelector(".tip");
+    if (!tip) return;
+    tip.innerHTML = html;
+    tip.hidden = false;
+    const box = wrap.getBoundingClientRect();
+    const x = ev.clientX - box.left, y = ev.clientY - box.top;
+    const w = tip.offsetWidth || 280, h = tip.offsetHeight || 140;
+    tip.style.left = (x + 18 + w > box.width ? Math.max(4, x - w - 18) : x + 18) + "px";
+    tip.style.top = (y + 18 + h > box.height ? Math.max(4, y - h - 12) : y + 18) + "px";
+  }
+  const hideTip = wrap => { const t = wrap.querySelector(".tip"); if (t) t.hidden = true; };
+  // Client point -> svg user units, through whatever zoom the viewBox holds.
+  function svgPoint(svg, ev) {
+    const m = svg.getScreenCTM && svg.getScreenCTM();
+    if (m) { const p = svg.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY; return p.matrixTransform(m.inverse()); }
+    const r = svg.getBoundingClientRect(), vb = svg.getAttribute("viewBox").split(/[\s,]+/).map(Number);
+    return {x: vb[0] + (ev.clientX - r.left) / r.width * vb[2], y: vb[1] + (ev.clientY - r.top) / r.height * vb[3]};
+  }
+  const keyDate = k => new Date(Date.parse((k.length === 13 ? k + ":00" : k.length === 10 ? k + "T00:00" : k) + ":00Z"));
+  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const fmtKey = k => { const d = keyDate(k); return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`; };
+  const keyMs = k => keyDate(k).getTime() - R.window.utc_offset_min * 60000;
+  const ago = min => min < 0 ? "an unknown time" : min < 90 ? `${num(min)} min` : min < 60 * 48 ? `${(min / 60).toFixed(1)} h` : `${(min / 1440).toFixed(1)} days`;
+  const mini = (parts, w) => { const t = parts.reduce((a, p) => a + p[1], 0) || 1; return `<span class="mini" style="width:${w}px">${parts.map(([k, v]) => `<i style="width:${(100 * v / t).toFixed(2)}%;background:${C[k]}"></i>`).join("")}</span>`; };
+  const seatLink = (s, sid, h, model) => `${h ? `${esc(h)}` : ""}${model ? ` · ${esc(model)}` : ""}${sid ? `<br><span class="mono">session ${esc(sid)}</span>` : ""}`;
+
+  function makeZoomable(svg) {
+    const vb = svg.getAttribute("viewBox").split(/[\s,]+/).map(Number);
+    const base = {x: vb[0], y: vb[1], w: vb[2], h: vb[3]};
+    let v = {...base};
+    const api = {onzoom: null, scale: () => base.w / v.w};
+    const apply = () => {
+      svg.setAttribute("viewBox", `${v.x.toFixed(2)} ${v.y.toFixed(2)} ${v.w.toFixed(2)} ${v.h.toFixed(2)}`);
+      const s = base.w / v.w;
+      svg.style.setProperty("--z", s.toFixed(4));
+      if (api.onzoom) api.onzoom(s);
+    };
+    const clamp = () => {
+      if (v.w >= base.w) { v = {...base}; return; }
+      v.x = Math.min(Math.max(v.x, base.x - v.w * 0.3), base.x + base.w - v.w * 0.7);
+      v.y = Math.min(Math.max(v.y, base.y - v.h * 0.3), base.y + base.h - v.h * 0.7);
+    };
+    const zoomAt = (f, cx, cy) => {
+      const s = base.w / v.w, ns = Math.min(40, Math.max(1, s * f)), k = s / ns;
+      v = {x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k, w: v.w * k, h: v.h * k};
+      clamp(); apply();
+    };
+    const toSvg = (cx, cy) => { const r = svg.getBoundingClientRect(); return [v.x + (cx - r.left) / r.width * v.w, v.y + (cy - r.top) / r.height * v.h]; };
+    svg.addEventListener("wheel", e => { e.preventDefault(); const [x, y] = toSvg(e.clientX, e.clientY); zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0018)), x, y); }, {passive: false});
+    const pts = new Map();
+    let last = null, pinch = null, moved = 0;
+    svg.addEventListener("pointerdown", e => {
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 1) { last = [e.clientX, e.clientY]; moved = 0; }
+      if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); }
     });
-    out.push("</svg>");
-    return out.join("");
+    svg.addEventListener("pointermove", e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 2 && pinch) {
+        const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        const [x, y] = toSvg((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+        zoomAt(d / pinch, x, y); pinch = d; moved += 10; return;
+      }
+      if (pts.size === 1 && last) {
+        const r = svg.getBoundingClientRect(), dx = e.clientX - last[0], dy = e.clientY - last[1];
+        moved += Math.abs(dx) + Math.abs(dy);
+        if (moved > 4 && v.w < base.w) { svg.classList.add("panning"); v.x -= dx / r.width * v.w; v.y -= dy / r.height * v.h; clamp(); apply(); }
+        last = [e.clientX, e.clientY];
+      }
+    });
+    const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) { last = null; svg.classList.remove("panning"); } };
+    for (const t of ["pointerup", "pointercancel", "pointerleave"]) svg.addEventListener(t, up);
+    // A drag that panned is not a click.
+    svg.addEventListener("click", e => { if (moved > 4) { e.stopImmediatePropagation(); e.preventDefault(); moved = 0; } }, true);
+    svg.style.touchAction = "none";
+    api.zoom = f => zoomAt(f, v.x + v.w / 2, v.y + v.h / 2);
+    api.reset = () => { v = {...base}; apply(); };
+    api.pan = (fx, fy) => { v.x += fx * v.w; v.y += fy * v.h; clamp(); apply(); };
+    api.focus = (x, y, s) => { v = {x: x - base.w / s / 2, y: y - base.h / s / 2, w: base.w / s, h: base.h / s}; clamp(); apply(); };
+    apply();
+    return api;
+  }
+  function openChart(id) {
+    const spec = CHARTS[id];
+    const W = spec.bigW || 1500, H = spec.bigH || Math.round((spec.h || 300) * (spec.bigScale || 1.9));
+    const m = document.getElementById("modal");
+    m.innerHTML = `<div class="modal-card wide" role="dialog" aria-modal="true" aria-label="${esc(spec.title)}">
+      <div class="zbar"><b>${esc(spec.title)}</b>${spec.tools ? spec.tools() : ""}<span class="zhint">scroll or pinch to zoom · drag to pan · <kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd> · <kbd>Esc</kbd></span>
+      <span class="zbtns"><button data-z="in" title="Zoom in (+)">+</button><button data-z="out" title="Zoom out (−)">−</button><button data-z="reset" title="Reset (0)">⟲</button><button data-z="close" title="Close (Esc)">×</button></span></div>
+      <div class="chart-wrap zoom">${spec.build(W, H, true)}<div class="tip" hidden></div></div>${spec.legend ? spec.legend() : ""}${spec.note ? spec.note() : ""}</div>`;
+    m.hidden = false;
+    const wrap = m.querySelector(".chart-wrap"), z = makeZoomable(wrap.querySelector("svg"));
+    if (spec.wire) spec.wire(wrap, true, z);
+    const close = () => { m.hidden = true; m.innerHTML = ""; document.onkeydown = null; };
+    m.querySelector(".zbar").onclick = e => {
+      const a = attr(e.target, "data-z");
+      if (a === "in") z.zoom(1.5); else if (a === "out") z.zoom(1 / 1.5); else if (a === "reset") z.reset(); else if (a === "close") close();
+    };
+    m.onclick = e => { if (e.target === m) close(); };
+    document.onkeydown = e => {
+      if (e.key === "Escape") return close();
+      if (e.target && e.target.tagName === "INPUT") return;
+      if (e.key === "+" || e.key === "=") z.zoom(1.5);
+      else if (e.key === "-" || e.key === "_") z.zoom(1 / 1.5);
+      else if (e.key === "0") z.reset();
+      else if (e.key.startsWith("Arrow")) { const d = {ArrowLeft: [-0.15, 0], ArrowRight: [0.15, 0], ArrowUp: [0, -0.15], ArrowDown: [0, 0.15]}[e.key]; if (d) { z.pan(d[0], d[1]); e.preventDefault(); } }
+    };
   }
 
-  function meter() {
+  // ---- Spend per hour: hover a column for the hour's story.
+  function hourlySpec() {
+    const B = R.hourly;
+    const vals = B.map(b => STACK.map(k => price(b.components[k]))), tot = vals.map(v => v.reduce((a, b) => a + b, 0));
+    const sorted = [...tot].sort((a, b) => a - b), med = sorted[Math.floor(sorted.length / 2)] || 0;
+    const geo = (W, H) => { const x0 = 56, x1 = W - 10, y0 = 14, y1 = H - 34; return {x0, x1, y0, y1, bw: (x1 - x0) / Math.max(1, B.length), max: Math.max(1e-9, ...tot)}; };
+    const build = (W, H) => {
+      const {x0, x1, y0, y1, bw, max} = geo(W, H);
+      const out = [`<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spend per hour by part; hover a column for the hour">`];
+      for (let i = 0; i <= 4; i++) { const v = max * i / 4, y = y1 - (y1 - y0) * i / 4; out.push(`<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="var(--rule)" stroke-width=".6"/><text x="${x0 - 6}" y="${y + 4}" class="ax" text-anchor="end">${usd(v)}</text>`); }
+      if (med > 0) { const y = y1 - (y1 - y0) * med / max; out.push(`<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="var(--ink2)" stroke-dasharray="4 4" stroke-width=".8"/><text x="${x1}" y="${y - 4}" class="ax" text-anchor="end">median hour ${usd(med)}</text>`); }
+      B.forEach((b, i) => {
+        let y = y1;
+        const x = x0 + i * bw;
+        STACK.forEach((k, j) => { const hh = (y1 - y0) * vals[i][j] / max; if (hh > 0) out.push(`<rect x="${x.toFixed(2)}" y="${(y - hh).toFixed(2)}" width="${Math.max(0.6, bw - 0.6).toFixed(2)}" height="${hh.toFixed(2)}" fill="${C[k]}"/>`); y -= hh; });
+        if (b.key.endsWith("T00")) out.push(`<line x1="${x}" x2="${x}" y1="${y1}" y2="${y1 + 6}" stroke="var(--ink)"/><text x="${x + 3}" y="${y1 + 20}" class="ax ax-day">${esc(fmtKey(b.key).slice(0, 10))}</text>`);
+      });
+      out.push(`<rect class="hl" x="0" y="${y0}" width="${bw}" height="${y1 - y0}" fill="none" stroke="var(--ink)" stroke-width="1.2" visibility="hidden"/>`);
+      B.forEach((b, i) => out.push(`<rect class="hit" data-i="${i}" x="${(x0 + i * bw).toFixed(2)}" y="${y0}" width="${bw.toFixed(2)}" height="${y1 - y0}" fill="transparent"/>`));
+      out.push("</svg>");
+      return out.join("");
+    };
+    const wire = (wrap, big) => {
+      const svg = wrap.querySelector("svg"), hl = svg.querySelector(".hl");
+      const vb = svg.getAttribute("viewBox").split(" ").map(Number), {x0, bw} = geo(vb[2], vb[3]);
+      svg.addEventListener("mousemove", e => {
+        if (!has(e.target, "data-i")) return;
+        const i = +attr(e.target, "data-i"), b = B[i], t = tot[i];
+        hl.setAttribute("x", (x0 + i * bw).toFixed(2)); hl.setAttribute("width", bw.toFixed(2)); hl.setAttribute("visibility", "visible");
+        const rank = 1 + tot.filter(x => x > t).length;
+        const trig = Object.entries(b.by_trigger).map(([k, tk]) => [k, price(tk)]).sort((a, c) => c[1] - a[1]);
+        const parts = STACK.map((k, j) => [k, vals[i][j]]).filter(p => p[1] > 0);
+        showTip(wrap, `<b>${esc(fmtKey(b.key))}–${String((keyDate(b.key).getUTCHours() + 1) % 24).padStart(2, "0")}:00</b>
+          <div class="big">${usd(t, 2)}</div>
+          <div>${med > 0 ? `<b>${(t / med).toFixed(1)}×</b> the median hour · ` : ""}rank ${rank} of ${B.length}</div>
+          ${mini(parts, 230)}
+          ${parts.map(([k, v]) => `<div class="row"><span class="dot" style="background:${C[k]}"></span>${esc(LABEL[k])}<span>${usd(v, 2)}</span></div>`).join("")}
+          <div class="sep">${num(b.calls)} calls · ${num(b.sessions)} sessions · <b>${num(b.cold)}</b> cold calls</div>
+          <div>turns opened: ${num(b.peer_turns)} by messages · ${num(b.human_turns)} typed${b.compactions ? ` · ${b.compactions} compactions` : ""}</div>
+          ${trig.length ? `<div>biggest driver: <b>${esc(trig[0][0])}</b> (${pct(100 * trig[0][1] / (t || 1))})</div>` : ""}`, e);
+      });
+      svg.addEventListener("mouseleave", () => { hideTip(wrap); hl.setAttribute("visibility", "hidden"); });
+    };
+    return {title: "Spend per hour", h: 300, build, wire, legend: () => legend(STACK)};
+  }
+
+  // ---- Cumulative spend: a crosshair with spend so far and the burn rate.
+  function meterSpec() {
     const pts = R.series_10m;
-    if (!pts.length) return "";
-    const total = pts.reduce((a, p) => a + price(p.tokens), 0) || 1;
-    const W = 1100, H = 260, x0 = 56, x1 = W - 10, y0 = 14, y1 = H - 34;
-    let acc = 0;
-    const xy = pts.map((p, i) => { acc += price(p.tokens); return [x0 + (x1 - x0) * i / Math.max(1, pts.length - 1), y1 - (y1 - y0) * acc / total]; });
-    const out = [`<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative spend over the window">`];
-    for (const v of [0, 25, 50, 75, 100]) { const y = y1 - (y1 - y0) * v / 100; out.push(`<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="var(--rule)" stroke-width=".6"/><text x="${x0 - 6}" y="${y + 4}" class="ax" text-anchor="end">${v}%</text>`); }
-    pts.forEach((p, i) => { if (p.key.endsWith("T00:00")) { const x = xy[i][0]; out.push(`<line x1="${x}" x2="${x}" y1="${y0}" y2="${y1 + 6}" stroke="var(--rule)"/><text x="${x + 3}" y="${y1 + 20}" class="ax ax-day">${esc(p.key.slice(5, 10))}</text>`); } });
-    const span = R.window.until_ms - R.window.since_ms;
-    for (const n of R.limits) {
-      const x = x0 + (x1 - x0) * (n.ts_ms - R.window.since_ms) / span;
-      out.push(`<line x1="${x}" x2="${x}" y1="${y0}" y2="${y1}" stroke="var(--red)" stroke-dasharray="3 3"><title>${esc(local(n.ts_ms))} limit notice (${esc(n.subkind || "")}) on ${esc(n.seat)}</title></line>`);
-    }
-    out.push(`<polyline fill="none" stroke="var(--ink)" stroke-width="2" points="${xy.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}"/></svg>`);
-    return out.join("");
+    const step = pts.map(p => price(p.tokens)), total = step.reduce((a, b) => a + b, 0) || 1;
+    const cum = []; step.reduce((a, s, i) => (cum[i] = a + s), 0);
+    const hourly = step.map((_, i) => step.slice(Math.max(0, i - 5), i + 1).reduce((a, b) => a + b, 0));
+    const avgHour = total / Math.max(1, pts.length / 6);
+    let peak = 0; hourly.forEach((h, i) => { if (h > hourly[peak]) peak = i; });
+    const geo = (W, H) => { const x0 = 56, x1 = W - 10, y0 = 14, y1 = H - 34; return {x0, x1, y0, y1, X: i => x0 + (x1 - x0) * i / Math.max(1, pts.length - 1), Y: v => y1 - (y1 - y0) * v / total}; };
+    const build = (W, H) => {
+      const {x0, x1, y0, y1, X, Y} = geo(W, H);
+      const out = [`<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative spend over the window; hover for spend so far and the burn rate">`];
+      for (const v of [0, 25, 50, 75, 100]) { const y = y1 - (y1 - y0) * v / 100; out.push(`<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="var(--rule)" stroke-width=".6"/><text x="${x0 - 6}" y="${y + 4}" class="ax" text-anchor="end">${v}%</text>`); }
+      pts.forEach((p, i) => { if (p.key.endsWith("T00:00")) { const x = X(i); out.push(`<line x1="${x}" x2="${x}" y1="${y0}" y2="${y1 + 6}" stroke="var(--rule)"/><text x="${x + 3}" y="${y1 + 20}" class="ax ax-day">${esc(fmtKey(p.key).slice(0, 10))}</text>`); } });
+      const span = R.window.until_ms - R.window.since_ms;
+      for (const n of R.limits) { const x = x0 + (x1 - x0) * (n.ts_ms - R.window.since_ms) / span; out.push(`<line x1="${x}" x2="${x}" y1="${y0}" y2="${y1}" stroke="var(--red)" stroke-dasharray="3 3"/>`); }
+      if (pts.length > 6) { const a = X(Math.max(0, peak - 5)), b = X(peak); out.push(`<rect x="${a}" y="${y0}" width="${Math.max(2, b - a)}" height="${y1 - y0}" fill="var(--amber)" opacity=".18"/><text x="${b + 4}" y="${y0 + 12}" class="ax">steepest hour: ${usd(hourly[peak])}</text>`); }
+      out.push(`<polyline fill="none" stroke="var(--ink)" stroke-width="2" points="${cum.map((c, i) => X(i).toFixed(1) + "," + Y(c).toFixed(1)).join(" ")}"/>`);
+      out.push(`<line class="cx" x1="0" x2="0" y1="${y0}" y2="${y1}" stroke="var(--ink)" stroke-width=".8" visibility="hidden"/><circle class="cd" r="4" fill="var(--ink)" visibility="hidden"/>`);
+      out.push(`<rect class="hit" x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="transparent"/></svg>`);
+      return out.join("");
+    };
+    const wire = wrap => {
+      const svg = wrap.querySelector("svg"), cx = svg.querySelector(".cx"), cd = svg.querySelector(".cd");
+      const vb = svg.getAttribute("viewBox").split(" ").map(Number), g = geo(vb[2], vb[3]);
+      svg.addEventListener("mousemove", e => {
+        if (!pts.length) return;
+        const p = svgPoint(svg, e), i = Math.max(0, Math.min(pts.length - 1, Math.round((p.x - g.x0) / (g.x1 - g.x0) * (pts.length - 1))));
+        const x = g.X(i), y = g.Y(cum[i]);
+        cx.setAttribute("x1", x); cx.setAttribute("x2", x); cx.setAttribute("visibility", "visible");
+        cd.setAttribute("cx", x); cd.setAttribute("cy", y); cd.setAttribute("visibility", "visible");
+        const at = keyMs(pts[i].key), near = R.limits.filter(n => Math.abs(n.ts_ms - at) < 3600000);
+        showTip(wrap, `<b>${esc(fmtKey(pts[i].key))}</b>
+          <div class="big">${pct(100 * cum[i] / total)}</div><div>of the window's spend so far · ${usd(cum[i])}</div>
+          <div class="sep">last hour: <b>${usd(hourly[i], 2)}</b> · ${(hourly[i] / (avgHour || 1)).toFixed(1)}× the average hour</div>
+          <div>still to come: ${usd(total - cum[i])} (${pct(100 - 100 * cum[i] / total)})</div>
+          ${near.map(n => `<div class="warn">limit notice (${esc(n.subkind || "")}) on ${esc(n.seat)} at ${esc(local(n.ts_ms).slice(11))}</div>`).join("")}`, e);
+      });
+      svg.addEventListener("mouseleave", () => { hideTip(wrap); cx.setAttribute("visibility", "hidden"); cd.setAttribute("visibility", "hidden"); });
+    };
+    return {title: "Cumulative spend", h: 260, build, wire};
   }
 
-  function lane(l) {
-    const W = 330, H = 110, x0 = 4, x1 = W - 4, y0 = 6, y1 = H - 14;
+  // ---- Context lanes: a crosshair per lane, with wakes and compactions nearby.
+  function laneSpec(l) {
     const span = R.window.until_ms - R.window.since_ms;
-    const keyMs = k => Date.parse(k + ":00Z") - R.window.utc_offset_min * 60000;
-    const max = Math.max(1, ...l.points.map(p => p.max_context), 1e6);
-    const X = ms => x0 + (x1 - x0) * (ms - R.window.since_ms) / span;
-    const Y = v => y1 - (y1 - y0) * v / max;
-    const out = [`<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Context of ${esc(l.seat)} over time">`,
-      `<line x1="${x0}" x2="${x1}" y1="${Y(1e6 * 0.5)}" y2="${Y(1e6 * 0.5)}" stroke="var(--rule)" stroke-dasharray="2 3"/>`];
-    out.push(`<polyline fill="none" stroke="var(--ink)" stroke-width="1.2" points="${l.points.map(p => X(keyMs(p.key)).toFixed(1) + "," + Y(p.max_context).toFixed(1)).join(" ")}"/>`);
-    for (const c of l.cold) out.push(`<path d="M${X(c.ts_ms).toFixed(1)},${y1 + 1} l4,8 h-8 z" fill="${c.status ? "var(--red)" : "var(--cold)"}"><title>${esc(local(c.ts_ms))} cold ${esc(c.kind)} wake: rewrote ${num(c.tokens.cw_1h + c.tokens.cw_5m)} tokens (${usd(price(c.tokens), 2)})${c.status ? ", opened by a status turn" : ""}</title></path>`);
-    for (const k of l.compactions) out.push(`<circle cx="${X(k.ts_ms).toFixed(1)}" cy="${Y(k.post || 0).toFixed(1)}" r="2.6" fill="var(--violet)"><title>${esc(local(k.ts_ms))} compaction ${num(k.pre)} → ${num(k.post)}</title></circle>`);
-    out.push("</svg>");
-    return `<div class="lane"><h4>${esc(l.seat)}</h4><p class="note">${esc(l.role || "no role")} · ${usd(price(l.tokens))} · ${num(l.calls)} calls · ${l.peer_turns} message turns · ${l.human_turns} typed</p>${out.join("")}</div>`;
+    const pts = l.points.map(p => [keyMs(p.key), p.max_context, p.calls]);
+    const geo = (W, H) => { const x0 = 4, x1 = W - 4, y0 = 6, y1 = H - 16, max = Math.max(1e6, ...pts.map(p => p[1])); return {x0, x1, y0, y1, X: ms => x0 + (x1 - x0) * (ms - R.window.since_ms) / span, Y: v => y1 - (y1 - y0) * v / max, T: x => R.window.since_ms + (x - x0) / (x1 - x0) * span}; };
+    const build = (W, H, big) => {
+      const {x0, x1, y0, y1, X, Y} = geo(W, H), s = big ? 7 : 4;
+      const out = [`<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Context of ${esc(l.seat)} over time; hover for detail">`];
+      for (const v of big ? [250e3, 500e3, 750e3, 1e6] : [500e3]) out.push(`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--rule)" stroke-dasharray="2 3"/>${big ? `<text x="${x0 + 4}" y="${Y(v) - 3}" class="ax">${v / 1e3}k</text>` : ""}`);
+      if (big) R.daily.forEach(d => { const x = X(keyMs(d.key)); if (x > x0) out.push(`<line x1="${x}" x2="${x}" y1="${y0}" y2="${y1}" stroke="var(--rule)"/><text x="${x + 3}" y="${y1 + 13}" class="ax ax-day">${esc(fmtKey(d.key).slice(0, 10))}</text>`); });
+      out.push(`<polyline fill="none" stroke="var(--ink)" stroke-width="1.2" points="${pts.map(p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(" ")}"/>`);
+      for (const c of l.cold) out.push(`<path d="M${X(c.ts_ms).toFixed(1)},${y1 + 1} l${s},${s * 2} h${-s * 2} z" fill="${c.status ? "var(--red)" : "var(--cold)"}"/>`);
+      for (const k of l.compactions) out.push(`<circle cx="${X(k.ts_ms).toFixed(1)}" cy="${Y(k.post || 0).toFixed(1)}" r="${big ? 4 : 2.6}" fill="var(--violet)"/>`);
+      out.push(`<line class="cx" x1="0" x2="0" y1="${y0}" y2="${y1}" stroke="var(--ink)" stroke-width=".7" visibility="hidden"/><rect class="hit" x="${x0}" y="0" width="${x1 - x0}" height="${H}" fill="transparent"/></svg>`);
+      return out.join("");
+    };
+    const wire = wrap => {
+      const svg = wrap.querySelector("svg"), cx = svg.querySelector(".cx");
+      const vb = svg.getAttribute("viewBox").split(" ").map(Number), g = geo(vb[2], vb[3]);
+      svg.addEventListener("mousemove", e => {
+        if (!pts.length) return;
+        const p = svgPoint(svg, e), t = g.T(p.x);
+        let i = 0; pts.forEach((q, j) => { if (Math.abs(q[0] - t) < Math.abs(pts[i][0] - t)) i = j; });
+        const [ms, ctx, calls] = pts[i], x = g.X(ms);
+        cx.setAttribute("x1", x); cx.setAttribute("x2", x); cx.setAttribute("visibility", "visible");
+        const hourAgo = pts.filter(q => q[0] <= ms - 3600000).pop();
+        const near = (list, f) => list.filter(c => Math.abs(c.ts_ms - ms) <= 20 * 60000).map(f).join("");
+        showTip(wrap, `<b>${esc(l.seat)}</b> · ${esc(local(ms))}
+          <div class="big">${mtok(ctx)} tokens</div>
+          <div>${num(calls)} calls in these 5 minutes${hourAgo ? ` · ${ctx >= hourAgo[1] ? "+" : "−"}${mtok(Math.abs(ctx - hourAgo[1]))} in the last hour` : ""}</div>
+          <div>each call here re-reads about ${usd(ctx * prices().read / 1e6, 3)}${state.free ? " (free in this view)" : ""}</div>
+          ${near(l.cold, c => `<div class="${c.status ? "warn" : ""}">${c.status ? "avoidable " : ""}cold wake ${esc(local(c.ts_ms).slice(11))}: rewrote ${mtok(c.tokens.cw_1h + c.tokens.cw_5m)} (${usd(price(c.tokens), 2)}) after ${ago(c.gap_min)} idle, opened by ${esc(c.trigger)}${c.sender ? " · " + esc(c.sender) : ""}</div>`)}
+          ${near(l.compactions, k => `<div>compaction ${esc(local(k.ts_ms).slice(11))}: ${mtok(k.pre)} → ${mtok(k.post)}</div>`)}`, e);
+      });
+      svg.addEventListener("mouseleave", () => { hideTip(wrap); cx.setAttribute("visibility", "hidden"); });
+    };
+    return {title: `Context of ${l.seat}`, w: 330, h: 110, bigW: 1500, bigH: 520, build, wire, legend: () => laneKeyHtml()};
   }
 
-  // Growth runs: every run faint; hover highlights one, click opens its detail.
+  // ---- Growth runs: hover a line for its story, click it for its detail.
   const RUN_COL = "#1B7F79";
   function runFrame(runs, W, H, col) {
     const x0 = 64, x1 = W - 10, y0 = 14, y1 = H - 40, XMAX = 1e6;
@@ -185,10 +405,9 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
   }
   const poly = (pts, f) => pts.map(p => f(p)).join(" ");
   function runOverlay(r, X, Y, col, big) {
-    const line = poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1));
     const out = [];
     if (!state.free && r.replay.length) out.push(`<polyline fill="none" stroke="${RUN_COL}" stroke-width="${big ? 2 : 1.6}" stroke-dasharray="5 4" opacity=".8" points="${poly(r.replay, p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1))}"/>`);
-    out.push(`<polyline fill="none" stroke="${RUN_COL}" stroke-width="${big ? 3 : 2.6}" points="${line}"/>`);
+    out.push(`<polyline fill="none" stroke="${RUN_COL}" stroke-width="${big ? 3 : 2.6}" points="${poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1))}"/>`);
     for (const m of r.markers) {
       const x = X(m.context), y = Y(state.free ? m.usd_reads_free : m.usd), s = big ? 6 : 5;
       const tip = `<title>${esc(local(m.ts_ms))}: ${m.kind === "status" ? "status turn" : m.kind === "cold" ? "cold wake opened by real work" : "cold wake opened by a no-action message (avoidable)"}</title>`;
@@ -207,159 +426,231 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
     ['<path d="M9,2 l5,9 h-10 z" fill="var(--red)"/>', "cold wake opened by a no-action message (avoidable)"],
     ['<path d="M9,2 l5,9 h-10 z" fill="var(--cold)"/>', "cold wake opened by real work"],
   ].map(([svg, label]) => `<span class="lk"><svg width="18" height="12" viewBox="0 0 18 12" aria-hidden="true">${svg}</svg>${label}</span>`).join("")}</p>`;
+  function runStats(r) {
+    const runs = R.context_cost.runs, cost = state.free ? r.usd_reads_free : r.usd;
+    const costlier = runs.filter(x => (state.free ? x.usd_reads_free : x.usd) > cost).length;
+    const model = R.context_cost.model, last = r.points[r.points.length - 1];
+    const fit = !state.free && model.length && last ? model.reduce((a, p) => Math.abs(p[0] - last[0]) < Math.abs(a[0] - last[0]) ? p : a, model[0]) : null;
+    const saved = !state.free && r.replay.length ? cost - r.replay[r.replay.length - 1][1] : 0;
+    const hours = Math.max(1, (r.end_ms - r.start_ms) / 3600000);
+    return {costlier, fit, saved, hours, cost};
+  }
   function runFacts(r) {
-    const rf = state.free;
+    const {costlier, fit, saved, hours, cost} = runStats(r);
     return table(["", ""], [
       ["seat", esc(r.seat) + (r.role ? ` <span class="read">${esc(r.role)}</span>` : "")],
-      ["from", esc(local(r.start_ms))],
-      ["to", esc(local(r.end_ms))],
-      ["cost", `<b>${usd(rf ? r.usd_reads_free : r.usd, 2)}</b> ${rf ? "with cached reads free" : `at ${esc(R.prices.default)} list price`}${!rf && r.replay.length ? ` · ${usd(r.replay[r.replay.length - 1][1], 2)} without its status turns` : ""}`],
+      ["harness · model", `${esc(r.harness || "–")} · ${esc(r.model || "–")}`],
+      ["harness session", r.session_id ? `<code>${esc(r.session_id)}</code> <span class="read">to find the transcript again</span>` : "–"],
+      ["from → to", `${esc(local(r.start_ms))} → ${esc(local(r.end_ms))} (${hours.toFixed(1)} h)`],
+      ["cost", `<b>${usd(cost, 2)}</b> ${state.free ? "with cached reads free" : `at ${esc(R.prices.default)} list price`} · costlier than ${num(R.context_cost.runs.length - 1 - costlier)} of ${num(R.context_cost.runs.length - 1)} other runs`],
+      ...(fit ? [["vs the average run", `${usd(fit[1], 2)} at the same peak: this run cost <b>${(cost / (fit[1] || 1)).toFixed(2)}×</b>`]] : []),
+      ...(saved > 0 ? [["without status turns", `${usd(cost - saved, 2)}: they cost <b>${usd(saved, 2)}</b> (${pct(100 * saved / cost)})`]] : []),
       ["peak context", `${mtok(r.peak_context)} tokens`],
-      ["calls", num(r.calls)],
-      ["turns", `${num(r.turns)} (${num(r.message_turns)} opened by agent messages)`],
-      ["status turns", num(r.status_turns)],
+      ["calls · per hour", `${num(r.calls)} · ${num(r.calls / hours)} an hour · ${usd(cost / r.calls, 3)} a call`],
+      ["turns", `${num(r.turns)} (${num(r.message_turns)} opened by agent messages, ${num(r.status_turns)} status turns)`],
       ["cold wakes", `${num(r.cold_wakes)} (${num(r.avoidable_cold_wakes)} avoidable)`],
       ["FYI messages", `<span class="read">arrive with pij's message records (plan 162 P2)</span>`],
     ]);
   }
-  function curves() {
-    const runs = R.context_cost.runs;
-    if (!runs.length) return `<p class="note">No growth run started under 150k and passed 400k in this window.</p>`;
-    const col = state.free ? 2 : 1, W = 1100, H = 440;
-    const {X, Y, axes} = runFrame(runs, W, H, col);
-    const out = [`<div class="runs-wrap"><svg class="fig" id="runs-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative cost of growth runs against context; hover a line for its story, click for detail">`, axes];
-    for (const r of runs) out.push(`<polyline fill="none" stroke="var(--ink)" stroke-width=".8" opacity=".22" points="${poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1))}"/>`);
-    if (!state.free && R.context_cost.model.length) out.push(`<polyline fill="none" stroke="var(--amber)" stroke-width="3" points="${poly(R.context_cost.model, p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1))}"/>`);
-    out.push(`<g id="runs-hi"></g>`);
-    runs.forEach((r, i) => out.push(`<polyline class="hit" data-i="${i}" fill="none" stroke="transparent" stroke-width="9" points="${poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1))}"/>`));
-    out.push(`</svg><div id="runs-tip" class="tip" hidden></div></div>`);
-    return out.join("") + runKey() + `<p class="note">Hover a line to highlight it; click it for its detail. ${state.free ? "With cached reads free every curve is close to a straight line: the square rule is the cached reads." : `At ${esc(R.prices.default)} list price. The orange line is the square-law model of an average run; the dashed line replays the highlighted run without its status turns.`}</p>`;
-  }
-  function wireRuns() {
-    const svg = document.getElementById("runs-svg");
-    if (!svg || !svg.getBoundingClientRect) return;
+  function runsSpec() {
     const runs = R.context_cost.runs, col = state.free ? 2 : 1;
-    const {X, Y} = runFrame(runs, 1100, 440, col);
-    const hi = document.getElementById("runs-hi"), tip = document.getElementById("runs-tip");
-    const show = (i, e) => {
-      const r = runs[i];
-      hi.innerHTML = runOverlay(r, X, Y, col, false);
-      tip.innerHTML = `<b>${esc(r.seat)}</b>${r.role ? ` · ${esc(r.role)}` : ""}<br>${esc(local(r.start_ms))} → ${esc(local(r.end_ms))}<br>${usd(state.free ? r.usd_reads_free : r.usd, 2)} · peak ${mtok(r.peak_context)} · ${num(r.turns)} turns<br>${num(r.status_turns)} status turns · ${num(r.cold_wakes)} cold wakes (${num(r.avoidable_cold_wakes)} avoidable)<br><span class="read">click for detail</span>`;
-      const box = svg.getBoundingClientRect();
-      tip.style.left = Math.min(e.clientX - box.left + 14, box.width - 260) + "px";
-      tip.style.top = (e.clientY - box.top + 14) + "px";
-      tip.hidden = false;
+    const build = (W, H) => {
+      const {X, Y, axes} = runFrame(runs, W, H, col);
+      const out = [`<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative cost of growth runs against context; hover a line for its story, click for detail">`, axes];
+      for (const r of runs) out.push(`<polyline fill="none" stroke="var(--ink)" stroke-width=".8" opacity=".22" points="${poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1))}"/>`);
+      if (!state.free && R.context_cost.model.length) out.push(`<polyline fill="none" stroke="var(--amber)" stroke-width="3" points="${poly(R.context_cost.model, p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1))}"/>`);
+      out.push(`<g class="hi"></g>`);
+      runs.forEach((r, i) => out.push(`<polyline class="hit" data-i="${i}" fill="none" stroke="transparent" stroke-width="10" points="${poly(r.points, p => X(p[0]).toFixed(1) + "," + Y(p[col]).toFixed(1))}"/>`));
+      out.push("</svg>");
+      return out.join("");
     };
-    svg.onmousemove = e => { const i = e.target.getAttribute && e.target.getAttribute("data-i"); if (i !== null && i !== undefined) show(+i, e); };
-    svg.onmouseleave = () => { hi.innerHTML = ""; tip.hidden = true; };
-    svg.onclick = e => { const i = e.target.getAttribute && e.target.getAttribute("data-i"); if (i !== null && i !== undefined) openRun(+i); };
+    const wire = wrap => {
+      const svg = wrap.querySelector("svg"), hi = svg.querySelector(".hi");
+      const vb = svg.getAttribute("viewBox").split(" ").map(Number), {X, Y} = runFrame(runs, vb[2], vb[3], col);
+      svg.addEventListener("mousemove", e => {
+        if (!has(e.target, "data-i")) return;
+        const r = runs[+attr(e.target, "data-i")], s = runStats(r);
+        hi.innerHTML = runOverlay(r, X, Y, col, false);
+        showTip(wrap, `<b>${esc(r.seat)}</b>${r.role ? ` · ${esc(r.role)}` : ""}<div>${seatLink(r.seat, r.session_id, r.harness, r.model)}</div>
+          <div class="sep">${esc(local(r.start_ms))} → ${esc(local(r.end_ms))} (${s.hours.toFixed(1)} h)</div>
+          <div class="big">${usd(s.cost, 2)}</div>
+          <div>${s.fit ? `<b>${(s.cost / (s.fit[1] || 1)).toFixed(2)}×</b> the average run at ${mtok(r.peak_context)}` : `peak ${mtok(r.peak_context)}`}</div>
+          <div>${num(r.turns)} turns · ${num(r.status_turns)} status · ${num(r.cold_wakes)} cold wakes (${num(r.avoidable_cold_wakes)} avoidable)</div>
+          ${s.saved > 0 ? `<div class="warn">status turns cost it ${usd(s.saved, 2)}</div>` : ""}<div class="read">click for the full story</div>`, e);
+      });
+      svg.addEventListener("mouseleave", () => { hi.innerHTML = ""; hideTip(wrap); });
+      svg.addEventListener("click", e => { if (has(e.target, "data-i")) openRun(+attr(e.target, "data-i")); });
+    };
+    return {title: "Growth runs: cost against context", h: 440, bigH: 760, build, wire, legend: runKey};
   }
   function openRun(i) {
-    const r = R.context_cost.runs[i], col = state.free ? 2 : 1;
-    const {X, Y, axes} = runFrame([r], 900, 420, col);
+    const r = R.context_cost.runs[i], col = state.free ? 2 : 1, W = 1000, H = 460;
+    const {X, Y, axes} = runFrame([r], W, H, col);
     const m = document.getElementById("modal");
-    m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" aria-label="Growth run detail"><button class="close" aria-label="Close" id="modal-x">×</button>
-      <h3>${esc(r.seat)}${r.role ? ` · ${esc(r.role)}` : ""}</h3>
-      <svg class="fig" viewBox="0 0 900 420" role="img" aria-label="This run's cumulative cost against context">${axes}${!state.free && R.context_cost.model.length ? `<polyline fill="none" stroke="var(--amber)" stroke-width="2" opacity=".7" points="${poly(R.context_cost.model, p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1))}"/>` : ""}${runOverlay(r, X, Y, col, true)}</svg>
+    m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true" aria-label="Growth run detail"><div class="zbar"><b>${esc(r.seat)}${r.role ? ` · ${esc(r.role)}` : ""}</b><span class="zhint">scroll or pinch to zoom · drag to pan</span><span class="zbtns"><button data-z="in">+</button><button data-z="out">−</button><button data-z="reset">⟲</button><button data-z="close">×</button></span></div>
+      <div class="chart-wrap zoom"><svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="This run's cumulative cost against context">${axes}${!state.free && R.context_cost.model.length ? `<polyline fill="none" stroke="var(--amber)" stroke-width="2" opacity=".7" points="${poly(R.context_cost.model, p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1))}"/>` : ""}${runOverlay(r, X, Y, col, true)}</svg><div class="tip" hidden></div></div>
       ${runKey()}${runFacts(r)}</div>`;
     m.hidden = false;
-    const close = () => { m.hidden = true; m.innerHTML = ""; };
-    document.getElementById("modal-x").onclick = close;
+    const z = makeZoomable(m.querySelector(".chart-wrap svg"));
+    const close = () => { m.hidden = true; m.innerHTML = ""; document.onkeydown = null; };
+    m.querySelector(".zbar").onclick = e => { const a = attr(e.target, "data-z"); if (a === "in") z.zoom(1.5); else if (a === "out") z.zoom(1 / 1.5); else if (a === "reset") z.reset(); else if (a === "close") close(); };
     m.onclick = e => { if (e.target === m) close(); };
-    document.onkeydown = e => { if (e.key === "Escape") close(); };
+    document.onkeydown = e => { if (e.key === "Escape") close(); else if (e.key === "+" || e.key === "=") z.zoom(1.5); else if (e.key === "-") z.zoom(1 / 1.5); else if (e.key === "0") z.reset(); };
   }
 
-  // Hub graph: primes as hubs, each seat around the prime it messages most.
+  // ---- Hub graph: primes as hubs; hover a seat or a link, search, declutter.
   const HUB_MAX = 70;
-  let HUB = null;
-  function hubLayout() {
-    const g = R.graph, W = 1100;
-    const vol = n => n.sent + n.received;
+  function hubData() {
+    const g = R.graph, vol = n => n.sent + n.received;
     let nodes = g.nodes.filter(n => vol(n) > 0);
     nodes.sort((a, b) => (b.prime - a.prime) || vol(b) - vol(a) || a.id.localeCompare(b.id));
     nodes = nodes.filter((n, i) => n.prime || i < HUB_MAX);
     const ids = new Set(nodes.map(n => n.id));
     const msgs = g.messages.filter(m => ids.has(m.from) && ids.has(m.to));
+    const turn = {};
+    for (const e of g.edges) turn[e.from + "\u0000" + e.to] = e;
+    const pair = (a, b) => msgs.find(m => m.from === a && m.to === b);
+    const total = g.messages.reduce((a, m) => a + m.messages, 0) || 1;
+    const info = {};
+    for (const n of nodes) {
+      const out = msgs.filter(m => m.from === n.id).sort((a, b) => b.messages - a.messages);
+      const inn = msgs.filter(m => m.to === n.id).sort((a, b) => b.messages - a.messages);
+      const partners = new Set([...out.map(m => m.to), ...inn.map(m => m.from)]);
+      const twoWay = [...partners].filter(p => pair(n.id, p) && pair(p, n.id)).length;
+      const caused = g.edges.filter(e => e.from === n.id), suffered = g.edges.filter(e => e.to === n.id);
+      info[n.id] = {out, inn, partners: partners.size, twoWay, caused, suffered, share: 100 * (n.sent + n.received) / total};
+    }
+    return {nodes, msgs, turn, pair, info, ids};
+  }
+  function hubLayout(D, W, H) {
+    const {nodes, msgs} = D;
     let hubs = nodes.filter(n => n.prime);
     if (!hubs.length && nodes.length) hubs = [nodes[0]];
-    const hubIds = new Set(hubs.map(h => h.id));
-    const tie = {};
+    const hubIds = new Set(hubs.map(h => h.id)), tie = {};
     for (const m of msgs) for (const [a, b] of [[m.from, m.to], [m.to, m.from]]) if (hubIds.has(b) && !hubIds.has(a)) { tie[a] = tie[a] || {}; tie[a][b] = (tie[a][b] || 0) + m.messages; }
     const home = {};
     for (const n of nodes) if (!hubIds.has(n.id) && tie[n.id]) home[n.id] = Object.entries(tie[n.id]).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))[0][0];
-    const k = hubs.length, H = Math.max(520, k > 2 ? 640 : 560), cy = H / 2;
-    const pos = {}, cr = Math.min(230, (W / Math.max(1, k)) * 0.42);
+    const k = hubs.length, cy = H / 2, pos = {}, cr = Math.min(H * 0.4, (W / Math.max(1, k)) * 0.42);
     hubs.forEach((h, i) => { pos[h.id] = [W * (i + 1) / (k + 1), cy]; });
     hubs.forEach(h => {
       const members = nodes.filter(n => home[n.id] === h.id);
-      members.forEach((n, j) => { const t = -Math.PI / 2 + 2 * Math.PI * j / Math.max(1, members.length); pos[n.id] = [pos[h.id][0] + cr * Math.cos(t), cy + cr * 0.95 * Math.sin(t)]; });
+      // Busiest members on the inner ring, the rest outside.
+      members.forEach((n, j) => { const ring = members.length > 18 && j % 2 ? 1.28 : 1; const t = -Math.PI / 2 + 2 * Math.PI * j / Math.max(1, members.length); pos[n.id] = [pos[h.id][0] + cr * ring * Math.cos(t), cy + cr * ring * 0.95 * Math.sin(t)]; });
     });
     const loose = nodes.filter(n => !pos[n.id]);
-    loose.forEach((n, j) => { const t = Math.PI * (0.15 + 0.7 * (j + 0.5) / Math.max(1, loose.length)); pos[n.id] = [W / 2 + (W / 2 - 60) * Math.cos(t + Math.PI), cy + (H / 2 - 30) * Math.sin(t + Math.PI) * (j % 2 ? -1 : 1)]; });
-    const cold = {};
-    for (const e of g.edges) cold[e.from + "\u0000" + e.to] = e.cold;
-    return {nodes, msgs, pos, W, H, hubIds, cold};
+    loose.forEach((n, j) => { const t = 2 * Math.PI * (j + 0.5) / Math.max(1, loose.length); pos[n.id] = [W / 2 + (W / 2 - 50) * Math.cos(t), cy + (H / 2 - 24) * Math.sin(t)]; });
+    return {pos, home};
   }
-  function hubGraph() {
-    if (!R.graph.messages || !R.graph.messages.length) return `<p class="note">No pij messages touched a seat of this report in the window.</p>`;
-    HUB = hubLayout();
-    const {nodes, msgs, pos, W, H, cold} = HUB;
-    const maxM = Math.max(1, ...msgs.map(m => m.messages));
-    const spend = n => price(n.tokens);
-    const maxS = Math.max(1e-9, ...nodes.map(spend));
-    const out = [`<div class="runs-wrap"><svg class="fig" id="hub-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Who messaged whom: primes as hubs; hover a seat for its numbers">`];
-    msgs.forEach((m, i) => {
-      const [x1, y1] = pos[m.from], [x2, y2] = pos[m.to];
-      const mx = (x1 + x2) / 2 + (y2 - y1) * 0.12, my = (y1 + y2) / 2 - (x2 - x1) * 0.12;
-      const hot = (cold[m.from + "\u0000" + m.to] || 0) >= 3;
-      out.push(`<path class="hub-e" data-f="${esc(m.from)}" data-t="${esc(m.to)}" d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${hot ? "var(--cold)" : "var(--ink)"}" stroke-width="${(0.6 + 4.5 * Math.sqrt(m.messages / maxM)).toFixed(2)}" opacity="${hot ? 0.75 : 0.22}"><title>${esc(m.from)} → ${esc(m.to)}: ${num(m.messages)} messages</title></path>`);
-    });
-    nodes.forEach((n, i) => {
-      const [x, y] = pos[n.id], r = 3.5 + 15 * Math.sqrt(spend(n) / maxS);
-      const role = (n.role || "").toLowerCase();
-      const fill = !n.local ? "var(--paper)" : n.prime ? "var(--amber)" : /^pa\b|^pa[^a-z]/.test(role) ? "var(--violet)" : "var(--ink)";
-      const name = n.id.replace(/^pij-/, "");
-      out.push(`<g class="hub-n" data-i="${i}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(n.prime ? Math.max(r, 9) : r).toFixed(1)}" fill="${fill}" stroke="var(--ink)" stroke-width="${n.local ? 0.6 : 1.4}"/><text x="${(x + r + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" class="ax${n.prime ? " ax-day" : ""}">${esc(name)}${n.prime ? " · prime" : ""}</text><circle class="hit" data-i="${i}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.max(r, 9).toFixed(1)}" fill="transparent"/></g>`);
-    });
-    out.push(`</svg><div id="hub-tip" class="tip" hidden></div></div>`);
+  let HUBD = null;
+  function hubSpec() {
+    HUBD = hubData();
+    const D = HUBD, spend = n => price(n.tokens), maxS = Math.max(1e-9, ...D.nodes.map(spend)), maxM = Math.max(1, ...D.msgs.map(m => m.messages));
+    const build = (W, H, big) => {
+      const {pos} = hubLayout(D, W, H);
+      const out = [`<svg class="fig hub" viewBox="0 0 ${W} ${H}" role="img" aria-label="Who messaged whom: primes as hubs; hover a seat or a link, click to pin">`];
+      D.msgs.forEach(m => {
+        const [x1, y1] = pos[m.from], [x2, y2] = pos[m.to];
+        const mx = (x1 + x2) / 2 + (y2 - y1) * 0.12, my = (y1 + y2) / 2 - (x2 - x1) * 0.12;
+        const e = D.turn[m.from + "\u0000" + m.to], hot = e && e.cold >= 3;
+        out.push(`<path class="hub-e" data-f="${esc(m.from)}" data-t="${esc(m.to)}" data-n="${m.messages}" d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${hot ? "var(--cold)" : "var(--ink)"}" stroke-width="${(0.6 + 4.5 * Math.sqrt(m.messages / maxM)).toFixed(2)}" opacity="${hot ? 0.75 : 0.22}"/>`);
+      });
+      D.nodes.forEach((n, i) => {
+        const [x, y] = pos[n.id], r = Math.max(n.prime ? 9 : 3.5, 3.5 + 15 * Math.sqrt(spend(n) / maxS));
+        const role = (n.role || "").toLowerCase();
+        const fill = !n.local ? "var(--paper)" : n.prime ? "var(--amber)" : /^pa\b|^pa[^a-z]/.test(role) ? "var(--violet)" : "var(--ink)";
+        out.push(`<g class="hub-n" data-id="${esc(n.id)}"><circle class="dotn" data-r="${r.toFixed(1)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}" stroke="var(--ink)" stroke-width="${n.local ? 0.6 : 1.4}"/><text x="${(x + r + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" class="ax${n.prime ? " ax-day" : ""}">${esc(n.id.replace(/^pij-/, ""))}${n.prime ? " · prime" : ""}</text><circle class="hit" data-i="${i}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.max(r, 9).toFixed(1)}" fill="transparent"/></g>`);
+      });
+      out.push("</svg>");
+      return out.join("");
+    };
+    const nodeTip = n => {
+      const I = D.info[n.id], top = (list, key) => list.slice(0, 3).map(m => `<div class="row"><span>${esc(m[key].replace(/^pij-/, ""))}</span><span>${num(m.messages)}</span></div>`).join("") || `<div class="read">none</div>`;
+      const caused = I.caused.reduce((a, e) => a + price(e.tokens), 0), causedCold = I.caused.reduce((a, e) => a + e.cold, 0);
+      const suffered = I.suffered.reduce((a, e) => a + price(e.tokens), 0), sufferedCold = I.suffered.reduce((a, e) => a + e.cold, 0);
+      return `<b>${esc(n.id)}</b>${n.role ? ` · ${esc(n.role)}` : ""}${n.prime ? " · <b>prime</b>" : ""}
+        <div>${n.local ? esc(n.harness || "local seat") : `<span class="warn">not a seat on this machine</span>`} · ${pct(I.share)} of all messages</div>
+        <div class="big">${num(n.sent)} → · ← ${num(n.received)}</div>
+        <div>${num(I.partners)} partners, ${num(I.twoWay)} both ways</div>
+        <div class="cols"><div><div class="sub">sends most to</div>${top(I.out, "to")}</div><div><div class="sub">hears most from</div>${top(I.inn, "from")}</div></div>
+        <div class="sep">its messages cost others <b>${usd(caused)}</b>${causedCold ? `, ${num(causedCold)} cold wakes` : ""}${n.sent ? ` (${usd(caused / n.sent, 2)} a message)` : ""}</div>
+        <div>others' messages cost it <b>${usd(suffered)}</b>${sufferedCold ? `, ${num(sufferedCold)} cold wakes` : ""}</div>
+        <div>own spend ${usd(spend(n))} · peak ${mtok(n.max_context)}</div><div class="read">click to keep only its links</div>`;
+    };
+    const edgeTip = (f, t) => {
+      const m = D.pair(f, t), back = D.pair(t, f), e = D.turn[f + "\u0000" + t];
+      const cost = e ? price(e.tokens) : 0;
+      return `<b>${esc(f.replace(/^pij-/, ""))} → ${esc(t.replace(/^pij-/, ""))}</b>
+        <div class="big">${num(m ? m.messages : 0)} messages</div>
+        <div>${back ? `${num(back.messages)} back the other way` : "nothing back the other way"}</div>
+        <div class="sep">opened ${num(e ? e.turns : 0)} turns in ${esc(t.replace(/^pij-/, ""))} costing <b>${usd(cost, 2)}</b>${m && m.messages ? ` (${usd(cost / m.messages, 3)} a message)` : ""}</div>
+        ${e && e.cold ? `<div class="warn">${num(e.cold)} of them woke it on an expired cache</div>` : ""}`;
+    };
+    const wire = (wrap, big, z) => {
+      const svg = wrap.querySelector("svg");
+      const edges = [...svg.querySelectorAll(".hub-e")], groups = [...svg.querySelectorAll(".hub-n")];
+      let pinned = null, minN = 0;
+      const neighbours = id => new Set([id, ...D.msgs.filter(m => m.from === id || m.to === id).flatMap(m => [m.from, m.to])]);
+      const paint = id => {
+        const near = id ? neighbours(id) : null;
+        for (const e of edges) {
+          const n = +e.getAttribute("data-n"), on = !id || e.getAttribute("data-f") === id || e.getAttribute("data-t") === id;
+          e.style.display = n < minN ? "none" : "";
+          e.style.opacity = id ? (on ? "0.95" : "0.03") : "";
+        }
+        for (const g of groups) g.style.opacity = near && !near.has(g.getAttribute("data-id")) ? "0.18" : "";
+      };
+      svg.addEventListener("mousemove", e => {
+        if (has(e.target, "data-i")) { const n = D.nodes[+attr(e.target, "data-i")]; if (!pinned) paint(n.id); showTip(wrap, nodeTip(n), e); }
+        else if (has(e.target, "data-f")) showTip(wrap, edgeTip(attr(e.target, "data-f"), attr(e.target, "data-t")), e);
+        else hideTip(wrap);
+      });
+      svg.addEventListener("mouseleave", () => { hideTip(wrap); if (!pinned) paint(null); });
+      svg.addEventListener("click", e => {
+        const id = has(e.target, "data-i") ? D.nodes[+attr(e.target, "data-i")].id : null;
+        pinned = id && id !== pinned ? id : null; paint(pinned);
+      });
+      if (z) {
+        z.onzoom = s => { for (const c of svg.querySelectorAll(".dotn")) c.setAttribute("r", (+c.getAttribute("data-r") / Math.pow(s, 0.6)).toFixed(2)); };
+        z.onzoom(z.scale());
+        const find = document.getElementById("hub-find"), min = document.getElementById("hub-min"), minOut = document.getElementById("hub-min-out");
+        if (find) find.oninput = () => {
+          const q = find.value.trim().toLowerCase(), hit = q && D.nodes.find(n => n.id.toLowerCase().includes(q));
+          pinned = hit ? hit.id : null; paint(pinned);
+          if (hit) { const c = svg.querySelector(`.hub-n[data-id="${window.CSS && CSS.escape ? CSS.escape(hit.id) : hit.id}"] .dotn`); z.focus(+c.getAttribute("cx"), +c.getAttribute("cy"), 3); }
+        };
+        if (min) min.oninput = () => { minN = +min.value; minOut.textContent = minN; paint(pinned); };
+      }
+    };
+    const maxMsg = Math.max(1, ...D.msgs.map(m => m.messages));
+    const tools = () => `<label class="ztool">find <input id="hub-find" type="search" placeholder="seat name" autocomplete="off"></label><label class="ztool">hide links under <input id="hub-min" type="range" min="0" max="${Math.min(200, maxMsg)}" value="0"> <span id="hub-min-out">0</span> messages</label>`;
+    return {title: "Messages between seats", h: 600, bigW: 1600, bigH: 1000, build, wire, tools, legend: hubKey};
+  }
+  const hubKey = () => {
     const key = (svg, label) => `<span class="lk"><svg width="18" height="12" viewBox="0 0 18 12" aria-hidden="true">${svg}</svg>${label}</span>`;
-    out.push(`<p class="legend">${[
+    return `<p class="legend">${[
       key('<circle cx="9" cy="6" r="5" fill="var(--amber)" stroke="var(--ink)" stroke-width=".6"/>', "prime"),
       key('<circle cx="9" cy="6" r="5" fill="var(--violet)" stroke="var(--ink)" stroke-width=".6"/>', "PA"),
       key('<circle cx="9" cy="6" r="5" fill="var(--ink)"/>', "seat (area = spend)"),
       key('<circle cx="9" cy="6" r="4.5" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.4"/>', "seat not on this machine"),
       key('<line x1="1" y1="6" x2="17" y2="6" stroke="var(--ink)" stroke-width="3" opacity=".35"/>', "messages (width = count)"),
       key('<line x1="1" y1="6" x2="17" y2="6" stroke="var(--cold)" stroke-width="3" opacity=".75"/>', "link whose messages caused 3+ cold wakes"),
-    ].join("")}</p>`);
-    return out.join("");
-  }
-  function wireHub() {
-    const svg = document.getElementById("hub-svg");
-    if (!svg || !svg.getBoundingClientRect || !HUB) return;
-    const tip = document.getElementById("hub-tip");
-    let pinned = null;
-    const focus = id => {
-      for (const e of svg.querySelectorAll(".hub-e")) {
-        const on = !id || e.getAttribute("data-f") === id || e.getAttribute("data-t") === id;
-        e.style.opacity = id ? (on ? "0.9" : "0.04") : "";
-      }
-    };
-    const show = (i, ev) => {
-      const n = HUB.nodes[i];
-      tip.innerHTML = `<b>${esc(n.id)}</b>${n.role ? ` · ${esc(n.role)}` : ""}${n.prime ? " · prime" : ""}<br>${n.local ? (n.harness ? esc(n.harness) : "local") : "not a seat on this machine"}<br>${num(n.sent)} messages sent · ${num(n.received)} received<br>${usd(price(n.tokens), 2)} spend · peak ${mtok(n.max_context)}`;
-      const box = svg.getBoundingClientRect();
-      tip.style.left = Math.min(ev.clientX - box.left + 14, box.width - 260) + "px";
-      tip.style.top = (ev.clientY - box.top + 14) + "px";
-      tip.hidden = false;
-      if (!pinned) focus(n.id);
-    };
-    svg.onmousemove = ev => { const i = ev.target.getAttribute && ev.target.getAttribute("data-i"); if (i !== null && i !== undefined) show(+i, ev); };
-    svg.onmouseleave = () => { tip.hidden = true; if (!pinned) focus(null); };
-    svg.onclick = ev => { const i = ev.target.getAttribute && ev.target.getAttribute("data-i"); const id = i !== null && i !== undefined ? HUB.nodes[+i].id : null; pinned = id && id !== pinned ? id : null; focus(pinned); };
-  }
+    ].join("")}</p>`;
+  };
+  const laneKeyHtml = () => {
+    const ico = (svg, label) => `<span class="lk"><svg width="18" height="12" viewBox="0 0 18 12" aria-hidden="true">${svg}</svg>${label}</span>`;
+    return `<p class="legend">${[
+      ico('<line x1="1" y1="9" x2="17" y2="3" stroke="var(--ink)" stroke-width="1.6"/>', "peak context (5-minute steps)"),
+      ico('<line x1="1" y1="6" x2="17" y2="6" stroke="var(--rule)" stroke-width="1.4" stroke-dasharray="2 3"/>', "500k tokens"),
+      ico('<path d="M9,2 l5,9 h-10 z" fill="var(--cold)"/>', "cold wake, opened by real work"),
+      ico('<path d="M9,2 l5,9 h-10 z" fill="var(--red)"/>', "cold wake, opened by a no-action message (avoidable)"),
+      ico('<circle cx="9" cy="6" r="3.4" fill="var(--violet)"/>', "compaction"),
+    ].join("")}</p>`;
+  };
 
   // ---------------------------------------------------------------- sections
   function render() {
+    for (const k of Object.keys(CHARTS)) delete CHARTS[k];
+    chartSeq = 0;
     const T = R.totals, K = R.key_figures, comp = R.components;
     const total = price(T.tokens);
     const parts = STACK.map(k => [k, price(comp[k])]);
@@ -420,30 +711,22 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
     out.push(sec("Spend", "Spend by part",
       `<p>Every call splits into mutually exclusive parts. Compactions and idle recaps are not recorded as calls; they are estimated from the context they re-read.</p>` +
       table(["part", "spend", "share", ""], parts.map(([k, v]) => [`<span class="key" style="background:${C[k]};margin:0 8px 0 0"></span>${esc(LABEL[k])}`, usd(v), pct(100 * v / grand), `<span class="bar" style="width:${Math.round(240 * v / grand)}px;background:${C[k]}"></span>`]), [0, 1, 1, 0])));
-    out.push(sec("Time", "Spend per hour", `<p>Spikes line up with bursts of agent messages and with mornings when idle seats are woken on expired caches. Look for tall amber (re-reads of big contexts) and tall blue (cold rewrites).</p>` + stackedBars(R.hourly) + legend(STACK) +
+    out.push(sec("Time", "Spend per hour", `<p>Spikes line up with bursts of agent messages and with mornings when idle seats are woken on expired caches. Look for tall amber (re-reads of big contexts) and tall blue (cold rewrites).</p>` + chart(hourlySpec()) + legend(STACK) +
       table(["day", "calls", "sessions", "cold", "message turns", "typed turns", "compactions", "spend"], R.daily.map(d => [esc(d.key), num(d.calls), num(d.sessions), num(d.cold), num(d.peer_turns), num(d.human_turns), num(d.compactions), usd(STACK.reduce((a, k) => a + price(d.components[k]), 0))]), [0, 1, 1, 1, 1, 1, 1, 1])));
-    out.push(sec("Time", "Cumulative spend", `<p>How fast the window's spend accumulated: a steep stretch is when the fleet burned budget fastest. Red dashed lines are usage-limit notices the harness wrote.</p>` + meter()));
+    out.push(sec("Time", "Cumulative spend", `<p>How fast the window's spend accumulated: a steep stretch is when the fleet burned budget fastest. Red dashed lines are usage-limit notices the harness wrote.</p>` + chart(meterSpec())));
     out.push(sec("Turns", "What opened the turns",
       `<p>Who prompted the work. A high share for agent messages with a low median of calls per turn means many short turns, each paying a full re-read.</p>` +
       table(["opened by", "turns", "calls", "spend", "share", "cold wakes", "cold spend", "median calls/turn"], R.triggers.map(t => [esc(t.trigger), num(t.turns), num(t.calls), usd(price(t.tokens)), pct(100 * price(t.tokens) / (total || 1)), num(t.cold_wakes), usd(price(t.cold_tokens)), t.median_calls_per_turn]), [0, 1, 1, 1, 1, 1, 1, 1]) +
       "<h3>Who woke whom</h3><p>Seats ranked by the spend their messages caused in others. A sender with many short turns and cold wakes is a candidate for <code>--fyi</code>.</p>" + table(["sender", "turns opened", "recipients", "spend", "cold wakes", "≤3-call turns"], R.senders.map(s => [esc(s.sender), num(s.turns), num(s.recipients), usd(price(s.tokens)), num(s.cold_wakes), num(s.short_turns)]), [0, 1, 1, 1, 1, 1])));
     const nodes = Object.fromEntries(R.graph.nodes.map(n => [n.id, n]));
     out.push(sec("Messages", "Messages between seats",
-      `<p>Who messaged whom, from pij's own delivery records. Primes sit at the centre of their seats; a seat is placed around the prime it exchanges most messages with. A thick line is heavy traffic; a blue line is a link whose messages woke the recipient on an expired cache three or more times. Hover a seat for its numbers; click it to keep only its links.</p>` + hubGraph() +
+      `<p>Who messaged whom, from pij's own delivery records. Primes sit at the centre of their seats; a seat is placed around the prime it exchanges most messages with. A thick line is heavy traffic; a blue line is a link whose messages woke the recipient on an expired cache three or more times. Hover a seat for who it talks to and what its messages cost others; hover a link for both directions; click a seat to keep only its links. ⤢ opens the graph to zoom, search for a seat and hide thin links.</p>` + (R.graph.messages && R.graph.messages.length ? chart(hubSpec()) + hubKey() : `<p class="note">No pij messages touched a seat of this report in the window.</p>`) +
       `<h3>Busiest pairs</h3>` + table(["from", "to", "messages", "turns opened", "turn spend", "cold wakes"], R.graph.messages.slice(0, 30).map(m => { const e = R.graph.edges.find(x => x.from === m.from && x.to === m.to) || {turns: 0, tokens: null, cold: 0}; return [esc(m.from), esc(m.to), num(m.messages), num(e.turns), e.tokens ? usd(price(e.tokens)) : "–", num(e.cold)]; }), [0, 0, 1, 1, 1, 1]) +
       `<p class="note">Messages counted by pij (every harness, both directions, including seats on other machines that messaged this one). Turns, spend and cold wakes are what those messages opened in the recipient's transcript. FYI, held and refused deliveries arrive with pij's message records (plan 162 P2).</p>`));
-    const ico = (svg, label) => `<span class="lk"><svg width="18" height="12" viewBox="0 0 18 12" aria-hidden="true">${svg}</svg>${label}</span>`;
-    const laneKey = `<p class="legend">${[
-      ico('<line x1="1" y1="9" x2="17" y2="3" stroke="var(--ink)" stroke-width="1.6"/>', "peak context (5-minute steps)"),
-      ico('<line x1="1" y1="6" x2="17" y2="6" stroke="var(--rule)" stroke-width="1.4" stroke-dasharray="2 3"/>', "500k tokens"),
-      ico('<path d="M9,2 l5,9 h-10 z" fill="var(--cold)"/>', "cold wake, opened by real work"),
-      ico('<path d="M9,2 l5,9 h-10 z" fill="var(--red)"/>', "cold wake, opened by a no-action message (avoidable)"),
-      ico('<circle cx="9" cy="6" r="3.4" fill="var(--violet)"/>', "compaction"),
-    ].join("")}</p>`;
-    out.push(sec("Seats", "Context per seat", `<p>The costliest main sessions, each on the same time axis as the report window and a 0–1M token scale. A line that climbs for hours without a compaction is a seat paying more for every call it makes; a drop is a compaction or a fresh start. Hover a shape for its time and cost.</p>${laneKey}<div class="lanes">${R.lanes.map(lane).join("")}</div>`));
+    out.push(sec("Seats", "Context per seat", `<p>The costliest main sessions, each on the same time axis as the report window and a 0–1M token scale. A line that climbs for hours without a compaction is a seat paying more for every call it makes; a drop is a compaction or a fresh start. Hover a lane for the context, calls and nearby wakes at that moment; ⤢ opens a lane to zoom into its timeline.</p>${laneKeyHtml()}<div class="lanes">${R.lanes.map(l => `<div class="lane"><h4>${esc(l.seat)}</h4><p class="note">${esc(l.role || "no role")} · ${usd(price(l.tokens))} · ${num(l.calls)} calls · ${l.peer_turns} message turns · ${l.human_turns} typed</p>${chart(laneSpec(l))}</div>`).join("")}</div>`));
     const cc = R.context_cost;
     out.push(sec("Context", "Cost and context size",
-      `<p>Why big contexts are expensive. A warm call costs about <b>${usd(cc.fit.slope * 1e5, 3)}</b> more per 100k of context it carries (linear fit over ${num(cc.warm_calls)} warm calls, r² ${cc.fit.r2.toFixed(2)}). Contexts grow by a median <b>${num(cc.growth_median)}</b> tokens a call, so a session's cumulative reads grow with the square of its context.</p>` + curves() +
+      `<p>Why big contexts are expensive. A warm call costs about <b>${usd(cc.fit.slope * 1e5, 3)}</b> more per 100k of context it carries (linear fit over ${num(cc.warm_calls)} warm calls, r² ${cc.fit.r2.toFixed(2)}). Contexts grow by a median <b>${num(cc.growth_median)}</b> tokens a call, so a session's cumulative reads grow with the square of its context.</p>` + (R.context_cost.runs.length ? chart(runsSpec()) + runKey() + `<p class="note">Hover a line for its story; click it for the full detail, including the harness session id to find its transcript. ⤢ opens the chart to zoom in. ${state.free ? "With cached reads free every curve is close to a straight line: the square rule is the cached reads." : `At ${esc(R.prices.default)} list price; the orange line is the square-law model of an average run.`}</p>` : `<p class="note">No growth run started under 150k and passed 400k in this window.</p>`) +
       "<h3>Which costs follow the square rule</h3>" + (R.square_rule.milestones.length ? table(["context", "runs", "total", "reads", "writes", "cold", "output", "input", "reads share"], R.square_rule.milestones.map(m => [mtok(m.context), num(m.runs), usd(m.total, 2), usd(m.reads, 2), usd(m.writes, 2), usd(m.cold, 2), usd(m.output, 2), usd(m.input, 2), pct(100 * m.reads_share)]), [0, 1, 1, 1, 1, 1, 1, 1, 1]) +
         `<p>Growth exponent from 200k to 600k (2 is the square rule, 1 is linear): ${Object.entries(R.square_rule.exponents).map(([k, v]) => `${esc(k.replace("_", " "))} <b>${v.toFixed(2)}</b>`).join(", ")}. ${num(R.square_rule.runs)} growth runs; median growth ${num(R.square_rule.median_growth)} tokens and output ${num(R.square_rule.median_output)} tokens per call; a call's reads outweigh its writes and output past about <b>${mtok(R.square_rule.crossover_context)}</b>.</p>` : `<p class="note">Fewer than five growth runs reached 200k and 600k; no exponent.</p>`) + fixedNote()));
     out.push(sec("Status turns", "Status turns and cold wakes",
@@ -460,8 +743,7 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
         return [mtok(r.context), r.calls, ...models.map(m => r.by_model[m] == null ? "won't fit" : usd(r.by_model[m], 2)), usd(r.switch_back, 2), a != null && b != null ? usd(a - b - co.follow_rate * r.switch_back, 2) : "–"];
       }), [0, 1, ...models.map(() => 1), 1, 1]) + `<p class="note">List prices from the report's price table (${models.map(m => `${esc(m)}: write ${R.prices.models[m].write_1h}/M, read ${R.prices.models[m].read}/M, output ${R.prices.models[m].output}/M`).join("; ")}). Expected net = default-model cost − alternative cost − follow-up rate × switch-back.</p>`));
     document.getElementById("app").innerHTML = out.join("");
-    wireRuns();
-    wireHub();
+    wireCharts();
     document.getElementById("foot").innerHTML = `Generated by <code>pij fleet-report</code> · report v${R.version} · window ${esc(since)} – ${esc(until)} (UTC${R.window.utc_offset_min >= 0 ? "+" : "−"}${String(Math.floor(Math.abs(R.window.utc_offset_min) / 60)).padStart(2, "0")}:${String(Math.abs(R.window.utc_offset_min) % 60).padStart(2, "0")}). Transcript facts by Unisphere; seats by pij. Per-row detail is in <code>tables/</code>; versions and row counts in <code>manifest.json</code>.`;
   }
 

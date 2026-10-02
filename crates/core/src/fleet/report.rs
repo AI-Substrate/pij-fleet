@@ -408,6 +408,12 @@ pub struct RunCurve {
     pub seat: String,
     /// The seat's role, when pij knows it.
     pub role: Option<String>,
+    /// The harness that wrote the transcript (`claude-code`, `oh-my-pi`, …).
+    pub harness: String,
+    /// The harness's own session id, to find the transcript again.
+    pub session_id: Option<String>,
+    /// The model most of the run's calls used.
+    pub model: Option<String>,
     /// First call, UTC ms.
     pub start_ms: i64,
     /// Last call, UTC ms.

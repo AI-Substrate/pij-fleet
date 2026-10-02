@@ -101,7 +101,21 @@ impl<const N: usize> Thin<N> {
 fn run_curve(ix: &Indexed<'_>, source: &str, run: &[&Call], peak: u64) -> RunCurve {
     let p = &ix.prices;
     let seat = ix.label(source);
+    let (harness, session_id) = ix.sessions.get(source).cloned().unwrap_or_default();
+    let mut models: BTreeMap<&str, usize> = BTreeMap::new();
+    for call in run {
+        if let Some(model) = call.model.as_deref() {
+            *models.entry(model).or_default() += 1;
+        }
+    }
+    let model = models
+        .into_iter()
+        .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(a.0)))
+        .map(|(model, _)| model.to_string());
     let mut curve = RunCurve {
+        harness,
+        session_id,
+        model,
         role: ix.roles.get(seat.as_str()).cloned(),
         seat,
         start_ms: run[0].ts_ms,

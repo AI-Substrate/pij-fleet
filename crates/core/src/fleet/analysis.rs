@@ -93,6 +93,8 @@ pub(super) struct Indexed<'a> {
     pub turns: BTreeMap<(String, i64), TurnAgg>,
     /// Seat roles by seat id.
     pub roles: HashMap<String, String>,
+    /// Each transcript's harness and harness session id.
+    pub sessions: HashMap<String, (String, Option<String>)>,
 }
 
 impl<'a> Indexed<'a> {
@@ -194,6 +196,11 @@ fn index<'a>(corpus: &'a Corpus, window: Window, prices: &PriceTable) -> Indexed
         labels,
         turn_origin,
         turns: BTreeMap::new(),
+        sessions: corpus
+            .sessions
+            .iter()
+            .map(|s| (s.source.clone(), (s.harness.clone(), s.session_id.clone())))
+            .collect(),
         roles: corpus
             .seats
             .iter()

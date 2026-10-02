@@ -450,6 +450,13 @@ fn a_growth_run_carries_its_story_for_the_hover() {
     let report = analyze(&corpus, window(), &PriceTable::default());
     let run = &report.context_cost.runs[0];
     assert_eq!(run.seat, "session s");
+    assert_eq!(run.harness, "claude-code");
+    assert_eq!(
+        run.session_id.as_deref(),
+        Some("s"),
+        "to go back to the transcript"
+    );
+    assert_eq!(run.model.as_deref(), Some("claude-opus-5-5"));
     assert_eq!((run.start_ms, run.end_ms), (T0 + HOUR, ts));
     assert_eq!((run.turns, run.message_turns, run.status_turns), (4, 3, 2));
     assert_eq!((run.cold_wakes, run.avoidable_cold_wakes), (1, 1));
