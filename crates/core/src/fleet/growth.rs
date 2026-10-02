@@ -19,6 +19,8 @@ const RUN_PEAK_MIN: u64 = 400_000;
 const MILES: [u64; 4] = [200_000, 400_000, 600_000, 800_000];
 /// How many growth-run curves the report carries (costliest first).
 const MAX_CURVES: usize = 200;
+/// A curve keeps one point per this much new peak context, plus its last.
+const CURVE_STEP: u64 = 5_000;
 
 /// In-window calls of each main transcript, in order.
 pub(super) fn by_source<'a>(ix: &Indexed<'a>, main_only: bool) -> BTreeMap<&'a str, Vec<&'a Call>> {
@@ -111,15 +113,25 @@ pub(super) fn context_cost(ix: &Indexed<'_>) -> ContextCost {
                 continue;
             }
             let (mut acc, mut acc_rf, mut top) = (0.0, 0.0, 0);
-            let mut points = Vec::new();
+            let mut points: Vec<[f64; 3]> = Vec::new();
+            let mut last_kept: Option<u64> = None;
+            let mut pending = None;
             for call in &run {
                 acc += call.tokens.usd(p);
                 acc_rf += call.tokens.usd_reads_free(p);
                 if call.context() >= top {
                     top = call.context();
-                    points.push([top as f64, acc, acc_rf]);
+                    let point = [top as f64, acc, acc_rf];
+                    if last_kept.is_none_or(|kept| top >= kept + CURVE_STEP) {
+                        points.push(point);
+                        last_kept = Some(top);
+                        pending = None;
+                    } else {
+                        pending = Some(point);
+                    }
                 }
             }
+            points.extend(pending);
             curves.push((
                 acc,
                 RunCurve {

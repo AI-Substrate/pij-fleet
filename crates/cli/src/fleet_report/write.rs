@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use super::{Facts, Format, Plan};
 
 /// The page: static, no network, renders `window.FLEET_REPORT`.
-const PAGE: &str = include_str!("page.html");
+pub(super) const PAGE: &str = include_str!("page.html");
 
 /// One CSV cell, quoted when it must be.
 pub fn csv_cell(value: &str) -> String {

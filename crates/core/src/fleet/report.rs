@@ -269,8 +269,6 @@ pub struct LanePoint {
     pub max_context: u64,
     /// Calls.
     pub calls: u64,
-    /// Tokens by class.
-    pub tokens: Tokens,
 }
 
 /// A compaction on a lane.

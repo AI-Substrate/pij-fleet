@@ -240,9 +240,17 @@ fn written(anonymise: bool, include_content: bool, format: &str) -> (PathBuf, St
     };
     let report = analyze(&corpus, window, &PriceTable::default());
     write_output(&plan, &corpus, &report, &Facts::default()).expect("write");
+    // The page is a fixed template: it must equal it byte for byte, so it can
+    // carry no data, and only the data files are searched for leaks.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("index.html")).unwrap(),
+        write::PAGE
+    );
     let mut all = String::new();
     for entry in walk(&dir) {
-        all.push_str(&std::fs::read_to_string(&entry).unwrap());
+        if entry.file_name().is_some_and(|name| name != "index.html") {
+            all.push_str(&std::fs::read_to_string(&entry).unwrap());
+        }
     }
     (dir, all)
 }

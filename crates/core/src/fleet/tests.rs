@@ -324,6 +324,44 @@ fn the_square_rule_measures_reads_quadratic_and_writes_linear() {
     assert_eq!(sq.milestones.len(), 4);
 }
 
+/// The page draws growth curves, not every call: a curve keeps a point per
+/// 5k of new peak context (plus its last), so a big fleet's report stays light.
+#[test]
+fn growth_curves_are_thinned_to_one_point_per_5k_of_context() {
+    let mut calls = Vec::new();
+    let mut ctx = 2_000u64;
+    let mut ts = T0 + HOUR;
+    while ctx < 850_000 {
+        let first = ctx == 2_000;
+        let t = if first {
+            tokens(0, ctx, 0, 500)
+        } else {
+            tokens(0, 1_000, ctx - 1_000, 500)
+        };
+        calls.push(call("r", ts, if first { None } else { Some(1_000) }, 1, t));
+        ctx += 1_000;
+        ts += 1_000;
+    }
+    let corpus = Corpus {
+        sessions: vec![session("r", "s")],
+        calls: number(calls),
+        turns: vec![turn("r", 1, "human", None)],
+        ..Corpus::default()
+    };
+    let report = analyze(&corpus, window(), &PriceTable::default());
+    let points = &report.context_cost.runs[0].points;
+    assert!(
+        points.len() <= 850_000 / 5_000 + 2,
+        "{} points",
+        points.len()
+    );
+    for pair in points.windows(2).take(points.len().saturating_sub(2)) {
+        assert!(pair[1][0] - pair[0][0] >= 5_000.0, "{pair:?}");
+    }
+    let last = points.last().unwrap();
+    assert_eq!(last[0], 849_000.0, "the run's peak is kept");
+}
+
 /// Compactions are simulated: a cold one re-reads the history at the 5-minute
 /// write rate, a warm one as cached reads; the summary is output (capped at 30k).
 #[test]

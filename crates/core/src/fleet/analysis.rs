@@ -763,7 +763,6 @@ fn lanes(ix: &Indexed<'_>, corpus: &Corpus, events: &[&Event]) -> Vec<Lane> {
                 });
                 point.max_context = point.max_context.max(call.context());
                 point.calls += 1;
-                point.tokens.add(&call.tokens);
                 if call.cold() {
                     lane.cold
                         .push(cold_wake(ix, call, is_status_call(ix, call)));
