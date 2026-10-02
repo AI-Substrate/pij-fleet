@@ -22,9 +22,15 @@ h1 .big{font-size:min(120px,22vw);letter-spacing:-.03em;display:inline-block;bor
 h1.title{font:600 34px/1.15 var(--display);text-transform:none;letter-spacing:0;margin:0 0 6px;word-break:break-all}
 h1.title .sub{color:var(--ink2);font-weight:500;white-space:nowrap}
 .period{font:14px/1.5 var(--mono);color:var(--ink2);margin:0 0 4px}
-table.summary{font:14px/1.5 var(--body);width:100%}
-table.summary td{white-space:normal;vertical-align:top;padding:8px 14px 8px 0}
-table.summary td.n{font-family:var(--mono);white-space:nowrap}
+table.summary{font:14px/1.5 var(--body);width:100%;min-width:0}
+table.summary td{white-space:normal;vertical-align:top;padding:7px 16px 7px 0;border-bottom:0}
+table.summary tr.top td{border-top:1px solid var(--rule);padding-top:10px}
+table.summary tr.top td.m{font-weight:600}
+table.summary tr.sub td{padding-top:1px;padding-bottom:1px;color:var(--ink2)}
+table.summary tr.sub td.m{padding-left:18px}
+table.summary td.m{white-space:nowrap}
+table.summary td.n{font-family:var(--mono);font-size:13px;white-space:nowrap;text-align:right}
+table.summary td.read{color:var(--ink2);font-size:13.5px;min-width:280px}
 .read{color:var(--ink2);font-size:13.5px}
 main{max-width:1180px;margin:0 auto;padding:0 16px 64px}
 section{display:grid;grid-template-columns:150px minmax(0,1fr);column-gap:40px;padding:48px 0 8px;border-top:1px solid var(--rule)}
@@ -194,25 +200,41 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
     document.getElementById("model").onchange = e => { state.model = e.target.value; render(); };
     document.getElementById("free").onchange = e => { state.free = e.target.checked; render(); };
 
-    const row = (metric, value, read) => [`<b>${esc(metric)}</b>`, value, `<span class="read">${read}</span>`];
+    const row = (metric, value, sh, read) => ({metric, value, share: sh || "", read: read || "", sub: false});
+    const subrow = (metric, value, sh) => ({metric, value, share: sh || "", read: "", sub: true});
+    const rows = [
+      row("Calls", num(T.calls), "", "One deduplicated model API call. Every call re-sends the whole conversation so far, so its cost tracks the context it carries, not the work it does."),
+      row("Turns", num(T.turns), "", "A turn is everything a seat does in answer to one prompt. Turns opened by another agent's message are the fleet's own traffic."),
+      subrow("opened by agent messages", num(peer), pct(100 * peer / (T.turns || 1))),
+      subrow("typed by a person", num(typed), pct(100 * typed / (T.turns || 1))),
+      row("Sessions", num(T.sessions), "", "A main session is one seat's conversation. Unseated sessions were started by hand, outside pij."),
+      subrow("main", num(T.main_sessions)),
+      subrow("subagent", num(T.sessions - T.main_sessions)),
+      subrow("main, not a pij seat", num(T.unseated_sessions)),
+      subrow("pij seats", num(T.seats)),
+      row("Tokens", mtok(T.tokens.output + T.tokens.cache_read + T.tokens.cw_1h + T.tokens.cw_5m + T.tokens.input), "", "Cached reads are context the model re-reads from its cache on every call. They usually dwarf output by orders of magnitude."),
+      subrow("cached reads", mtok(T.tokens.cache_read)),
+      subrow("cache writes", mtok(T.tokens.cw_1h + T.tokens.cw_5m)),
+      subrow("output", mtok(T.tokens.output)),
+      subrow("uncached input", mtok(T.tokens.input)),
+      row("Cost", `<b>${usd(total)}</b>`, "100%", "All calls at the selected price. Use the control above to switch models, or to treat cached reads as free (closer to a subscription's accounting). Cached reads are the cost of carrying context; cold rewrites are idle seats being woken; output is the work itself."),
+      subrow("cached reads", usd(price(comp.warm_reads)), share(price(comp.warm_reads))),
+      subrow("cold rewrites", usd(price(comp.cold_rewrite)), share(price(comp.cold_rewrite))),
+      subrow("incremental writes", usd(price(comp.incremental_writes)), share(price(comp.incremental_writes))),
+      subrow("output and input", usd(price(comp.output_cost)), share(price(comp.output_cost))),
+      row("Cold wakes", num(cw.idle + cw.rebuild), "", `A seat woken after its cache expired rewrites its whole context in one call. Avoidable ones were opened by a message that needed no action (${usd(price(st.cold_tokens))}).`),
+      subrow("idle (cache expired)", num(cw.idle)),
+      subrow("of which avoidable", num(st.avoidable_cold_wakes)),
+      subrow("rebuilds (after a compaction)", num(cw.rebuild)),
+      row("Status turns", num(st.turns), pct(st.share), `Agent messages that needed no action (an ack, an FYI, a status ping), seen as message-opened turns of three calls or fewer. Each still re-read the recipient's whole context. Replaying the sessions without them saves ${pct(st.replay_saving_share)}.`),
+      row("Compactions", num(R.compactions.count), "", `${num(R.compactions.manual)} manual; median ${mtok(R.compactions.median_pre)} tokens before. A compaction shrinks the context every later call carries, for the cost of one re-read.`),
+      row("Mean context", `${mtok(T.mean_context)} tokens`, "", "What the average call carried. Halving it roughly halves the cached-read bill."),
+      row("pij messages", "—", "", "Sent, held (FYI), flushed and refused counts arrive with pij's message records (plan 162 P2). Until then, message traffic shows as the turns it opened."),
+    ];
     const out = [];
     out.push(sec("Summary", "Summary",
-      `<div class="scroll"><table class="summary"><thead><tr><th>measure</th><th class="n">value</th><th>how to read it</th></tr></thead><tbody>${[
-        row("Calls", num(T.calls), "One deduplicated model API call. Every call re-sends the whole conversation so far, so its cost tracks the context it carries, not the work it does."),
-        row("Turns", `${num(T.turns)}<br><span class="read">${num(peer)} opened by agent messages · ${num(typed)} typed</span>`, "A turn is everything a seat does in answer to one prompt. Turns opened by another agent's message are the fleet's own traffic."),
-        row("Sessions", `${num(T.main_sessions)} main · ${num(T.sessions - T.main_sessions)} subagent<br><span class="read">${num(T.seats)} pij seats · ${num(T.unseated_sessions)} unseated</span>`, "A main session is one seat's conversation. Unseated sessions were started by hand, outside pij."),
-        row("Tokens", `${mtok(T.tokens.output)} output<br>${mtok(T.tokens.cache_read)} cached reads<br>${mtok(T.tokens.cw_1h + T.tokens.cw_5m)} cache writes<br>${mtok(T.tokens.input)} uncached input`, "Cached reads are context the model re-reads from its cache on every call. They usually dwarf output by orders of magnitude."),
-        row("Cost", `<b>${usd(total)}</b>`, "All calls at the selected price. Use the control above to switch models or to treat cached reads as free (closer to a subscription's accounting)."),
-        row("· cached reads", `${usd(price(comp.warm_reads))} · ${share(price(comp.warm_reads))}`, "The cost of carrying context. It grows with the square of a session's context, so the lever is smaller contexts: compact, hand off, or start fresh."),
-        row("· cold rewrites", `${usd(price(comp.cold_rewrite))} · ${share(price(comp.cold_rewrite))}`, "Writing a whole context back into the cache after it expired (over an hour idle) or after a compaction. Waking a big idle seat pays this in one call."),
-        row("· incremental writes", `${usd(price(comp.incremental_writes))} · ${share(price(comp.incremental_writes))}`, "Caching what each call adds: tool results and replies."),
-        row("· output and input", `${usd(price(comp.output_cost))} · ${share(price(comp.output_cost))}`, "What the seats actually wrote, plus uncached input. The closest thing to the cost of the work itself."),
-        row("Cold wakes", `${num(cw.idle)} idle · ${num(cw.rebuild)} rebuilds`, `A seat woken after its cache expired rewrites its whole context. <b>${num(st.avoidable_cold_wakes)}</b> of the idle ones were opened by a message that needed no action (${usd(price(st.cold_tokens))}).`),
-        row("Status turns", `${num(st.turns)} · ${pct(st.share)} of spend`, `Agent messages that needed no action (an ack, an FYI, a status ping), seen as message-opened turns of three calls or fewer. Each still re-read the recipient's whole context. Replaying the sessions without them saves ${pct(st.replay_saving_share)}.`),
-        row("Compactions", `${num(R.compactions.count)} (${num(R.compactions.manual)} manual)`, `Median ${mtok(R.compactions.median_pre)} tokens before. A compaction shrinks the context every later call carries; it costs one re-read.`),
-        row("Mean context", `${mtok(T.mean_context)} tokens`, "What the average call carried. Halving it roughly halves the cached-read bill."),
-        row("pij messages", "—", "Sent, held (FYI), flushed and refused counts arrive with pij's message records (plan 162 P2). Until then, message traffic shows as the turns it opened."),
-      ].map(r => `<tr><td>${r[0]}</td><td class="n">${r[1]}</td><td>${r[2]}</td></tr>`).join("")}</tbody></table></div>` +
+      `<div class="scroll"><table class="summary"><thead><tr><th>measure</th><th class="n">value</th><th class="n">share</th><th>how to read it</th></tr></thead><tbody>${rows.map(r =>
+        `<tr class="${r.sub ? "sub" : "top"}"><td class="m">${esc(r.metric)}</td><td class="n">${r.value}</td><td class="n">${r.share}</td><td class="read">${r.read}</td></tr>`).join("")}</tbody></table></div>` +
       `<h3>Why this matters</h3><p>On an agent fleet, most of the bill is not the work: it is the context each call carries. A seat at 400k tokens pays for those 400k tokens on every call, so the same task costs several times more late in a long session than early in a short one, and every message that opens a turn on a big seat buys a full re-read. Read the cost split first: if cached reads dominate, contexts are too big; if cold rewrites are large, idle seats are being woken; if status turns are a visible share, agents are messaging each other for no action. The sections below show where each of those came from.</p>` + priceNote()));
     out.push(sec("Spend", "Spend by part",
       `<p>Every call splits into mutually exclusive parts. Compactions and idle recaps are not recorded as calls; they are estimated from the context they re-read.</p>` +
