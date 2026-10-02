@@ -105,6 +105,9 @@ pub async fn run(mut args: FleetArgs, state_dir: &Path) -> Envelope<Value> {
         Ok(plan) => plan,
         Err(message) => return refused(ErrorKind::Refused, message),
     };
+    if let Err(message) = super::check_out(&plan.out) {
+        return refused(ErrorKind::Refused, message);
+    }
     let scope = FleetScope {
         folders: plan.folders.clone(),
         since_ms: plan.window.since_ms,

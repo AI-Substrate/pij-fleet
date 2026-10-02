@@ -4,8 +4,9 @@
 //! any aggregate or table is computed: nothing downstream can reach a name it
 //! was never given. Seats become `Orchestrator A` / `Worker C`, other senders
 //! `Peer B`, sessions and transcripts opaque `s0001` / `t0001` tokens that keep
-//! every join intact. Roles keep only their class; working directories, folders,
-//! message ids, opener heads and limit-reset texts are dropped.
+//! every join intact. Roles keep only their class; model ids only when they are a
+//! known family's catalogue id; working directories, folders, message ids, opener
+//! heads and limit-reset texts are dropped. Times and the UTC offset remain.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -46,6 +47,32 @@ fn tokens(values: BTreeSet<String>, prefix: &str) -> HashMap<String, String> {
         .enumerate()
         .map(|(i, value)| (value, format!("{prefix}{:04}", i + 1)))
         .collect()
+}
+
+/// Model families a catalogue id starts with; anything else is free text.
+const MODEL_FAMILIES: [&str; 14] = [
+    "claude-", "gpt-", "o1", "o3", "o4", "gemini-", "codex", "grok-", "kimi-", "glm-", "qwen",
+    "deepseek", "mistral", "llama",
+];
+
+/// A model id kept only when it is a known family's catalogue id. A model is
+/// whatever the harness recorded, which can be text the operator typed after
+/// `/model` or a private endpoint name.
+fn safe_model(model: &str) -> String {
+    let id = model
+        .rsplit('/')
+        .next()
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    if MODEL_FAMILIES.iter().any(|family| id.starts_with(family))
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | ':'))
+    {
+        id
+    } else {
+        "other".to_string()
+    }
 }
 
 /// Rewrite `corpus` so it is safe to share.
@@ -113,6 +140,7 @@ pub fn anonymise_corpus(corpus: &mut Corpus) {
     }
     for call in &mut corpus.calls {
         call.source = source(&call.source);
+        call.model = call.model.as_deref().map(safe_model);
     }
     for turn in &mut corpus.turns {
         turn.source = source(&turn.source);
@@ -124,12 +152,21 @@ pub fn anonymise_corpus(corpus: &mut Corpus) {
         event.source = source(&event.source);
         // A reset notice names the operator's timezone.
         event.resets_at = None;
+        event.model = event.model.as_deref().map(safe_model);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_catalogue_model_ids_survive() {
+        assert_eq!(safe_model("claude-opus-5-5"), "claude-opus-5-5");
+        assert_eq!(safe_model("github-copilot/gpt-5.6-luna"), "gpt-5.6-luna");
+        assert_eq!(safe_model("opys"), "other");
+        assert_eq!(safe_model("claude-my private note"), "other");
+    }
 
     #[test]
     fn letters_run_past_z() {

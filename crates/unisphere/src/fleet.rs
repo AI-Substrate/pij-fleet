@@ -567,6 +567,27 @@ mod tests {
         assert!(read.corpus.calls.iter().any(|c| c.is_sub));
     }
 
+    /// A subagent with no working directory rides along only with an in-scope parent.
+    #[test]
+    fn a_subagent_of_an_out_of_scope_parent_stays_out() {
+        let home = Home::new("sub-out");
+        home.write(
+            "p/par.jsonl",
+            &transcript("par", "/work/other", "2026-09-24T01:00:00Z"),
+        );
+        home.write(
+            "p/par/subagents/agent-x.jsonl",
+            &(user("s1", "par", "", "2026-09-24T01:01:00Z", "task")
+                + &assistant("s2", "m-sub", "par", "", "2026-09-24T01:01:01Z", 3)),
+        );
+        let read = home.read(&["/work/demo"], false);
+        assert!(
+            read.corpus.sessions.is_empty(),
+            "{:?}",
+            read.corpus.sessions
+        );
+    }
+
     /// Only sessions with a call inside the window are in scope; they bring every row.
     #[test]
     fn a_session_needs_a_call_in_the_window_and_brings_all_its_rows() {

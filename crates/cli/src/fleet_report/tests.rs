@@ -147,20 +147,40 @@ fn secret_corpus() -> Corpus {
         turn_no,
         call_in_turn: 1,
     };
+    let sub = "claude-code/default/-Users-secret-proj/0badc0de-1111-2222-3333-444455556666/subagents/agent-1.jsonl";
+    let mut sub_call = call(NOW + 5_000, 1, 0);
+    sub_call.source = sub.into();
+    sub_call.is_sub = true;
+    // Free text the operator typed after /model, not a catalogue id.
+    sub_call.model = Some("opys-private-endpoint".into());
     Corpus {
-        sessions: vec![Session {
-            source: source.into(),
-            harness: "claude-code".into(),
-            session_id: Some("0badc0de-1111-2222-3333-444455556666".into()),
-            parent_session_id: None,
-            is_sub: false,
-            cwd: Some("/Users/secret/proj".into()),
-            first_ms: Some(NOW),
-            last_ms: Some(NOW),
-        }],
+        sessions: vec![
+            Session {
+                source: sub.into(),
+                harness: "claude-code".into(),
+                session_id: Some("0badc0de-1111-2222-3333-444455556666".into()),
+                parent_session_id: Some("cafe0bad-9999-8888-7777-666655554444".into()),
+                is_sub: true,
+                cwd: None,
+                first_ms: Some(NOW),
+                last_ms: Some(NOW),
+            },
+            Session {
+                source: source.into(),
+                harness: "claude-code".into(),
+                session_id: Some("0badc0de-1111-2222-3333-444455556666".into()),
+                parent_session_id: None,
+                is_sub: false,
+                cwd: Some("/Users/secret/proj".into()),
+                first_ms: Some(NOW),
+                last_ms: Some(NOW),
+            },
+        ],
         calls: vec![
             call(NOW + 1_000, 1, 40_000),
+            sub_call,
             call(NOW + 9_000_000, 2, 40_000),
+            call(NOW + 9_500_000, 3, 0),
         ],
         turns: vec![
             Turn {
@@ -181,21 +201,47 @@ fn secret_corpus() -> Corpus {
                 started_ms: Some(NOW + 9_000_000),
                 head: None,
             },
+            // A sender that is not a seat of this report (another machine).
+            Turn {
+                source: source.into(),
+                turn_no: 3,
+                origin: "peer".into(),
+                sender: Some("pij-ghostly-heron".into()),
+                pij_msg_id: None,
+                started_ms: Some(NOW + 9_500_000),
+                head: None,
+            },
         ],
-        events: vec![Event {
-            source: source.into(),
-            ts_ms: Some(NOW + 2_000),
-            kind: "compaction".into(),
-            subkind: None,
-            trigger: Some("auto".into()),
-            model: None,
-            pre_tokens: Some(1),
-            post_tokens: Some(1),
-            duration_ms: None,
-            last_context: None,
-            gap_ms: None,
-            resets_at: None,
-        }],
+        events: vec![
+            Event {
+                source: source.into(),
+                ts_ms: Some(NOW + 2_000),
+                kind: "compaction".into(),
+                subkind: None,
+                trigger: Some("auto".into()),
+                model: None,
+                pre_tokens: Some(1),
+                post_tokens: Some(1),
+                duration_ms: None,
+                last_context: None,
+                gap_ms: None,
+                resets_at: None,
+            },
+            Event {
+                source: source.into(),
+                ts_ms: Some(NOW + 3_000),
+                kind: "limit_notice".into(),
+                subkind: Some("weekly".into()),
+                trigger: None,
+                model: Some("opys-private-endpoint".into()),
+                pre_tokens: None,
+                post_tokens: None,
+                duration_ms: None,
+                last_context: None,
+                gap_ms: None,
+                resets_at: Some("resets 5am (Australia/Brisbane)".into()),
+            },
+        ],
         seats: vec![
             Seat {
                 id: "pij-secret-stoat".into(),
@@ -212,7 +258,8 @@ fn secret_corpus() -> Corpus {
                 harness: "omp".into(),
                 role: Some("stream s07".into()),
                 folder: "/Users/secret/other".into(),
-                parent: None,
+                // A parent that is in neither the seat set nor the senders.
+                parent: Some("pij-orphan-walrus".into()),
                 spawned_ms: None,
                 ended_ms: None,
                 sessions: vec![],
@@ -239,7 +286,14 @@ fn written(anonymise: bool, include_content: bool, format: &str) -> (PathBuf, St
         utc_offset_min: 0,
     };
     let report = analyze(&corpus, window, &PriceTable::default());
-    write_output(&plan, &corpus, &report, &Facts::default()).expect("write");
+    let facts = Facts {
+        warnings: vec![
+            "unreadable transcript claude-code/default/-Users-secret-proj/x.jsonl: boom".into(),
+            "no pij seats: could not open /Users/secret/.pij-rs/pij.sqlite".into(),
+        ],
+        ..Facts::default()
+    };
+    write_output(&plan, &corpus, &report, &facts).expect("write");
     // The page is a fixed template: it must equal it byte for byte, so it can
     // carry no data, and only the data files are searched for leaks.
     assert_eq!(
@@ -284,6 +338,12 @@ fn anonymised_output_leaks_no_name_path_id_or_content() {
             "/Users",
             "-Users",
             "s07",
+            "Brisbane",
+            "cafe0bad",
+            "ghostly",
+            "walrus",
+            "opys",
+            "boom",
         ] {
             assert!(!all.contains(secret), "{format}: `{secret}` leaked");
         }
@@ -357,6 +417,55 @@ fn the_folder_holds_the_page_its_script_the_json_and_the_tables() {
     }
     let calls = std::fs::read_to_string(dir.join("tables/calls.csv")).unwrap();
     assert!(calls.lines().next().unwrap().contains("in_window"));
-    assert_eq!(calls.lines().count(), 3, "header + 2 calls");
+    assert_eq!(calls.lines().count(), 5, "header + 4 calls");
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// `--out` never silently replaces someone's files: a missing or empty folder
+/// is fine, a previous fleet report is replaced, anything else is refused.
+#[test]
+fn out_refuses_a_folder_that_is_not_a_previous_report() {
+    let missing = pij_testkit::fresh_dir("pij-fleet-out-missing").join("new");
+    assert_eq!(check_out(&missing), Ok(()));
+    let empty = pij_testkit::fresh_dir("pij-fleet-out-empty");
+    assert_eq!(check_out(&empty), Ok(()));
+    let theirs = pij_testkit::fresh_dir("pij-fleet-out-theirs");
+    std::fs::write(theirs.join("index.html"), "MY IMPORTANT PAGE").unwrap();
+    let error = check_out(&theirs).unwrap_err();
+    assert!(error.starts_with("E-RS-FLEET-OUT"), "{error}");
+    let (previous, _) = written(false, false, "jsonl");
+    assert_eq!(
+        check_out(&previous),
+        Ok(()),
+        "a previous report is replaced"
+    );
+    std::fs::write(previous.join("notes.txt"), "mine").unwrap();
+    assert_eq!(
+        check_out(&previous),
+        Ok(()),
+        "a report folder with extra files still is one"
+    );
+    for dir in [empty, theirs, previous] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// C12: fold threads are capped at 8 on the shared machine.
+#[test]
+fn threads_are_capped_for_the_shared_machine() {
+    let mut a = args("/work/demo");
+    a.threads = 99_999;
+    assert_eq!(
+        plan(&a, NOW, 0, &no_worktrees, Path::new("/r"))
+            .unwrap()
+            .threads,
+        8
+    );
+    a.threads = 0;
+    assert_eq!(
+        plan(&a, NOW, 0, &no_worktrees, Path::new("/r"))
+            .unwrap()
+            .threads,
+        1
+    );
 }

@@ -195,6 +195,34 @@ fn stamp(ts_ms: i64) -> String {
     )
 }
 
+/// May the report be written to `dir`? A missing or empty folder, or a previous
+/// fleet report (its `manifest.json` names the report shape), yes; any other
+/// folder is refused rather than overwritten.
+///
+/// # Errors
+/// `E-RS-FLEET-OUT` naming the folder.
+pub fn check_out(dir: &Path) -> Result<(), String> {
+    let Ok(mut entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
+    if entries.next().is_none() {
+        return Ok(());
+    }
+    let previous = std::fs::read_to_string(dir.join("manifest.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .is_some_and(|manifest| manifest["versions"]["report"].is_u64());
+    if previous {
+        Ok(())
+    } else {
+        Err(format!(
+            "E-RS-FLEET-OUT: {} is not empty and is not a previous fleet report; \
+             choose an empty or new folder",
+            dir.display()
+        ))
+    }
+}
+
 /// Resolve the arguments into a run.
 ///
 /// # Errors
@@ -299,6 +327,7 @@ pub fn plan(
         out,
         include_content: args.include_content,
         anonymise: args.anonymise,
-        threads: args.threads.max(1),
+        // C12: at most 8 workers on the shared machine.
+        threads: args.threads.clamp(1, 8),
     })
 }

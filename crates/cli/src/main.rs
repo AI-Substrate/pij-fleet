@@ -208,7 +208,8 @@ enum Command {
         /// Harnesses to read, comma-separated (claude-code, omp, codex, copilot). Default all.
         #[arg(long)]
         harness: Option<String>,
-        /// Output folder. Default ~/.pij-rs/fleet-reports/<folder>-<UTC stamp>.
+        /// Output folder: new, empty, or a previous fleet report (anything else is
+        /// refused). Default ~/.pij-rs/fleet-reports/<folder>-<UTC stamp>.
         #[arg(long)]
         out: Option<PathBuf>,
         /// Table format: jsonl or csv (parquet is not shipped yet).
@@ -217,7 +218,8 @@ enum Command {
         /// Keep turn-opener heads in the tables. Local use only.
         #[arg(long)]
         include_content: bool,
-        /// Replace seat names with roles and letters; drop paths, ids and content.
+        /// Replace seat names with roles and letters; drop paths, ids, content and
+        /// free-text model names. Times and the UTC offset remain.
         #[arg(long)]
         anonymise: bool,
         /// Reuse a Unisphere prep folder (not supported yet).
@@ -226,7 +228,7 @@ enum Command {
         /// The report clock as +HH:MM. Default the machine's offset.
         #[arg(long)]
         utc_offset: Option<String>,
-        /// Fold threads (C12: keep it at or under 8 on a shared machine).
+        /// Fold threads, 1 to 8 (C12: the machine is shared).
         #[arg(long, default_value_t = 4)]
         threads: usize,
     },

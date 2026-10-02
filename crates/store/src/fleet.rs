@@ -43,16 +43,16 @@ fn adapter(message: String) -> PijError {
     }
 }
 
-/// Read every seat and the harness sessions it was bound to, without writing.
+/// Open the store for reading only: never created, never migrated, and any
+/// write on the handle fails ("attempt to write a readonly database").
 ///
 /// # Errors
-/// [`PijError::Adapter`] when the store is missing, unreadable, or older than
-/// schema 0011.
-pub async fn read_seats(path: &Path) -> Result<FleetSeats> {
+/// [`PijError::Adapter`] when the store is missing or SQLite refuses it.
+pub async fn open_read_only(path: &Path) -> Result<SqliteConnection> {
     if !path.is_file() {
         return Err(adapter(format!("no pij store at {}", path.display())));
     }
-    let mut conn = SqliteConnectOptions::new()
+    SqliteConnectOptions::new()
         .filename(path)
         .read_only(true)
         .create_if_missing(false)
@@ -63,7 +63,16 @@ pub async fn read_seats(path: &Path) -> Result<FleetSeats> {
                 "could not open {} read-only: {error}",
                 path.display()
             ))
-        })?;
+        })
+}
+
+/// Read every seat and the harness sessions it was bound to, without writing.
+///
+/// # Errors
+/// [`PijError::Adapter`] when the store is missing, unreadable, or older than
+/// schema 0011.
+pub async fn read_seats(path: &Path) -> Result<FleetSeats> {
+    let mut conn = open_read_only(path).await?;
     let result = read(&mut conn).await;
     let _ = conn.close().await;
     result
@@ -143,8 +152,10 @@ async fn read(conn: &mut SqliteConnection) -> Result<FleetSeats> {
         if let Some(session) = payload.get(field).and_then(serde_json::Value::as_str) {
             sessions.insert(session.to_string());
         }
-        if kind == "seat.put" && record.spawned_ms.is_none() {
-            record.spawned_ms = Some(row.get("at"));
+        let at: i64 = row.get("at");
+        // Early stores stamped some events at 0: unknown, not 1970.
+        if kind == "seat.put" && record.spawned_ms.is_none() && at > 0 {
+            record.spawned_ms = Some(at);
         }
     }
     Ok(FleetSeats {
@@ -237,6 +248,49 @@ mod tests {
         let error = read_seats(Path::new(&store.path())).await.unwrap_err();
         assert!(matches!(error, PijError::Adapter { .. }), "{error:?}");
         assert!(!store.exists(), "the reader created a store");
+    }
+
+    /// The handle cannot write: a write on it fails, and the file is unchanged.
+    #[tokio::test]
+    async fn the_store_handle_refuses_every_write() {
+        let store = seeded().await;
+        let path = std::path::PathBuf::from(store.path());
+        let before = std::fs::read(&path).unwrap();
+        let mut conn = open_read_only(&path).await.expect("open");
+        for sql in [
+            "PRAGMA user_version = 99",
+            "INSERT INTO seats (id, harness, folder, state, seq) VALUES ('x', 'claude', '/x', 'idle', 9)",
+        ] {
+            let error = sqlx::query(sql).execute(&mut conn).await.unwrap_err();
+            assert!(error.to_string().contains("readonly"), "{sql}: {error}");
+        }
+        let _ = conn.close().await;
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "the store file changed"
+        );
+    }
+
+    /// A `seat.put` stamped at 0 (early stores) is an unknown spawn time, not 1970.
+    #[tokio::test]
+    async fn a_zero_stamp_is_an_unknown_spawn_time() {
+        let store = seeded().await;
+        let pool = crate::open(&store.path()).await.unwrap();
+        crate::SqliteSpine::new(pool.clone())
+            .append(Event {
+                seq: None,
+                v: 1,
+                at: 0,
+                kind: "seat.put".to_string(),
+                seat: Some(SeatId("pij-boss".into())),
+                payload: "{}".to_string(),
+            })
+            .await
+            .unwrap();
+        pool.close().await;
+        let read = read_seats(Path::new(&store.path())).await.unwrap();
+        assert_eq!(read.seats[1].spawned_ms, None);
     }
 
     /// The reader never migrates: an old store stays at its version and is refused.

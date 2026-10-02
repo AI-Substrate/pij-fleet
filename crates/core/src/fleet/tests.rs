@@ -81,6 +81,10 @@ fn a_call_is_cold_only_above_20k_when_it_wrote_half_its_context() {
     let at = |cw: u64, read: u64| call("s", T0, None, 1, tokens(0, cw, read, 0)).cold();
     assert!(at(10_001, 10_000), "20,001 context, writes >= half");
     assert!(!at(10_000, 10_000), "exactly 20k is not above the floor");
+    assert!(
+        at(15_000, 15_000),
+        "writes of exactly half the context are cold"
+    );
     assert!(!at(10_000, 10_002), "writes under half are warm");
 }
 
@@ -463,4 +467,33 @@ fn a_growth_run_carries_its_story_for_the_hover() {
         model.len() > 10 && model.windows(2).all(|w| w[1][1] >= w[0][1]),
         "{model:?}"
     );
+}
+
+/// The headline status-turn figure turns on its boundary: a message-opened turn
+/// of exactly three calls is a status turn; four calls is work.
+#[test]
+fn a_three_call_message_turn_is_a_status_turn_and_four_is_not() {
+    let mut calls = Vec::new();
+    for (turn_no, n) in [(1, 3), (2, 4)] {
+        for i in 0..n {
+            calls.push(call(
+                "a",
+                T0 + HOUR * turn_no + i * 1_000,
+                Some(1_000),
+                turn_no,
+                tokens(0, 100, 30_000, 10),
+            ));
+        }
+    }
+    let corpus = Corpus {
+        sessions: vec![session("a", "sa")],
+        calls: number(calls),
+        turns: vec![
+            turn("a", 1, "peer", Some("p")),
+            turn("a", 2, "peer", Some("p")),
+        ],
+        ..Corpus::default()
+    };
+    let report = analyze(&corpus, window(), &PriceTable::default());
+    assert_eq!(report.status_turns.turns, 1);
 }
