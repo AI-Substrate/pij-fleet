@@ -162,6 +162,8 @@ async fn read(conn: &mut SqliteConnection) -> Result<FleetSeats> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pij_core::model::{Event, SeatId};
+    use pij_core::ports::Spine;
     use pij_testkit::FreshStore;
 
     async fn seeded() -> FreshStore {
@@ -172,12 +174,36 @@ mod tests {
              VALUES ('pij-able-stoat', 'claude', 'sess-2', '/work/demo', 'idle', 'stream s07', 'pij-boss', 1790000000000, 1)",
             "INSERT INTO seats (id, harness, folder, state, seq) VALUES ('pij-boss', 'omp', '/work/demo', 'idle', 2)",
             "INSERT INTO seat_roles (seat, role, assigned_by, assigned_at) VALUES ('pij-boss', 'o-prime', 'jordan', 1)",
-            r#"INSERT INTO spine_events (v, at, kind, seat, payload) VALUES (1, 1789000000000, 'seat.put', 'pij-able-stoat', '{"session":"sess-1"}')"#,
-            r#"INSERT INTO spine_events (v, at, kind, seat, payload) VALUES (1, 1789500000000, 'seat.put', 'pij-able-stoat', '{"session":"sess-2"}')"#,
-            r#"INSERT INTO spine_events (v, at, kind, seat, payload) VALUES (1, 1789600000000, 'seat.native-resumed', 'pij-able-stoat', '{"old_harness_session":"sess-0"}')"#,
-            r#"INSERT INTO spine_events (v, at, kind, seat, payload) VALUES (1, 1789700000000, 'message.pushed', 'pij-able-stoat', '{"session":"not-a-binding"}')"#,
         ] {
             sqlx::query(sql).execute(&pool).await.expect(sql);
+        }
+        // Spine facts go through the spine port: only store/spine.rs writes spine_events.
+        let spine = crate::SqliteSpine::new(pool.clone());
+        for (at, kind, payload) in [
+            (1_789_000_000_000, "seat.put", r#"{"session":"sess-1"}"#),
+            (1_789_500_000_000, "seat.put", r#"{"session":"sess-2"}"#),
+            (
+                1_789_600_000_000,
+                "seat.native-resumed",
+                r#"{"old_harness_session":"sess-0"}"#,
+            ),
+            (
+                1_789_700_000_000,
+                "message.pushed",
+                r#"{"session":"not-a-binding"}"#,
+            ),
+        ] {
+            spine
+                .append(Event {
+                    seq: None,
+                    v: 1,
+                    at,
+                    kind: kind.to_string(),
+                    seat: Some(SeatId("pij-able-stoat".into())),
+                    payload: payload.to_string(),
+                })
+                .await
+                .expect(kind);
         }
         pool.close().await;
         store
