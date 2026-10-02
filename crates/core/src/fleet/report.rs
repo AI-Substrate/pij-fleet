@@ -214,6 +214,8 @@ pub struct Graph {
     pub nodes: Vec<GraphNode>,
     /// Peer-opened turns between them.
     pub edges: Vec<GraphEdge>,
+    /// pij messages per pair touching a seat in scope (from pij's own records).
+    pub messages: Vec<super::MessageCount>,
 }
 
 /// A seat, or an unseated session.
@@ -227,6 +229,14 @@ pub struct GraphNode {
     pub harness: Option<String>,
     /// Bound to a pij seat.
     pub seated: bool,
+    /// A project's prime (or the machine's designated prime): a hub.
+    pub prime: bool,
+    /// A seat of this machine's pij store; false for another machine's seat.
+    pub local: bool,
+    /// pij messages it sent in the window.
+    pub sent: u64,
+    /// pij messages it received in the window.
+    pub received: u64,
     /// Tokens by class.
     pub tokens: Tokens,
     /// The largest context.

@@ -691,13 +691,47 @@ fn graph(ix: &Indexed<'_>, corpus: &Corpus) -> Graph {
         edge.tokens.add(&turn.tokens);
         edge.cold += u64::from(turn.cold);
     }
+    // pij messages: every pair touching a seat with a transcript in scope.
+    let anchors: BTreeSet<String> = ix
+        .calls
+        .iter()
+        .map(|c| ix.label(&c.source))
+        .filter(|label| !label.starts_with("session "))
+        .collect();
+    let mut messages = Vec::new();
+    for m in &corpus.messages {
+        if !anchors.contains(&m.from) && !anchors.contains(&m.to) {
+            continue;
+        }
+        for (id, sent, received) in [(&m.from, m.messages, 0), (&m.to, 0, m.messages)] {
+            let node = nodes.entry(id.clone()).or_insert_with(|| GraphNode {
+                id: id.clone(),
+                ..GraphNode::default()
+            });
+            node.sent += sent;
+            node.received += received;
+        }
+        messages.push(m.clone());
+    }
+    let primes: BTreeSet<&str> = corpus.primes.iter().map(String::as_str).collect();
     for node in nodes.values_mut() {
         if let Some(seat) = seats.get(node.id.as_str()) {
             node.seated = true;
+            node.local = true;
             node.role = seat.role.clone();
             node.harness = Some(seat.harness.clone());
         }
+        node.prime = primes.contains(node.id.as_str())
+            || node
+                .role
+                .as_deref()
+                .is_some_and(|role| role.to_ascii_lowercase().contains("prime"));
     }
+    messages.sort_by(|a, b| {
+        b.messages
+            .cmp(&a.messages)
+            .then_with(|| (&a.from, &a.to).cmp(&(&b.from, &b.to)))
+    });
     let mut edges: Vec<GraphEdge> = edges.into_values().collect();
     edges.sort_by(|a, b| {
         b.tokens
@@ -709,6 +743,7 @@ fn graph(ix: &Indexed<'_>, corpus: &Corpus) -> Graph {
     Graph {
         nodes: nodes.into_values().collect(),
         edges,
+        messages,
     }
 }
 

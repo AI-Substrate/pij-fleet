@@ -497,3 +497,72 @@ fn a_three_call_message_turn_is_a_status_turn_and_four_is_not() {
     let report = analyze(&corpus, window(), &PriceTable::default());
     assert_eq!(report.status_turns.turns, 1);
 }
+
+/// The hub graph: pij message counts for every pair touching a seat in scope,
+/// primes marked as hubs, and a counterpart with no local seat (another
+/// machine) kept and marked as not local. Pairs that touch nothing in scope stay out.
+#[test]
+fn the_message_graph_keeps_pairs_touching_the_scope_and_marks_primes_and_remotes() {
+    let seat = |id: &str, session: &str| Seat {
+        id: id.into(),
+        harness: "claude".into(),
+        role: None,
+        folder: "/work/demo".into(),
+        parent: None,
+        spawned_ms: None,
+        ended_ms: None,
+        sessions: if session.is_empty() {
+            vec![]
+        } else {
+            vec![session.into()]
+        },
+    };
+    let pair = |from: &str, to: &str, messages: u64| MessageCount {
+        from: from.into(),
+        to: to.into(),
+        messages,
+    };
+    let corpus = Corpus {
+        sessions: vec![session("a", "sa"), session("b", "sb")],
+        calls: number(vec![
+            call("a", T0 + HOUR, None, 1, tokens(0, 30_000, 0, 1)),
+            call("b", T0 + HOUR, None, 1, tokens(0, 30_000, 0, 1)),
+        ]),
+        turns: vec![
+            turn("a", 1, "peer", Some("pij-boss")),
+            turn("b", 1, "human", None),
+        ],
+        seats: vec![
+            seat("pij-worker-a", "sa"),
+            seat("pij-worker-b", "sb"),
+            seat("pij-boss", ""),
+        ],
+        messages: vec![
+            pair("pij-boss", "pij-worker-a", 5),
+            pair("pij-boss", "pij-worker-b", 3),
+            pair("pij-worker-a", "pij-boss", 2),
+            pair("pij-far-otter", "pij-worker-a", 1),
+            pair("pij-x", "pij-y", 9),
+        ],
+        primes: vec!["pij-boss".into()],
+        ..Corpus::default()
+    };
+    let report = analyze(&corpus, window(), &PriceTable::default());
+    let g = &report.graph;
+    assert_eq!(g.messages.len(), 4, "{:?}", g.messages);
+    assert!(g.messages.iter().all(|m| m.from != "pij-x"));
+    let node = |id: &str| {
+        g.nodes
+            .iter()
+            .find(|n| n.id == id)
+            .unwrap_or_else(|| panic!("{id}"))
+    };
+    assert!(node("pij-boss").prime && node("pij-boss").local);
+    assert!(!node("pij-far-otter").local, "another machine's seat");
+    assert!(!node("pij-worker-a").prime);
+    assert_eq!(
+        (node("pij-worker-a").sent, node("pij-worker-a").received),
+        (2, 6)
+    );
+    assert!(g.nodes.iter().all(|n| n.id != "pij-x"));
+}

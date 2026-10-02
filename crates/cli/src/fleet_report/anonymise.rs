@@ -90,12 +90,16 @@ pub fn anonymise_corpus(corpus: &mut Corpus) {
         names.insert(id, format!("{class} {}", letters(*n)));
         *n += 1;
     }
-    let others: BTreeSet<String> = corpus
+    let mut others: BTreeSet<String> = corpus
         .turns
         .iter()
         .filter_map(|turn| turn.sender.clone())
-        .filter(|sender| !names.contains_key(sender))
         .collect();
+    for m in &corpus.messages {
+        others.insert(m.from.clone());
+        others.insert(m.to.clone());
+    }
+    others.retain(|other| !names.contains_key(other));
     for (i, sender) in others.into_iter().enumerate() {
         names.insert(sender, format!("Peer {}", letters(i)));
     }
@@ -148,6 +152,11 @@ pub fn anonymise_corpus(corpus: &mut Corpus) {
         turn.pij_msg_id = None;
         turn.head = None;
     }
+    for m in &mut corpus.messages {
+        m.from = name(&m.from);
+        m.to = name(&m.to);
+    }
+    corpus.primes = corpus.primes.iter().map(|id| name(id)).collect();
     for event in &mut corpus.events {
         event.source = source(&event.source);
         // A reset notice names the operator's timezone.

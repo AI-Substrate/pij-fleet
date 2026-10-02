@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use pij_core::error::{PijError, Result};
-use pij_core::fleet::Seat;
+use pij_core::fleet::{MessageCount, Seat};
 use sqlx::Row;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection, SqliteConnection};
@@ -34,6 +34,8 @@ pub struct FleetSeats {
     pub seats: Vec<Seat>,
     /// The store's `user_version`.
     pub schema_version: u32,
+    /// Seats that are a project's prime (or the machine's designated prime).
+    pub primes: Vec<String>,
 }
 
 fn adapter(message: String) -> PijError {
@@ -90,6 +92,25 @@ async fn read(conn: &mut SqliteConnection) -> Result<FleetSeats> {
             "the store is at schema {schema_version}; fleet-report needs {MIN_SCHEMA} or later"
         )));
     }
+    // A project's prime (0014+) and the machine's designated prime.
+    let mut primes: BTreeSet<String> =
+        sqlx::query_scalar::<_, String>("SELECT seat FROM prime_designation")
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(fail)?
+            .into_iter()
+            .collect();
+    if schema_version >= 14 {
+        primes.extend(
+            sqlx::query_scalar::<_, String>(
+                "SELECT prime_id FROM projects WHERE prime_id IS NOT NULL",
+            )
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(fail)?,
+        );
+    }
+    let primes: Vec<String> = primes.into_iter().collect();
     let roles: BTreeMap<String, String> = sqlx::query("SELECT seat, role FROM seat_roles")
         .fetch_all(&mut *conn)
         .await
@@ -167,7 +188,38 @@ async fn read(conn: &mut SqliteConnection) -> Result<FleetSeats> {
             })
             .collect(),
         schema_version,
+        primes,
     })
+}
+
+/// pij messages per sender -> recipient pushed in `[since_ms, until_ms)`.
+/// Metadata only: no body is read.
+///
+/// # Errors
+/// [`PijError::Adapter`] when the store is missing or unreadable.
+pub async fn read_messages(path: &Path, since_ms: i64, until_ms: i64) -> Result<Vec<MessageCount>> {
+    let mut conn = open_read_only(path).await?;
+    // The recipient is the event's seat; the sender is the payload's `from`.
+    let rows = sqlx::query(
+        "SELECT json_extract(payload, '$.from') AS sender, seat AS recipient, COUNT(*) AS n \
+         FROM spine_events WHERE kind = 'message.pushed' AND at >= ?1 AND at < ?2 \
+         AND seat IS NOT NULL AND json_extract(payload, '$.from') IS NOT NULL \
+         GROUP BY sender, recipient ORDER BY sender, recipient",
+    )
+    .bind(since_ms)
+    .bind(until_ms)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| adapter(format!("could not read messages: {error}")));
+    let _ = conn.close().await;
+    Ok(rows?
+        .iter()
+        .map(|row| MessageCount {
+            from: row.get("sender"),
+            to: row.get("recipient"),
+            messages: u64::try_from(row.get::<i64, _>("n")).unwrap_or(0),
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -216,8 +268,68 @@ mod tests {
                 .await
                 .expect(kind);
         }
+        for (at, from) in [
+            (1_789_800_000_000, "pij-boss"),
+            (1_789_800_001_000, "pij-boss"),
+            (1_789_800_002_000, "pij-remote-otter"),
+            (1_799_000_000_000, "pij-boss"),
+        ] {
+            spine
+                .append(Event {
+                    seq: None,
+                    v: 1,
+                    at,
+                    kind: "message.pushed".to_string(),
+                    seat: Some(SeatId("pij-able-stoat".into())),
+                    payload: format!(
+                        r#"{{"msg_id":"m-{at}","from":"{from}","body":"never read"}}"#
+                    ),
+                })
+                .await
+                .expect("message");
+        }
+        sqlx::query(
+            "INSERT INTO projects (slug, created_by, created_at, prime_id) \
+             VALUES ('demo', 'jordan', 1, 'pij-boss')",
+        )
+        .execute(&pool)
+        .await
+        .expect("project");
         pool.close().await;
         store
+    }
+
+    /// Message counts per sender -> recipient in the window, from pij's own
+    /// delivery records; a sender that is not a local seat (another machine) is kept.
+    #[tokio::test]
+    async fn messages_are_counted_per_pair_inside_the_window() {
+        let store = seeded().await;
+        let counts = read_messages(
+            Path::new(&store.path()),
+            1_789_750_000_000,
+            1_790_000_000_000,
+        )
+        .await
+        .expect("messages");
+        let pairs: Vec<(&str, &str, u64)> = counts
+            .iter()
+            .map(|m| (m.from.as_str(), m.to.as_str(), m.messages))
+            .collect();
+        assert_eq!(
+            pairs,
+            [
+                ("pij-boss", "pij-able-stoat", 2),
+                ("pij-remote-otter", "pij-able-stoat", 1)
+            ]
+        );
+    }
+
+    /// A project's prime is a prime, whatever role the seat registered with.
+    #[tokio::test]
+    async fn project_primes_are_named() {
+        let store = seeded().await;
+        let read = read_seats(Path::new(&store.path())).await.expect("read");
+        assert_eq!(read.primes, ["pij-boss"]);
     }
 
     #[tokio::test]
@@ -255,6 +367,18 @@ mod tests {
     async fn the_store_handle_refuses_every_write() {
         let store = seeded().await;
         let path = std::path::PathBuf::from(store.path());
+        // Settle the store first: the seeding pool's close may still be
+        // checkpointing its WAL into the main file.
+        let mut settle = SqliteConnectOptions::new()
+            .filename(&path)
+            .connect()
+            .await
+            .unwrap();
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&mut settle)
+            .await
+            .unwrap();
+        settle.close().await.unwrap();
         let before = std::fs::read(&path).unwrap();
         let mut conn = open_read_only(&path).await.expect("open");
         for sql in [

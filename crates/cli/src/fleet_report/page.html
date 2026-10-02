@@ -269,6 +269,95 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
     document.onkeydown = e => { if (e.key === "Escape") close(); };
   }
 
+  // Hub graph: primes as hubs, each seat around the prime it messages most.
+  const HUB_MAX = 70;
+  let HUB = null;
+  function hubLayout() {
+    const g = R.graph, W = 1100;
+    const vol = n => n.sent + n.received;
+    let nodes = g.nodes.filter(n => vol(n) > 0);
+    nodes.sort((a, b) => (b.prime - a.prime) || vol(b) - vol(a) || a.id.localeCompare(b.id));
+    nodes = nodes.filter((n, i) => n.prime || i < HUB_MAX);
+    const ids = new Set(nodes.map(n => n.id));
+    const msgs = g.messages.filter(m => ids.has(m.from) && ids.has(m.to));
+    let hubs = nodes.filter(n => n.prime);
+    if (!hubs.length && nodes.length) hubs = [nodes[0]];
+    const hubIds = new Set(hubs.map(h => h.id));
+    const tie = {};
+    for (const m of msgs) for (const [a, b] of [[m.from, m.to], [m.to, m.from]]) if (hubIds.has(b) && !hubIds.has(a)) { tie[a] = tie[a] || {}; tie[a][b] = (tie[a][b] || 0) + m.messages; }
+    const home = {};
+    for (const n of nodes) if (!hubIds.has(n.id) && tie[n.id]) home[n.id] = Object.entries(tie[n.id]).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))[0][0];
+    const k = hubs.length, H = Math.max(520, k > 2 ? 640 : 560), cy = H / 2;
+    const pos = {}, cr = Math.min(230, (W / Math.max(1, k)) * 0.42);
+    hubs.forEach((h, i) => { pos[h.id] = [W * (i + 1) / (k + 1), cy]; });
+    hubs.forEach(h => {
+      const members = nodes.filter(n => home[n.id] === h.id);
+      members.forEach((n, j) => { const t = -Math.PI / 2 + 2 * Math.PI * j / Math.max(1, members.length); pos[n.id] = [pos[h.id][0] + cr * Math.cos(t), cy + cr * 0.95 * Math.sin(t)]; });
+    });
+    const loose = nodes.filter(n => !pos[n.id]);
+    loose.forEach((n, j) => { const t = Math.PI * (0.15 + 0.7 * (j + 0.5) / Math.max(1, loose.length)); pos[n.id] = [W / 2 + (W / 2 - 60) * Math.cos(t + Math.PI), cy + (H / 2 - 30) * Math.sin(t + Math.PI) * (j % 2 ? -1 : 1)]; });
+    const cold = {};
+    for (const e of g.edges) cold[e.from + "\u0000" + e.to] = e.cold;
+    return {nodes, msgs, pos, W, H, hubIds, cold};
+  }
+  function hubGraph() {
+    if (!R.graph.messages || !R.graph.messages.length) return `<p class="note">No pij messages touched a seat of this report in the window.</p>`;
+    HUB = hubLayout();
+    const {nodes, msgs, pos, W, H, cold} = HUB;
+    const maxM = Math.max(1, ...msgs.map(m => m.messages));
+    const spend = n => price(n.tokens);
+    const maxS = Math.max(1e-9, ...nodes.map(spend));
+    const out = [`<div class="runs-wrap"><svg class="fig" id="hub-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Who messaged whom: primes as hubs; hover a seat for its numbers">`];
+    msgs.forEach((m, i) => {
+      const [x1, y1] = pos[m.from], [x2, y2] = pos[m.to];
+      const mx = (x1 + x2) / 2 + (y2 - y1) * 0.12, my = (y1 + y2) / 2 - (x2 - x1) * 0.12;
+      const hot = (cold[m.from + "\u0000" + m.to] || 0) >= 3;
+      out.push(`<path class="hub-e" data-f="${esc(m.from)}" data-t="${esc(m.to)}" d="M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${hot ? "var(--cold)" : "var(--ink)"}" stroke-width="${(0.6 + 4.5 * Math.sqrt(m.messages / maxM)).toFixed(2)}" opacity="${hot ? 0.75 : 0.22}"><title>${esc(m.from)} → ${esc(m.to)}: ${num(m.messages)} messages</title></path>`);
+    });
+    nodes.forEach((n, i) => {
+      const [x, y] = pos[n.id], r = 3.5 + 15 * Math.sqrt(spend(n) / maxS);
+      const role = (n.role || "").toLowerCase();
+      const fill = !n.local ? "var(--paper)" : n.prime ? "var(--amber)" : /^pa\b|^pa[^a-z]/.test(role) ? "var(--violet)" : "var(--ink)";
+      const name = n.id.replace(/^pij-/, "");
+      out.push(`<g class="hub-n" data-i="${i}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(n.prime ? Math.max(r, 9) : r).toFixed(1)}" fill="${fill}" stroke="var(--ink)" stroke-width="${n.local ? 0.6 : 1.4}"/><text x="${(x + r + 4).toFixed(1)}" y="${(y + 4).toFixed(1)}" class="ax${n.prime ? " ax-day" : ""}">${esc(name)}${n.prime ? " · prime" : ""}</text><circle class="hit" data-i="${i}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.max(r, 9).toFixed(1)}" fill="transparent"/></g>`);
+    });
+    out.push(`</svg><div id="hub-tip" class="tip" hidden></div></div>`);
+    const key = (svg, label) => `<span class="lk"><svg width="18" height="12" viewBox="0 0 18 12" aria-hidden="true">${svg}</svg>${label}</span>`;
+    out.push(`<p class="legend">${[
+      key('<circle cx="9" cy="6" r="5" fill="var(--amber)" stroke="var(--ink)" stroke-width=".6"/>', "prime"),
+      key('<circle cx="9" cy="6" r="5" fill="var(--violet)" stroke="var(--ink)" stroke-width=".6"/>', "PA"),
+      key('<circle cx="9" cy="6" r="5" fill="var(--ink)"/>', "seat (area = spend)"),
+      key('<circle cx="9" cy="6" r="4.5" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.4"/>', "seat not on this machine"),
+      key('<line x1="1" y1="6" x2="17" y2="6" stroke="var(--ink)" stroke-width="3" opacity=".35"/>', "messages (width = count)"),
+      key('<line x1="1" y1="6" x2="17" y2="6" stroke="var(--cold)" stroke-width="3" opacity=".75"/>', "link whose messages caused 3+ cold wakes"),
+    ].join("")}</p>`);
+    return out.join("");
+  }
+  function wireHub() {
+    const svg = document.getElementById("hub-svg");
+    if (!svg || !svg.getBoundingClientRect || !HUB) return;
+    const tip = document.getElementById("hub-tip");
+    let pinned = null;
+    const focus = id => {
+      for (const e of svg.querySelectorAll(".hub-e")) {
+        const on = !id || e.getAttribute("data-f") === id || e.getAttribute("data-t") === id;
+        e.style.opacity = id ? (on ? "0.9" : "0.04") : "";
+      }
+    };
+    const show = (i, ev) => {
+      const n = HUB.nodes[i];
+      tip.innerHTML = `<b>${esc(n.id)}</b>${n.role ? ` · ${esc(n.role)}` : ""}${n.prime ? " · prime" : ""}<br>${n.local ? (n.harness ? esc(n.harness) : "local") : "not a seat on this machine"}<br>${num(n.sent)} messages sent · ${num(n.received)} received<br>${usd(price(n.tokens), 2)} spend · peak ${mtok(n.max_context)}`;
+      const box = svg.getBoundingClientRect();
+      tip.style.left = Math.min(ev.clientX - box.left + 14, box.width - 260) + "px";
+      tip.style.top = (ev.clientY - box.top + 14) + "px";
+      tip.hidden = false;
+      if (!pinned) focus(n.id);
+    };
+    svg.onmousemove = ev => { const i = ev.target.getAttribute && ev.target.getAttribute("data-i"); if (i !== null && i !== undefined) show(+i, ev); };
+    svg.onmouseleave = () => { tip.hidden = true; if (!pinned) focus(null); };
+    svg.onclick = ev => { const i = ev.target.getAttribute && ev.target.getAttribute("data-i"); const id = i !== null && i !== undefined ? HUB.nodes[+i].id : null; pinned = id && id !== pinned ? id : null; focus(pinned); };
+  }
+
   // ---------------------------------------------------------------- sections
   function render() {
     const T = R.totals, K = R.key_figures, comp = R.components;
@@ -321,7 +410,7 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
       row("Status turns", num(st.turns), pct(st.share), `Agent messages that needed no action (an ack, an FYI, a status ping), seen as message-opened turns of three calls or fewer. Each still re-read the recipient's whole context. Replaying the sessions without them saves ${pct(st.replay_saving_share)}.`),
       row("Compactions", num(R.compactions.count), "", `${num(R.compactions.manual)} manual; median ${mtok(R.compactions.median_pre)} tokens before. A compaction shrinks the context every later call carries, for the cost of one re-read.`),
       row("Mean context", `${mtok(T.mean_context)} tokens`, "", "What the average call carried. Halving it roughly halves the cached-read bill."),
-      row("pij messages", "—", "", "Sent, held (FYI), flushed and refused counts arrive with pij's message records (plan 162 P2). Until then, message traffic shows as the turns it opened."),
+      row("pij messages", num((R.graph.messages || []).reduce((a, m) => a + m.messages, 0)), "", `Messages pij delivered to or from a seat of this report, across ${num((R.graph.messages || []).length)} sender → recipient pairs. A message that opens a turn on a big seat costs a full re-read; FYI, held and refused counts arrive with plan 162 P2.`),
     ];
     const out = [];
     out.push(sec("Summary", "Summary",
@@ -340,9 +429,9 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
       "<h3>Who woke whom</h3><p>Seats ranked by the spend their messages caused in others. A sender with many short turns and cold wakes is a candidate for <code>--fyi</code>.</p>" + table(["sender", "turns opened", "recipients", "spend", "cold wakes", "≤3-call turns"], R.senders.map(s => [esc(s.sender), num(s.turns), num(s.recipients), usd(price(s.tokens)), num(s.cold_wakes), num(s.short_turns)]), [0, 1, 1, 1, 1, 1])));
     const nodes = Object.fromEntries(R.graph.nodes.map(n => [n.id, n]));
     out.push(sec("Messages", "Messages between seats",
-      `<p>Each row is one sender → recipient pair: the turns the sender's messages opened in the recipient's main session, and what those turns cost. Messages that never opened a turn (FYIs, held deliveries, refusals) arrive with pij's message records.</p>` +
-      table(["from", "to", "recipient role", "turns", "spend", "cold"], R.graph.edges.slice(0, 40).map(e => [esc(e.from), esc(e.to), esc((nodes[e.to] || {}).role || ""), num(e.turns), usd(price(e.tokens)), num(e.cold)]), [0, 0, 0, 1, 1, 1]) +
-      `<p class="note">${R.graph.nodes.length} seats and sessions, ${R.graph.edges.length} pairs${R.graph.edges.length > 40 ? "; the 40 costliest shown (all are in report.json)" : ""}.</p>`));
+      `<p>Who messaged whom, from pij's own delivery records. Primes sit at the centre of their seats; a seat is placed around the prime it exchanges most messages with. A thick line is heavy traffic; a blue line is a link whose messages woke the recipient on an expired cache three or more times. Hover a seat for its numbers; click it to keep only its links.</p>` + hubGraph() +
+      `<h3>Busiest pairs</h3>` + table(["from", "to", "messages", "turns opened", "turn spend", "cold wakes"], R.graph.messages.slice(0, 30).map(m => { const e = R.graph.edges.find(x => x.from === m.from && x.to === m.to) || {turns: 0, tokens: null, cold: 0}; return [esc(m.from), esc(m.to), num(m.messages), num(e.turns), e.tokens ? usd(price(e.tokens)) : "–", num(e.cold)]; }), [0, 0, 1, 1, 1, 1]) +
+      `<p class="note">Messages counted by pij (every harness, both directions, including seats on other machines that messaged this one). Turns, spend and cold wakes are what those messages opened in the recipient's transcript. FYI, held and refused deliveries arrive with pij's message records (plan 162 P2).</p>`));
     const ico = (svg, label) => `<span class="lk"><svg width="18" height="12" viewBox="0 0 18 12" aria-hidden="true">${svg}</svg>${label}</span>`;
     const laneKey = `<p class="legend">${[
       ico('<line x1="1" y1="9" x2="17" y2="3" stroke="var(--ink)" stroke-width="1.6"/>', "peak context (5-minute steps)"),
@@ -372,6 +461,7 @@ footer{max-width:1180px;margin:0 auto;padding:24px 16px 48px;font-size:13px;colo
       }), [0, 1, ...models.map(() => 1), 1, 1]) + `<p class="note">List prices from the report's price table (${models.map(m => `${esc(m)}: write ${R.prices.models[m].write_1h}/M, read ${R.prices.models[m].read}/M, output ${R.prices.models[m].output}/M`).join("; ")}). Expected net = default-model cost − alternative cost − follow-up rate × switch-back.</p>`));
     document.getElementById("app").innerHTML = out.join("");
     wireRuns();
+    wireHub();
     document.getElementById("foot").innerHTML = `Generated by <code>pij fleet-report</code> · report v${R.version} · window ${esc(since)} – ${esc(until)} (UTC${R.window.utc_offset_min >= 0 ? "+" : "−"}${String(Math.floor(Math.abs(R.window.utc_offset_min) / 60)).padStart(2, "0")}:${String(Math.abs(R.window.utc_offset_min) % 60).padStart(2, "0")}). Transcript facts by Unisphere; seats by pij. Per-row detail is in <code>tables/</code>; versions and row counts in <code>manifest.json</code>.`;
   }
 

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use pij_core::fleet::{
-    Call, Corpus, Event, PriceTable, Seat, Session, Tokens, Turn, Window, analyze,
+    Call, Corpus, Event, MessageCount, PriceTable, Seat, Session, Tokens, Turn, Window, analyze,
 };
 
 use super::*;
@@ -265,6 +265,24 @@ fn secret_corpus() -> Corpus {
                 sessions: vec![],
             },
         ],
+        messages: vec![
+            MessageCount {
+                from: "pij-hidden-boss".into(),
+                to: "pij-secret-stoat".into(),
+                messages: 3,
+            },
+            MessageCount {
+                from: "pij-ghostly-heron".into(),
+                to: "pij-secret-stoat".into(),
+                messages: 1,
+            },
+            MessageCount {
+                from: "pij-secret-stoat".into(),
+                to: "pij-remote-mongoose".into(),
+                messages: 2,
+            },
+        ],
+        primes: vec!["pij-hidden-boss".into(), "pij-other-prime-kestrel".into()],
     }
 }
 
@@ -343,6 +361,8 @@ fn anonymised_output_leaks_no_name_path_id_or_content() {
             "ghostly",
             "walrus",
             "opys",
+            "mongoose",
+            "kestrel",
             "boom",
         ] {
             assert!(!all.contains(secret), "{format}: `{secret}` leaked");
@@ -358,6 +378,18 @@ fn anonymised_output_leaks_no_name_path_id_or_content() {
         assert!(
             report["scope"]["folder"].is_null(),
             "{format}: the folder is a path"
+        );
+        let primes: Vec<&str> = report["graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|n| n["prime"] == true)
+            .map(|n| n["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            primes,
+            ["Worker A"],
+            "{format}: the prime is still the hub, by its new name"
         );
         assert_eq!(report["scope"]["folders"], 1, "{format}: the count stays");
         let _ = std::fs::remove_dir_all(dir);

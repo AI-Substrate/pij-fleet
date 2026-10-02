@@ -326,7 +326,7 @@ fn scoped(state: &PrepState, rows: PrepRows, scope: &FleetScope) -> Corpus {
         calls,
         turns,
         events,
-        seats: Vec::new(),
+        ..Corpus::default()
     }
 }
 

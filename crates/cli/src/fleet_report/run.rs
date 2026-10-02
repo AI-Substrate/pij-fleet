@@ -141,16 +141,45 @@ pub async fn run(mut args: FleetArgs, state_dir: &Path) -> Envelope<Value> {
             .push(format!("unreadable transcript {source}: {error}"));
     }
     let mut corpus = transcripts.corpus;
-    match pij_store::fleet::read_seats(&state_dir.join("pij.sqlite")).await {
+    let store_path = state_dir.join("pij.sqlite");
+    match pij_store::fleet::read_seats(&store_path).await {
         Ok(store) => {
             facts.store_schema = Some(store.schema_version);
-            corpus.seats = relevant_seats(
-                store.seats,
+            match pij_store::fleet::read_messages(
+                &store_path,
+                plan.window.since_ms,
+                plan.window.until_ms,
+            )
+            .await
+            {
+                Ok(messages) => corpus.messages = messages,
+                Err(error) => facts.warnings.push(format!("no pij messages ({error})")),
+            }
+            corpus.primes = store.primes;
+            let relevant = relevant_seats(
+                store.seats.clone(),
                 &corpus,
                 &plan.folders,
                 plan.window.since_ms,
                 plan.window.until_ms,
             );
+            // A seat that messaged a seat of this report is drawn as local, not remote.
+            let ids: BTreeSet<&str> = relevant.iter().map(|s| s.id.as_str()).collect();
+            let counterparts: BTreeSet<String> = corpus
+                .messages
+                .iter()
+                .filter(|m| ids.contains(m.from.as_str()) || ids.contains(m.to.as_str()))
+                .flat_map(|m| [m.from.clone(), m.to.clone()])
+                .collect();
+            let mut seats = relevant;
+            let have: BTreeSet<String> = seats.iter().map(|s| s.id.clone()).collect();
+            seats.extend(
+                store
+                    .seats
+                    .into_iter()
+                    .filter(|s| counterparts.contains(&s.id) && !have.contains(&s.id)),
+            );
+            corpus.seats = seats;
         }
         Err(error) => facts
             .warnings

@@ -284,6 +284,17 @@ pub struct Seat {
     pub sessions: Vec<String>,
 }
 
+/// pij messages from one seat to another in the window, from pij's own records.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageCount {
+    /// The sending seat (a seat of another machine is kept as its id).
+    pub from: String,
+    /// The receiving seat.
+    pub to: String,
+    /// Messages pushed.
+    pub messages: u64,
+}
+
 /// Everything one report is computed from.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Corpus {
@@ -297,6 +308,10 @@ pub struct Corpus {
     pub events: Vec<Event>,
     /// pij's seats.
     pub seats: Vec<Seat>,
+    /// pij messages between seats, per pair.
+    pub messages: Vec<MessageCount>,
+    /// Seats that are a project's prime.
+    pub primes: Vec<String>,
 }
 
 /// The report's window and the clock its buckets are read on.
