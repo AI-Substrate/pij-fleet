@@ -163,14 +163,16 @@ pub struct Daemon {
     /// Where it is actually listening — resolved, so a `:0` config becomes a
     /// real port a client can be told about.
     pub addr: SocketAddr,
-    /// How far that listener reaches, as the bind policy classified it.
-    pub exposure: http::Exposure,
+    /// The second, non-loopback listener: absent, listening, or refused/failed
+    /// with the reason (the daemon then serves loopback only).
+    pub remote: http::RemoteListener,
     /// The per-boot bearer key.
     pub key: BootKey,
     event_bus: Arc<events::EventBus>,
     delivery: Arc<delivery::DeliveryService>,
     store_pools: [pij_store::StorePool; 2],
-    shutdown: tokio::sync::oneshot::Sender<()>,
+    /// Stops every listener; one signal, so no listener outlives another.
+    shutdown: tokio::sync::watch::Sender<bool>,
     joined: tokio::task::JoinHandle<()>,
     /// Owned so it cannot outlive the boot that started it: a worker still
     /// forwarding for a daemon that has stopped serving is a process nobody can
@@ -211,7 +213,7 @@ impl Daemon {
         // Signal HTTP and poll every worker shutdown together. Each worker's
         // shutdown future sends its stop before awaiting its join, so no slow
         // HTTP drain can leave queue workers claiming new rows in the meantime.
-        let _ = self.shutdown.send(());
+        let _ = self.shutdown.send(true);
         let _ = self.governance_shutdown.send(());
         self.session_warmup.abort();
         let (served, drained, bound, observed, forwarded, background, deaths, (), governance) = tokio::join!(
@@ -609,6 +611,90 @@ fn write_runtime_record(state_dir: &Path, runtime: &DaemonRuntime) -> Result<Pat
     Ok(path)
 }
 
+fn local_addr(listener: &tokio::net::TcpListener) -> Result<SocketAddr> {
+    listener.local_addr().map_err(|error| PijError::Adapter {
+        adapter: "daemon".to_string(),
+        message: format!("could not resolve the bound address: {error}"),
+    })
+}
+
+async fn bind_one(addr: SocketAddr) -> std::io::Result<tokio::net::TcpListener> {
+    tokio::net::TcpListener::bind(addr).await
+}
+
+fn bind_failure(addr: SocketAddr, error: &std::io::Error) -> PijError {
+    PijError::Adapter {
+        adapter: "daemon".to_string(),
+        message: format!("could not bind {addr} ({error}) — another daemon may already hold it"),
+    }
+}
+
+/// Bind loopback (fatal on failure) and, when `requested` is not loopback, the
+/// remote listener `check_bind` allows (best effort). A wildcard address
+/// already covers loopback, so it is ONE listener when it binds.
+async fn bind_listeners(
+    requested: SocketAddr,
+    paired: bool,
+    insecure: bool,
+) -> Result<(
+    tokio::net::TcpListener,
+    Option<tokio::net::TcpListener>,
+    http::RemoteListener,
+)> {
+    if requested.ip().is_loopback() {
+        let listener = bind_one(requested)
+            .await
+            .map_err(|error| bind_failure(requested, &error))?;
+        return Ok((listener, None, http::RemoteListener::None));
+    }
+    let loopback = SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), requested.port());
+    let policy = http::check_bind(requested, paired, insecure);
+    if requested.ip().is_unspecified() {
+        let remote = match policy {
+            Err(refusal) => http::RemoteListener::Refused(refusal.to_string()),
+            Ok(exposure) => match bind_one(requested).await {
+                Ok(listener) => {
+                    let addr = local_addr(&listener)?;
+                    return Ok((
+                        listener,
+                        None,
+                        http::RemoteListener::Listening { addr, exposure },
+                    ));
+                }
+                Err(error) => {
+                    http::RemoteListener::Failed(format!("could not bind {requested} ({error})"))
+                }
+            },
+        };
+        let listener = bind_one(loopback)
+            .await
+            .map_err(|error| bind_failure(loopback, &error))?;
+        return Ok((listener, None, remote));
+    }
+    let listener = bind_one(loopback)
+        .await
+        .map_err(|error| bind_failure(loopback, &error))?;
+    // Same port as loopback, so `:0` in tests yields one port on both.
+    let remote_addr = SocketAddr::new(requested.ip(), local_addr(&listener)?.port());
+    let remote = match policy {
+        Err(refusal) => http::RemoteListener::Refused(refusal.to_string()),
+        Ok(exposure) => match bind_one(remote_addr).await {
+            Ok(remote_listener) => {
+                let addr = local_addr(&remote_listener)?;
+                return Ok((
+                    listener,
+                    Some(remote_listener),
+                    http::RemoteListener::Listening { addr, exposure },
+                ));
+            }
+            Err(error) => {
+                http::RemoteListener::Failed(format!("could not bind {remote_addr} ({error})"))
+            }
+        },
+    };
+    Ok((listener, None, remote))
+}
+
 /// Boot the daemon: stage the key, BIND, build, publish, serve.
 ///
 /// The ORDER is the security property, and it has been sharpened twice.
@@ -643,12 +729,10 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     let staged = auth::stage_key(&state_dir)?;
     let token = staged.token().to_string();
 
-    // 1b. The pairing, validated BEFORE the bind (plan 164 rulings 2, 3, 5):
-    //     every peer key maps to one alias, no two peers share a key, none
-    //     equals the local key; and the listen address must be loopback, or a
-    //     Tailscale address on a paired daemon, or explicitly --insecure-bind.
-    //     All refusals, so a bad peers.toml never costs a running daemon its
-    //     port or its key.
+    // 1b. The pairing, validated BEFORE the bind (plan 164 rulings 2, 3): every
+    //     peer key maps to one alias, no two peers share a key, none equals the
+    //     local key. A refusal, so a bad pairing never costs a running daemon
+    //     its port or its key.
     let auth_ring = http::AuthRing::new(
         token,
         config
@@ -667,27 +751,21 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             config.bind_addr
         ),
     })?;
-    let exposure = http::check_bind(requested, !config.peers.is_empty(), config.insecure_bind)
-        .map_err(|error| PijError::Adapter {
-            adapter: "daemon/bind".to_string(),
-            message: error.to_string(),
-        })?;
 
-    // 2. Bind. This is the step that fails when another daemon holds the port,
-    //    and it comes before anything that changes state on disk.
-    let listener = tokio::net::TcpListener::bind(&config.bind_addr)
-        .await
-        .map_err(|error| PijError::Adapter {
-            adapter: "daemon".to_string(),
-            message: format!(
-                "could not bind {} ({error}) — another daemon may already hold it",
-                config.bind_addr
-            ),
-        })?;
-    let addr = listener.local_addr().map_err(|error| PijError::Adapter {
-        adapter: "daemon".to_string(),
-        message: format!("could not resolve the bound address: {error}"),
-    })?;
+    // 2. Bind. LOOPBACK is the step that fails when another daemon holds the
+    //    port, and it comes before anything that changes state on disk. A
+    //    non-loopback address is a SECOND listener (plan 164 prime ruling): the
+    //    bind rule may refuse it and the OS may fail it, and either costs only
+    //    that listener — local clients and hooks keep loopback, never an exit.
+    let (listener, remote_listener, remote) =
+        bind_listeners(requested, !config.peers.is_empty(), config.insecure_bind).await?;
+    let addr = match &remote {
+        // A wildcard listener already serves loopback; tell clients loopback.
+        http::RemoteListener::Listening { addr, .. } if addr.ip().is_unspecified() => {
+            SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), addr.port())
+        }
+        _ => local_addr(&listener)?,
+    };
 
     // 3. This boot owns the port, so it may now touch the store. Migrations run
     //    here, exactly once, by the process that won.
@@ -893,17 +971,35 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         },
         federation,
     );
-    let (shutdown, shutdown_rx) = tokio::sync::oneshot::channel();
-    let joined = tokio::spawn(async move {
-        serve::serve(listener, router, serve::IDLE_CONNECTION_TIMEOUT, async {
-            let _ = shutdown_rx.await;
-        })
-        .await;
-    });
+    let (shutdown, shutdown_rx) = tokio::sync::watch::channel(false);
+    let stopped = |mut stop: tokio::sync::watch::Receiver<bool>| async move {
+        let _ = stop.wait_for(|stop| *stop).await;
+    };
+    // Both listeners serve the SAME router: one auth ring, one peer scope.
+    let local = serve::serve(
+        listener,
+        router.clone(),
+        serve::IDLE_CONNECTION_TIMEOUT,
+        stopped(shutdown_rx.clone()),
+    );
+    let joined = match remote_listener {
+        Some(remote_listener) => {
+            let remote = serve::serve(
+                remote_listener,
+                router,
+                serve::IDLE_CONNECTION_TIMEOUT,
+                stopped(shutdown_rx),
+            );
+            tokio::spawn(async move {
+                tokio::join!(local, remote);
+            })
+        }
+        None => tokio::spawn(local),
+    };
 
     Ok(Daemon {
         addr,
-        exposure,
+        remote,
         key,
         event_bus,
         delivery,

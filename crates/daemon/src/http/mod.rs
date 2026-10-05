@@ -58,7 +58,7 @@ use crate::registration::{RegistrationError, RegistrationService, requested_mode
 use crate::{BUILD, Services};
 pub use auth::{AuthRing, AuthRingError};
 pub use client::{PeerEndpoint, get_from_peer, post_to_peer, stream_from_peer};
-pub use exposure::{BindRefusal, Exposure, boot_banner, check_bind};
+pub use exposure::{BindRefusal, Exposure, RemoteListener, boot_banner, check_bind};
 pub use identity::{CallerContext, IdentityQuery, IdentityRequest, Phonehome};
 pub use types::{
     CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest, PeerStreamState,

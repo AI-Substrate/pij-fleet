@@ -3,6 +3,7 @@
 //! only that listener, never the loopback one.
 
 use pij_core::config::{Config, PeerDefinition};
+use pij_daemon::http::RemoteListener;
 
 fn peer(alias: &str, key: &str) -> PeerDefinition {
     PeerDefinition {
@@ -55,6 +56,11 @@ async fn an_unpaired_remote_bind_is_refused_and_loopback_kept() {
             ..Config::default()
         })
         .await;
+        assert!(
+            matches!(&daemon.remote, RemoteListener::Refused(reason) if reason.contains("no machine is paired")),
+            "{bind}: {:?}",
+            daemon.remote
+        );
         daemon.shutdown().await.expect("shutdown");
     }
 }
@@ -70,6 +76,11 @@ async fn a_failed_remote_bind_keeps_loopback_serving() {
         ..Config::default()
     })
     .await;
+    assert!(
+        matches!(&daemon.remote, RemoteListener::Failed(reason) if reason.contains("100.64.0.1")),
+        "{:?}",
+        daemon.remote
+    );
     daemon.shutdown().await.expect("shutdown");
 }
 

@@ -1,5 +1,8 @@
-//! Where the daemon may listen (plan 164 rulings 2 and 5), decided in ONE
-//! function so a later move to TLS changes one place.
+//! Where the daemon may listen beyond loopback (plan 164 rulings 2 and 5),
+//! decided in ONE function so a later move to TLS changes one place.
+//!
+//! Loopback is always bound. A configured non-loopback address is a second
+//! listener that [`check_bind`] may refuse; a refusal costs only that listener.
 //!
 //! A BRAKE: it can only refuse a bind. Removing it lets the daemon listen on
 //! more addresses, never on different ones, and it decides nothing about what
@@ -19,6 +22,25 @@ pub enum Exposure {
     /// Any other address, allowed only by an explicit `--insecure-bind`: keys
     /// cross that network in clear.
     Insecure,
+}
+
+/// The daemon's second, non-loopback listener. Loopback is always bound; this
+/// says what became of the configured remote address.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RemoteListener {
+    /// The configured address is loopback: there is no second listener.
+    None,
+    /// Serving the same router on `addr`.
+    Listening {
+        /// The bound remote address.
+        addr: SocketAddr,
+        /// How far it reaches.
+        exposure: Exposure,
+    },
+    /// The bind rule refused the address; loopback only.
+    Refused(String),
+    /// The OS failed the bind; loopback only.
+    Failed(String),
 }
 
 /// A listen address the daemon refuses.

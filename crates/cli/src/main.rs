@@ -67,7 +67,8 @@ enum Command {
         #[command(subcommand)]
         action: Option<DaemonAction>,
         /// Address to listen on. Resolution is `--bind`, then `PIJ_RS_BIND`,
-        /// then `127.0.0.1:7461`. Non-loopback exposes the bearer-key boundary.
+        /// then `127.0.0.1:7461`. Loopback on the same port is ALWAYS bound; a
+        /// non-loopback address is a second listener for paired machines.
         #[arg(long)]
         bind: Option<String>,
         /// Boot with every adapter FAKE: no store, no process table, nothing
@@ -2311,7 +2312,6 @@ async fn run_daemon(
             if let Err(error) = statusline_script {
                 eprintln!("pij-rs claude statusline: {error}");
             }
-            let banner = pij_daemon::http::boot_banner(&daemon.addr, daemon.exposure);
             println!(
                 "pij-rs daemon: listening on {} · key {} (0600) · offline={} · paired with {}",
                 daemon.addr,
@@ -2328,11 +2328,26 @@ async fn run_daemon(
                         .join(", ")
                 }
             );
-            // Once, on stderr when insecure, so the warning is not lost in stdout.
-            if daemon.exposure == pij_daemon::http::Exposure::Insecure {
-                eprintln!("{banner}");
-            } else {
-                println!("{banner}");
+            println!(
+                "{}",
+                pij_daemon::http::boot_banner(&daemon.addr, pij_daemon::http::Exposure::Loopback)
+            );
+            match &daemon.remote {
+                pij_daemon::http::RemoteListener::None => {}
+                pij_daemon::http::RemoteListener::Listening { addr, exposure } => {
+                    let banner = pij_daemon::http::boot_banner(addr, *exposure);
+                    // Once, on stderr when insecure, so the warning is not lost.
+                    if *exposure == pij_daemon::http::Exposure::Insecure {
+                        eprintln!("{banner}");
+                    } else {
+                        println!("{banner}");
+                    }
+                }
+                pij_daemon::http::RemoteListener::Refused(reason)
+                | pij_daemon::http::RemoteListener::Failed(reason) => eprintln!(
+                    "WARNING: remote listener NOT started: {reason}. Serving loopback {} only; paired machines cannot reach this daemon until this is fixed.",
+                    daemon.addr
+                ),
             }
             let _ = tokio::signal::ctrl_c().await;
             println!("pij-rs daemon: shutting down");
