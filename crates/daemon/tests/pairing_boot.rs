@@ -1,5 +1,6 @@
-//! Plan 164: a daemon refuses to BOOT with an unsafe pairing or listen address,
-//! before it binds or publishes a key.
+//! Plan 164: a daemon refuses to BOOT with an unsafe pairing, before it binds
+//! or publishes a key; a remote listen address it cannot or may not use costs
+//! only that listener, never the loopback one.
 
 use pij_core::config::{Config, PeerDefinition};
 
@@ -24,32 +25,52 @@ async fn boot_error(config: Config) -> String {
     refused
 }
 
+/// Boot, then prove the LOOPBACK listener answers an authenticated call.
+async fn boot_serving_loopback(config: Config) -> pij_daemon::Daemon {
+    let state = pij_testkit::fresh_dir("pij-pairing-boot");
+    let daemon = match pij_daemon::boot(&config, state).await {
+        Ok(daemon) => daemon,
+        Err(error) => panic!("a remote-listener problem must never stop the daemon: {error}"),
+    };
+    assert!(daemon.addr.ip().is_loopback(), "{}", daemon.addr);
+    let health = reqwest::Client::new()
+        .get(format!("http://{}/health", daemon.addr))
+        .header("authorization", daemon.key.header())
+        .send()
+        .await
+        .expect("loopback answers");
+    assert_eq!(health.status(), reqwest::StatusCode::OK);
+    daemon
+}
+
+/// Plan 164 prime ruling: loopback is ALWAYS bound. An unpaired daemon given
+/// a non-loopback address refuses that listener, says so, and keeps serving
+/// local clients on loopback.
 #[tokio::test]
-async fn an_unpaired_daemon_refuses_any_non_loopback_bind() {
+async fn an_unpaired_remote_bind_is_refused_and_loopback_kept() {
     for bind in ["0.0.0.0:0", "100.64.0.1:0"] {
-        let refused = boot_error(Config {
+        let daemon = boot_serving_loopback(Config {
             bind_addr: bind.to_string(),
             insecure_bind: true,
             ..Config::default()
         })
         .await;
-        assert!(
-            refused.contains("no machine is paired"),
-            "{bind}: {refused}"
-        );
+        daemon.shutdown().await.expect("shutdown");
     }
 }
 
+/// A paired daemon whose second bind fails (here: a Tailscale address this
+/// host does not hold) logs it and keeps loopback; it never exits.
 #[tokio::test]
-async fn a_paired_daemon_refuses_a_non_tailscale_bind_without_insecure_bind() {
-    let refused = boot_error(Config {
-        bind_addr: "0.0.0.0:0".to_string(),
+async fn a_failed_remote_bind_keeps_loopback_serving() {
+    let daemon = boot_serving_loopback(Config {
+        bind_addr: "100.64.0.1:0".to_string(),
         machine_alias: Some("mac-studio".to_string()),
         peers: vec![peer("laptop", "laptop-key-0123456789abcdef0123456789")],
         ..Config::default()
     })
     .await;
-    assert!(refused.contains("--insecure-bind"), "{refused}");
+    daemon.shutdown().await.expect("shutdown");
 }
 
 #[tokio::test]
