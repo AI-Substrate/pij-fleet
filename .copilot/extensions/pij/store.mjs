@@ -539,6 +539,7 @@ function messageFromClaim(claim, seat) {
 		!positiveInteger(claim?.job_id) ||
 		!nonempty(message?.msg_id) ||
 		!nonempty(message.from) ||
+		(message.from_machine != null && !nonempty(message.from_machine)) ||
 		message.to !== seat ||
 		typeof message.body !== "string" ||
 		message.command != null ||
@@ -547,13 +548,28 @@ function messageFromClaim(claim, seat) {
 		throw new NativeError(
 			"Malformed, unsupported command or wrong-recipient claim; receiving held without acknowledgement",
 		);
-	return { msg_id: message.msg_id, from: message.from, to: message.to, body: message.body };
+	return {
+		msg_id: message.msg_id,
+		from: message.from,
+		...(message.from_machine == null ? {} : { from_machine: message.from_machine }),
+		to: message.to,
+		body: message.body,
+	};
+}
+
+/** How a message's sender is shown: `seat@machine` when the daemon stamped the paired
+ *  machine it was forwarded from, so a remote seat never reads as a local one (plan 164 S7). */
+function senderLabel(message) {
+	return message.from_machine === undefined
+		? message.from
+		: `${message.from}@${message.from_machine}`;
 }
 
 function sameMessage(left, right) {
 	return (
 		left?.msg_id === right.msg_id &&
 		left.from === right.from &&
+		left.from_machine === right.from_machine &&
 		left.to === right.to &&
 		left.body === right.body
 	);
@@ -1246,7 +1262,7 @@ export class NativeBridge {
 				throw new NativeError(
 					"Native discard recovery received malformed queue snapshot; receiving held",
 				);
-			const prefix = `[pij from ${JSON.stringify(message.from)}; msg_id=${JSON.stringify(message.msg_id)}]\n`;
+			const prefix = `[pij from ${JSON.stringify(senderLabel(message))}; msg_id=${JSON.stringify(message.msg_id)}]\n`;
 			if (
 				pending.items.some(
 					(item) => item.id === completion.nativeId || item.displayText.startsWith(prefix),
@@ -1308,7 +1324,7 @@ export class NativeBridge {
 	async enqueue(message, completion) {
 		const signal = this.receiverController.signal;
 		throwIfStopped(signal);
-		const prompt = `[pij from ${JSON.stringify(message.from)}; msg_id=${JSON.stringify(message.msg_id)}]\n${message.body}`;
+		const prompt = `[pij from ${JSON.stringify(senderLabel(message))}; msg_id=${JSON.stringify(message.msg_id)}]\n${message.body}`;
 		this.completion = completion;
 		const nativeId = await this.nativeRpc("native.send", () =>
 			this.native.send({ prompt, mode: "immediate" }),

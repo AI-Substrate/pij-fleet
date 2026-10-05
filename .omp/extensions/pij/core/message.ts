@@ -8,9 +8,17 @@ import type { ReceiptState, Role, SessionId } from "./types.js";
 const FRAME_RE = /^\[pij-rs from ([^\]]+)\]\n([\s\S]*)\n\[\/pij\]$/;
 const LEGACY_FRAME_RE = /^\[pij from ([^\]]+)\] ([\s\S]*)$/;
 
-/** Frame a body with the sender id for injection into the peer. */
-export function frame(from: SessionId, body: string): string {
-	return `[pij-rs from ${from}]\n${body}\n[/pij]`;
+/** How a message's sender is shown: `seat@machine` when the daemon stamped the
+ *  paired machine it was forwarded from, so a remote seat never reads as a local
+ *  one; the bare seat id only for a local message (plan 164 S7). */
+export function senderLabel(from: SessionId, fromMachine?: string): string {
+	return fromMachine === undefined ? from : `${from}@${fromMachine}`;
+}
+
+/** Frame a body with the sender for injection into the peer; byte-for-byte the
+ *  daemon's `frame_message` (crates/core/src/framing.rs). */
+export function frame(from: SessionId, body: string, fromMachine?: string): string {
+	return `[pij-rs from ${senderLabel(from, fromMachine)}]\n${body}\n[/pij]`;
 }
 
 /** Parse a canonical or legacy message into { from, body }, or null if unframed. */

@@ -10,7 +10,7 @@ import {
 import { memorableIdentitySeed } from "../core/discovery.js";
 import { buildCallerContext } from "../core/generation-routing.js";
 import { memorablePijIdCandidates } from "../core/memorable-id.js";
-import { frame, parseFrame } from "../core/message.js";
+import { frame, parseFrame, senderLabel } from "../core/message.js";
 import type { ModelEntry } from "../core/models/registry.js";
 import type {
 	DeliveryPort,
@@ -623,7 +623,9 @@ export class RustRuntimeSession {
 		if (!pending || pending.lifecycle !== this.lifecycle || pending.seat !== this.self) return;
 		if (!pending.consumed) {
 			pending.consumed = true;
-			this.lastInbound.set(pending.claim.message.from, pending.claim.message.messageId);
+			// Keyed by the shown sender: a local reply to `w3` never threads onto `w3@laptop`.
+			const { from, fromMachine, messageId } = pending.claim.message;
+			this.lastInbound.set(senderLabel(from, fromMachine), messageId);
 		}
 		this.showMailStatus();
 		await this.ackConsumed(pending);
@@ -918,7 +920,8 @@ export class RustRuntimeSession {
 		const body = claim.message.body ?? "";
 		const shown =
 			body.length > ANNOUNCE_BODY_CHARS ? `${body.slice(0, ANNOUNCE_BODY_CHARS)}…` : body;
-		this.pi.notify?.(`📨 pij from ${claim.message.from}: ${shown}`, "info");
+		const sender = senderLabel(claim.message.from, claim.message.fromMachine);
+		this.pi.notify?.(`📨 pij from ${sender}: ${shown}`, "info");
 	}
 
 	private showMailStatus(): void {
@@ -1106,7 +1109,12 @@ export class RustRuntimeSession {
 		});
 		this.showMailStatus();
 		try {
-			this.pi.inject(frame(message.from, message.body), "immediate", message.messageId, attempt);
+			this.pi.inject(
+				frame(message.from, message.body, message.fromMachine),
+				"immediate",
+				message.messageId,
+				attempt,
+			);
 		} catch (error) {
 			this.session.capture("daemon_event_error", {
 				message: error instanceof Error ? error.message : String(error),
@@ -1383,6 +1391,7 @@ function pushedMessageValue(value: unknown, to: string, label: string): InboxCla
 	return {
 		messageId: record.msg_id,
 		from: record.from,
+		...(typeof record.from_machine === "string" ? { fromMachine: record.from_machine } : {}),
 		to,
 		body: record.body,
 		...(typeof record.command === "string" ? { command: record.command } : {}),

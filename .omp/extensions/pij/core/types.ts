@@ -529,6 +529,9 @@ export interface EventQuery {
 /** A message as it travels to a peer's delivery channel. */
 export interface PijMessage {
 	readonly from: SessionId;
+	/** The paired machine a forwarded message came from (daemon `from_machine`);
+	 *  absent for a local message. Render the sender with `senderLabel`. */
+	readonly fromMachine?: string;
 	readonly to: SessionId;
 	readonly body: string;
 	/** Present when this is a remote command rather than free text. */

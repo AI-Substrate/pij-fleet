@@ -9,7 +9,7 @@
 
 import { type ControlCommand, isControlCommand, validateCommand } from "./commands.js";
 import { buildEvent } from "./events.js";
-import { announceText, frame, receiptBody } from "./message.js";
+import { announceText, frame, receiptBody, senderLabel } from "./message.js";
 import type { ModelEntry } from "./models/registry.js";
 import type {
 	DeliveryPort,
@@ -551,12 +551,13 @@ export class PijSession {
 	 *  command (validate -> compact), or free text (frame + idle/steer inject +
 	 *  emit a delivery receipt). Native consumers opt in to per-envelope runtime metadata. */
 	onInbound(msg: PijMessage, messageId: string, trackConsumption = false): InboundResult {
+		const sender = senderLabel(msg.from, msg.fromMachine);
 		// A receipt acknowledges OUR earlier outbound — record it so the sender
 		// sees it via tail/state, but NEVER inject it (don't wake/bill the peer).
 		if (msg.kind === "receipt") {
 			this.capture("receipt", {
 				messageId,
-				from: msg.from,
+				from: sender,
 				body: msg.body,
 				source: "extension",
 			});
@@ -597,7 +598,7 @@ export class PijSession {
 			// the message must ask it to RELAY to its human operator (D-042).
 			this.pendingControl.push(v.value);
 			this.ports.pi.inject(
-				`[pij] Peer ${msg.from} asked this session to /${v.value}, but pij is not armed yet. You cannot run a slash command yourself — please ask your human operator to run /pij once in this session to apply it (that also arms reload/new from peers for the rest of this session).`,
+				`[pij] Peer ${sender} asked this session to /${v.value}, but pij is not armed yet. You cannot run a slash command yourself — please ask your human operator to run /pij once in this session to apply it (that also arms reload/new from peers for the rest of this session).`,
 				this.ports.pi.isIdle() ? "immediate" : "steer",
 			);
 			this.capture("receipt", { messageId, command: v.value, deferred: true });
@@ -608,13 +609,13 @@ export class PijSession {
 		// reply needs no lookup (AC-5), inject, and emit the first receipt.
 		const idle = this.ports.pi.isIdle();
 		this.ports.pi.inject(
-			frame(msg.from, msg.body),
+			frame(msg.from, msg.body, msg.fromMachine),
 			idle ? "immediate" : "steer",
 			trackConsumption ? messageId : undefined,
 		);
 		const atIso = this.nowIso();
 		const state = classifyOnInject(idle);
-		const receipt = initialReceipt(messageId, this.self, msg.from, idle, atIso);
+		const receipt = initialReceipt(messageId, this.self, sender, idle, atIso);
 		this.emitReceipt(receipt);
 		if (!idle) {
 			this.pending.push({ injectIso: atIso, receipt });
