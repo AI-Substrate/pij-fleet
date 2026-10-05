@@ -499,7 +499,16 @@ impl FederationService {
                 self.retry_claim(job_id, job.attempt, &request).await
             }
             Ok(envelope) if !envelope.ok => {
-                let reason = refusal_reason(&envelope);
+                // The peer's own auth prose speaks to ITS local clients; the
+                // sender needs to hear that the pairing itself failed.
+                let reason = if envelope.error == Some(ErrorKind::Auth) {
+                    format!(
+                        "peer `{alias}` refused this machine's pairing key ({}); its peers.toml may no longer pair with this machine — run `pij-rs peers check`",
+                        refusal_reason(&envelope)
+                    )
+                } else {
+                    refusal_reason(&envelope)
+                };
                 self.refuse_claim(job_id, &request, reason, envelope.details)
                     .await?;
                 Ok(WorkerStep::Refused)
