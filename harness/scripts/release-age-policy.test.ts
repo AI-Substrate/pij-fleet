@@ -16,6 +16,7 @@ import {
 	MIN_NPM_VERSION_FOR_QUARANTINE,
 	MIN_RELEASE_AGE_DAYS,
 	NPM_PREFER_ONLINE,
+	NPM_REGISTRY_OVERRIDE_ENV,
 	NPM_REGISTRY_URL,
 	NPM_REPLACE_REGISTRY_HOST,
 	npmRegistryUrl,
@@ -221,7 +222,8 @@ describe("npm resolution policy", () => {
 				cwd: PIJ_ROOT,
 				encoding: "utf8",
 				env: {
-					...process.env,
+					// The machine's own registry override would leak into the expectation below.
+					...withoutRegistryOverride(process.env),
 					NPM_CONFIG_REGISTRY: "https://caller.invalid/",
 					NPM_CONFIG_REPLACE_REGISTRY_HOST: "never",
 					NPM_CONFIG_PREFER_ONLINE: "false",
@@ -326,3 +328,8 @@ describe("npm resolution policy", () => {
 		expect(invalid.stdout).toContain("run npm link from the local main checkout");
 	});
 });
+
+function withoutRegistryOverride(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const { [NPM_REGISTRY_OVERRIDE_ENV]: _override, ...rest } = env;
+	return rest;
+}
