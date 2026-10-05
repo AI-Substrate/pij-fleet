@@ -111,8 +111,8 @@ if (!process.env.PIJ_NATIVE_MEMORY_CHILD) {
 			registration,
 			native,
 			journal: {
-				async load(id) {
-					return record?.message.msg_id === id ? record : undefined;
+				async load(message) {
+					return record?.message.msg_id === message.msg_id ? record : undefined;
 				},
 				async begin(message) {
 					record = { state: "pending", message };
@@ -316,8 +316,8 @@ if (!process.env.PIJ_NATIVE_MEMORY_CHILD) {
 			registration,
 			native,
 			journal: {
-				async load(id) {
-					assert.equal(id, message.msg_id);
+				async load(loaded) {
+					assert.equal(loaded.msg_id, message.msg_id);
 					return record;
 				},
 				async begin() {

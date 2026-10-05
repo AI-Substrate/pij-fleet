@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -102,8 +103,8 @@ function fixture(overrides = {}) {
 	let observer;
 	let claims = 0;
 	const journal = {
-		async load(id) {
-			return records.get(id);
+		async load(message) {
+			return records.get(message.msg_id);
 		},
 		async begin(message) {
 			trace.push("intent");
@@ -717,11 +718,11 @@ test("native discard recovery: concurrent journal rearm preserves one exclusive 
 		second.rearm(claim.message, "discarded-native"),
 	]);
 	assert.deepEqual(winners.sort(), [false, true]);
-	assert.equal((await first.load(claim.message.msg_id)).state, "pending");
+	assert.equal((await first.load(claim.message)).state, "pending");
 	assert.equal(await second.begin(claim.message), false);
 	await first.accept(claim.message, "recovered-native");
 	assert.equal(await second.rearm(claim.message, "discarded-native"), false);
-	assert.equal((await second.load(claim.message.msg_id)).nativeId, "recovered-native");
+	assert.equal((await second.load(claim.message)).nativeId, "recovered-native");
 });
 
 test("native consumption: accepted send stays unacknowledged until matching user message", async (t) => {
@@ -1067,6 +1068,76 @@ for (const [machine, sender] of [
 		assert.equal(f.records.get(claim.message.msg_id).message.from_machine, machine);
 	});
 }
+
+// Plan 164 F02: identity is (origin machine, msg_id); a forwarded `X` is not the local `X`.
+test("real journal keeps a local and a forwarded message with the same msg_id apart", async (t) => {
+	const home = await mkdtemp(join(tmpdir(), "pij-native-origin-"));
+	t.after(() => rm(home, { recursive: true, force: true }));
+	const journal = new FileJournal(home, registration);
+	const drained = deferred();
+	const reports = [];
+	const f = fixture({
+		journal,
+		delay: () => flush(),
+		report: (event) => {
+			reports.push(event);
+			if (event.kind === "receive-held") drained.resolve();
+		},
+	});
+	t.after(() => f.bridge.stop());
+	const local = { ...claim, job_id: 1 };
+	const forwarded = {
+		...claim,
+		job_id: 2,
+		message: { ...claim.message, from_machine: "laptop", body: "from the laptop" },
+	};
+	const repeat = { ...forwarded, job_id: 3 };
+	const queue = [local, forwarded, repeat];
+	f.client.claimInbox = async (_consumer, signal) => {
+		const next = queue.shift();
+		if (next) return { claims: [next], hold: null };
+		drained.resolve();
+		return new Promise((resolve) =>
+			signal.addEventListener("abort", () => resolve({ claims: [], hold: null }), { once: true }),
+		);
+	};
+	const acks = [];
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path !== "/v1/inbox/ack") return request(path, body, signal);
+		acks.push(body.job_id);
+		return body.job_id;
+	};
+	const prompts = [];
+	f.native.send = async (input) => {
+		const n = prompts.push(input.prompt);
+		f.history.push(
+			{ type: "user.message", id: `user-${n}`, data: { messageId: `native-${n}` } },
+			{ type: "assistant.message", id: `answer-${n}`, parentId: `user-${n}`, data: {} },
+			{ type: "assistant.turn_end", id: `end-${n}`, parentId: `answer-${n}`, data: {} },
+		);
+		return `native-${n}`;
+	};
+	const run = f.bridge.run();
+	await drained.promise;
+	f.bridge.stop();
+	await run;
+	assert.deepEqual(
+		reports.filter((event) => event.kind === "receive-held").map((event) => event.diagnostic),
+		[],
+	);
+	assert.deepEqual(prompts, [
+		`[pij from "pij-peer"; msg_id="message-137"]\n${claim.message.body}`,
+		`[pij from "pij-peer@laptop"; msg_id="message-137"]\nfrom the laptop`,
+	]);
+	assert.deepEqual(acks, [1, 2, 3], "the exact forwarded repeat is the same message");
+	assert.equal((await journal.load(local.message)).nativeId, "native-1");
+	assert.equal((await journal.load(forwarded.message)).nativeId, "native-2");
+	// A local record stays where it was before origin keys existed.
+	const legacyName = `${createHash("sha256").update(claim.message.msg_id).digest("hex")}.json`;
+	assert.equal(journal.path(local.message), join(journal.directory, legacyName));
+	assert.ok(journal.path(forwarded.message).startsWith(join(journal.directory, "peers")));
+});
 
 test("busy native turn consumes immediate steering and journals its returned message ID", async (t) => {
 	const f = fixture({ delay: () => flush() });
@@ -1766,11 +1837,8 @@ test("same-process A to B to A restores the retired native address and accepted 
 		new AbortController().signal,
 	);
 	assert.notEqual(reopened.id, next.id);
-	assert.equal(
-		(await new FileJournal(home, reopened).load(message.msg_id)).nativeId,
-		"old-acceptance",
-	);
-	assert.equal((await oldJournal.load(message.msg_id)).nativeId, "old-acceptance");
+	assert.equal((await new FileJournal(home, reopened).load(message)).nativeId, "old-acceptance");
+	assert.equal((await oldJournal.load(message)).nativeId, "old-acceptance");
 	const reopenedSeat = { ...firstSeat, id: reopened.id };
 	assert.equal(
 		chooseRegistration({
@@ -1893,12 +1961,12 @@ test("fresh verified spawn keeps its allocated identity and journal separate fro
 	assert.equal(selected.parent, prebind.parent);
 	assert.equal(selected.supersedes, undefined);
 	const spawnedJournal = new FileJournal(home, selected);
-	assert.equal(await spawnedJournal.load(savedMessage.msg_id), undefined);
+	assert.equal(await spawnedJournal.load(savedMessage), undefined);
 	const spawnedMessage = { ...savedMessage, to: prebind.id };
 	assert.equal(await spawnedJournal.begin(spawnedMessage), true);
 	await spawnedJournal.accept(spawnedMessage, "spawned-acceptance");
-	assert.equal((await savedJournal.load(savedMessage.msg_id)).nativeId, "saved-acceptance");
-	assert.equal((await spawnedJournal.load(spawnedMessage.msg_id)).nativeId, "spawned-acceptance");
+	assert.equal((await savedJournal.load(savedMessage)).nativeId, "saved-acceptance");
+	assert.equal((await spawnedJournal.load(spawnedMessage)).nativeId, "spawned-acceptance");
 });
 
 test("verified spawn with a compatible saved session retains the allocated parent", () => {
@@ -2089,16 +2157,16 @@ test("real filesystem journal survives restart and hashes opaque ids with privat
 	assert.equal(await new FileJournal(home, resumed).begin(message), false);
 	await journal.accept(message, "native-durable");
 	const restarted = new FileJournal(home, resumed);
-	assert.equal((await restarted.load(message.msg_id)).nativeId, "native-durable");
+	assert.equal((await restarted.load(message)).nativeId, "native-durable");
 	assert.equal((await stat(journal.directory)).mode & 0o777, 0o700);
-	assert.equal((await stat(journal.path(message.msg_id))).mode & 0o777, 0o600);
-	assert.ok(journal.path(message.msg_id).startsWith(journal.directory));
+	assert.equal((await stat(journal.path(message))).mode & 0o777, 0o600);
+	assert.ok(journal.path(message).startsWith(journal.directory));
 	const next = new FileJournal(home, { ...registration, harness_session: "different" });
-	assert.equal(await next.load(message.msg_id), undefined);
+	assert.equal(await next.load(message), undefined);
 	assert.equal(await next.begin(message), true);
 	const otherSeat = new FileJournal(home, { ...resumed, id: "different-seat" });
-	assert.equal(await otherSeat.load(message.msg_id), undefined);
-	assert.match(await readFile(journal.path(message.msg_id), "utf8"), /native-durable/);
+	assert.equal(await otherSeat.load(message), undefined);
+	assert.match(await readFile(journal.path(message), "utf8"), /native-durable/);
 });
 
 test("real chooseRegistration and filesystem preserve accepted-before-ack across changed host", {
@@ -2135,7 +2203,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 		}
 		if (path === "/v1/inbox/ack") {
 			failedAcks++;
-			assert.equal((await journal.load(claim.message.msg_id)).state, "accepted");
+			assert.equal((await journal.load(claim.message)).state, "accepted");
 			first.bridge.stop();
 			throw new Error("Process stopped after durable acceptance before daemon acknowledgement");
 		}
@@ -2221,7 +2289,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 		seats: [registered],
 	});
 	assert.notEqual(fresh.id, selected.id);
-	assert.equal(await new FileJournal(home, fresh).load(queued.message.msg_id), undefined);
+	assert.equal(await new FileJournal(home, fresh).load(queued.message), undefined);
 });
 
 test("HTTP client reloads key on every request, binds tuple, keeps bounded non-JSON diagnostic", async () => {

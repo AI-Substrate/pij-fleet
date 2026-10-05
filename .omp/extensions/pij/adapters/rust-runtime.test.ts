@@ -1893,17 +1893,49 @@ describe("extension-stream delivery", () => {
 		expect(client.parks).toEqual([]);
 	});
 
-	// Plan 164 S7: a forwarded message's resend keeps naming its machine.
+	// Plan 164 S7/F02: a forwarded message's resend names its machine, and its marker
+	// acknowledges exactly that message when consumed.
 	it.each([
 		{ machine: "laptop", sender: "pij-sender@laptop" },
 		{ machine: undefined, sender: "pij-sender" },
 	])("resend frames the sender as $sender", async ({ machine, sender }) => {
-		const { client, api } = await startSwallowing();
+		const { runtime, client, api } = await startSwallowing();
 		await client.push(message("swallowed", machine === undefined ? {} : { from_machine: machine }));
 		await vi.advanceTimersByTimeAsync(10_000);
-		expect(api.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
-			`[pij resend 1]\n[pijMessageId:swallowed]\n[pij-rs from ${sender}]\nswallowed\n[/pij]`,
-		);
+		expect(api.sendUserMessage).toHaveBeenCalledOnce();
+		const resent = String(api.sendUserMessage.mock.calls[0]?.[0]);
+		expect(resent).toMatch(/^\[pij resend 1\]\n\[pijMessageId:[^\]]+\]\n/);
+		expect(resent.endsWith(`\n[pij-rs from ${sender}]\nswallowed\n[/pij]`)).toBe(true);
+		await runtime.onMessageStart({ role: "user", content: resent });
+		expect(client.acks).toEqual([1]);
+	});
+
+	// Plan 164 F02: identity is (origin machine, msg_id); a forwarded `X` is not the local `X`.
+	it("a parked local message never suppresses a forwarded one with the same msg_id", async () => {
+		const { client, api } = await startSwallowing();
+		await client.push(message("X"));
+		expect(api.sendMessage).toHaveBeenCalledOnce();
+		await client.park(1, "undelivered:lease-exhausted");
+		await client.push(message("X", { from_machine: "laptop", body: "from the laptop" }));
+		expect(api.sendMessage).toHaveBeenCalledTimes(2);
+		expect(api.sendMessage.mock.calls[1]?.[0]).toMatchObject({
+			content: "[pij-rs from pij-sender@laptop]\nfrom the laptop\n[/pij]",
+		});
+	});
+
+	it("a local message's consumption marker never acknowledges a forwarded one with the same msg_id", async () => {
+		const { runtime, client, api } = await startSwallowing();
+		const consumed = (details: unknown) =>
+			runtime.onMessageStart({ role: "custom", customType: "pij", details });
+		await client.push(message("X"));
+		await consumed(api.sendMessage.mock.calls[0]?.[0].details);
+		expect(client.acks).toEqual([1]);
+		await client.push(message("X", { from_machine: "laptop" }));
+		expect(api.sendMessage).toHaveBeenCalledTimes(2);
+		await consumed(api.sendMessage.mock.calls[0]?.[0].details); // a late echo of the local one
+		expect(client.acks).toEqual([1]);
+		await consumed(api.sendMessage.mock.calls[1]?.[0].details);
+		expect(client.acks).toEqual([1, 2]);
 	});
 
 	it("resets the resend idle window on every turn start without treating a turn as consumption", async () => {
