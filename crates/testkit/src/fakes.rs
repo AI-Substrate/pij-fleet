@@ -1268,7 +1268,8 @@ impl Queue for FakeQueue {
             .expect("fake queue mutex")
             .fyis
             .iter()
-            .any(|(held, _)| held.id == fyi.id)
+            // Identity is (origin machine, msg_id), as in the store.
+            .any(|(held, _)| held.id == fyi.id && held.from_machine == fyi.from_machine)
         {
             return Ok(Vec::new());
         }

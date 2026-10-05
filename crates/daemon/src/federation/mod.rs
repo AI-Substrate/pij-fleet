@@ -268,17 +268,31 @@ impl FederationService {
         let peers = PeerTable::new(&local_alias, definitions)?;
         // A TOTAL timeout. reqwest has NONE by default, so a stalled peer cannot
         // hold a queue claim forever. Comfortably under the default lease.
+        //
+        // `no_proxy` on BOTH clients (review S4): every request carries a pair's
+        // bearer key, and reqwest otherwise hands it to whatever HTTP(S)_PROXY
+        // the daemon inherited. A peer is reached directly or not at all. There
+        // is deliberately no `Client::new()` fallback: that one reads the proxy
+        // environment again.
         let client = reqwest::Client::builder()
+            .no_proxy()
             .timeout(Duration::from_secs(30))
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .map_err(|error| {
+                PeerConfigError::InvalidPolicy(format!("could not build the peer client: {error}"))
+            })?;
         // A stream is intentionally unbounded in duration. A total request
         // timeout would kill every healthy peer stream after 30 seconds, so it
         // gets a connect timeout only; reconnect owns later failures.
         let stream_client = reqwest::Client::builder()
+            .no_proxy()
             .connect_timeout(Duration::from_secs(30))
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .map_err(|error| {
+                PeerConfigError::InvalidPolicy(format!(
+                    "could not build the peer stream client: {error}"
+                ))
+            })?;
         let fanin = Arc::new(FanInService::new(
             peers
                 .endpoints()

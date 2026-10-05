@@ -62,10 +62,27 @@ pub struct HeldFyi {
     pub recipient: SeatId,
     /// Who sent it.
     pub sender: SeatId,
+    /// The paired machine the sender is on, for an FYI forwarded from another
+    /// daemon (plan 164); `None` for a local sender. Part of the FYI's identity:
+    /// `(from_machine, id)` is unique, so a forwarded FYI never collides with a
+    /// local one that shares its msg_id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_machine: Option<String>,
     /// What it says.
     pub body: String,
     /// When it was held, in epoch ms.
     pub held_at_ms: u64,
+}
+
+impl HeldFyi {
+    /// The sender as every rendering shows it: `seat@machine` when forwarded
+    /// from a paired machine, so a remote FYI can never pass for a local seat.
+    pub fn sender_label(&self) -> String {
+        match &self.from_machine {
+            Some(machine) => format!("{}@{machine}", self.sender),
+            None => self.sender.to_string(),
+        }
+    }
 }
 
 /// Render the block for `fyis`, oldest first, at `utc_offset_minutes` local time.
@@ -126,20 +143,26 @@ pub fn render_read(fyis: &[HeldFyi], utc_offset_minutes: i32) -> String {
 
 fn oldest_first(fyis: &[HeldFyi]) -> Vec<&HeldFyi> {
     let mut ordered: Vec<&HeldFyi> = fyis.iter().collect();
-    ordered.sort_by(|a, b| a.held_at_ms.cmp(&b.held_at_ms).then(a.id.cmp(&b.id)));
+    ordered.sort_by(|a, b| {
+        a.held_at_ms
+            .cmp(&b.held_at_ms)
+            .then(a.id.cmp(&b.id))
+            .then(a.from_machine.cmp(&b.from_machine))
+    });
     ordered
 }
 
 /// `6 from pij-x, 2 from pij-y`: most first, then by name.
 fn per_sender(ordered: &[&HeldFyi]) -> String {
-    let mut counts: Vec<(&SeatId, usize)> = Vec::new();
+    let mut counts: Vec<(String, usize)> = Vec::new();
     for fyi in ordered {
-        match counts.iter_mut().find(|(sender, _)| *sender == &fyi.sender) {
+        let label = fyi.sender_label();
+        match counts.iter_mut().find(|(sender, _)| *sender == label) {
             Some((_, count)) => *count += 1,
-            None => counts.push((&fyi.sender, 1)),
+            None => counts.push((label, 1)),
         }
     }
-    counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.0.cmp(&b.0.0)));
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     counts
         .iter()
         .map(|(sender, count)| format!("{count} from {sender}"))
@@ -154,7 +177,7 @@ fn push_numbered(block: &mut String, fyis: &[&HeldFyi], skipped: usize, utc_offs
         block.push_str(&format!(
             "\n{}. [from {}, {}] {}",
             skipped + index + 1,
-            fyi.sender,
+            fyi.sender_label(),
             clock_hh_mm(fyi.held_at_ms, utc_offset_minutes),
             lines.next().unwrap_or_default()
         ));
@@ -193,12 +216,17 @@ fn fyi_event(kind: &str, recipient: &SeatId, at: u64, payload: serde_json::Value
 
 /// The `fyi.held` fact. The body stays in the store, not on the spine.
 pub fn held_event(fyi: &HeldFyi) -> Event {
-    fyi_event(
-        "fyi.held",
-        &fyi.recipient,
-        fyi.held_at_ms,
-        serde_json::json!({"id": fyi.id, "sender": fyi.sender, "held_at_ms": fyi.held_at_ms}),
-    )
+    fyi_event("fyi.held", &fyi.recipient, fyi.held_at_ms, {
+        let mut payload = serde_json::json!({
+            "id": fyi.id,
+            "sender": fyi.sender,
+            "held_at_ms": fyi.held_at_ms,
+        });
+        if let Some(machine) = &fyi.from_machine {
+            payload["from_machine"] = machine.as_str().into();
+        }
+        payload
+    })
 }
 
 /// The `fyi.delivered` receipt for one atomic claim.
@@ -220,6 +248,7 @@ mod tests {
             id: id.to_string(),
             recipient: SeatId("pij-r".to_string()),
             sender: SeatId(sender.to_string()),
+            from_machine: None,
             body: body.to_string(),
             held_at_ms,
         }

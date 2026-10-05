@@ -131,6 +131,7 @@ async fn fyi_contract(queue: &dyn Queue, spine: &dyn pij_core::ports::Spine) {
         id: id.to_string(),
         recipient: to.clone(),
         sender: SeatId::from("pij-sender"),
+        from_machine: None,
         body: format!("body {id}"),
         held_at_ms: at,
     };

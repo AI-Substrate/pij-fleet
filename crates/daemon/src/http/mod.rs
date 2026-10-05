@@ -179,10 +179,13 @@ enum Endpoint {
     Node,
     Orchestration,
     Spine,
+    /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
+    /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
+    BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 48] = [
+    const ALL: [Self; 49] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -231,6 +234,7 @@ impl Endpoint {
         Self::Node,
         Self::Orchestration,
         Self::Spine,
+        Self::BackgroundEmit,
     ];
 
     const fn path(self) -> &'static str {
@@ -278,6 +282,7 @@ impl Endpoint {
             Self::Node => "/v1/node",
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
+            Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
             // unknown fields, so the additive shape would have an older daemon
@@ -324,7 +329,8 @@ impl Endpoint {
             | Self::Task
             | Self::Node
             | Self::Orchestration
-            | Self::Spine => Method::POST,
+            | Self::Spine
+            | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
             }
@@ -335,6 +341,15 @@ impl Endpoint {
             | Self::Seats
             | Self::Events
             | Self::ShimSessions => Method::GET,
+        }
+    }
+
+    /// Which credential guards this route. Every route is behind the bearer
+    /// ring except the per-job-token hook, the one named exception.
+    const fn auth(self) -> RouteAuth {
+        match self {
+            Self::BackgroundEmit => RouteAuth::JobToken,
+            _ => RouteAuth::Bearer,
         }
     }
 
@@ -352,6 +367,15 @@ impl Endpoint {
             _ => PeerAccess::Refused,
         }
     }
+}
+
+/// The credential a route checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RouteAuth {
+    /// The bearer ring (local key, or a paired machine's key under scope).
+    Bearer,
+    /// A per-job secret minted for one background job; no daemon or peer key.
+    JobToken,
 }
 
 /// The answer [`Endpoint::peer_access`] gives for one method on one route.
@@ -489,6 +513,7 @@ fn router_with_optional_federation(
         registration,
     };
     let mut router = Router::new();
+    let mut job_token_routes = Vec::new();
     for endpoint in Endpoint::ALL {
         debug_assert_eq!(
             endpoint.method(),
@@ -535,6 +560,7 @@ fn router_with_optional_federation(
                     | Endpoint::Node
                     | Endpoint::Orchestration
                     | Endpoint::Spine
+                    | Endpoint::BackgroundEmit
             ) {
                 Method::POST
             } else {
@@ -607,17 +633,28 @@ fn router_with_optional_federation(
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),
             Endpoint::ShimInboxAck => router.route(endpoint.path(), post(shim::shim_inbox_ack)),
             Endpoint::ShimSessions => router.route(endpoint.path(), get(shim::shim_sessions)),
+            // Collected apart and merged after the bearer layer: its credential
+            // is its own per-job token (plan 163), never a daemon or peer key.
+            Endpoint::BackgroundEmit => {
+                job_token_routes.push((endpoint.path(), post(background::emit)));
+                router
+            }
         };
+        debug_assert_eq!(
+            endpoint.auth() == RouteAuth::JobToken,
+            matches!(endpoint, Endpoint::BackgroundEmit)
+        );
     }
-    router
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            require_bearer,
-        ))
-        // Added after the layer on purpose: the event hook's credential is its
-        // own per-job token (Plan 163), never the daemon key.
-        .route(background::EMIT_PATH, post(background::emit))
-        .with_state(state)
+    let mut router = router.layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        require_bearer,
+    ));
+    // Routed AFTER the layer (not merged: a merge would drop the bearer layer
+    // from the fallback, turning a keyless 401 for an unknown path into a 404).
+    for (path, method_router) in job_token_routes {
+        router = router.route(path, method_router);
+    }
+    router.with_state(state)
 }
 
 async fn require_bearer(

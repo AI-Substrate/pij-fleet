@@ -48,8 +48,14 @@ pub enum PairingError {
     Mode(PathBuf, u32),
     /// Owned by a different user than the daemon's.
     Owner(PathBuf, u32, u32),
-    /// Not valid TOML, or not the documented shape.
-    Malformed(String),
+    /// Not valid TOML, or not the documented shape. Carries WHERE, never a
+    /// value: a key typed into the wrong shape must not reach a log (review S6).
+    Malformed {
+        /// 1-based line of the problem, when the parser could place it.
+        line: Option<usize>,
+        /// The key or table name on that line, when there is one.
+        field: Option<String>,
+    },
     /// An alias is empty or uses characters outside `[A-Za-z0-9._-]`.
     BadAlias(String),
     /// A peer uses this machine's own alias.
@@ -80,7 +86,20 @@ impl fmt::Display for PairingError {
                 "{} is owned by uid {owner}, not the daemon's uid {expected}; refusing keys another user could have written",
                 path.display()
             ),
-            Self::Malformed(error) => write!(formatter, "peers.toml is malformed: {error}"),
+            Self::Malformed { line, field } => {
+                let line = line.map_or_else(
+                    || "an unknown line".to_string(),
+                    |line| format!("line {line}"),
+                );
+                let field = field
+                    .as_deref()
+                    .map(|field| format!(" (`{field}`)"))
+                    .unwrap_or_default();
+                write!(
+                    formatter,
+                    "peers.toml is malformed at {line}{field}: expected `machine = \"<alias>\"` and [[peer]] tables of alias, url and key strings (values are never shown)"
+                )
+            }
             Self::BadAlias(alias) => write!(
                 formatter,
                 "alias `{alias}` must be non-empty and use only letters, digits, `.`, `_` and `-`"
@@ -148,14 +167,37 @@ fn check_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Where a parse error is, without what is there: the parser's own message
+/// can quote the offending value, which may be a key.
+fn malformed(text: &str, error: &toml::de::Error) -> PairingError {
+    let line = error
+        .span()
+        .map(|span| text[..span.start.min(text.len())].matches('\n').count() + 1);
+    let field = line
+        .and_then(|line| text.lines().nth(line - 1))
+        .and_then(field_name);
+    PairingError::Malformed { line, field }
+}
+
+/// The key (`name = …`) or table (`[[name]]`) a line names, if it is a plain
+/// identifier. Anything else on the line is a value and is never returned.
+fn field_name(line: &str) -> Option<String> {
+    let line = line.trim();
+    let name = match line.strip_prefix('[') {
+        Some(table) => table.trim_start_matches('[').split(']').next()?,
+        None => line.split('=').next()?,
+    }
+    .trim();
+    valid_alias(name).then(|| name.to_string())
+}
+
 /// Parse and validate the file's text.
 ///
 /// # Errors
 /// Malformed TOML, bad or duplicate aliases, a self alias, a bad URL, a short
 /// key, or two peers sharing a key.
 pub fn parse(text: &str) -> Result<Pairing, PairingError> {
-    let file: PairingFile = toml::from_str(text)
-        .map_err(|error| PairingError::Malformed(error.message().to_string()))?;
+    let file: PairingFile = toml::from_str(text).map_err(|error| malformed(text, &error))?;
     if !valid_alias(&file.machine) {
         return Err(PairingError::BadAlias(file.machine));
     }
@@ -344,7 +386,7 @@ mod tests {
         ));
         assert!(matches!(
             parse("machine = \"m\"\nsecret = 1\n"),
-            Err(PairingError::Malformed(_))
+            Err(PairingError::Malformed { .. })
         ));
     }
 

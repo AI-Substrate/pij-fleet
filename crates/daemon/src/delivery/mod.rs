@@ -728,6 +728,7 @@ impl DeliveryService {
             id: msg.msg_id.clone(),
             recipient: msg.to,
             sender: msg.from,
+            from_machine: msg.from_machine,
             body: msg.body,
             held_at_ms: at,
         };

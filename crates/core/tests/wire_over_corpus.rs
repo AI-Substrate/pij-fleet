@@ -144,6 +144,7 @@ fn plan_158_event_kinds_are_known() {
             id: "m-1".to_string(),
             recipient: "pij-seat".into(),
             sender: "pij-sender".into(),
+            from_machine: None,
             body: "note".to_string(),
             held_at_ms: 1,
         }),

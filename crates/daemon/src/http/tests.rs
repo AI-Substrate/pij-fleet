@@ -2403,7 +2403,11 @@ async fn auth_ring_covers_every_declared_route_and_scopes_peer_keys() {
     .await;
     let client = reqwest::Client::new();
 
-    for endpoint in Endpoint::ALL {
+    // The per-job-token hook is the named exception; the scope walk covers it.
+    for endpoint in Endpoint::ALL
+        .into_iter()
+        .filter(|endpoint| endpoint.auth() == RouteAuth::Bearer)
+    {
         for key in [None, Some("unpaired-secret")] {
             let mut request = client.request(
                 endpoint.method(),
@@ -7534,6 +7538,7 @@ async fn a_turn_boundary_never_flushes_even_when_warm() {
             id: format!("f-{n}"),
             recipient: SeatId::from("pij-cold"),
             sender: SeatId::from("pij-sender"),
+            from_machine: None,
             body: format!("note {n}"),
             held_at_ms: n,
         };

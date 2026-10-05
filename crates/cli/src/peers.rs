@@ -60,10 +60,21 @@ pub async fn check(state_dir: &Path, euid: u32) -> Envelope<PeersReport> {
         }
         Err(error) => return Envelope::refused(COMMAND, ErrorKind::Refused, error.to_string()),
     };
-    let client = reqwest::Client::builder()
+    // Direct only, like the daemon's own peer client: a proxy would see the key.
+    let client = match reqwest::Client::builder()
+        .no_proxy()
         .timeout(PEER_CHECK_TIMEOUT)
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return Envelope::refused(
+                COMMAND,
+                ErrorKind::Adapter,
+                format!("could not build the peer client: {error}"),
+            );
+        }
+    };
     let mut rows = Vec::with_capacity(pairing.peers.len());
     for peer in &pairing.peers {
         let (status, seats) = reach(&client, &peer.alias, &peer.url, &peer.key).await;
@@ -128,12 +139,20 @@ async fn reach(
     }
     let body: serde_json::Value = match response.json().await {
         Ok(body) => body,
-        Err(error) => return (format!("unreadable answer: {error}"), None),
+        Err(error) => return (format!("not a pij answer: {error}"), None),
     };
-    let seats = body["data"]["seats"]
+    // Only an authenticated pij roster envelope proves the pairing: a proxy, a
+    // captive portal or another service can answer 200 too (review S5).
+    let Some(seats) = body["data"]["seats"]
         .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or_default();
+        .filter(|_| body["ok"] == true && body["command"] == "pij seats" && body["v"].is_u64())
+    else {
+        return (
+            "not a pij roster answer: something other than a pij daemon answered (a proxy or another service?)"
+                .to_string(),
+            None,
+        );
+    };
     if let Some(other) = seats
         .iter()
         .filter_map(|seat| seat["machine"].as_str())

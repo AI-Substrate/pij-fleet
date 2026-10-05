@@ -650,6 +650,7 @@ async fn a_read_returns_exactly_the_batch_one_claim_delivered() {
         id: id.to_string(),
         recipient: seat.clone(),
         sender: SeatId::from("pij-sender"),
+        from_machine: None,
         body: format!("body {id}"),
         held_at_ms,
     };

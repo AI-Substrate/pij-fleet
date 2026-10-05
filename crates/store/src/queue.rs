@@ -281,6 +281,9 @@ fn decode_fyi(row: &sqlx::sqlite::SqliteRow, recipient: &SeatId) -> Result<pij_c
         id: row.try_get("id").map_err(adapter_error)?,
         recipient: recipient.clone(),
         sender: SeatId(row.try_get("sender").map_err(adapter_error)?),
+        // '' is a local FYI: the column is part of the primary key, so NOT NULL.
+        from_machine: Some(row.try_get::<String, _>("origin").map_err(adapter_error)?)
+            .filter(|origin| !origin.is_empty()),
         body: row.try_get("body").map_err(adapter_error)?,
         held_at_ms: row.try_get::<i64, _>("held_at_ms").map_err(adapter_error)? as u64,
     })
@@ -358,7 +361,7 @@ impl SqliteQueue {
             let rows = sqlx::query(
                 "UPDATE fyis SET state = 'delivered', settled_at_ms = ?2, settled_via = ?3 \
                  WHERE recipient = ?1 AND state = 'pending' \
-                 RETURNING id, sender, body, held_at_ms",
+                 RETURNING id, origin, sender, body, held_at_ms",
             )
             .bind(recipient.as_str())
             .bind(sql_ms(at)?)
@@ -1079,16 +1082,18 @@ impl Queue for SqliteQueue {
         let fyi = fyi.clone();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            // A retried send with the same msg_id is the same FYI, held once.
+            // A retried send with the same msg_id FROM THE SAME MACHINE is the
+            // same FYI, held once; another machine's msg_id is another FYI.
             let inserted = sqlx::query(
-                "INSERT OR IGNORE INTO fyis (id, recipient, sender, body, held_at_ms, state) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                "INSERT OR IGNORE INTO fyis (origin, id, recipient, sender, body, held_at_ms, state) \
+                 VALUES (?6, ?1, ?2, ?3, ?4, ?5, 'pending')",
             )
             .bind(&fyi.id)
             .bind(fyi.recipient.as_str())
             .bind(fyi.sender.as_str())
             .bind(&fyi.body)
             .bind(sql_ms(fyi.held_at_ms)?)
+            .bind(fyi.from_machine.as_deref().unwrap_or_default())
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?
@@ -1123,7 +1128,7 @@ impl Queue for SqliteQueue {
             let rows = sqlx::query(
                 "UPDATE fyis SET state = 'delivered', settled_at_ms = ?2, settled_via = ?3 \
                  WHERE recipient = ?1 AND state = 'pending' \
-                 RETURNING id, sender, body, held_at_ms",
+                 RETURNING id, origin, sender, body, held_at_ms",
             )
             .bind(recipient.as_str())
             .bind(sql_ms(at)?)
@@ -1196,7 +1201,7 @@ impl Queue for SqliteQueue {
     ) -> Result<Vec<pij_core::fyi::HeldFyi>> {
         require_current_schema(&self.pool).await?;
         let rows = sqlx::query(
-            "SELECT id, sender, body, held_at_ms FROM fyis \
+            "SELECT id, origin, sender, body, held_at_ms FROM fyis \
              WHERE recipient = ?1 AND state = 'delivered' AND settled_at_ms = ?2 \
              ORDER BY held_at_ms, id",
         )
