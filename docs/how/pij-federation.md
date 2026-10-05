@@ -52,6 +52,14 @@ refused to peers by default. A peer may not relay onward (`to.machine` set),
 may not send controls, and cannot claim to be another machine: `from_machine`
 is stamped from the key.
 
+A forwarded message keeps its origin all the way to the agent that reads it.
+Every harness (OMP, Pi, Copilot, Claude's pane frame) and every FYI rendering
+(the block, the digest, `fyi-read`) shows the sender as `seat@alias`, never a
+bare name that could pass for a local seat. A peer's msg_id is stored in that
+peer's namespace (`<msg_id>@<alias>`), so it never collides with a local
+message or FYI. The sender's receipt still names its own id, and a reply's
+`in_reply_to` is translated back on the way home.
+
 A forwarded message obeys the **receiver's** rules. The receiving daemon runs
 its cold-wake guard and holds `--fyi` messages exactly as for a local sender.
 The sender's `pij send` waits up to 10 s for the first forwarding attempt
@@ -81,8 +89,14 @@ Bind each daemon to its Tailscale address and restart it:
 PIJ_RS_BIND=100.101.102.103:7461 pij-rs daemon     # or: pij-rs daemon --bind …
 ```
 
-Local clients on that machine then need `PIJ_RS_ADDR=100.101.102.103:7461`
-(the daemon listens on that one address, not on loopback as well).
+The daemon **always** listens on `127.0.0.1:<port>` too, so local clients,
+hooks and extensions keep their default address. The Tailscale address is a
+second listener on the same port, serving the same routes under the same
+auth and peer scope. If that second listener is refused (no pairing, or not a
+Tailscale address without `--insecure-bind`) or cannot bind (the address is
+not on this host yet, say Tailscale is down), the daemon prints
+`WARNING: remote listener NOT started: …` and keeps serving loopback. It never
+exits over the second listener; restart it once the address is available.
 
 Check the pairing from each end:
 
@@ -93,7 +107,8 @@ pij-rs peers check
 ```
 
 `peers check` applies the boot validation, then calls each peer's local roster
-with that peer's key. Keys print only as fingerprints (the first 8 hex
+with that peer's key and accepts only a real, authenticated `pij seats`
+envelope. Keys print only as fingerprints (the first 8 hex
 characters of their SHA-256): compare fingerprints across machines, never keys.
 `key refused` means the other machine's `peers.toml` does not hold this key for
 this machine; `alias mismatch` means the two files disagree on a name.
@@ -111,13 +126,17 @@ table ends with `unavailable: laptop (<reason>)`.
 ## Tailscale and the bind rule
 
 The daemon speaks plain HTTP, so a key crosses the wire in clear unless the
-network encrypts it. The bind rule (`check_bind`, one function):
+network encrypts it. Outbound, the federation clients and `peers check` never
+use `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`: a proxy would see every key. They
+connect directly or not at all. Inbound, the bind rule for the second
+listener (`check_bind`, one function; loopback is always bound):
 
-| Listen address | Unpaired | Paired |
+| Second listener | Unpaired | Paired |
 |---|---|---|
-| loopback (`127.0.0.1`, `::1`) | allowed | allowed |
 | Tailscale (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) | refused | allowed (WireGuard encrypts) |
 | anything else, including `0.0.0.0` / `::` | refused | refused unless `--insecure-bind` |
+
+A refused second listener costs only itself; loopback keeps serving.
 
 `--insecure-bind` prints a loud warning on stderr at boot. It is never a
 default. It is a brake on where the daemon listens, not a policy on what
@@ -129,8 +148,10 @@ callers may do.
   the daemon. Exactly that machine loses access; other pairings are untouched.
 - **Rotate a pair's key:** `pij-rs peers new-key`, write the new key into the
   pair's `[[peer]]` on **both** machines, restart both daemons, and run
-  `pij-rs peers check` on each. Until both have restarted, sends between them
-  fail with `key refused` and stay queued, then retry.
+  `pij-rs peers check` on each. A send made while the two ends disagree is
+  refused by the peer (`peer \`<alias>\` refused this machine's pairing key`).
+  That refusal is **terminal**: the message is not queued or retried. Resend it
+  once both ends hold the new key.
 - **Suspect a leak:** rotate that pair's key. Every pair has its own key, so a
   leaked key exposes one pair, and only the three federation routes.
 

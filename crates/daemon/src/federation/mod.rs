@@ -181,6 +181,7 @@ pub enum FirstAttempt {
 }
 
 /// What the worker tells an inline waiter about the first attempt.
+#[derive(Clone)]
 enum Settled {
     Forwarded(Receipt),
     Refused {
@@ -190,7 +191,10 @@ enum Settled {
     Retrying,
 }
 
-type WaiterMap = HashMap<(String, String), tokio::sync::oneshot::Sender<Settled>>;
+/// Every sender waiting on one `(peer alias, msg_id)`, each with its own id so
+/// it removes only itself (review F07: a second waiter must not replace or
+/// remove the first).
+type WaiterMap = HashMap<(String, String), Vec<(u64, tokio::sync::oneshot::Sender<Settled>)>>;
 type Waiters = Mutex<WaiterMap>;
 
 /// Remote-send admission and the durable queue consumed by the federation worker.
@@ -210,6 +214,7 @@ pub struct FederationService {
     /// by `(peer alias, msg_id)`. Removed when answered or when the wait ends.
     first_attempt_wait: Duration,
     first_attempts: Waiters,
+    next_waiter: std::sync::atomic::AtomicU64,
 }
 
 impl FederationService {
@@ -317,6 +322,7 @@ impl FederationService {
             fanin,
             first_attempt_wait: policy.first_attempt_wait,
             first_attempts: Mutex::new(HashMap::new()),
+            next_waiter: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -338,16 +344,22 @@ impl FederationService {
             request.msg_id.clone(),
         );
         let (sender, answer) = tokio::sync::oneshot::channel();
-        self.waiters().insert(key.clone(), sender);
+        let waiter = self
+            .next_waiter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.waiters()
+            .entry(key.clone())
+            .or_default()
+            .push((waiter, sender));
         let queued = match self.enqueue_remote(request).await {
             Ok(receipt) => receipt,
             Err(error) => {
-                self.waiters().remove(&key);
+                self.forget_waiter(&key, waiter);
                 return Err(error);
             }
         };
         let settled = tokio::time::timeout(self.first_attempt_wait, answer).await;
-        self.waiters().remove(&key);
+        self.forget_waiter(&key, waiter);
         Ok(match settled {
             Ok(Ok(Settled::Forwarded(receipt))) => FirstAttempt::Forwarded(receipt),
             Ok(Ok(Settled::Refused { reason, details })) => {
@@ -364,13 +376,26 @@ impl FederationService {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// Remove ONE waiter, leaving any other waiting on the same message.
+    fn forget_waiter(&self, key: &(String, String), waiter: u64) {
+        let mut waiters = self.waiters();
+        if let Some(list) = waiters.get_mut(key) {
+            list.retain(|(id, _)| *id != waiter);
+            if list.is_empty() {
+                waiters.remove(key);
+            }
+        }
+    }
+
+    /// Answer EVERY sender waiting on this message's first attempt.
     fn settle(&self, request: &SendRequest, settled: Settled) {
         let key = (
             request.to.machine.clone().unwrap_or_default(),
             request.msg_id.clone(),
         );
-        if let Some(waiter) = self.waiters().remove(&key) {
-            let _ = waiter.send(settled);
+        let waiting = self.waiters().remove(&key).unwrap_or_default();
+        for (_, waiter) in waiting {
+            let _ = waiter.send(settled.clone());
         }
     }
 
@@ -507,6 +532,13 @@ impl FederationService {
         let mut forwarded = request.clone();
         forwarded.to.machine = None;
         forwarded.from_machine = Some(self.local_alias.clone());
+        // A reply to a message that peer sent us names it by the id we scoped
+        // it under (`<id>@<alias>`); give the peer back its own id.
+        if let Some(answered) = forwarded.in_reply_to.as_deref()
+            && let Some(own) = answered.strip_suffix(&format!("@{alias}"))
+        {
+            forwarded.in_reply_to = Some(own.to_string());
+        }
         match post_to_peer::<_, Receipt>(&self.client, endpoint, "/v1/send", &forwarded).await {
             Err(_) => self.retry_claim(job_id, job.attempt, &request).await,
             Ok(envelope) if !envelope.ok && envelope.error == Some(ErrorKind::Adapter) => {

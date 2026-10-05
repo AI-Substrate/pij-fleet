@@ -152,16 +152,21 @@ fn valid_alias(alias: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
 }
 
+/// A peer URL must be a usable HTTP base: `http(s)://host[:port]` and nothing
+/// else, parsed by the HTTP client's own URL parser so an authority it cannot
+/// use (no host, port out of range) is refused here, not retried forever later.
 fn check_url(url: &str) -> Result<(), String> {
-    let rest = url
-        .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-        .ok_or_else(|| "scheme must be http:// or https://".to_string())?;
-    let authority = rest.trim_end_matches('/');
-    if authority.is_empty() {
+    let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("scheme must be http:// or https://".to_string());
+    }
+    if parsed.host_str().is_none_or(str::is_empty) {
         return Err("no host".to_string());
     }
-    if authority.contains(['/', '?', '#', '@']) {
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("no credentials in the URL; the key is the credential".to_string());
+    }
+    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
         return Err("give only scheme, host and port".to_string());
     }
     Ok(())
@@ -258,17 +263,42 @@ pub fn check_permissions(
 /// # Errors
 /// An unreadable file, wrong owner or mode, or invalid contents.
 pub fn load(state_dir: &Path, expected_uid: u32) -> Result<Option<Pairing>, PairingError> {
-    use std::os::unix::fs::MetadataExt as _;
     let path = state_dir.join(PEERS_FILE);
-    let metadata = match std::fs::metadata(&path) {
-        Ok(metadata) => metadata,
+    let file = match std::fs::File::open(&path) {
+        Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(PairingError::Unreadable(path, error.to_string())),
     };
-    check_permissions(&path, metadata.mode(), metadata.uid(), expected_uid)?;
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| PairingError::Unreadable(path.clone(), error.to_string()))?;
-    parse(&text).map(Some)
+    read_checked(file, &path, expected_uid).map(Some)
+}
+
+/// Check the OPEN descriptor's owner and mode (fstat), then read that same
+/// descriptor (review F09). Checking the path and reading it again would let a
+/// file swapped in between be loaded unchecked.
+///
+/// # Errors
+/// Not a regular file, wrong owner or mode, unreadable, or invalid contents.
+pub fn read_checked(
+    mut file: std::fs::File,
+    path: &Path,
+    expected_uid: u32,
+) -> Result<Pairing, PairingError> {
+    use std::io::Read as _;
+    use std::os::unix::fs::MetadataExt as _;
+    let metadata = file
+        .metadata()
+        .map_err(|error| PairingError::Unreadable(path.to_path_buf(), error.to_string()))?;
+    if !metadata.is_file() {
+        return Err(PairingError::Unreadable(
+            path.to_path_buf(),
+            "not a regular file".to_string(),
+        ));
+    }
+    check_permissions(path, metadata.mode(), metadata.uid(), expected_uid)?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .map_err(|error| PairingError::Unreadable(path.to_path_buf(), error.to_string()))?;
+    parse(&text)
 }
 
 /// The printable stand-in for a key: the first 8 hex characters of its SHA-256.
