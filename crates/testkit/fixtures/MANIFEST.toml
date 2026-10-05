@@ -534,3 +534,10 @@ sha256 = "359b3b78e2eef53919518e737bee61cdde158cc1922cf9d9f933e8cef5c81420"
 bytes = 310
 note = "Plan 160: pij list's human table rendered from list-sized.json."
 answer = "Columns SEAT, HARNESS, STATE, CTX, IDLE, CACHE padded two spaces apart. ❄ marks a row the guard would refuse. A remote seat shows `id@machine` and `-` sizes. Unavailable peers are listed after the rows. No trailing newline."
+
+[[fixture]]
+path = "golden/address/cases.json"
+sha256 = "396a5119b779aa1c49a6def3085e74e56a612077b88000d6a1b3cb750ced1ce2"
+bytes = 976
+note = "Plan 164 review F01b: the seat-address grammar (`seat`, `seat@machine`, `@@` escapes), read by pij_core::address tests and by the OMP/Pi and Copilot parsers' tests so the three sides cannot drift."
+answer = "Each case is {input, seat, machine|null} (valid) or {input, error: true}: the first unescaped `@` separates the machine, `@@` is a literal `@` in the seat, an alias cannot contain `@`, and an empty seat or alias is refused."
