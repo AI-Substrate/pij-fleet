@@ -323,6 +323,10 @@ impl BackgroundService {
         }
         // Provenance is persisted before the signal (never after, which a
         // crash could lose), and withdrawn if this first attempt sends nothing.
+        // Accepted residual: a daemon crash between this commit and the TERM
+        // leaves term_sent set without a signal, so an overrun job that then
+        // fails on its own reads TIMEOUT instead of FAILED (exit N). Only the
+        // label differs, and the deadline it names really did pass.
         let first = !job.term_sent;
         if first {
             self.store.set_term_sent(&job.job_id, true).await?;
