@@ -6,6 +6,11 @@ use pij_core::error::PijError;
 use pij_core::model::Envelope;
 use serde::Deserialize;
 use serde_json::json;
+use std::path::{Path as StdPath, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::background::{CreateOptions, human_duration};
+use pij_core::background::{BackgroundJob, BackgroundState};
 
 use super::{AppState, CallerContext, envelope, identity, internal, refused};
 
@@ -31,10 +36,22 @@ pub(super) struct ReadQuery {
 }
 
 enum Call {
-    Create { title: String, command: String },
-    List { all: bool },
-    Tail { job: String, lines: usize },
-    Kill { job: String },
+    Create {
+        title: String,
+        command: String,
+        cwd: Option<String>,
+        timeout_ms: Option<u64>,
+    },
+    List {
+        all: bool,
+    },
+    Tail {
+        job: String,
+        lines: usize,
+    },
+    Kill {
+        job: String,
+    },
 }
 
 impl Call {
@@ -61,6 +78,7 @@ fn parse(argv: &[String]) -> Result<Call, String> {
     }
     let leaf = args.next().ok_or("expected bg create|list|tail|kill")?;
     let (mut title, mut command, mut job, mut lines) = (None, None, None, None);
+    let (mut cwd, mut timeout_ms) = (None, None);
     let mut all = false;
     while let Some(arg) = args.next() {
         let (flag, inline) = arg
@@ -85,6 +103,22 @@ fn parse(argv: &[String]) -> Result<Call, String> {
                         .to_owned(),
                 )
             }
+            "--cwd" if leaf == "create" && cwd.is_none() => {
+                cwd = Some(
+                    inline
+                        .or_else(|| args.next())
+                        .ok_or("--cwd requires a value")?
+                        .to_owned(),
+                )
+            }
+            "--timeout" if leaf == "create" && timeout_ms.is_none() => {
+                timeout_ms = Some(parse_duration_ms(
+                    inline
+                        .or_else(|| args.next())
+                        .ok_or("--timeout requires a value")?,
+                    "--timeout",
+                )?)
+            }
             "--lines" if leaf == "tail" && lines.is_none() => {
                 lines = Some(
                     inline
@@ -104,6 +138,8 @@ fn parse(argv: &[String]) -> Result<Call, String> {
         "create" => Ok(Call::Create {
             title: title.ok_or("--title is required")?,
             command: command.ok_or("--command is required")?,
+            cwd,
+            timeout_ms,
         }),
         "list" => Ok(Call::List { all }),
         "tail" => Ok(Call::Tail {
@@ -116,6 +152,59 @@ fn parse(argv: &[String]) -> Result<Call, String> {
         _ => Err(format!(
             "unknown bg command `{leaf}`; use create|list|tail|kill"
         )),
+    }
+}
+
+/// Parse `90`, `90s`, `5m`, `2h`, `1d` or a sum such as `1h30m` into milliseconds.
+/// A bare number is seconds.
+fn parse_duration_ms(text: &str, flag: &str) -> Result<u64, String> {
+    let invalid = || format!("{flag} must be a duration such as 90s, 5m, 1h30m or 2d");
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(invalid());
+    }
+    if text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return text
+            .parse::<u64>()
+            .ok()
+            .and_then(|seconds| seconds.checked_mul(1000))
+            .ok_or_else(invalid);
+    }
+    let mut total: u64 = 0;
+    let mut digits = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            digits.push(ch);
+            continue;
+        }
+        let unit: u64 = match ch {
+            's' => 1000,
+            'm' => 60_000,
+            'h' => 3_600_000,
+            'd' => 86_400_000,
+            _ => return Err(invalid()),
+        };
+        let value: u64 = digits.parse().map_err(|_| invalid())?;
+        digits.clear();
+        total = value
+            .checked_mul(unit)
+            .and_then(|part| total.checked_add(part))
+            .ok_or_else(invalid)?;
+    }
+    if !digits.is_empty() {
+        return Err(invalid());
+    }
+    Ok(total)
+}
+
+/// `--cwd` wins and may be relative to the caller's directory; otherwise the
+/// caller's own directory; otherwise (no caller cwd) the owner's recorded folder.
+fn resolve_cwd(flag: Option<String>, caller: Option<&str>) -> Result<Option<PathBuf>, String> {
+    match (flag, caller) {
+        (Some(flag), _) if StdPath::new(&flag).is_absolute() => Ok(Some(PathBuf::from(flag))),
+        (Some(flag), Some(caller)) => Ok(Some(StdPath::new(caller).join(flag))),
+        (Some(_), None) => Err("a relative --cwd needs the caller's working directory".into()),
+        (None, caller) => Ok(caller.map(PathBuf::from)),
     }
 }
 
@@ -141,7 +230,12 @@ pub(super) async fn post(
         parse(&argv)
     } else {
         match (request.title, request.command) {
-            (Some(title), Some(command)) => Ok(Call::Create { title, command }),
+            (Some(title), Some(command)) => Ok(Call::Create {
+                title,
+                command,
+                cwd: None,
+                timeout_ms: None,
+            }),
             _ => Err("bg create requires title and command".into()),
         }
     };
@@ -197,18 +291,33 @@ pub(super) async fn kill(
 
 async fn execute(state: &AppState, caller: CallerContext, call: Call) -> Response {
     let name = call.name();
+    let caller_cwd = caller.cwd.clone();
     let owner = match identity::resolve_seat(state, name, caller.session_id, caller.pane).await {
         identity::Resolved::Seat(owner, _) => owner,
         identity::Resolved::Refusal(response) => return response,
     };
     let jobs = &state.services.background;
     let result = match call {
-        Call::Create { title, command } => jobs.create(&owner, &title, &command).await.map(|job| {
+        Call::Create { title, command, cwd, timeout_ms } => {
+            let cwd = match resolve_cwd(cwd, caller_cwd.as_deref()) {
+                Ok(cwd) => cwd,
+                Err(error) => return refused(name, error),
+            };
+            let options = CreateOptions { cwd, timeout_ms };
+            jobs.create(&owner, &title, &command, options).await.map(|job| {
             let line = format!("bg started — {} (job {}, pid {}); result will arrive as an injected turn from pij-bg; full output at {}", job.title, job.job_id, job.pid.unwrap_or_default(), job.out_path);
             json!({"job":job.job_id,"title":job.title,"pid":job.pid,"outPath":job.out_path,"line":line})
-        }),
+        })
+        }
         Call::List { all } => jobs.list(&owner.id, all).await.map(|rows| {
-            let line = if rows.is_empty() { "no bg jobs".to_owned() } else { rows.iter().map(|job| format!("{}  {:?}{}  {}", job.job_id, job.state, job.exit_code.map_or_else(String::new, |code| format!(" (exit {code})")), job.title)).collect::<Vec<_>>().join("\n") };
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
+            let line = if rows.is_empty() {
+                "no bg jobs".to_owned()
+            } else {
+                rows.iter().map(|job| list_line(job, now)).collect::<Vec<_>>().join("\n")
+            };
             json!({"jobs":rows,"line":line})
         }),
         Call::Tail { job, lines } => jobs.tail(&owner.id, &job, lines).await.map(|(job, lines)| {
@@ -227,6 +336,29 @@ async fn execute(state: &AppState, caller: CallerContext, call: Call) -> Respons
         }
         Err(error) => internal(name, error),
     }
+}
+
+/// One `bg list` row: running time for live jobs, duration for finished ones.
+fn list_line(job: &BackgroundJob, now: u64) -> String {
+    let exit = job
+        .exit_code
+        .map_or_else(String::new, |code| format!(" (exit {code})"));
+    let timing = match (job.state, job.finished_at) {
+        (BackgroundState::Queued, _) => "queued".to_owned(),
+        (BackgroundState::Running, _) => {
+            format!(
+                "running {}",
+                human_duration(now.saturating_sub(job.started_at))
+            )
+        }
+        (_, Some(at)) => format!("took {}", human_duration(at.saturating_sub(job.started_at))),
+        (_, None) => "took ?".to_owned(),
+    };
+    let timeout = if job.timed_out { " TIMEOUT" } else { "" };
+    format!(
+        "{}  {:?}{exit}{timeout}  {timing}  {}",
+        job.job_id, job.state, job.title
+    )
 }
 
 #[cfg(test)]
@@ -248,9 +380,56 @@ mod tests {
         assert!(
             matches!(parse(&argv).unwrap(), Call::Create { command, .. } if command == "--json")
         );
+        let argv = [
+            "bg",
+            "create",
+            "--title",
+            "t",
+            "--timeout=1h30m",
+            "--cwd",
+            "sub",
+            "--command",
+            "true",
+        ]
+        .map(str::to_owned);
+        assert!(matches!(
+            parse(&argv).unwrap(),
+            Call::Create { timeout_ms: Some(5_400_000), cwd: Some(cwd), .. } if cwd == "sub"
+        ));
         for lines in ["0", "1001", "-1", "x"] {
             let argv = ["bg", "tail", "job", "--lines", lines].map(str::to_owned);
             assert!(parse(&argv).is_err());
         }
+    }
+
+    #[test]
+    fn durations_accept_units_sums_and_bare_seconds_only() {
+        for (text, ms) in [
+            ("90", 90_000),
+            ("90s", 90_000),
+            ("5m", 300_000),
+            ("1h30m", 5_400_000),
+            ("2d", 172_800_000),
+        ] {
+            assert_eq!(parse_duration_ms(text, "--timeout"), Ok(ms), "{text}");
+        }
+        for text in ["", "5x", "m", "1h30", "-5s", "99999999999999999999d"] {
+            assert!(parse_duration_ms(text, "--timeout").is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn cwd_flag_wins_and_is_relative_to_the_caller() {
+        assert_eq!(resolve_cwd(None, None), Ok(None));
+        assert_eq!(resolve_cwd(None, Some("/c")), Ok(Some(PathBuf::from("/c"))));
+        assert_eq!(
+            resolve_cwd(Some("sub".into()), Some("/c")),
+            Ok(Some(PathBuf::from("/c/sub")))
+        );
+        assert_eq!(
+            resolve_cwd(Some("/abs".into()), Some("/c")),
+            Ok(Some(PathBuf::from("/abs")))
+        );
+        assert!(resolve_cwd(Some("sub".into()), None).is_err());
     }
 }

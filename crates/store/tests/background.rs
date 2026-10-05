@@ -23,6 +23,8 @@ fn queued(id: &str) -> BackgroundJob {
         finished_at: None,
         kill_requested: false,
         notified: false,
+        deadline_at: None,
+        timed_out: false,
     }
 }
 
@@ -658,4 +660,28 @@ fn background_json_uses_snake_case_and_round_trips_identity() {
             state
         );
     }
+}
+
+#[tokio::test]
+async fn background_timeout_fires_once_only_after_the_deadline_and_never_over_a_caller_kill() {
+    let (_fresh, _pool, background) = setup().await;
+    let identity = ProcIdentity {
+        pid: 321,
+        proc_start: 654,
+    };
+    for id in ["timed", "killed"] {
+        let mut job = queued(id);
+        job.deadline_at = Some(5_000);
+        background.insert(&job).await.expect("insert");
+        assert!(background.start(id, &identity, 321).await.expect("start"));
+    }
+    assert!(!background.request_timeout("timed", 4_999).await.unwrap());
+    assert!(background.request_timeout("timed", 5_000).await.unwrap());
+    assert!(!background.request_timeout("timed", 9_000).await.unwrap());
+    let timed = background.get("timed").await.unwrap().unwrap();
+    assert!(timed.kill_requested && timed.timed_out);
+    assert_eq!(timed.deadline_at, Some(5_000));
+    assert!(background.request_kill("killed").await.unwrap());
+    assert!(!background.request_timeout("killed", 9_000).await.unwrap());
+    assert!(!background.get("killed").await.unwrap().unwrap().timed_out);
 }

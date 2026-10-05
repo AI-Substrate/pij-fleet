@@ -407,3 +407,159 @@ async fn bg_relative_daemon_state_still_writes_receipt_beside_log() {
     assert_eq!(row["exit_code"], 7);
     assert!(PathBuf::from(created["data"]["outPath"].as_str().unwrap()).is_absolute());
 }
+
+async fn call_from(
+    daemon: &Daemon,
+    owner: &str,
+    cwd: &std::path::Path,
+    argv: Value,
+) -> (u16, Value) {
+    post(
+        daemon,
+        "/v1/bg",
+        json!({"argv": argv, "caller": {"pijSessionId": owner, "cwd": cwd}}),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn bg_create_runs_in_caller_cwd_and_cwd_flag_overrides() {
+    let fixture = Fixture::new().await;
+    let daemon = fixture.boot().await;
+    let caller = fixture.state.join("caller");
+    let nested = caller.join("nested");
+    let elsewhere = fixture.state.join("elsewhere");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    for (argv, expected) in [
+        (
+            json!(["bg", "create", "--title", "cwd", "--command", "pwd"]),
+            &caller,
+        ),
+        (
+            json!([
+                "bg",
+                "create",
+                "--title",
+                "cwd",
+                "--cwd",
+                "nested",
+                "--command",
+                "pwd"
+            ]),
+            &nested,
+        ),
+        (
+            json!([
+                "bg",
+                "create",
+                "--title",
+                "cwd",
+                "--cwd",
+                elsewhere,
+                "--command",
+                "pwd"
+            ]),
+            &elsewhere,
+        ),
+    ] {
+        let (status, created) = call_from(&daemon, OWNER, &caller, argv).await;
+        assert_eq!(status, 200, "{created}");
+        let job = created["data"]["job"].as_str().unwrap();
+        wait_done(&daemon, job).await;
+        let (_, tail) = call(&daemon, OWNER, json!(["bg", "tail", job])).await;
+        assert_eq!(
+            tail["data"]["lines"],
+            json!([expected.canonicalize().unwrap().to_str().unwrap()])
+        );
+    }
+    let (status, refusal) = call_from(
+        &daemon,
+        OWNER,
+        &caller,
+        json!([
+            "bg",
+            "create",
+            "--title",
+            "cwd",
+            "--cwd",
+            "missing",
+            "--command",
+            "pwd"
+        ]),
+    )
+    .await;
+    assert_eq!(
+        status, 400,
+        "a missing directory is refused before launch: {refusal}"
+    );
+    assert!(refusal.to_string().contains("does not exist"), "{refusal}");
+    daemon.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn bg_timeout_kills_with_a_timeout_turn_and_list_shows_timing() {
+    let fixture = Fixture::new().await;
+    let daemon = fixture.boot().await;
+    let (status, created) = call(
+        &daemon,
+        OWNER,
+        json!([
+            "bg",
+            "create",
+            "--title",
+            "slow",
+            "--timeout",
+            "1s",
+            "--command",
+            "echo STARTED; sleep 300"
+        ]),
+    )
+    .await;
+    assert_eq!(status, 200, "{created}");
+    let job = created["data"]["job"].as_str().unwrap();
+    let (_, listed) = call(&daemon, OWNER, json!(["bg", "list"])).await;
+    let line = listed["data"]["line"].as_str().unwrap();
+    assert!(
+        line.contains("Running  running ") && line.ends_with("  slow"),
+        "{line}"
+    );
+    let row = wait_done(&daemon, job).await;
+    assert_eq!(row["state"], "killed");
+    assert_eq!(row["timed_out"], true);
+    let (_, listed) = call(&daemon, OWNER, json!(["bg", "list"])).await;
+    let line = listed["data"]["line"].as_str().unwrap();
+    assert!(
+        line.contains(" TIMEOUT  took ") && line.ends_with("  slow"),
+        "{line}"
+    );
+    let (_, inbox) = post(
+        &daemon,
+        "/v1/shim/inbox",
+        json!({"argv":["inbox"],"caller":{"pijSessionId":OWNER}}),
+    )
+    .await;
+    let inbox = inbox.to_string();
+    assert!(
+        inbox.contains("[pij bg] TIMEOUT — slow (killed after 1s)"),
+        "{inbox}"
+    );
+    assert!(inbox.contains("tail: STARTED"), "{inbox}");
+    let (status, refusal) = call(
+        &daemon,
+        OWNER,
+        json!([
+            "bg",
+            "create",
+            "--title",
+            "x",
+            "--timeout",
+            "0s",
+            "--command",
+            "true"
+        ]),
+    )
+    .await;
+    assert_eq!(status, 400, "{refusal}");
+    daemon.shutdown().await.unwrap();
+}

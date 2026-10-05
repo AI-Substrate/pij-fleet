@@ -51,4 +51,10 @@ pub struct BackgroundJob {
     pub kill_requested: bool,
     /// Whether the terminal notification has been delivered.
     pub notified: bool,
+    /// Absolute instant after which the daemon kills the job, if a timeout was set.
+    #[serde(default)]
+    pub deadline_at: Option<u64>,
+    /// The daemon, not a caller, requested the kill because the deadline passed.
+    #[serde(default)]
+    pub timed_out: bool,
 }

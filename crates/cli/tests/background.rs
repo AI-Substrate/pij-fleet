@@ -135,3 +135,21 @@ async fn bg_tail_forwards_lines_and_matches_envelope_golden() {
 async fn bg_kill_forwards_job_and_matches_envelope_golden() {
     exercise("kill", &["bg-golden"]).await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bg_create_forwards_cwd_and_timeout_to_the_daemon_parser() {
+    exercise(
+        "create",
+        &[
+            "--title",
+            "shell output",
+            "--cwd",
+            "sub",
+            "--timeout",
+            "1h30m",
+            "--command",
+            "true",
+        ],
+    )
+    .await;
+}
