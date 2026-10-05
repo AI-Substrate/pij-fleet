@@ -384,11 +384,42 @@ impl SqliteBackground {
         .await
     }
 
+    /// The open batch: cut, possibly already delivered, but not yet settled.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn open_batch(&self, job_id: &str) -> Result<Option<EventBatch>> {
+        require_current_schema(&self.pool).await?;
+        let mut tx = self.pool.begin().await.map_err(adapter_error)?;
+        let Some(row) =
+            sqlx::query("SELECT batches, open_dropped FROM background_jobs WHERE job_id = ?")
+                .bind(job_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+        else {
+            return Ok(None);
+        };
+        let batches: i64 = row.try_get("batches").map_err(adapter_error)?;
+        let open_dropped: i64 = row.try_get("open_dropped").map_err(adapter_error)?;
+        let events = batch_events(&mut tx, job_id, batches).await?;
+        if events.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(EventBatch {
+            batch_no: sql_u64(batches, "batches")?,
+            events,
+            dropped: sql_u64(open_dropped, "open_dropped")?,
+        }))
+    }
+
     /// Return the open batch (cut but not yet settled), else cut a new one from
     /// the pending events. `None` when nothing is pending.
     ///
-    /// With `all`, the cut also absorbs an open batch (the final flush at a
-    /// source's end), so every pending event leaves in exactly one batch.
+    /// An open batch is never absorbed into a new one: it may already have been
+    /// accepted, and only its own msg_id makes a redelivery idempotent. With
+    /// `all` (a source's final flush), a cut is made even when only dropped
+    /// emits remain to report.
     ///
     /// # Errors
     /// Returns a schema error on skew or an adapter error on SQLite failure.
@@ -409,7 +440,7 @@ impl SqliteBackground {
             let dropped: i64 = row.try_get("dropped").map_err(adapter_error)?;
             let open_dropped: i64 = row.try_get("open_dropped").map_err(adapter_error)?;
             let open = batch_events(&mut tx, &job_id, batches).await?;
-            if !open.is_empty() && !all {
+            if !open.is_empty() {
                 return Ok(Some(EventBatch {
                     batch_no: sql_u64(batches, "batches")?,
                     events: open,
@@ -424,7 +455,7 @@ impl SqliteBackground {
             .fetch_one(&mut *tx)
             .await
             .map_err(adapter_error)?;
-            if unbatched == 0 && open.is_empty() && !(all && dropped + open_dropped > 0) {
+            if unbatched == 0 && !(all && dropped + open_dropped > 0) {
                 return Ok(None);
             }
             let batch_no = batches + 1;

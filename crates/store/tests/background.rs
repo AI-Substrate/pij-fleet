@@ -811,13 +811,31 @@ async fn background_emit_is_refused_for_one_shot_killed_and_finished_jobs() {
 }
 
 #[tokio::test]
-async fn background_final_cut_absorbs_the_open_batch_and_carries_drops() {
+async fn background_final_cut_never_absorbs_an_open_batch_and_still_reports_drops() {
     let (_fresh, _pool, background) = setup().await;
     live_source(&background, "src").await;
     background.emit("src", 1, "a", None, 1).await.unwrap();
     background.emit("src", 2, "b", None, 1).await.unwrap();
     let open = background.cut_batch("src", false).await.unwrap().unwrap();
     assert_eq!((open.batch_no, open.dropped), (1, 1));
+    assert_eq!(
+        background.open_batch("src").await.unwrap(),
+        Some(open.clone())
+    );
+    // The final cut hands back the same open batch, never a renumbered copy.
+    assert_eq!(background.cut_batch("src", true).await.unwrap(), Some(open));
+    background
+        .settle_batch("src", 1, "delivered", 3)
+        .await
+        .unwrap();
+    assert_eq!(background.open_batch("src").await.unwrap(), None);
+    background.emit("src", 4, "c", None, 1).await.unwrap();
+    background.emit("src", 5, "d", None, 1).await.unwrap();
     let last = background.cut_batch("src", true).await.unwrap().unwrap();
     assert_eq!((last.batch_no, last.dropped, last.events.len()), (2, 1, 1));
+    background
+        .settle_batch("src", 2, "delivered", 6)
+        .await
+        .unwrap();
+    assert_eq!(background.cut_batch("src", true).await.unwrap(), None);
 }

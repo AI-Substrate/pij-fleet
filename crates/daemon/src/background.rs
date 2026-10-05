@@ -932,6 +932,15 @@ impl BackgroundService {
         // The source's end flushes whatever it fired since its last batch into
         // this same final turn (its token was revoked when the row finished).
         let last = if job.kind == BackgroundKind::Events {
+            // A batch cut before the end may already have been accepted (a crash
+            // before it settled): finish it under its own msg_id, which makes
+            // the redelivery idempotent, so the final turn never replays it.
+            if let Some(open) = self.store.open_batch(&job.job_id).await?
+                && let Some(owner) = self.registry.get(&job.owner).await?
+                && owner.tombstoned_at.is_none()
+            {
+                self.deliver_batch(job, &owner, &open, now_ms()?).await?;
+            }
             let batch = self.store.cut_batch(&job.job_id, true).await?;
             match &batch {
                 Some(batch) if !batch.events.is_empty() || batch.dropped > 0 => {
@@ -1267,21 +1276,37 @@ async fn write_batch_file(path: &Path, job: &BackgroundJob, batch: &EventBatch) 
         .map_err(|error| fault(format!("batch file: {error}")))?;
     let path = path.to_path_buf();
     blocking(move || {
-        if let Some(dir) = path.parent() {
-            std::fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(dir)
-                .map_err(io_error)?;
+        // A batch's file is published once: a turn may already name it and a
+        // reader may hold it open, so a retry never rewrites it. The first write
+        // goes to a private temp file and appears under its name atomically.
+        if path.exists() {
+            return Ok(());
         }
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&path)
+        let dir = path
+            .parent()
+            .ok_or_else(|| fault("batch file has no directory"))?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)
             .map_err(io_error)?;
-        file.write_all(&bytes).map_err(io_error)
+        let mut nonce = [0_u8; 8];
+        getrandom::fill(&mut nonce).map_err(|error| fault(format!("batch file: {error}")))?;
+        let temp = dir.join(format!(".batch-{}.tmp", hex(&nonce)));
+        let written = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temp)
+            .and_then(|mut file| {
+                file.write_all(&bytes)?;
+                file.sync_all()
+            })
+            .and_then(|()| std::fs::rename(&temp, &path));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&temp);
+        }
+        written.map_err(io_error)
     })
     .await
 }
@@ -1922,6 +1947,94 @@ mod tests {
             fixture.service.event_stats("bg-src").await.unwrap().pending,
             0
         );
+    }
+
+    #[tokio::test]
+    async fn the_final_flush_never_replays_a_batch_that_was_already_accepted() {
+        // Review B4 (#22): a crash after batch 1 was accepted but before it was
+        // settled must not deliver its events again inside the final turn.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["late 1", "late 2"]).await;
+        let batch = fixture
+            .service
+            .store
+            .cut_batch("bg-src", false)
+            .await
+            .unwrap()
+            .unwrap();
+        let body = fixture
+            .service
+            .batch_turn(&job, &batch, false)
+            .await
+            .unwrap();
+        fixture
+            .delivery
+            .accept(bg_msg(
+                &SeatId::from("owner"),
+                body,
+                "pij-bg:bg-src:batch:1".to_string(),
+            ))
+            .await
+            .unwrap();
+        assert!(fixture.service.store.request_kill("bg-src").await.unwrap());
+        std::fs::write(receipt_path(&job), "143 1700000009\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        let turns = fixture.to("owner");
+        assert_eq!(
+            turns
+                .iter()
+                .map(|msg| msg.msg_id.as_str())
+                .collect::<Vec<_>>(),
+            ["pij-bg:bg-src:batch:1", "pij-bg:bg-src:finished"],
+            "each event reaches the owner once"
+        );
+        assert!(
+            turns[1].body.ends_with("No events since the last batch."),
+            "{}",
+            turns[1].body
+        );
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retried_batch_never_rewrites_its_published_file() {
+        // Review B5 (#22): the retry after a failed notice truncated and
+        // rewrote a file a reader may already have opened.
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        let job = fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture
+            .routing
+            .cold
+            .lock()
+            .unwrap()
+            .insert(SeatId::from("owner"), 18_720_000);
+        fixture
+            .routing
+            .telegram_failures
+            .store(1, std::sync::atomic::Ordering::SeqCst);
+        fixture.fire("bg-src", "tok", &["row 1"]).await;
+        assert!(fixture.service.tick().await.is_err());
+        let path = fixture.service.batch_path(&job, 1);
+        let published = std::fs::read_to_string(&path).unwrap();
+        assert!(published.contains("row 1"));
+        std::fs::write(&path, "PUBLISHED").unwrap();
+        fixture.service.tick().await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "PUBLISHED",
+            "a published batch file is never rewritten"
+        );
+        let stray: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "batch-0001.json")
+            .collect();
+        assert!(stray.is_empty(), "no temp files remain: {stray:?}");
     }
 
     #[tokio::test]
