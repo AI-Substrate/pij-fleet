@@ -9,6 +9,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use pij_core::model::{Envelope, ErrorKind};
+use pij_core::wire;
+use pij_daemon::http::FederatedRoster;
 use pij_daemon::pairing::{self, PEERS_FILE};
 use serde::Serialize;
 
@@ -137,25 +139,37 @@ async fn reach(
         }
         status => return (format!("peer answered HTTP {status}"), None),
     }
-    let body: serde_json::Value = match response.json().await {
-        Ok(body) => body,
-        Err(error) => return (format!("not a pij answer: {error}"), None),
+    let text = match response.text().await {
+        Ok(text) => text,
+        Err(error) => return (format!("unreadable answer: {error}"), None),
     };
-    // Only an authenticated pij roster envelope proves the pairing: a proxy, a
-    // captive portal or another service can answer 200 too (review S5).
-    let Some(seats) = body["data"]["seats"]
-        .as_array()
-        .filter(|_| body["ok"] == true && body["command"] == "pij seats" && body["v"].is_u64())
+    // Judged by the SAME decoder the federation fan-in uses (review F08b), so
+    // `peers check` certifies exactly what the daemon would accept: a versioned
+    // envelope this build understands, ok, carrying a roster. A proxy, a
+    // captive portal, another service or a newer daemon all fail here.
+    let envelope = match wire::decode_envelope::<FederatedRoster>(&text) {
+        Ok(envelope) => envelope,
+        Err(error) => {
+            return (
+                format!("not a pij roster answer this build accepts: {error}"),
+                None,
+            );
+        }
+    };
+    let Some(roster) = envelope
+        .data
+        .filter(|_| envelope.ok && envelope.command == "pij seats")
     else {
         return (
-            "not a pij roster answer: something other than a pij daemon answered (a proxy or another service?)"
+            "not a pij roster answer: the peer answered without an ok `pij seats` roster"
                 .to_string(),
             None,
         );
     };
+    let seats = roster.seats;
     if let Some(other) = seats
         .iter()
-        .filter_map(|seat| seat["machine"].as_str())
+        .filter_map(|seat| seat.machine.as_deref())
         .find(|machine| *machine != alias)
     {
         return (

@@ -641,15 +641,20 @@ async fn bind_listeners(
     Option<tokio::net::TcpListener>,
     http::RemoteListener,
 )> {
-    if requested.ip().is_loopback() {
+    // 127.0.0.1 is ALWAYS bound (review F04): `--bind` only ever ADDS a
+    // listener (::1, another loopback, a Tailscale address), never replaces
+    // the IPv4 loopback every local client and hook defaults to.
+    let loopback = SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), requested.port());
+    if requested.ip() == loopback.ip() {
         let listener = bind_one(requested)
             .await
             .map_err(|error| bind_failure(requested, &error))?;
         return Ok((listener, None, http::RemoteListener::None));
     }
-    let loopback = SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), requested.port());
     let policy = http::check_bind(requested, paired, insecure);
-    if requested.ip().is_unspecified() {
+    // The IPv4 wildcard already serves 127.0.0.1, and Linux refuses a second
+    // listener on 127.0.0.1 beside it, so it is the one listener when it binds.
+    if requested.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED) {
         let remote = match policy {
             Err(refusal) => http::RemoteListener::Refused(refusal.to_string()),
             Ok(exposure) => match bind_one(requested).await {
