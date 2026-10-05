@@ -145,7 +145,7 @@ impl SqliteQueue {
                    AND lease_expirations >= 2 AND kind = 'delivery:' || serial_key \
                    AND CASE WHEN json_valid(payload) THEN json_extract(payload, '$.command') END IS NULL \
                    AND kind IN (SELECT value FROM json_each(?2)) \
-                 RETURNING id, kind, serial_key, payload, dedupe_key, attempt",
+                 RETURNING id, kind, serial_key, payload, dedupe_key, dedupe_origin, attempt",
             )
             .bind(lease_secs).bind(&kinds_json)
             .fetch_all(&mut *tx).await.map_err(adapter_error)?;
@@ -216,7 +216,7 @@ impl SqliteQueue {
         .map_err(adapter_error)?;
 
         let row = sqlx::query(
-            "SELECT id, kind, serial_key, payload, dedupe_key, attempt FROM jobs \
+            "SELECT id, kind, serial_key, payload, dedupe_key, dedupe_origin, attempt FROM jobs \
              WHERE state = 'pending' \
                AND not_before <= unixepoch() \
                AND kind IN (SELECT value FROM json_each(?1)) \
@@ -289,12 +289,18 @@ fn decode_fyi(row: &sqlx::sqlite::SqliteRow, recipient: &SeatId) -> Result<pij_c
     })
 }
 
+/// The origin column's '' is a local job or message (plan 164 review F02).
+fn origin_column(origin: String) -> Option<String> {
+    Some(origin).filter(|origin| !origin.is_empty())
+}
+
 fn decode_job(row: &sqlx::sqlite::SqliteRow) -> Result<Job> {
     Ok(Job {
         kind: row.try_get("kind").map_err(adapter_error)?,
         serial_key: row.try_get("serial_key").map_err(adapter_error)?,
         payload: row.try_get("payload").map_err(adapter_error)?,
         dedupe_key: row.try_get("dedupe_key").map_err(adapter_error)?,
+        dedupe_origin: origin_column(row.try_get("dedupe_origin").map_err(adapter_error)?),
         attempt: row
             .try_get::<i64, _>("attempt")
             .map_err(adapter_error)?
@@ -324,10 +330,12 @@ impl SqliteQueue {
             // commit together or not at all (plan 158 review HIGH-1).
             let mut tx = begin_write(&pool).await?;
             let delivered_origin: Option<String> = sqlx::query_scalar(
-                "SELECT origin FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2",
+                "SELECT origin FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2 \
+                 AND sender_machine = ?3",
             )
             .bind(&job.serial_key)
             .bind(&job.dedupe_key)
+            .bind(job.dedupe_origin.as_deref().unwrap_or_default())
             .fetch_optional(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -340,10 +348,11 @@ impl SqliteQueue {
             // it must not claim anything that body will never carry.
             let live: Option<(i64, i64)> = sqlx::query_as(
                 "SELECT id, not_before FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 \
-               AND state IN ('pending', 'running') ORDER BY id LIMIT 1",
+               AND dedupe_origin = ?3 AND state IN ('pending', 'running') ORDER BY id LIMIT 1",
             )
             .bind(&job.kind)
             .bind(&job.dedupe_key)
+            .bind(job.dedupe_origin.as_deref().unwrap_or_default())
             .fetch_optional(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -384,13 +393,14 @@ impl SqliteQueue {
                 attach(&job.payload, &fyis)?
             };
             let (id, not_before): (i64, i64) = sqlx::query_as(
-                "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, enqueued_at) \
-                 VALUES (?1, ?2, ?3, ?4, unixepoch()) RETURNING id, not_before",
+                "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, dedupe_origin, enqueued_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, unixepoch()) RETURNING id, not_before",
             )
             .bind(&job.kind)
             .bind(&job.serial_key)
             .bind(&payload)
             .bind(&job.dedupe_key)
+            .bind(job.dedupe_origin.as_deref().unwrap_or_default())
             .fetch_one(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -426,13 +436,14 @@ impl Queue for SqliteQueue {
             let mut tx = begin_write(&pool).await?;
 
             sqlx::query(
-                "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, enqueued_at) \
-             VALUES (?1, ?2, ?3, ?4, unixepoch()) ON CONFLICT DO NOTHING",
+                "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, dedupe_origin, enqueued_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch()) ON CONFLICT DO NOTHING",
             )
             .bind(&job.kind)
             .bind(&job.serial_key)
             .bind(&job.payload)
             .bind(&job.dedupe_key)
+            .bind(job.dedupe_origin.as_deref().unwrap_or_default())
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -443,11 +454,12 @@ impl Queue for SqliteQueue {
                 // would hand back a live row for a DIFFERENT recipient that happens
                 // to share a caller-chosen msg_id (review F5).
                 "SELECT id FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 \
-               AND state IN ('pending', 'running') \
+               AND dedupe_origin = ?3 AND state IN ('pending', 'running') \
              ORDER BY id LIMIT 1",
             )
             .bind(&job.kind)
             .bind(&job.dedupe_key)
+            .bind(job.dedupe_origin.as_deref().unwrap_or_default())
             .fetch_one(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -466,10 +478,12 @@ impl Queue for SqliteQueue {
             let mut tx = begin_write(&pool).await?;
 
             let delivered_origin: Option<String> = sqlx::query_scalar(
-                "SELECT origin FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2",
+                "SELECT origin FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2 \
+                 AND sender_machine = ?3",
             )
             .bind(&job.serial_key)
             .bind(&job.dedupe_key)
+            .bind(job.dedupe_origin.as_deref().unwrap_or_default())
             .fetch_optional(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -480,23 +494,25 @@ impl Queue for SqliteQueue {
             }
 
             sqlx::query(
-                "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, enqueued_at) \
-             VALUES (?1, ?2, ?3, ?4, unixepoch()) ON CONFLICT DO NOTHING",
+                "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, dedupe_origin, enqueued_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch()) ON CONFLICT DO NOTHING",
             )
             .bind(&job.kind)
             .bind(&job.serial_key)
             .bind(&job.payload)
             .bind(&job.dedupe_key)
+            .bind(job.dedupe_origin.as_deref().unwrap_or_default())
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
 
             let (id, not_before): (i64, i64) = sqlx::query_as(
                 "SELECT id, not_before FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 \
-               AND state IN ('pending', 'running') ORDER BY id LIMIT 1",
+               AND dedupe_origin = ?3 AND state IN ('pending', 'running') ORDER BY id LIMIT 1",
             )
             .bind(&job.kind)
             .bind(&job.dedupe_key)
+            .bind(job.dedupe_origin.as_deref().unwrap_or_default())
             .fetch_one(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -537,7 +553,7 @@ impl Queue for SqliteQueue {
             message: error.to_string(),
         })?;
         let rows = sqlx::query(
-            "SELECT id, kind, serial_key, payload, dedupe_key, attempt, outcome FROM jobs \
+            "SELECT id, kind, serial_key, payload, dedupe_key, dedupe_origin, attempt, outcome FROM jobs \
              WHERE state = 'failed' AND kind IN (SELECT value FROM json_each(?1)) \
                AND outcome IN ('undelivered:lease-exhausted', 'undelivered:harness-swallowed', \
                                'undelivered:operator-released', 'undelivered:native-receiver-unavailable') ORDER BY id",
@@ -580,9 +596,11 @@ impl Queue for SqliteQueue {
              WHERE id = ?1 AND serial_key = ?2 AND kind = 'delivery:' || serial_key \
                AND state = 'failed' AND outcome = 'undelivered:native-receiver-unavailable' \
                AND NOT EXISTS (SELECT 1 FROM jobs live WHERE live.id != jobs.id \
-                   AND live.state IN ('pending', 'running') AND live.dedupe_key = jobs.dedupe_key) \
+                   AND live.state IN ('pending', 'running') AND live.dedupe_key = jobs.dedupe_key \
+                   AND live.dedupe_origin = jobs.dedupe_origin) \
                AND NOT EXISTS (SELECT 1 FROM delivered_messages \
-                   WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key)",
+                   WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key \
+                   AND sender_machine = jobs.dedupe_origin)",
             )
             .bind(id)
             .bind(recipient.as_str())
@@ -632,7 +650,7 @@ impl Queue for SqliteQueue {
                AND NOT EXISTS (SELECT 1 FROM jobs earlier \
                    WHERE earlier.serial_key = jobs.serial_key AND earlier.id < jobs.id \
                      AND earlier.state IN ('pending', 'running')) \
-             RETURNING kind, serial_key, payload, dedupe_key, attempt",
+             RETURNING kind, serial_key, payload, dedupe_key, dedupe_origin, attempt",
         ).bind(id).bind(recipient.as_str()).bind(i64::from(attempt)).bind(evidence.outcome.as_str())
             .bind(claim_lease_secs)
             .fetch_optional(&mut *tx).await.map_err(adapter_error)?;
@@ -661,7 +679,7 @@ impl Queue for SqliteQueue {
             message: format!("could not encode the peek filter: {error}"),
         })?;
         let row = sqlx::query(
-            "SELECT id, kind, serial_key, payload, dedupe_key, attempt FROM jobs \
+            "SELECT id, kind, serial_key, payload, dedupe_key, dedupe_origin, attempt FROM jobs \
              WHERE state IN ('pending', 'running') \
                AND kind IN (SELECT value FROM json_each(?1)) \
              ORDER BY id LIMIT 1",
@@ -679,6 +697,7 @@ impl Queue for SqliteQueue {
             serial_key: row.try_get("serial_key").map_err(adapter_error)?,
             payload: row.try_get("payload").map_err(adapter_error)?,
             dedupe_key: row.try_get("dedupe_key").map_err(adapter_error)?,
+            dedupe_origin: origin_column(row.try_get("dedupe_origin").map_err(adapter_error)?),
             attempt: row
                 .try_get::<i64, _>("attempt")
                 .map_err(adapter_error)?
@@ -693,7 +712,7 @@ impl Queue for SqliteQueue {
             return Ok(None);
         };
         let row = sqlx::query(
-            "SELECT kind, serial_key, payload, dedupe_key, attempt FROM jobs \
+            "SELECT kind, serial_key, payload, dedupe_key, dedupe_origin, attempt FROM jobs \
              WHERE id = ?1 AND state = 'running' AND kind = 'delivery:' || serial_key",
         )
         .bind(id)
@@ -708,6 +727,7 @@ impl Queue for SqliteQueue {
             serial_key: row.try_get("serial_key").map_err(adapter_error)?,
             payload: row.try_get("payload").map_err(adapter_error)?,
             dedupe_key: row.try_get("dedupe_key").map_err(adapter_error)?,
+            dedupe_origin: origin_column(row.try_get("dedupe_origin").map_err(adapter_error)?),
             attempt: row
                 .try_get::<i64, _>("attempt")
                 .map_err(adapter_error)?
@@ -944,12 +964,13 @@ impl Queue for SqliteQueue {
         let pool = self.pool.clone();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            let row =
-                sqlx::query("SELECT kind, serial_key, dedupe_key, state FROM jobs WHERE id = ?1")
-                    .bind(id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(adapter_error)?;
+            let row = sqlx::query(
+                "SELECT kind, serial_key, dedupe_key, dedupe_origin, state FROM jobs WHERE id = ?1",
+            )
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
             let Some(row) = row else {
                 tx.commit().await.map_err(adapter_error)?;
                 return Ok(DeferOutcome::NotLive {
@@ -968,6 +989,7 @@ impl Queue for SqliteQueue {
                 serial_key: row.try_get("serial_key").map_err(adapter_error)?,
                 payload: String::new(),
                 dedupe_key: row.try_get("dedupe_key").map_err(adapter_error)?,
+                dedupe_origin: origin_column(row.try_get("dedupe_origin").map_err(adapter_error)?),
                 attempt: 0,
             };
             require_delivery_job(&delivery)?;
@@ -1025,12 +1047,13 @@ impl Queue for SqliteQueue {
         let pool = self.pool.clone();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            let row =
-                sqlx::query("SELECT kind, serial_key, dedupe_key, state FROM jobs WHERE id = ?1")
-                    .bind(id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(adapter_error)?;
+            let row = sqlx::query(
+                "SELECT kind, serial_key, dedupe_key, dedupe_origin, state FROM jobs WHERE id = ?1",
+            )
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
             let Some(row) = row else {
                 tx.commit().await.map_err(adapter_error)?;
                 return Ok(ReleaseOutcome::NotLive {
@@ -1049,6 +1072,7 @@ impl Queue for SqliteQueue {
                 serial_key: row.try_get("serial_key").map_err(adapter_error)?,
                 payload: String::new(),
                 dedupe_key: row.try_get("dedupe_key").map_err(adapter_error)?,
+                dedupe_origin: origin_column(row.try_get("dedupe_origin").map_err(adapter_error)?),
                 attempt: 0,
             };
             require_delivery_job(&delivery)?;
@@ -1260,6 +1284,7 @@ impl Queue for SqliteQueue {
         &self,
         recipient: &SeatId,
         msg_id: &str,
+        sender_machine: Option<&str>,
         origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
         require_current_schema(&self.pool).await?;
@@ -1267,14 +1292,17 @@ impl Queue for SqliteQueue {
         let delivered_id_capacity = self.delivered_id_capacity;
         let recipient = recipient.clone();
         let msg_id = msg_id.to_owned();
+        let sender_machine = sender_machine.unwrap_or_default().to_owned();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
 
             let existing: Option<String> = sqlx::query_scalar(
-                "SELECT origin FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2",
+                "SELECT origin FROM delivered_messages \
+                 WHERE recipient = ?1 AND msg_id = ?2 AND sender_machine = ?3",
             )
             .bind(recipient.as_str())
             .bind(&msg_id)
+            .bind(&sender_machine)
             .fetch_optional(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -1284,11 +1312,13 @@ impl Queue for SqliteQueue {
             }
 
             sqlx::query(
-                "INSERT INTO delivered_messages (recipient, msg_id, origin) VALUES (?1, ?2, ?3)",
+                "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine) \
+                 VALUES (?1, ?2, ?3, ?4)",
             )
             .bind(recipient.as_str())
             .bind(&msg_id)
             .bind(encode_origin(origin))
+            .bind(&sender_machine)
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
@@ -1310,35 +1340,53 @@ impl Queue for SqliteQueue {
         .await
     }
 
-    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+    async fn admitted(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<bool> {
         require_current_schema(&self.pool).await?;
         let found: Option<i64> = sqlx::query_scalar(
-            "SELECT 1 FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2 \
+            "SELECT 1 FROM delivered_messages \
+               WHERE recipient = ?1 AND msg_id = ?2 AND sender_machine = ?3 \
              UNION ALL \
              SELECT 1 FROM jobs WHERE kind = 'delivery:' || ?1 AND dedupe_key = ?2 \
+               AND dedupe_origin = ?3 \
              LIMIT 1",
         )
         .bind(recipient.as_str())
         .bind(msg_id)
+        .bind(sender_machine.unwrap_or_default())
         .fetch_optional(&self.pool)
         .await
         .map_err(adapter_error)?;
         Ok(found.is_some())
     }
 
-    async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()> {
+    async fn forget_delivered(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<()> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let recipient = recipient.clone();
         let msg_id = msg_id.to_owned();
+        let sender_machine = sender_machine.unwrap_or_default().to_owned();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            sqlx::query("DELETE FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2")
-                .bind(recipient.as_str())
-                .bind(msg_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(adapter_error)?;
+            sqlx::query(
+                "DELETE FROM delivered_messages \
+                 WHERE recipient = ?1 AND msg_id = ?2 AND sender_machine = ?3",
+            )
+            .bind(recipient.as_str())
+            .bind(msg_id)
+            .bind(sender_machine)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
             tx.commit().await.map_err(adapter_error)?;
             Ok(())
         })
@@ -1353,7 +1401,7 @@ impl Queue for SqliteQueue {
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
             let row = sqlx::query(
-                "SELECT kind, serial_key, dedupe_key FROM jobs WHERE id = ?1 AND state = 'running'",
+                "SELECT kind, serial_key, dedupe_key, dedupe_origin FROM jobs WHERE id = ?1 AND state = 'running'",
             )
             .bind(job.0 as i64)
             .fetch_optional(&mut *tx)
@@ -1371,6 +1419,7 @@ impl Queue for SqliteQueue {
                 serial_key: row.try_get("serial_key").map_err(adapter_error)?,
                 payload: String::new(),
                 dedupe_key: row.try_get("dedupe_key").map_err(adapter_error)?,
+                dedupe_origin: origin_column(row.try_get("dedupe_origin").map_err(adapter_error)?),
                 attempt: 0,
             };
             require_delivery_job(&claimed)?;
@@ -1384,12 +1433,14 @@ impl Queue for SqliteQueue {
             .await
             .map_err(adapter_error)?;
             sqlx::query(
-                "INSERT INTO delivered_messages (recipient, msg_id, origin) VALUES (?1, ?2, ?3) \
-             ON CONFLICT (recipient, msg_id) DO NOTHING",
+                "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine) \
+                 VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT (recipient, sender_machine, msg_id) DO NOTHING",
             )
             .bind(&claimed.serial_key)
             .bind(&claimed.dedupe_key)
             .bind(encode_origin(origin))
+            .bind(claimed.dedupe_origin.as_deref().unwrap_or_default())
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;

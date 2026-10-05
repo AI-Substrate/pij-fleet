@@ -835,6 +835,7 @@ mod tests {
                 serial_key: msg.to.0.clone(),
                 payload: serde_json::to_string(msg).expect("message json"),
                 dedupe_key: msg.msg_id.clone(),
+                dedupe_origin: None,
                 attempt: 0,
             })
             .await
@@ -1121,6 +1122,7 @@ mod tests {
                 serial_key: msg.to.0.clone(),
                 payload: serde_json::to_string(&msg).expect("message json"),
                 dedupe_key: msg.msg_id.clone(),
+                dedupe_origin: None,
                 attempt: 0,
             })
             .await
@@ -2069,6 +2071,7 @@ mod tests {
                 serial_key: msg.to.0.clone(),
                 payload: serde_json::to_string(&msg).expect("message json"),
                 dedupe_key: msg.msg_id.clone(),
+                dedupe_origin: None,
                 attempt: 0,
             })
             .await
@@ -2114,24 +2117,31 @@ mod tests {
             &self,
             recipient: &SeatId,
             msg_id: &str,
+            sender_machine: Option<&str>,
             origin: DeliveryOrigin,
         ) -> pij_core::error::Result<Option<DeliveryOrigin>> {
-            self.inner.note_delivered(recipient, msg_id, origin).await
+            self.inner
+                .note_delivered(recipient, msg_id, sender_machine, origin)
+                .await
         }
 
         async fn forget_delivered(
             &self,
             recipient: &SeatId,
             msg_id: &str,
+            sender_machine: Option<&str>,
         ) -> pij_core::error::Result<()> {
-            self.inner.forget_delivered(recipient, msg_id).await
+            self.inner
+                .forget_delivered(recipient, msg_id, sender_machine)
+                .await
         }
         async fn admitted(
             &self,
             recipient: &SeatId,
             msg_id: &str,
+            sender_machine: Option<&str>,
         ) -> pij_core::error::Result<bool> {
-            self.inner.admitted(recipient, msg_id).await
+            self.inner.admitted(recipient, msg_id, sender_machine).await
         }
 
         async fn enqueue(&self, job: Job) -> pij_core::error::Result<JobId> {
@@ -2379,6 +2389,7 @@ mod tests {
                     serial_key: msg.to.0.clone(),
                     payload: serde_json::to_string(&msg).expect("message json"),
                     dedupe_key: msg.msg_id,
+                    dedupe_origin: None,
                     attempt: 0,
                 })
                 .await
@@ -2429,6 +2440,7 @@ mod tests {
                 serial_key: later.to.0.clone(),
                 payload: serde_json::to_string(&later).expect("message json"),
                 dedupe_key: later.msg_id.clone(),
+                dedupe_origin: None,
                 attempt: 0,
             })
             .await

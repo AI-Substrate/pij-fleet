@@ -37,6 +37,7 @@ impl Queue for CountingQueue {
         &self,
         _recipient: &SeatId,
         _msg_id: &str,
+        _sender_machine: Option<&str>,
         _origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
         // The counting request fixture models no ledger. Claiming would be a lie
@@ -48,18 +49,27 @@ impl Queue for CountingQueue {
         })
     }
 
-    async fn forget_delivered(&self, _recipient: &SeatId, _msg_id: &str) -> Result<()> {
+    async fn forget_delivered(
+        &self,
+        _recipient: &SeatId,
+        _msg_id: &str,
+        _sender_machine: Option<&str>,
+    ) -> Result<()> {
         Ok(())
     }
 
-    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+    async fn admitted(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<bool> {
         let kind = format!("delivery:{}", recipient.as_str());
-        Ok(self
-            .jobs
-            .lock()
-            .expect("queue mutex")
-            .iter()
-            .any(|job| job.kind == kind && job.dedupe_key == msg_id))
+        Ok(self.jobs.lock().expect("queue mutex").iter().any(|job| {
+            job.kind == kind
+                && job.dedupe_key == msg_id
+                && job.dedupe_origin.as_deref() == sender_machine
+        }))
     }
 
     async fn enqueue(&self, job: Job) -> Result<JobId> {
@@ -1848,6 +1858,7 @@ async fn state_projects_live_delivery_deferrals_and_clears_success_or_terminal_r
                 serial_key: seat.to_string(),
                 payload: serde_json::to_string(&message).unwrap(),
                 dedupe_key: message.msg_id.clone(),
+                dedupe_origin: None,
                 attempt: 0,
             })
             .await

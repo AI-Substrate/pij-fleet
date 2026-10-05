@@ -2890,6 +2890,7 @@ async fn native_sqlite_malformed_claim_is_held_without_ack() {
             serial_key: seat.id.0.clone(),
             payload: "{broken".into(),
             dedupe_key: "malformed-137".into(),
+            dedupe_origin: None,
             attempt: 0,
         })
         .await

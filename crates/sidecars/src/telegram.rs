@@ -124,6 +124,7 @@ pub fn send_job(request: &TelegramSend) -> Result<Job> {
             message: format!("could not encode Telegram request: {error}"),
         })?,
         dedupe_key: request.msg_id.clone(),
+        dedupe_origin: None,
         attempt: 0,
     })
 }

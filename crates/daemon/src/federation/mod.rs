@@ -448,6 +448,7 @@ impl FederationService {
                 serial_key: format!("{}@{alias}", request.to.seat),
                 payload,
                 dedupe_key: request.msg_id.clone(),
+                dedupe_origin: None,
                 attempt: 0,
             })
             .await
@@ -532,13 +533,6 @@ impl FederationService {
         let mut forwarded = request.clone();
         forwarded.to.machine = None;
         forwarded.from_machine = Some(self.local_alias.clone());
-        // A reply to a message that peer sent us names it by the id we scoped
-        // it under (`<id>@<alias>`); give the peer back its own id.
-        if let Some(answered) = forwarded.in_reply_to.as_deref()
-            && let Some(own) = answered.strip_suffix(&format!("@{alias}"))
-        {
-            forwarded.in_reply_to = Some(own.to_string());
-        }
         match post_to_peer::<_, Receipt>(&self.client, endpoint, "/v1/send", &forwarded).await {
             Err(_) => self.retry_claim(job_id, job.attempt, &request).await,
             Ok(envelope) if !envelope.ok && envelope.error == Some(ErrorKind::Adapter) => {

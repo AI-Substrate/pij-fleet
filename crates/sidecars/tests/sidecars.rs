@@ -102,15 +102,30 @@ impl Queue for FailFirstClaim {
         &self,
         recipient: &SeatId,
         msg_id: &str,
+        sender_machine: Option<&str>,
         origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
-        self.inner.note_delivered(recipient, msg_id, origin).await
+        self.inner
+            .note_delivered(recipient, msg_id, sender_machine, origin)
+            .await
     }
-    async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()> {
-        self.inner.forget_delivered(recipient, msg_id).await
+    async fn forget_delivered(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<()> {
+        self.inner
+            .forget_delivered(recipient, msg_id, sender_machine)
+            .await
     }
-    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
-        self.inner.admitted(recipient, msg_id).await
+    async fn admitted(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<bool> {
+        self.inner.admitted(recipient, msg_id, sender_machine).await
     }
     async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
         self.inner.retry(job, delay).await
@@ -701,15 +716,30 @@ impl Queue for RefuseFirstDelivery {
         &self,
         recipient: &SeatId,
         msg_id: &str,
+        sender_machine: Option<&str>,
         origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
-        self.inner.note_delivered(recipient, msg_id, origin).await
+        self.inner
+            .note_delivered(recipient, msg_id, sender_machine, origin)
+            .await
     }
-    async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()> {
-        self.inner.forget_delivered(recipient, msg_id).await
+    async fn forget_delivered(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<()> {
+        self.inner
+            .forget_delivered(recipient, msg_id, sender_machine)
+            .await
     }
-    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
-        self.inner.admitted(recipient, msg_id).await
+    async fn admitted(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<bool> {
+        self.inner.admitted(recipient, msg_id, sender_machine).await
     }
     async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
         self.inner.retry(job, delay).await

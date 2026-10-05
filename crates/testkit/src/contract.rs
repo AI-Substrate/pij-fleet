@@ -355,6 +355,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
         serial_key: serial.to_string(),
         payload: "{}".to_string(),
         dedupe_key: dedupe.to_string(),
+        dedupe_origin: None,
         attempt: 0,
     };
 
@@ -405,6 +406,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
             serial_key: "seat-peek".to_string(),
             payload: "peek-body".to_string(),
             dedupe_key: "peek-1".to_string(),
+            dedupe_origin: None,
             attempt: 0,
         })
         .await
@@ -441,6 +443,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
         serial_key: "seat-delivered".to_string(),
         payload: "{}".to_string(),
         dedupe_key: "delivered-1".to_string(),
+        dedupe_origin: None,
         attempt: 0,
     };
     let first = queue
@@ -491,10 +494,41 @@ pub async fn queue_contract(queue: &dyn Queue) {
     );
     assert_eq!(
         queue
-            .enqueue_delivery(delivery)
+            .enqueue_delivery(delivery.clone())
             .await
             .expect("consult delivered id"),
         DeliveryEnqueue::AlreadyDelivered(DeliveryOrigin::ReaderRead)
+    );
+    // Plan 164 review F02: identity is (origin, msg_id), origin in its own
+    // field. The same id from a paired machine is a new message, neither the
+    // delivered local one nor collapsed into it; its exact retry collapses.
+    let forwarded = Job {
+        dedupe_origin: Some("laptop".to_string()),
+        ..delivery
+    };
+    let DeliveryEnqueue::Queued {
+        job_id: forwarded_id,
+        ..
+    } = queue
+        .enqueue_delivery(forwarded.clone())
+        .await
+        .expect("a peer's same id")
+    else {
+        panic!("a peer's same id is a new message, not the delivered local one");
+    };
+    assert_ne!(forwarded_id, first);
+    let DeliveryEnqueue::Queued {
+        job_id: retried, ..
+    } = queue
+        .enqueue_delivery(forwarded)
+        .await
+        .expect("the peer's exact retry")
+    else {
+        panic!("the peer's retry stays queued");
+    };
+    assert_eq!(
+        retried, forwarded_id,
+        "an exact retry from that peer collapses"
     );
 
     // R4-AMEND-4, in the SHARED contract so fake and real cannot drift: the claim
@@ -503,26 +537,71 @@ pub async fn queue_contract(queue: &dyn Queue) {
     let claimant = SeatId::from("seat-claimed");
     assert_eq!(
         queue
-            .note_delivered(&claimant, "claim-1", DeliveryOrigin::ReaderRead)
+            .note_delivered(&claimant, "claim-1", None, DeliveryOrigin::ReaderRead)
             .await
             .expect("first claim"),
         None
     );
     assert_eq!(
         queue
-            .note_delivered(&claimant, "claim-1", DeliveryOrigin::InjectedToTransport)
+            .note_delivered(
+                &claimant,
+                "claim-1",
+                None,
+                DeliveryOrigin::InjectedToTransport
+            )
             .await
             .expect("second claim"),
         Some(DeliveryOrigin::ReaderRead),
         "a claimed message reports what was ORIGINALLY observed"
     );
+    // Plan 164 review F02: the ledger key is (recipient, sender machine,
+    // msg_id). The same id from a paired machine is another message, with its
+    // own claim; an exact repeat from that machine is the same one.
+    assert_eq!(
+        queue
+            .note_delivered(
+                &claimant,
+                "claim-1",
+                Some("laptop"),
+                DeliveryOrigin::ReaderRead
+            )
+            .await
+            .expect("a peer's claim"),
+        None,
+        "a peer's `claim-1` is not the local `claim-1`"
+    );
+    assert_eq!(
+        queue
+            .note_delivered(
+                &claimant,
+                "claim-1",
+                Some("laptop"),
+                DeliveryOrigin::TypedToPane
+            )
+            .await
+            .expect("the peer's retry"),
+        Some(DeliveryOrigin::ReaderRead)
+    );
     queue
-        .forget_delivered(&claimant, "claim-1")
+        .forget_delivered(&claimant, "claim-1", None)
         .await
         .expect("release the claim");
     assert_eq!(
         queue
-            .note_delivered(&claimant, "claim-1", DeliveryOrigin::ReaderRead)
+            .note_delivered(
+                &claimant,
+                "claim-1",
+                Some("laptop"),
+                DeliveryOrigin::TypedToPane
+            )
+            .await
+            .expect("the peer's claim survives the local release"),
+        Some(DeliveryOrigin::ReaderRead)
+    );
+    assert_eq!(
+        queue
+            .note_delivered(&claimant, "claim-1", None, DeliveryOrigin::ReaderRead)
             .await
             .expect("re-claim"),
         None,
@@ -546,6 +625,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
         serial_key: "seat-typing".to_string(),
         payload: "{}".to_string(),
         dedupe_key: "typing-1".to_string(),
+        dedupe_origin: None,
         attempt: 0,
     };
     let DeliveryEnqueue::Queued { .. } = queue
@@ -660,6 +740,7 @@ pub async fn queue_contract(queue: &dyn Queue) {
         serial_key: holder.to_string(),
         payload: serde_json::json!({"to":holder,"command":null}).to_string(),
         dedupe_key: "heartbeat-body".into(),
+        dedupe_origin: None,
         attempt: 0,
     };
     let held_kinds = [held.kind.clone()];

@@ -22,6 +22,7 @@ fn job(kind: &str, serial: &str, dedupe: &str) -> Job {
         serial_key: serial.to_string(),
         payload: "{}".to_string(),
         dedupe_key: dedupe.to_string(),
+        dedupe_origin: None,
         attempt: 0,
     }
 }
@@ -1666,6 +1667,7 @@ async fn defer_pending_delivery_replaces_deadline_and_zero_releases_it() {
         .note_delivered(
             &SeatId::from("pij-other"),
             "m-existing",
+            None,
             DeliveryOrigin::VerifiedArrival,
         )
         .await
@@ -1733,6 +1735,7 @@ async fn defer_pending_delivery_replaces_deadline_and_zero_releases_it() {
             .note_delivered(
                 &SeatId::from("pij-other"),
                 "m-existing",
+                None,
                 DeliveryOrigin::ReaderRead
             )
             .await
@@ -1991,6 +1994,7 @@ async fn release_deferred_pending_delivery_is_immediate_without_changing_body_at
         .note_delivered(
             &SeatId::from("pij-other"),
             "m-existing",
+            None,
             DeliveryOrigin::VerifiedArrival,
         )
         .await
@@ -2226,6 +2230,7 @@ async fn one_msg_id_to_two_recipients_is_two_rows() {
         serial_key: seat.to_string(),
         payload: format!("to {seat}"),
         dedupe_key: "m-1".to_string(),
+        dedupe_origin: None,
         attempt: 0,
     };
 
@@ -2266,6 +2271,7 @@ async fn the_lease_sweep_does_not_reach_another_workers_kind() {
             serial_key: "laptop".to_string(),
             payload: "forward".to_string(),
             dedupe_key: "m-fed".to_string(),
+            dedupe_origin: None,
             attempt: 0,
         })
         .await
@@ -2470,7 +2476,7 @@ async fn note_delivered_claims_once_and_survives_reconstruction() {
 
     assert_eq!(
         queue
-            .note_delivered(&recipient, "m-1", DeliveryOrigin::ReaderRead)
+            .note_delivered(&recipient, "m-1", None, DeliveryOrigin::ReaderRead)
             .await
             .expect("first claim"),
         None,
@@ -2478,7 +2484,7 @@ async fn note_delivered_claims_once_and_survives_reconstruction() {
     );
     assert_eq!(
         queue
-            .note_delivered(&recipient, "m-1", DeliveryOrigin::InjectedToTransport)
+            .note_delivered(&recipient, "m-1", None, DeliveryOrigin::InjectedToTransport)
             .await
             .expect("second claim"),
         Some(DeliveryOrigin::ReaderRead),
@@ -2490,7 +2496,7 @@ async fn note_delivered_claims_once_and_survives_reconstruction() {
     let reopened = crate_queue(&fresh).await;
     assert_eq!(
         reopened
-            .note_delivered(&recipient, "m-1", DeliveryOrigin::VerifiedArrival)
+            .note_delivered(&recipient, "m-1", None, DeliveryOrigin::VerifiedArrival)
             .await
             .expect("claim after reconstruction"),
         Some(DeliveryOrigin::ReaderRead)
@@ -2502,6 +2508,7 @@ async fn note_delivered_claims_once_and_survives_reconstruction() {
             .note_delivered(
                 &SeatId::from("pij-other"),
                 "m-1",
+                None,
                 DeliveryOrigin::ReaderRead
             )
             .await
@@ -2519,17 +2526,17 @@ async fn forget_delivered_releases_a_claim_on_the_real_adapter() {
     let recipient = SeatId::from("pij-real");
 
     queue
-        .note_delivered(&recipient, "m-2", DeliveryOrigin::InjectedToTransport)
+        .note_delivered(&recipient, "m-2", None, DeliveryOrigin::InjectedToTransport)
         .await
         .expect("claim");
     queue
-        .forget_delivered(&recipient, "m-2")
+        .forget_delivered(&recipient, "m-2", None)
         .await
         .expect("release");
 
     assert_eq!(
         queue
-            .note_delivered(&recipient, "m-2", DeliveryOrigin::InjectedToTransport)
+            .note_delivered(&recipient, "m-2", None, DeliveryOrigin::InjectedToTransport)
             .await
             .expect("re-claim"),
         None,

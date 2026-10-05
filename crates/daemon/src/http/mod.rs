@@ -1597,7 +1597,6 @@ async fn send(
             "pij-bg is a daemon-owned sender; callers cannot impersonate it",
         );
     }
-    let mut peer_msg_id: Option<String> = None;
     // The sending machine comes from the KEY, never from the body (plan 164
     // ruling 3): a peer is stamped with its configured alias, and a local
     // caller cannot pose as a forward to slip past this daemon's rules.
@@ -1627,14 +1626,9 @@ async fn send(
                     ),
                 );
             }
+            // The origin is its own field, never folded into the id (review
+            // F02): every dedupe downstream keys on (from_machine, msg_id).
             request.message.from_machine = Some(alias.to_string());
-            // The peer's msg_id lives in the PEER's namespace (review F02): one
-            // daemon's ids must never dedupe against another's, here or in any
-            // ledger or journal downstream. The receipt still names the
-            // sender's own id; a reply's `in_reply_to` is unscoped on its way
-            // back by the forwarding worker.
-            peer_msg_id = Some(request.message.msg_id.clone());
-            request.message.msg_id = scoped_msg_id(&request.message.msg_id, alias);
         }
         auth::AuthenticatedMachine::Local => {
             if request.message.from_machine.is_some() {
@@ -1643,10 +1637,18 @@ async fn send(
                     "from_machine is stamped from a paired machine's key; a local caller cannot assert it",
                 );
             }
+            // `@` is the address separator. A local id never carries it, so no
+            // local id can be read as, or collide with, a qualified one.
+            if request.message.msg_id.contains('@') {
+                return refused(
+                    "pij send",
+                    "E-RS-ARG: msg_id cannot contain `@`, which separates a seat from its machine",
+                );
+            }
         }
     }
     if request.message.fyi {
-        return hold_fyi(&state, request, peer_msg_id).await;
+        return hold_fyi(&state, request).await;
     }
     if let Some(command) = request.command {
         if request.message.to.machine.is_some() {
@@ -1718,19 +1720,11 @@ async fn send(
     match accepted {
         Ok(mut receipt) => {
             receipt.cold_check = cold_check;
-            if let Some(original) = peer_msg_id {
-                receipt.msg_id = original;
-            }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
         }
 
         Err(error) => send_failure("pij send", error),
     }
-}
-
-/// A forwarded message's id as this daemon keys it: `<msg_id>@<peer alias>`.
-fn scoped_msg_id(msg_id: &str, alias: &str) -> String {
-    format!("{msg_id}@{alias}")
 }
 
 /// One remote send, from either the native or the shim route: durably queued
@@ -1784,11 +1778,7 @@ pub(crate) async fn send_remote(state: &AppState, command: &str, request: SendRe
 /// `pij send --fyi` (plan 158): hold the message for the recipient's next real
 /// turn. A remote recipient's FYI is held by ITS daemon: this one forwards it,
 /// and a forwarded FYI is held here exactly as a local one.
-async fn hold_fyi(
-    state: &AppState,
-    request: SendBodyRequest,
-    peer_msg_id: Option<String>,
-) -> Response {
+async fn hold_fyi(state: &AppState, request: SendBodyRequest) -> Response {
     if request.command.is_some() {
         return refused(
             "pij send",
@@ -1813,9 +1803,6 @@ async fn hold_fyi(
     match state.services.delivery.hold_fyi(msg).await {
         Ok(mut receipt) => {
             fyi::after_hold(state, &recipient, question, &mut receipt).await;
-            if let Some(original) = peer_msg_id {
-                receipt.msg_id = original;
-            }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
         }
         Err(error) => send_failure("pij send", error),
