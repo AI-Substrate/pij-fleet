@@ -1,10 +1,10 @@
 //! Durable background lifecycle contracts against a fresh, real SQLite store.
 
-use pij_core::background::{BackgroundJob, BackgroundState};
+use pij_core::background::{BackgroundJob, BackgroundKind, BackgroundState};
 use pij_core::error::PijError;
 use pij_core::model::{ProcIdentity, SeatId};
 use pij_store::StorePool;
-use pij_store::background::SqliteBackground;
+use pij_store::background::{EmitOutcome, SqliteBackground};
 use pij_testkit::FreshStore;
 
 fn queued(id: &str) -> BackgroundJob {
@@ -26,6 +26,12 @@ fn queued(id: &str) -> BackgroundJob {
         deadline_at: None,
         timed_out: false,
         term_sent: false,
+        kind: BackgroundKind::Oneshot,
+        events_fyi: false,
+        min_interval_ms: 0,
+        inline_max: 0,
+        last_wake_at: None,
+        batches: 0,
     }
 }
 
@@ -712,5 +718,146 @@ async fn background_term_provenance_needs_kill_intent_and_a_live_job() {
     assert!(
         !background.set_term_sent("job", true).await.unwrap(),
         "a finished job's provenance is frozen"
+    );
+}
+
+async fn live_source(background: &SqliteBackground, id: &str) {
+    let mut job = queued(id);
+    job.kind = BackgroundKind::Events;
+    background
+        .insert_with_token(&job, Some(&"a".repeat(64)))
+        .await
+        .expect("insert source");
+    let identity = ProcIdentity {
+        pid: 321,
+        proc_start: 654,
+    };
+    assert!(background.start(id, &identity, 321).await.expect("start"));
+}
+
+#[tokio::test]
+async fn background_events_cap_counts_drops_and_an_open_batch_is_redelivered_until_settled() {
+    let (_fresh, _pool, background) = setup().await;
+    live_source(&background, "src").await;
+    for (text, expected) in [
+        ("a", EmitOutcome::Accepted { seq: 1 }),
+        ("b", EmitOutcome::Accepted { seq: 2 }),
+        ("c", EmitOutcome::Dropped { dropped: 1 }),
+        ("d", EmitOutcome::Dropped { dropped: 2 }),
+    ] {
+        assert_eq!(
+            background
+                .emit("src", 10, text, Some("{\"k\":1}"), 2)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    let batch = background.cut_batch("src").await.unwrap().unwrap();
+    assert_eq!(batch.batch_no, 1);
+    assert_eq!(batch.dropped, 2);
+    assert_eq!(
+        batch
+            .events
+            .iter()
+            .map(|e| e.text.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "b"]
+    );
+    assert_eq!(batch.events[0].data.as_deref(), Some("{\"k\":1}"));
+    // Not settled (a crash mid-delivery): the same batch comes back, never a new one.
+    assert_eq!(background.cut_batch("src").await.unwrap(), Some(batch));
+    background
+        .settle_batch("src", 1, "delivered", 99)
+        .await
+        .unwrap();
+    assert_eq!(background.cut_batch("src").await.unwrap(), None);
+    let job = background.get("src").await.unwrap().unwrap();
+    assert_eq!((job.batches, job.last_wake_at), (1, Some(99)));
+    let stats = background.event_stats("src").await.unwrap();
+    assert_eq!(
+        (stats.fired, stats.pending, stats.last_fire_at),
+        (2, 0, Some(10))
+    );
+    assert!(background.settle_batch("src", 1, "lost", 1).await.is_err());
+}
+
+#[tokio::test]
+async fn background_emit_is_refused_for_one_shot_killed_and_finished_jobs() {
+    let (_fresh, _pool, background) = setup().await;
+    background.insert(&queued("oneshot")).await.unwrap();
+    live_source(&background, "killed").await;
+    live_source(&background, "finished").await;
+    assert!(background.request_kill("killed").await.unwrap());
+    background
+        .finish("finished", BackgroundState::Done, Some(0), 2_000)
+        .await
+        .unwrap();
+    for id in ["oneshot", "killed", "finished", "missing"] {
+        assert_eq!(
+            background.emit(id, 1, "x", None, 10).await.unwrap(),
+            EmitOutcome::Refused,
+            "{id}"
+        );
+    }
+    assert_eq!(background.token_hash("finished").await.unwrap(), None);
+    assert_eq!(
+        background.token_hash("killed").await.unwrap(),
+        Some("a".repeat(64))
+    );
+}
+
+#[tokio::test]
+async fn background_final_cut_is_fixed_once_and_never_takes_an_open_batchs_events() {
+    let (_fresh, _pool, background) = setup().await;
+    live_source(&background, "src").await;
+    background.emit("src", 1, "a", None, 1).await.unwrap();
+    let open = background.cut_batch("src").await.unwrap().unwrap();
+    assert_eq!(
+        background.open_batch("src").await.unwrap(),
+        Some(open.clone())
+    );
+    // The open batch belongs to batch 1; the final cut takes only what is unbatched.
+    assert_eq!(background.cut_final("src").await.unwrap(), None);
+    background
+        .settle_batch("src", 1, "delivered", 2)
+        .await
+        .unwrap();
+    background.emit("src", 3, "b", None, 1).await.unwrap();
+    background.emit("src", 4, "c", None, 1).await.unwrap();
+    let last = background.cut_final("src").await.unwrap().unwrap();
+    assert_eq!((last.batch_no, last.dropped, last.events.len()), (2, 1, 1));
+    assert_eq!(background.final_batch("src").await.unwrap(), Some(2));
+    // A retried final turn gets the very same batch back.
+    assert_eq!(background.cut_final("src").await.unwrap(), Some(last));
+    background
+        .settle_batch("src", 2, "delivered", 5)
+        .await
+        .unwrap();
+    let settled = background.cut_final("src").await.unwrap().unwrap();
+    assert_eq!((settled.batch_no, settled.events.len()), (2, 0));
+}
+
+#[tokio::test]
+async fn background_handoff_is_recorded_once_and_only_an_observed_fallback_replaces_it() {
+    let (_fresh, _pool, background) = setup().await;
+    live_source(&background, "src").await;
+    assert_eq!(background.handoff("src", "m").await.unwrap(), None);
+    assert_eq!(
+        background.record_handoff("src", "m", "wake").await.unwrap(),
+        "wake"
+    );
+    assert_eq!(
+        background.record_handoff("src", "m", "fyi").await.unwrap(),
+        "wake",
+        "the first decision stands"
+    );
+    background
+        .replace_handoff("src", "m", "held")
+        .await
+        .unwrap();
+    assert_eq!(
+        background.handoff("src", "m").await.unwrap().as_deref(),
+        Some("held")
     );
 }

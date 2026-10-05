@@ -52,6 +52,16 @@ impl Queue for CountingQueue {
         Ok(())
     }
 
+    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+        let kind = format!("delivery:{}", recipient.as_str());
+        Ok(self
+            .jobs
+            .lock()
+            .expect("queue mutex")
+            .iter()
+            .any(|job| job.kind == kind && job.dedupe_key == msg_id))
+    }
+
     async fn enqueue(&self, job: Job) -> Result<JobId> {
         let mut jobs = self.jobs.lock().expect("queue mutex");
         jobs.push(job);

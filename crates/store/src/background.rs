@@ -1,11 +1,42 @@
 //! Durable facts for daemon-owned detached processes and their completion turns.
 
-use pij_core::background::{BackgroundJob, BackgroundState};
+use pij_core::background::{
+    BackgroundEvent, BackgroundJob, BackgroundKind, BackgroundState, EventStats,
+};
 use pij_core::error::{PijError, Result};
 use pij_core::model::{ProcIdentity, SeatId};
 use sqlx::Row;
 
+use crate::migrate::{begin_write, owned_write};
 use crate::{StorePool, require_current_schema};
+
+/// What one emit did to a source's pending events.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmitOutcome {
+    /// Stored as the job's `seq`-th event.
+    Accepted {
+        /// Per-job sequence number.
+        seq: u64,
+    },
+    /// Over the pending cap: counted, not stored.
+    Dropped {
+        /// Emits dropped since the last batch, including this one.
+        dropped: u64,
+    },
+    /// The job is not a live, unkilled event source with a valid hook.
+    Refused,
+}
+
+/// A numbered batch of events cut for one delivery.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventBatch {
+    /// The batch's number, from 1; also its delivery dedupe key.
+    pub batch_no: u64,
+    /// Its events, oldest first.
+    pub events: Vec<BackgroundEvent>,
+    /// Emits dropped over the cap before this batch was cut.
+    pub dropped: u64,
+}
 
 /// SQLite persistence for background jobs; the daemon owns authorization and IO.
 #[derive(Clone)]
@@ -25,13 +56,25 @@ impl SqliteBackground {
     /// Returns a schema error on skew, or an adapter error for duplicate ids,
     /// inconsistent lifecycle facts, out-of-range integers, or SQLite failure.
     pub async fn insert(&self, job: &BackgroundJob) -> Result<()> {
+        self.insert_with_token(job, None).await
+    }
+
+    /// Persist a job together with the SHA-256 (hex) of its event-hook token.
+    ///
+    /// # Errors
+    /// As [`Self::insert`].
+    pub async fn insert_with_token(
+        &self,
+        job: &BackgroundJob,
+        token_hash: Option<&str>,
+    ) -> Result<()> {
         require_current_schema(&self.pool).await?;
         sqlx::query(
             "INSERT INTO background_jobs \
              (job_id, owner, title, command, pid, proc_start, pgid, out_path, state, \
               exit_code, started_at, finished_at, kill_requested, notified, deadline_at, \
-              timed_out) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              timed_out, kind, token_hash, events_fyi, min_interval_ms, inline_max) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&job.job_id)
         .bind(job.owner.as_str())
@@ -61,6 +104,11 @@ impl SqliteBackground {
                 .transpose()?,
         )
         .bind(job.timed_out)
+        .bind(encode_kind(job.kind))
+        .bind(token_hash)
+        .bind(job.events_fyi)
+        .bind(sql_i64(job.min_interval_ms, "min_interval_ms")?)
+        .bind(sql_i64(job.inline_max, "inline_max")?)
         .execute(&self.pool)
         .await
         .map_err(adapter_error)?;
@@ -226,8 +274,8 @@ impl SqliteBackground {
             return Err(invalid("background completion requires a terminal state"));
         }
         let result = sqlx::query(
-            "UPDATE background_jobs SET state = ?, exit_code = ?, finished_at = ? \
-             WHERE job_id = ? AND state IN ('queued', 'running')",
+            "UPDATE background_jobs SET state = ?, exit_code = ?, finished_at = ?, \
+             token_hash = NULL WHERE job_id = ? AND state IN ('queued', 'running')",
         )
         .bind(encode_state(state))
         .bind(exit_code)
@@ -237,6 +285,443 @@ impl SqliteBackground {
         .await
         .map_err(adapter_error)?;
         Ok(result.rows_affected() == 1)
+    }
+
+    /// The stored SHA-256 (hex) of a job's event-hook token; `None` when the job
+    /// is unknown, one-shot, or its token was revoked at finish.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn token_hash(&self, job_id: &str) -> Result<Option<String>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT token_hash FROM background_jobs WHERE job_id = ?",
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(adapter_error)
+        .map(Option::flatten)
+    }
+
+    /// Store one fired event, or count it as dropped once `cap` events are pending.
+    ///
+    /// Refused unless the job is a running event source with a live token and no
+    /// kill request: an emit can never outlive the job it belongs to.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn emit(
+        &self,
+        job_id: &str,
+        ts: u64,
+        text: &str,
+        data: Option<&str>,
+        cap: u64,
+    ) -> Result<EmitOutcome> {
+        require_current_schema(&self.pool).await?;
+        let (pool, job_id, text, data) = (
+            self.pool.clone(),
+            job_id.to_owned(),
+            text.to_owned(),
+            data.map(str::to_owned),
+        );
+        let ts = sql_i64(ts, "ts")?;
+        let cap = sql_i64(cap, "cap")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let live: Option<i64> = sqlx::query_scalar(
+                "SELECT 1 FROM background_jobs WHERE job_id = ? AND kind = 'events' \
+                 AND state = 'running' AND kill_requested = 0 AND token_hash IS NOT NULL",
+            )
+            .bind(&job_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            if live.is_none() {
+                return Ok(EmitOutcome::Refused);
+            }
+            let pending: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM bg_events WHERE job_id = ? AND state = 'pending'",
+            )
+            .bind(&job_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let outcome = if pending >= cap {
+                let dropped: i64 = sqlx::query_scalar(
+                    "UPDATE background_jobs SET dropped = dropped + 1 WHERE job_id = ? \
+                     RETURNING dropped",
+                )
+                .bind(&job_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+                EmitOutcome::Dropped {
+                    dropped: sql_u64(dropped, "dropped")?,
+                }
+            } else {
+                let seq: i64 = sqlx::query_scalar(
+                    "INSERT INTO bg_events (job_id, seq, ts, text, data_json) \
+                     SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ? FROM bg_events WHERE job_id = ? \
+                     RETURNING seq",
+                )
+                .bind(&job_id)
+                .bind(ts)
+                .bind(&text)
+                .bind(&data)
+                .bind(&job_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+                EmitOutcome::Accepted {
+                    seq: sql_u64(seq, "seq")?,
+                }
+            };
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(outcome)
+        })
+        .await
+    }
+
+    /// The open batch: cut, possibly already delivered, but not yet settled.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn open_batch(&self, job_id: &str) -> Result<Option<EventBatch>> {
+        require_current_schema(&self.pool).await?;
+        let mut tx = self.pool.begin().await.map_err(adapter_error)?;
+        let Some(row) =
+            sqlx::query("SELECT batches, open_dropped FROM background_jobs WHERE job_id = ?")
+                .bind(job_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+        else {
+            return Ok(None);
+        };
+        let batches: i64 = row.try_get("batches").map_err(adapter_error)?;
+        let open_dropped: i64 = row.try_get("open_dropped").map_err(adapter_error)?;
+        let events = batch_events(&mut tx, job_id, batches).await?;
+        if events.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(EventBatch {
+            batch_no: sql_u64(batches, "batches")?,
+            events,
+            dropped: sql_u64(open_dropped, "open_dropped")?,
+        }))
+    }
+
+    /// The batch a source's final turn carries, once cut (see [`Self::cut_final`]).
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn final_batch(&self, job_id: &str) -> Result<Option<u64>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT final_batch FROM background_jobs WHERE job_id = ?",
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .flatten()
+        .map(|value| sql_u64(value, "final_batch"))
+        .transpose()
+    }
+
+    /// Cut, once, the batch a source's final turn carries: every event not yet
+    /// in a batch, plus unreported drops. A retry returns that same batch (its
+    /// events still pending until settled), never a renumbered copy. `None`
+    /// when there is nothing to report. The caller finishes any earlier open
+    /// batch first; this cut never takes events that are already in one.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn cut_final(&self, job_id: &str) -> Result<Option<EventBatch>> {
+        require_current_schema(&self.pool).await?;
+        let (pool, job_id) = (self.pool.clone(), job_id.to_owned());
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let Some(row) = sqlx::query(
+                "SELECT batches, dropped, open_dropped, final_batch FROM background_jobs \
+                 WHERE job_id = ?",
+            )
+            .bind(&job_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            else {
+                return Ok(None);
+            };
+            let batches: i64 = row.try_get("batches").map_err(adapter_error)?;
+            let dropped: i64 = row.try_get("dropped").map_err(adapter_error)?;
+            let open_dropped: i64 = row.try_get("open_dropped").map_err(adapter_error)?;
+            let final_batch: Option<i64> = row.try_get("final_batch").map_err(adapter_error)?;
+            if let Some(final_batch) = final_batch {
+                return Ok(Some(EventBatch {
+                    batch_no: sql_u64(final_batch, "final_batch")?,
+                    events: batch_events(&mut tx, &job_id, final_batch).await?,
+                    dropped: sql_u64(open_dropped, "open_dropped")?,
+                }));
+            }
+            let unbatched: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM bg_events \
+                 WHERE job_id = ? AND state = 'pending' AND batch_no IS NULL",
+            )
+            .bind(&job_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            if unbatched == 0 && dropped == 0 {
+                return Ok(None);
+            }
+            let batch_no = batches + 1;
+            sqlx::query(
+                "UPDATE bg_events SET batch_no = ? \
+                 WHERE job_id = ? AND state = 'pending' AND batch_no IS NULL",
+            )
+            .bind(batch_no)
+            .bind(&job_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            sqlx::query(
+                "UPDATE background_jobs SET batches = ?, final_batch = ?, dropped = 0, \
+                 open_dropped = ? WHERE job_id = ?",
+            )
+            .bind(batch_no)
+            .bind(batch_no)
+            .bind(dropped)
+            .bind(&job_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let events = batch_events(&mut tx, &job_id, batch_no).await?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(Some(EventBatch {
+                batch_no: sql_u64(batch_no, "batch_no")?,
+                events,
+                dropped: sql_u64(dropped, "dropped")?,
+            }))
+        })
+        .await
+    }
+
+    /// Return the open batch (cut but not yet settled), else cut a new one from
+    /// the pending events. `None` when nothing is pending.
+    ///
+    /// An open batch is never absorbed into a new one: it may already have been
+    /// accepted, and only its own msg_id makes a redelivery idempotent.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn cut_batch(&self, job_id: &str) -> Result<Option<EventBatch>> {
+        require_current_schema(&self.pool).await?;
+        let (pool, job_id) = (self.pool.clone(), job_id.to_owned());
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let row = sqlx::query(
+                "SELECT batches, dropped, open_dropped FROM background_jobs WHERE job_id = ?",
+            )
+            .bind(&job_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let Some(row) = row else { return Ok(None) };
+            let batches: i64 = row.try_get("batches").map_err(adapter_error)?;
+            let dropped: i64 = row.try_get("dropped").map_err(adapter_error)?;
+            let open_dropped: i64 = row.try_get("open_dropped").map_err(adapter_error)?;
+            let open = batch_events(&mut tx, &job_id, batches).await?;
+            if !open.is_empty() {
+                return Ok(Some(EventBatch {
+                    batch_no: sql_u64(batches, "batches")?,
+                    events: open,
+                    dropped: sql_u64(open_dropped, "open_dropped")?,
+                }));
+            }
+            let unbatched: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM bg_events \
+                 WHERE job_id = ? AND state = 'pending' AND batch_no IS NULL",
+            )
+            .bind(&job_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            if unbatched == 0 {
+                return Ok(None);
+            }
+            let batch_no = batches + 1;
+            let carried = dropped + open_dropped;
+            sqlx::query("UPDATE bg_events SET batch_no = ? WHERE job_id = ? AND state = 'pending'")
+                .bind(batch_no)
+                .bind(&job_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+            sqlx::query(
+                "UPDATE background_jobs SET batches = ?, dropped = 0, open_dropped = ? \
+                 WHERE job_id = ?",
+            )
+            .bind(batch_no)
+            .bind(carried)
+            .bind(&job_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let events = batch_events(&mut tx, &job_id, batch_no).await?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(Some(EventBatch {
+                batch_no: sql_u64(batch_no, "batch_no")?,
+                events,
+                dropped: sql_u64(carried, "dropped")?,
+            }))
+        })
+        .await
+    }
+
+    /// Record how a batch left (`delivered`, `held` or `routed`) and when, which
+    /// also starts the next `--min-interval` window.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error for an invalid state or
+    /// SQLite failure.
+    pub async fn settle_batch(
+        &self,
+        job_id: &str,
+        batch_no: u64,
+        state: &str,
+        at: u64,
+    ) -> Result<()> {
+        require_current_schema(&self.pool).await?;
+        if !matches!(state, "delivered" | "held" | "routed") {
+            return Err(invalid(format!("unknown event settlement: {state}")));
+        }
+        let (pool, job_id, state) = (self.pool.clone(), job_id.to_owned(), state.to_owned());
+        let batch_no = sql_i64(batch_no, "batch_no")?;
+        let at = sql_i64(at, "at")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            sqlx::query(
+                "UPDATE bg_events SET state = ? \
+                 WHERE job_id = ? AND batch_no = ? AND state = 'pending'",
+            )
+            .bind(&state)
+            .bind(&job_id)
+            .bind(batch_no)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            sqlx::query(
+                "UPDATE background_jobs SET last_wake_at = ?, open_dropped = 0 \
+                 WHERE job_id = ? AND batches = ?",
+            )
+            .bind(at)
+            .bind(&job_id)
+            .bind(batch_no)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            tx.commit().await.map_err(adapter_error)
+        })
+        .await
+    }
+
+    /// The recorded hand-off plan for one source message, if decided.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn handoff(&self, job_id: &str, msg_id: &str) -> Result<Option<String>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query_scalar("SELECT plan FROM bg_handoffs WHERE job_id = ? AND msg_id = ?")
+            .bind(job_id)
+            .bind(msg_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(adapter_error)
+    }
+
+    /// Record a hand-off plan unless one is already recorded; return the plan
+    /// that stands (the first writer's), so every attempt replays one decision.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn record_handoff(&self, job_id: &str, msg_id: &str, plan: &str) -> Result<String> {
+        require_current_schema(&self.pool).await?;
+        let (pool, job_id, msg_id, plan) = (
+            self.pool.clone(),
+            job_id.to_owned(),
+            msg_id.to_owned(),
+            plan.to_owned(),
+        );
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            sqlx::query(
+                "INSERT OR IGNORE INTO bg_handoffs (job_id, msg_id, plan) VALUES (?, ?, ?)",
+            )
+            .bind(&job_id)
+            .bind(&msg_id)
+            .bind(&plan)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let recorded: String =
+                sqlx::query_scalar("SELECT plan FROM bg_handoffs WHERE job_id = ? AND msg_id = ?")
+                    .bind(&job_id)
+                    .bind(&msg_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(adapter_error)?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(recorded)
+        })
+        .await
+    }
+
+    /// Advance a recorded plan along a fallback the attempt observed (a refused
+    /// wake becomes held; a refused or failed prime notice becomes Telegram),
+    /// persisted before the fallback acts.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn replace_handoff(&self, job_id: &str, msg_id: &str, plan: &str) -> Result<()> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query("UPDATE bg_handoffs SET plan = ? WHERE job_id = ? AND msg_id = ?")
+            .bind(plan)
+            .bind(job_id)
+            .bind(msg_id)
+            .execute(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        Ok(())
+    }
+
+    /// Count a source's fired and pending events.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn event_stats(&self, job_id: &str) -> Result<EventStats> {
+        require_current_schema(&self.pool).await?;
+        let row = sqlx::query(
+            "SELECT COUNT(*) AS fired, \
+                    COALESCE(SUM(state = 'pending'), 0) AS pending, \
+                    MAX(ts) AS last_fire_at \
+             FROM bg_events WHERE job_id = ?",
+        )
+        .bind(job_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(EventStats {
+            fired: sql_u64(row.try_get("fired").map_err(adapter_error)?, "fired")?,
+            pending: sql_u64(row.try_get("pending").map_err(adapter_error)?, "pending")?,
+            last_fire_at: row
+                .try_get::<Option<i64>, _>("last_fire_at")
+                .map_err(adapter_error)?
+                .map(|value| sql_u64(value, "last_fire_at"))
+                .transpose()?,
+        })
     }
 
     /// Acknowledge terminal notification delivery; live or missing rows are no-ops.
@@ -255,6 +740,49 @@ impl SqliteBackground {
         .map_err(adapter_error)?;
         Ok(())
     }
+}
+
+const fn encode_kind(kind: BackgroundKind) -> &'static str {
+    match kind {
+        BackgroundKind::Oneshot => "oneshot",
+        BackgroundKind::Events => "events",
+    }
+}
+
+fn decode_kind(value: &str) -> Result<BackgroundKind> {
+    match value {
+        "oneshot" => Ok(BackgroundKind::Oneshot),
+        "events" => Ok(BackgroundKind::Events),
+        other => Err(invalid(format!("unknown background kind: {other}"))),
+    }
+}
+
+fn decode_event(row: &sqlx::sqlite::SqliteRow) -> Result<BackgroundEvent> {
+    Ok(BackgroundEvent {
+        seq: sql_u64(row.try_get("seq").map_err(adapter_error)?, "seq")?,
+        ts: sql_u64(row.try_get("ts").map_err(adapter_error)?, "ts")?,
+        text: row.try_get("text").map_err(adapter_error)?,
+        data: row.try_get("data_json").map_err(adapter_error)?,
+    })
+}
+
+async fn batch_events(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    job_id: &str,
+    batch_no: i64,
+) -> Result<Vec<BackgroundEvent>> {
+    sqlx::query(
+        "SELECT seq, ts, text, data_json FROM bg_events \
+         WHERE job_id = ? AND batch_no = ? AND state = 'pending' ORDER BY seq",
+    )
+    .bind(job_id)
+    .bind(batch_no)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(adapter_error)?
+    .iter()
+    .map(decode_event)
+    .collect()
 }
 
 const fn encode_state(state: BackgroundState) -> &'static str {
@@ -320,6 +848,22 @@ fn decode_job(row: &sqlx::sqlite::SqliteRow) -> Result<BackgroundJob> {
             .transpose()?,
         timed_out: row.try_get("timed_out").map_err(adapter_error)?,
         term_sent: row.try_get("term_sent").map_err(adapter_error)?,
+        kind: decode_kind(row.try_get("kind").map_err(adapter_error)?)?,
+        events_fyi: row.try_get("events_fyi").map_err(adapter_error)?,
+        min_interval_ms: sql_u64(
+            row.try_get("min_interval_ms").map_err(adapter_error)?,
+            "min_interval_ms",
+        )?,
+        inline_max: sql_u64(
+            row.try_get("inline_max").map_err(adapter_error)?,
+            "inline_max",
+        )?,
+        last_wake_at: row
+            .try_get::<Option<i64>, _>("last_wake_at")
+            .map_err(adapter_error)?
+            .map(|value| sql_u64(value, "last_wake_at"))
+            .transpose()?,
+        batches: sql_u64(row.try_get("batches").map_err(adapter_error)?, "batches")?,
     })
 }
 

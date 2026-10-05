@@ -563,3 +563,126 @@ async fn bg_timeout_kills_with_a_timeout_turn_and_list_shows_timing() {
     assert_eq!(status, 400, "{refusal}");
     daemon.shutdown().await.unwrap();
 }
+
+async fn emit(daemon: &Daemon, job: &str, token: &str, text: &str) -> (u16, Value) {
+    let response = reqwest::Client::new()
+        .post(format!("http://{}/v1/bg/{job}/emit", daemon.addr))
+        .bearer_auth(token)
+        .json(&json!({ "text": text, "data": {"n": text} }))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status().as_u16();
+    (status, response.json().await.unwrap())
+}
+
+/// Claim and acknowledge the owner's messages until one contains `needle`.
+/// Delivery is serial per recipient: an unacknowledged claim holds the rest.
+async fn inbox_until(daemon: &Daemon, needle: &str) -> String {
+    let mut seen = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while tokio::time::Instant::now() < deadline {
+        let (_, inbox) = post(
+            daemon,
+            "/v1/shim/inbox",
+            json!({"argv":["inbox"],"caller":{"pijSessionId":OWNER}}),
+        )
+        .await;
+        for claim in inbox["data"].as_array().into_iter().flatten() {
+            seen.push_str(claim["message"]["body"].as_str().unwrap_or_default());
+            seen.push('\n');
+            let (status, ack) = post(
+                daemon,
+                "/v1/shim/inbox/ack",
+                json!({"caller":{"pijSessionId":OWNER},"job_id":claim["job_id"]}),
+            )
+            .await;
+            assert_eq!(status, 200, "{ack}");
+        }
+        if seen.contains(needle) {
+            return seen;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let (_, listed) = call(daemon, OWNER, json!(["bg", "list"])).await;
+    panic!("inbox never showed {needle:?}; seen: {seen}; jobs: {listed}")
+}
+
+#[tokio::test]
+async fn bg_event_source_token_fires_across_a_restart_and_dies_at_kill() {
+    let fixture = Fixture::new().await;
+    let daemon = fixture.boot().await;
+    let (status, created) = call(
+        &daemon,
+        OWNER,
+        json!([
+            "bg",
+            "create",
+            "--events",
+            "--min-interval",
+            "0",
+            "--title",
+            "source",
+            "--command",
+            "printf '%s' \"$PIJ_BG_TOKEN\" > \"$PIJ_RS_STATE_DIR/$PIJ_BG_JOB.token\"; sleep 300"
+        ]),
+    )
+    .await;
+    assert_eq!(status, 200, "{created}");
+    let job = created["data"]["job"].as_str().unwrap().to_owned();
+    let token_file = fixture.state.join(format!("{job}.token"));
+    let token = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(token) = std::fs::read_to_string(&token_file)
+                && token.len() == 64
+            {
+                return token;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the child sees PIJ_BG_TOKEN");
+    assert!(
+        !created.to_string().contains(&token),
+        "the token never leaves the child"
+    );
+    for wrong in ["wrong", daemon.key.token.as_str()] {
+        let (status, refusal) = emit(&daemon, &job, wrong, "x").await;
+        assert_eq!(status, 401, "{refusal}");
+    }
+    let (status, fired) = emit(&daemon, &job, &token, "before").await;
+    assert_eq!(
+        (status, fired["data"]["seq"].clone()),
+        (200, json!(1)),
+        "{fired}"
+    );
+    inbox_until(&daemon, "1 new event from source").await;
+    daemon.shutdown().await.unwrap();
+    let daemon = fixture.boot().await;
+    let (status, fired) = emit(&daemon, &job, &token, "after restart").await;
+    assert_eq!(
+        (status, fired["data"]["seq"].clone()),
+        (200, json!(2)),
+        "{fired}"
+    );
+    inbox_until(&daemon, "after restart").await;
+    let (_, listed) = call(&daemon, OWNER, json!(["bg", "list"])).await;
+    assert_eq!(listed["data"]["jobs"][0]["events"]["fired"], 2, "{listed}");
+    assert!(
+        listed["data"]["line"]
+            .as_str()
+            .unwrap()
+            .contains("events: 2 fired, 0 pending"),
+        "{listed}"
+    );
+    assert_eq!(
+        call(&daemon, OWNER, json!(["bg", "kill", &job])).await.0,
+        200
+    );
+    assert_eq!(wait_done(&daemon, &job).await["state"], "killed");
+    inbox_until(&daemon, "STOPPED — source").await;
+    let (status, refusal) = emit(&daemon, &job, &token, "too late").await;
+    assert_eq!(status, 401, "the token dies with the job: {refusal}");
+    daemon.shutdown().await.unwrap();
+}

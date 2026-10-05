@@ -1305,6 +1305,22 @@ impl Queue for SqliteQueue {
         .await
     }
 
+    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let found: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM delivered_messages WHERE recipient = ?1 AND msg_id = ?2 \
+             UNION ALL \
+             SELECT 1 FROM jobs WHERE kind = 'delivery:' || ?1 AND dedupe_key = ?2 \
+             LIMIT 1",
+        )
+        .bind(recipient.as_str())
+        .bind(msg_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(found.is_some())
+    }
+
     async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();

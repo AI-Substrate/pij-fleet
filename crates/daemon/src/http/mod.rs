@@ -549,6 +549,9 @@ fn router_with_optional_federation(
             state.clone(),
             require_bearer,
         ))
+        // Added after the layer on purpose: the event hook's credential is its
+        // own per-job token (Plan 163), never the daemon key.
+        .route(background::EMIT_PATH, post(background::emit))
         .with_state(state)
 }
 

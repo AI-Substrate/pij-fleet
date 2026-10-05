@@ -381,6 +381,12 @@ pub trait Queue: Send + Sync {
     /// failure cannot leave the ledger claiming a delivery that never happened.
     async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()>;
 
+    /// Whether a delivery of `msg_id` to `recipient` was ever admitted: recorded
+    /// as delivered, or present as a delivery job in any state. Read-only.
+    ///
+    /// The FYI namespace is separate and deliberately not consulted.
+    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool>;
+
     /// Return a CLAIMED job to pending, after `delay`, counting the attempt.
     ///
     /// **R4-AMEND-1**, ratified after two wave-4 units found the same hole from

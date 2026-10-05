@@ -24,7 +24,7 @@ export interface RsHttpRoute extends RouteIdentity {
 
 export interface RsNativeRoute extends RouteIdentity {
 	/** Native stdout/stderr/exit are the contract, not a JSON envelope. */
-	readonly nativeCommand: "commit-trailers" | "fleet-report";
+	readonly nativeCommand: "commit-trailers" | "fleet-report" | "bg";
 }
 
 export interface RsUnportedRoute extends RouteIdentity {
@@ -240,6 +240,12 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		method: "POST",
 		render: renderRegister,
 		why: "Resolve registered panes or admit verified external pull hosts through native rs registration",
+	},
+	{
+		verb: "bg",
+		leaf: "emit",
+		nativeCommand: "bg",
+		why: "An event source fires with its own job token (PIJ_BG_TOKEN), never the daemon key",
 	},
 	{
 		verb: "bg",

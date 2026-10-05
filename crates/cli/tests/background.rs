@@ -226,3 +226,85 @@ async fn bg_create_from_a_deleted_cwd_refuses_unless_an_absolute_cwd_is_given() 
     server.abort();
     std::fs::remove_dir_all(dir).expect("cleanup");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bg_emit_fires_with_the_job_token_and_needs_no_daemon_key() {
+    async fn hook(
+        axum::extract::Path(job): axum::extract::Path<String>,
+        headers: HeaderMap,
+        State(seen): State<Arc<Mutex<Vec<Value>>>>,
+        Json(body): Json<Value>,
+    ) -> Json<Value> {
+        seen.lock().expect("seen").push(serde_json::json!({
+            "job": job,
+            "auth": headers["authorization"].to_str().expect("header"),
+            "body": body,
+        }));
+        Json(serde_json::json!({
+            "ok": true, "command": "pij bg emit", "v": 2,
+            "data": {"job": job, "seq": 1, "line": "event 1 fired for bg-src"}
+        }))
+    }
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let router = axum::Router::new()
+        .route("/v1/bg/{job}/emit", post(hook))
+        .with_state(seen.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("address").to_string();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("serve");
+    });
+    // No daemon.key anywhere: the hook's only credential is the job token.
+    let empty = pij_testkit::fresh_dir("pij-bg-emit-nokey");
+    let run = |env: &[(&str, &str)], args: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pij-rs"));
+        command
+            .args([
+                "--state-dir",
+                empty.to_str().expect("path"),
+                "--addr",
+                &addr,
+            ])
+            .args(["bg", "emit"])
+            .args(args)
+            .env_remove("PIJ_BG_JOB")
+            .env_remove("PIJ_BG_TOKEN");
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        command.output().expect("run bg emit")
+    };
+    let outside = run(&[], &["hello"]);
+    assert!(!outside.status.success());
+    assert!(String::from_utf8_lossy(&outside.stdout).contains("PIJ_BG_JOB and PIJ_BG_TOKEN"));
+    let fired = run(
+        &[("PIJ_BG_JOB", "bg-src"), ("PIJ_BG_TOKEN", "secret")],
+        &["--data", "{\"rows\":3}", "new rows"],
+    );
+    assert!(
+        fired.status.success(),
+        "{}",
+        String::from_utf8_lossy(&fired.stdout)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&fired.stdout),
+        "event 1 fired for bg-src\n"
+    );
+    assert_eq!(
+        seen.lock().expect("seen").pop().expect("one emit"),
+        serde_json::json!({
+            "job": "bg-src",
+            "auth": "Bearer secret",
+            "body": {"text": "new rows", "data": {"rows": 3}},
+        })
+    );
+    let bad = run(
+        &[("PIJ_BG_JOB", "bg-src"), ("PIJ_BG_TOKEN", "secret")],
+        &["--data", "{not json", "x"],
+    );
+    assert!(!bad.status.success());
+    server.abort();
+    std::fs::remove_dir_all(empty).expect("cleanup");
+}

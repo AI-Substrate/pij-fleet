@@ -985,6 +985,19 @@ impl Queue for FakeQueue {
         Ok(None)
     }
 
+    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+        let state = self.state.lock().expect("fake queue mutex");
+        let kind = format!("delivery:{}", recipient.as_str());
+        let is_it = |job: &Job| job.kind == kind && job.dedupe_key == msg_id;
+        Ok(state
+            .delivered
+            .iter()
+            .any(|(seat, id, _)| seat == recipient.as_str() && id == msg_id)
+            || state.live.iter().any(|(_, job)| is_it(job))
+            || state.claimed.values().any(|(job, _)| is_it(job))
+            || state.completed.values().any(|(job, _)| is_it(job)))
+    }
+
     async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()> {
         let mut state = self.state.lock().expect("fake queue mutex");
         state
@@ -1490,6 +1503,12 @@ impl FakeTransport {
     pub fn script_outcome(self, outcome: DeliveryOutcome) -> Self {
         self.state.lock().expect("fake transport mutex").outcome = Some(outcome);
         self
+    }
+
+    /// Change (or, with `None`, clear) the scripted outcome mid-test — e.g. a
+    /// receiver that refused one attempt and is live again for the retry.
+    pub fn set_outcome(&self, outcome: Option<DeliveryOutcome>) {
+        self.state.lock().expect("fake transport mutex").outcome = outcome;
     }
 
     /// Every message this transport actually delivered.

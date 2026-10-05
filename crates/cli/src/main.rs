@@ -584,6 +584,31 @@ enum BgAction {
         /// Kill the job with a TIMEOUT turn after this long (e.g. 90s, 5m, 1h30m).
         #[arg(long)]
         timeout: Option<String>,
+        /// Make it an event source: each `pij bg emit` from the command fires an
+        /// event back to you, batched, until it exits or is killed.
+        #[arg(long)]
+        events: bool,
+        /// Hold each batch as an FYI for your next turn instead of waking you.
+        #[arg(long, requires = "events")]
+        fyi: bool,
+        /// Minimum gap between two wakes from this source (default 60s).
+        #[arg(long, requires = "events")]
+        min_interval: Option<String>,
+        /// The most events listed in the turn itself; more go to a file (default 5).
+        #[arg(long, requires = "events")]
+        inline_max: Option<u64>,
+    },
+    /// Fire one event from inside an event source (uses PIJ_BG_JOB and PIJ_BG_TOKEN).
+    Emit {
+        /// One-line description of what happened.
+        #[arg(allow_hyphen_values = true)]
+        text: String,
+        /// Structured payload, as JSON.
+        #[arg(long, conflicts_with = "data_file")]
+        data: Option<String>,
+        /// Read the JSON payload from this file.
+        #[arg(long)]
+        data_file: Option<PathBuf>,
     },
     /// List your jobs, including finished jobs.
     List {
@@ -610,6 +635,10 @@ impl BgAction {
                 command,
                 cwd,
                 timeout,
+                events,
+                fyi,
+                min_interval,
+                inline_max,
             } => {
                 argv.extend(["create".to_string(), "--title".to_string(), title]);
                 if let Some(cwd) = cwd {
@@ -617,6 +646,18 @@ impl BgAction {
                 }
                 if let Some(timeout) = timeout {
                     argv.extend(["--timeout".to_string(), timeout]);
+                }
+                if events {
+                    argv.push("--events".to_string());
+                }
+                if fyi {
+                    argv.push("--fyi".to_string());
+                }
+                if let Some(min_interval) = min_interval {
+                    argv.extend(["--min-interval".to_string(), min_interval]);
+                }
+                if let Some(inline_max) = inline_max {
+                    argv.extend(["--inline-max".to_string(), inline_max.to_string()]);
                 }
                 argv.extend(["--command".to_string(), command]);
             }
@@ -633,6 +674,8 @@ impl BgAction {
                 }
             }
             Self::Kill { job } => argv.extend(["kill".to_string(), job]),
+            // Never forwarded: `run` sends it to the job's own hook first.
+            Self::Emit { text, .. } => argv.extend(["emit".to_string(), text]),
         }
         argv
     }
@@ -989,6 +1032,19 @@ async fn run(cli: Cli) -> ExitCode {
         Ok(addr) => addr,
         Err(message) => return emit_config_error(&cli, message),
     };
+    // The event hook authenticates with its own job token, so a source needs no
+    // daemon key: this verb runs before the keyed client is built.
+    if let Command::Bg {
+        action:
+            BgAction::Emit {
+                text,
+                data,
+                data_file,
+            },
+    } = &cli.command
+    {
+        return bg_emit(&addr, text, data.as_deref(), data_file.as_deref(), cli.json).await;
+    }
     let client = match DaemonClient::new(&state_dir, &addr) {
         Ok(client) => client,
         Err(error) => {
@@ -1666,6 +1722,65 @@ fn validate_host_port(value: &str, source: &str) -> Result<(), String> {
 
 fn malformed_addr(source: &str, value: &str, expected: &str) -> String {
     format!("{source} has malformed value {value:?}: expected {expected} with port 1..65535")
+}
+
+/// `pij bg emit`: POST one event to this job's hook with its own token.
+async fn bg_emit(
+    addr: &str,
+    text: &str,
+    data: Option<&str>,
+    data_file: Option<&Path>,
+    json: bool,
+) -> ExitCode {
+    const NAME: &str = "pij bg emit";
+    let setup = |message: String| {
+        emit(
+            &setup_refusal::<Value>(
+                NAME,
+                PijError::Adapter {
+                    adapter: "configuration".to_string(),
+                    message,
+                },
+            ),
+            json,
+        )
+    };
+    let read = |key: &str| std::env::var(key).ok().filter(|value| !value.is_empty());
+    let (Some(job), Some(token)) = (read("PIJ_BG_JOB"), read("PIJ_BG_TOKEN")) else {
+        return setup(
+            "pij bg emit runs inside an event source: PIJ_BG_JOB and PIJ_BG_TOKEN must be set \
+             (start the source with `pij bg create --events`)"
+                .to_string(),
+        );
+    };
+    let data = match (data, data_file) {
+        (Some(data), _) => Some(data.to_string()),
+        (None, Some(path)) => match std::fs::read_to_string(path) {
+            Ok(data) => Some(data),
+            Err(error) => return setup(format!("--data-file {}: {error}", path.display())),
+        },
+        (None, None) => None,
+    };
+    let data = match data
+        .map(|data| serde_json::from_str::<Value>(&data))
+        .transpose()
+    {
+        Ok(data) => data,
+        Err(error) => return setup(format!("--data must be JSON: {error}")),
+    };
+    let client = DaemonClient::with_token(addr, token);
+    let response = client.bg_emit(&job, text, data.as_ref()).await;
+    if !json
+        && response.ok
+        && let Some(line) = response
+            .data
+            .as_ref()
+            .and_then(|data| data["line"].as_str())
+    {
+        println!("{line}");
+        return ExitCode::from(exit_code(&response));
+    }
+    emit(&response, json)
 }
 
 fn emit_config_error(cli: &Cli, message: String) -> ExitCode {

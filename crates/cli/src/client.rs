@@ -145,6 +145,26 @@ impl DaemonClient {
         })
     }
 
+    /// A client whose only credential is one event source's job token: it can
+    /// fire that job's hook and nothing else.
+    pub fn with_token(addr: &str, token: String) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            base_url: format!("http://{addr}"),
+            token,
+        }
+    }
+
+    /// Fire one event through a source's hook (authenticated by the job token).
+    pub async fn bg_emit(&self, job: &str, text: &str, data: Option<&Value>) -> Envelope<Value> {
+        let mut body = serde_json::json!({ "text": text });
+        if let Some(data) = data {
+            body["data"] = data.clone();
+        }
+        self.post("pij bg emit", &format!("/v1/bg/{job}/emit"), &body)
+            .await
+    }
+
     /// Ask whether the daemon is healthy.
     pub async fn ping(&self) -> Envelope<Value> {
         self.get("pij ping", "/health").await
