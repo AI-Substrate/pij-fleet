@@ -55,10 +55,12 @@ is stamped from the key.
 A forwarded message keeps its origin all the way to the agent that reads it.
 Every harness (OMP, Pi, Copilot, Claude's pane frame) and every FYI rendering
 (the block, the digest, `fyi-read`) shows the sender as `seat@alias`, never a
-bare name that could pass for a local seat. A peer's msg_id is stored in that
-peer's namespace (`<msg_id>@<alias>`), so it never collides with a local
-message or FYI. The sender's receipt still names its own id, and a reply's
-`in_reply_to` is translated back on the way home.
+bare name that could pass for a local seat. A message's identity is the pair
+(origin machine, msg_id), each in its own field: a peer's `X` and a local `X`
+are two messages, and an exact retry from the same machine is still one. No
+msg_id may contain `@` (it separates a seat from its machine), local or
+forwarded. A reply to `seat@alias` (the `pij_send` tool, `pij send`, or
+`pij-rs send --to`) is routed to that machine.
 
 A forwarded message obeys the **receiver's** rules. The receiving daemon runs
 its cold-wake guard and holds `--fyi` messages exactly as for a local sender.
