@@ -6833,6 +6833,14 @@ async fn forwarded_ids_stay_raw_and_local_ids_cannot_contain_at() {
     )
     .await;
     assert_eq!(status, 400, "a local id with `@` is refused: {reply}");
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-x@y", serde_json::json!({"body": "from afar"})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 400, "a peer's id with `@` is refused too: {reply}");
     assert_eq!(queue.live_len(), 1);
     server.abort();
 }
