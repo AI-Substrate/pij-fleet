@@ -41,19 +41,17 @@ pub struct CreateOptions {
 // No user text is interpolated. The pipe is a persist-before-execute barrier:
 // losing the daemon before its release closes stdin and cannot run the command.
 // Only this runner supplies an exit code AND the original finish instant.
-// The TERM trap alone appends ` term`: provenance that a TERM reached the runner,
-// which a command's own `exit 143` can never forge.
 const RUNNER: &str = r#"
 umask 077
 __pij_bg_finish() {
     trap '' TERM
     __pij_bg_code=$1
     __pij_bg_finished=$(/bin/date +%s) || return
-    printf '%s %s%s\n' "$__pij_bg_code" "$__pij_bg_finished" "${2:+ $2}" > "$PIJ_BG_EXIT.tmp" &&
+    printf '%s %s\n' "$__pij_bg_code" "$__pij_bg_finished" > "$PIJ_BG_EXIT.tmp" &&
         /bin/mv -f "$PIJ_BG_EXIT.tmp" "$PIJ_BG_EXIT"
 }
 trap '' HUP
-trap '__pij_bg_finish 143 term; exit 143' TERM
+trap '__pij_bg_finish 143; exit 143' TERM
 : > "$PIJ_BG_EXIT.ready" || exit 125
 IFS= read -r __pij_bg_gate || exit 125
 [ "$__pij_bg_gate" = start ] || exit 125
@@ -172,6 +170,7 @@ impl BackgroundService {
                 .timeout_ms
                 .map(|timeout| started_at.saturating_add(timeout)),
             timed_out: false,
+            term_sent: false,
         };
         let mut children = self.children.lock().await;
         let dir = self.out_dir.clone();
@@ -322,18 +321,35 @@ impl BackgroundService {
                 "refusing to signal a group that is not this job's own runner",
             ));
         }
+        // Provenance is persisted before the signal (never after, which a
+        // crash could lose), and withdrawn if this first attempt sends nothing.
+        let first = !job.term_sent;
+        if first {
+            self.store.set_term_sent(&job.job_id, true).await?;
+        }
+        let sent = self.send_term(identity, pgid).await;
+        if first && !matches!(sent, Ok(true)) {
+            self.store.set_term_sent(&job.job_id, false).await?;
+        }
+        match sent {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(refusal(
+                "runner process group or identity changed or disappeared; no signal sent",
+            )),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// `Ok(false)` when the identity brakes refuse; `Ok(true)` once TERM is sent.
+    async fn send_term(&self, identity: ProcIdentity, pgid: u32) -> Result<bool> {
         // Group membership is checked before the final identity observation.
         // Nothing awaits between that observation and spawning the fixed signal.
         let observed_group = blocking(move || process_group(identity.pid)).await?;
         if observed_group != Some(pgid) {
-            return Err(refusal(
-                "runner process group changed or disappeared; no signal sent",
-            ));
+            return Ok(false);
         }
         if self.liveness.proc_start(identity.pid).await? != Some(identity.proc_start) {
-            return Err(refusal(
-                "runner identity changed or disappeared; no signal sent",
-            ));
+            return Ok(false);
         }
         let signal = Command::new("/bin/kill")
             .args(["-TERM", "--", &format!("-{pgid}")])
@@ -349,7 +365,7 @@ impl BackgroundService {
                 String::from_utf8_lossy(&result.stderr).trim()
             )));
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Reap local children, recover orphaned rows by identity/receipt, and notify endings.
@@ -466,10 +482,13 @@ impl BackgroundService {
         let (state, code, at) = match receipt {
             Some(receipt) => (
                 // A caller's kill always reads KILLED. A timeout reads TIMEOUT
-                // only when the receipt's `term` proves the TERM reached the
-                // runner; a runner that exited on its own (any code, 143 too)
-                // keeps its own result.
-                if job.kill_requested && (!job.timed_out || receipt.terminated) {
+                // only when the daemon recorded sending its TERM and the runner
+                // then failed; a runner that exited on its own before any TERM
+                // (any code, 143 too) keeps its own result. The exit code alone
+                // is never provenance: a command can `exit 143` by itself.
+                if job.kill_requested
+                    && (!job.timed_out || (job.term_sent && receipt.exit_code != 0))
+                {
                     BackgroundState::Killed
                 } else {
                     BackgroundState::Done
@@ -628,8 +647,6 @@ async fn await_runner_ready(child: &mut Child, ready: &Path) -> Result<()> {
 struct ExitReceipt {
     exit_code: i32,
     finished_at: u64,
-    /// Written by the runner's TERM trap, never by an ordinary exit.
-    terminated: bool,
 }
 
 fn read_receipt(path: &Path) -> Result<Option<ExitReceipt>> {
@@ -653,18 +670,12 @@ fn read_receipt(path: &Path) -> Result<Option<ExitReceipt>> {
     let Some(at) = fields.next().and_then(|field| field.parse::<u64>().ok()) else {
         return Ok(None);
     };
-    let terminated = match fields.next() {
-        None => false,
-        Some("term") => true,
-        Some(_) => return Ok(None),
-    };
     if fields.next().is_some() || !(0..=255).contains(&code) || at == 0 {
         return Ok(None);
     }
     Ok(at.checked_mul(1000).map(|finished_at| ExitReceipt {
         exit_code: code,
         finished_at,
-        terminated,
     }))
 }
 
@@ -869,6 +880,7 @@ mod tests {
                 notified: false,
                 deadline_at,
                 timed_out: false,
+                term_sent: false,
             };
             std::fs::write(&job.out_path, "one\ntwo\n").unwrap();
             self.service.store.insert(&job).await.unwrap();
@@ -1152,7 +1164,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_timeout_whose_term_reached_the_runner_reads_timeout_once() {
+    async fn a_timeout_whose_term_was_sent_reads_timeout_once() {
         let fixture = Fixture::new(FakeLiveness::new()).await;
         let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
         assert!(
@@ -1163,7 +1175,15 @@ mod tests {
                 .await
                 .unwrap()
         );
-        std::fs::write(receipt_path(&job), "143 1700000006 term\n").unwrap();
+        assert!(
+            fixture
+                .service
+                .store
+                .set_term_sent(&job.job_id, true)
+                .await
+                .unwrap()
+        );
+        std::fs::write(receipt_path(&job), "143 1700000006\n").unwrap();
         fixture.service.tick().await.unwrap();
         fixture.service.tick().await.unwrap();
         let finished = fixture.service.lookup(&job.job_id).await.unwrap();
@@ -1180,47 +1200,25 @@ mod tests {
         );
     }
 
-    #[test]
-    fn runner_receipt_says_term_only_when_a_term_reached_the_runner() {
-        let dir = fresh_dir("pij-bg-provenance");
-        let run = |name: &str, command: &str, term: bool| {
-            let receipt = dir.join(format!("{name}.exit"));
-            let mut child = Command::new("/bin/sh")
-                .args(["-c", RUNNER])
-                .env("PIJ_BG_COMMAND", command)
-                .env("PIJ_BG_EXIT", &receipt)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .process_group(0)
-                .spawn()
-                .unwrap();
-            let ready = receipt.with_extension("exit.ready");
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            while !ready.exists() && std::time::Instant::now() < deadline {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            child.stdin.take().unwrap().write_all(b"start\n").unwrap();
-            if term {
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                Command::new("/bin/kill")
-                    .args(["-TERM", "--", &format!("-{}", child.id())])
-                    .status()
-                    .unwrap();
-            }
-            child.wait().unwrap();
-            std::fs::read_to_string(receipt).unwrap()
-        };
-        let natural = run("natural", "exit 143", false);
-        let terminated = run("terminated", "sleep 30", true);
-        std::fs::remove_dir_all(&dir).unwrap();
+    #[tokio::test]
+    async fn a_runner_that_exits_zero_after_the_timeout_term_was_sent_keeps_ok() {
+        // TERM sent, but the command finished cleanly first: its own success wins.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        let store = &fixture.service.store;
         assert!(
-            natural.starts_with("143 ") && !natural.contains("term"),
-            "{natural:?}"
+            store
+                .request_timeout(&job.job_id, 1_700_000_006_000)
+                .await
+                .unwrap()
         );
-        assert!(
-            terminated.starts_with("143 ") && terminated.trim_end().ends_with(" term"),
-            "{terminated:?}"
+        assert!(store.set_term_sent(&job.job_id, true).await.unwrap());
+        std::fs::write(receipt_path(&job), "0 1700000006\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(
+            (finished.state, finished.exit_code),
+            (BackgroundState::Done, Some(0))
         );
     }
 
@@ -1301,8 +1299,6 @@ mod tests {
             "0 0",
             "0 18446744073709551615",
             "0 1700000000 extra",
-            "143 1700000000 term extra",
-            "143 1700000000 terminated",
             "-1 1700000000",
             "256 1700000000",
         ] {

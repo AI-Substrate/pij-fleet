@@ -57,4 +57,7 @@ pub struct BackgroundJob {
     /// The daemon, not a caller, requested the kill because the deadline passed.
     #[serde(default)]
     pub timed_out: bool,
+    /// The daemon persisted this just before sending TERM to the runner's group.
+    #[serde(default)]
+    pub term_sent: bool,
 }

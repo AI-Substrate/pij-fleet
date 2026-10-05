@@ -25,6 +25,7 @@ fn queued(id: &str) -> BackgroundJob {
         notified: false,
         deadline_at: None,
         timed_out: false,
+        term_sent: false,
     }
 }
 
@@ -684,4 +685,32 @@ async fn background_timeout_fires_once_only_after_the_deadline_and_never_over_a_
     assert!(background.request_kill("killed").await.unwrap());
     assert!(!background.request_timeout("killed", 9_000).await.unwrap());
     assert!(!background.get("killed").await.unwrap().unwrap().timed_out);
+}
+
+#[tokio::test]
+async fn background_term_provenance_needs_kill_intent_and_a_live_job() {
+    let (_fresh, _pool, background) = setup().await;
+    let identity = ProcIdentity {
+        pid: 321,
+        proc_start: 654,
+    };
+    background.insert(&queued("job")).await.unwrap();
+    assert!(background.start("job", &identity, 321).await.unwrap());
+    assert!(
+        !background.set_term_sent("job", true).await.unwrap(),
+        "no kill intent: nothing to prove"
+    );
+    assert!(background.request_kill("job").await.unwrap());
+    assert!(background.set_term_sent("job", true).await.unwrap());
+    assert!(background.get("job").await.unwrap().unwrap().term_sent);
+    assert!(background.set_term_sent("job", false).await.unwrap());
+    assert!(!background.get("job").await.unwrap().unwrap().term_sent);
+    background
+        .finish("job", BackgroundState::Killed, Some(143), 2_000)
+        .await
+        .unwrap();
+    assert!(
+        !background.set_term_sent("job", true).await.unwrap(),
+        "a finished job's provenance is frozen"
+    );
 }

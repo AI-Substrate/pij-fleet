@@ -187,6 +187,25 @@ impl SqliteBackground {
         Ok(result.rows_affected() == 1)
     }
 
+    /// Record (or, when the signal was never sent, withdraw) that the daemon is
+    /// sending TERM to a live job it intends to kill. Persisted before the signal.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn set_term_sent(&self, job_id: &str, sent: bool) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let result = sqlx::query(
+            "UPDATE background_jobs SET term_sent = ? \
+             WHERE job_id = ? AND kill_requested = 1 AND state IN ('queued', 'running')",
+        )
+        .bind(sent)
+        .bind(job_id)
+        .execute(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(result.rows_affected() == 1)
+    }
+
     /// Transition a queued or running job to a terminal state exactly once.
     ///
     /// Competing completion/reconciliation calls are atomic no-ops after the
@@ -300,6 +319,7 @@ fn decode_job(row: &sqlx::sqlite::SqliteRow) -> Result<BackgroundJob> {
             .map(|value| sql_u64(value, "deadline_at"))
             .transpose()?,
         timed_out: row.try_get("timed_out").map_err(adapter_error)?,
+        term_sent: row.try_get("term_sent").map_err(adapter_error)?,
     })
 }
 
