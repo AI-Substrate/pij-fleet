@@ -27,7 +27,7 @@ use crate::http::{session_status_block, system_time_ms};
 const STATUS_WAIT: Duration = Duration::from_secs(3);
 const PRIME_ROLE: &str = "prime";
 
-/// Answers [`ColdRouting`] from the registry, transcripts, roles and queue.
+/// Answers [`ColdRouting`] from the registry, transcripts, roles, governance and queue.
 pub struct DaemonColdRouting {
     registry: Arc<dyn Registry>,
     session_status: Arc<dyn SessionStatusPort>,
@@ -52,6 +52,27 @@ impl DaemonColdRouting {
             orchestration,
             queue,
         }
+    }
+}
+
+impl DaemonColdRouting {
+    /// The prime of the project behind a seat's newest open task assignment.
+    async fn project_prime(&self, seat: &SeatId) -> Result<Option<SeatId>> {
+        let task = self
+            .orchestration
+            .list_tasks(Some(seat))
+            .await?
+            .into_iter()
+            .filter(|task| task.closed_at.is_none() && task.project.is_some())
+            .max_by_key(|task| task.opened_at);
+        let Some(slug) = task.and_then(|task| task.project) else {
+            return Ok(None);
+        };
+        Ok(self
+            .orchestration
+            .project(&slug)
+            .await?
+            .and_then(|project| project.prime_id))
     }
 }
 
@@ -85,6 +106,7 @@ impl ColdRouting for DaemonColdRouting {
 
     async fn prime(&self, seat: &SeatDescriptor) -> Result<Option<SeatId>> {
         let mut ancestors = Vec::new();
+        let mut project_prime = self.project_prime(&seat.id).await?;
         let mut seen = HashSet::from([seat.id.clone()]);
         let mut next = seat.parent.clone();
         while let Some(id) = next {
@@ -95,6 +117,9 @@ impl ColdRouting for DaemonColdRouting {
                 break;
             };
             let role = self.roles.read_role(&id).await?.or(ancestor.role.clone());
+            if project_prime.is_none() {
+                project_prime = self.project_prime(&id).await?;
+            }
             ancestors.push((id, role));
             next = ancestor.parent;
         }
@@ -104,7 +129,12 @@ impl ColdRouting for DaemonColdRouting {
             .await?
             .filter(|designation| designation.state == PrimeState::Current)
             .map(|designation| designation.seat);
-        Ok(nearest_prime(&seat.id, &ancestors, designated))
+        Ok(nearest_prime(
+            &seat.id,
+            &ancestors,
+            project_prime,
+            designated,
+        ))
     }
 
     async fn telegram(&self, from: &SeatId, body: String, msg_id: String) -> Result<()> {
@@ -120,17 +150,20 @@ impl ColdRouting for DaemonColdRouting {
     }
 }
 
-/// The nearest ancestor (nearest first) whose role is prime, else the designated
-/// prime; never the seat itself.
+/// The nearest ancestor (nearest first) whose role is prime, else the prime of
+/// the seat's project (its open task, or its nearest ancestor's), else the
+/// machine-wide designated prime; never the seat itself.
 fn nearest_prime(
     seat: &SeatId,
     ancestors: &[(SeatId, Option<String>)],
+    project_prime: Option<SeatId>,
     designated: Option<SeatId>,
 ) -> Option<SeatId> {
     ancestors
         .iter()
         .find(|(_, role)| role.as_deref() == Some(PRIME_ROLE))
         .map(|(id, _)| id.clone())
+        .or(project_prime)
         .or(designated)
         .filter(|prime| prime != seat)
 }
@@ -138,6 +171,112 @@ fn nearest_prime(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::EventBus;
+    use pij_core::model::Harness;
+    use pij_core::orchestration::{PrimeDesignation, Project, TaskAssignment};
+    use pij_testkit::fakes::{FakeQueue, FakeRegistry, FakeSessionStatus, FakeSpine};
+
+    /// A seat with a parent, a project prime reachable through its open task,
+    /// and a different machine-wide designated prime.
+    async fn routing(task_holder: &str, close_task: bool) -> (DaemonColdRouting, SeatDescriptor) {
+        let pool = pij_store::open("").await.unwrap();
+        let orchestration = SqliteOrchestration::new(pool.clone());
+        let registry = Arc::new(FakeRegistry::new());
+        let mut owner = SeatDescriptor::new("coder", Harness::Claude, "/tmp");
+        owner.parent = Some(id("pm"));
+        registry.put(owner.clone()).await.unwrap();
+        registry
+            .put(SeatDescriptor::new("pm", Harness::Claude, "/tmp"))
+            .await
+            .unwrap();
+        assert!(
+            orchestration
+                .create_project(&Project {
+                    slug: "proj".to_string(),
+                    description: None,
+                    repo: None,
+                    plan_path: None,
+                    prime_id: Some(id("project-prime")),
+                    created_by: id("pm"),
+                    created_at: 1,
+                })
+                .await
+                .unwrap()
+        );
+        assert!(
+            orchestration
+                .open_task(&TaskAssignment {
+                    id: "task-1".to_string(),
+                    node_id: id(task_holder),
+                    task: "build".to_string(),
+                    project: Some("proj".to_string()),
+                    opened_by: id("pm"),
+                    opened_at: 2,
+                    closed_at: None,
+                    close_reason: None,
+                })
+                .await
+                .unwrap()
+        );
+        if close_task {
+            orchestration
+                .close_task("task-1", pij_core::orchestration::TaskCloseReason::Done, 3)
+                .await
+                .unwrap();
+        }
+        orchestration
+            .designate_prime(&PrimeDesignation {
+                seat: id("machine-prime"),
+                designated_by: id("pm"),
+                designated_at: 4,
+                state: PrimeState::Current,
+            })
+            .await
+            .unwrap();
+        let spine = Arc::new(FakeSpine::new());
+        let roles = Arc::new(RoleService::new(
+            registry.clone(),
+            SqliteOrchestration::new(pool),
+            Arc::new(EventBus::new(spine, 16).unwrap()),
+        ));
+        let routing = DaemonColdRouting::new(
+            registry,
+            Arc::new(FakeSessionStatus::new()),
+            roles,
+            orchestration,
+            Arc::new(FakeQueue::new(8).unwrap()),
+        );
+        (routing, owner)
+    }
+
+    #[tokio::test]
+    async fn the_owners_project_prime_comes_before_the_machine_designation() {
+        // Review B3 (#22): an open TaskAssignment links the seat to a project,
+        // and that project's prime_id is "the project's designated prime".
+        let (routing, owner) = routing("coder", false).await;
+        assert_eq!(
+            routing.prime(&owner).await.unwrap(),
+            Some(id("project-prime"))
+        );
+    }
+
+    #[tokio::test]
+    async fn an_ancestors_open_task_supplies_the_project_when_the_owner_has_none() {
+        let (routing, owner) = routing("pm", false).await;
+        assert_eq!(
+            routing.prime(&owner).await.unwrap(),
+            Some(id("project-prime"))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_closed_task_no_longer_links_the_project() {
+        let (routing, owner) = routing("coder", true).await;
+        assert_eq!(
+            routing.prime(&owner).await.unwrap(),
+            Some(id("machine-prime"))
+        );
+    }
 
     fn id(name: &str) -> SeatId {
         SeatId::from(name)
@@ -151,7 +290,12 @@ mod tests {
             (id("far-prime"), Some("prime".to_string())),
         ];
         assert_eq!(
-            nearest_prime(&id("coder"), &ancestors, Some(id("designated"))),
+            nearest_prime(
+                &id("coder"),
+                &ancestors,
+                Some(id("project")),
+                Some(id("designated"))
+            ),
             Some(id("near-prime"))
         );
     }
@@ -160,12 +304,21 @@ mod tests {
     fn without_a_prime_ancestor_the_designation_is_used_but_never_the_seat_itself() {
         let ancestors = [(id("pm"), None)];
         assert_eq!(
-            nearest_prime(&id("coder"), &ancestors, Some(id("designated"))),
+            nearest_prime(&id("coder"), &ancestors, None, Some(id("designated"))),
             Some(id("designated"))
         );
-        assert_eq!(nearest_prime(&id("coder"), &ancestors, None), None);
         assert_eq!(
-            nearest_prime(&id("designated"), &[], Some(id("designated"))),
+            nearest_prime(
+                &id("coder"),
+                &ancestors,
+                Some(id("project")),
+                Some(id("designated"))
+            ),
+            Some(id("project"))
+        );
+        assert_eq!(nearest_prime(&id("coder"), &ancestors, None, None), None);
+        assert_eq!(
+            nearest_prime(&id("designated"), &[], None, Some(id("designated"))),
             None
         );
     }
