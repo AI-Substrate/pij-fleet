@@ -1,6 +1,7 @@
 //! Canonical framing for messages injected by the Rust daemon.
 
-use crate::model::SeatId;
+use crate::address::render_destination;
+use crate::model::{Destination, SeatId};
 
 const LEGACY_HEAD: &str = "[pij from ";
 const RUST_HEAD: &str = "[pij-rs from ";
@@ -13,16 +14,16 @@ const TAIL: &str = "[/pij]";
 /// callers supply payload text and this function alone owns the envelope.
 #[must_use]
 pub fn frame_message(from: &SeatId, from_machine: Option<&str>, payload: &str) -> String {
-    let machine_len = from_machine.map_or(0, |machine| machine.len() + 1);
-    let mut framed = String::with_capacity(
-        RUST_HEAD.len() + from.as_str().len() + machine_len + payload.len() + TAIL.len() + 3,
-    );
+    // The sender in the ONE address grammar (`crate::address`), so a reply can
+    // parse it straight back: `seat@machine`, `@` in a seat escaped as `@@`.
+    let sender = render_destination(&Destination {
+        seat: from.clone(),
+        machine: from_machine.map(str::to_string),
+    });
+    let mut framed =
+        String::with_capacity(RUST_HEAD.len() + sender.len() + payload.len() + TAIL.len() + 3);
     framed.push_str(RUST_HEAD);
-    framed.push_str(from.as_str());
-    if let Some(machine) = from_machine {
-        framed.push('@');
-        framed.push_str(machine);
-    }
+    framed.push_str(&sender);
     framed.push_str("]\n");
     framed.push_str(payload);
     framed.push('\n');
@@ -78,6 +79,29 @@ fn rust_parts(frame: &str) -> Option<(&str, &str)> {
 mod tests {
     use super::{frame_message, self_injection_matches};
     use crate::model::SeatId;
+
+    /// The frame names the sender in the address grammar, so the recipient can
+    /// reply to exactly what it read, `@` in a seat id included.
+    #[test]
+    fn a_framed_sender_parses_back_to_its_seat_and_machine() {
+        for (seat, machine) in [
+            ("pij-x", Some("laptop")),
+            ("a@b", Some("laptop")),
+            ("pij-x", None),
+        ] {
+            let framed = frame_message(&SeatId::from(seat), machine, "hi");
+            let sender = framed
+                .strip_prefix("[pij-rs from ")
+                .and_then(|rest| rest.split_once("]\n"))
+                .map(|(sender, _)| sender)
+                .expect("framed sender");
+            let parsed = crate::address::parse_destination(sender).expect("parses");
+            assert_eq!(
+                (parsed.seat.as_str(), parsed.machine.as_deref()),
+                (seat, machine)
+            );
+        }
+    }
 
     #[test]
     fn frame_names_local_and_machine_qualified_senders() {

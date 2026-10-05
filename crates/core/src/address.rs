@@ -100,9 +100,20 @@ mod tests {
                 continue;
             }
             let parsed = parsed.unwrap_or_else(|error| panic!("{input:?}: {error}"));
-            assert_eq!(parsed.seat.as_str(), case["seat"].as_str().expect("seat"), "{input:?}");
-            assert_eq!(parsed.machine.as_deref(), case["machine"].as_str(), "{input:?}");
-            assert_eq!(parse_destination(&render_destination(&parsed)).ok(), Some(parsed));
+            assert_eq!(
+                parsed.seat.as_str(),
+                case["seat"].as_str().expect("seat"),
+                "{input:?}"
+            );
+            assert_eq!(
+                parsed.machine.as_deref(),
+                case["machine"].as_str(),
+                "{input:?}"
+            );
+            assert_eq!(
+                parse_destination(&render_destination(&parsed)).ok(),
+                Some(parsed)
+            );
         }
     }
 

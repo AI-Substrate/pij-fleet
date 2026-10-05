@@ -78,10 +78,10 @@ impl HeldFyi {
     /// The sender as every rendering shows it: `seat@machine` when forwarded
     /// from a paired machine, so a remote FYI can never pass for a local seat.
     pub fn sender_label(&self) -> String {
-        match &self.from_machine {
-            Some(machine) => format!("{}@{machine}", self.sender),
-            None => self.sender.to_string(),
-        }
+        crate::address::render_destination(&crate::model::Destination {
+            seat: self.sender.clone(),
+            machine: self.from_machine.clone(),
+        })
     }
 }
 
