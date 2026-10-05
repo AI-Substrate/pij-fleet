@@ -1278,6 +1278,43 @@ test("outgoing tool ignores spoofed from, mints unique ids and returns queue gra
 	await run;
 });
 
+// Plan 164 F01b: `seat@alias` reaches the paired machine; the grammar is the shared Rust golden.
+test("outgoing tool parses every golden address into the daemon destination", async (t) => {
+	const cases = JSON.parse(
+		await readFile(
+			new URL("../../../crates/testkit/fixtures/golden/address/cases.json", import.meta.url),
+			"utf8",
+		),
+	);
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	const sent = [];
+	const request = f.client.request;
+	f.client.request = (path, body, signal) => {
+		if (path === "/v1/send") sent.push(body);
+		return request(path, body, signal);
+	};
+	for (const c of cases) {
+		sent.length = 0;
+		const result = await f.bridge.send({ to: c.input, message: "reply" });
+		if (c.error) {
+			assert.equal(result.ok, false, c.input);
+			assert.deepEqual(sent, [], c.input);
+		} else {
+			assert.equal(result.ok, true, c.input);
+			assert.deepEqual(
+				sent.map((body) => body.to),
+				[c.machine === null ? { seat: c.seat } : { seat: c.seat, machine: c.machine }],
+				c.input,
+			);
+		}
+	}
+	f.bridge.stop();
+	await run;
+});
+
 test("activity: foreground turns publish working then idle in order; failures never break the turn", async () => {
 	const f = fixture();
 	const run = f.bridge.run();

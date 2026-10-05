@@ -82,6 +82,30 @@ mod tests {
 
     use super::{parse_destination, render_destination};
 
+    /// The ONE grammar, shared with the TS harnesses (plan 164 review F01b):
+    /// `crates/testkit/fixtures/golden/address/cases.json` is read by this test
+    /// and by the OMP/Pi and Copilot parsers' tests, so the sides cannot drift.
+    #[test]
+    fn the_shared_golden_address_cases_hold() {
+        let cases: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../testkit/fixtures/golden/address/cases.json"
+        ))
+        .expect("golden address cases");
+        assert!(!cases.is_empty());
+        for case in cases {
+            let input = case["input"].as_str().expect("input");
+            let parsed = parse_destination(input);
+            if case["error"] == true {
+                assert!(parsed.is_err(), "{input:?} must be refused");
+                continue;
+            }
+            let parsed = parsed.unwrap_or_else(|error| panic!("{input:?}: {error}"));
+            assert_eq!(parsed.seat.as_str(), case["seat"].as_str().expect("seat"), "{input:?}");
+            assert_eq!(parsed.machine.as_deref(), case["machine"].as_str(), "{input:?}");
+            assert_eq!(parse_destination(&render_destination(&parsed)).ok(), Some(parsed));
+        }
+    }
+
     #[test]
     fn an_unqualified_address_always_means_local() {
         let destination = parse_destination("pij-local-seat").expect("parse local seat");

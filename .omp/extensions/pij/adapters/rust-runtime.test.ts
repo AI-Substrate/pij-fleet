@@ -488,6 +488,30 @@ describe("RustRuntimeSession", () => {
 			runtime.shutdown("quit");
 		}
 	});
+	// Plan 164 F01b: a qualified reply reaches the paired machine, not a local seat named `seat@alias`.
+	it.each([
+		{ to: "pij-x@laptop", destination: { seat: "pij-x", machine: "laptop" } },
+		{ to: "pij-x", destination: { seat: "pij-x" } },
+		{ to: "a@@b@laptop", destination: { seat: "a@b", machine: "laptop" } },
+	])("send addresses $to as $destination", async ({ to, destination }) => {
+		const { runtime, sends } = await bootPushedEvent(PUSHED_EVENT_WIRE, new FakePiRuntime());
+		try {
+			await runtime.send(to, "reply");
+			expect(sends.at(-1)?.to).toEqual(destination);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+	it("refuses a malformed address without sending", async () => {
+		const { runtime, sends } = await bootPushedEvent(PUSHED_EVENT_WIRE, new FakePiRuntime());
+		try {
+			const before = sends.length;
+			await expect(runtime.send("a@b@c", "reply")).rejects.toThrow(/machine aliases cannot/);
+			expect(sends).toHaveLength(before);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
 	it("does not overwrite a claude seat when omp boots in the same pane", async () => {
 		vi.stubEnv("PIJ_ANNOUNCE_TO", "");
 		vi.stubEnv("PIJ_SESSION_ID", undefined);

@@ -1,0 +1,20 @@
+[
+	{ "input": "seat", "seat": "seat", "machine": null },
+	{ "input": "pij-local-seat", "seat": "pij-local-seat", "machine": null },
+	{ "input": "seat@machine", "seat": "seat", "machine": "machine" },
+	{ "input": "pij-x@laptop", "seat": "pij-x", "machine": "laptop" },
+	{ "input": "seat@@id", "seat": "seat@id", "machine": null },
+	{ "input": "seat@@id@machine", "seat": "seat@id", "machine": "machine" },
+	{ "input": "a@@b@laptop", "seat": "a@b", "machine": "laptop" },
+	{ "input": "seat@@@@id", "seat": "seat@@id", "machine": null },
+	{ "input": "@@", "seat": "@", "machine": null },
+	{ "input": "@@@laptop", "seat": "@", "machine": "laptop" },
+	{ "input": "", "error": true },
+	{ "input": "@machine", "error": true },
+	{ "input": "@", "error": true },
+	{ "input": "seat@", "error": true },
+	{ "input": "seat@@id@", "error": true },
+	{ "input": "seat@machine@other", "error": true },
+	{ "input": "seat@machine@@other", "error": true },
+	{ "input": "a@b@c", "error": true }
+]
