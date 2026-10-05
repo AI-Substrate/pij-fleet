@@ -1350,6 +1350,28 @@ async fn run(cli: Cli) -> ExitCode {
         }
 
         Command::Bg { action } => {
+            // An unreadable cwd (deleted under the shell) must not silently become
+            // "no cwd": the daemon would then run in the owner's recorded folder.
+            if let BgAction::Create { cwd, .. } = &action
+                && !cwd
+                    .as_deref()
+                    .is_some_and(|cwd| Path::new(cwd).is_absolute())
+                && let Err(error) = std::env::current_dir()
+            {
+                return emit(
+                    &setup_refusal::<Value>(
+                        "pij bg",
+                        PijError::Adapter {
+                            adapter: "background/refused".to_string(),
+                            message: format!(
+                                "cannot read the current directory ({error}); cd into a directory \
+                                 that exists or pass an absolute --cwd"
+                            ),
+                        },
+                    ),
+                    cli.json,
+                );
+            }
             let response = client.bg(&action.argv(), &caller_context()).await;
             if !cli.json
                 && response.ok
