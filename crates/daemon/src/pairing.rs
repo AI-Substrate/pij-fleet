@@ -407,6 +407,39 @@ mod tests {
         }
     }
 
+    /// Review F10: an authority no HTTP client can use is a configuration
+    /// error at load, not a background retry loop later.
+    #[test]
+    fn an_unusable_peer_url_is_refused_at_load() {
+        for url in [
+            "http://:7461",
+            "http://127.0.0.1:99999",
+            "http://user:pass@100.64.0.7:7461",
+            "http://100.64.0.7:7461/base",
+            "http://100.64.0.7:7461?x=1",
+            "http://100.64.0.7:7461#frag",
+            "http://",
+        ] {
+            assert!(
+                matches!(
+                    parse(&file(&[("laptop", url, KEY_A)])),
+                    Err(PairingError::BadUrl(..))
+                ),
+                "{url} must be refused"
+            );
+        }
+        for url in [
+            "http://100.64.0.7:7461",
+            "https://studio.tailnet.ts.net",
+            "http://[fd7a:115c:a1e0::1]:7461/",
+        ] {
+            assert!(
+                parse(&file(&[("laptop", url, KEY_A)])).is_ok(),
+                "{url} is usable"
+            );
+        }
+    }
+
     #[test]
     fn the_file_must_be_the_daemon_users_and_private() {
         let path = Path::new("/state/peers.toml");

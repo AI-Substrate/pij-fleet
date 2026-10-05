@@ -6743,6 +6743,106 @@ async fn a_forwarded_fyi_keeps_its_machine_and_never_collides_with_a_local_one()
     server.abort();
 }
 
+/// Review F02 (plan 164): a peer's msg_id lives in that peer's namespace. A
+/// local message and a forwarded one sharing an id are two messages, and an
+/// exact retry from the same peer is still one.
+#[tokio::test]
+async fn a_forwarded_message_never_suppresses_a_local_one_with_the_same_id() {
+    let source = pij_testkit::fakes::FakeSessionStatus::new();
+    let (addr, server, queue, _) = cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-shared", serde_json::json!({"body": "from afar"})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(
+        reply["data"]["msg_id"], "m-shared",
+        "the sender's own id comes back"
+    );
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-shared", serde_json::json!({"body": "from afar"})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "an exact retry: {reply}");
+    let (status, reply) = post_json(
+        addr,
+        "/v1/send",
+        cold_send("m-shared", serde_json::json!({"body": "from next door"})),
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(
+        queue.live_len(),
+        2,
+        "one forwarded (its retry collapsed) and one local message are queued"
+    );
+    server.abort();
+}
+
+/// Review F07: two overlapping sends of one message both wait for, and both
+/// receive, the receiver's refusal; one is never left holding a dead waiter.
+#[tokio::test]
+async fn overlapping_duplicate_sends_both_receive_the_peers_refusal() {
+    async fn slow_cold_refusal() -> Response {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let mut refusal = Envelope::<()>::refused(
+            "pij send",
+            ErrorKind::Refused,
+            "E-RS-COLD-WAKE: ❄ pij-cold is cold",
+        );
+        refusal.details = Some(serde_json::json!({"code": "E-RS-COLD-WAKE"}));
+        envelope(StatusCode::BAD_REQUEST, &refusal)
+    }
+    let (b_addr, b_server) = spawn(Router::new().route("/v1/send", post(slow_cold_refusal))).await;
+    let a_services = test_services(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let federation = Arc::new(
+        FederationService::new(
+            "desktop".to_string(),
+            [peer_definition("laptop", b_addr)],
+            Arc::clone(&a_services.queue),
+            Arc::clone(&a_services.event_bus),
+            FederationPolicy {
+                first_attempt_wait: Duration::from_secs(5),
+                ..federation_policy()
+            },
+        )
+        .expect("federation"),
+    );
+    let worker = Arc::clone(&federation).start();
+    let (a_addr, a_server) = spawn(router_with_federation(
+        a_services,
+        config("a-local", &[]),
+        federation,
+    ))
+    .await;
+    let body = serde_json::json!({
+        "from": "pij-sender", "to": {"seat": "pij-cold", "machine": "laptop"},
+        "body": "wake up", "msg_id": "m-overlap",
+    });
+    let (first, second) = tokio::join!(
+        post_json_as(a_addr, "/v1/send", body.clone(), "a-local"),
+        post_json_as(a_addr, "/v1/send", body, "a-local"),
+    );
+    for (status, reply) in [first, second] {
+        assert_eq!(status, 400, "{reply}");
+        assert_eq!(reply["details"]["code"], "E-RS-COLD-WAKE", "{reply}");
+    }
+    worker.shutdown().await.expect("worker stops");
+    a_server.abort();
+    b_server.abort();
+}
+
 /// The sending machine comes from the key: a local caller cannot pose as a
 /// forward, and a peer cannot claim to be a different machine.
 #[tokio::test]
