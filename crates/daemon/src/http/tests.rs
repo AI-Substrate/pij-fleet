@@ -6785,6 +6785,47 @@ async fn a_forwarded_message_never_suppresses_a_local_one_with_the_same_id() {
     server.abort();
 }
 
+/// Review F02 ruling: origin is never folded into the id. A forwarded message
+/// keeps its raw msg_id (origin travels in from_machine, its own field), and a
+/// caller-supplied local id may not contain `@`, so no local id can ever be
+/// mistaken for, or collide with, a qualified one.
+#[tokio::test]
+async fn forwarded_ids_stay_raw_and_local_ids_cannot_contain_at() {
+    let source = pij_testkit::fakes::FakeSessionStatus::new();
+    let (addr, server, queue, spine) =
+        cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-raw", serde_json::json!({"body": "from afar"})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    let pushed = spine
+        .tail(None, Seq(0))
+        .await
+        .expect("spine")
+        .into_iter()
+        .find(|event| event.kind == "message.pushed")
+        .expect("pushed");
+    let pushed: serde_json::Value = serde_json::from_str(&pushed.payload).expect("payload");
+    assert_eq!(pushed["msg_id"], "m-raw", "{pushed}");
+    assert_eq!(pushed["from_machine"], "laptop", "{pushed}");
+    let (status, reply) = post_json(
+        addr,
+        "/v1/send",
+        cold_send(
+            "m-raw@laptop",
+            serde_json::json!({"body": "from next door"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 400, "a local id with `@` is refused: {reply}");
+    assert_eq!(queue.live_len(), 1);
+    server.abort();
+}
+
 /// Review F07: two overlapping sends of one message both wait for, and both
 /// receive, the receiver's refusal; one is never left holding a dead waiter.
 #[tokio::test]

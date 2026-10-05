@@ -99,3 +99,44 @@ async fn two_peers_sharing_a_key_refuse_the_boot_naming_aliases_only() {
     );
     assert!(!refused.contains(shared), "{refused}");
 }
+
+/// Review F04 (IPv6): 127.0.0.1 is ALWAYS bound. `--bind [::1]:<port>` only
+/// ADDS a listener; it never replaces the IPv4 loopback local clients use.
+#[tokio::test]
+async fn an_ipv6_loopback_bind_adds_to_ipv4_loopback_never_replaces_it() {
+    let state = pij_testkit::fresh_dir("pij-pairing-boot");
+    let daemon = match pij_daemon::boot(
+        &Config {
+            bind_addr: "[::1]:0".to_string(),
+            ..Config::default()
+        },
+        state,
+    )
+    .await
+    {
+        Ok(daemon) => daemon,
+        Err(error) => panic!("boot: {error}"),
+    };
+    let port = daemon.addr.port();
+    let health = |host: String| {
+        let header = daemon.key.header();
+        async move {
+            reqwest::Client::new()
+                .get(format!("http://{host}:{port}/health"))
+                .header("authorization", header)
+                .send()
+                .await
+                .map(|response| response.status().as_u16())
+        }
+    };
+    assert_eq!(
+        health("127.0.0.1".to_string()).await.ok(),
+        Some(200),
+        "IPv4 loopback must serve whatever --bind says"
+    );
+    if let RemoteListener::Listening { addr, .. } = &daemon.remote {
+        assert!(addr.ip().is_loopback() && addr.is_ipv6(), "{addr}");
+        assert_eq!(health("[::1]".to_string()).await.ok(), Some(200));
+    }
+    daemon.shutdown().await.expect("shutdown");
+}

@@ -219,6 +219,39 @@ mod tests {
         assert!(!human.contains(&key), "{human}");
     }
 
+    /// Review F08b: `peers check` judges a peer's answer exactly as the
+    /// federation wire decoder does, so a future-version roster the daemon
+    /// would refuse is never certified.
+    #[tokio::test]
+    async fn a_future_version_roster_is_not_certified() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().route(
+                    "/v1/seats",
+                    get(|| async {
+                        r#"{"ok":true,"command":"pij seats","v":999,"data":{"seats":[],"unavailable":[]}}"#
+                    }),
+                ),
+            )
+            .await
+            .expect("serve");
+        });
+        let (status, _) = reach(
+            &reqwest::Client::new(),
+            "laptop",
+            &format!("http://{addr}"),
+            "some-generated-test-key",
+        )
+        .await;
+        assert_ne!(status, "ok");
+        server.abort();
+    }
+
     /// Review S5: a 200 that is not an authenticated pij roster envelope (a
     /// proxy's `{}`, a captive portal) is not a reachable peer.
     #[tokio::test]
