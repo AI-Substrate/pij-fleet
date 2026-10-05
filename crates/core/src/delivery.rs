@@ -64,13 +64,21 @@ pub fn parked_events(
         adapter: "delivery/parking".into(),
         message: format!("invalid parked delivery payload: {error}"),
     })?;
-    let event = |kind: &str, payload: serde_json::Value| crate::model::Event {
-        seq: None,
-        v: 1,
-        at: evidence.at,
-        kind: kind.into(),
-        seat: Some(message.from.clone()),
-        payload: payload.to_string(),
+    // A forwarded message was sent by no seat on THIS machine: attributing its
+    // parking to the bare sender name would notify whichever local seat shares
+    // it (plan 164 review F02). Its origin travels in the payload instead.
+    let event = |kind: &str, mut payload: serde_json::Value| {
+        if let Some(machine) = &message.from_machine {
+            payload["from_machine"] = machine.as_str().into();
+        }
+        crate::model::Event {
+            seq: None,
+            v: 1,
+            at: evidence.at,
+            kind: kind.into(),
+            seat: message.from_machine.is_none().then(|| message.from.clone()),
+            payload: payload.to_string(),
+        }
     };
     Ok(vec![
         event(
