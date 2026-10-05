@@ -1170,6 +1170,8 @@ const HOLD_CONTRACT = JSON.parse(
 type GraceMessage = {
 	msg_id: string;
 	from: string;
+	/** Plan 164: stamped by the daemon on a message forwarded from a paired machine. */
+	from_machine?: string;
 	body: string;
 	command?: string;
 	urgent?: boolean;
@@ -1867,6 +1869,19 @@ describe("extension-stream delivery", () => {
 		expect(client.parks).toEqual([]);
 	});
 
+	// Plan 164 S7: a forwarded message's resend keeps naming its machine.
+	it.each([
+		{ machine: "laptop", sender: "pij-sender@laptop" },
+		{ machine: undefined, sender: "pij-sender" },
+	])("resend frames the sender as $sender", async ({ machine, sender }) => {
+		const { client, api } = await startSwallowing();
+		await client.push(message("swallowed", machine === undefined ? {} : { from_machine: machine }));
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(api.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+			`[pij resend 1]\n[pijMessageId:swallowed]\n[pij-rs from ${sender}]\nswallowed\n[/pij]`,
+		);
+	});
+
 	it("resets the resend idle window on every turn start without treating a turn as consumption", async () => {
 		vi.stubEnv("PIJ_REDELIVER_IDLE_MS", "2000");
 		const { runtime, pi, client, api } = await startSwallowing();
@@ -2162,6 +2177,32 @@ describe("extension-stream delivery", () => {
 		]);
 		expect(pi.statuses.some((status) => status?.includes("typing"))).toBe(false);
 		expect(pi.statuses.at(-1)).toBe(busy ? "📨 1 pending" : undefined);
+	});
+
+	// Plan 164 S7: a sender forwarded from a paired machine is never shown as a local seat.
+	it.each([
+		{ machine: "laptop", sender: "pij-sender@laptop" },
+		{ machine: undefined, sender: "pij-sender" },
+	])("pushed message names its sender as $sender", async ({ machine, sender }) => {
+		const { pi, client } = await start();
+		await client.push(message("hello", machine === undefined ? {} : { from_machine: machine }));
+		expect(pi.injects.map((row) => row.text)).toEqual([`[pij-rs from ${sender}]\nhello\n[/pij]`]);
+		expect(pi.notices.map((row) => row.text)).toEqual([`📨 pij from ${sender}: hello`]);
+	});
+
+	it.each([
+		{ machine: "laptop", sender: "pij-sender@laptop" },
+		{ machine: undefined, sender: "pij-sender" },
+	])("inbox claim recovered at boot names its sender as $sender", async ({ machine, sender }) => {
+		const client = new GraceClient();
+		await client.push(
+			message("recovered", machine === undefined ? {} : { from_machine: machine }),
+			false,
+		);
+		const { pi } = await start(client);
+		expect(pi.injects.map((row) => row.text)).toEqual([
+			`[pij-rs from ${sender}]\nrecovered\n[/pij]`,
+		]);
 	});
 
 	it("delivers through the OMP adapter without clearing or submitting a human draft", async () => {

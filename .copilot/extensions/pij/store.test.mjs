@@ -1033,6 +1033,41 @@ test("acceptance is persisted before tuple-bound acknowledgement, not model comp
 	);
 });
 
+// Plan 164 S7: a sender forwarded from a paired machine is never shown as a local seat.
+for (const [machine, sender] of [
+	["laptop", "pij-peer@laptop"],
+	[undefined, "pij-peer"],
+]) {
+	test(`native prompt names the sender as ${sender} and journals its machine`, async () => {
+		const f = fixture();
+		const forwarded = {
+			...claim,
+			message: { ...claim.message, ...(machine === undefined ? {} : { from_machine: machine }) },
+		};
+		const request = f.client.request.bind(f.client);
+		f.client.request = async (path, body, signal) => {
+			const result = await request(path, body, signal);
+			return path.startsWith("/v1/inbox?")
+				? result.map((c) => (c === claim ? forwarded : c))
+				: result;
+		};
+		const prompts = [];
+		const send = f.native.send;
+		f.native.send = async (input) => {
+			prompts.push(input.prompt);
+			return send(input);
+		};
+		const run = f.bridge.run();
+		await f.accepted.promise;
+		f.bridge.stop();
+		await run;
+		assert.deepEqual(prompts, [
+			`[pij from ${JSON.stringify(sender)}; msg_id=${JSON.stringify(claim.message.msg_id)}]\n${claim.message.body}`,
+		]);
+		assert.equal(f.records.get(claim.message.msg_id).message.from_machine, machine);
+	});
+}
+
 test("busy native turn consumes immediate steering and journals its returned message ID", async (t) => {
 	const f = fixture({ delay: () => flush() });
 	t.after(() => f.bridge.stop());

@@ -22,6 +22,11 @@ describe("frame/parseFrame", () => {
 		expect(frame("pij-a", "hello")).toBe("[pij-rs from pij-a]\nhello\n[/pij]");
 	});
 
+	it("matches the Rust canonical machine-qualified frame byte-for-byte", () => {
+		// crates/core/src/framing.rs::frame_message (from_machine = Some("desktop")).
+		expect(frame("pij-a", "hello", "desktop")).toBe("[pij-rs from pij-a@desktop]\nhello\n[/pij]");
+	});
+
 	it("still parses the legacy head without a closing tail", () => {
 		expect(parseFrame("[pij from w3] refactor store.ts")).toEqual({
 			from: "w3",

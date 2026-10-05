@@ -434,6 +434,30 @@ describe("PijSession.onInbound — free text", () => {
 		h.session.onTurnStart(new Date(T0 + 9000).toISOString());
 		expect(h.delivery.outbox).toHaveLength(2);
 	});
+
+	// Plan 164 S7: a forwarded sender is shown machine-qualified everywhere it is named.
+	it.each([
+		{ fromMachine: "laptop", sender: "bob@laptop" },
+		{ fromMachine: undefined, sender: "bob" },
+	])("names the sender as $sender in the frame and the receipt event", ({
+		fromMachine,
+		sender,
+	}) => {
+		const h = harness({ idle: true, now: T0 });
+		h.session.boot(bootInput());
+		h.pi.injects.length = 0;
+		h.session.onInbound(
+			{
+				from: "bob",
+				...(fromMachine === undefined ? {} : { fromMachine }),
+				to: "alice",
+				body: "hi",
+			},
+			"m1",
+		);
+		expect(h.pi.injects[0]?.text).toBe(`[pij-rs from ${sender}]\nhi\n[/pij]`);
+		expect(h.eventLog.read({ type: "receipt" })[0]?.data).toMatchObject({ to: sender });
+	});
 });
 
 describe("PijSession.onInbound — commands (AC-6, finding 05)", () => {
@@ -488,6 +512,27 @@ describe("PijSession.onInbound — commands (AC-6, finding 05)", () => {
 		expect(h.session.applyPendingControl()).toEqual(["reload"]);
 		expect(h.pi.controlCalls).toEqual(["reload"]);
 		expect(h.session.applyPendingControl()).toEqual([]);
+	});
+
+	it.each([
+		{ fromMachine: "laptop", sender: "bob@laptop" },
+		{ fromMachine: undefined, sender: "bob" },
+	])("a deferred control names its requester as $sender", ({ fromMachine, sender }) => {
+		const h = harness();
+		h.session.boot(bootInput());
+		h.pi.setArmed(false);
+		h.pi.injects.length = 0;
+		h.session.onInbound(
+			{
+				from: "bob",
+				...(fromMachine === undefined ? {} : { fromMachine }),
+				to: "alice",
+				body: "",
+				command: "reload",
+			},
+			"c5",
+		);
+		expect(h.pi.injects[0]?.text).toMatch(new RegExp(`^\\[pij\\] Peer ${sender} asked `));
 	});
 });
 
