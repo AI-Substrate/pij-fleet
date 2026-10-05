@@ -200,6 +200,25 @@ mod tests {
 
     use super::reach;
 
+    /// Review F05 follow-up: the error envelope and its human rendering for a
+    /// malformed file carry no text from the file.
+    #[tokio::test]
+    async fn a_malformed_file_never_reaches_the_envelope() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let key = pij_daemon::pairing::new_key().expect("key");
+        let dir = pij_testkit::fresh_dir("pij-peers-check-malformed");
+        let path = dir.join(pij_daemon::pairing::PEERS_FILE);
+        std::fs::write(&path, format!("machine = \"m\"\npeer=[\n{key}\n]\n")).expect("write");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+        let uid = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata(&path).expect("stat"));
+        let envelope = super::check(&dir, uid).await;
+        assert!(!envelope.ok);
+        let json = serde_json::to_string(&envelope).expect("json");
+        let human = super::render(&envelope);
+        assert!(!json.contains(&key), "{json}");
+        assert!(!human.contains(&key), "{human}");
+    }
+
     /// Review S5: a 200 that is not an authenticated pij roster envelope (a
     /// proxy's `{}`, a captive portal) is not a reachable peer.
     #[tokio::test]

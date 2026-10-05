@@ -437,6 +437,52 @@ mod tests {
         }
     }
 
+    /// Review F05 follow-up: whatever malformed shape a generated key is
+    /// typed into, no error text (Display or Debug, the source of every
+    /// stdout/stderr line and error envelope) contains it.
+    #[test]
+    fn no_malformed_shape_ever_echoes_a_generated_key() {
+        let key = new_key().expect("key");
+        let ok_head = "machine = \"m\"\n[[peer]]\nalias = \"laptop\"\nurl = \"http://h:1\"\n";
+        let shapes = [
+            format!("machine = \"m\"\npeer=[\n{key}\n]\n"),
+            format!("machine = \"m\"\npeer = [\"{key}\"]\n"),
+            format!("machine = \"m\"\npeer = {{ key = \"{key}\" }}\n"),
+            format!("{ok_head}key = \"{key}\n"),
+            format!("{ok_head}key = {key}\n"),
+            format!("{ok_head}key = [\"{key}\"]\n"),
+            format!("{ok_head}key = {{ value = \"{key}\" }}\n"),
+            format!("{ok_head}key = 1\n{key}\n"),
+            format!("{key}\n"),
+            format!("machine = \"m\"\n{key} = \"x\"\n"),
+            format!("machine = \"m\"\n[{key}]\n"),
+            format!("machine = \"m\"\n[[{key}]]\n"),
+            format!("machine = \"{key}\"\n"),
+            format!(
+                "{ok_head}key = \"{key}\"\n[[peer]]\nalias = \"{key}\"\nurl = \"http://h:2\"\nkey = \"{key}x\"\n"
+            ),
+            format!(
+                "machine = \"m\"\n[[peer]]\nalias = \"laptop\"\nurl = \"http://{key}:1\"\nkey = \"{key}\"\n"
+            ),
+            format!(
+                "machine = \"m\"\n[[peer]]\nalias = \"laptop\"\nurl = \"{key}\"\nkey = \"{key}\"\n"
+            ),
+        ];
+        for shape in shapes {
+            match parse(&shape) {
+                Ok(_) => {}
+                Err(refused) => {
+                    let shown = format!("{refused} {refused:?}");
+                    assert!(!shown.contains(&key), "{shape:?} echoed the key: {shown}");
+                    assert!(
+                        !shown.contains(&key[..16]),
+                        "{shape:?} echoed part of the key: {shown}"
+                    );
+                }
+            }
+        }
+    }
+
     /// Review F10: an authority no HTTP client can use is a configuration
     /// error at load, not a background retry loop later.
     #[test]
