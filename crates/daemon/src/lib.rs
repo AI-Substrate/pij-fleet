@@ -17,6 +17,7 @@ pub mod delivery;
 pub mod events;
 pub mod federation;
 pub mod lifecycle;
+pub mod pairing;
 pub mod pane_observer;
 pub mod pointer;
 pub mod reaper;
@@ -162,6 +163,8 @@ pub struct Daemon {
     /// Where it is actually listening — resolved, so a `:0` config becomes a
     /// real port a client can be told about.
     pub addr: SocketAddr,
+    /// How far that listener reaches, as the bind policy classified it.
+    pub exposure: http::Exposure,
     /// The per-boot bearer key.
     pub key: BootKey,
     event_bus: Arc<events::EventBus>,
@@ -640,6 +643,36 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     let staged = auth::stage_key(&state_dir)?;
     let token = staged.token().to_string();
 
+    // 1b. The pairing, validated BEFORE the bind (plan 164 rulings 2, 3, 5):
+    //     every peer key maps to one alias, no two peers share a key, none
+    //     equals the local key; and the listen address must be loopback, or a
+    //     Tailscale address on a paired daemon, or explicitly --insecure-bind.
+    //     All refusals, so a bad peers.toml never costs a running daemon its
+    //     port or its key.
+    let auth_ring = http::AuthRing::new(
+        token,
+        config
+            .peers
+            .iter()
+            .map(|peer| (peer.alias.clone(), peer.key.clone())),
+    )
+    .map_err(|error| PijError::Adapter {
+        adapter: "daemon/pairing".to_string(),
+        message: error.to_string(),
+    })?;
+    let requested: SocketAddr = config.bind_addr.parse().map_err(|_| PijError::Adapter {
+        adapter: "daemon".to_string(),
+        message: format!(
+            "bind address {} is not IP:port; the bind policy needs an address it can classify",
+            config.bind_addr
+        ),
+    })?;
+    let exposure = http::check_bind(requested, !config.peers.is_empty(), config.insecure_bind)
+        .map_err(|error| PijError::Adapter {
+            adapter: "daemon/bind".to_string(),
+            message: error.to_string(),
+        })?;
+
     // 2. Bind. This is the step that fails when another daemon holds the port,
     //    and it comes before anything that changes state on disk.
     let listener = tokio::net::TcpListener::bind(&config.bind_addr)
@@ -688,6 +721,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
                 poll_interval: Duration::from_secs(config.federation_poll_interval_secs),
                 max_retry_delay: Duration::from_secs(config.federation_retry_max_secs),
                 event_buffer_capacity: config.event_buffer_capacity,
+                first_attempt_wait: Duration::from_secs(config.federation_first_attempt_wait_secs),
             },
         )
         .map_err(|error| PijError::Adapter {
@@ -854,8 +888,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     let router = http::router_with_federation(
         services,
         http::HttpConfig {
-            local_key: token,
-            peer_keys: config.peers.iter().map(|peer| peer.key.clone()).collect(),
+            auth: auth_ring,
             machine_alias: identity.alias().to_string(),
         },
         federation,
@@ -870,6 +903,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
 
     Ok(Daemon {
         addr,
+        exposure,
         key,
         event_bus,
         delivery,

@@ -25,8 +25,7 @@ async fn native_list_here_filters_and_refuses_valued_flags() {
     let router = router_with_config(
         services,
         HttpConfig {
-            local_key: "list-test-key".into(),
-            peer_keys: Vec::new(),
+            auth: pij_daemon::http::AuthRing::local("list-test-key".into()),
             machine_alias: "test".into(),
         },
     );

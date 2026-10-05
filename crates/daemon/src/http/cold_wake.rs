@@ -8,14 +8,15 @@
 
 use std::time::Duration;
 
+use axum::http::StatusCode;
 use axum::response::Response;
 use pij_core::cold_wake::{
     COLD_IDLE_MS, COLD_WAKE_CODE, COLD_WAKE_FORCED_KIND, ColdCheck, check, refusal,
 };
-use pij_core::model::{Event, SeatDescriptor, SeatId};
+use pij_core::model::{Envelope, ErrorKind, Event, SeatDescriptor, SeatId};
 use pij_core::session_status::SessionStatusBlock;
 
-use super::{AppState, internal, refused, session_status_block, system_time_ms};
+use super::{AppState, envelope, internal, refused, session_status_block, system_time_ms};
 
 /// How long a send waits for the recipient's session facts before allowing it.
 /// A cold first read of a very large transcript can take longer; the brake
@@ -93,6 +94,22 @@ pub(crate) async fn is_known_warm(state: &AppState, seat: &SeatDescriptor, now_m
 pub(crate) struct Override<'a> {
     pub(crate) force: bool,
     pub(crate) reason: Option<&'a str>,
+    /// The paired machine a forwarded send came from, `None` for a local one.
+    /// The guard applies the same rule either way (plan 164 ruling 6); this
+    /// only names the sender's machine in the forced-wake audit.
+    pub(crate) from_machine: Option<&'a str>,
+}
+
+/// The cold refusal, with the cold facts as data so a forwarding daemon can
+/// relay them to the sender without reading them back out of the prose.
+fn cold_refusal(command: &str, to: &SeatId, message: String, verdict: &ColdCheck) -> Response {
+    let mut refusal = Envelope::<()>::refused(command, ErrorKind::Refused, message);
+    refusal.details = Some(serde_json::json!({
+        "code": COLD_WAKE_CODE,
+        "seat": to,
+        "cold": verdict,
+    }));
+    envelope(StatusCode::BAD_REQUEST, &refusal)
 }
 
 /// Check one local recipient before a real (non-FYI, non-control) send.
@@ -173,7 +190,7 @@ pub(crate) async fn guard(
     if let Some(message) = refusal(to, &verdict)
         && !over.force
     {
-        return Err(Box::new(refused(command, message)));
+        return Err(Box::new(cold_refusal(command, to, message, &verdict)));
     }
     if let ColdCheck::Cold {
         context_tokens,
@@ -191,6 +208,7 @@ pub(crate) async fn guard(
             seat: Some(to.clone()),
             payload: serde_json::json!({
                 "from": from,
+                "from_machine": over.from_machine,
                 "msg_id": msg_id,
                 "reason": reason,
                 "context_tokens": context_tokens,

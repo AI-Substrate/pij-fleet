@@ -11,7 +11,8 @@ workspace = true
 # loopback; `tokio` is the runtime both halves share.
 [dependencies]
 clap = { workspace = true }
-nix = { workspace = true }
+# `user`: geteuid, so peers.toml must belong to the daemon's own user (plan 164).
+nix = { workspace = true, features = ["user"] }
 pij-core = { workspace = true }
 pij-daemon = { workspace = true }
 pij-harnesses = { workspace = true }

@@ -3,9 +3,9 @@ mod fanin;
 
 pub(crate) use fanin::RemoteSubscription;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::config::PeerDefinition;
@@ -53,6 +53,10 @@ pub struct FederationPolicy {
     pub max_retry_delay: Duration,
     /// Per-peer remote event buffer bound.
     pub event_buffer_capacity: usize,
+    /// How long a remote send waits inline for its first forwarding attempt
+    /// before answering `Queued`. A latency cap, not a brake: past it the same
+    /// outcome still lands as an event.
+    pub first_attempt_wait: Duration,
 }
 /// A peer-configuration refusal.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -159,6 +163,36 @@ impl PeerTable {
     }
 }
 
+/// What a remote send's sender learns inline.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FirstAttempt {
+    /// The peer accepted the message and answered with its receipt.
+    Forwarded(Receipt),
+    /// The peer refused it under its own rules; its words and details, relayed.
+    Refused {
+        /// The peer's refusal text.
+        reason: String,
+        /// The peer's structured details (for a cold wake: code and cold facts).
+        details: Option<serde_json::Value>,
+    },
+    /// Durably queued but not answered within the wait (peer unreachable, or
+    /// behind earlier rows for the same seat). The outcome lands as an event.
+    Queued(Receipt),
+}
+
+/// What the worker tells an inline waiter about the first attempt.
+enum Settled {
+    Forwarded(Receipt),
+    Refused {
+        reason: String,
+        details: Option<serde_json::Value>,
+    },
+    Retrying,
+}
+
+type WaiterMap = HashMap<(String, String), tokio::sync::oneshot::Sender<Settled>>;
+type Waiters = Mutex<WaiterMap>;
+
 /// Remote-send admission and the durable queue consumed by the federation worker.
 pub struct FederationService {
     local_alias: String,
@@ -172,6 +206,10 @@ pub struct FederationService {
     retry_base: Duration,
     retry_max: Duration,
     fanin: Arc<FanInService>,
+    /// Senders waiting inline for their row's FIRST forwarding attempt, keyed
+    /// by `(peer alias, msg_id)`. Removed when answered or when the wait ends.
+    first_attempt_wait: Duration,
+    first_attempts: Waiters,
 }
 
 impl FederationService {
@@ -263,7 +301,63 @@ impl FederationService {
             retry_base: policy.poll_interval,
             retry_max: policy.max_retry_delay,
             fanin,
+            first_attempt_wait: policy.first_attempt_wait,
+            first_attempts: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Enqueue a remote send, then wait up to the policy's `first_attempt_wait`
+    /// for its first forwarding
+    /// attempt, so the sender sees the peer's receipt or refusal inline — a
+    /// cold-wake refusal by the receiver reads exactly as a local one would
+    /// (plan 164 ruling 6). Durability is unchanged: the row is queued before
+    /// the wait, and a peer that is down leaves it queued with backoff.
+    ///
+    /// # Errors
+    /// As [`Self::enqueue_remote`].
+    pub async fn send_remote(
+        &self,
+        request: &SendRequest,
+    ) -> std::result::Result<FirstAttempt, FederationSendError> {
+        let key = (
+            request.to.machine.clone().unwrap_or_default(),
+            request.msg_id.clone(),
+        );
+        let (sender, answer) = tokio::sync::oneshot::channel();
+        self.waiters().insert(key.clone(), sender);
+        let queued = match self.enqueue_remote(request).await {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                self.waiters().remove(&key);
+                return Err(error);
+            }
+        };
+        let settled = tokio::time::timeout(self.first_attempt_wait, answer).await;
+        self.waiters().remove(&key);
+        Ok(match settled {
+            Ok(Ok(Settled::Forwarded(receipt))) => FirstAttempt::Forwarded(receipt),
+            Ok(Ok(Settled::Refused { reason, details })) => {
+                FirstAttempt::Refused { reason, details }
+            }
+            Ok(Ok(Settled::Retrying) | Err(_)) | Err(_) => FirstAttempt::Queued(queued),
+        })
+    }
+
+    fn waiters(&self) -> std::sync::MutexGuard<'_, WaiterMap> {
+        // A poisoned map only ever held senders; recovering it loses nothing.
+        self.first_attempts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn settle(&self, request: &SendRequest, settled: Settled) {
+        let key = (
+            request.to.machine.clone().unwrap_or_default(),
+            request.msg_id.clone(),
+        );
+        if let Some(waiter) = self.waiters().remove(&key) {
+            let _ = waiter.send(settled);
+        }
     }
 
     /// Merge authoritative local rows with retained remote roster views.
@@ -380,6 +474,7 @@ impl FederationService {
                     job_id,
                     &request,
                     "remote-send job has a local destination".to_string(),
+                    None,
                 )
                 .await?;
                 return Ok(WorkerStep::Refused);
@@ -389,7 +484,7 @@ impl FederationService {
             Ok(ResolvedPeer::Remote(endpoint)) => endpoint,
             Ok(ResolvedPeer::Local) => unreachable!("machine was present"),
             Err(error) => {
-                self.refuse_claim(job_id, &request, error.to_string())
+                self.refuse_claim(job_id, &request, error.to_string(), None)
                     .await?;
                 return Ok(WorkerStep::Refused);
             }
@@ -399,13 +494,14 @@ impl FederationService {
         forwarded.to.machine = None;
         forwarded.from_machine = Some(self.local_alias.clone());
         match post_to_peer::<_, Receipt>(&self.client, endpoint, "/v1/send", &forwarded).await {
-            Err(_) => self.retry_claim(job_id, job.attempt).await,
+            Err(_) => self.retry_claim(job_id, job.attempt, &request).await,
             Ok(envelope) if !envelope.ok && envelope.error == Some(ErrorKind::Adapter) => {
-                self.retry_claim(job_id, job.attempt).await
+                self.retry_claim(job_id, job.attempt, &request).await
             }
             Ok(envelope) if !envelope.ok => {
                 let reason = refusal_reason(&envelope);
-                self.refuse_claim(job_id, &request, reason).await?;
+                self.refuse_claim(job_id, &request, reason, envelope.details)
+                    .await?;
                 Ok(WorkerStep::Refused)
             }
             Ok(envelope) => {
@@ -414,6 +510,7 @@ impl FederationService {
                         job_id,
                         &request,
                         "peer returned ok without a receipt".to_string(),
+                        None,
                     )
                     .await?;
                     return Ok(WorkerStep::Refused);
@@ -426,6 +523,7 @@ impl FederationService {
                             "peer receipt named message {}, expected {}",
                             receipt.msg_id, request.msg_id
                         ),
+                        None,
                     )
                     .await?;
                     return Ok(WorkerStep::Refused);
@@ -439,9 +537,11 @@ impl FederationService {
                 {
                     let delay = self.retry_delay(job.attempt)?;
                     self.queue.retry(job_id, delay).await?;
+                    self.settle(&request, Settled::Retrying);
                     return Ok(WorkerStep::Retried);
                 }
                 self.queue.ack(job_id, Outcome::Done).await?;
+                self.settle(&request, Settled::Forwarded(receipt));
                 Ok(WorkerStep::Forwarded)
             }
         }
@@ -506,9 +606,15 @@ impl FederationService {
         }
     }
 
-    async fn retry_claim(&self, job_id: JobId, attempt: u32) -> Result<WorkerStep> {
+    async fn retry_claim(
+        &self,
+        job_id: JobId,
+        attempt: u32,
+        request: &SendRequest,
+    ) -> Result<WorkerStep> {
         let delay = self.retry_delay(attempt)?;
         self.queue.retry(job_id, delay).await?;
+        self.settle(request, Settled::Retrying);
         Ok(WorkerStep::Retried)
     }
 
@@ -523,6 +629,7 @@ impl FederationService {
         job_id: JobId,
         request: &SendRequest,
         reason: String,
+        details: Option<serde_json::Value>,
     ) -> Result<()> {
         self.queue
             .ack(
@@ -536,6 +643,7 @@ impl FederationService {
             msg_id: &request.msg_id,
             peer: request.to.machine.as_deref(),
             reason: &reason,
+            details: details.as_ref(),
         })
         .map_err(|error| PijError::Adapter {
             adapter: "daemon/federation".to_string(),
@@ -551,6 +659,7 @@ impl FederationService {
                 payload,
             })
             .await?;
+        self.settle(request, Settled::Refused { reason, details });
         Ok(())
     }
 
@@ -656,6 +765,10 @@ struct RemoteRefusal<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     peer: Option<&'a str>,
     reason: &'a str,
+    /// The peer's structured refusal details, relayed verbatim so a sender can
+    /// decode (for example) a cold wake's code and facts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<&'a serde_json::Value>,
 }
 
 fn refusal_reason<T>(envelope: &Envelope<T>) -> String {
@@ -720,6 +833,7 @@ mod tests {
             poll_interval: Duration::from_secs(1),
             max_retry_delay: Duration::from_secs(5 * 60),
             event_buffer_capacity: 16,
+            first_attempt_wait: Duration::from_millis(50),
         }
     }
 

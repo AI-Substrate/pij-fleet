@@ -32,8 +32,11 @@ async fn a_peer_key_is_refused_by_every_route_but_the_federation_ones() {
         Arc::new(FakeSpine::new()),
     )
     .await;
-    let (addr, server) =
-        spawn(router_with_config(services, config("local-key", &["peer-key"]))).await;
+    let (addr, server) = spawn(router_with_config(
+        services,
+        config("local-key", &[("laptop", "peer-key")]),
+    ))
+    .await;
     let client = reqwest::Client::new();
     let mut wrong = Vec::new();
     for endpoint in Endpoint::ALL {

@@ -1,8 +1,8 @@
-//! Human seat-address parsing for federation.
+//! Human seat-address parsing for federation: `<seat>` or `<seat>@<machine>`.
 
 use std::fmt;
 
-use pij_core::model::Destination;
+use crate::model::Destination;
 
 /// A malformed `<seat>` or `<seat>@<machine-alias>` address.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,7 +78,7 @@ pub fn render_destination(destination: &Destination) -> String {
 
 #[cfg(test)]
 mod tests {
-    use pij_core::model::Destination;
+    use crate::model::Destination;
 
     use super::{parse_destination, render_destination};
 

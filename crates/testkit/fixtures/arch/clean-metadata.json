@@ -295,6 +295,10 @@
           "kind": null
         },
         {
+          "name": "toml",
+          "kind": null
+        },
+        {
           "name": "tokio",
           "kind": null
         },
