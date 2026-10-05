@@ -354,7 +354,11 @@ fn list_line(job: &BackgroundJob, now: u64) -> String {
         (_, Some(at)) => format!("took {}", human_duration(at.saturating_sub(job.started_at))),
         (_, None) => "took ?".to_owned(),
     };
-    let timeout = if job.timed_out { " TIMEOUT" } else { "" };
+    let timeout = if job.timed_out && job.state == BackgroundState::Killed {
+        " TIMEOUT"
+    } else {
+        ""
+    };
     format!(
         "{}  {:?}{exit}{timeout}  {timing}  {}",
         job.job_id, job.state, job.title

@@ -359,16 +359,41 @@ impl BackgroundService {
         let mut children = self.children.lock().await;
         let mut first_error = None;
         let now = now_ms()?;
-        for mut job in self.store.pending().await? {
-            if job.state == BackgroundState::Running
-                && !job.kill_requested
-                && job.deadline_at.is_some_and(|deadline| deadline <= now)
+        for job in self.store.pending().await? {
+            // Completion first: a runner that already exited on its own (a late
+            // tick, a daemon restart) keeps its own result. The deadline applies
+            // only to a runner that is still alive now.
+            if let Err(error) = self.reconcile(&job, &mut children).await {
+                first_error.get_or_insert(error);
+                continue;
+            }
+            let mut current = match self.lookup(&job.job_id).await {
+                Ok(current) => current,
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                    continue;
+                }
+            };
+            if current.state == BackgroundState::Running
+                && !current.kill_requested
+                && current.deadline_at.is_some_and(|deadline| deadline <= now)
             {
-                match self.store.request_timeout(&job.job_id, now).await {
-                    // Reconcile below signals a live runner with kill intent.
+                match self.store.request_timeout(&current.job_id, now).await {
                     Ok(true) => {
-                        job.kill_requested = true;
-                        job.timed_out = true;
+                        current.kill_requested = true;
+                        current.timed_out = true;
+                        // Signals the still-live runner through the identity brakes.
+                        if let Err(error) = self.reconcile(&current, &mut children).await {
+                            first_error.get_or_insert(error);
+                            continue;
+                        }
+                        match self.lookup(&job.job_id).await {
+                            Ok(latest) => current = latest,
+                            Err(error) => {
+                                first_error.get_or_insert(error);
+                                continue;
+                            }
+                        }
                     }
                     Ok(false) => {}
                     Err(error) => {
@@ -377,16 +402,9 @@ impl BackgroundService {
                     }
                 }
             }
-            if let Err(error) = self.reconcile(&job, &mut children).await {
-                first_error.get_or_insert(error);
-                continue;
-            }
-            let result = match self.lookup(&job.job_id).await {
-                Ok(current) if terminal(current.state) => self.notify(&current).await,
-                Ok(_) => Ok(()),
-                Err(error) => Err(error),
-            };
-            if let Err(error) = result {
+            if terminal(current.state)
+                && let Err(error) = self.notify(&current).await
+            {
                 first_error.get_or_insert(error);
             }
         }
@@ -445,7 +463,10 @@ impl BackgroundService {
         let now = now_ms()?;
         let (state, code, at) = match receipt {
             Some(receipt) => (
-                if job.kill_requested {
+                // A caller's kill always reads KILLED. A timeout reads TIMEOUT
+                // only when the runner's TERM trap (143) proves the timeout ended
+                // it; a runner that won the race to exit keeps its own result.
+                if job.kill_requested && !(job.timed_out && receipt.exit_code != 143) {
                     BackgroundState::Killed
                 } else {
                     BackgroundState::Done
@@ -812,6 +833,10 @@ mod tests {
         }
 
         async fn running(&self) -> BackgroundJob {
+            self.running_with_deadline(None).await
+        }
+
+        async fn running_with_deadline(&self, deadline_at: Option<u64>) -> BackgroundJob {
             let job = BackgroundJob {
                 job_id: "bg-recovery".to_string(),
                 owner: SeatId::from("owner"),
@@ -831,7 +856,7 @@ mod tests {
                 finished_at: None,
                 kill_requested: false,
                 notified: false,
-                deadline_at: None,
+                deadline_at,
                 timed_out: false,
             };
             std::fs::write(&job.out_path, "one\ntwo\n").unwrap();
@@ -1030,6 +1055,58 @@ mod tests {
                 .get(&SeatId::from("grandparent"), &job.job_id)
                 .await
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_runner_that_finished_before_its_deadline_keeps_its_exit_when_the_tick_is_late() {
+        // Review F1 (PR #21): the daemon was down, or a tick ran late, across the
+        // deadline; the runner had already exited on its own and written its receipt.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        std::fs::write(receipt_path(&job), "3 1700000002\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(finished.state, BackgroundState::Done);
+        assert_eq!(finished.exit_code, Some(3));
+        assert!(!finished.timed_out && !finished.kill_requested);
+        let delivered = fixture.transport.delivered();
+        assert_eq!(delivered.len(), 1, "exactly one completion turn");
+        assert!(
+            delivered[0]
+                .body
+                .starts_with("[pij bg] FAILED (exit 3) — build"),
+            "{}",
+            delivered[0].body
+        );
+    }
+
+    #[tokio::test]
+    async fn a_timeout_claim_that_lost_the_race_to_the_runner_reports_its_own_exit() {
+        // The runner exits between the live check and the TERM: kill intent is
+        // recorded, but only the trap's 143 proves the timeout ended it.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        assert!(
+            fixture
+                .service
+                .store
+                .request_timeout(&job.job_id, 1_700_000_006_000)
+                .await
+                .unwrap()
+        );
+        std::fs::write(receipt_path(&job), "0 1700000006\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(finished.state, BackgroundState::Done);
+        assert_eq!(finished.exit_code, Some(0));
+        assert!(
+            fixture.transport.delivered()[0]
+                .body
+                .starts_with("[pij bg] OK — build"),
+            "{}",
+            fixture.transport.delivered()[0].body
         );
     }
 
