@@ -329,6 +329,46 @@ pub fn route_control(recipient: &SeatDescriptor, transport_reachable: bool) -> D
 
 #[cfg(test)]
 mod tests {
+    /// Review F02/F01 (plan 164): a parked FORWARDED message was sent by no
+    /// seat here, so its parking facts must not be attributed to a local seat
+    /// that merely shares the remote sender's bare name; the origin travels in
+    /// the payload instead.
+    #[test]
+    fn a_parked_forwarded_message_is_attributed_to_no_local_seat() {
+        let msg = crate::model::Msg {
+            from: crate::model::SeatId::from("pij-sender"),
+            from_machine: Some("laptop".to_string()),
+            to: crate::model::SeatId::from("pij-reader"),
+            body: "hi".to_string(),
+            msg_id: "m-1".to_string(),
+            in_reply_to: None,
+            command: None,
+        };
+        let job = crate::model::Job {
+            kind: "delivery:pij-reader".to_string(),
+            serial_key: "pij-reader".to_string(),
+            payload: serde_json::to_string(&msg).expect("payload"),
+            dedupe_key: "m-1".to_string(),
+            dedupe_origin: Some("laptop".to_string()),
+            attempt: 0,
+        };
+        let events = super::parked_events(
+            crate::model::JobId(1),
+            &job,
+            &crate::ports::ParkingEvidence {
+                outcome: crate::model::DeliveryFailure::OperatorReleased,
+                reason: "test",
+                at: 1,
+            },
+        )
+        .expect("events");
+        for event in events {
+            assert_eq!(event.seat, None, "{}: {}", event.kind, event.payload);
+            let payload: serde_json::Value = serde_json::from_str(&event.payload).expect("json");
+            assert_eq!(payload["from_machine"], "laptop", "{}", event.kind);
+        }
+    }
+
     use super::{DeliveryRoute, DeliveryRung, QueueReason, route, select_rung};
     use crate::error::PijError;
     use crate::model::{
