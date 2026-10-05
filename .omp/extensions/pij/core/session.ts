@@ -549,8 +549,9 @@ export class PijSession {
 
 	/** Handle one inbound channel message: a receipt (record only), a remote
 	 *  command (validate -> compact), or free text (frame + idle/steer inject +
-	 *  emit a delivery receipt). Native consumers opt in to per-envelope runtime metadata. */
-	onInbound(msg: PijMessage, messageId: string, trackConsumption = false): InboundResult {
+	 *  emit a delivery receipt). A native consumer passes `consumptionId`, the key its
+	 *  runtime correlates consumption by; `messageId` stays the raw wire id. */
+	onInbound(msg: PijMessage, messageId: string, consumptionId?: string): InboundResult {
 		const sender = senderLabel(msg.from, msg.fromMachine);
 		// A receipt acknowledges OUR earlier outbound — record it so the sender
 		// sees it via tail/state, but NEVER inject it (don't wake/bill the peer).
@@ -611,7 +612,7 @@ export class PijSession {
 		this.ports.pi.inject(
 			frame(msg.from, msg.body, msg.fromMachine),
 			idle ? "immediate" : "steer",
-			trackConsumption ? messageId : undefined,
+			consumptionId,
 		);
 		const atIso = this.nowIso();
 		const state = classifyOnInject(idle);

@@ -140,7 +140,11 @@ export class RustRuntimeSession {
 	/** Claims are serialized, so only the latest ACK can overtake a claim response. */
 	private lastAcknowledgedJobId: number | undefined;
 	private idleSince: number | undefined;
+	/** Our outbound messages already reported parked; their ids are ours, so local. */
 	private readonly parkedNotifications = new Set<string>();
+	/** Inbound jobs already reported parked. Keyed by job, the daemon's delivery identity:
+	 *  a parked event names only the raw msg_id, which a forwarded message can share. */
+	private readonly parkedJobs = new Set<number>();
 	private readonly redeliverIdleMs: number;
 	private readonly compactionLatchMaxMs: number;
 	private readonly boundaryGraceMs: number;
@@ -248,6 +252,7 @@ export class RustRuntimeSession {
 		this.lastAcknowledgedJobId = undefined;
 		this.idleSince = this.pi.isIdle() ? this.clock() : undefined;
 		this.parkedNotifications.clear();
+		this.parkedJobs.clear();
 		this.inboxPending = false;
 		this.inboxPollQueued = false;
 		this.compacting = false;
@@ -297,7 +302,8 @@ export class RustRuntimeSession {
 						PARKED_OUTCOMES.has(payload.outcome)
 					) {
 						if (payload.recipient === seat) {
-							this.noteParked(payload.messageId, payload.outcome);
+							if (typeof payload.jobId === "number")
+								this.noteParked(payload.jobId, payload.messageId, payload.outcome);
 						} else if (
 							frame.event.seat === seat &&
 							!this.parkedNotifications.has(payload.messageId)
@@ -668,6 +674,7 @@ export class RustRuntimeSession {
 		this.releasedStartupHead = undefined;
 		this.idleSince = undefined;
 		this.parkedNotifications.clear();
+		this.parkedJobs.clear();
 		this.pendingConsumption.clear();
 		this.lastAcknowledgedJobId = undefined;
 		this.pi.setStatus(undefined);
@@ -793,7 +800,7 @@ export class RustRuntimeSession {
 			});
 			return;
 		}
-		if (claim.message.messageId !== announced.messageId) {
+		if (messageKey(claim.message) !== messageKey(announced)) {
 			this.inboxPending = true;
 			this.session.capture("daemon_event_claim_mismatch", {
 				announcedMessageId: announced.messageId,
@@ -811,13 +818,9 @@ export class RustRuntimeSession {
 	): Promise<void> {
 		if (this.self !== seat || this.lifecycle !== lifecycle) return;
 		// An ACK or parking can overtake an in-flight claim response.
-		if (
-			this.lastAcknowledgedJobId === claim.jobId ||
-			this.parkedNotifications.has(claim.message.messageId)
-		)
-			return;
+		if (this.lastAcknowledgedJobId === claim.jobId || this.parkedJobs.has(claim.jobId)) return;
 		// Announce before a busy runtime queues the message at its next boundary.
-		if (!this.pendingConsumption.has(claim.message.messageId)) this.announceArrival(claim);
+		if (!this.pendingConsumption.has(messageKey(claim.message))) this.announceArrival(claim);
 		await this.injectAndAck(claim, seat, client, lifecycle);
 	}
 
@@ -840,7 +843,7 @@ export class RustRuntimeSession {
 			await this.ackClaim(claim, seat, client, outcome);
 			return;
 		}
-		const id = claim.message.messageId;
+		const id = messageKey(claim.message);
 		const existing = this.pendingConsumption.get(id);
 		if (existing) {
 			if (claim.attempt < existing.claim.attempt) return;
@@ -871,7 +874,7 @@ export class RustRuntimeSession {
 			return;
 		}
 		try {
-			this.session.onInbound(claim.message, id, true);
+			this.session.onInbound(claim.message, claim.message.messageId, id);
 		} catch (error) {
 			this.pendingConsumption.delete(id);
 			this.showMailStatus();
@@ -953,7 +956,7 @@ export class RustRuntimeSession {
 			pending.heartbeating ||
 			this.self !== pending.seat ||
 			this.lifecycle !== pending.lifecycle ||
-			this.pendingConsumption.get(pending.claim.message.messageId) !== pending
+			this.pendingConsumption.get(messageKey(pending.claim.message)) !== pending
 		)
 			return "skip";
 		// Stream reconnect owns daemon outage retries; local idle recovery remains available.
@@ -971,7 +974,7 @@ export class RustRuntimeSession {
 			if (
 				this.lifecycle !== pending.lifecycle ||
 				this.self !== pending.seat ||
-				this.pendingConsumption.get(pending.claim.message.messageId) !== pending
+				this.pendingConsumption.get(messageKey(pending.claim.message)) !== pending
 			)
 				return "skip";
 			pending.heartbeatUncertain = response === undefined;
@@ -980,7 +983,7 @@ export class RustRuntimeSession {
 				return "unknown";
 			}
 			if (response.state === "done" || response.state === "failed") {
-				this.dropTerminal(pending.claim.jobId, pending.claim.message.messageId);
+				this.dropTerminal(pending.claim.jobId, pending.claim.message);
 				return "skip";
 			}
 			return "running";
@@ -990,7 +993,7 @@ export class RustRuntimeSession {
 				!pending.consumed &&
 				this.self === pending.seat &&
 				this.lifecycle === pending.lifecycle &&
-				this.pendingConsumption.get(pending.claim.message.messageId) === pending
+				this.pendingConsumption.get(messageKey(pending.claim.message)) === pending
 			) {
 				this.session.capture("daemon_event_heartbeat_error", {
 					jobId: pending.claim.jobId,
@@ -1041,9 +1044,9 @@ export class RustRuntimeSession {
 		this.inboxPending = true; // An expired claim may need reclaiming before ACK can succeed.
 		if (!acked) return;
 		this.lastAcknowledgedJobId = pending.claim.jobId;
-		this.pendingConsumption.delete(pending.claim.message.messageId);
+		this.pendingConsumption.delete(messageKey(pending.claim.message));
 		if (deliveryOutcome !== undefined) {
-			this.noteParked(pending.claim.message.messageId, deliveryOutcome);
+			this.noteParked(pending.claim.jobId, pending.claim.message.messageId, deliveryOutcome);
 		}
 		this.showMailStatus();
 	}
@@ -1074,7 +1077,7 @@ export class RustRuntimeSession {
 			state === "skip" ||
 			this.compacting ||
 			pending.consumed ||
-			this.pendingConsumption.get(pending.claim.message.messageId) !== pending
+			this.pendingConsumption.get(messageKey(pending.claim.message)) !== pending
 		)
 			return;
 		if (state === "unknown") boundary = false;
@@ -1100,7 +1103,7 @@ export class RustRuntimeSession {
 			pending.resends >= MAX_RESENDS ||
 			this.self !== pending.seat ||
 			this.lifecycle !== pending.lifecycle ||
-			this.pendingConsumption.get(pending.claim.message.messageId) !== pending
+			this.pendingConsumption.get(messageKey(pending.claim.message)) !== pending
 		)
 			return;
 		const attempt = ++pending.resends;
@@ -1117,7 +1120,7 @@ export class RustRuntimeSession {
 			this.pi.inject(
 				frame(message.from, message.body, message.fromMachine),
 				"immediate",
-				message.messageId,
+				messageKey(message),
 				attempt,
 			);
 		} catch (error) {
@@ -1129,18 +1132,20 @@ export class RustRuntimeSession {
 		}
 	}
 
-	private noteParked(messageId: string, outcome: string): void {
-		this.pendingConsumption.delete(messageId);
+	private noteParked(jobId: number, messageId: string, outcome: string): void {
+		for (const [key, pending] of this.pendingConsumption) {
+			if (pending.claim.jobId === jobId) this.pendingConsumption.delete(key);
+		}
 		this.inboxPending = true;
 		this.showMailStatus();
-		if (this.parkedNotifications.has(messageId)) return;
-		this.parkedNotifications.add(messageId);
+		if (this.parkedJobs.has(jobId)) return;
+		this.parkedJobs.add(jobId);
 		this.pi.notify(`pij parked message ${messageId}: ${outcome}`, "warning");
 	}
 
-	private dropTerminal(jobId: number, messageId: string): void {
+	private dropTerminal(jobId: number, message: InboxClaim["message"]): void {
 		this.lastAcknowledgedJobId = jobId;
-		this.pendingConsumption.delete(messageId);
+		this.pendingConsumption.delete(messageKey(message));
 		this.inboxPending = true;
 		this.showMailStatus();
 	}
@@ -1149,8 +1154,8 @@ export class RustRuntimeSession {
 		return pushedInboxClaim(
 			value,
 			seat,
-			(messageId, outcome) => this.noteParked(messageId, outcome),
-			(jobId, messageId) => this.dropTerminal(jobId, messageId),
+			(jobId, messageId, outcome) => this.noteParked(jobId, messageId, outcome),
+			(jobId, message) => this.dropTerminal(jobId, message),
 		);
 	}
 
@@ -1302,8 +1307,8 @@ function pushedMessage(payload: string, to: string): InboxClaim["message"] {
 function pushedInboxClaim(
 	value: unknown,
 	to: string,
-	onParked: (messageId: string, outcome: string) => void,
-	onDone: (jobId: number, messageId: string) => void,
+	onParked: (jobId: number, messageId: string, outcome: string) => void,
+	onDone: (jobId: number, message: InboxClaim["message"]) => void,
 ): InboxClaim | undefined {
 	if (!Array.isArray(value)) throw new Error("pij inbox response must be an array");
 	let live: InboxClaim | undefined;
@@ -1324,14 +1329,14 @@ function pushedInboxClaim(
 		}
 		const message = pushedMessageValue(record.message, to, "pij inbox claim message");
 		if (record.state === "done") {
-			onDone(record.job_id, message.messageId);
+			onDone(record.job_id, message);
 			continue;
 		}
 		if (record.state === "failed") {
 			if (typeof record.outcome !== "string" || !PARKED_OUTCOMES.has(record.outcome)) {
 				throw new Error("pij parked inbox claim needs a recognized outcome");
 			}
-			onParked(message.messageId, record.outcome);
+			onParked(record.job_id, message.messageId, record.outcome);
 			continue;
 		}
 		if (record.state !== undefined && record.state !== "pending" && record.state !== "running") {
@@ -1342,6 +1347,20 @@ function pushedInboxClaim(
 		live = { jobId: record.job_id, attempt, message };
 	}
 	return live;
+}
+
+/** In-memory delivery key for one message identity, (origin machine, msg_id); the wire
+ *  msg_id stays raw. A local key is the bare id, as before; a forwarded one appends
+ *  `@<alias>`. Injective: the daemon refuses a local msg_id containing `@` and an alias
+ *  never contains one, so no local id can name a forwarded message (plan 164 F02). This
+ *  is also the consumption marker (`pijMessageId`) a native injection carries. */
+function messageKey(message: {
+	readonly messageId: string;
+	readonly fromMachine?: string;
+}): string {
+	return message.fromMachine === undefined
+		? message.messageId
+		: `${message.messageId}@${message.fromMachine}`;
 }
 
 export function consumedMessageId(message: {

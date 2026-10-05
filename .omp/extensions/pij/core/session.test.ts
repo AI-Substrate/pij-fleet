@@ -392,8 +392,8 @@ describe("PijSession.onInbound — free text", () => {
 		};
 		h.session.onInbound({ from: "bob", to: "alice", body: "legacy" }, "legacy-id");
 		expect(identities).toEqual([undefined]);
-		h.session.onInbound({ from: "bob", to: "alice", body: "native" }, "native-id", true);
-		expect(identities).toEqual([undefined, "native-id"]);
+		h.session.onInbound({ from: "bob", to: "alice", body: "native" }, "native-id", "native-key");
+		expect(identities).toEqual([undefined, "native-key"]);
 	});
 	it("idle peer: immediate inject, framed sender id, single delivered receipt", () => {
 		const h = harness({ idle: true, now: T0 });
