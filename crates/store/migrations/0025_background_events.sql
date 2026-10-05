@@ -22,6 +22,9 @@ ALTER TABLE background_jobs ADD COLUMN batches INTEGER NOT NULL DEFAULT 0 CHECK 
 ALTER TABLE background_jobs ADD COLUMN dropped INTEGER NOT NULL DEFAULT 0 CHECK (dropped >= 0);
 ALTER TABLE background_jobs ADD COLUMN open_dropped INTEGER NOT NULL DEFAULT 0
     CHECK (open_dropped >= 0);
+-- The batch the source's final turn carries, fixed at the first final cut so a
+-- retried final turn reuses it instead of re-cutting (or re-sending) its events.
+ALTER TABLE background_jobs ADD COLUMN final_batch INTEGER CHECK (final_batch > 0);
 
 CREATE TABLE bg_events (
     job_id    TEXT NOT NULL REFERENCES background_jobs (job_id),

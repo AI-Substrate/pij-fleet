@@ -98,6 +98,14 @@ pub trait ColdRouting: Send + Sync {
     async fn telegram(&self, from: &SeatId, body: String, msg_id: String) -> Result<()>;
 }
 
+/// What a cold owner's prime (or the human) is told about a held message.
+struct Notice {
+    lead: String,
+    /// Several events ("They wait … them") or one final turn ("It waits … it").
+    plural: bool,
+    file: Option<PathBuf>,
+}
+
 /// Where a cold owner's notice goes.
 enum PrimeRoute {
     Warm(SeatId),
@@ -145,6 +153,8 @@ pub struct BackgroundService {
     children: Mutex<HashMap<String, Child>>,
     /// Serializes batch cutting with the final flush so no event leaves twice.
     events: Mutex<()>,
+    #[cfg(test)]
+    failpoints: std::sync::Mutex<std::collections::HashSet<&'static str>>,
 }
 
 /// The shared daemon ports a [`BackgroundService`] reads and delivers through.
@@ -187,6 +197,8 @@ impl BackgroundService {
             routing,
             children: Mutex::new(HashMap::new()),
             events: Mutex::new(()),
+            #[cfg(test)]
+            failpoints: std::sync::Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -656,12 +668,13 @@ impl BackgroundService {
         if self.store.event_stats(&job.job_id).await?.pending == 0 {
             return Ok(());
         }
-        let Some(batch) = self.store.cut_batch(&job.job_id, false).await? else {
+        let Some(batch) = self.store.cut_batch(&job.job_id).await? else {
             return Ok(());
         };
         self.deliver_batch(&job, &owner, &batch, now).await
     }
 
+    /// Hand one batch to its owner by the source's rules, then settle it.
     async fn deliver_batch(
         &self,
         job: &BackgroundJob,
@@ -670,75 +683,116 @@ impl BackgroundService {
         now: u64,
     ) -> Result<()> {
         let msg_id = format!("pij-bg:{}:batch:{}", job.job_id, batch.batch_no);
+        let cold = self.cold_facts(job, owner).await;
+        // Cold routing always cites a file, so a cold batch is always written.
+        let body = self.batch_turn(job, batch, cold.is_some()).await?;
+        self.failpoint("published-file-before-admission")?;
+        let count = batch.events.len();
+        let notice = cold.map(|(tokens, idle)| Notice {
+            lead: format!(
+                "❄ {} is cold ({}k, idle {}): {count} {} from {} {} held.",
+                owner.id,
+                tokens / 1000,
+                human_duration(idle),
+                plural(count, "event", "events"),
+                job.title,
+                if count == 1 { "is" } else { "are" },
+            ),
+            plural: true,
+            file: Some(self.batch_path(job, batch.batch_no)),
+        });
+        let state = self.hand_off(job, owner, body, &msg_id, notice).await?;
+        self.failpoint("admission-before-settle")?;
+        self.store
+            .settle_batch(&job.job_id, batch.batch_no, state, now)
+            .await
+    }
+
+    /// The owner's size and idle time when the cold-wake guard's own check says
+    /// cold. Never for an `--fyi` source: it never wakes anyone.
+    async fn cold_facts(&self, job: &BackgroundJob, owner: &SeatDescriptor) -> Option<(u64, u64)> {
         if job.events_fyi {
-            let body = self.batch_turn(job, batch, false).await?;
-            self.delivery
-                .hold_fyi(bg_msg(&owner.id, body, msg_id))
-                .await?;
-            return self
-                .store
-                .settle_batch(&job.job_id, batch.batch_no, "held", now)
-                .await;
+            return None;
         }
-        let ColdCheck::Cold {
-            context_tokens,
-            idle_ms,
-            ..
-        } = self.routing.check(owner).await
-        else {
-            let body = self.batch_turn(job, batch, false).await?;
+        match self.routing.check(owner).await {
+            ColdCheck::Cold {
+                context_tokens,
+                idle_ms,
+                ..
+            } => Some((context_tokens, idle_ms)),
+            _ => None,
+        }
+    }
+
+    /// Deliver one message from a source by its rules (ruling 1 and 4), and say
+    /// how it left: `held` (an `--fyi` source, or the owner refused it),
+    /// `delivered`, or `routed` (a cold owner: held as an FYI, never woken, and
+    /// escalated to its prime or the human).
+    ///
+    /// Every step is idempotent by msg_id (the FYI hold, the owner's and the
+    /// prime's deliveries, the Telegram job), and the caller settles only after
+    /// this returns, so a failure or crash anywhere retries the whole hand-off
+    /// without losing or duplicating it.
+    async fn hand_off(
+        &self,
+        job: &BackgroundJob,
+        owner: &SeatDescriptor,
+        body: String,
+        msg_id: &str,
+        cold: Option<Notice>,
+    ) -> Result<&'static str> {
+        if job.events_fyi {
+            self.delivery
+                .hold_fyi(bg_msg(&owner.id, body, msg_id.to_string()))
+                .await?;
+            return Ok("held");
+        }
+        let Some(notice) = cold else {
             let receipt = self
                 .delivery
-                .accept(bg_msg(&owner.id, body.clone(), msg_id.clone()))
+                .accept(bg_msg(&owner.id, body.clone(), msg_id.to_string()))
                 .await?;
-            // A refusal is final for that message: never record the batch as
-            // delivered, and never re-prompt; it waits for the owner's next turn.
-            let state = if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
+            // A refusal is final for that message: never record it as delivered
+            // and never re-prompt; it waits for the owner's next turn instead.
+            if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
                 self.delivery
                     .hold_fyi(bg_msg(&owner.id, body, format!("{msg_id}:held")))
                     .await?;
-                "held"
-            } else {
-                "delivered"
-            };
-            return self
-                .store
-                .settle_batch(&job.job_id, batch.batch_no, state, now)
-                .await;
+                return Ok("held");
+            }
+            return Ok("delivered");
         };
-        // Cold: never wake it. The batch waits as an FYI (nothing is lost) and
-        // the prime, or failing that the human, decides whether a wake is worth
-        // it. Every step is idempotent by msg_id (the FYI hold, the prime's
-        // delivery, the Telegram job), and the batch settles only after the
-        // notice is admitted, so a failure or crash in between retries the
-        // whole step instead of losing the notice.
-        let body = self.batch_turn(job, batch, true).await?;
-        let file = self.batch_path(job, batch.batch_no);
         self.delivery
-            .hold_fyi(bg_msg(&owner.id, body, msg_id.clone()))
+            .hold_fyi(bg_msg(&owner.id, body, msg_id.to_string()))
             .await?;
-        let count = batch.events.len();
-        let lead = format!(
-            "❄ {} is cold ({}k, idle {}): {count} {} from {} {} held.",
-            owner.id,
-            context_tokens / 1000,
-            human_duration(idle_ms),
-            plural(count, "event", "events"),
-            job.title,
-            if count == 1 { "is" } else { "are" },
-        );
+        self.failpoint("cold-fyi-before-escalation")?;
+        self.escalate(owner, &notice, msg_id).await?;
+        Ok("routed")
+    }
+
+    /// Tell the cold owner's prime, or the human when there is no warm prime.
+    async fn escalate(&self, owner: &SeatDescriptor, notice: &Notice, msg_id: &str) -> Result<()> {
+        let lead = &notice.lead;
+        let file = notice
+            .file
+            .as_ref()
+            .map_or_else(String::new, |file| format!("\nEvents: {}", file.display()));
+        let (wait, them) = if notice.plural {
+            ("They wait", "them")
+        } else {
+            ("It waits", "it")
+        };
         // `None`: the prime admitted the notice. `Some(why)`: the human hears.
         let why = match self.prime_route(owner).await? {
             PrimeRoute::Warm(prime) => {
-                let notice = format!(
-                    "{lead}\nThey wait as an FYI on {owner}, which sees them on its next turn. \
-                     To wake it now: pij send {owner} --force --reason \"<why>\"\nEvents: {file}",
+                let text = format!(
+                    "{lead}\n{wait} as an FYI on {owner}, which sees {them} on its next turn. \
+                     To wake it now: pij send {owner} --force --reason \"<why>\"{file}",
                     owner = owner.id,
-                    file = file.display(),
                 );
                 match self
                     .delivery
-                    .accept(bg_msg(&prime, notice, format!("{msg_id}:prime")))
+                    .accept(bg_msg(&prime, text, format!("{msg_id}:prime")))
                     .await
                 {
                     Ok(receipt) => match receipt.outcome {
@@ -765,14 +819,26 @@ impl BackgroundService {
             self.routing
                 .telegram(
                     &owner.id,
-                    format!("{lead}\n{why}\nEvents: {}", file.display()),
+                    format!("{lead}\n{why}{file}"),
                     format!("{msg_id}:telegram"),
                 )
                 .await?;
         }
-        self.store
-            .settle_batch(&job.job_id, batch.batch_no, "routed", now)
-            .await
+        Ok(())
+    }
+
+    /// Test-only deterministic crash points: an armed name fails once.
+    fn failpoint(&self, name: &'static str) -> Result<()> {
+        #[cfg(test)]
+        if self
+            .failpoints
+            .lock()
+            .is_ok_and(|mut armed| armed.remove(name))
+        {
+            return Err(fault(format!("failpoint {name}")));
+        }
+        let _ = name;
+        Ok(())
     }
 
     async fn prime_route(&self, owner: &SeatDescriptor) -> Result<PrimeRoute> {
@@ -928,31 +994,7 @@ impl BackgroundService {
         } else {
             String::new()
         };
-        let mut body = completion_turn(job, &output);
-        // The source's end flushes whatever it fired since its last batch into
-        // this same final turn (its token was revoked when the row finished).
-        let last = if job.kind == BackgroundKind::Events {
-            // A batch cut before the end may already have been accepted (a crash
-            // before it settled): finish it under its own msg_id, which makes
-            // the redelivery idempotent, so the final turn never replays it.
-            if let Some(open) = self.store.open_batch(&job.job_id).await?
-                && let Some(owner) = self.registry.get(&job.owner).await?
-                && owner.tombstoned_at.is_none()
-            {
-                self.deliver_batch(job, &owner, &open, now_ms()?).await?;
-            }
-            let batch = self.store.cut_batch(&job.job_id, true).await?;
-            match &batch {
-                Some(batch) if !batch.events.is_empty() || batch.dropped > 0 => {
-                    body.push('\n');
-                    body.push_str(&self.final_events(job, batch).await?);
-                }
-                _ => body.push_str("\nNo events since the last batch."),
-            }
-            batch
-        } else {
-            None
-        };
+        let body = completion_turn(job, &output);
         let msg_id = format!("pij-bg:{}:finished", job.job_id);
         let kind = match job.state {
             BackgroundState::Done => "bg.finished",
@@ -982,6 +1024,9 @@ impl BackgroundService {
                 payload,
             })
             .await?;
+        if job.kind == BackgroundKind::Events {
+            return self.finish_source(job, body, &msg_id).await;
+        }
         self.delivery
             .accept(Msg {
                 from: SeatId::from(BG_ACTOR),
@@ -993,17 +1038,84 @@ impl BackgroundService {
                 command: None,
             })
             .await?;
-        if let Some(batch) = last {
-            self.store
-                .settle_batch(&job.job_id, batch.batch_no, "delivered", now_ms()?)
-                .await?;
-        }
         self.store.mark_notified(&job.job_id).await?;
         Ok(())
     }
 
-    /// "N events since the last batch", inline or as a file, for the final turn.
-    async fn final_events(&self, job: &BackgroundJob, batch: &EventBatch) -> Result<String> {
+    /// A source's final turn: its end plus the events since its last batch,
+    /// delivered by the same rules as its batches (ruling R2): held with
+    /// `--fyi`, held and escalated for a cold owner, held when refused.
+    async fn finish_source(
+        &self,
+        job: &BackgroundJob,
+        mut body: String,
+        msg_id: &str,
+    ) -> Result<()> {
+        let owner = self
+            .registry
+            .get(&job.owner)
+            .await?
+            .filter(|owner| owner.tombstoned_at.is_none())
+            .ok_or_else(|| {
+                refusal(format!(
+                    "owner {} of source {} is gone; its final turn waits",
+                    job.owner, job.job_id
+                ))
+            })?;
+        let now = now_ms()?;
+        // A batch cut before the end may already have been accepted (a crash
+        // before it settled): finish it under its own msg_id, which makes the
+        // redelivery idempotent, so the final turn never replays it.
+        let final_no = self.store.final_batch(&job.job_id).await?;
+        if let Some(open) = self.store.open_batch(&job.job_id).await?
+            && Some(open.batch_no) != final_no
+        {
+            self.deliver_batch(job, &owner, &open, now).await?;
+        }
+        // Cut once: a retried final turn carries the very same batch.
+        let last = self.store.cut_final(&job.job_id).await?;
+        let cold = self.cold_facts(job, &owner).await;
+        let mut file = None;
+        match &last {
+            Some(batch) if !batch.events.is_empty() || batch.dropped > 0 => {
+                let (events, written) = self.final_events(job, batch, cold.is_some()).await?;
+                body.push('\n');
+                body.push_str(&events);
+                file = written;
+            }
+            _ => body.push_str("\nNo events since the last batch."),
+        }
+        let notice = cold.map(|(tokens, idle)| Notice {
+            lead: format!(
+                "❄ {} is cold ({}k, idle {}): {} ended ({}) and its final turn is held.",
+                owner.id,
+                tokens / 1000,
+                human_duration(idle),
+                job.title,
+                end_word(job),
+            ),
+            plural: false,
+            file,
+        });
+        self.failpoint("final-before-admission")?;
+        let state = self.hand_off(job, &owner, body, msg_id, notice).await?;
+        self.failpoint("admission-before-settle")?;
+        if let Some(batch) = last {
+            self.store
+                .settle_batch(&job.job_id, batch.batch_no, state, now)
+                .await?;
+        }
+        self.store.mark_notified(&job.job_id).await
+    }
+
+    /// "N events since the last batch", inline or as a file (also returned),
+    /// for the final turn. `force_file` writes the file whenever there are events.
+    async fn final_events(
+        &self,
+        job: &BackgroundJob,
+        batch: &EventBatch,
+        force_file: bool,
+    ) -> Result<(String, Option<PathBuf>)> {
         let count = batch.events.len();
         let since = format!(
             "{count} {} since the last batch",
@@ -1017,20 +1129,32 @@ impl BackgroundService {
         } else {
             String::new()
         };
-        match inline_events(batch)
-            .filter(|_| u64::try_from(count).unwrap_or(u64::MAX) <= job.inline_max)
-        {
-            Some(inline) if count > 0 => Ok(format!("{since}{dropped}:\n{inline}")),
-            Some(_) => Ok(format!("{since}{dropped}.")),
+        match inline_events(batch).filter(|_| {
+            u64::try_from(count).unwrap_or(u64::MAX) <= job.inline_max && !(force_file && count > 0)
+        }) {
+            Some(inline) if count > 0 => Ok((format!("{since}{dropped}:\n{inline}"), None)),
+            Some(_) => Ok((format!("{since}{dropped}."), None)),
             None => {
                 let path = self.batch_path(job, batch.batch_no);
                 write_batch_file(&path, job, batch).await?;
-                Ok(format!(
-                    "{since}{dropped}, here is the file: {}",
-                    path.display()
+                Ok((
+                    format!("{since}{dropped}, here is the file: {}", path.display()),
+                    Some(path),
                 ))
             }
         }
+    }
+}
+
+/// How a job ended, in the words its completion turn uses.
+fn end_word(job: &BackgroundJob) -> String {
+    match (job.state, job.exit_code) {
+        (BackgroundState::Killed, _) if job.timed_out => "TIMEOUT".to_string(),
+        (BackgroundState::Killed, _) => "STOPPED".to_string(),
+        (BackgroundState::Lost, _) => "LOST".to_string(),
+        (_, Some(0)) => "OK".to_string(),
+        (_, Some(code)) => format!("FAILED (exit {code})"),
+        (_, None) => "ended".to_string(),
     }
 }
 
@@ -1959,7 +2083,7 @@ mod tests {
         let batch = fixture
             .service
             .store
-            .cut_batch("bg-src", false)
+            .cut_batch("bg-src")
             .await
             .unwrap()
             .unwrap();
@@ -2035,6 +2159,172 @@ mod tests {
             .filter(|name| name != "batch-0001.json")
             .collect();
         assert!(stray.is_empty(), "no temp files remain: {stray:?}");
+    }
+
+    /// A live source with two unbatched events whose runner was just killed.
+    async fn killed_source_with_two_events(fixture: &Fixture, fyi: bool) -> BackgroundJob {
+        let job = fixture.source("bg-src", "tok", fyi, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["late 1", "late 2"]).await;
+        assert!(fixture.service.store.request_kill("bg-src").await.unwrap());
+        std::fs::write(receipt_path(&job), "143 1700000009\n").unwrap();
+        job
+    }
+
+    #[tokio::test]
+    async fn the_final_turn_of_an_fyi_source_is_held_not_woken() {
+        // Ruling R2 (#22): the final turn obeys the source's batch rules.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        killed_source_with_two_events(&fixture, true).await;
+        fixture.service.tick().await.unwrap();
+        assert!(
+            fixture.to("owner").is_empty(),
+            "an --fyi source never wakes"
+        );
+        assert_eq!(fixture.held_fyis().await, 1);
+        assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn the_final_turn_for_a_cold_owner_is_held_and_escalated_never_woken() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = killed_source_with_two_events(&fixture, false).await;
+        fixture
+            .routing
+            .cold
+            .lock()
+            .unwrap()
+            .insert(SeatId::from("owner"), 18_720_000);
+        fixture.service.tick().await.unwrap();
+        assert!(
+            fixture.to("owner").is_empty(),
+            "a cold owner is never woken"
+        );
+        assert_eq!(fixture.held_fyis().await, 1);
+        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        assert_eq!(telegrams.len(), 1);
+        assert_eq!(
+            telegrams[0].1,
+            format!(
+                "❄ owner is cold (472k, idle 5h12m): db-watch ended (STOPPED) and its final turn is held.\n\
+                 It has no prime, so this came to you.\nEvents: {}",
+                fixture.service.batch_path(&job, 1).display()
+            )
+        );
+        assert_eq!(telegrams[0].2, "pij-bg:bg-src:finished:telegram");
+    }
+
+    #[tokio::test]
+    async fn a_refused_final_turn_is_held_for_the_next_turn() {
+        let fixture = Fixture::with_transport(FakeLiveness::new(), refusing()).await;
+        killed_source_with_two_events(&fixture, false).await;
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.held_fyis().await, 1, "the refused final turn waits");
+        assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+    }
+
+    fn arm(fixture: &Fixture, name: &'static str) {
+        fixture.service.failpoints.lock().unwrap().insert(name);
+    }
+
+    #[tokio::test]
+    async fn failpoint_admission_before_settle_redelivers_once() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["one", "two"]).await;
+        arm(&fixture, "admission-before-settle");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "crash after admission"
+        );
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            2
+        );
+        fixture.service.tick().await.unwrap();
+        let turns = fixture.to("owner");
+        assert_eq!(turns.len(), 1, "the retry is deduplicated by msg_id");
+        assert_eq!(turns[0].msg_id, "pij-bg:bg-src:batch:1");
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn failpoint_cold_fyi_before_escalation_escalates_once_and_holds_once() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture
+            .routing
+            .cold
+            .lock()
+            .unwrap()
+            .insert(SeatId::from("owner"), 18_720_000);
+        fixture.fire("bg-src", "tok", &["row"]).await;
+        arm(&fixture, "cold-fyi-before-escalation");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "crash after the FYI hold"
+        );
+        assert!(fixture.routing.telegrams.lock().unwrap().is_empty());
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.routing.telegrams.lock().unwrap().len(), 1);
+        assert_eq!(fixture.held_fyis().await, 1);
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn failpoint_published_file_before_admission_never_rewrites_it() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        let job = fixture.source("bg-src", "tok", false, 0, 1).await;
+        fixture.fire("bg-src", "tok", &["a", "b"]).await;
+        arm(&fixture, "published-file-before-admission");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "crash after the file was written"
+        );
+        let path = fixture.service.batch_path(&job, 1);
+        std::fs::write(&path, "PUBLISHED").unwrap();
+        fixture.service.tick().await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "PUBLISHED");
+        assert_eq!(fixture.to("owner").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn failpoint_final_before_admission_keeps_the_final_batch_identity() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        killed_source_with_two_events(&fixture, false).await;
+        arm(&fixture, "final-before-admission");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "crash after the final cut"
+        );
+        fixture.service.tick().await.unwrap();
+        let turns = fixture.to("owner");
+        assert_eq!(
+            turns
+                .iter()
+                .map(|msg| msg.msg_id.as_str())
+                .collect::<Vec<_>>(),
+            ["pij-bg:bg-src:finished"],
+            "the final batch is never re-sent as an ordinary batch"
+        );
+        assert!(
+            turns[0].body.contains("2 events since the last batch"),
+            "{}",
+            turns[0].body
+        );
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
     }
 
     #[tokio::test]

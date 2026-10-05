@@ -753,7 +753,7 @@ async fn background_events_cap_counts_drops_and_an_open_batch_is_redelivered_unt
             expected
         );
     }
-    let batch = background.cut_batch("src", false).await.unwrap().unwrap();
+    let batch = background.cut_batch("src").await.unwrap().unwrap();
     assert_eq!(batch.batch_no, 1);
     assert_eq!(batch.dropped, 2);
     assert_eq!(
@@ -766,15 +766,12 @@ async fn background_events_cap_counts_drops_and_an_open_batch_is_redelivered_unt
     );
     assert_eq!(batch.events[0].data.as_deref(), Some("{\"k\":1}"));
     // Not settled (a crash mid-delivery): the same batch comes back, never a new one.
-    assert_eq!(
-        background.cut_batch("src", false).await.unwrap(),
-        Some(batch)
-    );
+    assert_eq!(background.cut_batch("src").await.unwrap(), Some(batch));
     background
         .settle_batch("src", 1, "delivered", 99)
         .await
         .unwrap();
-    assert_eq!(background.cut_batch("src", false).await.unwrap(), None);
+    assert_eq!(background.cut_batch("src").await.unwrap(), None);
     let job = background.get("src").await.unwrap().unwrap();
     assert_eq!((job.batches, job.last_wake_at), (1, Some(99)));
     let stats = background.event_stats("src").await.unwrap();
@@ -811,31 +808,32 @@ async fn background_emit_is_refused_for_one_shot_killed_and_finished_jobs() {
 }
 
 #[tokio::test]
-async fn background_final_cut_never_absorbs_an_open_batch_and_still_reports_drops() {
+async fn background_final_cut_is_fixed_once_and_never_takes_an_open_batchs_events() {
     let (_fresh, _pool, background) = setup().await;
     live_source(&background, "src").await;
     background.emit("src", 1, "a", None, 1).await.unwrap();
-    background.emit("src", 2, "b", None, 1).await.unwrap();
-    let open = background.cut_batch("src", false).await.unwrap().unwrap();
-    assert_eq!((open.batch_no, open.dropped), (1, 1));
+    let open = background.cut_batch("src").await.unwrap().unwrap();
     assert_eq!(
         background.open_batch("src").await.unwrap(),
         Some(open.clone())
     );
-    // The final cut hands back the same open batch, never a renumbered copy.
-    assert_eq!(background.cut_batch("src", true).await.unwrap(), Some(open));
+    // The open batch belongs to batch 1; the final cut takes only what is unbatched.
+    assert_eq!(background.cut_final("src").await.unwrap(), None);
     background
-        .settle_batch("src", 1, "delivered", 3)
+        .settle_batch("src", 1, "delivered", 2)
         .await
         .unwrap();
-    assert_eq!(background.open_batch("src").await.unwrap(), None);
+    background.emit("src", 3, "b", None, 1).await.unwrap();
     background.emit("src", 4, "c", None, 1).await.unwrap();
-    background.emit("src", 5, "d", None, 1).await.unwrap();
-    let last = background.cut_batch("src", true).await.unwrap().unwrap();
+    let last = background.cut_final("src").await.unwrap().unwrap();
     assert_eq!((last.batch_no, last.dropped, last.events.len()), (2, 1, 1));
+    assert_eq!(background.final_batch("src").await.unwrap(), Some(2));
+    // A retried final turn gets the very same batch back.
+    assert_eq!(background.cut_final("src").await.unwrap(), Some(last));
     background
-        .settle_batch("src", 2, "delivered", 6)
+        .settle_batch("src", 2, "delivered", 5)
         .await
         .unwrap();
-    assert_eq!(background.cut_batch("src", true).await.unwrap(), None);
+    let settled = background.cut_final("src").await.unwrap().unwrap();
+    assert_eq!((settled.batch_no, settled.events.len()), (2, 0));
 }

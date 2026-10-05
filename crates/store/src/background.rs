@@ -413,17 +413,111 @@ impl SqliteBackground {
         }))
     }
 
+    /// The batch a source's final turn carries, once cut (see [`Self::cut_final`]).
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn final_batch(&self, job_id: &str) -> Result<Option<u64>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT final_batch FROM background_jobs WHERE job_id = ?",
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .flatten()
+        .map(|value| sql_u64(value, "final_batch"))
+        .transpose()
+    }
+
+    /// Cut, once, the batch a source's final turn carries: every event not yet
+    /// in a batch, plus unreported drops. A retry returns that same batch (its
+    /// events still pending until settled), never a renumbered copy. `None`
+    /// when there is nothing to report. The caller finishes any earlier open
+    /// batch first; this cut never takes events that are already in one.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn cut_final(&self, job_id: &str) -> Result<Option<EventBatch>> {
+        require_current_schema(&self.pool).await?;
+        let (pool, job_id) = (self.pool.clone(), job_id.to_owned());
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let Some(row) = sqlx::query(
+                "SELECT batches, dropped, open_dropped, final_batch FROM background_jobs \
+                 WHERE job_id = ?",
+            )
+            .bind(&job_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            else {
+                return Ok(None);
+            };
+            let batches: i64 = row.try_get("batches").map_err(adapter_error)?;
+            let dropped: i64 = row.try_get("dropped").map_err(adapter_error)?;
+            let open_dropped: i64 = row.try_get("open_dropped").map_err(adapter_error)?;
+            let final_batch: Option<i64> = row.try_get("final_batch").map_err(adapter_error)?;
+            if let Some(final_batch) = final_batch {
+                return Ok(Some(EventBatch {
+                    batch_no: sql_u64(final_batch, "final_batch")?,
+                    events: batch_events(&mut tx, &job_id, final_batch).await?,
+                    dropped: sql_u64(open_dropped, "open_dropped")?,
+                }));
+            }
+            let unbatched: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM bg_events \
+                 WHERE job_id = ? AND state = 'pending' AND batch_no IS NULL",
+            )
+            .bind(&job_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            if unbatched == 0 && dropped == 0 {
+                return Ok(None);
+            }
+            let batch_no = batches + 1;
+            sqlx::query(
+                "UPDATE bg_events SET batch_no = ? \
+                 WHERE job_id = ? AND state = 'pending' AND batch_no IS NULL",
+            )
+            .bind(batch_no)
+            .bind(&job_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            sqlx::query(
+                "UPDATE background_jobs SET batches = ?, final_batch = ?, dropped = 0, \
+                 open_dropped = ? WHERE job_id = ?",
+            )
+            .bind(batch_no)
+            .bind(batch_no)
+            .bind(dropped)
+            .bind(&job_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let events = batch_events(&mut tx, &job_id, batch_no).await?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(Some(EventBatch {
+                batch_no: sql_u64(batch_no, "batch_no")?,
+                events,
+                dropped: sql_u64(dropped, "dropped")?,
+            }))
+        })
+        .await
+    }
+
     /// Return the open batch (cut but not yet settled), else cut a new one from
     /// the pending events. `None` when nothing is pending.
     ///
     /// An open batch is never absorbed into a new one: it may already have been
-    /// accepted, and only its own msg_id makes a redelivery idempotent. With
-    /// `all` (a source's final flush), a cut is made even when only dropped
-    /// emits remain to report.
+    /// accepted, and only its own msg_id makes a redelivery idempotent.
     ///
     /// # Errors
     /// Returns a schema error on skew or an adapter error on SQLite failure.
-    pub async fn cut_batch(&self, job_id: &str, all: bool) -> Result<Option<EventBatch>> {
+    pub async fn cut_batch(&self, job_id: &str) -> Result<Option<EventBatch>> {
         require_current_schema(&self.pool).await?;
         let (pool, job_id) = (self.pool.clone(), job_id.to_owned());
         owned_write(async move {
@@ -455,7 +549,7 @@ impl SqliteBackground {
             .fetch_one(&mut *tx)
             .await
             .map_err(adapter_error)?;
-            if unbatched == 0 && !(all && dropped + open_dropped > 0) {
+            if unbatched == 0 {
                 return Ok(None);
             }
             let batch_no = batches + 1;
