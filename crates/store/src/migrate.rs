@@ -31,7 +31,7 @@ use pij_core::error::{PijError, Result};
 pub type StorePool = Pool<Sqlite>;
 
 /// The schema version this binary speaks.
-pub const SCHEMA_VERSION: u32 = 23;
+pub const SCHEMA_VERSION: u32 = 24;
 
 /// The embedded migration set. Compiled in, so a binary always carries the
 /// schema it expects rather than trusting a directory to be present.

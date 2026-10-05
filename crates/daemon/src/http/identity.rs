@@ -119,7 +119,8 @@ pub struct CallerContext {
         alias = "codexThreadId"
     )]
     pub codex_session: Option<String>,
-    /// The caller's working folder. Used only when no pane can supply one.
+    /// The caller's working folder. Identity uses it only when no pane can supply
+    /// one; `bg create` runs its command here (Plan 163), as the TS CLI did.
     #[serde(default)]
     pub cwd: Option<String>,
     /// Claimed pid — DIAGNOSTIC ONLY. **Never admissible as bind evidence.**

@@ -135,3 +135,94 @@ async fn bg_tail_forwards_lines_and_matches_envelope_golden() {
 async fn bg_kill_forwards_job_and_matches_envelope_golden() {
     exercise("kill", &["bg-golden"]).await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bg_create_forwards_cwd_and_timeout_to_the_daemon_parser() {
+    exercise(
+        "create",
+        &[
+            "--title",
+            "shell output",
+            "--cwd",
+            "sub",
+            "--timeout",
+            "1h30m",
+            "--command",
+            "true",
+        ],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bg_create_from_a_deleted_cwd_refuses_unless_an_absolute_cwd_is_given() {
+    // Review F2 (PR #21): the native CLI turned an unreadable cwd into "no cwd",
+    // and the daemon then ran the command in the owner's recorded folder.
+    let dir = pij_testkit::fresh_dir("pij-bg-gone-cwd")
+        .canonicalize()
+        .expect("canonical fixture directory");
+    std::fs::write(dir.join("daemon.key"), "bg-cli-key").expect("key");
+    let golden = pij_testkit::fixtures::read("golden/cli/bg-create-envelope.json");
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let router = axum::Router::new()
+        .route("/v1/bg", post(capture))
+        .with_state(Fixture {
+            response: serde_json::from_str(&golden).expect("golden envelope"),
+            requests: requests.clone(),
+        });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("address").to_string();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("serve");
+    });
+    let gone = dir.join("gone");
+    let run = |extra: &[&str]| {
+        Command::new("/bin/sh")
+            .args([
+                "-c",
+                r#"mkdir "$1" && cd "$1" && rmdir "$1" && shift && exec "$@""#,
+            ])
+            .arg("sh")
+            .arg(&gone)
+            .arg(env!("CARGO_BIN_EXE_pij-rs"))
+            .args(["--state-dir", dir.to_str().expect("path"), "--addr", &addr])
+            .args(["bg", "create", "--title", "t"])
+            .args(extra)
+            .args(["--command", "pwd"])
+            .env("PIJ_SESSION_ID", "pij-bg-owner")
+            .output()
+            .expect("run bg CLI")
+    };
+    let refused = run(&[]);
+    let stdout = String::from_utf8_lossy(&refused.stdout);
+    assert!(!refused.status.success(), "must refuse: {stdout}");
+    assert!(stdout.contains("absolute --cwd"), "{stdout}");
+    assert!(
+        requests.lock().expect("requests").is_empty(),
+        "nothing reaches the daemon"
+    );
+    let absolute = dir.to_str().expect("path");
+    let accepted = run(&["--cwd", absolute]);
+    assert!(
+        accepted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&accepted.stderr)
+    );
+    let request = requests
+        .lock()
+        .expect("requests")
+        .pop()
+        .expect("bg request");
+    assert!(
+        request["argv"]
+            .as_array()
+            .expect("argv")
+            .windows(2)
+            .any(|pair| pair[0] == "--cwd" && pair[1] == absolute),
+        "{request}"
+    );
+    server.abort();
+    std::fs::remove_dir_all(dir).expect("cleanup");
+}

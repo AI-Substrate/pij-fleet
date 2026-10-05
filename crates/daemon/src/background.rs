@@ -24,6 +24,19 @@ use crate::events::EventBus;
 const TAIL_BYTES: u64 = 64 * 1024;
 const TAIL_CHARS: usize = 1200;
 const MAX_LINES: usize = 1000;
+/// Bounds for `--timeout`: long enough for any build, short enough to be a limit.
+pub const MIN_TIMEOUT_MS: u64 = 1_000;
+/// See [`MIN_TIMEOUT_MS`].
+pub const MAX_TIMEOUT_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+
+/// Caller-chosen launch options beyond the title and command.
+#[derive(Clone, Debug, Default)]
+pub struct CreateOptions {
+    /// Working directory for the command; the owner's recorded folder when absent.
+    pub cwd: Option<PathBuf>,
+    /// Kill the job with a TIMEOUT turn once it has run this long.
+    pub timeout_ms: Option<u64>,
+}
 
 // No user text is interpolated. The pipe is a persist-before-execute barrier:
 // losing the daemon before its release closes stdin and cannot run the command.
@@ -96,6 +109,7 @@ impl BackgroundService {
         owner: &SeatDescriptor,
         title: &str,
         command: &str,
+        options: CreateOptions,
     ) -> Result<BackgroundJob> {
         let title = title.trim();
         let command = command.trim();
@@ -113,6 +127,24 @@ impl BackgroundService {
         }
         if title.contains('\0') || command.contains('\0') {
             return Err(refusal("title and command must not contain NUL"));
+        }
+        if let Some(timeout) = options.timeout_ms
+            && !(MIN_TIMEOUT_MS..=MAX_TIMEOUT_MS).contains(&timeout)
+        {
+            return Err(refusal("--timeout must be between 1s and 30d"));
+        }
+        let cwd = options.cwd.unwrap_or_else(|| PathBuf::from(&owner.folder));
+        if !cwd.is_absolute() {
+            return Err(refusal(format!(
+                "working directory {} is not absolute",
+                cwd.display()
+            )));
+        }
+        if !cwd.is_dir() {
+            return Err(refusal(format!(
+                "working directory {} does not exist or is not a directory",
+                cwd.display()
+            )));
         }
         let mut random = [0_u8; 16];
         getrandom::fill(&mut random).map_err(|error| fault(format!("job id: {error}")))?;
@@ -134,6 +166,11 @@ impl BackgroundService {
             finished_at: None,
             kill_requested: false,
             notified: false,
+            deadline_at: options
+                .timeout_ms
+                .map(|timeout| started_at.saturating_add(timeout)),
+            timed_out: false,
+            term_sent: false,
         };
         let mut children = self.children.lock().await;
         let dir = self.out_dir.clone();
@@ -152,7 +189,7 @@ impl BackgroundService {
         let mut runner = Command::new("/bin/sh");
         runner
             .args(["-c", RUNNER])
-            .current_dir(&owner.folder)
+            .current_dir(&cwd)
             .env("PIJ_SESSION_ID", owner.id.as_str())
             .env("PIJ_RS_ADDR", &self.daemon_addr)
             .env(
@@ -284,18 +321,39 @@ impl BackgroundService {
                 "refusing to signal a group that is not this job's own runner",
             ));
         }
+        // Provenance is persisted before the signal (never after, which a
+        // crash could lose), and withdrawn if this first attempt sends nothing.
+        // Accepted residual: a daemon crash between this commit and the TERM
+        // leaves term_sent set without a signal, so an overrun job that then
+        // fails on its own reads TIMEOUT instead of FAILED (exit N). Only the
+        // label differs, and the deadline it names really did pass.
+        let first = !job.term_sent;
+        if first {
+            self.store.set_term_sent(&job.job_id, true).await?;
+        }
+        let sent = self.send_term(identity, pgid).await;
+        if first && !matches!(sent, Ok(true)) {
+            self.store.set_term_sent(&job.job_id, false).await?;
+        }
+        match sent {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(refusal(
+                "runner process group or identity changed or disappeared; no signal sent",
+            )),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// `Ok(false)` when the identity brakes refuse; `Ok(true)` once TERM is sent.
+    async fn send_term(&self, identity: ProcIdentity, pgid: u32) -> Result<bool> {
         // Group membership is checked before the final identity observation.
         // Nothing awaits between that observation and spawning the fixed signal.
         let observed_group = blocking(move || process_group(identity.pid)).await?;
         if observed_group != Some(pgid) {
-            return Err(refusal(
-                "runner process group changed or disappeared; no signal sent",
-            ));
+            return Ok(false);
         }
         if self.liveness.proc_start(identity.pid).await? != Some(identity.proc_start) {
-            return Err(refusal(
-                "runner identity changed or disappeared; no signal sent",
-            ));
+            return Ok(false);
         }
         let signal = Command::new("/bin/kill")
             .args(["-TERM", "--", &format!("-{pgid}")])
@@ -311,7 +369,7 @@ impl BackgroundService {
                 String::from_utf8_lossy(&result.stderr).trim()
             )));
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Reap local children, recover orphaned rows by identity/receipt, and notify endings.
@@ -322,17 +380,53 @@ impl BackgroundService {
     pub async fn tick(&self) -> Result<()> {
         let mut children = self.children.lock().await;
         let mut first_error = None;
+        let now = now_ms()?;
         for job in self.store.pending().await? {
+            // Completion first: a runner that already exited on its own (a late
+            // tick, a daemon restart) keeps its own result. The deadline applies
+            // only to a runner that is still alive now.
             if let Err(error) = self.reconcile(&job, &mut children).await {
                 first_error.get_or_insert(error);
                 continue;
             }
-            let result = match self.lookup(&job.job_id).await {
-                Ok(current) if terminal(current.state) => self.notify(&current).await,
-                Ok(_) => Ok(()),
-                Err(error) => Err(error),
+            let mut current = match self.lookup(&job.job_id).await {
+                Ok(current) => current,
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                    continue;
+                }
             };
-            if let Err(error) = result {
+            if current.state == BackgroundState::Running
+                && !current.kill_requested
+                && current.deadline_at.is_some_and(|deadline| deadline <= now)
+            {
+                match self.store.request_timeout(&current.job_id, now).await {
+                    Ok(true) => {
+                        current.kill_requested = true;
+                        current.timed_out = true;
+                        // Signals the still-live runner through the identity brakes.
+                        if let Err(error) = self.reconcile(&current, &mut children).await {
+                            first_error.get_or_insert(error);
+                            continue;
+                        }
+                        match self.lookup(&job.job_id).await {
+                            Ok(latest) => current = latest,
+                            Err(error) => {
+                                first_error.get_or_insert(error);
+                                continue;
+                            }
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        first_error.get_or_insert(error);
+                        continue;
+                    }
+                }
+            }
+            if terminal(current.state)
+                && let Err(error) = self.notify(&current).await
+            {
                 first_error.get_or_insert(error);
             }
         }
@@ -391,7 +485,14 @@ impl BackgroundService {
         let now = now_ms()?;
         let (state, code, at) = match receipt {
             Some(receipt) => (
-                if job.kill_requested {
+                // A caller's kill always reads KILLED. A timeout reads TIMEOUT
+                // only when the daemon recorded sending its TERM and the runner
+                // then failed; a runner that exited on its own before any TERM
+                // (any code, 143 too) keeps its own result. The exit code alone
+                // is never provenance: a command can `exit 143` by itself.
+                if job.kill_requested
+                    && (!job.timed_out || (job.term_sent && receipt.exit_code != 0))
+                {
                     BackgroundState::Killed
                 } else {
                     BackgroundState::Done
@@ -410,7 +511,7 @@ impl BackgroundService {
             return Ok(());
         }
         let path = PathBuf::from(&job.out_path);
-        let output = if job.state == BackgroundState::Done {
+        let output = if job.state == BackgroundState::Done || job.timed_out {
             blocking(move || read_tail(&path, 20).map(|lines| lines.join("\n"))).await?
         } else {
             String::new()
@@ -612,7 +713,32 @@ fn process_group(pid: u32) -> Result<Option<u32>> {
         .map_err(|error| fault(format!("runner process group: {error}")))
 }
 
+/// Compact elapsed time: `42s`, `3m05s`, `2h07m`.
+pub fn human_duration(ms: u64) -> String {
+    let seconds = ms.saturating_add(500) / 1000;
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else if seconds < 3600 {
+        format!("{}m{:02}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{}h{:02}m", seconds / 3600, (seconds % 3600) / 60)
+    }
+}
+
 fn completion_turn(job: &BackgroundJob, output: &str) -> String {
+    if job.state == BackgroundState::Killed && job.timed_out {
+        let limit = job.deadline_at.map_or_else(
+            || "unknown".to_string(),
+            |at| human_duration(at.saturating_sub(job.started_at)),
+        );
+        return with_tail(
+            format!(
+                "[pij bg] TIMEOUT — {} (killed after {limit}) · full log: {}",
+                job.title, job.out_path
+            ),
+            output,
+        );
+    }
     if job.state == BackgroundState::Killed {
         return format!(
             "[pij bg] KILLED — {} · full log: {}",
@@ -628,21 +754,21 @@ fn completion_turn(job: &BackgroundJob, output: &str) -> String {
     } else {
         format!("FAILED (exit {code})")
     };
-    let duration = match job.finished_at {
-        Some(at) => {
-            let seconds = at.saturating_sub(job.started_at).saturating_add(500) / 1000;
-            if seconds < 60 {
-                format!("{seconds}s")
-            } else {
-                format!("{}m{:02}s", seconds / 60, seconds % 60)
-            }
-        }
-        None => "unknown".to_string(),
-    };
-    let mut body = format!(
-        "[pij bg] {verdict} — {} ({duration}) · full log: {}",
-        job.title, job.out_path
+    let duration = job.finished_at.map_or_else(
+        || "unknown".to_string(),
+        |at| human_duration(at.saturating_sub(job.started_at)),
     );
+    with_tail(
+        format!(
+            "[pij bg] {verdict} — {} ({duration}) · full log: {}",
+            job.title, job.out_path
+        ),
+        output,
+    )
+}
+
+/// Append the bounded, single-line log tail that every completion turn shares.
+fn with_tail(mut body: String, output: &str) -> String {
     let trimmed = output.trim_end();
     let count = trimmed.chars().count();
     let tail = if count > TAIL_CHARS {
@@ -733,6 +859,10 @@ mod tests {
         }
 
         async fn running(&self) -> BackgroundJob {
+            self.running_with_deadline(None).await
+        }
+
+        async fn running_with_deadline(&self, deadline_at: Option<u64>) -> BackgroundJob {
             let job = BackgroundJob {
                 job_id: "bg-recovery".to_string(),
                 owner: SeatId::from("owner"),
@@ -752,6 +882,9 @@ mod tests {
                 finished_at: None,
                 kill_requested: false,
                 notified: false,
+                deadline_at,
+                timed_out: false,
+                term_sent: false,
             };
             std::fs::write(&job.out_path, "one\ntwo\n").unwrap();
             self.service.store.insert(&job).await.unwrap();
@@ -949,6 +1082,147 @@ mod tests {
                 .get(&SeatId::from("grandparent"), &job.job_id)
                 .await
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_runner_that_finished_before_its_deadline_keeps_its_exit_when_the_tick_is_late() {
+        // Review F1 (PR #21): the daemon was down, or a tick ran late, across the
+        // deadline; the runner had already exited on its own and written its receipt.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        std::fs::write(receipt_path(&job), "3 1700000002\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(finished.state, BackgroundState::Done);
+        assert_eq!(finished.exit_code, Some(3));
+        assert!(!finished.timed_out && !finished.kill_requested);
+        let delivered = fixture.transport.delivered();
+        assert_eq!(delivered.len(), 1, "exactly one completion turn");
+        assert!(
+            delivered[0]
+                .body
+                .starts_with("[pij bg] FAILED (exit 3) — build"),
+            "{}",
+            delivered[0].body
+        );
+    }
+
+    #[tokio::test]
+    async fn a_timeout_claim_that_lost_the_race_to_the_runner_reports_its_own_exit() {
+        // The runner exits between the live check and the TERM: kill intent is
+        // recorded, but only the trap's 143 proves the timeout ended it.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        assert!(
+            fixture
+                .service
+                .store
+                .request_timeout(&job.job_id, 1_700_000_006_000)
+                .await
+                .unwrap()
+        );
+        std::fs::write(receipt_path(&job), "0 1700000006\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(finished.state, BackgroundState::Done);
+        assert_eq!(finished.exit_code, Some(0));
+        assert!(
+            fixture.transport.delivered()[0]
+                .body
+                .starts_with("[pij bg] OK — build"),
+            "{}",
+            fixture.transport.delivered()[0].body
+        );
+    }
+
+    #[tokio::test]
+    async fn an_ordinary_exit_143_racing_a_timeout_claim_stays_failed_exit_143() {
+        // Re-review R1 (PR #21): the command itself exits 143 just as the timeout
+        // is claimed; no TERM ever reached the runner, so this is not a TIMEOUT.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        assert!(
+            fixture
+                .service
+                .store
+                .request_timeout(&job.job_id, 1_700_000_006_000)
+                .await
+                .unwrap()
+        );
+        std::fs::write(receipt_path(&job), "143 1700000006\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(finished.state, BackgroundState::Done);
+        assert_eq!(finished.exit_code, Some(143));
+        let delivered = fixture.transport.delivered();
+        assert_eq!(delivered.len(), 1);
+        assert!(
+            delivered[0]
+                .body
+                .starts_with("[pij bg] FAILED (exit 143) — build"),
+            "{}",
+            delivered[0].body
+        );
+    }
+
+    #[tokio::test]
+    async fn a_timeout_whose_term_was_sent_reads_timeout_once() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        assert!(
+            fixture
+                .service
+                .store
+                .request_timeout(&job.job_id, 1_700_000_006_000)
+                .await
+                .unwrap()
+        );
+        assert!(
+            fixture
+                .service
+                .store
+                .set_term_sent(&job.job_id, true)
+                .await
+                .unwrap()
+        );
+        std::fs::write(receipt_path(&job), "143 1700000006\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(finished.state, BackgroundState::Killed);
+        assert!(finished.timed_out);
+        let delivered = fixture.transport.delivered();
+        assert_eq!(delivered.len(), 1, "exactly one TIMEOUT turn");
+        assert!(
+            delivered[0]
+                .body
+                .starts_with("[pij bg] TIMEOUT — build (killed after 5s)"),
+            "{}",
+            delivered[0].body
+        );
+    }
+
+    #[tokio::test]
+    async fn a_runner_that_exits_zero_after_the_timeout_term_was_sent_keeps_ok() {
+        // TERM sent, but the command finished cleanly first: its own success wins.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        let store = &fixture.service.store;
+        assert!(
+            store
+                .request_timeout(&job.job_id, 1_700_000_006_000)
+                .await
+                .unwrap()
+        );
+        assert!(store.set_term_sent(&job.job_id, true).await.unwrap());
+        std::fs::write(receipt_path(&job), "0 1700000006\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(
+            (finished.state, finished.exit_code),
+            (BackgroundState::Done, Some(0))
         );
     }
 

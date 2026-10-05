@@ -575,9 +575,15 @@ enum BgAction {
         /// Human title included in the completion turn.
         #[arg(long, allow_hyphen_values = true)]
         title: String,
-        /// Literal command interpreted by /bin/sh in the caller's recorded folder.
+        /// Literal command interpreted by /bin/sh in the caller's working directory.
         #[arg(long, allow_hyphen_values = true)]
         command: String,
+        /// Run the command here instead; relative paths resolve against your cwd.
+        #[arg(long)]
+        cwd: Option<String>,
+        /// Kill the job with a TIMEOUT turn after this long (e.g. 90s, 5m, 1h30m).
+        #[arg(long)]
+        timeout: Option<String>,
     },
     /// List your jobs, including finished jobs.
     List {
@@ -599,14 +605,20 @@ impl BgAction {
     fn argv(self) -> Vec<String> {
         let mut argv = vec!["bg".to_string()];
         match self {
-            Self::Create { title, command } => {
-                argv.extend([
-                    "create".to_string(),
-                    "--title".to_string(),
-                    title,
-                    "--command".to_string(),
-                    command,
-                ]);
+            Self::Create {
+                title,
+                command,
+                cwd,
+                timeout,
+            } => {
+                argv.extend(["create".to_string(), "--title".to_string(), title]);
+                if let Some(cwd) = cwd {
+                    argv.extend(["--cwd".to_string(), cwd]);
+                }
+                if let Some(timeout) = timeout {
+                    argv.extend(["--timeout".to_string(), timeout]);
+                }
+                argv.extend(["--command".to_string(), command]);
             }
             Self::List { all } => {
                 argv.push("list".to_string());
@@ -1338,6 +1350,28 @@ async fn run(cli: Cli) -> ExitCode {
         }
 
         Command::Bg { action } => {
+            // An unreadable cwd (deleted under the shell) must not silently become
+            // "no cwd": the daemon would then run in the owner's recorded folder.
+            if let BgAction::Create { cwd, .. } = &action
+                && !cwd
+                    .as_deref()
+                    .is_some_and(|cwd| Path::new(cwd).is_absolute())
+                && let Err(error) = std::env::current_dir()
+            {
+                return emit(
+                    &setup_refusal::<Value>(
+                        "pij bg",
+                        PijError::Adapter {
+                            adapter: "background/refused".to_string(),
+                            message: format!(
+                                "cannot read the current directory ({error}); cd into a directory \
+                                 that exists or pass an absolute --cwd"
+                            ),
+                        },
+                    ),
+                    cli.json,
+                );
+            }
             let response = client.bg(&action.argv(), &caller_context()).await;
             if !cli.json
                 && response.ok
