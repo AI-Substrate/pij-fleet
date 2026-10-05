@@ -1629,6 +1629,9 @@ async fn send(
             // The origin is its own field, never folded into the id (review
             // F02): every dedupe downstream keys on (from_machine, msg_id).
             request.message.from_machine = Some(alias.to_string());
+            if let Some(refusal) = at_in_msg_id(&request.message.msg_id) {
+                return refusal;
+            }
         }
         auth::AuthenticatedMachine::Local => {
             if request.message.from_machine.is_some() {
@@ -1637,13 +1640,8 @@ async fn send(
                     "from_machine is stamped from a paired machine's key; a local caller cannot assert it",
                 );
             }
-            // `@` is the address separator. A local id never carries it, so no
-            // local id can be read as, or collide with, a qualified one.
-            if request.message.msg_id.contains('@') {
-                return refused(
-                    "pij send",
-                    "E-RS-ARG: msg_id cannot contain `@`, which separates a seat from its machine",
-                );
+            if let Some(refusal) = at_in_msg_id(&request.message.msg_id) {
+                return refusal;
             }
         }
     }
@@ -1725,6 +1723,18 @@ async fn send(
 
         Err(error) => send_failure("pij send", error),
     }
+}
+
+/// `@` is the address separator, so NO msg_id carries it, local or forwarded:
+/// an id can never be read as, or collide with, a qualified `(origin, id)` a
+/// client must hold in one string.
+fn at_in_msg_id(msg_id: &str) -> Option<Response> {
+    msg_id.contains('@').then(|| {
+        refused(
+            "pij send",
+            "E-RS-ARG: msg_id cannot contain `@`, which separates a seat from its machine",
+        )
+    })
 }
 
 /// One remote send, from either the native or the shim route: durably queued
