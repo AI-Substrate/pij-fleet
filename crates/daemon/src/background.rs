@@ -3,19 +3,22 @@
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use async_trait::async_trait;
 use pij_core::BG_ACTOR;
-use pij_core::background::{BackgroundJob, BackgroundState};
+use pij_core::background::{BackgroundJob, BackgroundKind, BackgroundState, EventStats};
+use pij_core::cold_wake::ColdCheck;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Event, Msg, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::ports::{LivenessPort, Registry};
-use pij_store::background::SqliteBackground;
+use pij_store::background::{EmitOutcome, EventBatch, SqliteBackground};
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
 use crate::delivery::DeliveryService;
@@ -29,6 +32,25 @@ pub const MIN_TIMEOUT_MS: u64 = 1_000;
 /// See [`MIN_TIMEOUT_MS`].
 pub const MAX_TIMEOUT_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 
+/// An emit's text is one line of description, not a payload.
+pub const EMIT_TEXT_MAX: usize = 16 * 1024;
+/// An emit's optional JSON payload.
+pub const EMIT_DATA_MAX: usize = 256 * 1024;
+/// Pending events per source; emits beyond this are dropped and counted.
+pub const PENDING_CAP: u64 = 10_000;
+/// Default `--min-interval` between two wakes from one source.
+pub const DEFAULT_MIN_INTERVAL_MS: u64 = 60_000;
+/// Default `--inline-max`: events listed in the turn itself.
+pub const DEFAULT_INLINE_MAX: u64 = 5;
+/// Upper bounds for the two batching knobs.
+pub const MAX_MIN_INTERVAL_MS: u64 = 24 * 60 * 60 * 1000;
+/// See [`MAX_MIN_INTERVAL_MS`].
+pub const MAX_INLINE_MAX: u64 = 100;
+/// An inline turn longer than this, or any inline datum longer than
+/// `INLINE_DATA_CHARS`, goes to a batch file instead.
+const INLINE_BODY_CHARS: usize = 4_000;
+const INLINE_DATA_CHARS: usize = 400;
+
 /// Caller-chosen launch options beyond the title and command.
 #[derive(Clone, Debug, Default)]
 pub struct CreateOptions {
@@ -36,6 +58,52 @@ pub struct CreateOptions {
     pub cwd: Option<PathBuf>,
     /// Kill the job with a TIMEOUT turn once it has run this long.
     pub timeout_ms: Option<u64>,
+    /// Make the job an event source with these batching rules.
+    pub events: Option<EventsOptions>,
+}
+
+/// How an event source's batches reach its owner.
+#[derive(Clone, Copy, Debug)]
+pub struct EventsOptions {
+    /// Hold each batch as an FYI for the owner's next turn instead of waking it.
+    pub fyi: bool,
+    /// Minimum gap between two wakes caused by this source.
+    pub min_interval_ms: u64,
+    /// The most events listed in the turn itself.
+    pub inline_max: u64,
+}
+
+impl Default for EventsOptions {
+    fn default() -> Self {
+        Self {
+            fyi: false,
+            min_interval_ms: DEFAULT_MIN_INTERVAL_MS,
+            inline_max: DEFAULT_INLINE_MAX,
+        }
+    }
+}
+
+/// The daemon facts that decide where a batch for a cold owner goes.
+///
+/// Injected so that every routing branch is exercised without a real
+/// transcript, role store or Telegram bot.
+#[async_trait]
+pub trait ColdRouting: Send + Sync {
+    /// The cold-wake guard's own `check()` for this seat.
+    async fn check(&self, seat: &SeatDescriptor) -> ColdCheck;
+    /// The seat's prime: its nearest ancestor holding the prime role, else the
+    /// designated prime. Never the seat itself.
+    async fn prime(&self, seat: &SeatDescriptor) -> Result<Option<SeatId>>;
+    /// Telegram the user, as `pij send pij-telegram` would.
+    async fn telegram(&self, from: &SeatId, body: String, msg_id: String) -> Result<()>;
+}
+
+/// Where a cold owner's notice goes.
+enum PrimeRoute {
+    Warm(SeatId),
+    Cold(SeatId, u64),
+    Gone(SeatId),
+    None,
 }
 
 // No user text is interpolated. The pipe is a persist-before-execute barrier:
@@ -73,20 +141,41 @@ pub struct BackgroundService {
     event_bus: Arc<EventBus>,
     out_dir: PathBuf,
     daemon_addr: String,
+    routing: Arc<dyn ColdRouting>,
     children: Mutex<HashMap<String, Child>>,
+    /// Serializes batch cutting with the final flush so no event leaves twice.
+    events: Mutex<()>,
+}
+
+/// The shared daemon ports a [`BackgroundService`] reads and delivers through.
+pub struct BackgroundPorts {
+    /// Seat descriptors: owners, parents and primes.
+    pub registry: Arc<dyn Registry>,
+    /// Process identity for re-adoption and the signal brakes.
+    pub liveness: Arc<dyn LivenessPort>,
+    /// The one delivery pipeline for turns and FYIs.
+    pub delivery: Arc<DeliveryService>,
+    /// Lifecycle events (`bg.finished` and friends).
+    pub event_bus: Arc<EventBus>,
+    /// Where a cold owner's batch goes instead of waking it.
+    pub routing: Arc<dyn ColdRouting>,
 }
 
 impl BackgroundService {
-    /// Compose the durable store, existing delivery pipeline and private output directory.
+    /// Compose the durable store, shared ports and private output directory.
     pub fn new(
         store: SqliteBackground,
-        registry: Arc<dyn Registry>,
-        liveness: Arc<dyn LivenessPort>,
-        delivery: Arc<DeliveryService>,
-        event_bus: Arc<EventBus>,
+        ports: BackgroundPorts,
         out_dir: PathBuf,
         daemon_addr: String,
     ) -> Self {
+        let BackgroundPorts {
+            registry,
+            liveness,
+            delivery,
+            event_bus,
+            routing,
+        } = ports;
         Self {
             store,
             registry,
@@ -95,7 +184,9 @@ impl BackgroundService {
             event_bus,
             out_dir,
             daemon_addr,
+            routing,
             children: Mutex::new(HashMap::new()),
+            events: Mutex::new(()),
         }
     }
 
@@ -132,6 +223,14 @@ impl BackgroundService {
             && !(MIN_TIMEOUT_MS..=MAX_TIMEOUT_MS).contains(&timeout)
         {
             return Err(refusal("--timeout must be between 1s and 30d"));
+        }
+        if let Some(events) = options.events {
+            if events.min_interval_ms > MAX_MIN_INTERVAL_MS {
+                return Err(refusal("--min-interval must be at most 1d"));
+            }
+            if events.inline_max > MAX_INLINE_MAX {
+                return Err(refusal("--inline-max must be at most 100"));
+            }
         }
         let cwd = options.cwd.unwrap_or_else(|| PathBuf::from(&owner.folder));
         if !cwd.is_absolute() {
@@ -171,6 +270,29 @@ impl BackgroundService {
                 .map(|timeout| started_at.saturating_add(timeout)),
             timed_out: false,
             term_sent: false,
+            kind: if options.events.is_some() {
+                BackgroundKind::Events
+            } else {
+                BackgroundKind::Oneshot
+            },
+            events_fyi: options.events.is_some_and(|events| events.fyi),
+            min_interval_ms: options
+                .events
+                .map_or(DEFAULT_MIN_INTERVAL_MS, |events| events.min_interval_ms),
+            inline_max: options
+                .events
+                .map_or(DEFAULT_INLINE_MAX, |events| events.inline_max),
+            last_wake_at: None,
+            batches: 0,
+        };
+        // The hook's secret exists only in the child's environment; the store
+        // keeps its digest, so a store read never yields a usable token.
+        let token = if options.events.is_some() {
+            let mut secret = [0_u8; 32];
+            getrandom::fill(&mut secret).map_err(|error| fault(format!("job token: {error}")))?;
+            Some(hex(&secret))
+        } else {
+            None
         };
         let mut children = self.children.lock().await;
         let dir = self.out_dir.clone();
@@ -184,7 +306,9 @@ impl BackgroundService {
                 .map_err(io_error)
         })
         .await?;
-        self.store.insert(&job).await?;
+        self.store
+            .insert_with_token(&job, token.as_deref().map(token_digest).as_deref())
+            .await?;
         let stderr = log.try_clone().map_err(io_error)?;
         let mut runner = Command::new("/bin/sh");
         runner
@@ -208,6 +332,9 @@ impl BackgroundService {
             .process_group(0);
         if let Some(pane) = &owner.pane {
             runner.env("TMUX_PANE", pane);
+        }
+        if let Some(token) = &token {
+            runner.env("PIJ_BG_TOKEN", token);
         }
         let mut child = runner.spawn().map_err(io_error)?;
         let pid = child.id();
@@ -285,6 +412,61 @@ impl BackgroundService {
         let path = PathBuf::from(&job.out_path);
         let tail = blocking(move || read_tail(&path, lines)).await?;
         Ok((job, tail))
+    }
+
+    /// Accept one event from a source's hook, authenticated by its job token.
+    ///
+    /// # Errors
+    /// A `background/auth` refusal for an unknown job, a wrong token or a revoked
+    /// one (indistinguishable on purpose); a refusal for oversize input or a job
+    /// that is killed or finishing; store failures.
+    pub async fn emit(
+        &self,
+        job_id: &str,
+        token: &str,
+        text: &str,
+        data: Option<&serde_json::Value>,
+    ) -> Result<EmitOutcome> {
+        let stored = self.store.token_hash(job_id).await?;
+        let presented = token_digest(token);
+        if !stored.is_some_and(|stored| constant_time_eq(stored.as_bytes(), presented.as_bytes())) {
+            return Err(PijError::Adapter {
+                adapter: "background/auth".to_string(),
+                message: "invalid job token: a token works only for its own live job".to_string(),
+            });
+        }
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(refusal("event text must not be empty"));
+        }
+        if text.len() > EMIT_TEXT_MAX {
+            return Err(refusal("event text must be at most 16 KiB"));
+        }
+        let data = data
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| refusal(format!("event data: {error}")))?;
+        if data.as_ref().is_some_and(|data| data.len() > EMIT_DATA_MAX) {
+            return Err(refusal("event data must be at most 256 KiB"));
+        }
+        match self
+            .store
+            .emit(job_id, now_ms()?, text, data.as_deref(), PENDING_CAP)
+            .await?
+        {
+            EmitOutcome::Refused => Err(refusal(
+                "this source is stopping or stopped; it no longer accepts events",
+            )),
+            outcome => Ok(outcome),
+        }
+    }
+
+    /// Fired and pending counts for one source.
+    ///
+    /// # Errors
+    /// Store failures.
+    pub async fn event_stats(&self, job_id: &str) -> Result<EventStats> {
+        self.store.event_stats(job_id).await
     }
 
     /// Persist kill intent, re-check the full process identity and group, then SIGTERM.
@@ -378,59 +560,259 @@ impl BackgroundService {
     /// Store, liveness, receipt, event, or delivery failures. Other jobs are still
     /// visited when one fails, and unnotified terminal rows are retried next tick.
     pub async fn tick(&self) -> Result<()> {
-        let mut children = self.children.lock().await;
         let mut first_error = None;
-        let now = now_ms()?;
-        for job in self.store.pending().await? {
-            // Completion first: a runner that already exited on its own (a late
-            // tick, a daemon restart) keeps its own result. The deadline applies
-            // only to a runner that is still alive now.
-            if let Err(error) = self.reconcile(&job, &mut children).await {
-                first_error.get_or_insert(error);
-                continue;
-            }
-            let mut current = match self.lookup(&job.job_id).await {
-                Ok(current) => current,
-                Err(error) => {
+        let mut sources = Vec::new();
+        {
+            let mut children = self.children.lock().await;
+            let now = now_ms()?;
+            for job in self.store.pending().await? {
+                // Completion first: a runner that already exited on its own (a
+                // late tick, a daemon restart) keeps its own result. The deadline
+                // applies only to a runner that is still alive now.
+                if let Err(error) = self.reconcile(&job, &mut children).await {
                     first_error.get_or_insert(error);
                     continue;
                 }
-            };
-            if current.state == BackgroundState::Running
-                && !current.kill_requested
-                && current.deadline_at.is_some_and(|deadline| deadline <= now)
-            {
-                match self.store.request_timeout(&current.job_id, now).await {
-                    Ok(true) => {
-                        current.kill_requested = true;
-                        current.timed_out = true;
-                        // Signals the still-live runner through the identity brakes.
-                        if let Err(error) = self.reconcile(&current, &mut children).await {
-                            first_error.get_or_insert(error);
-                            continue;
-                        }
-                        match self.lookup(&job.job_id).await {
-                            Ok(latest) => current = latest,
-                            Err(error) => {
-                                first_error.get_or_insert(error);
-                                continue;
-                            }
-                        }
-                    }
-                    Ok(false) => {}
+                let mut current = match self.lookup(&job.job_id).await {
+                    Ok(current) => current,
                     Err(error) => {
                         first_error.get_or_insert(error);
                         continue;
                     }
+                };
+                if current.state == BackgroundState::Running
+                    && !current.kill_requested
+                    && current.deadline_at.is_some_and(|deadline| deadline <= now)
+                {
+                    match self.store.request_timeout(&current.job_id, now).await {
+                        Ok(true) => {
+                            current.kill_requested = true;
+                            current.timed_out = true;
+                            // Signals the still-live runner through the identity brakes.
+                            if let Err(error) = self.reconcile(&current, &mut children).await {
+                                first_error.get_or_insert(error);
+                                continue;
+                            }
+                            match self.lookup(&job.job_id).await {
+                                Ok(latest) => current = latest,
+                                Err(error) => {
+                                    first_error.get_or_insert(error);
+                                    continue;
+                                }
+                            }
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            first_error.get_or_insert(error);
+                            continue;
+                        }
+                    }
+                }
+                if terminal(current.state) {
+                    if let Err(error) = self.notify(&current).await {
+                        first_error.get_or_insert(error);
+                    }
+                } else if current.kind == BackgroundKind::Events
+                    && current.state == BackgroundState::Running
+                {
+                    sources.push(current);
                 }
             }
-            if terminal(current.state)
-                && let Err(error) = self.notify(&current).await
-            {
+        }
+        // Batching reads transcripts for the cold check; never hold the child
+        // lock (which create and kill need) across that.
+        for job in sources {
+            if let Err(error) = self.pump(&job).await {
                 first_error.get_or_insert(error);
             }
         }
         first_error.map_or(Ok(()), Err)
+    }
+
+    /// Cut and deliver one batch for a live source when its owner may take it.
+    async fn pump(&self, job: &BackgroundJob) -> Result<()> {
+        let _batching = self.events.lock().await;
+        let job = self.lookup(&job.job_id).await?;
+        if job.state != BackgroundState::Running {
+            return Ok(());
+        }
+        let now = now_ms()?;
+        if job
+            .last_wake_at
+            .is_some_and(|at| now < at.saturating_add(job.min_interval_ms))
+        {
+            return Ok(());
+        }
+        let Some(owner) = self.registry.get(&job.owner).await? else {
+            return Ok(());
+        };
+        if owner.tombstoned_at.is_some() {
+            return Ok(());
+        }
+        // A busy owner keeps accumulating; the batch lands when its turn ends.
+        if !job.events_fyi && owner.state == pij_core::model::SystemState::Working {
+            return Ok(());
+        }
+        if self.store.event_stats(&job.job_id).await?.pending == 0 {
+            return Ok(());
+        }
+        let Some(batch) = self.store.cut_batch(&job.job_id, false).await? else {
+            return Ok(());
+        };
+        self.deliver_batch(&job, &owner, &batch, now).await
+    }
+
+    async fn deliver_batch(
+        &self,
+        job: &BackgroundJob,
+        owner: &SeatDescriptor,
+        batch: &EventBatch,
+        now: u64,
+    ) -> Result<()> {
+        let msg_id = format!("pij-bg:{}:batch:{}", job.job_id, batch.batch_no);
+        if job.events_fyi {
+            let body = self.batch_turn(job, batch, false).await?;
+            self.delivery
+                .hold_fyi(bg_msg(&owner.id, body, msg_id))
+                .await?;
+            return self
+                .store
+                .settle_batch(&job.job_id, batch.batch_no, "held", now)
+                .await;
+        }
+        let ColdCheck::Cold {
+            context_tokens,
+            idle_ms,
+            ..
+        } = self.routing.check(owner).await
+        else {
+            let body = self.batch_turn(job, batch, false).await?;
+            self.delivery
+                .accept(bg_msg(&owner.id, body, msg_id))
+                .await?;
+            return self
+                .store
+                .settle_batch(&job.job_id, batch.batch_no, "delivered", now)
+                .await;
+        };
+        // Cold: never wake it. The batch waits as an FYI (nothing is lost) and
+        // the prime, or failing that the human, decides whether a wake is worth it.
+        let body = self.batch_turn(job, batch, true).await?;
+        let file = self.batch_path(job, batch.batch_no);
+        self.delivery
+            .hold_fyi(bg_msg(&owner.id, body, msg_id.clone()))
+            .await?;
+        self.store
+            .settle_batch(&job.job_id, batch.batch_no, "routed", now)
+            .await?;
+        let count = batch.events.len();
+        let lead = format!(
+            "❄ {} is cold ({}k, idle {}): {count} {} from {} {} held.",
+            owner.id,
+            context_tokens / 1000,
+            human_duration(idle_ms),
+            plural(count, "event", "events"),
+            job.title,
+            if count == 1 { "is" } else { "are" },
+        );
+        let why = match self.prime_route(owner).await? {
+            PrimeRoute::Warm(prime) => {
+                let notice = format!(
+                    "{lead}\nThey wait as an FYI on {owner}, which sees them on its next turn. \
+                     To wake it now: pij send {owner} --force --reason \"<why>\"\nEvents: {file}",
+                    owner = owner.id,
+                    file = file.display(),
+                );
+                match self
+                    .delivery
+                    .accept(bg_msg(&prime, notice, format!("{msg_id}:prime")))
+                    .await
+                {
+                    Ok(_) => return Ok(()),
+                    Err(error) => format!(
+                        "Its prime {prime} could not take the notice ({error}), so this came to you."
+                    ),
+                }
+            }
+            PrimeRoute::Cold(prime, idle) => format!(
+                "Its prime {prime} is cold (idle {}), so this came to you.",
+                human_duration(idle)
+            ),
+            PrimeRoute::Gone(prime) => format!("Its prime {prime} is gone, so this came to you."),
+            PrimeRoute::None => "It has no prime, so this came to you.".to_string(),
+        };
+        self.routing
+            .telegram(
+                &owner.id,
+                format!("{lead}\n{why}\nEvents: {}", file.display()),
+                format!("{msg_id}:telegram"),
+            )
+            .await
+    }
+
+    async fn prime_route(&self, owner: &SeatDescriptor) -> Result<PrimeRoute> {
+        let Some(prime) = self.routing.prime(owner).await? else {
+            return Ok(PrimeRoute::None);
+        };
+        if prime == owner.id {
+            return Ok(PrimeRoute::None);
+        }
+        let Some(seat) = self.registry.get(&prime).await? else {
+            return Ok(PrimeRoute::Gone(prime));
+        };
+        if seat.tombstoned_at.is_some() {
+            return Ok(PrimeRoute::Gone(prime));
+        }
+        Ok(match self.routing.check(&seat).await {
+            ColdCheck::Cold { idle_ms, .. } => PrimeRoute::Cold(prime, idle_ms),
+            _ => PrimeRoute::Warm(prime),
+        })
+    }
+
+    fn batch_path(&self, job: &BackgroundJob, batch_no: u64) -> PathBuf {
+        self.out_dir
+            .join(&job.job_id)
+            .join(format!("batch-{batch_no:04}.json"))
+    }
+
+    /// The batch as a turn: listed inline when small, else written to a file the
+    /// turn names. `force_file` always writes the file (cold routing cites it).
+    async fn batch_turn(
+        &self,
+        job: &BackgroundJob,
+        batch: &EventBatch,
+        force_file: bool,
+    ) -> Result<String> {
+        let count = batch.events.len();
+        let dropped = if batch.dropped > 0 {
+            format!(
+                " ({} more dropped over the {PENDING_CAP}-event pending cap)",
+                batch.dropped
+            )
+        } else {
+            String::new()
+        };
+        let inline = inline_events(batch);
+        let needs_file = force_file
+            || u64::try_from(count).unwrap_or(u64::MAX) > job.inline_max
+            || inline.is_none();
+        if needs_file {
+            let path = self.batch_path(job, batch.batch_no);
+            write_batch_file(&path, job, batch).await?;
+            return Ok(format!(
+                "[pij bg] {count} new {} from {}{dropped}, here is the file: {}",
+                plural(count, "event", "events"),
+                job.title,
+                path.display()
+            ));
+        }
+        Ok(format!(
+            "[pij bg] {count} new {} from {} (job {}){dropped}:\n{}",
+            plural(count, "event", "events"),
+            job.title,
+            job.job_id,
+            inline.unwrap_or_default()
+        ))
     }
 
     async fn lookup(&self, job: &str) -> Result<BackgroundJob> {
@@ -510,13 +892,33 @@ impl BackgroundService {
         if job.notified {
             return Ok(());
         }
+        let _batching = if job.kind == BackgroundKind::Events {
+            Some(self.events.lock().await)
+        } else {
+            None
+        };
         let path = PathBuf::from(&job.out_path);
         let output = if job.state == BackgroundState::Done || job.timed_out {
             blocking(move || read_tail(&path, 20).map(|lines| lines.join("\n"))).await?
         } else {
             String::new()
         };
-        let body = completion_turn(job, &output);
+        let mut body = completion_turn(job, &output);
+        // The source's end flushes whatever it fired since its last batch into
+        // this same final turn (its token was revoked when the row finished).
+        let last = if job.kind == BackgroundKind::Events {
+            let batch = self.store.cut_batch(&job.job_id, true).await?;
+            match &batch {
+                Some(batch) if !batch.events.is_empty() || batch.dropped > 0 => {
+                    body.push('\n');
+                    body.push_str(&self.final_events(job, batch).await?);
+                }
+                _ => body.push_str("\nNo events since the last batch."),
+            }
+            batch
+        } else {
+            None
+        };
         let msg_id = format!("pij-bg:{}:finished", job.job_id);
         let kind = match job.state {
             BackgroundState::Done => "bg.finished",
@@ -557,8 +959,56 @@ impl BackgroundService {
                 command: None,
             })
             .await?;
+        if let Some(batch) = last {
+            self.store
+                .settle_batch(&job.job_id, batch.batch_no, "delivered", now_ms()?)
+                .await?;
+        }
         self.store.mark_notified(&job.job_id).await?;
         Ok(())
+    }
+
+    /// "N events since the last batch", inline or as a file, for the final turn.
+    async fn final_events(&self, job: &BackgroundJob, batch: &EventBatch) -> Result<String> {
+        let count = batch.events.len();
+        let since = format!(
+            "{count} {} since the last batch",
+            plural(count, "event", "events")
+        );
+        let dropped = if batch.dropped > 0 {
+            format!(
+                " ({} more dropped over the {PENDING_CAP}-event pending cap)",
+                batch.dropped
+            )
+        } else {
+            String::new()
+        };
+        match inline_events(batch)
+            .filter(|_| u64::try_from(count).unwrap_or(u64::MAX) <= job.inline_max)
+        {
+            Some(inline) if count > 0 => Ok(format!("{since}{dropped}:\n{inline}")),
+            Some(_) => Ok(format!("{since}{dropped}.")),
+            None => {
+                let path = self.batch_path(job, batch.batch_no);
+                write_batch_file(&path, job, batch).await?;
+                Ok(format!(
+                    "{since}{dropped}, here is the file: {}",
+                    path.display()
+                ))
+            }
+        }
+    }
+}
+
+fn bg_msg(to: &SeatId, body: String, msg_id: String) -> Msg {
+    Msg {
+        from: SeatId::from(BG_ACTOR),
+        to: to.clone(),
+        body,
+        msg_id,
+        from_machine: None,
+        in_reply_to: None,
+        command: None,
     }
 }
 
@@ -725,6 +1175,92 @@ pub fn human_duration(ms: u64) -> String {
     }
 }
 
+fn plural<'a>(count: usize, one: &'a str, many: &'a str) -> &'a str {
+    if count == 1 { one } else { many }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The stored form of a job token: its SHA-256, hex.
+fn token_digest(token: &str) -> String {
+    hex(&Sha256::digest(token.as_bytes()))
+}
+
+/// Compare without an early exit, so timing does not reveal a matching prefix.
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .fold(0_u8, |difference, (a, b)| difference | (a ^ b))
+            == 0
+}
+
+/// Numbered lines, or `None` when the batch is too large to read inline.
+fn inline_events(batch: &EventBatch) -> Option<String> {
+    let mut lines = Vec::with_capacity(batch.events.len());
+    for (index, event) in batch.events.iter().enumerate() {
+        let text = event.text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let line = match &event.data {
+            Some(data) if data.chars().count() > INLINE_DATA_CHARS => return None,
+            Some(data) => format!("{}. {text} · data: {data}", index + 1),
+            None => format!("{}. {text}", index + 1),
+        };
+        lines.push(line);
+    }
+    let body = lines.join("\n");
+    (body.chars().count() <= INLINE_BODY_CHARS).then_some(body)
+}
+
+async fn write_batch_file(path: &Path, job: &BackgroundJob, batch: &EventBatch) -> Result<()> {
+    let events: Vec<serde_json::Value> = batch
+        .events
+        .iter()
+        .map(|event| {
+            serde_json::json!({
+                "seq": event.seq,
+                "ts": event.ts,
+                "text": event.text,
+                "data": event
+                    .data
+                    .as_deref()
+                    .and_then(|data| serde_json::from_str::<serde_json::Value>(data).ok()),
+            })
+        })
+        .collect();
+    let document = serde_json::json!({
+        "job": job.job_id,
+        "title": job.title,
+        "owner": job.owner,
+        "batch": batch.batch_no,
+        "dropped": batch.dropped,
+        "events": events,
+    });
+    let bytes = serde_json::to_vec_pretty(&document)
+        .map_err(|error| fault(format!("batch file: {error}")))?;
+    let path = path.to_path_buf();
+    blocking(move || {
+        if let Some(dir) = path.parent() {
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(dir)
+                .map_err(io_error)?;
+        }
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(io_error)?;
+        file.write_all(&bytes).map_err(io_error)
+    })
+    .await
+}
+
 fn completion_turn(job: &BackgroundJob, output: &str) -> String {
     if job.state == BackgroundState::Killed && job.timed_out {
         let limit = job.deadline_at.map_or_else(
@@ -740,8 +1276,14 @@ fn completion_turn(job: &BackgroundJob, output: &str) -> String {
         );
     }
     if job.state == BackgroundState::Killed {
+        // A source's normal end is a stop, not an accident.
+        let word = if job.kind == BackgroundKind::Events {
+            "STOPPED"
+        } else {
+            "KILLED"
+        };
         return format!(
-            "[pij bg] KILLED — {} · full log: {}",
+            "[pij bg] {word} — {} · full log: {}",
             job.title, job.out_path
         );
     }
@@ -813,7 +1355,45 @@ mod tests {
         registry: Arc<FakeRegistry>,
         transport: Arc<FakeTransport>,
         spine: Arc<FakeSpine>,
+        delivery: Arc<DeliveryService>,
+        routing: Arc<FakeRouting>,
         dir: PathBuf,
+    }
+
+    /// Scripted cold-routing facts: which seats are cold (and idle how long),
+    /// who the prime is, and every Telegram the service would have sent.
+    #[derive(Default)]
+    struct FakeRouting {
+        cold: std::sync::Mutex<HashMap<SeatId, u64>>,
+        prime: std::sync::Mutex<Option<SeatId>>,
+        telegrams: std::sync::Mutex<Vec<(SeatId, String, String)>>,
+    }
+
+    #[async_trait]
+    impl ColdRouting for FakeRouting {
+        async fn check(&self, seat: &SeatDescriptor) -> ColdCheck {
+            match self.cold.lock().unwrap().get(&seat.id) {
+                Some(idle_ms) => ColdCheck::Cold {
+                    context_tokens: 472_000,
+                    idle_ms: *idle_ms,
+                    model: None,
+                    estimate_usd: None,
+                },
+                None => ColdCheck::Clear,
+            }
+        }
+
+        async fn prime(&self, _seat: &SeatDescriptor) -> Result<Option<SeatId>> {
+            Ok(self.prime.lock().unwrap().clone())
+        }
+
+        async fn telegram(&self, from: &SeatId, body: String, msg_id: String) -> Result<()> {
+            self.telegrams
+                .lock()
+                .unwrap()
+                .push((from.clone(), body, msg_id));
+            Ok(())
+        }
     }
 
     impl Fixture {
@@ -830,6 +1410,7 @@ mod tests {
             let spine = Arc::new(FakeSpine::new());
             let event_bus = Arc::new(EventBus::new(spine.clone(), 16).unwrap());
             let transport = Arc::new(FakeTransport::reachable());
+            let routing = Arc::new(FakeRouting::default());
             let delivery = Arc::new(
                 DeliveryService::new(
                     registry.clone(),
@@ -842,10 +1423,13 @@ mod tests {
             );
             let service = BackgroundService::new(
                 SqliteBackground::new(pij_store::open("").await.unwrap()),
-                registry.clone(),
-                Arc::new(liveness),
-                delivery,
-                event_bus,
+                BackgroundPorts {
+                    registry: registry.clone(),
+                    liveness: Arc::new(liveness),
+                    delivery: delivery.clone(),
+                    event_bus,
+                    routing: routing.clone(),
+                },
                 dir.clone(),
                 "127.0.0.1:1".to_string(),
             );
@@ -854,8 +1438,99 @@ mod tests {
                 registry,
                 transport,
                 spine,
+                delivery,
+                routing,
                 dir,
             }
+        }
+
+        /// A live event source owned by `owner`, whose hook token is `token`.
+        async fn source(
+            &self,
+            job_id: &str,
+            token: &str,
+            fyi: bool,
+            min_interval_ms: u64,
+            inline_max: u64,
+        ) -> BackgroundJob {
+            let job = BackgroundJob {
+                job_id: job_id.to_string(),
+                owner: SeatId::from("owner"),
+                title: "db-watch".to_string(),
+                command: "watch".to_string(),
+                pid: Some(PROC.pid),
+                proc_start: Some(PROC.proc_start),
+                pgid: Some(PROC.pid),
+                out_path: self
+                    .dir
+                    .join(format!("{job_id}.log"))
+                    .to_string_lossy()
+                    .into_owned(),
+                state: BackgroundState::Running,
+                exit_code: None,
+                started_at: 1_700_000_000_000,
+                finished_at: None,
+                kill_requested: false,
+                notified: false,
+                deadline_at: None,
+                timed_out: false,
+                term_sent: false,
+                kind: BackgroundKind::Events,
+                events_fyi: fyi,
+                min_interval_ms,
+                inline_max,
+                last_wake_at: None,
+                batches: 0,
+            };
+            std::fs::write(&job.out_path, "watching\n").unwrap();
+            self.service
+                .store
+                .insert_with_token(&job, Some(&token_digest(token)))
+                .await
+                .unwrap();
+            job
+        }
+
+        async fn fire(&self, job: &str, token: &str, texts: &[&str]) {
+            for text in texts {
+                self.service.emit(job, token, text, None).await.unwrap();
+            }
+        }
+
+        async fn set_owner_state(&self, state: pij_core::model::SystemState) {
+            let mut owner = self
+                .registry
+                .get(&SeatId::from("owner"))
+                .await
+                .unwrap()
+                .unwrap();
+            owner.state = state;
+            self.registry.put(owner).await.unwrap();
+        }
+
+        /// A reachable seat, like the owner: a process identity makes delivery push.
+        async fn add_seat(&self, id: &str) {
+            let mut seat = SeatDescriptor::new(id, Harness::Claude, self.dir.to_string_lossy());
+            seat.proc = Some(ProcIdentity {
+                pid: 8,
+                proc_start: 12,
+            });
+            self.registry.put(seat).await.unwrap();
+        }
+
+        fn to(&self, seat: &str) -> Vec<Msg> {
+            self.transport
+                .delivered()
+                .into_iter()
+                .filter(|msg| msg.to == SeatId::from(seat))
+                .collect()
+        }
+
+        async fn held_fyis(&self) -> u64 {
+            self.delivery
+                .pending_fyi_count(&SeatId::from("owner"))
+                .await
+                .unwrap()
         }
 
         async fn running(&self) -> BackgroundJob {
@@ -885,11 +1560,276 @@ mod tests {
                 deadline_at,
                 timed_out: false,
                 term_sent: false,
+                kind: BackgroundKind::Oneshot,
+                events_fyi: false,
+                min_interval_ms: 0,
+                inline_max: 0,
+                last_wake_at: None,
+                batches: 0,
             };
             std::fs::write(&job.out_path, "one\ntwo\n").unwrap();
             self.service.store.insert(&job).await.unwrap();
             job
         }
+    }
+
+    fn adapter(error: &PijError) -> &str {
+        match error {
+            PijError::Adapter { adapter, .. } => adapter,
+            _ => "",
+        }
+    }
+
+    #[tokio::test]
+    async fn emit_accepts_only_the_jobs_own_live_token() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-a", "token-a", false, 0, 5).await;
+        fixture.source("bg-b", "token-b", false, 0, 5).await;
+        let service = &fixture.service;
+        for (job, token) in [("bg-a", "token-b"), ("bg-missing", "token-a"), ("bg-a", "")] {
+            let error = service.emit(job, token, "x", None).await.unwrap_err();
+            assert_eq!(adapter(&error), "background/auth", "{job} with {token:?}");
+        }
+        assert_eq!(
+            service
+                .emit("bg-a", "token-a", "first", None)
+                .await
+                .unwrap(),
+            EmitOutcome::Accepted { seq: 1 }
+        );
+        assert!(service.store.request_kill("bg-a").await.unwrap());
+        let error = service
+            .emit("bg-a", "token-a", "after kill", None)
+            .await
+            .unwrap_err();
+        assert_eq!(adapter(&error), "background/refused");
+        service
+            .store
+            .finish("bg-b", BackgroundState::Done, Some(0), 1_700_000_001_000)
+            .await
+            .unwrap();
+        let error = service
+            .emit("bg-b", "token-b", "after exit", None)
+            .await
+            .unwrap_err();
+        assert_eq!(adapter(&error), "background/auth", "the token dies at exit");
+        assert_eq!(service.store.token_hash("bg-b").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn batches_list_up_to_inline_max_inline_and_write_a_file_beyond_it() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        let job = fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture
+            .fire("bg-src", "tok", &["e1", "e2", "e3", "e4", "e5"])
+            .await;
+        fixture.service.tick().await.unwrap();
+        let first = fixture.to("owner");
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].msg_id, "pij-bg:bg-src:batch:1");
+        assert_eq!(
+            first[0].body,
+            "[pij bg] 5 new events from db-watch (job bg-src):\n1. e1\n2. e2\n3. e3\n4. e4\n5. e5"
+        );
+        fixture
+            .fire("bg-src", "tok", &["f1", "f2", "f3", "f4", "f5", "f6"])
+            .await;
+        fixture.service.tick().await.unwrap();
+        let path = fixture.service.batch_path(&job, 2);
+        let second = fixture.to("owner");
+        assert_eq!(
+            second[1].body,
+            format!(
+                "[pij bg] 6 new events from db-watch, here is the file: {}",
+                path.display()
+            )
+        );
+        let file: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(file["events"].as_array().unwrap().len(), 6);
+        assert_eq!(file["events"][5]["text"], "f6");
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let stats = fixture.service.event_stats("bg-src").await.unwrap();
+        assert_eq!((stats.fired, stats.pending), (11, 0));
+    }
+
+    #[tokio::test]
+    async fn events_coalesce_while_the_owner_is_busy_or_within_min_interval() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-src", "tok", false, 300, 5).await;
+        fixture.fire("bg-src", "tok", &["one"]).await;
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.to("owner").len(), 1);
+        fixture.fire("bg-src", "tok", &["two", "three"]).await;
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.to("owner").len(), 1, "inside --min-interval");
+        tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+        fixture
+            .set_owner_state(pij_core::model::SystemState::Working)
+            .await;
+        fixture.fire("bg-src", "tok", &["four"]).await;
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.to("owner").len(), 1, "a busy owner is not woken");
+        fixture
+            .set_owner_state(pij_core::model::SystemState::Idle)
+            .await;
+        fixture.service.tick().await.unwrap();
+        let turns = fixture.to("owner");
+        assert_eq!(turns.len(), 2);
+        assert_eq!(
+            turns[1].body,
+            "[pij bg] 3 new events from db-watch (job bg-src):\n1. two\n2. three\n3. four"
+        );
+    }
+
+    #[tokio::test]
+    async fn fyi_sources_hold_batches_without_waking_even_a_busy_owner() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-src", "tok", true, 0, 5).await;
+        fixture
+            .set_owner_state(pij_core::model::SystemState::Working)
+            .await;
+        fixture.fire("bg-src", "tok", &["quiet"]).await;
+        fixture.service.tick().await.unwrap();
+        assert!(fixture.to("owner").is_empty());
+        assert_eq!(fixture.held_fyis().await, 1);
+    }
+
+    /// A cold owner with two pending events; returns the batch file's path.
+    async fn cold_owner_batch(fixture: &Fixture) -> PathBuf {
+        let job = fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture
+            .routing
+            .cold
+            .lock()
+            .unwrap()
+            .insert(SeatId::from("owner"), 18_720_000);
+        fixture.fire("bg-src", "tok", &["row 1", "row 2"]).await;
+        fixture.service.tick().await.unwrap();
+        assert!(
+            fixture.to("owner").is_empty(),
+            "a cold owner is never woken"
+        );
+        assert_eq!(fixture.held_fyis().await, 1, "the batch waits as an FYI");
+        let path = fixture.service.batch_path(&job, 1);
+        assert!(path.exists(), "cold routing always cites a file");
+        path
+    }
+
+    #[tokio::test]
+    async fn cold_owner_with_a_warm_prime_goes_to_the_prime() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.add_seat("prime").await;
+        *fixture.routing.prime.lock().unwrap() = Some(SeatId::from("prime"));
+        let path = cold_owner_batch(&fixture).await;
+        let notices = fixture.to("prime");
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].msg_id, "pij-bg:bg-src:batch:1:prime");
+        assert_eq!(
+            notices[0].body,
+            format!(
+                "❄ owner is cold (472k, idle 5h12m): 2 events from db-watch are held.\n\
+                 They wait as an FYI on owner, which sees them on its next turn. \
+                 To wake it now: pij send owner --force --reason \"<why>\"\nEvents: {}",
+                path.display()
+            )
+        );
+        assert!(fixture.routing.telegrams.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cold_owner_with_a_cold_prime_goes_to_telegram() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.add_seat("prime").await;
+        *fixture.routing.prime.lock().unwrap() = Some(SeatId::from("prime"));
+        fixture
+            .routing
+            .cold
+            .lock()
+            .unwrap()
+            .insert(SeatId::from("prime"), 7_200_000);
+        let path = cold_owner_batch(&fixture).await;
+        assert!(fixture.to("prime").is_empty());
+        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        assert_eq!(
+            telegrams,
+            vec![(
+                SeatId::from("owner"),
+                format!(
+                    "❄ owner is cold (472k, idle 5h12m): 2 events from db-watch are held.\n\
+                     Its prime prime is cold (idle 2h00m), so this came to you.\nEvents: {}",
+                    path.display()
+                ),
+                "pij-bg:bg-src:batch:1:telegram".to_string()
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn cold_owner_without_a_prime_goes_to_telegram() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        let path = cold_owner_batch(&fixture).await;
+        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        assert_eq!(telegrams.len(), 1);
+        assert_eq!(
+            telegrams[0].1,
+            format!(
+                "❄ owner is cold (472k, idle 5h12m): 2 events from db-watch are held.\n\
+                 It has no prime, so this came to you.\nEvents: {}",
+                path.display()
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn cold_owner_whose_prime_is_gone_goes_to_telegram() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        *fixture.routing.prime.lock().unwrap() = Some(SeatId::from("departed"));
+        cold_owner_batch(&fixture).await;
+        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        assert_eq!(telegrams.len(), 1);
+        assert!(
+            telegrams[0]
+                .1
+                .contains("Its prime departed is gone, so this came to you."),
+            "{}",
+            telegrams[0].1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_killed_source_flushes_pending_events_into_its_final_stopped_turn() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture
+            .set_owner_state(pij_core::model::SystemState::Working)
+            .await;
+        fixture.fire("bg-src", "tok", &["late 1", "late 2"]).await;
+        assert!(fixture.service.store.request_kill("bg-src").await.unwrap());
+        std::fs::write(receipt_path(&job), "143 1700000009\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        let turns = fixture.to("owner");
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].msg_id, "pij-bg:bg-src:finished");
+        assert_eq!(
+            turns[0].body,
+            format!(
+                "[pij bg] STOPPED — db-watch · full log: {}\n2 events since the last batch:\n1. late 1\n2. late 2",
+                job.out_path
+            )
+        );
+        let stats = fixture.service.event_stats("bg-src").await.unwrap();
+        assert_eq!(stats.pending, 0);
+        assert_eq!(
+            fixture.service.store.token_hash("bg-src").await.unwrap(),
+            None
+        );
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.to("owner").len(), 1, "the final turn is sent once");
     }
 
     impl Drop for Fixture {

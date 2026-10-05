@@ -185,6 +185,20 @@ Reach for it whenever a command runs longer than a few seconds — `harness chec
 
 `list`/`tail`/`kill` are RECOVERY, not routine — the completion turn stays the primary signal. `list` includes your finished jobs without `--all`; `--all` additionally includes only directly recorded children's jobs, never every seat's jobs. Only the owner or its recorded parent may tail or kill a job. `tail` is deliberately a bounded snapshot with no `--follow`: a follow loop would quietly reinstate the blocking wait `bg` exists to remove. `--timeout` kills an overrunning job and delivers `[pij bg] TIMEOUT — <title> (killed after <limit>)` with the log tail. `kill` still delivers a turn (`[pij bg] KILLED — <title>`), because a silent kill leaves you waiting forever for a result that can never arrive. On restart, the daemon re-adopts surviving jobs by pid **and process-start identity** and recovers durable completions; if neither can be recovered it marks the job `lost` and sends a LOST turn naming the log. Restart does not change the owner, and a recycled pid is never enough to re-adopt.
 
+**Event sources — one program, many turns.** `pij bg create --events [--fyi] [--min-interval 60s] [--inline-max 5] --title T --command …` runs a long-lived program that fires events back to you until it exits or you `pij bg kill` it. The child gets `PIJ_BG_JOB` and a per-job secret `PIJ_BG_TOKEN` (not the daemon key; it dies at kill or exit) and fires with `pij bg emit [--data <json>|--data-file <path>] "<text>"` (or `POST /v1/bg/{job}/emit` with `Authorization: Bearer $PIJ_BG_TOKEN`). Events that arrive while you are busy, or within `--min-interval` of the last wake, arrive together as one turn: up to `--inline-max` listed inline, more as `[pij bg] N new events from <title>, here is the file: <path>`. `--fyi` holds each batch for your next turn instead of waking you. A cold owner (the cold-wake guard's check) is never woken: the batch is held as an FYI and its prime (or, if none is warm, the human by Telegram) is told and decides. The end arrives as the usual final turn (`STOPPED`, or `OK/FAILED (exit N)`) with the events since the last batch. `list` shows events fired, pending and the last fire. At most 10,000 events wait per source; beyond that they are dropped and the next batch says how many.
+
+```bash
+pij bg create --events --title db-watch --command '
+  last=$(psql -Atc "select max(id) from orders")
+  while sleep 30; do
+    now=$(psql -Atc "select max(id) from orders")
+    if [ "$now" != "$last" ]; then
+      pij bg emit --data "{\"from\":$last,\"to\":$now}" "new orders $last→$now"
+      last=$now
+    fi
+  done'
+```
+
 Two things it is NOT: not a way to message yourself (`pij send <self>` is still E-SELF — bg delivers as the `pij-bg` actor because the result genuinely comes from the runner), and not a substitute for peer delegation. One command whose output you want → `pij bg`. A unit of work needing judgement → a peer.
 
 ### C8 — Terminal and no-show interpretation

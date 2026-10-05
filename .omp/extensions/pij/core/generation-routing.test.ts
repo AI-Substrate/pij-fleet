@@ -239,6 +239,12 @@ describe("explicit generation forcing", () => {
 		});
 	});
 
+	it("bg emit runs natively with the job token while other bg leaves keep the daemon route", () => {
+		expect(findRoute("bg", "emit")).toMatchObject({ nativeCommand: "bg" });
+		expect(findRoute("bg", "list")).toMatchObject({ rsPath: "/v1/bg" });
+		expect(findRoute("bg", undefined)).toMatchObject({ rsPath: "/v1/bg" });
+	});
+
 	it("native fleet-report needs no daemon: it folds transcripts and reads the store itself", () => {
 		expect(pre({ verb: "fleet-report", rsLive: false })).toMatchObject({
 			kind: "try-rs",

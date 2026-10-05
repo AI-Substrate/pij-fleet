@@ -10,6 +10,7 @@
 pub mod admission;
 pub mod auth;
 pub mod background;
+pub mod bg_routing;
 mod claude_bind;
 pub mod death_sweep;
 pub mod delivery;
@@ -450,6 +451,13 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         config.adapters.registry.is_real() && config.adapters.spine.is_real(),
     );
     let store_pools = [spine_pool.clone(), background_pool.clone()];
+    let bg_routing = Arc::new(bg_routing::DaemonColdRouting::new(
+        Arc::clone(&registry),
+        Arc::clone(&session_status),
+        Arc::clone(&roles),
+        pij_store::SqliteOrchestration::new(spine_pool.clone()),
+        Arc::clone(&queue),
+    ));
     let governance = Arc::new(http::governance::GovernanceService::new(
         pij_store::SqliteOrchestration::new(spine_pool),
         Arc::clone(&event_bus),
@@ -457,10 +465,13 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     ));
     let background = Arc::new(background::BackgroundService::new(
         pij_store::background::SqliteBackground::new(background_pool),
-        Arc::clone(&registry),
-        Arc::clone(&liveness),
-        Arc::clone(&delivery),
-        Arc::clone(&event_bus),
+        background::BackgroundPorts {
+            registry: Arc::clone(&registry),
+            liveness: Arc::clone(&liveness),
+            delivery: Arc::clone(&delivery),
+            event_bus: Arc::clone(&event_bus),
+            routing: bg_routing,
+        },
         pane_signal_dir
             .parent()
             .unwrap_or_else(|| Path::new("."))

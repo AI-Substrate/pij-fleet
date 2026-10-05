@@ -9,8 +9,17 @@ use serde_json::json;
 use std::path::{Path as StdPath, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::background::{CreateOptions, human_duration};
-use pij_core::background::{BackgroundJob, BackgroundState};
+use crate::background::{
+    CreateOptions, DEFAULT_INLINE_MAX, DEFAULT_MIN_INTERVAL_MS, EventsOptions, human_duration,
+};
+use axum::http::HeaderMap;
+use pij_core::background::{BackgroundJob, BackgroundKind, BackgroundState, EventStats};
+use pij_core::model::ErrorKind;
+use pij_store::background::EmitOutcome;
+
+/// The event hook. Routed OUTSIDE the daemon-key ring: its own per-job token is
+/// the credential, so a source needs no daemon key to fire.
+pub(super) const EMIT_PATH: &str = "/v1/bg/{job}/emit";
 
 use super::{AppState, CallerContext, envelope, identity, internal, refused};
 
@@ -41,6 +50,7 @@ enum Call {
         command: String,
         cwd: Option<String>,
         timeout_ms: Option<u64>,
+        events: Option<EventsOptions>,
     },
     List {
         all: bool,
@@ -79,6 +89,7 @@ fn parse(argv: &[String]) -> Result<Call, String> {
     let leaf = args.next().ok_or("expected bg create|list|tail|kill")?;
     let (mut title, mut command, mut job, mut lines) = (None, None, None, None);
     let (mut cwd, mut timeout_ms) = (None, None);
+    let (mut events, mut fyi, mut min_interval_ms, mut inline_max) = (false, false, None, None);
     let mut all = false;
     while let Some(arg) = args.next() {
         let (flag, inline) = arg
@@ -119,6 +130,25 @@ fn parse(argv: &[String]) -> Result<Call, String> {
                     "--timeout",
                 )?)
             }
+            "--events" if leaf == "create" && inline.is_none() => events = true,
+            "--fyi" if leaf == "create" && inline.is_none() => fyi = true,
+            "--min-interval" if leaf == "create" && min_interval_ms.is_none() => {
+                min_interval_ms = Some(parse_duration_ms(
+                    inline
+                        .or_else(|| args.next())
+                        .ok_or("--min-interval requires a value")?,
+                    "--min-interval",
+                )?)
+            }
+            "--inline-max" if leaf == "create" && inline_max.is_none() => {
+                inline_max = Some(
+                    inline
+                        .or_else(|| args.next())
+                        .ok_or("--inline-max requires a value")?
+                        .parse::<u64>()
+                        .map_err(|_| "--inline-max must be a whole number")?,
+                );
+            }
             "--lines" if leaf == "tail" && lines.is_none() => {
                 lines = Some(
                     inline
@@ -140,6 +170,17 @@ fn parse(argv: &[String]) -> Result<Call, String> {
             command: command.ok_or("--command is required")?,
             cwd,
             timeout_ms,
+            events: if events {
+                Some(EventsOptions {
+                    fyi,
+                    min_interval_ms: min_interval_ms.unwrap_or(DEFAULT_MIN_INTERVAL_MS),
+                    inline_max: inline_max.unwrap_or(DEFAULT_INLINE_MAX),
+                })
+            } else if fyi || min_interval_ms.is_some() || inline_max.is_some() {
+                return Err("--fyi, --min-interval and --inline-max need --events".into());
+            } else {
+                None
+            },
         }),
         "list" => Ok(Call::List { all }),
         "tail" => Ok(Call::Tail {
@@ -235,6 +276,7 @@ pub(super) async fn post(
                 command,
                 cwd: None,
                 timeout_ms: None,
+                events: None,
             }),
             _ => Err("bg create requires title and command".into()),
         }
@@ -298,28 +340,55 @@ async fn execute(state: &AppState, caller: CallerContext, call: Call) -> Respons
     };
     let jobs = &state.services.background;
     let result = match call {
-        Call::Create { title, command, cwd, timeout_ms } => {
+        Call::Create { title, command, cwd, timeout_ms, events } => {
             let cwd = match resolve_cwd(cwd, caller_cwd.as_deref()) {
                 Ok(cwd) => cwd,
                 Err(error) => return refused(name, error),
             };
-            let options = CreateOptions { cwd, timeout_ms };
+            let options = CreateOptions { cwd, timeout_ms, events };
             jobs.create(&owner, &title, &command, options).await.map(|job| {
-            let line = format!("bg started — {} (job {}, pid {}); result will arrive as an injected turn from pij-bg; full output at {}", job.title, job.job_id, job.pid.unwrap_or_default(), job.out_path);
+            let arrives = if job.kind == BackgroundKind::Events { "events arrive in batches, and the end as a final turn, from pij-bg; fire with `pij bg emit` (PIJ_BG_JOB/PIJ_BG_TOKEN are in its environment)" } else { "result will arrive as an injected turn from pij-bg" };
+            let line = format!("bg started — {} (job {}, pid {}); {arrives}; full output at {}", job.title, job.job_id, job.pid.unwrap_or_default(), job.out_path);
             json!({"job":job.job_id,"title":job.title,"pid":job.pid,"outPath":job.out_path,"line":line})
         })
         }
-        Call::List { all } => jobs.list(&owner.id, all).await.map(|rows| {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
-            let line = if rows.is_empty() {
-                "no bg jobs".to_owned()
-            } else {
-                rows.iter().map(|job| list_line(job, now)).collect::<Vec<_>>().join("\n")
-            };
-            json!({"jobs":rows,"line":line})
-        }),
+        Call::List { all } => match jobs.list(&owner.id, all).await {
+            Ok(rows) => {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_or(0, |elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
+                let mut lines = Vec::with_capacity(rows.len());
+                let mut values = Vec::with_capacity(rows.len());
+                let mut failure = None;
+                for job in &rows {
+                    let stats = if job.kind == BackgroundKind::Events {
+                        match jobs.event_stats(&job.job_id).await {
+                            Ok(stats) => Some(stats),
+                            Err(error) => {
+                                failure = Some(error);
+                                break;
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    lines.push(list_line(job, stats, now));
+                    let mut value = json!(job);
+                    if let Some(stats) = stats {
+                        value["events"] = json!(stats);
+                    }
+                    values.push(value);
+                }
+                match failure {
+                    Some(error) => Err(error),
+                    None => {
+                        let line = if lines.is_empty() { "no bg jobs".to_owned() } else { lines.join("\n") };
+                        Ok(json!({"jobs":values,"line":line}))
+                    }
+                }
+            }
+            Err(error) => Err(error),
+        },
         Call::Tail { job, lines } => jobs.tail(&owner.id, &job, lines).await.map(|(job, lines)| {
             let line = format!("{}  {:?}  {}\n{}\n\n{}", job.job_id, job.state, job.title, job.out_path, lines.join("\n"));
             json!({"job":job.job_id,"state":job.state,"lines":lines,"line":line})
@@ -338,8 +407,67 @@ async fn execute(state: &AppState, caller: CallerContext, call: Call) -> Respons
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct EmitRequest {
+    text: String,
+    #[serde(default)]
+    data: Option<serde_json::Value>,
+}
+
+/// `POST /v1/bg/{job}/emit` with `Authorization: Bearer <PIJ_BG_TOKEN>`.
+pub(super) async fn emit(
+    State(state): State<AppState>,
+    Path(job): Path<String>,
+    headers: HeaderMap,
+    body: Result<Json<EmitRequest>, JsonRejection>,
+) -> Response {
+    const NAME: &str = "pij bg emit";
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .unwrap_or_default();
+    let request = match body {
+        Ok(Json(request)) => request,
+        Err(error) => return refused(NAME, error.body_text()),
+    };
+    match state
+        .services
+        .background
+        .emit(&job, token, &request.text, request.data.as_ref())
+        .await
+    {
+        Ok(EmitOutcome::Accepted { seq }) => envelope(
+            StatusCode::OK,
+            &Envelope::ok(
+                NAME,
+                json!({"job": job, "seq": seq, "line": format!("event {seq} fired for {job}")}),
+            ),
+        ),
+        Ok(EmitOutcome::Dropped { dropped }) => envelope(
+            StatusCode::OK,
+            &Envelope::ok(
+                NAME,
+                json!({"job": job, "dropped": dropped, "line": format!(
+                    "event dropped: {job} already has the maximum pending events ({dropped} dropped since its last batch)"
+                )}),
+            ),
+        ),
+        Ok(EmitOutcome::Refused) => refused(NAME, "this source no longer accepts events"),
+        Err(PijError::Adapter { adapter, message }) if adapter == "background/auth" => envelope(
+            StatusCode::UNAUTHORIZED,
+            &Envelope::<()>::refused(NAME, ErrorKind::Auth, message),
+        ),
+        Err(PijError::Adapter { adapter, message }) if adapter == "background/refused" => {
+            refused(NAME, message)
+        }
+        Err(error) => internal(NAME, error),
+    }
+}
+
 /// One `bg list` row: running time for live jobs, duration for finished ones.
-fn list_line(job: &BackgroundJob, now: u64) -> String {
+fn list_line(job: &BackgroundJob, stats: Option<EventStats>, now: u64) -> String {
     let exit = job
         .exit_code
         .map_or_else(String::new, |code| format!(" (exit {code})"));
@@ -359,8 +487,18 @@ fn list_line(job: &BackgroundJob, now: u64) -> String {
     } else {
         ""
     };
+    let events = stats.map_or_else(String::new, |stats| {
+        let last = stats.last_fire_at.map_or_else(
+            || "never fired".to_owned(),
+            |at| format!("last {} ago", human_duration(now.saturating_sub(at))),
+        );
+        format!(
+            "  events: {} fired, {} pending, {last}",
+            stats.fired, stats.pending
+        )
+    });
     format!(
-        "{}  {:?}{exit}{timeout}  {timing}  {}",
+        "{}  {:?}{exit}{timeout}  {timing}{events}  {}",
         job.job_id, job.state, job.title
     )
 }
