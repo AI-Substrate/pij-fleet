@@ -628,6 +628,75 @@ impl SqliteBackground {
         .await
     }
 
+    /// The recorded hand-off plan for one source message, if decided.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn handoff(&self, job_id: &str, msg_id: &str) -> Result<Option<String>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query_scalar("SELECT plan FROM bg_handoffs WHERE job_id = ? AND msg_id = ?")
+            .bind(job_id)
+            .bind(msg_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(adapter_error)
+    }
+
+    /// Record a hand-off plan unless one is already recorded; return the plan
+    /// that stands (the first writer's), so every attempt replays one decision.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn record_handoff(&self, job_id: &str, msg_id: &str, plan: &str) -> Result<String> {
+        require_current_schema(&self.pool).await?;
+        let (pool, job_id, msg_id, plan) = (
+            self.pool.clone(),
+            job_id.to_owned(),
+            msg_id.to_owned(),
+            plan.to_owned(),
+        );
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            sqlx::query(
+                "INSERT OR IGNORE INTO bg_handoffs (job_id, msg_id, plan) VALUES (?, ?, ?)",
+            )
+            .bind(&job_id)
+            .bind(&msg_id)
+            .bind(&plan)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let recorded: String =
+                sqlx::query_scalar("SELECT plan FROM bg_handoffs WHERE job_id = ? AND msg_id = ?")
+                    .bind(&job_id)
+                    .bind(&msg_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(adapter_error)?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(recorded)
+        })
+        .await
+    }
+
+    /// Advance a recorded plan along a fallback the attempt observed (a refused
+    /// wake becomes held; a refused or failed prime notice becomes Telegram),
+    /// persisted before the fallback acts.
+    ///
+    /// # Errors
+    /// Returns a schema error on skew or an adapter error on SQLite failure.
+    pub async fn replace_handoff(&self, job_id: &str, msg_id: &str, plan: &str) -> Result<()> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query("UPDATE bg_handoffs SET plan = ? WHERE job_id = ? AND msg_id = ?")
+            .bind(plan)
+            .bind(job_id)
+            .bind(msg_id)
+            .execute(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        Ok(())
+    }
+
     /// Count a source's fired and pending events.
     ///
     /// # Errors

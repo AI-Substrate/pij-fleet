@@ -837,3 +837,27 @@ async fn background_final_cut_is_fixed_once_and_never_takes_an_open_batchs_event
     let settled = background.cut_final("src").await.unwrap().unwrap();
     assert_eq!((settled.batch_no, settled.events.len()), (2, 0));
 }
+
+#[tokio::test]
+async fn background_handoff_is_recorded_once_and_only_an_observed_fallback_replaces_it() {
+    let (_fresh, _pool, background) = setup().await;
+    live_source(&background, "src").await;
+    assert_eq!(background.handoff("src", "m").await.unwrap(), None);
+    assert_eq!(
+        background.record_handoff("src", "m", "wake").await.unwrap(),
+        "wake"
+    );
+    assert_eq!(
+        background.record_handoff("src", "m", "fyi").await.unwrap(),
+        "wake",
+        "the first decision stands"
+    );
+    background
+        .replace_handoff("src", "m", "held")
+        .await
+        .unwrap();
+    assert_eq!(
+        background.handoff("src", "m").await.unwrap().as_deref(),
+        Some("held")
+    );
+}

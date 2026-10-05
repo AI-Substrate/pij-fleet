@@ -1492,6 +1492,12 @@ impl FakeTransport {
         self
     }
 
+    /// Change (or, with `None`, clear) the scripted outcome mid-test — e.g. a
+    /// receiver that refused one attempt and is live again for the retry.
+    pub fn set_outcome(&self, outcome: Option<DeliveryOutcome>) {
+        self.state.lock().expect("fake transport mutex").outcome = outcome;
+    }
+
     /// Every message this transport actually delivered.
     pub fn delivered(&self) -> Vec<Msg> {
         self.state

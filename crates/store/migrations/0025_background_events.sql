@@ -41,4 +41,15 @@ CREATE TABLE bg_events (
 
 CREATE INDEX bg_events_pending ON bg_events (job_id, seq) WHERE state = 'pending';
 
+-- The hand-off of one source message (a batch or the final turn), decided once
+-- (FYI or wake; owner, prime or Telegram) and recorded before any admission.
+-- Every retry replays the recorded plan instead of re-deriving it from the
+-- owner's current state. `plan` is the daemon's JSON; the store keeps it opaque.
+CREATE TABLE bg_handoffs (
+    job_id TEXT NOT NULL REFERENCES background_jobs (job_id),
+    msg_id TEXT NOT NULL,
+    plan   TEXT NOT NULL,
+    PRIMARY KEY (job_id, msg_id)
+) STRICT;
+
 PRAGMA user_version = 25;
