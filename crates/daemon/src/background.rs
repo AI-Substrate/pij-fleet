@@ -15,7 +15,7 @@ use pij_core::BG_ACTOR;
 use pij_core::background::{BackgroundJob, BackgroundKind, BackgroundState, EventStats};
 use pij_core::cold_wake::ColdCheck;
 use pij_core::error::{PijError, Result};
-use pij_core::model::{Event, Msg, ProcIdentity, SeatDescriptor, SeatId};
+use pij_core::model::{DeliveryOutcome, Event, Msg, ProcIdentity, SeatDescriptor, SeatId};
 use pij_core::ports::{LivenessPort, Registry};
 use pij_store::background::{EmitOutcome, EventBatch, SqliteBackground};
 use sha2::{Digest, Sha256};
@@ -687,23 +687,35 @@ impl BackgroundService {
         } = self.routing.check(owner).await
         else {
             let body = self.batch_turn(job, batch, false).await?;
-            self.delivery
-                .accept(bg_msg(&owner.id, body, msg_id))
+            let receipt = self
+                .delivery
+                .accept(bg_msg(&owner.id, body.clone(), msg_id.clone()))
                 .await?;
+            // A refusal is final for that message: never record the batch as
+            // delivered, and never re-prompt; it waits for the owner's next turn.
+            let state = if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
+                self.delivery
+                    .hold_fyi(bg_msg(&owner.id, body, format!("{msg_id}:held")))
+                    .await?;
+                "held"
+            } else {
+                "delivered"
+            };
             return self
                 .store
-                .settle_batch(&job.job_id, batch.batch_no, "delivered", now)
+                .settle_batch(&job.job_id, batch.batch_no, state, now)
                 .await;
         };
         // Cold: never wake it. The batch waits as an FYI (nothing is lost) and
-        // the prime, or failing that the human, decides whether a wake is worth it.
+        // the prime, or failing that the human, decides whether a wake is worth
+        // it. Every step is idempotent by msg_id (the FYI hold, the prime's
+        // delivery, the Telegram job), and the batch settles only after the
+        // notice is admitted, so a failure or crash in between retries the
+        // whole step instead of losing the notice.
         let body = self.batch_turn(job, batch, true).await?;
         let file = self.batch_path(job, batch.batch_no);
         self.delivery
             .hold_fyi(bg_msg(&owner.id, body, msg_id.clone()))
-            .await?;
-        self.store
-            .settle_batch(&job.job_id, batch.batch_no, "routed", now)
             .await?;
         let count = batch.events.len();
         let lead = format!(
@@ -715,6 +727,7 @@ impl BackgroundService {
             job.title,
             if count == 1 { "is" } else { "are" },
         );
+        // `None`: the prime admitted the notice. `Some(why)`: the human hears.
         let why = match self.prime_route(owner).await? {
             PrimeRoute::Warm(prime) => {
                 let notice = format!(
@@ -728,25 +741,37 @@ impl BackgroundService {
                     .accept(bg_msg(&prime, notice, format!("{msg_id}:prime")))
                     .await
                 {
-                    Ok(_) => return Ok(()),
-                    Err(error) => format!(
+                    Ok(receipt) => match receipt.outcome {
+                        DeliveryOutcome::Refused { reason } => Some(format!(
+                            "Its prime {prime} refused the notice ({reason}), so this came to you."
+                        )),
+                        _ => None,
+                    },
+                    Err(error) => Some(format!(
                         "Its prime {prime} could not take the notice ({error}), so this came to you."
-                    ),
+                    )),
                 }
             }
-            PrimeRoute::Cold(prime, idle) => format!(
+            PrimeRoute::Cold(prime, idle) => Some(format!(
                 "Its prime {prime} is cold (idle {}), so this came to you.",
                 human_duration(idle)
-            ),
-            PrimeRoute::Gone(prime) => format!("Its prime {prime} is gone, so this came to you."),
-            PrimeRoute::None => "It has no prime, so this came to you.".to_string(),
+            )),
+            PrimeRoute::Gone(prime) => {
+                Some(format!("Its prime {prime} is gone, so this came to you."))
+            }
+            PrimeRoute::None => Some("It has no prime, so this came to you.".to_string()),
         };
-        self.routing
-            .telegram(
-                &owner.id,
-                format!("{lead}\n{why}\nEvents: {}", file.display()),
-                format!("{msg_id}:telegram"),
-            )
+        if let Some(why) = why {
+            self.routing
+                .telegram(
+                    &owner.id,
+                    format!("{lead}\n{why}\nEvents: {}", file.display()),
+                    format!("{msg_id}:telegram"),
+                )
+                .await?;
+        }
+        self.store
+            .settle_batch(&job.job_id, batch.batch_no, "routed", now)
             .await
     }
 
@@ -1367,6 +1392,8 @@ mod tests {
         cold: std::sync::Mutex<HashMap<SeatId, u64>>,
         prime: std::sync::Mutex<Option<SeatId>>,
         telegrams: std::sync::Mutex<Vec<(SeatId, String, String)>>,
+        /// Telegram admissions to fail before succeeding.
+        telegram_failures: std::sync::atomic::AtomicU32,
     }
 
     #[async_trait]
@@ -1388,6 +1415,16 @@ mod tests {
         }
 
         async fn telegram(&self, from: &SeatId, body: String, msg_id: String) -> Result<()> {
+            use std::sync::atomic::Ordering;
+            if self
+                .telegram_failures
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                    left.checked_sub(1)
+                })
+                .is_ok()
+            {
+                return Err(fault("telegram queue unavailable"));
+            }
             self.telegrams
                 .lock()
                 .unwrap()
@@ -1398,6 +1435,10 @@ mod tests {
 
     impl Fixture {
         async fn new(liveness: FakeLiveness) -> Self {
+            Self::with_transport(liveness, FakeTransport::reachable()).await
+        }
+
+        async fn with_transport(liveness: FakeLiveness, transport: FakeTransport) -> Self {
             let dir = fresh_dir("pij-bg-runtime");
             let registry = Arc::new(FakeRegistry::new());
             let mut owner = SeatDescriptor::new("owner", Harness::Claude, dir.to_string_lossy());
@@ -1409,7 +1450,7 @@ mod tests {
             registry.put(owner).await.unwrap();
             let spine = Arc::new(FakeSpine::new());
             let event_bus = Arc::new(EventBus::new(spine.clone(), 16).unwrap());
-            let transport = Arc::new(FakeTransport::reachable());
+            let transport = Arc::new(transport);
             let routing = Arc::new(FakeRouting::default());
             let delivery = Arc::new(
                 DeliveryService::new(
@@ -1798,6 +1839,88 @@ mod tests {
                 .contains("Its prime departed is gone, so this came to you."),
             "{}",
             telegrams[0].1
+        );
+    }
+
+    fn refusing() -> FakeTransport {
+        FakeTransport::reachable().script_outcome(pij_core::model::DeliveryOutcome::Refused {
+            reason: "declined by the recipient".to_string(),
+        })
+    }
+
+    #[tokio::test]
+    async fn a_refused_wake_holds_the_batch_for_the_next_turn_instead_of_settling_it() {
+        // Review B1 (#22): a Refused receipt is final for that message, so the
+        // batch must not be recorded as delivered; it waits as an FYI.
+        let fixture =
+            Fixture::with_transport(FakeLiveness::new().with_proc(PROC), refusing()).await;
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["one", "two"]).await;
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.held_fyis().await, 1, "the refused batch is held");
+        fixture.service.tick().await.unwrap();
+        assert_eq!(fixture.held_fyis().await, 1, "held once, never re-prompted");
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_prime_notice_falls_back_to_telegram() {
+        let fixture =
+            Fixture::with_transport(FakeLiveness::new().with_proc(PROC), refusing()).await;
+        fixture.add_seat("prime").await;
+        *fixture.routing.prime.lock().unwrap() = Some(SeatId::from("prime"));
+        cold_owner_batch(&fixture).await;
+        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        assert_eq!(
+            telegrams.len(),
+            1,
+            "a refused prime is not a notified prime"
+        );
+        assert!(
+            telegrams[0].1.contains("Its prime prime"),
+            "{}",
+            telegrams[0].1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_cold_notice_leaves_the_batch_open_and_the_retry_delivers_it_once() {
+        // Review B2 (#22): settling before the notice was admitted lost it.
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture
+            .routing
+            .cold
+            .lock()
+            .unwrap()
+            .insert(SeatId::from("owner"), 18_720_000);
+        fixture
+            .routing
+            .telegram_failures
+            .store(1, std::sync::atomic::Ordering::SeqCst);
+        fixture.fire("bg-src", "tok", &["row 1", "row 2"]).await;
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "the failed admission surfaces"
+        );
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            2
+        );
+        fixture.service.tick().await.unwrap();
+        let telegrams = fixture.routing.telegrams.lock().unwrap().clone();
+        assert_eq!(telegrams.len(), 1, "the retry notifies");
+        assert_eq!(
+            telegrams[0].2, "pij-bg:bg-src:batch:1:telegram",
+            "same batch, same key"
+        );
+        assert_eq!(fixture.held_fyis().await, 1, "the FYI hold is idempotent");
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
         );
     }
 
