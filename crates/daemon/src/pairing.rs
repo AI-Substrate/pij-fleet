@@ -348,6 +348,23 @@ mod tests {
         ));
     }
 
+    /// Review S6: a malformed file names the line and field, never a value, so
+    /// a key typed into the wrong shape is not echoed into a log.
+    #[test]
+    fn a_malformed_file_never_echoes_a_value() {
+        for text in [
+            format!("machine = \"m\"\npeer = [\"{KEY_A}\"]\n"),
+            format!(
+                "machine = \"m\"\n[[peer]]\nalias = \"laptop\"\nurl = \"http://h:1\"\nkey = [\"{KEY_A}\"]\n"
+            ),
+            format!("machine = \"m\"\nmystery = \"{KEY_A}\"\n"),
+        ] {
+            let refused = parse(&text).expect_err("malformed").to_string();
+            assert!(!refused.contains(KEY_A), "{refused}");
+            assert!(refused.contains("line"), "names the line: {refused}");
+        }
+    }
+
     #[test]
     fn the_file_must_be_the_daemon_users_and_private() {
         let path = Path::new("/state/peers.toml");

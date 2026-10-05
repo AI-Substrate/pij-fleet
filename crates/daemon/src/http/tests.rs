@@ -6695,6 +6695,50 @@ async fn a_forwarded_fyi_is_held_by_the_receiver() {
     server.abort();
 }
 
+/// Review S2 + S3 (plan 164): a forwarded FYI keeps its machine all the way to
+/// the rendered block (`sender@alias`, never a bare local-looking name), and it
+/// never collides with a local FYI that happens to share its msg_id.
+#[tokio::test]
+async fn a_forwarded_fyi_keeps_its_machine_and_never_collides_with_a_local_one() {
+    let source =
+        pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, cold_status());
+    let (addr, server, queue, spine) =
+        cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json(
+        addr,
+        "/v1/send",
+        cold_send(
+            "m-same",
+            serde_json::json!({"fyi": true, "body": "from next door"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send(
+            "m-same",
+            serde_json::json!({"fyi": true, "body": "from afar"}),
+        ),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    let (fyis, _) = queue
+        .claim_fyis(&SeatId::from("pij-cold"), "hook:claude", 10, spine.as_ref())
+        .await
+        .expect("claim");
+    assert_eq!(
+        fyis.len(),
+        2,
+        "both FYIs were held, so both are claimed: {fyis:?}"
+    );
+    let block = pij_core::fyi::render_block(&fyis, pij_core::fyi::Lead::Also, 10, 0);
+    assert!(block.contains("pij-sender@laptop"), "{block}");
+    server.abort();
+}
+
 /// The sending machine comes from the key: a local caller cannot pose as a
 /// forward, and a peer cannot claim to be a different machine.
 #[tokio::test]

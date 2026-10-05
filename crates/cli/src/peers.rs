@@ -174,3 +174,37 @@ pub fn render(envelope: &Envelope<PeersReport>) -> String {
     }
     lines.join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::routing::get;
+
+    use super::reach;
+
+    /// Review S5: a 200 that is not an authenticated pij roster envelope (a
+    /// proxy's `{}`, a captive portal) is not a reachable peer.
+    #[tokio::test]
+    async fn only_a_real_pij_roster_envelope_counts_as_reachable() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().route("/v1/seats", get(|| async { "{}" })),
+            )
+            .await
+            .expect("serve");
+        });
+        let (status, _) = reach(
+            &reqwest::Client::new(),
+            "laptop",
+            &format!("http://{addr}"),
+            "some-generated-test-key",
+        )
+        .await;
+        assert_ne!(status, "ok");
+        server.abort();
+    }
+}

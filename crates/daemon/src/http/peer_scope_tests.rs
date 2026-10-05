@@ -73,3 +73,19 @@ async fn a_peer_key_is_refused_by_every_route_but_the_federation_ones() {
         wrong.join("\n")
     );
 }
+
+/// Review S1: the walk above is only as good as its inventory. Every route the
+/// router registers, including the per-job-token bg emit hook mounted outside
+/// the bearer layer, must be in it, so nothing is walked by omission.
+#[test]
+fn the_route_inventory_names_every_registered_route() {
+    let inventory: Vec<&str> = Endpoint::ALL
+        .iter()
+        .map(|endpoint| endpoint.path())
+        .collect();
+    assert!(
+        inventory.contains(&super::background::EMIT_PATH),
+        "{} is registered but missing from Endpoint::ALL",
+        super::background::EMIT_PATH
+    );
+}
