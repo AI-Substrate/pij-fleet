@@ -162,13 +162,14 @@ fn nearest_prime(
     project_prime: Option<SeatId>,
     designated: Option<SeatId>,
 ) -> Option<SeatId> {
+    // Each tier skips the seat itself, so a self candidate never blocks the next.
+    let other = |prime: &SeatId| prime != seat;
     ancestors
         .iter()
-        .find(|(_, role)| role.as_deref() == Some(PRIME_ROLE))
+        .find(|(id, role)| role.as_deref() == Some(PRIME_ROLE) && other(id))
         .map(|(id, _)| id.clone())
-        .or(project_prime)
-        .or(designated)
-        .filter(|prime| prime != seat)
+        .or_else(|| project_prime.filter(other))
+        .or_else(|| designated.filter(other))
 }
 
 #[cfg(test)]
@@ -182,6 +183,14 @@ mod tests {
     /// A seat with a parent, a project prime reachable through its open task,
     /// and a different machine-wide designated prime.
     async fn routing(task_holder: &str, close_task: bool) -> (DaemonColdRouting, SeatDescriptor) {
+        routing_with_project_prime(task_holder, close_task, "project-prime").await
+    }
+
+    async fn routing_with_project_prime(
+        task_holder: &str,
+        close_task: bool,
+        project_prime: &str,
+    ) -> (DaemonColdRouting, SeatDescriptor) {
         let pool = pij_store::open("").await.unwrap();
         let orchestration = SqliteOrchestration::new(pool.clone());
         let registry = Arc::new(FakeRegistry::new());
@@ -199,7 +208,7 @@ mod tests {
                     description: None,
                     repo: None,
                     plan_path: None,
-                    prime_id: Some(id("project-prime")),
+                    prime_id: Some(id(project_prime)),
                     created_by: id("pm"),
                     created_at: 1,
                 })
@@ -250,6 +259,31 @@ mod tests {
             Arc::new(FakeQueue::new(8).unwrap()),
         );
         (routing, owner)
+    }
+
+    #[test]
+    fn a_candidate_equal_to_the_owner_is_skipped_and_resolution_falls_through() {
+        // Re-review (#22, prime ruling): the owner being its own project prime
+        // must not end resolution; the next tier is the machine designation.
+        assert_eq!(
+            nearest_prime(&id("coder"), &[], Some(id("coder")), Some(id("machine"))),
+            Some(id("machine"))
+        );
+        assert_eq!(
+            nearest_prime(&id("coder"), &[], Some(id("coder")), Some(id("coder"))),
+            None,
+            "no other candidate: the human hears"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_owner_that_is_its_own_project_prime_falls_through_to_the_machine_prime() {
+        // Re-review R-B (#22): the self candidate must not block the next tier.
+        let (routing, owner) = routing_with_project_prime("coder", false, "coder").await;
+        assert_eq!(
+            routing.prime(&owner).await.unwrap(),
+            Some(id("machine-prime"))
+        );
     }
 
     #[tokio::test]
