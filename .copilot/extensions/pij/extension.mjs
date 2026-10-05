@@ -88,7 +88,11 @@ async function startExtension() {
 					parameters: {
 						type: "object",
 						properties: {
-							to: { type: "string", description: "Exact recipient Pij seat ID" },
+							to: {
+								type: "string",
+								description:
+									"Recipient Pij seat ID, or seat@machine for a paired machine (copy a `[pij from …]` sender verbatim)",
+							},
 							message: { type: "string", description: "Message body" },
 							fyi: {
 								type: "boolean",

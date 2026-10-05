@@ -557,12 +557,38 @@ function messageFromClaim(claim, seat) {
 	};
 }
 
-/** How a message's sender is shown: `seat@machine` when the daemon stamped the paired
- *  machine it was forwarded from, so a remote seat never reads as a local one (plan 164 S7). */
+/** Parse a human seat address, `<seat>` or `<seat>@<machine-alias>`, into a daemon
+ *  destination or `{ error }`. Mirrors crates/core/src/address.rs `parse_destination`
+ *  (pinned by crates/testkit/fixtures/golden/address/cases.json): `@@` is a literal
+ *  `@` in the seat; the first unescaped `@` starts the alias, which cannot contain `@`. */
+function parseDestination(input) {
+	let seat = "";
+	let machine;
+	for (let i = 0; i < input.length; i++) {
+		const character = input.charAt(i);
+		if (machine !== undefined) {
+			if (character === "@")
+				return {
+					error: "machine aliases cannot contain '@' — escape '@' only inside the seat as '@@'",
+				};
+			machine += character;
+		} else if (character !== "@") seat += character;
+		else if (input.charAt(i + 1) === "@") {
+			i++;
+			seat += "@";
+		} else machine = "";
+	}
+	if (seat === "") return { error: "a seat address needs a seat id" };
+	if (machine === "") return { error: "a qualified seat address needs a machine alias after '@'" };
+	return machine === undefined ? { seat } : { seat, machine };
+}
+
+/** How a message's sender is shown, in the address grammar `parseDestination` reads back:
+ *  `seat@machine` when the daemon stamped the paired machine it was forwarded from, so a
+ *  remote seat never reads as a local one (plan 164 S7) and a reply to it reaches it (F01b). */
 function senderLabel(message) {
-	return message.from_machine === undefined
-		? message.from
-		: `${message.from}@${message.from_machine}`;
+	const seat = message.from.replaceAll("@", "@@");
+	return message.from_machine === undefined ? seat : `${seat}@${message.from_machine}`;
 }
 
 function sameMessage(left, right) {
@@ -1503,13 +1529,16 @@ export class NativeBridge {
 				ok: false,
 				error: `${COLD_WAKE_CODE}: force needs a non-empty reason saying why the wake is worth it`,
 			};
+		const destination = parseDestination(input.to);
+		if (destination.error !== undefined)
+			return { ok: false, error: `pij_send: ${destination.error}; no message sent` };
 		const msgId = randomUUID();
 		try {
 			const receipt = await this.client.request(
 				"/v1/send",
 				{
 					from: this.registration.id,
-					to: { seat: input.to },
+					to: destination,
 					body: input.message,
 					msg_id: msgId,
 					...(input.fyi === true ? { fyi: true } : {}),

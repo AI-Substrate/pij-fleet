@@ -3,6 +3,7 @@
 // A message carries the sender id inline so the receiver can reply with zero
 // lookup (spec AC-5): `[pij-rs from <id>]\n<body>\n[/pij]`.
 
+import { renderDestination } from "./address.js";
 import type { ReceiptState, Role, SessionId } from "./types.js";
 
 const FRAME_RE = /^\[pij-rs from ([^\]]+)\]\n([\s\S]*)\n\[\/pij\]$/;
@@ -10,13 +11,16 @@ const LEGACY_FRAME_RE = /^\[pij from ([^\]]+)\] ([\s\S]*)$/;
 
 /** How a message's sender is shown: `seat@machine` when the daemon stamped the
  *  paired machine it was forwarded from, so a remote seat never reads as a local
- *  one; the bare seat id only for a local message (plan 164 S7). */
+ *  one; the bare seat id only for a local message (plan 164 S7). Rendered in the
+ *  address grammar, so a reply to exactly this text reaches the sender (F01b). */
 export function senderLabel(from: SessionId, fromMachine?: string): string {
-	return fromMachine === undefined ? from : `${from}@${fromMachine}`;
+	return renderDestination(
+		fromMachine === undefined ? { seat: from } : { seat: from, machine: fromMachine },
+	);
 }
 
-/** Frame a body with the sender for injection into the peer; byte-for-byte the
- *  daemon's `frame_message` (crates/core/src/framing.rs). */
+/** Frame a body with the sender for injection into the peer; the daemon's
+ *  `frame_message` envelope (crates/core/src/framing.rs), sender in address grammar. */
 export function frame(from: SessionId, body: string, fromMachine?: string): string {
 	return `[pij-rs from ${senderLabel(from, fromMachine)}]\n${body}\n[/pij]`;
 }

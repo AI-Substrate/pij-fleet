@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseDestination, renderDestination } from "../core/address.js";
 import { type ControlOutcome, isControlCommand, validateCommand } from "../core/commands.js";
 import {
 	COLD_WAKE_CODE,
@@ -386,6 +387,8 @@ export class RustRuntimeSession {
 		readonly warning?: string;
 	}> {
 		const { command, fyi = false, force } = options;
+		const destination = parseDestination(to);
+		if (!destination.ok) throw new Error(`${destination.code}: ${destination.message}`);
 		if (fyi && command !== undefined) {
 			throw new Error("fyi cannot be combined with a control command");
 		}
@@ -407,10 +410,12 @@ export class RustRuntimeSession {
 			body = "";
 		}
 		const msgId = randomUUID();
-		const inReplyTo = this.lastInbound.get(to);
+		// Keyed like `senderLabel`, so a reply to the shown sender threads onto its message.
+		const replyKey = renderDestination(destination.value);
+		const inReplyTo = this.lastInbound.get(replyKey);
 		const receipt = await this.client.send({
 			from: this.self,
-			to: { seat: to },
+			to: destination.value,
 			body,
 			msg_id: msgId,
 			...(command === undefined
@@ -427,7 +432,7 @@ export class RustRuntimeSession {
 			...(force === undefined ? {} : { force: true, reason: force.reason }),
 			...(inReplyTo === undefined ? {} : { in_reply_to: inReplyTo }),
 		});
-		if (inReplyTo !== undefined) this.lastInbound.delete(to);
+		if (inReplyTo !== undefined) this.lastInbound.delete(replyKey);
 		return {
 			msgId,
 			held: isHeldFyi(receipt),
