@@ -2312,9 +2312,6 @@ async fn run_daemon(
                 eprintln!("pij-rs claude statusline: {error}");
             }
             let banner = pij_daemon::http::boot_banner(&daemon.addr, daemon.exposure);
-            if daemon.exposure == pij_daemon::http::Exposure::Insecure {
-                eprintln!("{banner}");
-            }
             println!(
                 "pij-rs daemon: listening on {} · key {} (0600) · offline={} · paired with {}",
                 daemon.addr,
@@ -2331,7 +2328,12 @@ async fn run_daemon(
                         .join(", ")
                 }
             );
-            println!("{banner}");
+            // Once, on stderr when insecure, so the warning is not lost in stdout.
+            if daemon.exposure == pij_daemon::http::Exposure::Insecure {
+                eprintln!("{banner}");
+            } else {
+                println!("{banner}");
+            }
             let _ = tokio::signal::ctrl_c().await;
             println!("pij-rs daemon: shutting down");
             match daemon.shutdown().await {
