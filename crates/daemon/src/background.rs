@@ -771,7 +771,9 @@ impl BackgroundService {
             }
         };
         self.failpoint("published-file-before-admission")?;
-        let state = self.hand_off(job, owner, &msg_id, plan, replay).await?;
+        let state = self
+            .hand_off(job, owner, &msg_id, plan, replay, Some(batch))
+            .await?;
         self.failpoint("admission-before-settle")?;
         self.store
             .settle_batch(&job.job_id, batch.batch_no, state, now)
@@ -870,6 +872,7 @@ impl BackgroundService {
         msg_id: &str,
         plan: HandOff,
         replay: bool,
+        batch: Option<&EventBatch>,
     ) -> Result<&'static str> {
         match plan {
             HandOff::Fyi { body } => {
@@ -897,8 +900,18 @@ impl BackgroundService {
                     // owner has since turned cold is downgraded (recorded first),
                     // never woken; nothing is ever upgraded to a Wake.
                     if let Some(facts) = self.cold_facts(job, owner).await {
+                        // Every cold escalation cites published evidence: an
+                        // inline batch is written now (once, atomically, 0600),
+                        // before anything is admitted.
                         let mut notice = subject.cold_notice(&owner.id, facts);
-                        notice.file = notice.file.filter(|file| Path::new(file).exists());
+                        notice.file = match batch.filter(|batch| !batch.events.is_empty()) {
+                            Some(batch) => {
+                                let path = self.batch_path(job, batch.batch_no);
+                                write_batch_file(&path, job, batch).await?;
+                                Some(path.display().to_string())
+                            }
+                            None => None,
+                        };
                         let cold = HandOff::Cold {
                             body,
                             notice,
@@ -907,7 +920,8 @@ impl BackgroundService {
                         self.store
                             .replace_handoff(&job.job_id, msg_id, &encode_plan(&cold)?)
                             .await?;
-                        return Box::pin(self.hand_off(job, owner, msg_id, cold, true)).await;
+                        return Box::pin(self.hand_off(job, owner, msg_id, cold, true, batch))
+                            .await;
                     }
                 }
                 let receipt = self
@@ -923,7 +937,7 @@ impl BackgroundService {
                 self.store
                     .replace_handoff(&job.job_id, msg_id, &encode_plan(&held)?)
                     .await?;
-                Box::pin(self.hand_off(job, owner, msg_id, held, replay)).await
+                Box::pin(self.hand_off(job, owner, msg_id, held, replay, batch)).await
             }
             HandOff::Cold { body, notice, to } => {
                 self.delivery
@@ -1279,7 +1293,9 @@ impl BackgroundService {
             }
         };
         self.failpoint("final-before-admission")?;
-        let state = self.hand_off(job, &owner, msg_id, plan, replay).await?;
+        let state = self
+            .hand_off(job, &owner, msg_id, plan, replay, last.as_ref())
+            .await?;
         self.failpoint("admission-before-settle")?;
         if let Some(batch) = last {
             self.store
@@ -2725,6 +2741,49 @@ mod tests {
             fixture.held_fyis().await,
             0,
             "an acknowledged wake was duplicated as a held FYI"
+        );
+    }
+
+    #[tokio::test]
+    async fn review_inline_wake_downgrade_preserves_cold_batch_file_evidence() {
+        // pij-very-bonobo's e349448 probe (B11), verbatim.
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        let job = fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["row"]).await;
+        arm(&fixture, "published-file-before-admission");
+        assert!(fixture.service.tick().await.is_err());
+        make_owner_cold(&fixture);
+        fixture.service.tick().await.unwrap();
+        let notices = fixture.routing.telegrams.lock().unwrap().clone();
+        assert_eq!(notices.len(), 1);
+        let path = fixture.service.batch_path(&job, 1);
+        assert!(
+            path.is_file(),
+            "cold downgrade escalated without publishing its event file: {}",
+            path.display()
+        );
+        assert!(notices[0].1.contains(&path.display().to_string()));
+    }
+
+    #[tokio::test]
+    async fn an_inline_final_turn_downgraded_to_cold_publishes_and_cites_its_events_file() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = killed_source_with_two_events(&fixture, false).await;
+        arm(&fixture, "final-before-admission");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "an inline final Wake recorded"
+        );
+        make_owner_cold(&fixture);
+        fixture.service.tick().await.unwrap();
+        let notices = fixture.routing.telegrams.lock().unwrap().clone();
+        assert_eq!(notices.len(), 1);
+        let path = fixture.service.batch_path(&job, 1);
+        assert!(path.is_file(), "final cold downgrade without its file");
+        assert!(
+            notices[0]
+                .1
+                .ends_with(&format!("Events: {}", path.display()))
         );
     }
 
