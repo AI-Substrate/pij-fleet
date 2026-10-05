@@ -845,6 +845,15 @@ impl DeliveryService {
         Ok(Some(receipt))
     }
 
+    /// Whether a delivery of `msg_id` to `recipient` was ever admitted
+    /// (recorded as delivered, or queued in any state). FYIs are not consulted.
+    ///
+    /// # Errors
+    /// Store failures.
+    pub async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+        self.queue.admitted(recipient, msg_id).await
+    }
+
     /// How many FYIs wait for `seat`.
     ///
     /// # Errors

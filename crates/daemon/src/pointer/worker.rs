@@ -2126,6 +2126,13 @@ mod tests {
         ) -> pij_core::error::Result<()> {
             self.inner.forget_delivered(recipient, msg_id).await
         }
+        async fn admitted(
+            &self,
+            recipient: &SeatId,
+            msg_id: &str,
+        ) -> pij_core::error::Result<bool> {
+            self.inner.admitted(recipient, msg_id).await
+        }
 
         async fn enqueue(&self, job: Job) -> pij_core::error::Result<JobId> {
             self.inner.enqueue(job).await

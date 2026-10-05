@@ -109,6 +109,9 @@ impl Queue for FailFirstClaim {
     async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()> {
         self.inner.forget_delivered(recipient, msg_id).await
     }
+    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+        self.inner.admitted(recipient, msg_id).await
+    }
     async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
         self.inner.retry(job, delay).await
     }
@@ -704,6 +707,9 @@ impl Queue for RefuseFirstDelivery {
     }
     async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()> {
         self.inner.forget_delivered(recipient, msg_id).await
+    }
+    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+        self.inner.admitted(recipient, msg_id).await
     }
     async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
         self.inner.retry(job, delay).await

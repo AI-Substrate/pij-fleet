@@ -105,8 +105,9 @@ pub trait ColdRouting: Send + Sync {
 enum HandOff {
     /// An `--fyi` source: held for the owner's next turn.
     Fyi { body: String },
-    /// Wake the owner; a refusal turns the record into `Held`.
-    Wake { body: String },
+    /// Wake the owner; a refusal turns the record into `Held`, and a replay
+    /// for an owner that has since turned cold downgrades it to `Cold`.
+    Wake { body: String, subject: Subject },
     /// The owner refused the wake: held under `<msg_id>:held`.
     Held { body: String },
     /// A cold owner: held as an FYI, never woken, and escalated.
@@ -115,6 +116,32 @@ enum HandOff {
         notice: ColdNotice,
         to: Escalation,
     },
+}
+
+/// What a held message is, for a cold-owner notice.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Subject {
+    /// "2 events from db-watch are held" or "db-watch ended (STOPPED) and its
+    /// final turn is held".
+    what: String,
+    plural: bool,
+    /// The batch file the notice cites, once written.
+    file: Option<String>,
+}
+
+impl Subject {
+    fn cold_notice(&self, owner: &SeatId, (tokens, idle): (u64, u64)) -> ColdNotice {
+        ColdNotice {
+            lead: format!(
+                "❄ {owner} is cold ({}k, idle {}): {}.",
+                tokens / 1000,
+                human_duration(idle),
+                self.what
+            ),
+            plural: self.plural,
+            file: self.file.clone(),
+        }
+    }
 }
 
 /// What a cold owner's prime (or the human) is told about a held message.
@@ -719,31 +746,32 @@ impl BackgroundService {
         now: u64,
     ) -> Result<()> {
         let msg_id = format!("pij-bg:{}:batch:{}", job.job_id, batch.batch_no);
-        let plan = match self.recorded_plan(job, &msg_id).await? {
-            Some(plan) => plan,
+        let (plan, replay) = match self.recorded_plan(job, &msg_id).await? {
+            Some(plan) => (plan, true),
             None => {
                 let cold = self.cold_facts(job, owner).await;
                 // Cold routing always cites a file, so a cold batch is always written.
                 let body = self.batch_turn(job, batch, cold.is_some()).await?;
                 let count = batch.events.len();
-                let cold = cold.map(|(tokens, idle)| ColdNotice {
-                    lead: format!(
-                        "❄ {} is cold ({}k, idle {}): {count} {} from {} {} held.",
-                        owner.id,
-                        tokens / 1000,
-                        human_duration(idle),
+                let subject = Subject {
+                    what: format!(
+                        "{count} {} from {} {} held",
                         plural(count, "event", "events"),
                         job.title,
                         if count == 1 { "is" } else { "are" },
                     ),
                     plural: true,
                     file: Some(self.batch_path(job, batch.batch_no).display().to_string()),
-                });
-                self.decide(job, owner, &msg_id, body, cold).await?
+                };
+                (
+                    self.decide(job, owner, &msg_id, body, subject, cold)
+                        .await?,
+                    false,
+                )
             }
         };
         self.failpoint("published-file-before-admission")?;
-        let state = self.hand_off(job, owner, &msg_id, plan).await?;
+        let state = self.hand_off(job, owner, &msg_id, plan, replay).await?;
         self.failpoint("admission-before-settle")?;
         self.store
             .settle_batch(&job.job_id, batch.batch_no, state, now)
@@ -782,29 +810,19 @@ impl BackgroundService {
         owner: &SeatDescriptor,
         msg_id: &str,
         body: String,
-        cold: Option<ColdNotice>,
+        subject: Subject,
+        cold: Option<(u64, u64)>,
     ) -> Result<HandOff> {
         let plan = if job.events_fyi {
             HandOff::Fyi { body }
-        } else if let Some(notice) = cold {
-            let to = match self.prime_route(owner).await? {
-                PrimeRoute::Warm(prime) => Escalation::Prime { seat: prime },
-                PrimeRoute::Cold(prime, idle) => Escalation::Telegram {
-                    why: format!(
-                        "Its prime {prime} is cold (idle {}), so this came to you.",
-                        human_duration(idle)
-                    ),
-                },
-                PrimeRoute::Gone(prime) => Escalation::Telegram {
-                    why: format!("Its prime {prime} is gone, so this came to you."),
-                },
-                PrimeRoute::None => Escalation::Telegram {
-                    why: "It has no prime, so this came to you.".to_string(),
-                },
-            };
-            HandOff::Cold { body, notice, to }
+        } else if let Some(facts) = cold {
+            HandOff::Cold {
+                body,
+                notice: subject.cold_notice(&owner.id, facts),
+                to: self.escalation(owner).await?,
+            }
         } else {
-            HandOff::Wake { body }
+            HandOff::Wake { body, subject }
         };
         let recorded = self
             .store
@@ -813,21 +831,45 @@ impl BackgroundService {
         decode_plan(&recorded)
     }
 
+    /// Who hears about a cold owner: its warm prime, else the human (and why).
+    async fn escalation(&self, owner: &SeatDescriptor) -> Result<Escalation> {
+        Ok(match self.prime_route(owner).await? {
+            PrimeRoute::Warm(prime) => Escalation::Prime { seat: prime },
+            PrimeRoute::Cold(prime, idle) => Escalation::Telegram {
+                why: format!(
+                    "Its prime {prime} is cold (idle {}), so this came to you.",
+                    human_duration(idle)
+                ),
+            },
+            PrimeRoute::Gone(prime) => Escalation::Telegram {
+                why: format!("Its prime {prime} is gone, so this came to you."),
+            },
+            PrimeRoute::None => Escalation::Telegram {
+                why: "It has no prime, so this came to you.".to_string(),
+            },
+        })
+    }
+
     /// Carry out a recorded hand-off and say how the message left: `held` (an
     /// `--fyi` source, or the owner refused the wake), `delivered`, or `routed`
     /// (a cold owner: held as an FYI, never woken, and escalated).
     ///
     /// The owner's channel and the escalation target come from the record,
-    /// never from the owner's current state: a retry after the owner warmed
-    /// (or its receiver came back) replays the same channel, so the message
-    /// reaches the owner once. Each step is idempotent by msg_id within its
-    /// channel, and a fallback is recorded before it acts.
+    /// never re-derived upward from the owner's current state: a retry after the
+    /// owner warmed (or its receiver came back) replays the same channel, so the
+    /// message reaches the owner once. Each step is idempotent by msg_id within
+    /// its channel, and any change of channel is recorded before it acts.
+    ///
+    /// A `replay` of a Wake first consults the delivery store: an owner
+    /// admission that already happened completes the hand-off (ruling B10).
+    /// Only then may it downgrade, never upgrade (ruling B9).
     async fn hand_off(
         &self,
         job: &BackgroundJob,
         owner: &SeatDescriptor,
         msg_id: &str,
         plan: HandOff,
+        replay: bool,
     ) -> Result<&'static str> {
         match plan {
             HandOff::Fyi { body } => {
@@ -842,7 +884,32 @@ impl BackgroundService {
                     .await?;
                 Ok("held")
             }
-            HandOff::Wake { body } => {
+            HandOff::Wake { body, subject } => {
+                if replay {
+                    // B10: queued, delivered or acknowledged already (a later
+                    // refusal, e.g. an expired receiver lease, says nothing about
+                    // that). The hand-off is complete: settle it, and never copy
+                    // the message into another channel.
+                    if self.delivery.admitted(&owner.id, msg_id).await? {
+                        return Ok("delivered");
+                    }
+                    // B9: a one-directional brake. A never-admitted Wake whose
+                    // owner has since turned cold is downgraded (recorded first),
+                    // never woken; nothing is ever upgraded to a Wake.
+                    if let Some(facts) = self.cold_facts(job, owner).await {
+                        let mut notice = subject.cold_notice(&owner.id, facts);
+                        notice.file = notice.file.filter(|file| Path::new(file).exists());
+                        let cold = HandOff::Cold {
+                            body,
+                            notice,
+                            to: self.escalation(owner).await?,
+                        };
+                        self.store
+                            .replace_handoff(&job.job_id, msg_id, &encode_plan(&cold)?)
+                            .await?;
+                        return Box::pin(self.hand_off(job, owner, msg_id, cold, true)).await;
+                    }
+                }
                 let receipt = self
                     .delivery
                     .accept(bg_msg(&owner.id, body.clone(), msg_id.to_string()))
@@ -856,7 +923,7 @@ impl BackgroundService {
                 self.store
                     .replace_handoff(&job.job_id, msg_id, &encode_plan(&held)?)
                     .await?;
-                Box::pin(self.hand_off(job, owner, msg_id, held)).await
+                Box::pin(self.hand_off(job, owner, msg_id, held, replay)).await
             }
             HandOff::Cold { body, notice, to } => {
                 self.delivery
@@ -1180,8 +1247,8 @@ impl BackgroundService {
         }
         // Cut once: a retried final turn carries the very same batch.
         let last = self.store.cut_final(&job.job_id).await?;
-        let plan = match self.recorded_plan(job, msg_id).await? {
-            Some(plan) => plan,
+        let (plan, replay) = match self.recorded_plan(job, msg_id).await? {
+            Some(plan) => (plan, true),
             None => {
                 let cold = self.cold_facts(job, &owner).await;
                 let mut file = None;
@@ -1195,23 +1262,24 @@ impl BackgroundService {
                     }
                     _ => body.push_str("\nNo events since the last batch."),
                 }
-                let cold = cold.map(|(tokens, idle)| ColdNotice {
-                    lead: format!(
-                        "❄ {} is cold ({}k, idle {}): {} ended ({}) and its final turn is held.",
-                        owner.id,
-                        tokens / 1000,
-                        human_duration(idle),
+                let subject = Subject {
+                    what: format!(
+                        "{} ended ({}) and its final turn is held",
                         job.title,
-                        end_word(job),
+                        end_word(job)
                     ),
                     plural: false,
                     file: file.map(|file| file.display().to_string()),
-                });
-                self.decide(job, &owner, msg_id, body, cold).await?
+                };
+                (
+                    self.decide(job, &owner, msg_id, body, subject, cold)
+                        .await?,
+                    false,
+                )
             }
         };
         self.failpoint("final-before-admission")?;
-        let state = self.hand_off(job, &owner, msg_id, plan).await?;
+        let state = self.hand_off(job, &owner, msg_id, plan, replay).await?;
         self.failpoint("admission-before-settle")?;
         if let Some(batch) = last {
             self.store
@@ -2512,6 +2580,152 @@ mod tests {
         assert_eq!(owner_copies(&fixture).await, (0, 1));
         assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
         assert_eq!(fixture.routing.telegrams.lock().unwrap().len(), 1);
+    }
+
+    fn make_owner_cold(fixture: &Fixture) {
+        fixture
+            .routing
+            .cold
+            .lock()
+            .unwrap()
+            .insert(SeatId::from("owner"), 18_720_000);
+    }
+
+    #[tokio::test]
+    async fn a_wake_plan_replayed_after_the_owner_went_cold_is_downgraded_never_woken() {
+        // B9 (#22): a recorded Wake, interrupted before admission, then the
+        // owner turns cold. A replay may only downgrade: hold and escalate.
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["row"]).await;
+        arm(&fixture, "published-file-before-admission");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "Wake recorded, not admitted"
+        );
+        make_owner_cold(&fixture);
+        fixture.service.tick().await.unwrap();
+        assert_eq!(
+            owner_copies(&fixture).await,
+            (0, 1),
+            "never woken; held once"
+        );
+        assert_eq!(fixture.routing.telegrams.lock().unwrap().len(), 1);
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn an_admitted_wake_is_never_downgraded_when_the_owner_goes_cold() {
+        // The brake applies only to a wake that was never admitted: a second
+        // copy as an FYI would duplicate the one already delivered.
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["row"]).await;
+        arm(&fixture, "admission-before-settle");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "Wake admitted, not settled"
+        );
+        make_owner_cold(&fixture);
+        fixture.service.tick().await.unwrap();
+        assert_eq!(
+            owner_copies(&fixture).await,
+            (1, 0),
+            "the admitted copy only"
+        );
+        assert!(fixture.routing.telegrams.lock().unwrap().is_empty());
+        assert_eq!(
+            fixture.service.event_stats("bg-src").await.unwrap().pending,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn a_final_wake_plan_replayed_after_the_owner_went_cold_is_downgraded() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        killed_source_with_two_events(&fixture, false).await;
+        arm(&fixture, "final-before-admission");
+        assert!(fixture.service.tick().await.is_err());
+        make_owner_cold(&fixture);
+        fixture.service.tick().await.unwrap();
+        assert_eq!(owner_copies(&fixture).await, (0, 1));
+        assert_eq!(fixture.routing.telegrams.lock().unwrap().len(), 1);
+        assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+    }
+
+    // pij-very-bonobo's executable probes from the b858fac re-review, verbatim.
+
+    #[tokio::test]
+    async fn review_warm_plan_must_not_wake_owner_that_is_cold_before_admission() {
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["row"]).await;
+        arm(&fixture, "published-file-before-admission");
+        assert!(fixture.service.tick().await.is_err());
+        assert!(fixture.to("owner").is_empty(), "no owner admission yet");
+        fixture
+            .routing
+            .cold
+            .lock()
+            .unwrap()
+            .insert(SeatId::from("owner"), 18_720_000);
+        fixture.service.tick().await.unwrap();
+        let turns = fixture.to("owner");
+        assert!(
+            turns.is_empty(),
+            "recorded warm plan woke a now-cold owner: {turns:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn review_acknowledged_wake_must_not_be_held_again_after_receiver_expiry() {
+        use crate::delivery::NativeInboxIdentity;
+        let fixture = Fixture::new(FakeLiveness::new().with_proc(PROC)).await;
+        let owner_id = SeatId::from("owner");
+        let mut owner = fixture.registry.get(&owner_id).await.unwrap().unwrap();
+        owner.harness = Harness::Copilot;
+        owner.harness_session = Some("copilot-review".to_string());
+        owner.native_extension_delivery = true;
+        fixture.registry.put(owner).await.unwrap();
+        let identity = NativeInboxIdentity {
+            native_session: Some("copilot-review".to_string()),
+            pid: Some(7),
+            proc_start: Some(11),
+        };
+        fixture
+            .delivery
+            .attest_native_receiver(&owner_id, &identity)
+            .await
+            .unwrap();
+        fixture.source("bg-src", "tok", false, 0, 5).await;
+        fixture.fire("bg-src", "tok", &["row"]).await;
+        arm(&fixture, "admission-before-settle");
+        assert!(fixture.service.tick().await.is_err());
+        let mut page = fixture
+            .delivery
+            .claim_native_inbox(&owner_id, false, &identity)
+            .await
+            .unwrap();
+        assert_eq!(page.claims.len(), 1, "the first wake was admitted");
+        let claim = page.claims.remove(0);
+        assert_eq!(claim.message.msg_id, "pij-bg:bg-src:batch:1");
+        fixture
+            .delivery
+            .acknowledge_inbox(&owner_id, claim.job_id, &identity, None)
+            .await
+            .unwrap();
+        tokio::time::pause();
+        tokio::time::advance(std::time::Duration::from_secs(61)).await;
+        tokio::time::resume();
+        fixture.service.tick().await.unwrap();
+        assert_eq!(
+            fixture.held_fyis().await,
+            0,
+            "an acknowledged wake was duplicated as a held FYI"
+        );
     }
 
     #[tokio::test]
