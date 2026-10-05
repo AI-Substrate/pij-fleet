@@ -3386,6 +3386,8 @@ mod identity_tests;
 #[cfg(test)]
 mod native_tests;
 #[cfg(test)]
+mod peer_scope_tests;
+#[cfg(test)]
 mod tests;
 
 /// One sidecar job, named by which consumer will claim it.
