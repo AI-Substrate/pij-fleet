@@ -53,11 +53,13 @@ pub enum PairingError {
     Malformed {
         /// 1-based line of the problem, when the parser could place it.
         line: Option<usize>,
-        /// The key or table name on that line, when there is one.
-        field: Option<String>,
+        /// The schema field on that line, when it names one.
+        field: Option<&'static str>,
     },
-    /// An alias is empty or uses characters outside `[A-Za-z0-9._-]`.
-    BadAlias(String),
+    /// An alias is empty, longer than 63 characters, or uses characters outside
+    /// `[A-Za-z0-9._-]`. Names WHICH alias, never its text: it is not a valid
+    /// name, so it may be anything, a pasted key included.
+    BadAlias(AliasSite),
     /// A peer uses this machine's own alias.
     SelfAlias(String),
     /// Two peers share an alias.
@@ -91,18 +93,18 @@ impl fmt::Display for PairingError {
                     || "an unknown line".to_string(),
                     |line| format!("line {line}"),
                 );
-                let field = field
-                    .as_deref()
-                    .map(|field| format!(" (`{field}`)"))
-                    .unwrap_or_default();
+                let what = match field {
+                    Some(field) => format!("`{field}` at {line} is not in the documented shape"),
+                    None => format!("unrecognised content at {line}"),
+                };
                 write!(
                     formatter,
-                    "peers.toml is malformed at {line}{field}: expected `machine = \"<alias>\"` and [[peer]] tables of alias, url and key strings (values are never shown)"
+                    "peers.toml: {what}: expected `machine = \"<alias>\"` and [[peer]] tables of alias, url and key strings (file text is never shown)"
                 )
             }
-            Self::BadAlias(alias) => write!(
+            Self::BadAlias(site) => write!(
                 formatter,
-                "alias `{alias}` must be non-empty and use only letters, digits, `.`, `_` and `-`"
+                "{site} must be 1-63 characters of letters, digits, `.`, `_` and `-`"
             ),
             Self::SelfAlias(alias) => write!(
                 formatter,
@@ -129,6 +131,24 @@ impl fmt::Display for PairingError {
 
 impl std::error::Error for PairingError {}
 
+/// Which alias a [`PairingError::BadAlias`] is about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AliasSite {
+    /// The file's own `machine = …`.
+    Machine,
+    /// The `alias` of the Nth `[[peer]]` (1-based).
+    Peer(usize),
+}
+
+impl fmt::Display for AliasSite {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Machine => formatter.write_str("`machine`"),
+            Self::Peer(index) => write!(formatter, "the alias of [[peer]] #{index}"),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PairingFile {
@@ -146,7 +166,8 @@ struct PeerRow {
 }
 
 fn valid_alias(alias: &str) -> bool {
-    !alias.is_empty()
+    // At most 63 (a DNS label): a 64-character generated key is never a name.
+    (1..=63).contains(&alias.len())
         && alias
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
@@ -184,16 +205,24 @@ fn malformed(text: &str, error: &toml::de::Error) -> PairingError {
     PairingError::Malformed { line, field }
 }
 
-/// The key (`name = …`) or table (`[[name]]`) a line names, if it is a plain
-/// identifier. Anything else on the line is a value and is never returned.
-fn field_name(line: &str) -> Option<String> {
+/// Every name the schema knows. Only these are ever printed back: any other
+/// text on a line may be a value, a pasted key included (review F05).
+const KNOWN_FIELDS: [&str; 5] = ["machine", "peer", "alias", "url", "key"];
+
+/// The schema field a line names (`name = …`, `[name]` or `[[name]]`), only if
+/// it is one of [`KNOWN_FIELDS`]. Otherwise `None`: the line is reported as
+/// unrecognised content and none of its text is shown.
+fn field_name(line: &str) -> Option<&'static str> {
     let line = line.trim();
-    let name = match line.strip_prefix('[') {
-        Some(table) => table.trim_start_matches('[').split(']').next()?,
-        None => line.split('=').next()?,
+    let name = if let Some(table) = line.strip_prefix("[[") {
+        table.strip_suffix("]]")?
+    } else if let Some(table) = line.strip_prefix('[') {
+        table.strip_suffix(']')?
+    } else {
+        line.split_once('=')?.0
     }
     .trim();
-    valid_alias(name).then(|| name.to_string())
+    KNOWN_FIELDS.into_iter().find(|known| *known == name)
 }
 
 /// Parse and validate the file's text.
@@ -204,13 +233,13 @@ fn field_name(line: &str) -> Option<String> {
 pub fn parse(text: &str) -> Result<Pairing, PairingError> {
     let file: PairingFile = toml::from_str(text).map_err(|error| malformed(text, &error))?;
     if !valid_alias(&file.machine) {
-        return Err(PairingError::BadAlias(file.machine));
+        return Err(PairingError::BadAlias(AliasSite::Machine));
     }
     let mut aliases = BTreeSet::new();
     let mut peers: Vec<PeerDefinition> = Vec::with_capacity(file.peers.len());
-    for row in file.peers {
+    for (index, row) in file.peers.into_iter().enumerate() {
         if !valid_alias(&row.alias) {
-            return Err(PairingError::BadAlias(row.alias));
+            return Err(PairingError::BadAlias(AliasSite::Peer(index + 1)));
         }
         if row.alias == file.machine {
             return Err(PairingError::SelfAlias(row.alias));
@@ -393,7 +422,7 @@ mod tests {
             ),
             (
                 file(&[("lap@top", "http://h:1", KEY_A)]),
-                PairingError::BadAlias("lap@top".into()),
+                PairingError::BadAlias(super::AliasSite::Peer(1)),
             ),
             (
                 file(&[("laptop", "http://h:1", &KEY_A[..MIN_KEY_CHARS - 1])]),
