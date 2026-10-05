@@ -41,17 +41,19 @@ pub struct CreateOptions {
 // No user text is interpolated. The pipe is a persist-before-execute barrier:
 // losing the daemon before its release closes stdin and cannot run the command.
 // Only this runner supplies an exit code AND the original finish instant.
+// The TERM trap alone appends ` term`: provenance that a TERM reached the runner,
+// which a command's own `exit 143` can never forge.
 const RUNNER: &str = r#"
 umask 077
 __pij_bg_finish() {
     trap '' TERM
     __pij_bg_code=$1
     __pij_bg_finished=$(/bin/date +%s) || return
-    printf '%s %s\n' "$__pij_bg_code" "$__pij_bg_finished" > "$PIJ_BG_EXIT.tmp" &&
+    printf '%s %s%s\n' "$__pij_bg_code" "$__pij_bg_finished" "${2:+ $2}" > "$PIJ_BG_EXIT.tmp" &&
         /bin/mv -f "$PIJ_BG_EXIT.tmp" "$PIJ_BG_EXIT"
 }
 trap '' HUP
-trap '__pij_bg_finish 143; exit 143' TERM
+trap '__pij_bg_finish 143 term; exit 143' TERM
 : > "$PIJ_BG_EXIT.ready" || exit 125
 IFS= read -r __pij_bg_gate || exit 125
 [ "$__pij_bg_gate" = start ] || exit 125
@@ -464,9 +466,10 @@ impl BackgroundService {
         let (state, code, at) = match receipt {
             Some(receipt) => (
                 // A caller's kill always reads KILLED. A timeout reads TIMEOUT
-                // only when the runner's TERM trap (143) proves the timeout ended
-                // it; a runner that won the race to exit keeps its own result.
-                if job.kill_requested && !(job.timed_out && receipt.exit_code != 143) {
+                // only when the receipt's `term` proves the TERM reached the
+                // runner; a runner that exited on its own (any code, 143 too)
+                // keeps its own result.
+                if job.kill_requested && (!job.timed_out || receipt.terminated) {
                     BackgroundState::Killed
                 } else {
                     BackgroundState::Done
@@ -625,6 +628,8 @@ async fn await_runner_ready(child: &mut Child, ready: &Path) -> Result<()> {
 struct ExitReceipt {
     exit_code: i32,
     finished_at: u64,
+    /// Written by the runner's TERM trap, never by an ordinary exit.
+    terminated: bool,
 }
 
 fn read_receipt(path: &Path) -> Result<Option<ExitReceipt>> {
@@ -648,12 +653,18 @@ fn read_receipt(path: &Path) -> Result<Option<ExitReceipt>> {
     let Some(at) = fields.next().and_then(|field| field.parse::<u64>().ok()) else {
         return Ok(None);
     };
+    let terminated = match fields.next() {
+        None => false,
+        Some("term") => true,
+        Some(_) => return Ok(None),
+    };
     if fields.next().is_some() || !(0..=255).contains(&code) || at == 0 {
         return Ok(None);
     }
     Ok(at.checked_mul(1000).map(|finished_at| ExitReceipt {
         exit_code: code,
         finished_at,
+        terminated,
     }))
 }
 
@@ -1111,6 +1122,109 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_ordinary_exit_143_racing_a_timeout_claim_stays_failed_exit_143() {
+        // Re-review R1 (PR #21): the command itself exits 143 just as the timeout
+        // is claimed; no TERM ever reached the runner, so this is not a TIMEOUT.
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        assert!(
+            fixture
+                .service
+                .store
+                .request_timeout(&job.job_id, 1_700_000_006_000)
+                .await
+                .unwrap()
+        );
+        std::fs::write(receipt_path(&job), "143 1700000006\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(finished.state, BackgroundState::Done);
+        assert_eq!(finished.exit_code, Some(143));
+        let delivered = fixture.transport.delivered();
+        assert_eq!(delivered.len(), 1);
+        assert!(
+            delivered[0]
+                .body
+                .starts_with("[pij bg] FAILED (exit 143) — build"),
+            "{}",
+            delivered[0].body
+        );
+    }
+
+    #[tokio::test]
+    async fn a_timeout_whose_term_reached_the_runner_reads_timeout_once() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        let job = fixture.running_with_deadline(Some(1_700_000_005_000)).await;
+        assert!(
+            fixture
+                .service
+                .store
+                .request_timeout(&job.job_id, 1_700_000_006_000)
+                .await
+                .unwrap()
+        );
+        std::fs::write(receipt_path(&job), "143 1700000006 term\n").unwrap();
+        fixture.service.tick().await.unwrap();
+        fixture.service.tick().await.unwrap();
+        let finished = fixture.service.lookup(&job.job_id).await.unwrap();
+        assert_eq!(finished.state, BackgroundState::Killed);
+        assert!(finished.timed_out);
+        let delivered = fixture.transport.delivered();
+        assert_eq!(delivered.len(), 1, "exactly one TIMEOUT turn");
+        assert!(
+            delivered[0]
+                .body
+                .starts_with("[pij bg] TIMEOUT — build (killed after 5s)"),
+            "{}",
+            delivered[0].body
+        );
+    }
+
+    #[test]
+    fn runner_receipt_says_term_only_when_a_term_reached_the_runner() {
+        let dir = fresh_dir("pij-bg-provenance");
+        let run = |name: &str, command: &str, term: bool| {
+            let receipt = dir.join(format!("{name}.exit"));
+            let mut child = Command::new("/bin/sh")
+                .args(["-c", RUNNER])
+                .env("PIJ_BG_COMMAND", command)
+                .env("PIJ_BG_EXIT", &receipt)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .process_group(0)
+                .spawn()
+                .unwrap();
+            let ready = receipt.with_extension("exit.ready");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !ready.exists() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            child.stdin.take().unwrap().write_all(b"start\n").unwrap();
+            if term {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                Command::new("/bin/kill")
+                    .args(["-TERM", "--", &format!("-{}", child.id())])
+                    .status()
+                    .unwrap();
+            }
+            child.wait().unwrap();
+            std::fs::read_to_string(receipt).unwrap()
+        };
+        let natural = run("natural", "exit 143", false);
+        let terminated = run("terminated", "sleep 30", true);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(
+            natural.starts_with("143 ") && !natural.contains("term"),
+            "{natural:?}"
+        );
+        assert!(
+            terminated.starts_with("143 ") && terminated.trim_end().ends_with(" term"),
+            "{terminated:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn kill_receipt_uses_exact_legacy_killed_wording() {
         let fixture = Fixture::new(FakeLiveness::new()).await;
         let job = fixture.running().await;
@@ -1187,6 +1301,8 @@ mod tests {
             "0 0",
             "0 18446744073709551615",
             "0 1700000000 extra",
+            "143 1700000000 term extra",
+            "143 1700000000 terminated",
             "-1 1700000000",
             "256 1700000000",
         ] {
