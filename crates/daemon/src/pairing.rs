@@ -440,6 +440,26 @@ mod tests {
         }
     }
 
+    /// Review F09: the bytes read are the bytes whose owner and mode were
+    /// checked. The checked descriptor is read even after the path is replaced.
+    #[test]
+    fn the_checked_descriptor_is_the_one_read() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = pij_testkit::fresh_dir("pij-pairing-fd");
+        let path = dir.join(super::PEERS_FILE);
+        std::fs::write(&path, file(&[("laptop", "http://h:1", KEY_A)])).expect("write");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+        let opened = std::fs::File::open(&path).expect("open");
+        // Swap a world-readable impostor into the path after the open.
+        let impostor = dir.join("impostor.toml");
+        std::fs::write(&impostor, file(&[("laptop", "http://h:1", KEY_B)])).expect("write");
+        std::fs::set_permissions(&impostor, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+        std::fs::rename(&impostor, &path).expect("swap");
+        let uid = std::os::unix::fs::MetadataExt::uid(&opened.metadata().expect("fstat"));
+        let pairing = super::read_checked(opened, &path, uid).expect("the checked file");
+        assert_eq!(pairing.peers[0].key, KEY_A);
+    }
+
     #[test]
     fn the_file_must_be_the_daemon_users_and_private() {
         let path = Path::new("/state/peers.toml");
