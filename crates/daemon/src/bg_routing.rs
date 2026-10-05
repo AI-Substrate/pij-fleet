@@ -116,7 +116,10 @@ impl ColdRouting for DaemonColdRouting {
             let Some(ancestor) = self.registry.get(&id).await? else {
                 break;
             };
-            let role = self.roles.read_role(&id).await?.or(ancestor.role.clone());
+            // The role store is the only authority (join_roles overwrites every
+            // descriptor role from it): a descriptor role is never consulted, so
+            // an explicit unset cannot be resurrected from a stale copy.
+            let role = self.roles.read_role(&id).await?;
             if project_prime.is_none() {
                 project_prime = self.project_prime(&id).await?;
             }
@@ -267,6 +270,44 @@ mod tests {
             routing.prime(&owner).await.unwrap(),
             Some(id("project-prime"))
         );
+    }
+
+    #[tokio::test]
+    async fn an_explicitly_unset_role_is_not_resurrected_from_a_stale_descriptor() {
+        // Review B6 (#22): the role store is the authority (join_roles replaces
+        // every descriptor role from it); a cleared role must exclude the seat.
+        let pool = pij_store::open("").await.unwrap();
+        let orchestration = SqliteOrchestration::new(pool.clone());
+        let registry = Arc::new(FakeRegistry::new());
+        let mut owner = SeatDescriptor::new("coder", Harness::Claude, "/tmp");
+        owner.parent = Some(id("pm"));
+        registry.put(owner.clone()).await.unwrap();
+        let mut stale = SeatDescriptor::new("pm", Harness::Claude, "/tmp");
+        stale.role = Some("prime".to_string());
+        registry.put(stale).await.unwrap();
+        orchestration
+            .assign_role(&pij_core::orchestration::RoleAssignment {
+                seat: id("pm"),
+                role: "prime".to_string(),
+                assigned_by: id("pm"),
+                assigned_at: 1,
+            })
+            .await
+            .unwrap();
+        orchestration.clear_role(&id("pm")).await.unwrap();
+        let roles = Arc::new(RoleService::new(
+            registry.clone(),
+            SqliteOrchestration::new(pool),
+            Arc::new(EventBus::new(Arc::new(FakeSpine::new()), 16).unwrap()),
+        ));
+        let routing = DaemonColdRouting::new(
+            registry,
+            Arc::new(FakeSessionStatus::new()),
+            roles,
+            orchestration,
+            Arc::new(FakeQueue::new(8).unwrap()),
+        );
+        assert_eq!(routing.prime(&owner).await.unwrap(), None);
     }
 
     #[tokio::test]
