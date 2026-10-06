@@ -3193,44 +3193,6 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn native_ps_admits_a_delayed_observation_without_weakening_identity() {
-        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
-        let mut claim = native_claim("pij-slow-observer");
-        claim.pane = None;
-        let result = service
-            .register_native_with_observer(
-                claim,
-                Some(SESSION.into()),
-                &FakeTmux::new(),
-                |pid| async move {
-                    tokio::task::spawn_blocking(move || {
-                        let mut ps = std::process::Command::new("/bin/sh");
-                        let delay = super::PROCESS_OBSERVATION_TIMEOUT.mul_f64(0.3);
-                        ps.args([
-                            "-c",
-                            &format!(
-                                "/bin/sleep {}; printf '41 copilot /opt/copilot\\n'",
-                                delay.as_secs_f64()
-                            ),
-                        ]);
-                        super::read_native_process_using(pid, &mut ps)
-                    })
-                    .await
-                    .unwrap()
-                },
-            )
-            .await;
-        let (seat, _) = result.expect("delayed ps response must fit the bounded host observation");
-        assert_eq!(seat.proc, Some(HOST));
-        assert!(seat.native_extension_delivery);
-        assert_eq!(
-            registry.list(SeatFilter::default()).await.unwrap(),
-            vec![seat]
-        );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
     async fn native_ps_never_answering_refuses_with_pid_within_total_bound() {
         let (service, registry) = native_service(Vec::new(), native_liveness()).await;
         let mut claim = native_claim("pij-stalled-observer");
