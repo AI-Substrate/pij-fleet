@@ -572,6 +572,12 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 		await run;
 	});
 
+	// "empty"/"expired" fail the backward page's own validity check (malformed
+	// cursor/empty page), which is unconditionally non-retryable and unaffected
+	// by the receiver-gap retry window. The other three reach a valid-but-
+	// uncorrelated anchor (anchor < 0, no terminal) and now retry in place for
+	// up to HOLD_ESCALATION_MS before escalating to the same final hold.
+	const retriedBeforeHold = new Set(["unrelated-terminal", "subagent-spoof", "consumption-only"]);
 	for (const gap of [
 		"empty",
 		"expired",
@@ -596,6 +602,21 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 			f.rebase(window);
 			if (gap === "expired") f.state.windowStatus = "expired";
 			await pump(f);
+			if (retriedBeforeHold.has(gap)) {
+				assert.equal(
+					held(f).length,
+					0,
+					"a receiver-gap condition retries in place before escalating to a hold",
+				);
+				assert.ok(
+					f.reports.some(
+						(event) => event.kind === "reconnecting" && event.holdKind === "receiver-gap",
+					),
+					"a retryable receiver-gap episode narrates as reconnecting, not held",
+				);
+				f.state.now += store.HOLD_ESCALATION_MS;
+				await f.tick();
+			}
 			assert.equal(
 				held(f).length,
 				1,
@@ -619,11 +640,149 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 		f.rebase([{ type: "session.model_change", id: "lost-consumption-gap", data: {} }]);
 		f.event({ type: "session.idle", id: "fresh-but-unrelated-boundary", data: {} });
 		await f.tick();
+		// This anchor-gap condition now retries in place (AC-01) before discard
+		// recovery's own uncorrelated-gap check can even run; drive it past the
+		// escalation ceiling to reach the same final hold.
+		assert.equal(held(f).length, 0, "a receiver-gap condition retries before escalating");
+		f.state.now += store.HOLD_ESCALATION_MS;
+		await f.tick();
 		assert.equal(held(f).length, 1, "discard recovery checks progress before its first retry");
 		assert.deepEqual(f.acks, []);
 		assert.equal(f.sends.length, 1);
 		assert.equal(f.calls.includes("journal.rearm"), false);
 		await run;
+	});
+
+	test("AC2: a receiver-gap retry resolves via a live terminal event before the escalation ceiling", async (t) => {
+		const f = fixture(t, { consume: false });
+		const run = f.bridge.run();
+		await flush();
+		f.rebase([{ type: "session.model_change", id: "unrelated-window-event", data: {} }]);
+		await pump(f);
+		assert.equal(held(f).length, 0, "a receiver-gap condition retries in place before escalating");
+		assert.ok(
+			f.reports.some((event) => event.kind === "reconnecting" && event.holdKind === "receiver-gap"),
+			"the retry narrates as reconnecting with a distinguishable holdKind, not held",
+		);
+		// The live push channel (not the lagging queryable eventLog window) delivers
+		// the correlated turn while the retry is still in its bounded window.
+		f.event(user);
+		for (const event of terminal) f.event(event);
+		await f.tick();
+		assert.equal(held(f).length, 0, "a live terminal event resolves the gap without ever holding");
+		assert.equal(
+			f.reports.find((event) => event.kind === "native-completed")?.eventId,
+			"owned-end",
+		);
+		f.bridge.stop();
+		await run;
+	});
+
+	test("AC1: a receiver-gap retry does not force a redundant /v1/register round-trip on every backoff cycle", async (t) => {
+		const f = fixture(t, { consume: false });
+		let registrations = 0;
+		const request = f.client.request;
+		f.client.request = async (path, body, signal) => {
+			if (path === "/v1/register") registrations++;
+			return request(path, body, signal);
+		};
+		const run = f.bridge.run();
+		await flush();
+		assert.equal(registrations, 1, "the first attempt already registered");
+		f.rebase([{ type: "session.model_change", id: "unrelated-window-event", data: {} }]);
+		await pump(f);
+		assert.equal(held(f).length, 0, "a receiver-gap condition retries in place before escalating");
+		assert.equal(
+			registrations,
+			1,
+			"a receiver-gap retry is not a registration problem and must not force re-registration " +
+				"on every backoff cycle while simply waiting for the event log to catch up",
+		);
+		f.bridge.stop();
+		await run;
+	});
+
+	test("AC1: gapFirstSeenAt resets when the anchor gap resolves via the caught-up branch, not only the fall-through path", async (t) => {
+		const f = fixture(t, { consume: false });
+		const run = f.bridge.run();
+		await flush();
+		const eventA = { type: "session.model_change", id: "stale-first-gap-event", data: {} };
+		f.rebase([eventA]);
+		await pump(f);
+		assert.equal(held(f).length, 0, "the first gap retries in place");
+		const completion = f.bridge.completion;
+		assert.ok(completion.gapFirstSeenAt !== undefined, "the first gap stamped gapFirstSeenAt");
+		// Simulate the normal forward-read path (readEvents) independently catching
+		// completion.lastEventId up to the window's newest event -- the real "no
+		// gap" steady state, reached via the anchor === last-index branch, not the
+		// gap branch's own fall-through reset at the bottom of probeReceiver.
+		completion.lastEventId = eventA.id;
+		await f.tick();
+		assert.equal(
+			completion.gapFirstSeenAt,
+			undefined,
+			"catching up through the caught-up branch must clear gapFirstSeenAt too, not only the " +
+				"gap branch's own fall-through",
+		);
+		// Advance well past the escalation ceiling before a brand-new, unrelated gap
+		// appears. If gapFirstSeenAt had leaked from the first (already-resolved)
+		// gap, this new, independent gap would see itself as having already
+		// exceeded the retry window and escalate straight to a non-retryable hold
+		// on its very first occurrence. Growing the window (rather than replacing
+		// it 1-for-1) also forces a fresh forward cursor, so this probe isn't
+		// short-circuited by the unchanged-cursor early return.
+		f.state.now += store.HOLD_ESCALATION_MS;
+		f.rebase([
+			"placeholder-unrelated",
+			{ type: "session.model_change", id: "fresh-second-gap-event", data: {} },
+		]);
+		await f.tick();
+		assert.equal(
+			held(f).length,
+			0,
+			"a brand-new, independent gap must get its own fresh retry window, not inherit a stale timestamp",
+		);
+		assert.ok(
+			f.reports.some((event) => event.kind === "reconnecting" && event.holdKind === "receiver-gap"),
+			"the fresh gap narrates as a retry, not an immediate escalate",
+		);
+		f.bridge.stop();
+		await run;
+	});
+
+	test("AC5: heartbeat lease renewal keeps running through a receiver-gap retry window", async (t) => {
+		const f = fixture(t, { consume: false });
+		const run = f.bridge.run();
+		await flush();
+		const heartbeatsBefore = f.heartbeats.length;
+		f.rebase([{ type: "session.model_change", id: "unrelated-window-event", data: {} }]);
+		await pump(f);
+		assert.equal(held(f).length, 0, "a receiver-gap condition retries in place before escalating");
+		await f.tick(f.heartbeatWaits);
+		assert.ok(
+			f.heartbeats.length > heartbeatsBefore,
+			"heartbeat lease renewal keeps running while the receiver retries an unresolved gap, " +
+				"rather than cascading into a separate native-receiver-stale hold",
+		);
+		f.bridge.stop();
+		await run;
+	});
+
+	test("AC5: holdReceiving aborts only the receiver, not the heartbeat controller", () => {
+		const f = fixture({ after() {} });
+		assert.equal(f.bridge.receiverController.signal.aborted, false);
+		assert.equal(f.bridge.heartbeatController.signal.aborted, false);
+		f.bridge.holdReceiving(new store.NativeError("direct unit check"));
+		assert.equal(
+			f.bridge.receiverController.signal.aborted,
+			true,
+			"holdReceiving still stops the receiver",
+		);
+		assert.equal(
+			f.bridge.heartbeatController.signal.aborted,
+			false,
+			"holdReceiving no longer unconditionally kills the heartbeat",
+		);
 	});
 
 	test("AC2: empty idle receiver leaves SDK observation to the next delivery", async (t) => {
@@ -753,6 +912,112 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 		assert.equal(f.heartbeats.length, 2);
 		assert.equal(f.state.claims, 1);
 		assert.equal((await f.bridge.send({ to: "pij-peer", message: "still available" })).ok, true);
+		// Self-healing now keeps run() retrying (reconnect()'s backoff wait) rather
+		// than resolving quietly; an explicit stop still ends it, same as any other
+		// in-flight attempt.
+		f.bridge.stop();
+		await run;
+	});
+
+	test("AC3: stale lease self-heals by re-registering and reclaiming without extensions_reload", async (t) => {
+		const f = fixture(t, { claims: false });
+		const request = f.client.request;
+		let registrations = 0;
+		f.client.request = async (path, body, signal) => {
+			if (path === "/v1/register") registrations++;
+			return request(path, body, signal);
+		};
+		const run = f.bridge.run();
+		await flush();
+		assert.equal(registrations, 1);
+		const claimsBefore = f.state.claims;
+		assert.ok(claimsBefore >= 1, "the first attempt already reached claimInbox");
+		f.state.lease = {
+			state: "stale",
+			reason: "native-receiver-stale",
+			lease_ms: 60000,
+			renew_after_ms: 20000,
+		};
+		await f.tick(f.heartbeatWaits);
+		assert.equal(held(f).length, 1);
+		assert.equal(held(f)[0].safeDiagnostic, "native-receiver-stale");
+		assert.equal(
+			f.reports.some((event) => event.kind === "reconnecting"),
+			true,
+			"a retryable stale hold announces the upcoming self-heal attempt",
+		);
+		const heartbeatsBefore = f.heartbeats.length;
+		// Simulate the daemon side of the contract: a fresh attempt's observation
+		// baseline advances past what the daemon last saw, clearing staleness
+		// (crates/daemon/src/delivery/mod.rs's `advanced` check) on its own.
+		f.state.lease = { state: "live", lease_ms: 60000, renew_after_ms: 20000 };
+		// The reconnect backoff wait lives on the generic delay queue, not the
+		// heartbeat queue; resolving it lets reconnect() start a fresh attempt.
+		await f.tick(f.waits);
+		assert.equal(
+			registrations,
+			2,
+			"reconnect re-registered instead of requiring extensions_reload",
+		);
+		assert.ok(
+			f.state.claims > claimsBefore,
+			"reconnect reached claimInbox again after re-registering, without extensions_reload",
+		);
+		assert.ok(
+			f.heartbeats.length > heartbeatsBefore,
+			"heartbeat renewal resumed on the fresh attempt",
+		);
+		assert.equal(held(f).length, 1, "the fresh attempt settles live, not a second hold");
+		f.bridge.stop();
+		await run;
+	});
+
+	test("AC3: lease-expiry-then-recovery (heartbeat transport failures then success) self-reclaims", async (t) => {
+		const f = fixture(t, { claims: false });
+		const request = f.client.request;
+		let failHeartbeats = 0;
+		let registrations = 0;
+		f.client.request = async (path, body, signal) => {
+			if (path === "/v1/register") registrations++;
+			if (path === "/v1/inbox/heartbeat" && failHeartbeats > 0) {
+				failHeartbeats--;
+				throw new store.NativeError("heartbeat transport failed", true);
+			}
+			return request(path, body, signal);
+		};
+		const run = f.bridge.run();
+		await flush();
+		assert.equal(registrations, 1);
+		failHeartbeats = 3;
+		// Transient transport failures (e.g. the daemon briefly down) must not hold
+		// receiving at all; keepReceiverAlive's own capped backoff already covers
+		// this without any new machinery.
+		await f.tick(f.heartbeatWaits);
+		await f.tick(f.heartbeatWaits);
+		await f.tick(f.heartbeatWaits);
+		assert.equal(
+			held(f).length,
+			0,
+			"transient heartbeat transport failures must not hold receiving",
+		);
+		assert.equal(registrations, 1, "transient heartbeat failures do not re-register");
+		const claimsBefore = f.state.claims;
+		// Once connectivity is back, a genuine lease expiry can still surface; the
+		// bridge must then self-reclaim on its own rather than staying wedged.
+		f.state.lease = {
+			state: "stale",
+			reason: "native-receiver-stale",
+			lease_ms: 60000,
+			renew_after_ms: 20000,
+		};
+		await f.tick(f.heartbeatWaits);
+		assert.equal(held(f).length, 1);
+		f.state.lease = { state: "live", lease_ms: 60000, renew_after_ms: 20000 };
+		await f.tick(f.waits);
+		assert.equal(registrations, 2, "self re-registers after the lease recovers, unaided");
+		assert.ok(f.state.claims > claimsBefore, "self re-claims after the lease recovers, unaided");
+		assert.equal(held(f).length, 1, "the recovered attempt settles live, not a second hold");
+		f.bridge.stop();
 		await run;
 	});
 

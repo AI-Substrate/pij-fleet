@@ -36,7 +36,8 @@ export class NativeError extends Error {
 		this.retryable = retryable;
 		// Local NativeError text is authored here; remote/OS text must supply a safe projection.
 		this.safeDiagnostic = safeDiagnostic;
-		if (retryable && holdKind === "native-session") this.holdKind = holdKind;
+		if (retryable && (holdKind === "native-session" || holdKind === "receiver-gap"))
+			this.holdKind = holdKind;
 	}
 }
 
@@ -567,6 +568,10 @@ class NativeCompletion {
 		this.tailCursor = cursor;
 		this.emptyReads = 0;
 		this.lastProbeAt = 0;
+		// Set/read only inside probeReceiver; tracks how long an anchor-gap
+		// condition has persisted for this completion so it can be retried in
+		// place for a bounded window instead of holding on first occurrence.
+		this.gapFirstSeenAt = undefined;
 		this.live = !replay;
 		this.cursor = replay ? undefined : cursor;
 		this.replay = replay;
@@ -699,6 +704,8 @@ export class NativeBridge {
 		this.running = undefined;
 		this.unsubscribe = undefined;
 		this.completion = undefined;
+		// Set by holdReceiving; read by run()'s reconnect loop once consume() settles.
+		this.heldError = undefined;
 		// Plan 158 addendum 3: busy/idle publication, serialized so a late
 		// `working` can never land after `idle`.
 		this.activity = Promise.resolve();
@@ -766,8 +773,49 @@ export class NativeBridge {
 		}
 	}
 	run() {
-		if (!this.running) this.running = this.consume();
+		if (!this.running) this.running = this.reconnect();
 		return this.running;
+	}
+	/**
+	 * `consume()` exits quietly (no throw) whenever `holdReceiving` fires, for
+	 * every hold reason — most are genuinely unsafe to auto-retry (malformed
+	 * claims, ambiguous sends, unprovable discard/gap recovery) and must stay
+	 * terminal-with-diagnostic. Only a stale receiver lease (a missed-heartbeat
+	 * condition, not a data-safety issue) is marked `retryable` by
+	 * `keepReceiverAlive`; this loop is what turns that into an automatic
+	 * re-register-and-reclaim instead of requiring `extensions_reload` or a
+	 * full host restart. An explicit `stop()` (aborting `this.controller`)
+	 * always ends the loop, same as before this existed.
+	 */
+	async reconnect() {
+		let retry = INITIAL_RETRY_MS;
+		for (;;) {
+			this.heldError = undefined;
+			await this.consume();
+			if (this.controller.signal.aborted || !this.heldError?.retryable) return;
+			this.emit("reconnecting", {
+				diagnostic: this.heldError.message,
+				safeDiagnostic: this.heldError.safeDiagnostic,
+				retryMs: retry,
+			});
+			try {
+				await this.delay(retry, this.controller.signal);
+			} catch {
+				return;
+			}
+			retry = Math.min(retry * 2, MAX_RETRY_MS);
+			// Fresh per-attempt state mirrors what a brand-new NativeBridge (i.e. an
+			// `extensions_reload`) would start with: unclaimed controllers, an
+			// unregistered seat, and an empty observation baseline so the next
+			// heartbeat's `observed_at` advances past whatever the daemon last saw.
+			this.receiverController = new AbortController();
+			this.heartbeatController = new AbortController();
+			this.registered = false;
+			this.heartbeat = undefined;
+			this.observedAt = 0;
+			this.observedSeq = 0;
+			this.recentEventIds = new Set();
+		}
 	}
 	/** SDK cancellation cancels our wait; an issued send can still commit remotely. */
 	nativeRpc(call, operation) {
@@ -823,6 +871,9 @@ export class NativeBridge {
 	}
 	holdReceiving(error) {
 		if (this.receiverController.signal.aborted) return;
+		// Recorded for `run()`'s reconnect loop (below): only a retryable hold is
+		// safe to re-arm automatically once this attempt's `consume()` settles.
+		this.heldError = error;
 		this.emit("receive-held", {
 			diagnostic: error.message,
 			safeDiagnostic:
@@ -833,7 +884,6 @@ export class NativeBridge {
 				"Inspect native history and durable acceptance before recovery; do not blindly resend or acknowledge.",
 		});
 		this.receiverController.abort(error);
-		this.heartbeatController.abort();
 	}
 	async register() {
 		const signal = this.controller.signal;
@@ -877,7 +927,11 @@ export class NativeBridge {
 				);
 				throwIfStopped(signal);
 				if (lease?.state === "stale" && lease.reason === "native-receiver-stale") {
-					this.holdReceiving(new NativeError("native-receiver-stale"));
+					// A missed-heartbeat condition is self-healable: unlike a malformed
+					// claim or an ambiguous send, nothing unsafe was observed, so `run()`
+					// (see below) re-arms registration and observation in place instead
+					// of leaving the receiver wedged until a manual `extensions_reload`.
+					this.holdReceiving(new NativeError("native-receiver-stale", true));
 					return;
 				}
 				if (
@@ -1008,7 +1062,12 @@ export class NativeBridge {
 					if (signal.aborted) return;
 					if (!(error instanceof InboxWaitDeadline)) {
 						if (!error.retryable) throw error;
-						this.registered = false;
+						// A receiver-gap retry is purely about the event log catching up to a
+						// live, busy turn — it carries no registration staleness, so forcing a
+						// real /v1/register round-trip on every backoff cycle would be an
+						// unrelated side effect of simply waiting.
+						if (!(error instanceof NativeError && error.holdKind === "receiver-gap"))
+							this.registered = false;
 						if (error instanceof NativeError && error.holdKind === "native-session") {
 							const now = performance.now();
 							holdStarted ??= now;
@@ -1027,6 +1086,7 @@ export class NativeBridge {
 								this.emit("reconnecting", {
 									diagnostic: error.message,
 									safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
+									holdKind: error instanceof NativeError ? error.holdKind : null,
 									retryMs: retry,
 								});
 							failureEpisode = true;
@@ -1158,6 +1218,7 @@ export class NativeBridge {
 			throw new NativeError("Native receiver progress gap is inaccessible; receiving held");
 		const anchor = page.events.findIndex((event) => event.id === completion.lastEventId);
 		if (anchor === page.events.length - 1) {
+			completion.gapFirstSeenAt = undefined;
 			completion.tailCursor = tail.cursor;
 			return;
 		}
@@ -1171,12 +1232,24 @@ export class NativeBridge {
 			completion.observe(event, undefined, false, false);
 		}
 		if (completion.msgId && anchor < 0 && !completion.terminal) {
-			const error = new NativeError(
-				"Native receiver progress gap lacks correlated terminal evidence; receiving held without acknowledgement or reinjection",
-			);
+			completion.gapFirstSeenAt ??= this.now();
+			const elapsedMs = this.now() - completion.gapFirstSeenAt;
+			const message =
+				"Native receiver progress gap lacks correlated terminal evidence; receiving held without acknowledgement or reinjection";
+			if (elapsedMs < HOLD_ESCALATION_MS) {
+				// Retry in place: the queryable event log can lag a live, busy turn
+				// that the push channel is still delivering on. Leave receiverController
+				// and heartbeatController untouched — the main loop's existing generic
+				// retryable branch backs off and calls probeReceiver again.
+				throw new NativeError(message, true, message, "receiver-gap");
+			}
+			// The gap has outlived the retry window: fall back to today's exact
+			// non-retryable hold.
+			const error = new NativeError(message);
 			this.holdReceiving(error);
 			throw error;
 		}
+		completion.gapFirstSeenAt = undefined;
 		const previousEventId = completion.lastEventId ?? null;
 		completion.lastEventId = page.events.at(-1).id;
 		completion.cursor = tail.cursor;
@@ -1609,7 +1682,9 @@ export function createNativeReporter({ log, capture }) {
 						: "receiving held; inspect native history and acceptance before recovery, do not blindly resend or acknowledge"
 					: event.kind === "extension-unavailable"
 						? `native registration failed: ${event.safeDiagnostic ?? "native initialization failed"}; no retry is scheduled — restart the Copilot CLI (/restart or relaunch) to recover; ordinary Copilot remains usable`
-						: "check the Pij daemon and PIJ_RS_ADDR/PIJ_RS_STATE_DIR; retrying when available; ordinary Copilot remains usable";
+						: event.kind === "reconnecting" && event.holdKind === "receiver-gap"
+							? "native receiver progress is temporarily lagging behind a live turn; retrying in place, not a Pij daemon issue; ordinary Copilot remains usable"
+							: "check the Pij daemon and PIJ_RS_ADDR/PIJ_RS_STATE_DIR; retrying when available; ordinary Copilot remains usable";
 			// Never project the raw diagnostic: HTTP/OS errors may carry bodies or credentials.
 			// The stderr log keeps the SAFE diagnostic so a hold is diagnosable after the fact.
 			capture({
