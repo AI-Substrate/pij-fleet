@@ -323,7 +323,6 @@ pub(crate) fn parse_adopt_argv(argv: &[String]) -> Result<AdoptArgs, String> {
                     .next()
                     .filter(|role| !role.trim().is_empty() && !role.starts_with("--"))
                     .ok_or_else(|| "--role needs a nonempty value".to_string())?;
-                pij_core::orchestration::check_seat_role(role)?;
                 if args.role.replace(role.to_string()).is_some() {
                     return Err("--role may be supplied only once".to_string());
                 }
@@ -621,6 +620,12 @@ pub(crate) async fn adopt(
         }
         (typed, argv) => typed.or(argv),
     };
+    if let Some(Err(reason)) = role
+        .as_deref()
+        .map(pij_core::orchestration::check_seat_role)
+    {
+        return super::role::RoleError::Invalid(reason).into_response(ADOPT);
+    }
     let pane = request
         .pane
         .or(args.pane)

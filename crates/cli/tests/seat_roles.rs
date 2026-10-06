@@ -265,3 +265,36 @@ async fn link_takes_a_hand_started_seat_and_stamps_its_role() {
     let (ok, json) = daemon.run(Some("pij-hand"), &["link", "pij-gov", "--role", "pm"]);
     assert!(!ok, "cycle: {json}");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_role_outside_the_vocabulary_is_a_json_refusal_naming_the_set() {
+    let daemon = Daemon::start("pij-166-register-vocab").await;
+    let (ok, json) = daemon.run(
+        None,
+        &[
+            "register",
+            "pij-coder",
+            "--harness",
+            "claude",
+            "--folder",
+            "/abs/tree",
+            "--pid",
+            &GOVERNOR.pid.to_string(),
+            "--proc-start",
+            &GOVERNOR.proc_start.to_string(),
+            "--role",
+            "coder",
+        ],
+    );
+    assert!(!ok, "{json}");
+    assert_eq!(json["error"], "refused", "{json}");
+    assert_eq!(json["details"]["code"], "E-RS-ARG", "{json}");
+    let message = json["meta"].as_str().unwrap_or_default();
+    assert!(message.contains("prime, pm, worker, pa"), "{json}");
+    let (ok, json) = daemon.run(None, &["list"]);
+    assert!(ok, "list: {json}");
+    assert!(
+        json["data"]["seats"].as_array().expect("seats").is_empty(),
+        "a refused role admits no seat: {json}"
+    );
+}

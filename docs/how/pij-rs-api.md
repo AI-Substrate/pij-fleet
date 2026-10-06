@@ -625,6 +625,7 @@ The case-id column names exact `.routes[].cases[].id` entries in [`governance-ro
   - `E-RS-OWNERSHIP` with `details.reason:"prime"` for a prime;
   - `E-RS-ARG` with `details.reason:"cycle"` for the caller's own ancestor.
 - The receipt carries `seat`, `parent`, `previous_parent`, `role`, `assigned_by`, `assigned_at`, `parent_changed`, `role_changed` and `seqs`.
+- A registration that claims no `--parent` keeps the parent the row holds at commit (`put_reporting_keeping_parent`). A refresh racing a link therefore never reverts the placement.
 - Self-asserted `adopt --role` is unchanged, a known divergence from TS. Placement needs the SQLite registry: fake-registry daemons refuse it rather than desync.
 
 Project/stream/fence/dispatch/task records are rs store authority, not files under `~/.pij/`. Fences describe intended writes, not permission. Stream close changes its record, not the worktree. Dispatch persists packet digest and outbound linkage before delivery; queued is not delivered, and delivered is not acknowledged. Only the resolved recipient can ack the matching packet SHA; identical ack is idempotent. Canary requires actual nonce-correlated dispatch/ack and observed runtime/model evidence, not descriptor presence. `attest --plan-id` never grants native-extension-delivery attestation. `node show` joins rs records only. `spine render` returns `{text,cursor}` and never writes a legacy ledger file.

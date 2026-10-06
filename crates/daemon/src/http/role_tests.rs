@@ -667,3 +667,177 @@ async fn every_role_setter_refuses_outside_the_closed_vocabulary() {
             .expect("every vocabulary role is assertable");
     }
 }
+
+/// Pauses one seat's registry commit until released: a deterministic failpoint
+/// between a writer's roster snapshot and its put (anglerfish #26, HIGH).
+struct GatedRegistry {
+    inner: Arc<SqliteRegistry>,
+    seat: SeatId,
+    reached: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+impl GatedRegistry {
+    async fn gate(&self, seat: &SeatId) {
+        if seat != &self.seat {
+            return;
+        }
+        if let Some(reached) = self.reached.lock().await.take() {
+            reached.send(()).expect("announce paused commit");
+        }
+        if let Some(release) = self.release.lock().await.take() {
+            release.await.expect("release paused commit");
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Registry for GatedRegistry {
+    async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
+        self.inner.get(seat).await
+    }
+    async fn put(&self, descriptor: SeatDescriptor) -> Result<Seq> {
+        self.put_reporting(descriptor).await.map(|(seq, _)| seq)
+    }
+    async fn put_reporting(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        self.gate(&descriptor.id).await;
+        self.inner.put_reporting(descriptor).await
+    }
+    async fn put_reporting_keeping_parent(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        self.gate(&descriptor.id).await;
+        self.inner.put_reporting_keeping_parent(descriptor).await
+    }
+    async fn list(&self, filter: pij_core::ports::SeatFilter) -> Result<Vec<SeatDescriptor>> {
+        self.inner.list(filter).await
+    }
+    async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq> {
+        self.inner.tombstone(seat, reason).await
+    }
+    async fn tombstone_if_unchanged(
+        &self,
+        expected: SeatDescriptor,
+        reason: String,
+    ) -> Result<Seq> {
+        self.inner.tombstone_if_unchanged(expected, reason).await
+    }
+    async fn set_activity(
+        &self,
+        seat: &SeatId,
+        state: pij_core::model::SystemState,
+        reason: Option<&str>,
+    ) -> Result<Option<Seq>> {
+        self.inner.set_activity(seat, state, reason).await
+    }
+}
+
+async fn registration_racing_link(orphaned: bool) {
+    let fixture = Fixture::new().await;
+    let (_, hand, _) = Fixture::ids();
+    let mut seat = fixture
+        .registry
+        .get(&hand)
+        .await
+        .expect("get")
+        .expect("seat");
+    seat.parent = if orphaned {
+        let dead = fixture.seat("pij-dead", None).await;
+        fixture.tombstone(&dead).await;
+        Some(dead)
+    } else {
+        None
+    };
+    fixture.registry.put(seat.clone()).await.expect("seed seat");
+    let governor = fixture.seat("pij-gov", None).await;
+    let outsider = fixture.seat("pij-outsider", None).await;
+    let proc = seat.proc.expect("template seat is bound");
+
+    let (reached_tx, reached_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let gated = Arc::new(GatedRegistry {
+        inner: fixture.registry.clone(),
+        seat: hand.clone(),
+        reached: tokio::sync::Mutex::new(Some(reached_tx)),
+        release: tokio::sync::Mutex::new(Some(release_rx)),
+    });
+    let registration = crate::registration::RegistrationService::new(
+        gated,
+        Arc::new(pij_testkit::fakes::FakeLiveness::new().with_proc(proc)),
+        fixture.bus.clone(),
+        Vec::new(),
+        fixture.service.clone(),
+    );
+    let claim = crate::http::Registration {
+        supersedes: None,
+        id: hand.to_string(),
+        harness: seat.harness.as_str().to_string(),
+        folder: seat.folder.clone(),
+        extension_build: None,
+        extension_path: None,
+        pane: seat.pane.clone(),
+        pid: Some(proc.pid),
+        proc_start: Some(proc.proc_start),
+        spawn_id: None,
+        model: None,
+        actual_model: None,
+        actual_model_observed: false,
+        provider: None,
+        effort: None,
+        parent: None,
+        role: None,
+        relay: false,
+    };
+    let refresh = tokio::spawn(async move { registration.register(claim).await });
+    // The refresh has read its roster snapshot (old parent) and is paused at its put.
+    reached_rx.await.expect("registration reached its commit");
+    let linked = fixture
+        .link(&governor, &hand, "worker")
+        .await
+        .expect("link commits while the refresh is paused");
+    assert_eq!(linked.parent, Some(governor.clone()));
+    release_tx.send(()).expect("release the refresh");
+    let refreshed = refresh
+        .await
+        .expect("registration task")
+        .expect("refresh commits");
+
+    let row = fixture
+        .registry
+        .get(&hand)
+        .await
+        .expect("get")
+        .expect("seat");
+    assert_eq!(
+        row.parent,
+        Some(governor.clone()),
+        "the link's parent survives the refresh"
+    );
+    assert_eq!(
+        refreshed.parent,
+        Some(governor.clone()),
+        "the refresh reports the committed parent"
+    );
+    let error = fixture
+        .link(&outsider, &hand, "pm")
+        .await
+        .expect_err("the governor still owns the seat");
+    assert!(
+        matches!(&error, RoleError::Ownership { parent: Some(named), .. } if *named == governor),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn a_registration_snapshot_never_reverts_a_link_of_a_parentless_seat() {
+    registration_racing_link(false).await;
+}
+
+#[tokio::test]
+async fn a_registration_snapshot_never_reverts_an_orphan_takeover() {
+    registration_racing_link(true).await;
+}

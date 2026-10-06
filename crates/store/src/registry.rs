@@ -333,23 +333,14 @@ pub fn descriptor_event(descriptor: &SeatDescriptor) -> Result<Event> {
     registry_event("seat.put", &descriptor.id, payload)
 }
 
-#[async_trait]
-impl Registry for SqliteRegistry {
-    async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
-        require_current_schema(&self.pool).await?;
-        let row = sqlx::query("SELECT * FROM seats WHERE id = ?1")
-            .bind(seat.as_str())
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(adapter_error)?;
-        row.as_ref().map(row_to_descriptor).transpose()
-    }
-
-    async fn put(&self, descriptor: SeatDescriptor) -> Result<Seq> {
-        self.put_reporting(descriptor).await.map(|(seq, _)| seq)
-    }
-
-    async fn put_reporting(&self, descriptor: SeatDescriptor) -> Result<(Seq, PutBinding)> {
+impl SqliteRegistry {
+    /// The sole descriptor commit. `keep_parent` re-reads the row's parent in
+    /// the same transaction so a stale snapshot cannot revert a placement.
+    async fn put_committed(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+    ) -> Result<(Seq, PutBinding)> {
         let pool = self.pool.clone();
         let (seq, binding) = self
             .publisher
@@ -362,16 +353,23 @@ impl Registry for SqliteRegistry {
                     // their locks. Failure rolls back both the descriptor and its event.
                     let mut descriptor = descriptor;
                     descriptor.machine = None;
-                    let mut event = descriptor_event(&descriptor)?;
                     let mut tx = begin_write(&pool).await?;
-                    let previous = sqlx::query("SELECT pid, proc_start FROM seats WHERE id = ?1")
-                        .bind(descriptor.id.as_str())
-                        .fetch_optional(&mut *tx)
-                        .await
-                        .map_err(adapter_error)?;
+                    let previous =
+                        sqlx::query("SELECT pid, proc_start, parent FROM seats WHERE id = ?1")
+                            .bind(descriptor.id.as_str())
+                            .fetch_optional(&mut *tx)
+                            .await
+                            .map_err(adapter_error)?;
+                    if keep_parent && let Some(row) = previous.as_ref() {
+                        let parent: Option<String> =
+                            row.try_get("parent").map_err(adapter_error)?;
+                        descriptor.parent = parent.map(SeatId::from);
+                    }
+                    let mut event = descriptor_event(&descriptor)?;
                     let binding = PutBinding {
                         inserted: previous.is_none(),
                         previous_proc: previous.as_ref().map(row_proc).transpose()?.flatten(),
+                        parent: descriptor.parent.clone(),
                     };
 
                     let seq = append_in_transaction(&mut tx, &event).await?;
@@ -390,6 +388,34 @@ impl Registry for SqliteRegistry {
             message: "registry publisher lost the committed put binding".to_string(),
         })?;
         Ok((seq, binding))
+    }
+}
+
+#[async_trait]
+impl Registry for SqliteRegistry {
+    async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
+        require_current_schema(&self.pool).await?;
+        let row = sqlx::query("SELECT * FROM seats WHERE id = ?1")
+            .bind(seat.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        row.as_ref().map(row_to_descriptor).transpose()
+    }
+
+    async fn put(&self, descriptor: SeatDescriptor) -> Result<Seq> {
+        self.put_reporting(descriptor).await.map(|(seq, _)| seq)
+    }
+
+    async fn put_reporting(&self, descriptor: SeatDescriptor) -> Result<(Seq, PutBinding)> {
+        self.put_committed(descriptor, false).await
+    }
+
+    async fn put_reporting_keeping_parent(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, PutBinding)> {
+        self.put_committed(descriptor, true).await
     }
 
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {

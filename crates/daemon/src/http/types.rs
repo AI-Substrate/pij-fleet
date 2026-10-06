@@ -81,7 +81,6 @@ pub(crate) fn deserialize_asserted_role<'de, D: serde::Deserializer<'de>>(
     if role.trim().is_empty() {
         return Err(serde::de::Error::custom("role must be a nonempty string"));
     }
-    pij_core::orchestration::check_seat_role(&role).map_err(serde::de::Error::custom)?;
     Ok(Some(role))
 }
 

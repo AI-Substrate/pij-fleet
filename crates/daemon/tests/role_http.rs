@@ -631,18 +631,29 @@ async fn register_and_adopt_refuse_roles_outside_the_closed_vocabulary_before_ad
     let register = json!({"id":template["id"],"harness":template["harness"],"folder":template["folder"],
         "pane":template["pane"],"pid":template["proc"]["pid"].as_u64().expect("pid") + index as u64,
         "proc_start":template["proc"]["proc_start"],"role":"coder"});
-    let (status, response) = fixture.post("/v1/register", &register).await;
-    assert!(status >= 400, "{response}");
     let typed = json!({"argv":["adopt",template["pane"],"--harness",template["harness"]],"role":"reviewer"});
-    assert!(fixture.post("/v1/adopt", &typed).await.0 >= 400);
     let argv =
         json!({"argv":["adopt",template["pane"],"--harness",template["harness"],"--role","coder"]});
-    let (status, response) = fixture.post("/v1/adopt", &argv).await;
-    assert!(status >= 400, "{response}");
-    assert!(
-        response.to_string().contains("prime, pm, worker, pa"),
-        "{response}"
-    );
+    for (path, request) in [
+        ("/v1/register", &register),
+        ("/v1/adopt", &typed),
+        ("/v1/adopt", &argv),
+    ] {
+        let (status, response) = fixture.post(path, request).await;
+        assert_eq!(status, 400, "{path}: {response}");
+        assert_eq!(response["error"], "refused", "{path}: {response}");
+        assert_eq!(
+            response["details"]["code"], "E-RS-ARG",
+            "{path}: {response}"
+        );
+        assert!(
+            response["meta"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("prime, pm, worker, pa"),
+            "{path}: {response}"
+        );
+    }
     assert!(
         fixture.events().await.is_empty(),
         "a refused role admits no seat and publishes nothing"

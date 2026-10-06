@@ -742,6 +742,15 @@ async fn register(
     State(state): State<AppState>,
     Json(mut request): Json<RegistrationRequest>,
 ) -> Response {
+    // Vocabulary is a refusal, never a serde rejection (plan 166).
+    if let Some(Err(reason)) = request
+        .claim
+        .role
+        .as_deref()
+        .map(pij_core::orchestration::check_seat_role)
+    {
+        return role::RoleError::Invalid(reason).into_response("pij register");
+    }
     // Native claims carry their own verified host tuple. Do not replace it with
     // the pane's shell PID while adding the ordinary registration provenance.
     let mut proc_source = request

@@ -846,10 +846,13 @@ impl RegistrationService {
         if descriptor.effort.is_none() {
             descriptor.effort = claim.effort;
         }
-        if let Some(parent) = claim
+        // An unclaimed parent is never written from this snapshot: a link may
+        // commit between the roster read and the put (plan 166).
+        let claimed_parent = claim
             .parent
-            .filter(|_| !resuming && (!native || existing.is_none()))
-        {
+            .filter(|_| !resuming && (!native || existing.is_none()));
+        let parent_claimed = claimed_parent.is_some();
+        if let Some(parent) = claimed_parent {
             descriptor.parent = Some(parent);
         }
         descriptor.relay = claim.relay;
@@ -875,11 +878,13 @@ impl RegistrationService {
                 .is_none_or(|claimed| role.as_ref() == Some(claimed))
             {
                 descriptor.role = role;
+                let parent = descriptor.parent.clone();
                 return Ok((
                     descriptor,
                     PutBinding {
                         inserted: false,
                         previous_proc: proc,
+                        parent,
                     },
                 ));
             }
@@ -930,7 +935,7 @@ impl RegistrationService {
             ));
             retired.native_extension_delivery = false;
             self.registry
-                .put(retired)
+                .put_reporting_keeping_parent(retired)
                 .await
                 .map_err(RegistrationError::Runtime)?;
             if spawn_predecessor.is_some_and(|previous| previous.id == observed.id) {
@@ -963,15 +968,20 @@ impl RegistrationService {
             ));
             previous.native_extension_delivery = false;
             self.registry
-                .put(previous)
+                .put_reporting_keeping_parent(previous)
                 .await
                 .map_err(RegistrationError::Runtime)?;
         }
-        let (_, binding) = self
-            .registry
-            .put_reporting(descriptor.clone())
-            .await
-            .map_err(RegistrationError::Runtime)?;
+        let committed = if parent_claimed {
+            self.registry.put_reporting(descriptor.clone()).await
+        } else {
+            self.registry
+                .put_reporting_keeping_parent(descriptor.clone())
+                .await
+        };
+        let (_, binding) = committed.map_err(RegistrationError::Runtime)?;
+        // Report the committed parent, not the snapshot's.
+        descriptor.parent = binding.parent.clone();
         if !native && let Some(previous) = retired {
             self.event_bus
                 .publish(Event {
