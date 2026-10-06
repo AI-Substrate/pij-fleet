@@ -351,82 +351,40 @@ impl Registry for SqliteRegistry {
 
     async fn put_reporting(&self, descriptor: SeatDescriptor) -> Result<(Seq, PutBinding)> {
         let pool = self.pool.clone();
-        let (seq, binding) = self.publisher.publish_registry(Box::pin(async move {
-        owned_write(async move {
-        require_current_schema(&pool).await?;
+        let (seq, binding) = self
+            .publisher
+            .publish_registry(Box::pin(async move {
+                owned_write(async move {
+                    require_current_schema(&pool).await?;
 
-        // The future is first polled under EventBus's publication lock. Acquire
-        // SQLite only afterwards, so ordinary and registry writers cannot invert
-        // their locks. Failure rolls back both the descriptor and its event.
-        let mut descriptor = descriptor;
-        descriptor.machine = None;
-        let mut event = descriptor_event(&descriptor)?;
-        let mut tx = begin_write(&pool).await?;
-        let previous = sqlx::query("SELECT pid, proc_start FROM seats WHERE id = ?1")
-            .bind(descriptor.id.as_str())
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
-        let binding = PutBinding {
-            inserted: previous.is_none(),
-            previous_proc: previous.as_ref().map(row_proc).transpose()?.flatten(),
-        };
+                    // The future is first polled under EventBus's publication lock. Acquire
+                    // SQLite only afterwards, so ordinary and registry writers cannot invert
+                    // their locks. Failure rolls back both the descriptor and its event.
+                    let mut descriptor = descriptor;
+                    descriptor.machine = None;
+                    let mut event = descriptor_event(&descriptor)?;
+                    let mut tx = begin_write(&pool).await?;
+                    let previous = sqlx::query("SELECT pid, proc_start FROM seats WHERE id = ?1")
+                        .bind(descriptor.id.as_str())
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(adapter_error)?;
+                    let binding = PutBinding {
+                        inserted: previous.is_none(),
+                        previous_proc: previous.as_ref().map(row_proc).transpose()?.flatten(),
+                    };
 
-        let seq = append_in_transaction(&mut tx, &event).await?;
+                    let seq = append_in_transaction(&mut tx, &event).await?;
 
-        sqlx::query(
-            "INSERT INTO seats (id, harness, harness_session, pane, pid, proc_start, folder, state, \
-             semantic_state, role, parent, relay, tombstoned_at, tombstone_reason, seq, \
-             spawn_id, model, provider, effort, cross_session_inbound_accept, native_extension_delivery, \
-             extension_build, extension_path) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-             ?17, ?18, ?19, ?20, ?21, ?22, ?23) \
-             ON CONFLICT(id) DO UPDATE SET \
-             harness=excluded.harness, harness_session=excluded.harness_session, \
-             pane=excluded.pane, pid=excluded.pid, proc_start=excluded.proc_start, \
-             folder=excluded.folder, state=excluded.state, \
-             semantic_state=excluded.semantic_state, role=excluded.role, \
-             parent=excluded.parent, relay=excluded.relay, \
-             tombstoned_at=excluded.tombstoned_at, \
-             tombstone_reason=excluded.tombstone_reason, seq=excluded.seq, \
-             spawn_id=excluded.spawn_id, model=excluded.model, \
-             provider=excluded.provider, effort=excluded.effort, \
-             cross_session_inbound_accept=excluded.cross_session_inbound_accept, \
-             native_extension_delivery=excluded.native_extension_delivery, \
-             extension_build=excluded.extension_build, extension_path=excluded.extension_path",
-        )
-        .bind(descriptor.id.as_str())
-        .bind(descriptor.harness.as_str())
-        .bind(descriptor.harness_session.as_deref())
-        .bind(descriptor.pane.as_deref())
-        .bind(descriptor.proc.map(|p| i64::from(p.pid)))
-        .bind(descriptor.proc.map(|p| p.proc_start as i64))
-        .bind(&descriptor.folder)
-        .bind(descriptor.state.as_str())
-        .bind(descriptor.semantic_state.map(SemanticState::as_str))
-        .bind(descriptor.role.as_deref())
-        .bind(descriptor.parent.as_ref().map(SeatId::as_str))
-        .bind(i64::from(descriptor.relay))
-        .bind(descriptor.tombstoned_at.map(|value| value as i64))
-        .bind(descriptor.tombstone_reason.as_deref())
-        .bind(seq.0 as i64)
-        .bind(descriptor.spawn_id.as_deref())
-        .bind(descriptor.model.as_deref())
-        .bind(descriptor.provider.as_deref())
-        .bind(descriptor.effort.as_deref())
-        .bind(descriptor.cross_session_inbound_accept.map(i64::from))
-        .bind(i64::from(descriptor.native_extension_delivery))
-        .bind(descriptor.extension_build.as_deref())
-        .bind(descriptor.extension_path.as_deref())
-        .execute(&mut *tx)
-        .await
-        .map_err(adapter_error)?;
+                    upsert_seat(&mut tx, &descriptor, seq).await?;
 
-        tx.commit().await.map_err(adapter_error)?;
-        event.seq = Some(seq);
-        Ok((event, Some(binding)))
-        }).await
-        })).await?;
+                    tx.commit().await.map_err(adapter_error)?;
+                    event.seq = Some(seq);
+                    Ok((event, Some(binding)))
+                })
+                .await
+            }))
+            .await?;
         let binding = binding.ok_or_else(|| PijError::Adapter {
             adapter: "store/registry".to_string(),
             message: "registry publisher lost the committed put binding".to_string(),
@@ -525,4 +483,60 @@ impl Registry for SqliteRegistry {
             Err(error) => Err(error),
         }
     }
+}
+
+/// The sole seats-row upsert, shared by registry puts and atomic placements.
+pub(crate) async fn upsert_seat(
+    connection: &mut sqlx::SqliteConnection,
+    descriptor: &SeatDescriptor,
+    seq: Seq,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO seats (id, harness, harness_session, pane, pid, proc_start, folder, state, \
+         semantic_state, role, parent, relay, tombstoned_at, tombstone_reason, seq, \
+         spawn_id, model, provider, effort, cross_session_inbound_accept, native_extension_delivery, \
+         extension_build, extension_path) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
+         ?17, ?18, ?19, ?20, ?21, ?22, ?23) \
+         ON CONFLICT(id) DO UPDATE SET \
+         harness=excluded.harness, harness_session=excluded.harness_session, \
+         pane=excluded.pane, pid=excluded.pid, proc_start=excluded.proc_start, \
+         folder=excluded.folder, state=excluded.state, \
+         semantic_state=excluded.semantic_state, role=excluded.role, \
+         parent=excluded.parent, relay=excluded.relay, \
+         tombstoned_at=excluded.tombstoned_at, \
+         tombstone_reason=excluded.tombstone_reason, seq=excluded.seq, \
+         spawn_id=excluded.spawn_id, model=excluded.model, \
+         provider=excluded.provider, effort=excluded.effort, \
+         cross_session_inbound_accept=excluded.cross_session_inbound_accept, \
+         native_extension_delivery=excluded.native_extension_delivery, \
+         extension_build=excluded.extension_build, extension_path=excluded.extension_path",
+    )
+    .bind(descriptor.id.as_str())
+    .bind(descriptor.harness.as_str())
+    .bind(descriptor.harness_session.as_deref())
+    .bind(descriptor.pane.as_deref())
+    .bind(descriptor.proc.map(|p| i64::from(p.pid)))
+    .bind(descriptor.proc.map(|p| p.proc_start as i64))
+    .bind(&descriptor.folder)
+    .bind(descriptor.state.as_str())
+    .bind(descriptor.semantic_state.map(SemanticState::as_str))
+    .bind(descriptor.role.as_deref())
+    .bind(descriptor.parent.as_ref().map(SeatId::as_str))
+    .bind(i64::from(descriptor.relay))
+    .bind(descriptor.tombstoned_at.map(|value| value as i64))
+    .bind(descriptor.tombstone_reason.as_deref())
+    .bind(seq.0 as i64)
+    .bind(descriptor.spawn_id.as_deref())
+    .bind(descriptor.model.as_deref())
+    .bind(descriptor.provider.as_deref())
+    .bind(descriptor.effort.as_deref())
+    .bind(descriptor.cross_session_inbound_accept.map(i64::from))
+    .bind(i64::from(descriptor.native_extension_delivery))
+    .bind(descriptor.extension_build.as_deref())
+    .bind(descriptor.extension_path.as_deref())
+    .execute(connection)
+    .await
+    .map_err(adapter_error)?;
+    Ok(())
 }

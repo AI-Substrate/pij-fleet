@@ -10,8 +10,9 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Envelope, ErrorKind, SeatDescriptor, SeatId, Seq};
+use pij_core::orchestration::{check_placement_role, check_seat_role};
 use pij_core::ports::Registry;
-use pij_store::SqliteOrchestration;
+use pij_store::{Placement, SqliteOrchestration};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -51,6 +52,15 @@ pub enum RoleError {
         /// Subject's current recorded parent.
         parent: Option<SeatId>,
     },
+    /// A placement refusal with its own decodable code (plan 166).
+    Placement {
+        /// Decodable refusal code.
+        code: &'static str,
+        /// Human-readable refusal.
+        reason: String,
+        /// Structured evidence.
+        details: Value,
+    },
     /// A dependency failed; no partial role assertion is committed.
     Runtime(PijError),
 }
@@ -62,6 +72,7 @@ impl std::fmt::Display for RoleError {
                 formatter,
                 "E-RS-OWNERSHIP role: {caller} is neither {seat} nor its recorded parent"
             ),
+            Self::Placement { code, reason, .. } => write!(formatter, "{code} {reason}"),
             Self::Runtime(error) => error.fmt(formatter),
         }
     }
@@ -84,6 +95,16 @@ impl RoleError {
                 ErrorKind::Refused,
                 json!({"code":"E-RS-OWNERSHIP","operation":"role","caller":caller,"seat":seat,"parent":parent}),
             ),
+            Self::Placement { code, details, .. } => {
+                let mut details = details.clone();
+                details["code"] = json!(code);
+                let status = if *code == "E-RS-ARG" {
+                    StatusCode::BAD_REQUEST
+                } else {
+                    StatusCode::FORBIDDEN
+                };
+                (status, ErrorKind::Refused, details)
+            }
             Self::Runtime(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ErrorKind::Adapter,
@@ -135,10 +156,8 @@ impl RoleService {
         target: &SeatId,
         role: Option<String>,
     ) -> std::result::Result<RoleReceipt, RoleError> {
-        if role.as_deref().is_some_and(|value| value.trim().is_empty()) {
-            return Err(RoleError::Invalid(
-                "role must be a nonempty string or explicit null".to_string(),
-            ));
+        if let Some(value) = role.as_deref() {
+            check_seat_role(value).map_err(RoleError::Invalid)?;
         }
         let registry = self.registry.clone();
         let store = self.roles.clone();
@@ -252,6 +271,108 @@ impl RoleService {
             seat.role = roles.remove(&seat.id);
         }
         Ok(())
+    }
+
+    /// Stamp a role from above on the placement call (spawn or link), with the
+    /// parent change, in one transaction under the shared publication boundary.
+    ///
+    /// # Errors
+    /// Vocabulary, ownership, prime-capture or cycle refusals; store failures.
+    pub async fn place(
+        &self,
+        actor: &SeatId,
+        placement: Placement,
+        role: &str,
+    ) -> std::result::Result<PlacementReceipt, RoleError> {
+        check_placement_role(role).map_err(RoleError::Invalid)?;
+        let store = self.roles.clone();
+        let clock = self.clock.clone();
+        let actor_id = actor.clone();
+        let target = match &placement {
+            Placement::Spawn(descriptor) => descriptor.id.clone(),
+            Placement::Link(target) => target.clone(),
+        };
+        let role_owned = role.to_string();
+        self.event_bus
+            .publish_committed_batch(async move {
+                let assigned_at = clock()?;
+                let commit = store
+                    .place_seat_committed(&actor_id, placement, &role_owned, assigned_at)
+                    .await?;
+                let receipt = PlacementReceipt {
+                    seat: commit.descriptor.id.clone(),
+                    parent: commit.descriptor.parent.clone(),
+                    previous_parent: commit.previous_parent,
+                    role: role_owned,
+                    assigned_by: actor_id,
+                    assigned_at,
+                    parent_changed: commit.parent_changed,
+                    role_changed: commit.role_changed,
+                    seqs: commit.events.iter().filter_map(|event| event.seq).collect(),
+                    descriptor: commit.descriptor,
+                };
+                Ok((commit.events, receipt))
+            })
+            .await
+            .map_err(|error| placement_error(actor, &target, error))
+    }
+}
+
+/// Receipt for one placement: the seat as written and what changed.
+#[derive(Clone, Debug, Serialize)]
+pub struct PlacementReceipt {
+    /// Placed seat.
+    pub seat: SeatId,
+    /// Recorded parent after the placement (the governor).
+    pub parent: Option<SeatId>,
+    /// Recorded parent before the placement.
+    pub previous_parent: Option<SeatId>,
+    /// Stamped role.
+    pub role: String,
+    /// Daemon-resolved governor, never body attribution.
+    pub assigned_by: SeatId,
+    /// Epoch milliseconds at placement time.
+    pub assigned_at: u64,
+    /// Whether the seat row was written (spawn record or new parent).
+    pub parent_changed: bool,
+    /// Whether a `role-set` was appended; an unchanged role appends none.
+    pub role_changed: bool,
+    /// Committed event sequences, in order.
+    pub seqs: Vec<Seq>,
+    /// The committed seat row, for the spawn response.
+    #[serde(skip)]
+    pub descriptor: SeatDescriptor,
+}
+
+fn placement_error(actor: &SeatId, target: &SeatId, error: PijError) -> RoleError {
+    let PijError::GovernanceRefused { code, record } = error else {
+        return RoleError::Runtime(error);
+    };
+    match code.as_str() {
+        "E-RS-OWNERSHIP" => RoleError::Ownership {
+            caller: actor.clone(),
+            seat: target.clone(),
+            parent: (record != "absent").then(|| SeatId::from(record)),
+        },
+        "E-RS-PRIME" => RoleError::Placement {
+            code: "E-RS-OWNERSHIP",
+            reason: format!("{target} is a prime; a prime is designated, never placed"),
+            details: json!({"operation": "link", "caller": actor, "seat": target, "reason": "prime"}),
+        },
+        "E-RS-CYCLE" => RoleError::Placement {
+            code: "E-RS-ARG",
+            reason: format!(
+                "{target} is an ancestor of {actor}; placing it under {actor} makes a cycle"
+            ),
+            details: json!({"operation": "link", "caller": actor, "seat": target, "reason": "cycle"}),
+        },
+        _ => RoleError::Placement {
+            code: "E-RS-ARG",
+            reason: format!(
+                "placement refused: {code} ({record}) — both seats must be live and distinct"
+            ),
+            details: json!({"operation": "link", "caller": actor, "seat": target, "record": record}),
+        },
     }
 }
 
@@ -426,6 +547,103 @@ pub(crate) async fn role(
     {
         Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, receipt)),
         Err(error) => error.into_response(COMMAND),
+    }
+}
+
+const LINK: &str = "pij link";
+
+/// `link <child> [--parent <caller>] --role <pm|worker|pa> [--json]`.
+fn parse_link(
+    body: Value,
+) -> std::result::Result<(SeatId, Option<SeatId>, String, CallerContext), RoleError> {
+    let invalid = |reason: &str| RoleError::Invalid(reason.to_string());
+    let usage = "expected link <seat> [--parent <you>] --role <pm|worker|pa>";
+    let object = body
+        .as_object()
+        .ok_or_else(|| invalid("link request must be an object"))?;
+    if let Some(key) = object
+        .keys()
+        .find(|key| !matches!(key.as_str(), "argv" | "caller"))
+    {
+        return Err(RoleError::Invalid(format!(
+            "unknown link request field: {key}"
+        )));
+    }
+    let caller = match object.get("caller") {
+        Some(value) => serde_json::from_value(value.clone())
+            .map_err(|error| RoleError::Invalid(error.to_string()))?,
+        None => CallerContext::default(),
+    };
+    let argv: Vec<String> =
+        serde_json::from_value(object.get("argv").cloned().unwrap_or(Value::Null))
+            .map_err(|_| invalid(usage))?;
+    let mut tokens = argv.iter().map(String::as_str);
+    if tokens.next() != Some("link") {
+        return Err(invalid(usage));
+    }
+    let (mut seat, mut parent, mut role) = (None, None, None);
+    while let Some(token) = tokens.next() {
+        let slot = match token {
+            "--json" => continue,
+            "--parent" if parent.is_none() => &mut parent,
+            "--role" if role.is_none() => &mut role,
+            flag if flag.starts_with('-') => {
+                return Err(RoleError::Invalid(format!(
+                    "unknown or repeated link flag: {flag}"
+                )));
+            }
+            value if seat.is_none() && !value.trim().is_empty() => {
+                seat = Some(value.to_string());
+                continue;
+            }
+            _ => return Err(invalid(usage)),
+        };
+        let value = tokens
+            .next()
+            .filter(|value| !value.trim().is_empty() && !value.starts_with('-'))
+            .ok_or_else(|| invalid(usage))?;
+        *slot = Some(value.to_string());
+    }
+    match (seat, role) {
+        (Some(seat), Some(role)) => {
+            Ok((SeatId::from(seat), parent.map(SeatId::from), role, caller))
+        }
+        _ => Err(invalid(usage)),
+    }
+}
+
+pub(crate) async fn link(
+    State(state): State<AppState>,
+    body: std::result::Result<Json<Value>, JsonRejection>,
+) -> Response {
+    let body = match body {
+        Ok(Json(body)) => body,
+        Err(error) => return RoleError::Invalid(error.body_text()).into_response(LINK),
+    };
+    let (seat, parent, role, caller) = match parse_link(body) {
+        Ok(call) => call,
+        Err(error) => return error.into_response(LINK),
+    };
+    let actor = match resolve_seat(&state, LINK, caller.session_id, caller.pane).await {
+        Resolved::Seat(seat, _) => seat,
+        Resolved::Refusal(response) => return response,
+    };
+    if parent.as_ref().is_some_and(|parent| parent != &actor.id) {
+        return RoleError::Placement {
+            code: "E-RS-OWNERSHIP",
+            reason: format!("--parent must name the caller {}: the caller becomes or is the parent", actor.id),
+            details: json!({"operation": "link", "caller": actor.id, "seat": seat, "claimed_parent": parent}),
+        }
+        .into_response(LINK);
+    }
+    match state
+        .services
+        .roles
+        .place(&actor.id, Placement::Link(seat), &role)
+        .await
+    {
+        Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(LINK, receipt)),
+        Err(error) => error.into_response(LINK),
     }
 }
 

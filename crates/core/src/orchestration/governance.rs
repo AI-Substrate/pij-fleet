@@ -157,6 +157,40 @@ pub struct RoleAssignment {
     pub assigned_at: u64,
 }
 
+/// The closed seat-role vocabulary every setter enforces (plan 166).
+pub const SEAT_ROLES: [&str; 4] = ["prime", "pm", "worker", "pa"];
+
+/// Roles a governor stamps on the placement call (spawn, link). `prime` is
+/// designated through the prime flag, never placed.
+pub const PLACEMENT_ROLES: [&str; 3] = ["pm", "worker", "pa"];
+
+/// Refuse any role outside [`SEAT_ROLES`], naming the allowed set.
+///
+/// # Errors
+/// A human-readable refusal reason listing every allowed role.
+pub fn check_seat_role(role: &str) -> Result<(), String> {
+    check_role_in(role, &SEAT_ROLES)
+}
+
+/// Refuse any role outside [`PLACEMENT_ROLES`], naming the allowed set.
+///
+/// # Errors
+/// A human-readable refusal reason listing every allowed placement role.
+pub fn check_placement_role(role: &str) -> Result<(), String> {
+    check_role_in(role, &PLACEMENT_ROLES)
+}
+
+fn check_role_in(role: &str, allowed: &[&str]) -> Result<(), String> {
+    if allowed.contains(&role) {
+        Ok(())
+    } else {
+        Err(format!(
+            "role `{role}` is not allowed here; allowed: {}",
+            allowed.join(", ")
+        ))
+    }
+}
+
 /// A prime designation is separate from a display role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

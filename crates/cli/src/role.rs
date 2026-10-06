@@ -19,6 +19,19 @@ impl DaemonClient {
         )
         .await
     }
+
+    /// Forward link arguments (without the leading verb) and caller evidence.
+    pub async fn link(&self, args: &[String], caller: &CallerContext) -> Envelope<Value> {
+        let argv: Vec<&str> = std::iter::once("link")
+            .chain(args.iter().map(String::as_str))
+            .collect();
+        self.post(
+            "pij link",
+            "/v1/link",
+            &json!({"argv":argv,"caller":caller}),
+        )
+        .await
+    }
 }
 
 #[cfg(test)]

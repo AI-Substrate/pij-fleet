@@ -455,3 +455,215 @@ async fn role_authority_is_read_after_earlier_ordered_registry_change() {
         "only the prior registry publication persisted"
     );
 }
+
+// Plan 166: link authority, re-role, guards and the closed vocabulary.
+
+impl Fixture {
+    async fn seat(&self, id: &str, parent: Option<&SeatId>) -> SeatId {
+        let (_, template, _) = Self::ids();
+        let mut seat = self
+            .registry
+            .get(&template)
+            .await
+            .expect("registry")
+            .expect("template seat");
+        seat.id = SeatId::from(id);
+        seat.parent = parent.cloned();
+        seat.pane = None;
+        seat.proc = None;
+        self.registry.put(seat).await.expect("seed seat");
+        SeatId::from(id)
+    }
+    async fn tombstone(&self, seat: &SeatId) {
+        self.registry
+            .tombstone(seat, "test retirement")
+            .await
+            .expect("tombstone");
+    }
+    async fn link(
+        &self,
+        actor: &SeatId,
+        seat: &SeatId,
+        role: &str,
+    ) -> std::result::Result<PlacementReceipt, RoleError> {
+        self.service
+            .place(actor, Placement::Link(seat.clone()), role)
+            .await
+    }
+    async fn kinds_since(&self, before: usize) -> Vec<String> {
+        self.events().await[before..]
+            .iter()
+            .map(|event| event.kind.clone())
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn link_takes_a_parentless_seat_in_one_commit() {
+    let fixture = Fixture::new().await;
+    let governor = fixture.seat("pij-gov", None).await;
+    let hand = fixture.seat("pij-hand", None).await;
+    let before = fixture.events().await.len();
+    let receipt = fixture
+        .link(&governor, &hand, "worker")
+        .await
+        .expect("link");
+    assert!(receipt.parent_changed && receipt.role_changed);
+    assert_eq!(receipt.previous_parent, None);
+    assert_eq!(fixture.kinds_since(before).await, ["seat.put", "role-set"]);
+    let seat = fixture
+        .registry
+        .get(&hand)
+        .await
+        .expect("get")
+        .expect("seat");
+    assert_eq!(seat.parent, Some(governor.clone()));
+    let assignment = fixture
+        .store
+        .seat_role(&hand)
+        .await
+        .expect("role")
+        .expect("assigned");
+    assert_eq!(
+        (assignment.role.as_str(), &assignment.assigned_by),
+        ("worker", &governor)
+    );
+}
+
+#[tokio::test]
+async fn link_takes_a_seat_whose_parent_is_tombstoned() {
+    let fixture = Fixture::new().await;
+    let governor = fixture.seat("pij-gov", None).await;
+    let dead = fixture.seat("pij-dead", None).await;
+    let orphan = fixture.seat("pij-orphan", Some(&dead)).await;
+    fixture.tombstone(&dead).await;
+    let receipt = fixture
+        .link(&governor, &orphan, "pm")
+        .await
+        .expect("orphan is takeable");
+    assert_eq!(receipt.previous_parent, Some(dead));
+    assert_eq!(receipt.parent, Some(governor));
+}
+
+#[tokio::test]
+async fn link_refuses_a_live_foreign_parent_and_names_it() {
+    let fixture = Fixture::new().await;
+    let (parent, worker, _) = Fixture::ids();
+    let governor = fixture.seat("pij-gov", None).await;
+    let before = fixture.events().await;
+    let error = fixture
+        .link(&governor, &worker, "worker")
+        .await
+        .expect_err("owned elsewhere");
+    assert!(
+        matches!(&error, RoleError::Ownership { parent: Some(named), .. } if *named == parent),
+        "{error}"
+    );
+    assert_eq!(fixture.events().await, before, "a refusal commits nothing");
+    assert_eq!(
+        fixture
+            .registry
+            .get(&worker)
+            .await
+            .expect("get")
+            .expect("seat")
+            .parent,
+        Some(parent)
+    );
+}
+
+#[tokio::test]
+async fn current_parent_re_roles_without_reparenting_and_unchanged_role_emits_nothing() {
+    let fixture = Fixture::new().await;
+    let (parent, worker, _) = Fixture::ids();
+    let before = fixture.events().await.len();
+    let receipt = fixture.link(&parent, &worker, "pm").await.expect("re-role");
+    assert!(!receipt.parent_changed && receipt.role_changed);
+    assert_eq!(fixture.kinds_since(before).await, ["role-set"]);
+    let before = fixture.events().await.len();
+    let again = fixture
+        .link(&parent, &worker, "pm")
+        .await
+        .expect("idempotent");
+    assert!(!again.parent_changed && !again.role_changed);
+    assert!(again.seqs.is_empty());
+    assert_eq!(
+        fixture.events().await.len(),
+        before,
+        "no role-set for an unchanged role"
+    );
+}
+
+#[tokio::test]
+async fn link_refuses_capturing_your_own_ancestor() {
+    let fixture = Fixture::new().await;
+    let (parent, worker, _) = Fixture::ids();
+    let before = fixture.events().await;
+    let error = fixture
+        .link(&worker, &parent, "worker")
+        .await
+        .expect_err("cycle");
+    assert!(
+        matches!(&error, RoleError::Placement { code: "E-RS-ARG", details, .. } if details["reason"] == "cycle"),
+        "{error}"
+    );
+    assert_eq!(fixture.events().await, before);
+}
+
+#[tokio::test]
+async fn link_refuses_capturing_a_prime() {
+    let fixture = Fixture::new().await;
+    let prime = fixture.seat("pij-prime", None).await;
+    let outsider = fixture.seat("pij-outsider", None).await;
+    fixture
+        .service
+        .assert_role(&prime, &prime, Some("prime".to_string()))
+        .await
+        .expect("self-asserted prime");
+    let before = fixture.events().await;
+    let error = fixture
+        .link(&outsider, &prime, "worker")
+        .await
+        .expect_err("prime capture");
+    assert!(
+        matches!(&error, RoleError::Placement { code: "E-RS-OWNERSHIP", details, .. } if details["reason"] == "prime"),
+        "{error}"
+    );
+    assert_eq!(fixture.events().await, before);
+}
+
+#[tokio::test]
+async fn every_role_setter_refuses_outside_the_closed_vocabulary() {
+    let fixture = Fixture::new().await;
+    let (parent, worker, _) = Fixture::ids();
+    let before = fixture.events().await;
+    for role in ["coder", "reviewer", "Worker", ""] {
+        let error = fixture
+            .service
+            .assert_role(&parent, &worker, Some(role.to_string()))
+            .await
+            .expect_err("assertion vocabulary");
+        assert!(
+            matches!(&error, RoleError::Invalid(reason) if reason.contains("prime, pm, worker, pa")),
+            "{error}"
+        );
+    }
+    for role in ["coder", "prime"] {
+        let error = fixture
+            .link(&parent, &worker, role)
+            .await
+            .expect_err("placement vocabulary");
+        assert!(
+            matches!(&error, RoleError::Invalid(reason) if reason.contains("pm, worker, pa")),
+            "{error}"
+        );
+    }
+    assert_eq!(fixture.events().await, before);
+    for role in ["prime", "pm", "worker", "pa"] {
+        fixture
+            .service
+            .assert_role(&parent, &worker, Some(role.to_string()))
+            .await
+            .expect("every vocabulary role is assertable");
+    }
+}

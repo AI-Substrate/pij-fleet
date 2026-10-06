@@ -48,6 +48,7 @@ import {
 	ok,
 	type PijErrorCode,
 	type PijMessage,
+	type PlacementRole,
 	type ReceiptState,
 	type Result,
 	type Role,
@@ -109,6 +110,8 @@ export interface SpawnOpts {
 	 *  ~1/3-width column on the caller's right (uncapped; the stack evens itself);
 	 *  "window" opts out into a new background tmux window. */
 	readonly layout?: "window" | "split";
+	/** Role stamped from above on the daemon spawn route (plan 166). */
+	readonly role?: PlacementRole;
 }
 
 /** What index.ts hands `boot` once it has minted/derived the session id from

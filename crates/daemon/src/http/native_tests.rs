@@ -262,7 +262,7 @@ async fn native_session_resume_contract(assertion: &str) {
     let client = reqwest::Client::new();
     let mut initial = native_registration(&seat);
     initial["parent"] = json!(seat.parent);
-    initial["role"] = json!("coder");
+    initial["role"] = json!("worker");
     native_http_response(
         client
             .post(format!("http://{addr}/v1/register"))
@@ -337,7 +337,7 @@ async fn native_session_resume_contract(assertion: &str) {
             assert_eq!(current.parent, seat.parent);
             assert_eq!(
                 roles.read_role(&seat.id).await.unwrap().as_deref(),
-                Some("coder")
+                Some("worker")
             );
             assert_eq!(
                 spine
@@ -346,7 +346,7 @@ async fn native_session_resume_contract(assertion: &str) {
                     .unwrap(),
                 original_binding
             );
-            assert_eq!(resumed["data"]["role"], "coder");
+            assert_eq!(resumed["data"]["role"], "worker");
         }
         "state" => {
             let state = native_http_response(
@@ -893,7 +893,7 @@ async fn native_sqlite_http_prebind_precedes_saved_session_without_retargeting_w
     let client = reqwest::Client::new();
     let mut initial = native_registration(&first);
     initial["parent"] = json!(first.parent);
-    initial["role"] = json!("reviewer");
+    initial["role"] = json!("pm");
     native_http_response(
         client
             .post(format!("http://{addr}/v1/register"))
@@ -910,7 +910,7 @@ async fn native_sqlite_http_prebind_precedes_saved_session_without_retargeting_w
     prebind.parent = Some("pij-chosen-parent".into());
     registry.put(prebind.clone()).await.unwrap();
     roles
-        .assert_role(&prebind.id, &prebind.id, Some("coder".into()))
+        .assert_role(&prebind.id, &prebind.id, Some("worker".into()))
         .await
         .unwrap();
     for (seat, body) in [
@@ -955,7 +955,7 @@ async fn native_sqlite_http_prebind_precedes_saved_session_without_retargeting_w
         bound["data"]["parent"],
         prebind.parent.as_ref().unwrap().as_str()
     );
-    assert_eq!(bound["data"]["role"], "coder");
+    assert_eq!(bound["data"]["role"], "worker");
     assert_eq!(
         bound["data"]["spawn_id"],
         prebind.spawn_id.as_deref().unwrap()
@@ -972,7 +972,7 @@ async fn native_sqlite_http_prebind_precedes_saved_session_without_retargeting_w
         replayed["data"]["parent"],
         prebind.parent.as_ref().unwrap().as_str()
     );
-    assert_eq!(replayed["data"]["role"], "coder");
+    assert_eq!(replayed["data"]["role"], "worker");
     assert_eq!(replayed["data"]["binding"], "same");
     let current = registry.get(&prebind.id).await.unwrap().unwrap();
     assert!(current.tombstoned_at.is_none());
@@ -984,7 +984,7 @@ async fn native_sqlite_http_prebind_precedes_saved_session_without_retargeting_w
     assert_eq!(retired.parent, first.parent);
     assert_eq!(
         roles.read_role(&first.id).await.unwrap().as_deref(),
-        Some("reviewer")
+        Some("pm")
     );
     let retirement = spine
         .latest_matching(&first.id, &["seat.native-superseded"])
@@ -1042,7 +1042,7 @@ async fn native_spawn_wait_resolves_prebound_child_resuming_saved_session() {
     let client = reqwest::Client::new();
     let mut initial = native_registration(&saved);
     initial["parent"] = json!(saved.parent);
-    initial["role"] = json!("reviewer");
+    initial["role"] = json!("pm");
     native_http_response(
         client
             .post(format!("http://{addr}/v1/register"))
@@ -1083,6 +1083,8 @@ async fn native_spawn_wait_resolves_prebound_child_resuming_saved_session() {
             wait_seconds: Some(2),
             no_wait: false,
             resume: None,
+            role: None,
+            caller: None,
         })
         .send();
     let register_child = async {
@@ -1099,7 +1101,7 @@ async fn native_spawn_wait_resolves_prebound_child_resuming_saved_session() {
         assert!(prebind.proc.is_none());
         assert_eq!(prebind.parent, Some(chosen_parent.clone()));
         roles
-            .assert_role(&child_id, &child_id, Some("coder".into()))
+            .assert_role(&child_id, &child_id, Some("worker".into()))
             .await
             .unwrap();
         native_http_response(
@@ -1146,7 +1148,7 @@ async fn native_spawn_wait_resolves_prebound_child_resuming_saved_session() {
     assert_eq!(outcome["data"]["parent"], chosen_parent.as_str());
     assert_eq!(registered["data"]["id"], child_id.as_str());
     assert_eq!(registered["data"]["parent"], chosen_parent.as_str());
-    assert_eq!(registered["data"]["role"], "coder");
+    assert_eq!(registered["data"]["role"], "worker");
     let current = registry.get(&child_id).await.unwrap().unwrap();
     assert_eq!(current.proc, Some(child_process));
     assert!(current.tombstoned_at.is_none());
@@ -1156,7 +1158,7 @@ async fn native_spawn_wait_resolves_prebound_child_resuming_saved_session() {
     assert_eq!(retired.parent, saved.parent);
     assert_eq!(
         roles.read_role(&saved.id).await.unwrap().as_deref(),
-        Some("reviewer")
+        Some("pm")
     );
     let retirement = spine
         .latest_matching(&saved.id, &["seat.native-superseded"])

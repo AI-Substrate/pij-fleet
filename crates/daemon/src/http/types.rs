@@ -81,6 +81,7 @@ pub(crate) fn deserialize_asserted_role<'de, D: serde::Deserializer<'de>>(
     if role.trim().is_empty() {
         return Err(serde::de::Error::custom("role must be a nonempty string"));
     }
+    pij_core::orchestration::check_seat_role(&role).map_err(serde::de::Error::custom)?;
     Ok(Some(role))
 }
 
@@ -135,6 +136,13 @@ pub struct SpawnRequest {
     /// Harness-native conversation to resume; set by revive (plan 156).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<String>,
+    /// Role stamped from above (plan 166): `pm`, `worker` or `pa`. The
+    /// daemon-resolved caller becomes the parent and the role's author.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// Caller evidence, resolved by the daemon when `role` is present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller: Option<super::CallerContext>,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.

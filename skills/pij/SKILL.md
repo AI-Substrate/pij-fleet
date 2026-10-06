@@ -40,7 +40,8 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 | `spawn` `revive` | peer route — shim refuses `E-RS-UNPORTED`; use explicit native rs grammar, never legacy flags |
 | `send` `compact-self` `adopt` `whoami` `state` `inbox` | peer route — rs; `send --fyi` holds text the seat's next action doesn't depend on until its next turn; verified external inbox register/wait supported, extension-owned receivers unchanged |
 | `list` `sessions` | peer route — rs-only; list supports boolean --here plus exact harness/folder/parent/scope=local shim filters; sessions has no filters or legacy union |
-| `tail` `tree` `link` | peer route — `E-RS-UNPORTED`; native tail is daemon events, not a transcript |
+| `tail` `tree` | peer route — `E-RS-UNPORTED`; native tail is daemon events, not a transcript |
+| `link` | peer route — rs; `link <seat> --role <pm, worker or pa>` takes a seat with no live parent or re-roles your own child |
 | `agent` (`list/run/spawn/show/new/check/eject/report`) | agent route — `E-RS-UNPORTED` |
 | `daemon` `path` `telegram` | ops route — shim `E-RS-UNPORTED`; use documented native daemon lifecycle |
 | `phonehome` `reap` `close` | ops / peer routes — rs binding, conservative reconciliation, self-or-parent tombstone |

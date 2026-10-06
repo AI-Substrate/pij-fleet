@@ -166,6 +166,7 @@ enum Endpoint {
     /// Busy/idle publication from a harness's own turn events (plan 158, addendum 3).
     Activity,
     Role,
+    Link,
     Close,
     Reap,
     Anomalies,
@@ -185,7 +186,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 48] = [
+    const ALL: [Self; 49] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -218,6 +219,7 @@ impl Endpoint {
         Self::ShimInboxAck,
         Self::ShimSessions,
         Self::Role,
+        Self::Link,
         Self::Close,
         Self::Reap,
         Self::Anomalies,
@@ -265,6 +267,7 @@ impl Endpoint {
             Self::FyiRead => "/v1/fyi/read",
             Self::Activity => "/v1/activity",
             Self::Role => "/v1/role",
+            Self::Link => "/v1/link",
             Self::Close => "/v1/close",
             Self::Reap => "/v1/reap",
             Self::Anomalies => "/v1/anomalies",
@@ -312,6 +315,7 @@ impl Endpoint {
             Self::Adopt | Self::Whoami | Self::Phonehome => Method::POST,
             Self::State | Self::FyiClaim | Self::FyiRead | Self::Activity => Method::POST,
             Self::Role
+            | Self::Link
             | Self::Close
             | Self::Reap
             | Self::Anomalies
@@ -454,6 +458,7 @@ fn router_with_optional_federation(
                     | Endpoint::ShimInbox
                     | Endpoint::ShimInboxAck
                     | Endpoint::Role
+                    | Endpoint::Link
                     | Endpoint::Close
                     | Endpoint::Reap
                     | Endpoint::Anomalies
@@ -515,6 +520,7 @@ fn router_with_optional_federation(
             Endpoint::FyiRead => router.route(endpoint.path(), post(fyi::read)),
             Endpoint::Activity => router.route(endpoint.path(), post(fyi::activity)),
             Endpoint::Role => router.route(endpoint.path(), post(role::role)),
+            Endpoint::Link => router.route(endpoint.path(), post(role::link)),
             Endpoint::Close => router.route(endpoint.path(), post(lifecycle::close)),
             Endpoint::Reap => router.route(endpoint.path(), post(lifecycle::reap)),
             Endpoint::Anomalies => router.route(
@@ -995,6 +1001,37 @@ async fn launch_seat_locked(
     }
     let wait_seconds = request.wait_seconds.unwrap_or(DEFAULT_SPAWN_WAIT_SECONDS);
     let no_wait = request.no_wait;
+    let mut request = request;
+    // Plan 166: a role is stamped from above. Refuse before any launch; the
+    // daemon-resolved caller becomes the parent and the role's author.
+    let governor = match request.role.as_deref() {
+        None => None,
+        Some(role) => {
+            if let Err(reason) = pij_core::orchestration::check_placement_role(role) {
+                return role::RoleError::Invalid(reason).into_response(command_name);
+            }
+            let caller = request.caller.take().unwrap_or_default();
+            let actor =
+                match identity::resolve_seat(state, command_name, caller.session_id, caller.pane)
+                    .await
+                {
+                    identity::Resolved::Seat(seat, _) => seat.id,
+                    identity::Resolved::Refusal(response) => return response,
+                };
+            if let Some(parent) = request.parent.as_ref().filter(|parent| **parent != actor) {
+                return role::RoleError::Placement {
+                    code: "E-RS-OWNERSHIP",
+                    reason: format!(
+                        "--parent {parent} is not the spawner {actor}; a role from above makes the spawner the parent"
+                    ),
+                    details: serde_json::json!({"operation": "spawn", "caller": actor, "claimed_parent": parent}),
+                }
+                .into_response(command_name);
+            }
+            request.parent = Some(actor.clone());
+            Some(actor)
+        }
+    };
 
     let session = match request.session.as_deref() {
         Some(session) if !session.trim().is_empty() => session.to_string(),
@@ -1165,26 +1202,49 @@ async fn launch_seat_locked(
     // A resumed launch keeps its conversation key, so no later registration can
     // mistake the relaunch for a different conversation (plan 156 rule 3).
     descriptor.harness_session = request.resume;
-    if let Err(write_error) = state.services.registry.put(descriptor.clone()).await {
-        let rollback = state.services.tmux.kill(&pane.id).await;
-        let message = match rollback {
-            Ok(()) => format!(
-                "observed launch in pane {} but registry write failed ({write_error}); the pane was removed",
-                pane.id
-            ),
-            Err(kill_error) => format!(
-                "observed launch in pane {} but registry write failed ({write_error}); rollback also failed ({kill_error})",
-                pane.id
-            ),
-        };
-        return internal(
-            command_name,
-            PijError::Adapter {
-                adapter: "spawn".to_string(),
-                message,
-            },
-        );
-    }
+    let written = match (governor, request.role) {
+        (Some(actor), Some(role)) => state
+            .services
+            .roles
+            .place(
+                &actor,
+                pij_store::Placement::Spawn(Box::new(descriptor.clone())),
+                &role,
+            )
+            .await
+            .map(|receipt| receipt.descriptor)
+            .map_err(|error| error.to_string()),
+        _ => state
+            .services
+            .registry
+            .put(descriptor.clone())
+            .await
+            .map(|_| descriptor.clone())
+            .map_err(|error| error.to_string()),
+    };
+    let descriptor = match written {
+        Ok(written) => written,
+        Err(write_error) => {
+            let rollback = state.services.tmux.kill(&pane.id).await;
+            let message = match rollback {
+                Ok(()) => format!(
+                    "observed launch in pane {} but registry write failed ({write_error}); the pane was removed",
+                    pane.id
+                ),
+                Err(kill_error) => format!(
+                    "observed launch in pane {} but registry write failed ({write_error}); rollback also failed ({kill_error})",
+                    pane.id
+                ),
+            };
+            return internal(
+                command_name,
+                PijError::Adapter {
+                    adapter: "spawn".to_string(),
+                    message,
+                },
+            );
+        }
+    };
     drop(spawn_guard);
 
     if no_wait {

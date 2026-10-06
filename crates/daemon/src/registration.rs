@@ -1907,7 +1907,7 @@ mod tests {
         let (service, registry) = native_service(vec![old.clone()], native_liveness()).await;
         service
             .roles
-            .assert_role(&old.id, &old.id, Some("coder".into()))
+            .assert_role(&old.id, &old.id, Some("worker".into()))
             .await
             .unwrap();
         old.tombstoned_at = Some(154);
@@ -1952,10 +1952,10 @@ mod tests {
         assert_eq!(resumed.proc, Some(OTHER_HOST));
         assert_eq!(resumed.pane.as_deref(), Some("%154-new"));
         assert_eq!(resumed.parent, old.parent);
-        assert_eq!(resumed.role.as_deref(), Some("coder"));
+        assert_eq!(resumed.role.as_deref(), Some("worker"));
         assert_eq!(
             service.roles.read_role(&old.id).await.unwrap().as_deref(),
-            Some("coder")
+            Some("worker")
         );
         assert_eq!(
             spine
@@ -2036,7 +2036,7 @@ mod tests {
 
     #[tokio::test]
     async fn retired_session_resume_does_not_replace_recorded_role() {
-        retired_session_resume_contract(Harness::Omp, Some("reviewer")).await;
+        retired_session_resume_contract(Harness::Omp, Some("pm")).await;
     }
 
     #[tokio::test]
@@ -3739,7 +3739,7 @@ mod tests {
         let (service, registry) = native_service(Vec::new(), paneless_liveness()).await;
         let mut claim = paneless_claim(harness);
         claim.parent = Some("pij-original-parent".into());
-        claim.role = Some("coder".into());
+        claim.role = Some("worker".into());
         let (first, _) = pull_register(&service, claim.clone(), SESSION, false)
             .await
             .unwrap();
@@ -3754,7 +3754,7 @@ mod tests {
         }
         registry.put(old.clone()).await.unwrap();
         claim.parent = Some("pij-unrelated-parent".into());
-        claim.role = Some("reviewer".into());
+        claim.role = Some("pm".into());
         let (resumed, binding) = pull_register(&service, claim, SESSION, false)
             .await
             .expect("a returning paneless host is not its own subagent");
@@ -3768,7 +3768,7 @@ mod tests {
         assert_eq!(resumed.harness, harness);
         assert_eq!(resumed.proc, Some(HOST));
         assert_eq!(resumed.parent, old.parent);
-        assert_eq!(resumed.role.as_deref(), Some("coder"));
+        assert_eq!(resumed.role.as_deref(), Some("worker"));
         assert_eq!(
             registry
                 .get(&first.id)
@@ -4170,11 +4170,11 @@ mod tests {
         for harness in [Harness::Claude, Harness::Copilot, Harness::Codex] {
             let (service, registry) = native_service(Vec::new(), paneless_liveness()).await;
             let mut claim = paneless_claim(harness);
-            claim.role = Some("coder".into());
+            claim.role = Some("worker".into());
             let (first, _) = pull_register(&service, claim.clone(), SESSION, true)
                 .await
                 .unwrap();
-            assert_eq!(first.role.as_deref(), Some("coder"));
+            assert_eq!(first.role.as_deref(), Some("worker"));
             let mut subscription = service
                 .event_bus
                 .subscribe(None, EventFilter::default())
@@ -4208,12 +4208,12 @@ mod tests {
             }
             service
                 .roles
-                .assert_role(&same.id, &same.id, Some("reviewer".into()))
+                .assert_role(&same.id, &same.id, Some("pm".into()))
                 .await
                 .unwrap();
             claim.role = None;
             let (authoritative, _) = pull_register(&service, claim, SESSION, true).await.unwrap();
-            assert_eq!(authoritative.role.as_deref(), Some("reviewer"));
+            assert_eq!(authoritative.role.as_deref(), Some("pm"));
             assert_eq!(
                 registry
                     .calls()

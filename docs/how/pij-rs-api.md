@@ -93,7 +93,7 @@ The daemon's `Config.retired_harnesses` reads comma-separated `PIJ_RETIRED_HARNE
 
 An intentional native `pij-rs spawn --harness pi --allow-retired …` sends HTTP `"allow_retired":true` to `/v1/spawn`. The daemon accepts the override with a spine event; inspect `pij spine events --peer <new-seat> --json` and retain that evidence. Omitted or false `allow_retired` does not bypass policy. The override does not rewrite the policy or change existing seats' registration, receiver ownership or caller authority.
 
-The existing `GET /health` v2 response adds `data.retired_harnesses`, an array of harness names (`[]` for the generic configuration, `["pi"]` for this machine's recipe). In-process spawn reads this through `client.health()` before local pane or spawn-expectation mutation; it does not re-read `PIJ_RETIRED_HARNESSES` in the extension environment or infer policy from the parent harness. OMP and Pi use their distinct local launch paths; external harness choices use native `/v1/spawn`. Use native `--allow-retired` when deliberately overriding retirement, never a `bin` selector.
+The existing `GET /health` v2 response adds `data.retired_harnesses`, an array of harness names (`[]` for the generic configuration, `["pi"]` for this machine's recipe). In-process spawn reads this through `client.health()` before local pane or spawn-expectation mutation; it does not re-read `PIJ_RETIRED_HARNESSES` in the extension environment or infer policy from the parent harness. OMP and Pi use their distinct local launch paths; external harness choices use native `/v1/spawn`. Use native `--allow-retired` when deliberately overriding retirement, never a `bin` selector. `pij-rs spawn --role pm|worker|pa` (HTTP `role` plus `caller`; in-process `pij_spawn({role})` for claude/copilot/codex) stamps the child's role from above; see [Seat roles](#governance-route-inventory). In-process omp/pi spawn refuses `role` until pij-fleet#25.
 
 ## Registration and tombstone continuity
 
@@ -601,6 +601,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/node` | `node show <seat>` | `node-show` |
 | POST `/v1/orchestration` | `orchestration baton define/list/show/request/grant/return/reclaim`; `prime set/retire/unset <seat>`; `role set <seat> <role>` / `role unset <seat>` | `baton-define`, `baton-list`, `baton-show`, `baton-request`, `baton-grant`, `baton-return`, `baton-reclaim`, `prime-set`, `prime-retire`, `prime-unset`, `orchestration-role-set`, `role-unset` |
 | POST `/v1/role` | `role [<seat>] <role>` / `role [<seat>] --unset`; typed `{seat?, role, caller}` | `role-set` |
+| POST `/v1/link` | `link <seat> [--parent <you>] --role <pm/worker/pa>`; argv + `caller` only | — (`crates/cli/tests/seat_roles.rs`) |
 | POST `/v1/report` | `report now/state/question/blocked/clear/verify`; state metadata flags below | `report-question`, `report-verify` |
 | GET and POST `/v1/anomalies` | `anomalies [--here] [--project <slug>]`; GET `here=<absolute-path>&project=<slug>` | `anomalies-list`, `anomalies-argv` |
 | GET and POST `/v1/decisions` | `decisions [--state <open/answered/all>] [--asked_by <seat>] [--parent <seat>]`; GET keys `state`, `asked_by`, `parent` (literal underscore; `--asked-by` refuses) | `decisions-list`, `decisions-argv` |
@@ -615,6 +616,17 @@ The case-id column names exact `.routes[].cases[].id` entries in [`governance-ro
 
 `--json` is accepted by the command surfaces. Read families share their GET and POST parser/projection; GET `here=true` cannot guess the caller's folder and refuses. Exact peer/project filters do not widen scope. `status-stale` is node-keyed, so a project filter can omit it: supervisors query anomalies unscoped before declaring cards fresh.
 
+**Seat roles (plan 166).** Every setter enforces the closed vocabulary `prime | pm | worker | pa` and refuses anything else (`E-RS-ARG`, naming the allowed list). This covers `role`, `orchestration role set`, `register`/`adopt --role`, spawn and link. Roles are stamped by a governor, never inferred or backfilled. The placement verbs accept only `pm | worker | pa`; `prime` comes from designation.
+
+- `POST /v1/spawn` with `role` resolves `caller`. That seat becomes the parent and `assigned_by`; a different `parent` refuses `E-RS-OWNERSHIP` before launch. The seat row, `seat.put`, the `seat_roles` row and `role-set` commit in one transaction.
+- `POST /v1/link` lets the caller take a live seat whose recorded parent is absent or not live, or re-role a seat it already parents. A parent change appends `seat.put`, a role change appends `role-set`, both in one transaction, and an unchanged role appends nothing.
+- Link refusals:
+  - `E-RS-OWNERSHIP` with `details.parent` for a live foreign parent;
+  - `E-RS-OWNERSHIP` with `details.reason:"prime"` for a prime;
+  - `E-RS-ARG` with `details.reason:"cycle"` for the caller's own ancestor.
+- The receipt carries `seat`, `parent`, `previous_parent`, `role`, `assigned_by`, `assigned_at`, `parent_changed`, `role_changed` and `seqs`.
+- Self-asserted `adopt --role` is unchanged, a known divergence from TS. Placement needs the SQLite registry: fake-registry daemons refuse it rather than desync.
+
 Project/stream/fence/dispatch/task records are rs store authority, not files under `~/.pij/`. Fences describe intended writes, not permission. Stream close changes its record, not the worktree. Dispatch persists packet digest and outbound linkage before delivery; queued is not delivered, and delivered is not acknowledged. Only the resolved recipient can ack the matching packet SHA; identical ack is idempotent. Canary requires actual nonce-correlated dispatch/ack and observed runtime/model evidence, not descriptor presence. `attest --plan-id` never grants native-extension-delivery attestation. `node show` joins rs records only. `spine render` returns `{text,cursor}` and never writes a legacy ledger file.
 
 Source: [`governance.rs` parser and handlers](../../crates/daemon/src/http/governance.rs), [`report.rs`](../../crates/daemon/src/http/report.rs), [`anomalies.rs`](../../crates/daemon/src/http/anomalies.rs), [`decisions.rs`](../../crates/daemon/src/http/decisions.rs), [`lifecycle.rs`](../../crates/daemon/src/http/lifecycle.rs).
@@ -628,7 +640,7 @@ POST `/v1/role` request:
 ```json
 {
   "seat": "pij-worker",
-  "role": "reviewer",
+  "role": "pm",
   "caller": {
     "TMUX_PANE": "%10",
     "cwd": "/work/project"
@@ -645,7 +657,7 @@ Complete success envelope:
   "v": 2,
   "data": {
     "seat": "pij-worker",
-    "role": "reviewer",
+    "role": "pm",
     "assigned_by": "pij-parent",
     "assigned_at": 1788739200000,
     "seq": 101
@@ -665,7 +677,7 @@ Matching canonical event frame (decode `event.payload` as a JSON string):
     "at": 1788739200000,
     "kind": "role-set",
     "seat": "pij-worker",
-    "payload": "{\"actor\":\"pij-parent\",\"action\":\"assigned\",\"record\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000}}"
+    "payload": "{\"actor\":\"pij-parent\",\"action\":\"assigned\",\"record\":{\"seat\":\"pij-worker\",\"role\":\"pm\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000}}"
   }
 }
 ```
@@ -816,7 +828,7 @@ This anchor is permanent; refusals and shipped consumers must not depend on an a
 - **Shim-only gaps / different meanings:** `spawn`, `revive`, `tail` and `daemon` refuse `E-RS-UNPORTED`; native capability is not a grammar-compatible shim port. Use the documented native forms in the [peer](../../skills/pij/references/routes/peer.md) and [ops](../../skills/pij/references/routes/ops.md) routes where available. Native tail is an event stream, not a transcript. [Native revive](#revive) accepts tombstoned or observed-dead ids and the authorized `--assume-dead --evidence` override; `--print` and `--attach` remain unsupported. Native spawn has no legacy layout/task/branch/plan-id flags.
 - **List/sessions filters:** shim `pij list` forwards declared `harness`, `folder`, `parent` and `scope=local` query values to GET `/v1/seats`. Shim and native `pij-rs list --here` scope to caller cwd; path-valued `--here` refuses. Native list has no other filters. `pij sessions` routes GET `/v1/shim/sessions` with no query flags or legacy union. Unsupported `--role`, `--prime`, `--archived` and tree semantics refuse instead of being dropped. Prime designation has no dedicated list/getter projection here: use actual designation receipts/events and authoritative government/human evidence; role assertion or an empty filtered view cannot prove absence.
 - **Baton projection limits:** a blocked-time field is not provided. Automatic request notices and their honest delivered/queued/unverified/null projection are supported as described under [Baton leases](#baton-leases); a durable request alone still does not prove recipient observation.
-- **Unported command surfaces:** `agent`, `path`, `telegram`, `models`, `watch`, `unwatch`, `chore`, `watchdog`, `focus`, `tree` and `link` refuse through the shim. This does not remove already composed sidecar internals; it does not advertise those old administrative grammars as a native port. In particular, there is no rs reparent/root-placement command equivalent to link.
+- **Unported command surfaces:** `agent`, `path`, `telegram`, `models`, `watch`, `unwatch`, `chore`, `watchdog`, `focus` and `tree` refuse through the shim. This does not remove already composed sidecar internals; it does not advertise those old administrative grammars as a native port. `link` is ported (plan 166) with a narrower grammar: the caller is always the parent, and `--role` is required.
 - **Inbox/admission:** verified external `inbox register` and `inbox --wait [ms]` are [supported](#verified-paneless-external-admission), not gaps. Paneless adopt, unlisted inbox leaves, generic shim `register`, send `--wait` and attachment semantics remain refused. Never fabricate host process evidence or use a legacy fallback; extension-owned registration/receive stays owned by that extension.
 - **Control and bg are supported, not gaps:** remote compact/new/reload, compact-self and bg create/list/tail/kill remain shipped. Controls carry no body; acceptance is not execution. Copilot and paneless controls refuse; new/reload require self or recorded parent plus target arming, not a prime role. Never replace refusal with slash text or sendkeys. bg remains daemon-owned detached execution (in the caller's cwd unless `--cwd`; optional `--timeout` ends it with a TIMEOUT turn; `list` shows running time and duration; `--events` makes an event source whose child fires `pij bg emit` / `POST /v1/bg/{job}/emit`, authenticated by its per-job `PIJ_BG_TOKEN` outside the daemon-key ring, batched per `--min-interval`/`--inline-max`, held as FYIs with `--fyi`, and routed to a warm prime or Telegram instead of waking a cold owner) with durable completion injection, bounded server-side log reads and owner/parent authorization; it introduces no answer queue cancellation.
 - **Native commit-trailers data gap:** forwarding is supported, but `commit_trailers::run` currently calls `derive` with no repository-designation input and does not query current assignment. It reads role-joined self/local seats, then uses a complete recorded-parent root as the explicit interim fallback. `Pij-Plan` derives from worktree path, branch or local flow context. Do not claim designation/current-assignment lookup or use stale legacy rows to fill either gap.

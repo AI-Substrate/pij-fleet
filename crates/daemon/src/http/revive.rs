@@ -418,6 +418,8 @@ pub(super) async fn revive_seat(
         wait_seconds: None,
         no_wait: true,
         resume,
+        role: None,
+        caller: None,
     };
     launch_seat_locked(
         &state,

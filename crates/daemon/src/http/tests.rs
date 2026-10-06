@@ -2989,6 +2989,8 @@ async fn spawned_registration_adopts_prebind_row_and_preserves_port() {
             wait_seconds: None,
             no_wait: true,
             resume: None,
+            role: None,
+            caller: None,
         })
         .send()
         .await
@@ -3389,6 +3391,8 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
             wait_seconds: Some(1),
             no_wait: false,
             resume: None,
+            role: None,
+            caller: None,
         })
         .send();
     let report_exit = async {
@@ -3486,6 +3490,8 @@ async fn spawn_wait_returns_bound_process_and_publishes_event() {
             wait_seconds: Some(1),
             no_wait: false,
             resume: None,
+            role: None,
+            caller: None,
         })
         .send();
     let register = async {
@@ -3597,6 +3603,8 @@ async fn spawn_reports_model_mismatch_without_killing_registered_seat() {
             wait_seconds: Some(1),
             no_wait: false,
             resume: None,
+            role: None,
+            caller: None,
         })
         .send();
     let register = async {
@@ -4177,6 +4185,8 @@ async fn spawn_stamps_only_the_argv_that_reached_the_observed_launch() {
             wait_seconds: None,
             no_wait: true,
             resume: None,
+            role: None,
+            caller: None,
         };
 
     for (id, accept, session, pane) in [
@@ -4305,6 +4315,8 @@ async fn direct_http_spawn_carries_no_claude_default_the_cli_owns_it() {
             wait_seconds: None,
             no_wait: true,
             resume: None,
+            role: None,
+            caller: None,
         })
         .send()
         .await

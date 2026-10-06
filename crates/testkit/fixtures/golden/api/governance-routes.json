@@ -141,7 +141,7 @@
       },
       "role": {
         "seat": "pij-worker",
-        "role": "reviewer",
+        "role": "pm",
         "assigned_by": "pij-parent",
         "assigned_at": 1788739200000
       },
@@ -934,7 +934,7 @@
               "node": {
                 "id": "pij-worker",
                 "parent": "pij-parent",
-                "role": "reviewer",
+                "role": "pm",
                 "plan_id": "139",
                 "state": null,
                 "children": [],
@@ -1384,7 +1384,7 @@
           "id": "role-set",
           "request": {
             "seat": "pij-worker",
-            "role": "reviewer",
+            "role": "pm",
             "caller": {
               "TMUX_PANE": "%10",
               "cwd": "/work/project"
@@ -1394,7 +1394,7 @@
             "argv": [
               "role",
               "pij-worker",
-              "reviewer"
+              "pm"
             ],
             "caller": {
               "TMUX_PANE": "%10",
@@ -1407,7 +1407,7 @@
             "v": 2,
             "data": {
               "seat": "pij-worker",
-              "role": "reviewer",
+              "role": "pm",
               "assigned_by": "pij-parent",
               "assigned_at": 1788739200000,
               "seq": 101
@@ -2082,7 +2082,7 @@
               "--parent",
               "pij-parent",
               "--role",
-              "reviewer"
+              "pm"
             ],
             "caller": {
               "TMUX_PANE": "%11",
@@ -2105,7 +2105,7 @@
               "folder": "/work/rs-governance-port",
               "state": "idle",
               "semantic_state": null,
-              "role": "reviewer",
+              "role": "pm",
               "parent": "pij-parent",
               "relay": false,
               "native_extension_delivery": false
@@ -2132,7 +2132,7 @@
             "pid": 12345,
             "proc_start": 20260907090000,
             "parent": "pij-parent",
-            "role": "reviewer"
+            "role": "pm"
           },
           "response": {
             "ok": true,
@@ -2150,7 +2150,7 @@
               "folder": "/work/rs-governance-port",
               "state": "idle",
               "semantic_state": null,
-              "role": "reviewer",
+              "role": "pm",
               "parent": "pij-parent",
               "relay": false,
               "native_extension_delivery": false
