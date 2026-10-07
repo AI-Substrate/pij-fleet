@@ -1,0 +1,8 @@
+[
+	{
+		"id": "GHSA-68fv-2mgg-jv7q",
+		"package": "source-map-js",
+		"reason": "dev-only (vitest > vite > postcss); fixed 1.2.2 published 2026-09-30T14:00Z clears the 7-day npm quarantine at 2026-10-07T14:00Z; bump then and delete this entry",
+		"expires": "2026-10-09T00:00:00Z"
+	}
+]
