@@ -1,0 +1,23 @@
+name: tmp-lockfix
+on:
+  push:
+    branches: [chore/source-map-js-1.2.2]
+permissions:
+  contents: write
+jobs:
+  lockfix:
+    if: ${{ !contains(github.event.head_commit.message, '[lockfix-done]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm update source-map-js --package-lock-only --ignore-scripts --min-release-age=null
+      - run: npm ls source-map-js || true
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "fix(deps): source-map-js 1.2.2 (GHSA-68fv-2mgg-jv7q) [lockfix-done]" || echo "no change"
+          git push
