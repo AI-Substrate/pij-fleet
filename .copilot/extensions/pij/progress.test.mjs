@@ -664,6 +664,16 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 			f.reports.some((event) => event.kind === "reconnecting" && event.holdKind === "receiver-gap"),
 			"the retry narrates as reconnecting with a distinguishable holdKind, not held",
 		);
+		// The retryable gap unwound deliver() before its ACK, and the daemon's running
+		// body claim keeps serial ownership of the seat. The ACK therefore waits until
+		// that claim's lease expires (5 min default, crates/core/src/config.rs) and the
+		// same job is re-claimed (crates/store/src/queue.rs claim expiry).
+		let claimExpired = false;
+		f.client.claimInbox = async () => {
+			if (!claimExpired) return { claims: [], hold: null };
+			claimExpired = false;
+			return { claims: [claim], hold: null };
+		};
 		// The live push channel (not the lagging queryable eventLog window) delivers
 		// the correlated turn while the retry is still in its bounded window.
 		f.event(user);
@@ -674,6 +684,16 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 			f.reports.find((event) => event.kind === "native-completed")?.eventId,
 			"owned-end",
 		);
+		assert.deepEqual(f.acks, [], "no ACK until the running claim is offered again");
+		claimExpired = true;
+		await pump(f);
+		assert.deepEqual(
+			f.acks.map((ack) => ack.job_id),
+			[claim.job_id],
+			"the re-claimed job is acknowledged once from the consumption already observed",
+		);
+		assert.equal(f.sends.length, 1, "the re-claim never re-injects the message");
+		assert.equal(held(f).length, 0);
 		f.bridge.stop();
 		await run;
 	});
