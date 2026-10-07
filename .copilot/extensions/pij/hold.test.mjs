@@ -65,6 +65,23 @@ test("native diagnostic sink counts one call per failure episode and never logs 
 	);
 });
 
+test("a receiver-gap reconnecting episode narrates distinctly from a daemon-connectivity retry", async () => {
+	const lines = [];
+	const report = createNativeReporter({
+		log: async (message, options) => lines.push({ message, options }),
+		capture: () => undefined,
+	});
+	await report({ kind: "reconnecting", diagnostic: "gap", holdKind: "receiver-gap" });
+	assert.equal(lines.length, 1);
+	assert.match(lines[0].message, /receiver progress is temporarily lagging/);
+	assert.doesNotMatch(lines[0].message, /check the Pij daemon/);
+	await report({ kind: "connection-ready" });
+	await report({ kind: "reconnecting", diagnostic: "daemon unreachable", holdKind: null });
+	assert.equal(lines.length, 2);
+	assert.match(lines[1].message, /check the Pij daemon/);
+	assert.doesNotMatch(lines[1].message, /receiver progress is temporarily lagging/);
+});
+
 test("registration wait episodes reset on success and do not hide unrelated failures", async () => {
 	const logs = [];
 	const captured = [];
