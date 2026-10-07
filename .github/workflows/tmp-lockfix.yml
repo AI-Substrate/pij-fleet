@@ -13,7 +13,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: npm update source-map-js --package-lock-only --ignore-scripts --min-release-age=null
+      - run: npm view source-map-js time --json | tail -5; npm config get min-release-age; npm --version
+      - run: npm update source-map-js --package-lock-only --ignore-scripts --min-release-age=0 || true
+      - run: npm ls source-map-js
       - run: npm ls source-map-js || true
       - run: |
           git config user.name "github-actions[bot]"
