@@ -178,10 +178,10 @@ place for up to ten minutes before it escalates to a terminal receive-hold — a
 busy turn can keep delivering through the push callback even while the bounded
 backward-read window still lags behind it, and this window gives that case time to
 resolve on its own instead of holding on the condition's first appearance. Only once
-the gap outlives that window does it hold exactly as before. A hold for any reason no
-longer by itself also kills heartbeat lease renewal — the two are tracked
-independently, so a hold does not by itself also present as a separate
-`native-receiver-stale` condition to the daemon.
+the gap outlives that window does it hold exactly as before. The retry is not a hold:
+heartbeat renewal keeps reporting the observation progress the push callback sees, as
+during any long turn. Every hold, including the escalated gap hold, still stops
+renewal, so the daemon's lease and `native-receiver-stale` brake apply unchanged.
 
 If only the extension died, run `pij inbox --json` inside the still-live Copilot
 seat's shell. The normal pane/session identity ladder authorizes this explicit

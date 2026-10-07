@@ -768,23 +768,6 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 		await run;
 	});
 
-	test("AC5: holdReceiving aborts only the receiver, not the heartbeat controller", () => {
-		const f = fixture({ after() {} });
-		assert.equal(f.bridge.receiverController.signal.aborted, false);
-		assert.equal(f.bridge.heartbeatController.signal.aborted, false);
-		f.bridge.holdReceiving(new store.NativeError("direct unit check"));
-		assert.equal(
-			f.bridge.receiverController.signal.aborted,
-			true,
-			"holdReceiving still stops the receiver",
-		);
-		assert.equal(
-			f.bridge.heartbeatController.signal.aborted,
-			false,
-			"holdReceiving no longer unconditionally kills the heartbeat",
-		);
-	});
-
 	test("AC2: empty idle receiver leaves SDK observation to the next delivery", async (t) => {
 		const f = fixture(t, { claims: false });
 		const run = f.bridge.run();

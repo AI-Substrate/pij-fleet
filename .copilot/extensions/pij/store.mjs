@@ -838,6 +838,7 @@ export class NativeBridge {
 				"Inspect native history and durable acceptance before recovery; do not blindly resend or acknowledge.",
 		});
 		this.receiverController.abort(error);
+		this.heartbeatController.abort();
 	}
 	async register() {
 		const signal = this.controller.signal;
