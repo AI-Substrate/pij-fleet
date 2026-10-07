@@ -172,19 +172,9 @@ native bodies with `undelivered:native-receiver-unavailable`, emits
 `delivery.parked` with reason `native-extension-unavailable`, and refuses later
 sends with the receiver's seat named. It does not silently fall back to tmux.
 
-A still-running extension process re-arms this on its own: a `native-receiver-stale`
-heartbeat response is the one receive-hold the extension treats as retryable, so once
-the daemon is reachable again (including after it restarts — a new process behind the
-same address) the extension re-registers the same seat and re-establishes its
-observation baseline before its next claim attempt, with no `extensions_reload` or
-Copilot CLI restart needed. Every other receive-hold (malformed claims, ambiguous
-sends, an unprovable discard/gap, an RPC deadline) stays terminal with a diagnostic;
-those conditions are not safe to retry automatically and still require the manual
-recovery below.
-
 A correlated-anchor gap (the queryable incremental-history window not yet showing
 the event the extension last observed, with no terminal proof either) is retried in
-place for up to ten minutes before it escalates to that same terminal hold — a live,
+place for up to ten minutes before it escalates to a terminal receive-hold — a live,
 busy turn can keep delivering through the push callback even while the bounded
 backward-read window still lags behind it, and this window gives that case time to
 resolve on its own instead of holding on the condition's first appearance. Only once

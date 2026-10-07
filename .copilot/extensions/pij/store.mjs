@@ -704,8 +704,6 @@ export class NativeBridge {
 		this.running = undefined;
 		this.unsubscribe = undefined;
 		this.completion = undefined;
-		// Set by holdReceiving; read by run()'s reconnect loop once consume() settles.
-		this.heldError = undefined;
 		// Plan 158 addendum 3: busy/idle publication, serialized so a late
 		// `working` can never land after `idle`.
 		this.activity = Promise.resolve();
@@ -773,49 +771,8 @@ export class NativeBridge {
 		}
 	}
 	run() {
-		if (!this.running) this.running = this.reconnect();
+		if (!this.running) this.running = this.consume();
 		return this.running;
-	}
-	/**
-	 * `consume()` exits quietly (no throw) whenever `holdReceiving` fires, for
-	 * every hold reason — most are genuinely unsafe to auto-retry (malformed
-	 * claims, ambiguous sends, unprovable discard/gap recovery) and must stay
-	 * terminal-with-diagnostic. Only a stale receiver lease (a missed-heartbeat
-	 * condition, not a data-safety issue) is marked `retryable` by
-	 * `keepReceiverAlive`; this loop is what turns that into an automatic
-	 * re-register-and-reclaim instead of requiring `extensions_reload` or a
-	 * full host restart. An explicit `stop()` (aborting `this.controller`)
-	 * always ends the loop, same as before this existed.
-	 */
-	async reconnect() {
-		let retry = INITIAL_RETRY_MS;
-		for (;;) {
-			this.heldError = undefined;
-			await this.consume();
-			if (this.controller.signal.aborted || !this.heldError?.retryable) return;
-			this.emit("reconnecting", {
-				diagnostic: this.heldError.message,
-				safeDiagnostic: this.heldError.safeDiagnostic,
-				retryMs: retry,
-			});
-			try {
-				await this.delay(retry, this.controller.signal);
-			} catch {
-				return;
-			}
-			retry = Math.min(retry * 2, MAX_RETRY_MS);
-			// Fresh per-attempt state mirrors what a brand-new NativeBridge (i.e. an
-			// `extensions_reload`) would start with: unclaimed controllers, an
-			// unregistered seat, and an empty observation baseline so the next
-			// heartbeat's `observed_at` advances past whatever the daemon last saw.
-			this.receiverController = new AbortController();
-			this.heartbeatController = new AbortController();
-			this.registered = false;
-			this.heartbeat = undefined;
-			this.observedAt = 0;
-			this.observedSeq = 0;
-			this.recentEventIds = new Set();
-		}
 	}
 	/** SDK cancellation cancels our wait; an issued send can still commit remotely. */
 	nativeRpc(call, operation) {
@@ -871,9 +828,6 @@ export class NativeBridge {
 	}
 	holdReceiving(error) {
 		if (this.receiverController.signal.aborted) return;
-		// Recorded for `run()`'s reconnect loop (below): only a retryable hold is
-		// safe to re-arm automatically once this attempt's `consume()` settles.
-		this.heldError = error;
 		this.emit("receive-held", {
 			diagnostic: error.message,
 			safeDiagnostic:
@@ -927,11 +881,7 @@ export class NativeBridge {
 				);
 				throwIfStopped(signal);
 				if (lease?.state === "stale" && lease.reason === "native-receiver-stale") {
-					// A missed-heartbeat condition is self-healable: unlike a malformed
-					// claim or an ambiguous send, nothing unsafe was observed, so `run()`
-					// (see below) re-arms registration and observation in place instead
-					// of leaving the receiver wedged until a manual `extensions_reload`.
-					this.holdReceiving(new NativeError("native-receiver-stale", true));
+					this.holdReceiving(new NativeError("native-receiver-stale"));
 					return;
 				}
 				if (
