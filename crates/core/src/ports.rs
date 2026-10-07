@@ -52,12 +52,14 @@ pub struct SeatFilter {
 }
 
 /// The binding replaced by one committed registry write.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PutBinding {
     /// No row existed for this id before the write.
     pub inserted: bool,
     /// The old process, not the incoming claim. `None` can also mean an unbound row.
     pub previous_proc: Option<ProcIdentity>,
+    /// The parent the committed row holds (kept or written).
+    pub parent: Option<SeatId>,
 }
 
 /// The seat roster: who exists, what they are, who governs them.
@@ -80,6 +82,13 @@ pub trait Registry: Send + Sync {
     /// `self.put_reporting(descriptor).await.map(|(seq, _)| seq)`.
     /// A separate `get` before or after `put` cannot satisfy this contract.
     async fn put_reporting(&self, d: SeatDescriptor) -> Result<(Seq, PutBinding)>;
+
+    /// [`Self::put_reporting`], except an existing row keeps the `parent` it
+    /// holds at commit time (plan 166). A writer that does not claim a parent
+    /// must use this: its snapshot may predate a committed link, and a full-row
+    /// put would silently revert that placement. Read and write under the same
+    /// serialization/transaction boundary; there is no read-then-write default.
+    async fn put_reporting_keeping_parent(&self, d: SeatDescriptor) -> Result<(Seq, PutBinding)>;
 
     /// Every seat matching `filter`, ordered by id so callers can diff listings.
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>>;

@@ -266,6 +266,7 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		"orchestration",
 		"spine",
 		"role",
+		"link",
 		"report",
 		"close",
 		"reap",
@@ -312,7 +313,6 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		"watchdog",
 		"focus",
 		"tree",
-		"link",
 		"models",
 	].map(
 		(verb): RsUnportedRoute => ({

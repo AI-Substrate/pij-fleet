@@ -319,6 +319,12 @@ export default function (pi: ExtensionAPI): void {
 					description: "Reasoning effort override for the child session.",
 				}),
 			),
+			role: Type.Optional(
+				Type.Union([Type.Literal("pm"), Type.Literal("worker"), Type.Literal("pa")], {
+					description:
+						"Stamp the child's role from above; you become its recorded parent. claude/copilot/codex only for now; for omp/pi run `pij link <child> --role <r>` after its ready-ping.",
+				}),
+			),
 			layout: Type.Optional(
 				Type.Union([Type.Literal("window"), Type.Literal("split")], {
 					description:
@@ -339,6 +345,7 @@ export default function (pi: ExtensionAPI): void {
 				model: typeof params.model === "string" ? params.model : undefined,
 				effort: typeof params.effort === "string" ? params.effort : undefined,
 				layout: params.layout === "window" || params.layout === "split" ? params.layout : undefined,
+				...(params.role === undefined ? {} : { role: params.role }),
 				cwd: ctx.cwd, // §M6: cwd from tool execute context
 			});
 			if (!res.ok) {

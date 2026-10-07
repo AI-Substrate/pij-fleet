@@ -41,7 +41,7 @@
         "folder": "/work/rs-governance-port",
         "state": "idle",
         "semantic_state": null,
-        "role": "reviewer",
+        "role": "pm",
         "parent": "pij-parent",
         "relay": false,
         "native_extension_delivery": false
@@ -55,7 +55,7 @@
           "at": 1788739200000,
           "kind": "seat.put",
           "seat": "pij-worker",
-          "payload": "{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"extension_build\":null,\"extension_path\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}"
+          "payload": "{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"extension_build\":null,\"extension_path\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"pm\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}"
         }
       }
     },
@@ -375,7 +375,7 @@
         "action": "assigned",
         "record": {
           "seat": "pij-worker",
-          "role": "reviewer",
+          "role": "pm",
           "assigned_by": "pij-parent",
           "assigned_at": 1788739200000
         }
@@ -389,7 +389,7 @@
           "at": 1788739200000,
           "kind": "role-set",
           "seat": "pij-worker",
-          "payload": "{\"actor\":\"pij-parent\",\"action\":\"assigned\",\"record\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000}}"
+          "payload": "{\"actor\":\"pij-parent\",\"action\":\"assigned\",\"record\":{\"seat\":\"pij-worker\",\"role\":\"pm\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000}}"
         }
       }
     },

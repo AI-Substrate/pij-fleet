@@ -51,16 +51,20 @@ A brief must carry:
 ## 4. Spawn
 
 ```bash
-pij spawn --harness copilot --model <id>        # from the MAIN checkout — see the trap below
-pij link <child> --parent <prime>               # NO --role: it overwrites the role stamp
-pij orchestration role set <child> pm
+pij-rs spawn --harness copilot --model <id> --role pm   # from the MAIN checkout; you become its parent
 pij task set <child> "<one-line charter>"
 pij send <child> --body-file <brief path>
 ```
 
-> **TRAP — `pij link --role` overwrites an existing role stamp.** Omit `--role` when
-> re-parenting a seat that is already stamped, or a PA silently becomes something else and the
-> capability gate changes under it.
+Pass `--role pm|worker|pa` on the placement call. The role is stamped from above, in the same
+transaction as the spawn record. OMP's `pij_spawn` takes `role` too, but only for
+claude/copilot/codex; for omp/pi see pij-fleet#25. For a hand-started seat, or after an omp/pi
+spawn, run `pij link <child> --role <r>` once its ready-ping arrives. That takes a parentless or
+orphaned seat, or re-roles one you already parent. `pij orchestration role set` refuses unless you
+are already the recorded parent.
+
+> **`--role` on link is required, and a different value overwrites the stamp.** To re-parent
+> a stamped seat, pass its current role: an unchanged role writes no `role-set`.
 
 ## 5. Supervise
 

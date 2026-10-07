@@ -135,6 +135,13 @@ pub struct SpawnRequest {
     /// Harness-native conversation to resume; set by revive (plan 156).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<String>,
+    /// Role stamped from above (plan 166): `pm`, `worker` or `pa`. The
+    /// daemon-resolved caller becomes the parent and the role's author.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// Caller evidence, resolved by the daemon when `role` is present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller: Option<super::CallerContext>,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.

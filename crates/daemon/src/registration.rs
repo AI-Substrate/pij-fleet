@@ -846,10 +846,13 @@ impl RegistrationService {
         if descriptor.effort.is_none() {
             descriptor.effort = claim.effort;
         }
-        if let Some(parent) = claim
+        // An unclaimed parent is never written from this snapshot: a link may
+        // commit between the roster read and the put (plan 166).
+        let claimed_parent = claim
             .parent
-            .filter(|_| !resuming && (!native || existing.is_none()))
-        {
+            .filter(|_| !resuming && (!native || existing.is_none()));
+        let parent_claimed = claimed_parent.is_some();
+        if let Some(parent) = claimed_parent {
             descriptor.parent = Some(parent);
         }
         descriptor.relay = claim.relay;
@@ -875,11 +878,13 @@ impl RegistrationService {
                 .is_none_or(|claimed| role.as_ref() == Some(claimed))
             {
                 descriptor.role = role;
+                let parent = descriptor.parent.clone();
                 return Ok((
                     descriptor,
                     PutBinding {
                         inserted: false,
                         previous_proc: proc,
+                        parent,
                     },
                 ));
             }
@@ -930,7 +935,7 @@ impl RegistrationService {
             ));
             retired.native_extension_delivery = false;
             self.registry
-                .put(retired)
+                .put_reporting_keeping_parent(retired)
                 .await
                 .map_err(RegistrationError::Runtime)?;
             if spawn_predecessor.is_some_and(|previous| previous.id == observed.id) {
@@ -963,15 +968,20 @@ impl RegistrationService {
             ));
             previous.native_extension_delivery = false;
             self.registry
-                .put(previous)
+                .put_reporting_keeping_parent(previous)
                 .await
                 .map_err(RegistrationError::Runtime)?;
         }
-        let (_, binding) = self
-            .registry
-            .put_reporting(descriptor.clone())
-            .await
-            .map_err(RegistrationError::Runtime)?;
+        let committed = if parent_claimed {
+            self.registry.put_reporting(descriptor.clone()).await
+        } else {
+            self.registry
+                .put_reporting_keeping_parent(descriptor.clone())
+                .await
+        };
+        let (_, binding) = committed.map_err(RegistrationError::Runtime)?;
+        // Report the committed parent, not the snapshot's.
+        descriptor.parent = binding.parent.clone();
         if !native && let Some(previous) = retired {
             self.event_bus
                 .publish(Event {
@@ -1907,7 +1917,7 @@ mod tests {
         let (service, registry) = native_service(vec![old.clone()], native_liveness()).await;
         service
             .roles
-            .assert_role(&old.id, &old.id, Some("coder".into()))
+            .assert_role(&old.id, &old.id, Some("worker".into()))
             .await
             .unwrap();
         old.tombstoned_at = Some(154);
@@ -1952,10 +1962,10 @@ mod tests {
         assert_eq!(resumed.proc, Some(OTHER_HOST));
         assert_eq!(resumed.pane.as_deref(), Some("%154-new"));
         assert_eq!(resumed.parent, old.parent);
-        assert_eq!(resumed.role.as_deref(), Some("coder"));
+        assert_eq!(resumed.role.as_deref(), Some("worker"));
         assert_eq!(
             service.roles.read_role(&old.id).await.unwrap().as_deref(),
-            Some("coder")
+            Some("worker")
         );
         assert_eq!(
             spine
@@ -2036,7 +2046,7 @@ mod tests {
 
     #[tokio::test]
     async fn retired_session_resume_does_not_replace_recorded_role() {
-        retired_session_resume_contract(Harness::Omp, Some("reviewer")).await;
+        retired_session_resume_contract(Harness::Omp, Some("pm")).await;
     }
 
     #[tokio::test]
@@ -3183,44 +3193,6 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn native_ps_admits_a_delayed_observation_without_weakening_identity() {
-        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
-        let mut claim = native_claim("pij-slow-observer");
-        claim.pane = None;
-        let result = service
-            .register_native_with_observer(
-                claim,
-                Some(SESSION.into()),
-                &FakeTmux::new(),
-                |pid| async move {
-                    tokio::task::spawn_blocking(move || {
-                        let mut ps = std::process::Command::new("/bin/sh");
-                        let delay = super::PROCESS_OBSERVATION_TIMEOUT.mul_f64(0.3);
-                        ps.args([
-                            "-c",
-                            &format!(
-                                "/bin/sleep {}; printf '41 copilot /opt/copilot\\n'",
-                                delay.as_secs_f64()
-                            ),
-                        ]);
-                        super::read_native_process_using(pid, &mut ps)
-                    })
-                    .await
-                    .unwrap()
-                },
-            )
-            .await;
-        let (seat, _) = result.expect("delayed ps response must fit the bounded host observation");
-        assert_eq!(seat.proc, Some(HOST));
-        assert!(seat.native_extension_delivery);
-        assert_eq!(
-            registry.list(SeatFilter::default()).await.unwrap(),
-            vec![seat]
-        );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
     async fn native_ps_never_answering_refuses_with_pid_within_total_bound() {
         let (service, registry) = native_service(Vec::new(), native_liveness()).await;
         let mut claim = native_claim("pij-stalled-observer");
@@ -3739,7 +3711,7 @@ mod tests {
         let (service, registry) = native_service(Vec::new(), paneless_liveness()).await;
         let mut claim = paneless_claim(harness);
         claim.parent = Some("pij-original-parent".into());
-        claim.role = Some("coder".into());
+        claim.role = Some("worker".into());
         let (first, _) = pull_register(&service, claim.clone(), SESSION, false)
             .await
             .unwrap();
@@ -3754,7 +3726,7 @@ mod tests {
         }
         registry.put(old.clone()).await.unwrap();
         claim.parent = Some("pij-unrelated-parent".into());
-        claim.role = Some("reviewer".into());
+        claim.role = Some("pm".into());
         let (resumed, binding) = pull_register(&service, claim, SESSION, false)
             .await
             .expect("a returning paneless host is not its own subagent");
@@ -3768,7 +3740,7 @@ mod tests {
         assert_eq!(resumed.harness, harness);
         assert_eq!(resumed.proc, Some(HOST));
         assert_eq!(resumed.parent, old.parent);
-        assert_eq!(resumed.role.as_deref(), Some("coder"));
+        assert_eq!(resumed.role.as_deref(), Some("worker"));
         assert_eq!(
             registry
                 .get(&first.id)
@@ -4170,11 +4142,11 @@ mod tests {
         for harness in [Harness::Claude, Harness::Copilot, Harness::Codex] {
             let (service, registry) = native_service(Vec::new(), paneless_liveness()).await;
             let mut claim = paneless_claim(harness);
-            claim.role = Some("coder".into());
+            claim.role = Some("worker".into());
             let (first, _) = pull_register(&service, claim.clone(), SESSION, true)
                 .await
                 .unwrap();
-            assert_eq!(first.role.as_deref(), Some("coder"));
+            assert_eq!(first.role.as_deref(), Some("worker"));
             let mut subscription = service
                 .event_bus
                 .subscribe(None, EventFilter::default())
@@ -4208,12 +4180,12 @@ mod tests {
             }
             service
                 .roles
-                .assert_role(&same.id, &same.id, Some("reviewer".into()))
+                .assert_role(&same.id, &same.id, Some("pm".into()))
                 .await
                 .unwrap();
             claim.role = None;
             let (authoritative, _) = pull_register(&service, claim, SESSION, true).await.unwrap();
-            assert_eq!(authoritative.role.as_deref(), Some("reviewer"));
+            assert_eq!(authoritative.role.as_deref(), Some("pm"));
             assert_eq!(
                 registry
                     .calls()

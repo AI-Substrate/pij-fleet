@@ -132,7 +132,7 @@ async fn shipped_json_preserves_validated_bytes_and_never_refetches() {
                 &addr,
                 "role",
                 "pij-worker",
-                "reviewer",
+                "pm",
             ])
             .current_dir(&dir)
             .env_clear()

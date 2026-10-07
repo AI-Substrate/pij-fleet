@@ -63,3 +63,38 @@ it("refuses spawning when the daemon cannot report retirement policy", async () 
 	expect(tmux.windows).toEqual([]);
 	expect(tmux.splits).toEqual([]);
 });
+
+it("forwards a placement role on the daemon spawn route and refuses it on the local omp/pi path", async () => {
+	const bodies: Record<string, unknown>[] = [];
+	const client = new PijDaemonClient({ addr: "127.0.0.1:1", stateDir: "/unused" }, "key", {
+		fetch: async (url, init) => {
+			if (String(url).endsWith("/health"))
+				return new Response(
+					JSON.stringify({ ok: true, command: "health", v: 2, data: { retired_harnesses: [] } }),
+				);
+			bodies.push(JSON.parse(String(init?.body)));
+			return new Response(
+				JSON.stringify({
+					ok: true,
+					command: "pij spawn",
+					v: 2,
+					data: { id: "pij-kid", spawn_id: "s1", pane: "%9" },
+				}),
+			);
+		},
+		readFile: async () => "key",
+		processStart: () => 1,
+	});
+	const tmux = new FakeTmux();
+	const runtime = new RustRuntimeSession(client, tmux, []);
+	await expect(
+		runtime.spawn({ harness: "copilot", cwd: "/repo", layout: "window", role: "pm" }),
+	).resolves.toMatchObject({ ok: true });
+	expect(bodies[0]).toMatchObject({ role: "pm", caller: { PIJ_SESSION_ID: expect.any(String) } });
+
+	await expect(
+		runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window", role: "worker" }),
+	).resolves.toMatchObject({ ok: false, code: "E-ARG" });
+	expect(tmux.windows).toEqual([]);
+	expect(tmux.splits).toEqual([]);
+});
