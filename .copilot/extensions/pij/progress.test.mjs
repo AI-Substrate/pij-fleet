@@ -750,6 +750,39 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 		await run;
 	});
 
+	test("AC1: a gap that rebaselines on a re-found anchor gives the next gap its own retry window", async (t) => {
+		const f = fixture(t, { consume: false });
+		const anchor = { type: "session.model_change", id: "pre-send-anchor", data: {} };
+		f.state.history = [anchor];
+		const run = f.bridge.run();
+		await flush();
+		f.rebase([{ type: "session.model_change", id: "first-gap-event", data: {} }]);
+		await pump(f);
+		assert.equal(held(f).length, 0, "the first gap retries in place");
+		// The anchor reappears with newer events after it: a contiguous rebaseline,
+		// not the caught-up branch, ends the first gap episode.
+		f.rebase([anchor, { type: "session.model_change", id: "after-anchor", data: {} }]);
+		await pump(f);
+		assert.equal(
+			f.reports.find((event) => event.kind === "receiver-rebaselined")?.gap.contiguous,
+			true,
+		);
+		// A second, unrelated gap appears long after the first one began.
+		f.state.now += store.HOLD_ESCALATION_MS;
+		f.rebase([{ type: "session.model_change", id: "second-gap-event", data: {} }]);
+		await pump(f);
+		assert.equal(
+			held(f).length,
+			0,
+			"the second gap starts its own retry window instead of inheriting the first gap's start",
+		);
+		f.state.now += store.HOLD_ESCALATION_MS;
+		await pump(f);
+		assert.equal(held(f).length, 1, "the second gap still escalates once its own window ends");
+		assert.deepEqual(f.acks, []);
+		await run;
+	});
+
 	test("AC5: heartbeat lease renewal keeps running through a receiver-gap retry window", async (t) => {
 		const f = fixture(t, { consume: false });
 		const run = f.bridge.run();
