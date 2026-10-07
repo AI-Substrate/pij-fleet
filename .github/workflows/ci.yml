@@ -62,8 +62,9 @@ jobs:
           PIJ_RS_BIN_REQUIRED: '1'
       # Native extension contracts use node:test, outside Vitest's TS include.
       - run: just copilot-native-test
-      # Dependency audit is a hard gate: the tree has no known high findings.
-      - run: npm audit --audit-level=high
+      # Dependency audit is a hard gate: no high findings beyond time-boxed
+      # entries in .github/audit-allowlist.json (an expired entry fails).
+      - run: node harness/scripts/audit-gate.mjs
       # The live tmux Driver smoke (`just smoke`) stays local-only: it needs tmux
       # and an OMP binary, which hosted runners do not have.
 
