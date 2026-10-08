@@ -210,4 +210,43 @@ impl Spine for SqliteSpine {
         .map(decode_event)
         .transpose()
     }
+
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        since_at: u64,
+    ) -> Result<Vec<Event>> {
+        if kinds.is_empty() {
+            return Err(PijError::Adapter {
+                adapter: "store/spine".to_string(),
+                message: "matching_since requires at least one event kind".to_string(),
+            });
+        }
+        require_current_schema(&self.pool).await?;
+        // `spine_by_seat_kind (seat, kind, seq)` bounds the scan to this seat's kinds.
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT seq, v, at, kind, seat, payload FROM spine_events WHERE seat = ",
+        );
+        query.push_bind(seat.as_str());
+        query.push(" AND kind IN (");
+        {
+            let mut kinds_sql = query.separated(", ");
+            for kind in kinds {
+                kinds_sql.push_bind(*kind);
+            }
+            kinds_sql.push_unseparated(")");
+        }
+        query.push(" AND at >= ");
+        query.push_bind(i64::try_from(since_at).unwrap_or(i64::MAX));
+        query.push(" ORDER BY seq");
+        query
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .iter()
+            .map(decode_event)
+            .collect()
+    }
 }

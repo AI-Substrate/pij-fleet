@@ -303,10 +303,18 @@ publishes sender-addressed `delivery.parked`, and refuses subsequent sends.
 
 **Every park tells its sender once.** For any parked outcome the daemon's
 `pij-bg` sends the sender one short message naming the msg id, the target, the
-outcome and reason, and "Resend after the target recovers", then records
-`delivery.park-notice` (`{msg_id,job_id,recipient,notice}`) so a replayed park is
-not re-sent. A sender with no live seat — missing, tombstoned, remote or `pij-bg` —
-gets no notice and no error.
+outcome and reason, and "Resend after the target recovers". The notice's msg_id
+is derived from the parked job (`park-notice-<job_id>`), so the queue's msg_id
+dedupe is the authority: a notice already admitted in any state is never admitted
+again. `delivery.park-notice` (`{msg_id,job_id,notice_msg_id,recipient,refused,notice}`)
+is an audit record written after admission and repaired on replay; a refused
+notice is final. The follower subscribes live, then sweeps every live seat's
+`delivery.parked` facts from the last 24 hours, so a park committed before a
+restart, after a shutdown abort, or dropped by a lagging subscriber is still
+notified once; a failed notice is retried by a sweep 30 seconds later. A sender
+with no live seat — missing, tombstoned, remote or `pij-bg` — gets no notice and
+no error. On first deploy the boot sweep also notifies parks from the preceding
+24 hours.
 
 From the same Copilot pane/session, `pij inbox --json` uses the normal identity
 ladder and registry host tuple. While the receiver lease is live it refuses

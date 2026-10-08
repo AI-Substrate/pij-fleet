@@ -288,6 +288,15 @@ impl Spine for EventBus {
     ) -> Result<Option<Event>> {
         self.spine.latest_matching_message(seat, kind, msg_id).await
     }
+
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        since_at: u64,
+    ) -> Result<Vec<Event>> {
+        self.spine.matching_since(seat, kinds, since_at).await
+    }
 }
 
 /// One replay-then-live event stream with an observable lag counter.

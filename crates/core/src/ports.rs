@@ -150,6 +150,17 @@ pub trait Spine: Send + Sync {
         kind: &str,
         msg_id: &str,
     ) -> Result<Option<Event>>;
+
+    /// One seat's events of any non-empty `kinds` committed at or after
+    /// `since_at` (epoch ms), oldest first. Seat scope is mandatory, like
+    /// [`Self::latest_matching`]; the spine performs the predicate in its
+    /// bounded query and refuses an empty kind set.
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        since_at: u64,
+    ) -> Result<Vec<Event>>;
 }
 
 /// Authority-owned identity and outcome committed by a delivery acknowledgement.

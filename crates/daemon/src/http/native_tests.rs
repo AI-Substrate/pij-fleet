@@ -2578,6 +2578,186 @@ async fn native_lease_expiry_parks_and_tells_each_live_sender_once() {
     clock.abort();
 }
 
+/// Restored from the pre-167 compound test, minus the removed K=3 policy: a live
+/// lease refuses manual pull without stealing; once heartbeats stop and the lease
+/// expires, both bodies park, the reason is visible, re-registration cannot
+/// revive the lease, and manual pull recovers the same job, unacknowledged.
+#[tokio::test(start_paused = true)]
+async fn native_lease_expiry_http_manual_pull_preserves_identity() {
+    let clock = manual_receiver_clock();
+    let host = HostFixture::spawn();
+    let (mut seat, _) = contract_identity();
+    seat.proc = Some(host.identity().await);
+    seat.pane = Some("%167-expiry".into());
+    let identity = NativeInboxIdentity {
+        native_session: seat.harness_session.clone(),
+        pid: seat.proc.map(|proc| proc.pid),
+        proc_start: seat.proc.map(|proc| proc.proc_start),
+    };
+    let store = FreshStore::new();
+    let services = native_host_services(&store, &seat.folder, &["%167-expiry"]).await;
+    let delivery = services.delivery.clone();
+    let queue = services.queue.clone();
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    let registration = native_registration(&seat);
+    native_http_response(
+        client
+            .post(format!("http://{addr}/v1/register"))
+            .json(&registration),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    let request = json!({
+        "seat":seat.id, "native_session":identity.native_session, "pid":identity.pid,
+        "proc_start":identity.proc_start, "observed_at":100, "observed_seq":1,
+    });
+    let first_heartbeat = progress_heartbeat(&client, addr, &request).await;
+    let lease_ms = first_heartbeat["data"]["lease_ms"].as_u64().unwrap();
+    let renewal_ms = first_heartbeat["data"]["renew_after_ms"].as_u64().unwrap();
+    assert_eq!(lease_ms, renewal_ms * 3);
+    let first = delivery
+        .send("pij-peer".into(), seat.id.clone(), "running body")
+        .await
+        .unwrap();
+    let claim = native_http_claims(&client, addr, &seat.id, &identity)
+        .await
+        .remove(0);
+    let second = delivery
+        .send("pij-peer".into(), seat.id.clone(), "pending body")
+        .await
+        .unwrap();
+    let caller = json!({"TMUX_PANE":seat.pane, "COPILOT_AGENT_SESSION_ID":seat.harness_session});
+
+    // Heartbeats keep arriving: the lease stays whole and manual pull refuses.
+    for _ in 0..3 {
+        tokio::time::advance(Duration::from_millis(renewal_ms)).await;
+        let reply = progress_heartbeat(&client, addr, &request).await;
+        assert_eq!(reply["data"]["state"], "live");
+        assert_eq!(reply["data"]["lease_ms"], lease_ms);
+        let refused = native_http_response(
+            client
+                .post(format!("http://{addr}/v1/shim/inbox"))
+                .json(&json!({"argv":["inbox"],"caller":caller})),
+            reqwest::StatusCode::CONFLICT,
+        )
+        .await;
+        assert_eq!(refused["details"]["code"], "native-receiver-lease-live");
+        assert_eq!(refused["details"]["expires_in_ms"], lease_ms);
+        assert!(
+            queue
+                .claimed_delivery(claim.job_id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    // Heartbeats stop: the lease expires and both bodies park.
+    tokio::time::advance(Duration::from_millis(lease_ms)).await;
+    let mut wrong = request.clone();
+    wrong["proc_start"] = json!(identity.proc_start.unwrap() + 1);
+    native_http_response(
+        client
+            .post(format!("http://{addr}/v1/inbox/heartbeat"))
+            .json(&wrong),
+        reqwest::StatusCode::BAD_REQUEST,
+    )
+    .await;
+    assert_eq!(delivery.reconcile_native_receivers().await.unwrap(), 2);
+    let state = native_http_response(
+        client
+            .post(format!("http://{addr}/v1/state"))
+            .json(&json!({"id":seat.id})),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert_eq!(state["data"]["liveness"], "active");
+    assert_eq!(
+        state["data"]["native_receiver_reason"],
+        "native-extension-unavailable"
+    );
+    let peek = native_http_response(
+        client
+            .get(format!("http://{addr}/v1/inbox"))
+            .query(&[("seat", seat.id.as_str()), ("peek", "true")]),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        peek["details"]["native_receiver_reason"],
+        "native-extension-unavailable"
+    );
+    assert!(
+        peek["meta"]
+            .as_str()
+            .unwrap()
+            .contains("native-extension-unavailable")
+    );
+    let parked: Vec<InboxClaim> = serde_json::from_value(peek["data"].clone()).unwrap();
+    assert_eq!(
+        parked
+            .iter()
+            .map(|row| row.message.msg_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![first.msg_id.as_str(), second.msg_id.as_str()]
+    );
+    assert_eq!(parked[0].job_id, claim.job_id);
+    for row in &peek["data"].as_array().unwrap()[..] {
+        assert_eq!(row["state"], "failed");
+        assert_eq!(row["outcome"], "undelivered:native-receiver-unavailable");
+    }
+
+    // Re-registration attests the tuple but cannot revive an expired lease.
+    native_http_response(
+        client
+            .post(format!("http://{addr}/v1/register"))
+            .json(&registration),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    let recovered = native_http_response(
+        client
+            .post(format!("http://{addr}/v1/shim/inbox"))
+            .json(&json!({"argv":["inbox"],"caller":caller})),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        recovered["details"]["native_receiver_reason"],
+        "native-extension-unavailable"
+    );
+    let recovered: Vec<InboxClaim> = serde_json::from_value(recovered["data"].clone()).unwrap();
+    assert_eq!(recovered[0].job_id, claim.job_id);
+    assert_eq!(recovered[0].message, claim.message);
+    assert_eq!(recovered[0].attempt, claim.attempt + 1);
+    assert!(
+        queue
+            .claimed_delivery(claim.job_id)
+            .await
+            .unwrap()
+            .is_some(),
+        "manual claim is not an ACK"
+    );
+    let ack = native_http_response(
+        client
+            .post(format!("http://{addr}/v1/shim/inbox/ack"))
+            .json(&json!({"job_id":claim.job_id,"caller":caller})),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert_eq!(ack["data"], "reader-read");
+    assert!(
+        queue
+            .claimed_delivery(claim.job_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    server.abort();
+    clock.abort();
+}
+
 #[tokio::test(start_paused = true)]
 async fn native_receiver_absent_after_boot_grace_remains_visible_after_parking() {
     let clock = manual_receiver_clock();

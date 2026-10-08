@@ -2178,6 +2178,15 @@ mod tests {
         ) -> Result<Option<Event>> {
             self.inner.latest_matching_message(seat, kind, msg_id).await
         }
+
+        async fn matching_since(
+            &self,
+            seat: &SeatId,
+            kinds: &[&str],
+            since_at: u64,
+        ) -> Result<Vec<Event>> {
+            self.inner.matching_since(seat, kinds, since_at).await
+        }
     }
 
     async fn service() -> (FreshStore, GovernanceService, Arc<FailOnceSpine>) {

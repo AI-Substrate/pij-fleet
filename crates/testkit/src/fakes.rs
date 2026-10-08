@@ -398,6 +398,34 @@ impl Spine for FakeSpine {
         }
         Ok(None)
     }
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        since_at: u64,
+    ) -> Result<Vec<Event>> {
+        if kinds.is_empty() {
+            return Err(PijError::Adapter {
+                adapter: "fake/spine".to_string(),
+                message: "matching_since requires at least one event kind".to_string(),
+            });
+        }
+        let state = self.state.lock().expect("fake spine mutex");
+        Ok(state
+            .events
+            .iter()
+            .filter(|(_, event)| {
+                event.seat.as_ref() == Some(seat)
+                    && event.at >= since_at
+                    && kinds.iter().any(|kind| *kind == event.kind)
+            })
+            .map(|(seq, event)| {
+                let mut event = event.clone();
+                event.seq = Some(*seq);
+                event
+            })
+            .collect())
+    }
 }
 
 /// Spine cost instrument: counts bounded/latest and tail reads independently.
@@ -480,6 +508,15 @@ impl Spine for CountingSpine {
     ) -> Result<Option<Event>> {
         self.latest_calls.fetch_add(1, Ordering::Relaxed);
         self.inner.latest_matching_message(seat, kind, msg_id).await
+    }
+
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+        since_at: u64,
+    ) -> Result<Vec<Event>> {
+        self.inner.matching_since(seat, kinds, since_at).await
     }
 }
 

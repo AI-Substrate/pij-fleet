@@ -216,7 +216,10 @@ impl Daemon {
         self.session_warmup.abort();
         self.park_notices.abort();
         // A cancelled notice task is the expected join outcome; any admitted
-        // publication it started is drained by the event-bus flush below.
+        // publication it started is drained by the event-bus flush below. A park
+        // that commits after this abort is not lost: the next boot's sweep
+        // notifies it (`park_notice::LOOKBACK_MS`), and a notice admitted twice
+        // is impossible because its id is derived from the parked job.
         let _ = self.park_notices.await;
         let (served, drained, bound, observed, forwarded, background, deaths, (), governance) = tokio::join!(
             async {
