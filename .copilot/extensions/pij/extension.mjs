@@ -9,6 +9,7 @@ import {
 	chooseRegistration,
 	createNativeReporter,
 	DaemonClient,
+	extensionBuildIdentity,
 	FileJournal,
 	HOLD_ESCALATED_RETRY_MS,
 	HOLD_ESCALATION_MS,
@@ -160,6 +161,8 @@ async function startExtension() {
 			stateDir,
 		});
 		let retry = INITIAL_RETRY_MS;
+		// Identity evidence only: an unreadable build never blocks registration.
+		const extension = await extensionBuildIdentity(import.meta.dirname).catch(() => undefined);
 		let failureEpisode = false;
 		let holdStarted;
 		while (!signal.aborted) {
@@ -173,6 +176,7 @@ async function startExtension() {
 						folder: process.cwd(),
 						seats: roster?.seats,
 						env: process.env,
+						extension,
 					}),
 					signal,
 				);

@@ -398,6 +398,27 @@ impl Spine for FakeSpine {
         }
         Ok(None)
     }
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        let state = self.state.lock().expect("fake spine mutex");
+        let mut page = state
+            .events
+            .iter()
+            .map(|(seq, event)| {
+                let mut event = event.clone();
+                event.seq = Some(*seq);
+                event
+            })
+            .filter(|event| event.seat.as_ref() == Some(seat) && window.admits(event))
+            .collect::<Vec<_>>();
+        // The SQLite plan's order: (at, seq), whatever order rows were appended in.
+        page.sort_by_key(|event| (event.at, event.seq));
+        page.truncate(window.limit());
+        Ok(page)
+    }
 }
 
 /// Spine cost instrument: counts bounded/latest and tail reads independently.
@@ -480,6 +501,14 @@ impl Spine for CountingSpine {
     ) -> Result<Option<Event>> {
         self.latest_calls.fetch_add(1, Ordering::Relaxed);
         self.inner.latest_matching_message(seat, kind, msg_id).await
+    }
+
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        self.inner.matching_since(seat, window).await
     }
 }
 

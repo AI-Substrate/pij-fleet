@@ -11,6 +11,7 @@ import {
 	DaemonClient,
 	FileJournal,
 	NativeBridge,
+	NativeError,
 	parseProcessStart,
 	resolveRegistration,
 } from "./store.mjs";
@@ -1334,6 +1335,17 @@ test("activity: session.idle settles a working seat to idle", async (t) => {
 	f.event({ type: "session.idle", id: "idle-1", data: {} });
 	await flush();
 	assert.deepEqual(states(), ["working", "idle"]);
+});
+
+test("activity: working and idle still publish while receiving is held", async (t) => {
+	const { f, states } = await activityBridge(t);
+	f.bridge.holdReceiving(new NativeError("integrity hold under test"));
+	await flush();
+	assert.equal(f.reports.filter(({ kind }) => kind === "receive-held").length, 1);
+	f.event({ type: "assistant.turn_start", id: "held-turn", data: {} });
+	f.event({ type: "assistant.turn_end", id: "held-turn-end", data: {} });
+	await flush();
+	assert.deepEqual(states(), ["working", "idle"], "the seat must not read working while idle");
 });
 
 test("activity: stop settles a seat left working to idle once, outside the stopped signal", async (t) => {
@@ -3855,7 +3867,9 @@ async function receiverLeaseScenario(t, replies) {
 		},
 	});
 	t.after(() => f.bridge.stop());
-	f.client.request = async () => {
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path !== "/v1/inbox/heartbeat") return request(path, body, signal);
 		const reply = replies[attempts++];
 		if (reply instanceof Error) throw reply;
 		return reply;
@@ -3864,6 +3878,7 @@ async function receiverLeaseScenario(t, replies) {
 	return {
 		attempts,
 		waits,
+		registrations: f.trace.filter((entry) => entry === "register").length,
 		unavailable: f.reports.filter(({ kind }) => kind === "receiver-lease-unavailable"),
 	};
 }
@@ -3916,6 +3931,19 @@ test("receiver lease: recovery resets backoff and allows a new failure episode",
 	assert.equal(result.attempts, 6);
 	assert.deepEqual(result.waits, [250, 500, 20000, 250, 500, 20000]);
 	assert.equal(result.unavailable.length, 2);
+	assert.equal(result.registrations, 4, "every failed renewal re-registers before the next");
+});
+
+test("receiver lease: a stale answer re-registers and resumes renewal instead of holding", async (t) => {
+	const lease = { state: "live", lease_ms: 60000, renew_after_ms: 20000 };
+	const result = await receiverLeaseScenario(t, [
+		{ state: "stale", reason: "native-receiver-stale", lease_ms: 60000, renew_after_ms: 20000 },
+		lease,
+	]);
+	assert.equal(result.attempts, 2);
+	assert.deepEqual(result.waits, [250, 20000]);
+	assert.equal(result.registrations, 1);
+	assert.equal(result.unavailable.length, 1);
 });
 
 test("receiver lease: stop ignores a late renewal response without rescheduling", async (t) => {
@@ -3975,7 +4003,6 @@ test("receiver lease: receive-held tears down renewal before a late timer fires"
 	assert.equal(abortedAtHold, true);
 	assert.equal(renewals, 1);
 	assert.equal(f.reports.filter(({ kind }) => kind === "receive-held").length, 1);
-	assert.equal(f.trace.filter((entry) => entry === "unsubscribe").length, 1);
 	assert.equal(f.trace.filter((entry) => entry === "send").length, 1);
 	assert.equal(f.trace.includes("ack"), false);
 	assert.equal(f.trace.includes("retry-intent"), false);

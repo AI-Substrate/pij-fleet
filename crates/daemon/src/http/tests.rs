@@ -6813,6 +6813,130 @@ async fn a_live_idle_claude_frame_under_a_long_stale_working_is_refused() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Plan 167: a park notice obeys the same complete cold-wake decision as an
+/// ordinary send, stale-working correction included. For the reviewer's seat
+/// (720k context, two hours idle, `working` for two hours, the real Claude
+/// parser over the recorded after-Esc frame), `/v1/send` refuses with
+/// E-RS-COLD-WAKE and the notice is held as an FYI, never queued, in either
+/// order.
+#[tokio::test]
+async fn a_stale_working_seat_refuses_a_send_and_holds_its_park_notice_alike() {
+    for notice_first in [true, false] {
+        let queue = Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy"));
+        let spine = Arc::new(FakeSpine::new());
+        let mut seat = cold_seat(pij_core::model::SystemState::Working);
+        seat.pane = Some("%stale".to_string());
+        let mut working = pij_store::registry::activity_event(
+            &seat.id,
+            pij_core::model::SystemState::Working,
+            None,
+        )
+        .expect("activity event");
+        working.at -= TWO_HOURS_MS;
+        spine.append(working).await.expect("seed working");
+        let mut services = test_services(
+            Arc::new(
+                FakeRegistry::new()
+                    .with_seat(seat.clone())
+                    .with_seat(SeatDescriptor::new("pij-sender", Harness::Omp, "/abs/tree")),
+            ),
+            queue.clone(),
+            spine.clone(),
+        )
+        .await;
+        services.session_status = Arc::new(
+            pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, cold_status()),
+        );
+        let tmux = Arc::new(
+            pij_testkit::fakes::FakeTmux::new().script_capture(include_str!(
+                "../../../testkit/fixtures/harnesses/claude-2.1.284-after-esc.txt"
+            )),
+        );
+        services.harnesses = Arc::new(
+            pij_harnesses::HarnessRegistry::new([
+                Arc::new(pij_harnesses::ClaudeHarness::new(tmux))
+                    as Arc<dyn pij_core::ports::HarnessPort>,
+                Arc::new(pij_testkit::fakes::FakeHarness::new(Harness::Copilot)),
+                Arc::new(pij_testkit::fakes::FakeHarness::new(Harness::Codex)),
+                Arc::new(pij_testkit::fakes::FakeHarness::new(Harness::Pi)),
+                Arc::new(pij_testkit::fakes::FakeHarness::new(Harness::Omp)),
+            ])
+            .expect("harness registry"),
+        );
+        // A message the cold seat sent, parked: the notice goes back to it.
+        let lost = pij_core::model::Msg {
+            from: seat.id.clone(),
+            to: "pij-sender".into(),
+            body: "lost".into(),
+            msg_id: "m-lost".into(),
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
+        };
+        let job = pij_core::model::Job {
+            kind: "delivery:pij-sender".into(),
+            serial_key: "pij-sender".into(),
+            payload: serde_json::to_string(&lost).unwrap(),
+            dedupe_key: lost.msg_id.clone(),
+            attempt: 0,
+        };
+        let evidence = pij_core::ports::ParkingEvidence {
+            outcome: pij_core::model::DeliveryFailure::NativeReceiverUnavailable,
+            reason: "native-extension-unavailable",
+            at: system_time_ms().unwrap(),
+        };
+        let mut parked = pij_core::delivery::parked_events(JobId(41), &job, &evidence)
+            .unwrap()
+            .into_iter()
+            .find(|event| event.kind == "delivery.parked")
+            .unwrap();
+        parked.seq = Some(spine.append(parked.clone()).await.unwrap());
+        let notifier = services.clone();
+        let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+        let send = async || {
+            let (status, reply) = post_json(
+                addr,
+                "/v1/send",
+                cold_send("m-parity", serde_json::json!({})),
+            )
+            .await;
+            assert_eq!(status, 400, "{reply}");
+            assert!(
+                reply["meta"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .starts_with("E-RS-COLD-WAKE"),
+                "{reply}"
+            );
+        };
+        if notice_first {
+            crate::park_notice::notify(&notifier, &parked)
+                .await
+                .unwrap();
+            send().await;
+        } else {
+            send().await;
+            crate::park_notice::notify(&notifier, &parked)
+                .await
+                .unwrap();
+        }
+        assert_eq!(queue.live_len(), 0, "neither path queued an ordinary wake");
+        let audit = spine
+            .latest_matching_message(&seat.id, crate::park_notice::NOTICE_KIND, "m-lost")
+            .await
+            .unwrap()
+            .expect("notice audited");
+        let audit: serde_json::Value = serde_json::from_str(&audit.payload).unwrap();
+        assert_eq!(audit["channel"], "fyi", "notice_first={notice_first}");
+        assert_eq!(
+            notifier.delivery.pending_fyi_count(&seat.id).await.unwrap(),
+            1,
+            "held once for the seat's next turn"
+        );
+        server.abort();
+    }
+}
+
 #[tokio::test]
 async fn a_stale_working_seat_with_an_idle_pane_is_refused_and_corrected() {
     let claude = Arc::new(pij_testkit::fakes::FakeHarness::new(Harness::Claude).script_idle(true));

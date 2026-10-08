@@ -2886,16 +2886,16 @@ mod tests {
         let card = serde_json::from_value::<pij_daemon::http::StateCard>(serde_json::json!({
             "id":"pij-native", "state":"idle", "liveness":"active", "cwd":"/abs/tree",
             "harness":"copilot", "unsupported":[],
-            "native_receiver_reason":"native-receiver-stale",
+            "native_receiver_reason":"native-extension-unavailable",
         }))
         .unwrap();
         let response = pij_core::model::Envelope::ok("pij state", card);
-        assert!(super::render_state(&response, false).contains("native-receiver-stale"));
+        assert!(super::render_state(&response, false).contains("native-extension-unavailable"));
         let json: serde_json::Value =
             serde_json::from_str(&super::render_state(&response, true)).unwrap();
         assert_eq!(
             json["data"]["native_receiver_reason"],
-            "native-receiver-stale"
+            "native-extension-unavailable"
         );
         assert_eq!(json["data"]["liveness"], "active");
     }

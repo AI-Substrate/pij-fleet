@@ -161,16 +161,25 @@ tail cursor. Missing overlap/correlated terminal proof holds without ACK or rese
 Shutdown with outstanding work logs `receiver-stopped` and its job/message identity.
 
 Receiver presence is separate from the Copilot host's process and Working state.
-The extension sends actual `observed_at` / `observed_seq` progress through
-`/v1/inbox/heartbeat`, including while it waits for completion or operator Hold.
-Timers and empty pages do not count as observations. The lease defaults to 60 seconds
-(`PIJ_RS_EXT_CLAIM_LEASE_SECS`), with renewal every third of that interval. With
-outstanding deliveries, frozen progress does not extend the lease horizon; three
-renewal opportunities yield `native-receiver-stale`. `pij state` and `pij inbox`
-show that reason separately from an active host. The daemon wakes on receiver deadlines, parks pending/unacknowledged
-native bodies with `undelivered:native-receiver-unavailable`, emits
-`delivery.parked` with reason `native-extension-unavailable`, and refuses later
-sends with the receiver's seat named. It does not silently fall back to tmux.
+The extension renews `/v1/inbox/heartbeat` every third of the lease, including
+while it waits for completion or operator Hold; the lease defaults to 60 seconds
+(`PIJ_RS_EXT_CLAIM_LEASE_SECS`). Lease liveness means heartbeats arrive, nothing
+more: a busy turn with no new native event (one long tool call) keeps its lease and
+its queued mail is delivered when the turn ends (plan 167). `observed_at` /
+`observed_seq` are still sent but are diagnostics only. If heartbeats stop, the
+daemon wakes on the receiver deadline, parks pending/unacknowledged native bodies
+with `undelivered:native-receiver-unavailable`, emits `delivery.parked` with reason
+`native-extension-unavailable`, tells each live sender once through `pij-bg`, and
+refuses later sends with the receiver's seat named. `pij state` and `pij inbox`
+show `native-extension-unavailable` separately from an active host. It does not
+silently fall back to tmux.
+
+A lease answer never holds the extension permanently: a `stale` or `unavailable`
+answer from an older daemon, a refused or malformed renewal all re-register and
+keep renewing, replaying nothing as progress. Turn-state publication (`working` /
+`idle`) continues while receiving is held, so a held seat never reads `working`
+while idle. Registration reports `extension_build` and `extension_path` the way OMP
+does, so `pij state` names the loaded build.
 
 A correlated-anchor gap (the queryable incremental-history window not yet showing
 the event the extension last observed, with no terminal proof either) is retried in
@@ -179,9 +188,8 @@ busy turn can keep delivering through the push callback even while the bounded
 backward-read window still lags behind it, and this window gives that case time to
 resolve on its own instead of holding on the condition's first appearance. Only once
 the gap outlives that window does it hold exactly as before. The retry is not a hold:
-heartbeat renewal keeps reporting the observation progress the push callback sees, as
-during any long turn. Every hold, including the escalated gap hold, still stops
-renewal, so the daemon's lease and `native-receiver-stale` brake apply unchanged.
+heartbeat renewal continues, as during any long turn. Every integrity hold, including
+the escalated gap hold, still stops renewal, so the daemon's lease expiry applies.
 
 If only the extension died, run `pij inbox --json` inside the still-live Copilot
 seat's shell. The normal pane/session identity ladder authorizes this explicit

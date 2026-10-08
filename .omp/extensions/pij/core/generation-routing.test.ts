@@ -182,14 +182,14 @@ describe("the explicit rs routing inventory", () => {
 				id: "pij-copilot",
 				state: "idle",
 				liveness: "active",
-				native_receiver_reason: "native-receiver-stale",
+				native_receiver_reason: "native-extension-unavailable",
 			},
 			["state", "pij-copilot"],
 		);
 		expect(rendered.kind).toBe("rendered");
 		if (rendered.kind !== "rendered") throw new Error("state was not rendered");
 		expect(rendered.text).toContain("idle · active");
-		expect(rendered.text).toContain("native-receiver-stale");
+		expect(rendered.text).toContain("native-extension-unavailable");
 	});
 });
 

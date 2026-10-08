@@ -16,6 +16,7 @@ use pij_core::model::{Event, SeatDescriptor, SeatId};
 use pij_core::session_status::SessionStatusBlock;
 
 use super::{AppState, internal, refused, session_status_block, system_time_ms};
+use crate::Services;
 
 /// How long a send waits for the recipient's session facts before allowing it.
 /// A cold first read of a very large transcript can take longer; the brake
@@ -34,9 +35,8 @@ const PANE_PROBE_WAIT: Duration = Duration::from_secs(1);
 /// woken after a long idle looks idle, with cold facts, until its reply is
 /// written. An Esc-stale `working` is always at least as old as the last call.
 /// A missing, unreadable or non-`working` fact is `false`.
-async fn working_is_old(state: &AppState, seat: &SeatId, now_ms: u64) -> bool {
-    let Ok(Some(event)) = state
-        .services
+async fn working_is_old(services: &Services, seat: &SeatId, now_ms: u64) -> bool {
+    let Ok(Some(event)) = services
         .spine
         .latest_matching(seat, &["seat.activity"])
         .await
@@ -55,11 +55,11 @@ async fn working_is_old(state: &AppState, seat: &SeatId, now_ms: u64) -> bool {
 /// The real capture is a synchronous `tmux` child inside an `async fn`, which a
 /// timeout cannot preempt. So the probe runs on the blocking pool, and the send
 /// stops waiting at the bound. A wedged capture finishes, or not, on its own.
-async fn pane_is_idle(state: &AppState, seat: &pij_core::model::SeatDescriptor) -> bool {
+async fn pane_is_idle(services: &Services, seat: &pij_core::model::SeatDescriptor) -> bool {
     let Some(pane) = seat.pane.clone() else {
         return false;
     };
-    let harness = state.services.harnesses.get(seat.harness).clone();
+    let harness = services.harnesses.get(seat.harness).clone();
     let runtime = tokio::runtime::Handle::current();
     let probe = tokio::task::spawn_blocking(move || runtime.block_on(harness.idle(&pane)));
     matches!(
@@ -87,6 +87,61 @@ pub(crate) async fn is_known_warm(state: &AppState, seat: &SeatDescriptor, now_m
         return false;
     };
     pij_core::cold_wake::is_warm(&block, now_ms)
+}
+
+/// The complete cold-wake verdict for one live seat: the pure `check()` over
+/// its session facts, plus the stale-`working` correction. This is the one
+/// decision both an ordinary `pij send` and a daemon park notice obey
+/// (plan 167); nothing else re-derives it.
+///
+/// A seat can SAY working after its turn ended unseen (a Claude Esc interrupt
+/// fires no hook). Only in the rare case that the facts alone say cold AND the
+/// `working` itself is older than the idle threshold, the live pane decides: one
+/// idle probe of that one pane. Only positive idle evidence means the `working`
+/// was stale: the verdict is cold, and the seat's activity is corrected. Anything
+/// else keeps trusting `working`, so the brake stays off rather than refuse on a
+/// guess.
+///
+/// # Errors
+/// Correcting the stale activity failed.
+pub(crate) async fn verdict(
+    services: &Services,
+    seat: &SeatDescriptor,
+    now_ms: u64,
+) -> pij_core::error::Result<ColdCheck> {
+    let block = tokio::time::timeout(
+        STATUS_WAIT,
+        session_status_block(
+            services.session_status.as_ref(),
+            &seat.id,
+            seat.harness,
+            seat.harness_session.clone(),
+            now_ms,
+        ),
+    )
+    .await
+    .unwrap_or_else(|_| SessionStatusBlock::Failed {
+        error: format!("no answer within {}s", STATUS_WAIT.as_secs()),
+    });
+    let verdict = check(seat.state, &block, now_ms);
+    if verdict == ColdCheck::Busy {
+        let as_idle = check(pij_core::model::SystemState::Idle, &block, now_ms);
+        if matches!(as_idle, ColdCheck::Cold { .. })
+            && working_is_old(services, &seat.id, now_ms).await
+            && pane_is_idle(services, seat).await
+        {
+            services
+                .registry
+                .set_activity(
+                    &seat.id,
+                    pij_core::model::SystemState::Idle,
+                    Some(STALE_WORKING_REASON),
+                )
+                .await?;
+            return Ok(as_idle);
+        }
+    }
+    Ok(verdict)
 }
 
 /// What the sender asked for about a cold recipient.
@@ -127,49 +182,9 @@ pub(crate) async fn guard(
         Err(error) => return Err(Box::new(internal(command, error))),
     };
     let now_ms = system_time_ms().map_err(|error| Box::new(internal(command, error)))?;
-    let block = tokio::time::timeout(
-        STATUS_WAIT,
-        session_status_block(
-            state.services.session_status.as_ref(),
-            &seat.id,
-            seat.harness,
-            seat.harness_session.clone(),
-            now_ms,
-        ),
-    )
-    .await
-    .unwrap_or_else(|_| SessionStatusBlock::Failed {
-        error: format!("no answer within {}s", STATUS_WAIT.as_secs()),
-    });
-    let mut verdict = check(seat.state, &block, now_ms);
-    // A seat can SAY working after its turn ended unseen (a Claude Esc interrupt
-    // fires no hook). Only in the rare case that the facts alone say cold AND
-    // the `working` itself is older than the idle threshold, the live pane
-    // decides: one idle probe of that one pane. Only positive idle evidence
-    // means the `working` was stale: refuse, and correct it. Anything else
-    // keeps trusting `working`, so the brake stays off rather than refuse on a
-    // guess.
-    if verdict == ColdCheck::Busy {
-        let as_idle = check(pij_core::model::SystemState::Idle, &block, now_ms);
-        if matches!(as_idle, ColdCheck::Cold { .. })
-            && working_is_old(state, &seat.id, now_ms).await
-            && pane_is_idle(state, &seat).await
-        {
-            if let Err(error) = state
-                .services
-                .registry
-                .set_activity(
-                    &seat.id,
-                    pij_core::model::SystemState::Idle,
-                    Some(STALE_WORKING_REASON),
-                )
-                .await
-            {
-                return Err(Box::new(internal(command, error)));
-            }
-            verdict = as_idle;
-        }
-    }
+    let verdict = verdict(&state.services, &seat, now_ms)
+        .await
+        .map_err(|error| Box::new(internal(command, error)))?;
     if let Some(message) = refusal(to, &verdict)
         && !over.force
     {

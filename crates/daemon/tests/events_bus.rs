@@ -95,6 +95,23 @@ impl Spine for TestSpine {
         }
         Ok(None)
     }
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        let mut page = self
+            .events
+            .lock()
+            .expect("test spine mutex")
+            .iter()
+            .filter(|event| event.seat.as_ref() == Some(seat) && window.admits(event))
+            .cloned()
+            .collect::<Vec<_>>();
+        page.sort_by_key(|event| (event.at, event.seq));
+        page.truncate(window.limit());
+        Ok(page)
+    }
 }
 
 fn event(number: u64, kind: &str) -> Event {
