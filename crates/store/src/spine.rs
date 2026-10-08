@@ -19,11 +19,18 @@ use pij_core::ports::{PutBinding, Spine, SpineWindow};
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, sql_u64};
 
-/// One page of one seat's events of one kind after an `(at, seq)` cursor.
-/// The row-value range seeks `spine_by_seat_kind_at (seat, kind, at)` (whose
-/// implicit rowid is `seq`), so no row before the cursor is read.
-pub const MATCHING_SINCE_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
-     WHERE seat = ?1 AND kind = ?2 AND (at, seq) > (?3, ?4) ORDER BY at, seq LIMIT ?5";
+/// A page of one seat's events of one kind after an `(at, seq)` cursor is two
+/// seeks on `spine_by_seat_kind_at (seat, kind, at, seq)`, each costing the rows
+/// it returns. SQLite seeks a row-value `(at, seq) > (?, ?)` only on `at`, so a
+/// cursor deep inside a run of equal `at` would re-read the run; splitting the
+/// predicate keeps both seeks exact.
+///
+/// First the rest of the cursor's own time: `at = ? AND seq > ?`.
+pub const MATCHING_AT_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     WHERE seat = ?1 AND kind = ?2 AND at = ?3 AND seq > ?4 ORDER BY seq LIMIT ?5";
+/// Then later times, filling the page: `at > ?`.
+pub const MATCHING_AFTER_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     WHERE seat = ?1 AND kind = ?2 AND at > ?3 ORDER BY at, seq LIMIT ?4";
 
 /// An owned, lazy registry transaction returning its committed event and binding.
 /// The publisher acquires its ordering lock before polling, then owns this future
@@ -226,17 +233,36 @@ impl Spine for SqliteSpine {
                 message: "matching_since bound exceeds a signed 64-bit integer".to_string(),
             })
         };
-        sqlx::query(MATCHING_SINCE_SQL)
+        let limit = as_sql(window.limit() as u64)?;
+        // One read snapshot for both seeks: an event appended between them at
+        // the cursor's own time can never fall between the two answers.
+        let mut snapshot = self.pool.begin().await.map_err(adapter_error)?;
+        let mut page = sqlx::query(MATCHING_AT_SQL)
             .bind(seat.as_str())
             .bind(window.kind())
             .bind(as_sql(window.since_at())?)
             .bind(as_sql(window.after().0)?)
-            .bind(as_sql(window.limit() as u64)?)
-            .fetch_all(&self.pool)
+            .bind(limit)
+            .fetch_all(&mut *snapshot)
             .await
             .map_err(adapter_error)?
             .iter()
             .map(decode_event)
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        if page.len() < window.limit() {
+            let rest = sqlx::query(MATCHING_AFTER_SQL)
+                .bind(seat.as_str())
+                .bind(window.kind())
+                .bind(as_sql(window.since_at())?)
+                .bind(limit - page.len() as i64)
+                .fetch_all(&mut *snapshot)
+                .await
+                .map_err(adapter_error)?;
+            for row in &rest {
+                page.push(decode_event(row)?);
+            }
+        }
+        snapshot.rollback().await.map_err(adapter_error)?;
+        Ok(page)
     }
 }

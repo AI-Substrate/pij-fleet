@@ -545,17 +545,38 @@ async fn the_sqlite_spine_honours_the_same_window_contract_the_fake_does() {
     spine_window_contract(&SqliteSpine::new(pool)).await;
 }
 
+async fn explain(pool: &pij_store::StorePool, sql: &str, binds: &[i64]) -> Vec<String> {
+    let explain = format!("EXPLAIN QUERY PLAN {sql}");
+    let mut query = sqlx::query(&explain)
+        .bind("pij-history")
+        .bind("delivery.parked");
+    for value in binds {
+        query = query.bind(*value);
+    }
+    query
+        .fetch_all(pool)
+        .await
+        .expect("plan")
+        .iter()
+        .map(|row| row.get::<String, _>("detail"))
+        .collect()
+}
+
 /// Plan 167 review: `matching_since` costs the rows it returns, not the seat's
-/// history. With 100 and with 10,000 older rows of the same seat and kind (and
-/// fresh statistics), the plan seeks `spine_by_seat_kind_at` on the `(at, seq)`
-/// cursor instead of scanning the seat's rows and filtering `at` afterwards.
+/// history. With 100 and with 10,000 rows sharing the cursor's own `at` (the
+/// cursor sits deep inside that run) plus as many at other times, and fresh
+/// statistics, both seeks of a page stay exact on `spine_by_seat_kind_at`:
+/// `at = ? AND seq > ?` for the rest of the cursor's time, `at > ?` after it.
+/// (SQLite seeks a row value `(at, seq) > (?, ?)` only on `at`, re-reading the
+/// run.) VM-step counts are evidence in the PR: this workspace forbids the
+/// unsafe FFI a test would need to read them.
 #[tokio::test]
-async fn matching_since_seeks_the_seat_kind_time_index_whatever_the_history() {
+async fn matching_since_seeks_exactly_inside_an_equal_time_run_whatever_the_history() {
     for history in [100_i64, 10_000] {
         let fresh = FreshStore::new();
         let pool = pij_store::open(&fresh.path()).await.expect("open");
         let mut tx = pool.begin().await.expect("begin");
-        for at in 0..history {
+        for at in std::iter::repeat_n(5_000, history as usize).chain(0..history) {
             sqlx::query(
                 "INSERT INTO spine_events (v, at, kind, seat, payload) \
                  VALUES (1, ?1, 'delivery.parked', 'pij-history', '{}')",
@@ -563,30 +584,24 @@ async fn matching_since_seeks_the_seat_kind_time_index_whatever_the_history() {
             .bind(at)
             .execute(&mut *tx)
             .await
-            .expect("old park");
+            .expect("history");
         }
         tx.commit().await.expect("commit");
         sqlx::query("ANALYZE")
             .execute(&pool)
             .await
             .expect("analyze");
-        let plan: Vec<String> = sqlx::query(&format!(
-            "EXPLAIN QUERY PLAN {}",
-            pij_store::spine::MATCHING_SINCE_SQL
-        ))
-        .bind("pij-history")
-        .bind("delivery.parked")
-        .bind(history)
-        .bind(0_i64)
-        .bind(256_i64)
-        .fetch_all(&pool)
-        .await
-        .expect("plan")
-        .iter()
-        .map(|row| row.get::<String, _>("detail"))
-        .collect();
+        let cursor = [5_000_i64, history - 1, 2];
         assert_eq!(
-            plan,
+            explain(&pool, pij_store::spine::MATCHING_AT_SQL, &cursor).await,
+            vec![
+                "SEARCH spine_events USING INDEX spine_by_seat_kind_at (seat=? AND kind=? AND at=? AND seq>?)"
+                    .to_string()
+            ],
+            "history of {history}"
+        );
+        assert_eq!(
+            explain(&pool, pij_store::spine::MATCHING_AFTER_SQL, &[5_000, 2]).await,
             vec![
                 "SEARCH spine_events USING INDEX spine_by_seat_kind_at (seat=? AND kind=? AND at>?)"
                     .to_string()

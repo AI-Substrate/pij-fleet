@@ -7,7 +7,7 @@ pub mod anomalies;
 mod auth;
 mod background;
 mod client;
-mod cold_wake;
+pub(crate) mod cold_wake;
 pub mod decisions;
 mod exposure;
 mod fyi;

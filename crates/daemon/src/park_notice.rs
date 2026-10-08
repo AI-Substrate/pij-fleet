@@ -11,8 +11,9 @@
 //! `delivery.park-notice` event is an audit record written after admission and
 //! repaired on replay; a lost or failed audit write cannot cause a duplicate.
 //!
-//! **The notice never wakes a cold seat.** It passes the send guard's own
-//! cold-wake `check()`: where a `pij send` would be refused with
+//! **The notice never wakes a cold seat.** It obeys the send guard's own
+//! complete cold-wake decision (`http::cold_wake::verdict`, the stale-working
+//! correction included): where a `pij send` would be refused with
 //! `E-RS-COLD-WAKE`, the notice is held as an FYI for the sender's next turn
 //! under the same id; otherwise it is delivered normally, and a refused delivery
 //! (the sender's own receiver is down) also falls back to that FYI. A held FYI
@@ -139,7 +140,9 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
             in_reply_to: None,
             command: None,
         };
-        let cold = crate::bg_routing::cold_check(services.session_status.as_ref(), &seat).await;
+        // The very decision `pij send` obeys, stale-working correction included.
+        let now = crate::http::system_time_ms()?;
+        let cold = crate::http::cold_wake::verdict(services, &seat, now).await?;
         if refusal(sender, &cold).is_some() {
             (Some("fyi"), Some(services.delivery.hold_fyi(msg).await?))
         } else {
@@ -654,8 +657,9 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let verdict =
-            crate::bg_routing::cold_check(services.session_status.as_ref(), &sender).await;
+        let verdict = crate::http::cold_wake::verdict(&services, &sender, now_ms())
+            .await
+            .unwrap();
         assert!(
             refusal(&sender.id, &verdict).is_some_and(|text| text.starts_with("E-RS-COLD-WAKE")),
             "the same seat refuses an ordinary send: {verdict:?}"
