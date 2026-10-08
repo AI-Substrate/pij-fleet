@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use pij_core::ports::{
     DeferOutcome, DeliveryAck, DeliveryEnqueue, Queue, Registry, ReleaseOutcome, SeatFilter, Spine,
-    TmuxPort,
+    SpineWindow, TmuxPort,
 };
 
 /// Every promise the [`Registry`] port makes, in one place.
@@ -346,6 +346,76 @@ pub async fn spine_contract(spine: &dyn Spine) {
 /// Every promise the [`Queue`] port makes (R4).
 ///
 /// # Panics
+/// Every promise [`Spine::matching_since`] makes, in one place: one seat, one
+/// kind, `(at, seq)` order whatever the append order, an inclusive first page,
+/// and pages that neither repeat nor skip an event, including equal-time ties.
+///
+/// # Panics
+/// On the first broken promise, naming which one.
+pub async fn spine_window_contract(spine: &dyn Spine) {
+    let seat = SeatId::from("pij-window-a");
+    let other = SeatId::from("pij-window-b");
+    let event = |kind: &str, seat: &SeatId, at: u64| Event {
+        seq: None,
+        v: 1,
+        at,
+        kind: kind.to_string(),
+        seat: Some(seat.clone()),
+        payload: format!("{{\"at\":{at}}}"),
+    };
+    // Appended out of time order; three share at=200.
+    let mut want = Vec::new();
+    for at in [300_u64, 100, 200, 200, 250, 200] {
+        let seq = spine
+            .append(event("parked", &seat, at))
+            .await
+            .expect("append");
+        if at >= 200 {
+            want.push((at, seq));
+        }
+    }
+    spine
+        .append(event("other-kind", &seat, 400))
+        .await
+        .expect("append");
+    spine
+        .append(event("parked", &other, 400))
+        .await
+        .expect("append");
+    want.sort();
+
+    let mut window = Some(SpineWindow::new("parked", 200, Seq(0), 2).expect("window"));
+    let mut seen = Vec::new();
+    let mut pages = 0;
+    while let Some(current) = window {
+        let page = spine.matching_since(&seat, &current).await.expect("page");
+        assert!(page.len() <= 2, "a page never exceeds its limit");
+        seen.extend(page.iter().map(|event| (event.at, event.seq.expect("seq"))));
+        window = current.next(&page);
+        pages += 1;
+    }
+    assert_eq!(
+        seen, want,
+        "one seat, one kind, (at, seq) order, inclusive since_at, no repeat or skip"
+    );
+    assert_eq!(
+        pages, 3,
+        "four events at limit 2: two full pages and an empty one"
+    );
+    assert!(
+        SpineWindow::new("parked", i64::MAX as u64 + 1, Seq(0), 1).is_err(),
+        "a bound no adapter can store is refused once, before any adapter sees it"
+    );
+    assert!(
+        SpineWindow::new("", 0, Seq(0), 1).is_err(),
+        "kind is mandatory"
+    );
+    assert!(
+        SpineWindow::new("parked", 0, Seq(0), 0).is_err(),
+        "limit is positive"
+    );
+}
+
 /// On the first broken promise, naming which one.
 pub async fn queue_contract(queue: &dyn Queue) {
     let kinds = vec!["deliver".to_string()];

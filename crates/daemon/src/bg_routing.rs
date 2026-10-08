@@ -76,32 +76,42 @@ impl DaemonColdRouting {
     }
 }
 
+/// The cold-wake decision for one seat: the send guard's own pure `check()`
+/// over its session facts, read with the same bounded wait. Anything that
+/// cannot be established in time is `Unknown`, which never refuses.
+pub(crate) async fn cold_check(
+    session_status: &dyn SessionStatusPort,
+    seat: &SeatDescriptor,
+) -> ColdCheck {
+    let now = match system_time_ms() {
+        Ok(now) => now,
+        Err(error) => {
+            return ColdCheck::Unknown {
+                why: error.to_string(),
+            };
+        }
+    };
+    let block = tokio::time::timeout(
+        STATUS_WAIT,
+        session_status_block(
+            session_status,
+            &seat.id,
+            seat.harness,
+            seat.harness_session.clone(),
+            now,
+        ),
+    )
+    .await
+    .unwrap_or_else(|_| SessionStatusBlock::Failed {
+        error: format!("no answer within {}s", STATUS_WAIT.as_secs()),
+    });
+    check(seat.state, &block, now)
+}
+
 #[async_trait]
 impl ColdRouting for DaemonColdRouting {
     async fn check(&self, seat: &SeatDescriptor) -> ColdCheck {
-        let now = match system_time_ms() {
-            Ok(now) => now,
-            Err(error) => {
-                return ColdCheck::Unknown {
-                    why: error.to_string(),
-                };
-            }
-        };
-        let block = tokio::time::timeout(
-            STATUS_WAIT,
-            session_status_block(
-                self.session_status.as_ref(),
-                &seat.id,
-                seat.harness,
-                seat.harness_session.clone(),
-                now,
-            ),
-        )
-        .await
-        .unwrap_or_else(|_| SessionStatusBlock::Failed {
-            error: format!("no answer within {}s", STATUS_WAIT.as_secs()),
-        });
-        check(seat.state, &block, now)
+        cold_check(self.session_status.as_ref(), seat).await
     }
 
     async fn prime(&self, seat: &SeatDescriptor) -> Result<Option<SeatId>> {

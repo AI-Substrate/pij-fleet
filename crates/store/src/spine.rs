@@ -14,10 +14,16 @@ use sqlx::{Pool, QueryBuilder, Row, Sqlite, SqliteConnection};
 
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Event, SeatId, Seq};
-use pij_core::ports::{PutBinding, Spine};
+use pij_core::ports::{PutBinding, Spine, SpineWindow};
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, sql_u64};
+
+/// One page of one seat's events of one kind after an `(at, seq)` cursor.
+/// The row-value range seeks `spine_by_seat_kind_at (seat, kind, at)` (whose
+/// implicit rowid is `seq`), so no row before the cursor is read.
+pub const MATCHING_SINCE_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     WHERE seat = ?1 AND kind = ?2 AND (at, seq) > (?3, ?4) ORDER BY at, seq LIMIT ?5";
 
 /// An owned, lazy registry transaction returning its committed event and binding.
 /// The publisher acquires its ordering lock before polling, then owns this future
@@ -211,37 +217,21 @@ impl Spine for SqliteSpine {
         .transpose()
     }
 
-    async fn matching_since(
-        &self,
-        seat: &SeatId,
-        kinds: &[&str],
-        since_at: u64,
-    ) -> Result<Vec<Event>> {
-        if kinds.is_empty() {
-            return Err(PijError::Adapter {
-                adapter: "store/spine".to_string(),
-                message: "matching_since requires at least one event kind".to_string(),
-            });
-        }
+    async fn matching_since(&self, seat: &SeatId, window: &SpineWindow) -> Result<Vec<Event>> {
         require_current_schema(&self.pool).await?;
-        // `spine_by_seat_kind (seat, kind, seq)` bounds the scan to this seat's kinds.
-        let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT seq, v, at, kind, seat, payload FROM spine_events WHERE seat = ",
-        );
-        query.push_bind(seat.as_str());
-        query.push(" AND kind IN (");
-        {
-            let mut kinds_sql = query.separated(", ");
-            for kind in kinds {
-                kinds_sql.push_bind(*kind);
-            }
-            kinds_sql.push_unseparated(")");
-        }
-        query.push(" AND at >= ");
-        query.push_bind(i64::try_from(since_at).unwrap_or(i64::MAX));
-        query.push(" ORDER BY seq");
-        query
-            .build()
+        // SpineWindow::new already proved every bound fits a signed 64-bit column.
+        let as_sql = |value: u64| {
+            i64::try_from(value).map_err(|_| PijError::Adapter {
+                adapter: "store/spine".to_string(),
+                message: "matching_since bound exceeds a signed 64-bit integer".to_string(),
+            })
+        };
+        sqlx::query(MATCHING_SINCE_SQL)
+            .bind(seat.as_str())
+            .bind(window.kind())
+            .bind(as_sql(window.since_at())?)
+            .bind(as_sql(window.after().0)?)
+            .bind(as_sql(window.limit() as u64)?)
             .fetch_all(&self.pool)
             .await
             .map_err(adapter_error)?

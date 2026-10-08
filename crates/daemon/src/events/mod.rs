@@ -292,10 +292,9 @@ impl Spine for EventBus {
     async fn matching_since(
         &self,
         seat: &SeatId,
-        kinds: &[&str],
-        since_at: u64,
+        window: &pij_core::ports::SpineWindow,
     ) -> Result<Vec<Event>> {
-        self.spine.matching_since(seat, kinds, since_at).await
+        self.spine.matching_since(seat, window).await
     }
 }
 

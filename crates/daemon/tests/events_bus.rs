@@ -98,22 +98,19 @@ impl Spine for TestSpine {
     async fn matching_since(
         &self,
         seat: &SeatId,
-        kinds: &[&str],
-        since_at: u64,
+        window: &pij_core::ports::SpineWindow,
     ) -> Result<Vec<Event>> {
-        assert!(!kinds.is_empty(), "test spine kinds must be non-empty");
-        Ok(self
+        let mut page = self
             .events
             .lock()
             .expect("test spine mutex")
             .iter()
-            .filter(|event| {
-                event.seat.as_ref() == Some(seat)
-                    && event.at >= since_at
-                    && kinds.iter().any(|kind| *kind == event.kind)
-            })
+            .filter(|event| event.seat.as_ref() == Some(seat) && window.admits(event))
             .cloned()
-            .collect())
+            .collect::<Vec<_>>();
+        page.sort_by_key(|event| (event.at, event.seq));
+        page.truncate(window.limit());
+        Ok(page)
     }
 }
 

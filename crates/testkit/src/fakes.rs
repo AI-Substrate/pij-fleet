@@ -401,30 +401,23 @@ impl Spine for FakeSpine {
     async fn matching_since(
         &self,
         seat: &SeatId,
-        kinds: &[&str],
-        since_at: u64,
+        window: &pij_core::ports::SpineWindow,
     ) -> Result<Vec<Event>> {
-        if kinds.is_empty() {
-            return Err(PijError::Adapter {
-                adapter: "fake/spine".to_string(),
-                message: "matching_since requires at least one event kind".to_string(),
-            });
-        }
         let state = self.state.lock().expect("fake spine mutex");
-        Ok(state
+        let mut page = state
             .events
             .iter()
-            .filter(|(_, event)| {
-                event.seat.as_ref() == Some(seat)
-                    && event.at >= since_at
-                    && kinds.iter().any(|kind| *kind == event.kind)
-            })
             .map(|(seq, event)| {
                 let mut event = event.clone();
                 event.seq = Some(*seq);
                 event
             })
-            .collect())
+            .filter(|event| event.seat.as_ref() == Some(seat) && window.admits(event))
+            .collect::<Vec<_>>();
+        // The SQLite plan's order: (at, seq), whatever order rows were appended in.
+        page.sort_by_key(|event| (event.at, event.seq));
+        page.truncate(window.limit());
+        Ok(page)
     }
 }
 
@@ -513,10 +506,9 @@ impl Spine for CountingSpine {
     async fn matching_since(
         &self,
         seat: &SeatId,
-        kinds: &[&str],
-        since_at: u64,
+        window: &pij_core::ports::SpineWindow,
     ) -> Result<Vec<Event>> {
-        self.inner.matching_since(seat, kinds, since_at).await
+        self.inner.matching_since(seat, window).await
     }
 }
 

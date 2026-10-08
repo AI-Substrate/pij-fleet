@@ -11,12 +11,22 @@
 //! `delivery.park-notice` event is an audit record written after admission and
 //! repaired on replay; a lost or failed audit write cannot cause a duplicate.
 //!
+//! **The notice never wakes a cold seat.** It passes the send guard's own
+//! cold-wake `check()`: where a `pij send` would be refused with
+//! `E-RS-COLD-WAKE`, the notice is held as an FYI for the sender's next turn
+//! under the same id; otherwise it is delivered normally, and a refused delivery
+//! (the sender's own receiver is down) also falls back to that FYI. A held FYI
+//! counts as admitted, so a seat that warms up later is never notified twice.
+//!
 //! **Committed parks are swept, not only followed.** The follower subscribes
 //! live first, then sweeps every live seat's parks from the last
 //! [`LOOKBACK_MS`], so a park committed before the follower attached (a
 //! restart, a shutdown abort) or dropped by a lagging subscription is still
-//! notified. Overlap between the sweep and the live feed is harmless. A failed
-//! notice is never treated as done: the sweep reruns after [`RETRY_AFTER`].
+//! notified. A filtered subscription that drops a park and then sees only
+//! unrelated events is never woken, so the sweep also reruns every
+//! [`SWEEP_EVERY`]. Overlap between sweeps and the live feed is harmless. A
+//! failed notice is never treated as done: the next sweep comes after
+//! [`RETRY_AFTER`].
 //!
 //! A sender with no live seat (missing, tombstoned, remote, or `pij-bg` itself)
 //! gets nothing, and that is not an error.
@@ -26,10 +36,11 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::BG_ACTOR;
+use pij_core::cold_wake::refusal;
 use pij_core::error::Result;
 use pij_core::events::EventFilter;
-use pij_core::model::{DeliveryFailure, DeliveryOutcome, Event, JobId, Msg, SeatId};
-use pij_core::ports::Spine;
+use pij_core::model::{DeliveryFailure, DeliveryOutcome, Event, JobId, Msg, SeatId, Seq};
+use pij_core::ports::{Spine, SpineWindow};
 use serde::Deserialize;
 use serde_json::json;
 use tokio_stream::StreamExt;
@@ -43,8 +54,14 @@ pub const NOTICE_KIND: &str = "delivery.park-notice";
 /// How far back a (re)starting or lagging follower looks for parks still owed
 /// a notice. Older parks are history, not news.
 pub const LOOKBACK_MS: u64 = 24 * 60 * 60 * 1_000;
-/// After a failed notice, the sweep reruns this long after the last attempt.
+/// After a failed notice, the next sweep runs this long after the attempt.
 pub const RETRY_AFTER: Duration = Duration::from_secs(30);
+/// The sweep reruns at least this often, whether or not anything woke the
+/// follower: a lag that drops a park is not itself an event.
+pub const SWEEP_EVERY: Duration = Duration::from_secs(60);
+/// One page of a seat's spine facts during a sweep.
+const PAGE: usize = 256;
+const FYI_HELD_KIND: &str = "fyi.held";
 
 /// The canonical `delivery.parked` payload (`pij_core::delivery::parked_events`).
 #[derive(Deserialize)]
@@ -89,14 +106,14 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
     let Ok(parked) = serde_json::from_str::<Parked>(&event.payload) else {
         return Ok(());
     };
-    let live = services
+    let Some(seat) = services
         .registry
         .get(sender)
         .await?
-        .is_some_and(|seat| seat.tombstoned_at.is_none());
-    if !live {
+        .filter(|seat| seat.tombstoned_at.is_none())
+    else {
         return Ok(());
-    }
+    };
     let id = notice_id(parked.job_id);
     let audited = services
         .event_bus
@@ -104,27 +121,41 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
         .await?
         .and_then(|prior| serde_json::from_str::<serde_json::Value>(&prior.payload).ok())
         .is_some_and(|prior| prior["job_id"] == json!(parked.job_id));
-    let notice = if services.delivery.admitted(sender, &id).await? {
-        None
+    let admitted = services.delivery.admitted(sender, &id).await?
+        || fyi_held(services, sender, &id, event.at).await?;
+    let (channel, notice) = if admitted {
+        (None, None)
     } else if audited {
-        // Audited but never admitted: the sender refused the notice. A refusal
-        // is final for that notice; it is never re-prompted.
+        // Audited yet not visible as admitted: its delivered-ledger entry aged
+        // out. It was sent; it is never sent again.
         return Ok(());
     } else {
-        Some(
-            services
-                .delivery
-                .accept(Msg {
-                    from: SeatId::from(BG_ACTOR),
-                    to: sender.clone(),
-                    body: body(&parked),
-                    msg_id: id.clone(),
-                    from_machine: None,
-                    in_reply_to: None,
-                    command: None,
-                })
-                .await?,
-        )
+        let msg = Msg {
+            from: SeatId::from(BG_ACTOR),
+            to: sender.clone(),
+            body: body(&parked),
+            msg_id: id.clone(),
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
+        };
+        let cold = crate::bg_routing::cold_check(services.session_status.as_ref(), &seat).await;
+        if refusal(sender, &cold).is_some() {
+            (Some("fyi"), Some(services.delivery.hold_fyi(msg).await?))
+        } else {
+            let receipt = services.delivery.accept(msg.clone()).await?;
+            if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
+                // A refusal (e.g. the sender's own receiver lease lapsed) is
+                // final for the wake, never for the notice: hold it for the
+                // sender's next turn under the same id (background B9/B10).
+                (
+                    Some("fyi-after-refusal"),
+                    Some(services.delivery.hold_fyi(msg).await?),
+                )
+            } else {
+                (Some("send"), Some(receipt))
+            }
+        }
     };
     if audited {
         return Ok(());
@@ -142,15 +173,57 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
                 "job_id": parked.job_id,
                 "notice_msg_id": id,
                 "recipient": parked.recipient,
-                "refused": notice
-                    .as_ref()
-                    .is_some_and(|notice| matches!(notice.outcome, DeliveryOutcome::Refused { .. })),
+                "channel": channel,
                 "notice": notice,
             })
             .to_string(),
         })
         .await?;
     Ok(())
+}
+
+/// Pages of one seat's `kind` facts committed at or after `since_at`.
+struct Pages {
+    seat: SeatId,
+    window: Option<SpineWindow>,
+}
+
+impl Pages {
+    fn new(seat: &SeatId, kind: &str, since_at: u64) -> Result<Self> {
+        Ok(Self {
+            seat: seat.clone(),
+            window: Some(SpineWindow::new(kind, since_at, Seq(0), PAGE)?),
+        })
+    }
+
+    /// The next non-empty page, or `None` after the last.
+    async fn next(&mut self, services: &Services) -> Result<Option<Vec<Event>>> {
+        let Some(window) = self.window.take() else {
+            return Ok(None);
+        };
+        let page = services
+            .event_bus
+            .matching_since(&self.seat, &window)
+            .await?;
+        self.window = window.next(&page);
+        Ok((!page.is_empty()).then_some(page))
+    }
+}
+
+/// Was notice `id` held as an FYI for `seat` since the park? The `fyi.held`
+/// fact commits in the same transaction as the FYI row it describes, and the
+/// FYI row is unique by id, so this stays true after the FYI is delivered.
+async fn fyi_held(services: &Services, seat: &SeatId, id: &str, since_at: u64) -> Result<bool> {
+    let mut pages = Pages::new(seat, FYI_HELD_KIND, since_at)?;
+    while let Some(page) = pages.next(services).await? {
+        if page.iter().any(|event| {
+            serde_json::from_str::<serde_json::Value>(&event.payload)
+                .is_ok_and(|payload| payload["id"] == id)
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 async fn notify_logged(services: &Services, event: &Event) -> bool {
@@ -163,8 +236,8 @@ async fn notify_logged(services: &Services, event: &Event) -> bool {
     }
 }
 
-/// Notify every live seat's parks from the last [`LOOKBACK_MS`]. Returns
-/// whether every notice settled; a `false` sweep is retried.
+/// Notify every live seat's parks from the last [`LOOKBACK_MS`], a page at a
+/// time. Returns whether every notice settled.
 async fn sweep(services: &Services) -> bool {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -179,19 +252,26 @@ async fn sweep(services: &Services) -> bool {
     };
     let mut settled = true;
     for seat in seats.iter().filter(|seat| seat.tombstoned_at.is_none()) {
-        match services
-            .event_bus
-            .matching_since(&seat.id, &[PARKED_KIND], since)
-            .await
-        {
-            Ok(parks) => {
-                for park in &parks {
-                    settled &= notify_logged(services, park).await;
-                }
-            }
+        let mut pages = match Pages::new(&seat.id, PARKED_KIND, since) {
+            Ok(pages) => pages,
             Err(error) => {
-                eprintln!("pij-rs park notice sweep for {}: {error}", seat.id);
-                settled = false;
+                eprintln!("pij-rs park notice sweep: {error}");
+                return false;
+            }
+        };
+        loop {
+            match pages.next(services).await {
+                Ok(Some(page)) => {
+                    for park in &page {
+                        settled &= notify_logged(services, park).await;
+                    }
+                }
+                Ok(None) => break,
+                Err(error) => {
+                    eprintln!("pij-rs park notice sweep for {}: {error}", seat.id);
+                    settled = false;
+                    break;
+                }
             }
         }
     }
@@ -207,42 +287,26 @@ pub async fn follow(services: Services) {
 }
 
 async fn run(services: Services, mut events: Subscription) {
-    // Subscribed first: a park committed during the sweep is on the live feed
-    // too, and admission dedupes the overlap. A failed notice schedules one
-    // sweep; live traffic cannot postpone it.
-    let retry_after = || Some(tokio::time::Instant::now() + RETRY_AFTER);
-    let mut retry_at = if sweep(&services).await {
-        None
-    } else {
-        retry_after()
+    // Subscribed first: a park committed during a sweep is on the live feed
+    // too, and admission dedupes the overlap. The next sweep is a deadline that
+    // live traffic cannot postpone: every SWEEP_EVERY, sooner after a failure.
+    let next_sweep = |settled: bool| {
+        tokio::time::Instant::now() + if settled { SWEEP_EVERY } else { RETRY_AFTER }
     };
+    let mut sweep_at = next_sweep(sweep(&services).await);
     let mut dropped = events.dropped_count();
     loop {
-        let next = match retry_at {
-            Some(at) => tokio::time::timeout_at(at, events.next()).await.ok(),
-            None => Some(events.next().await),
-        };
-        match next {
-            None => {
-                retry_at = if sweep(&services).await {
-                    None
-                } else {
-                    retry_after()
-                }
-            }
-            Some(None) => break,
-            Some(Some(event)) => {
+        match tokio::time::timeout_at(sweep_at, events.next()).await {
+            Err(_) => sweep_at = next_sweep(sweep(&services).await),
+            Ok(None) => break,
+            Ok(Some(event)) => {
                 let settled = notify_logged(&services, &event).await;
                 if events.dropped_count() != dropped {
-                    // A lagged subscriber has no cursor to resume from: sweep.
+                    // A lagged subscriber has no cursor to resume from: sweep now.
                     dropped = events.dropped_count();
-                    retry_at = if sweep(&services).await {
-                        None
-                    } else {
-                        retry_after()
-                    };
-                } else if !settled && retry_at.is_none() {
-                    retry_at = retry_after();
+                    sweep_at = next_sweep(sweep(&services).await);
+                } else if !settled {
+                    sweep_at = sweep_at.min(next_sweep(false));
                 }
             }
         }
@@ -252,18 +316,24 @@ async fn run(services: Services, mut events: Subscription) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Duration;
 
     use pij_core::config::{AdapterChoice, Config};
     use pij_core::delivery::delivery_kind;
     use pij_core::model::{DeliveryFailure, Event, Harness, ProcIdentity, SeatDescriptor};
     use pij_core::ports::ParkingEvidence;
+    use pij_core::session_status::{Fact, SeatStatus, SessionStatusReply};
     use pij_testkit::FreshStore;
+    use pij_testkit::fakes::FakeSessionStatus;
+    use sqlx::SqlitePool;
 
     use super::*;
+    use crate::delivery::NativeInboxIdentity;
 
     const TARGET: &str = "pij-park-target";
     const SENDER: &str = "pij-park-sender";
+    const SENDER_SESSION: &str = "session-pij-park-sender";
 
     fn config(store: &FreshStore, capacity: usize) -> Config {
         let mut config = Config {
@@ -296,6 +366,23 @@ mod tests {
         services
     }
 
+    /// 720k tokens, last called two hours ago: a `pij send` would be refused.
+    fn cold_sender() -> FakeSessionStatus {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        FakeSessionStatus::new().with_reply(
+            SENDER_SESSION,
+            SessionStatusReply::Status(SeatStatus {
+                model: Fact::native("claude-opus-5-5".to_string()),
+                context_used_tokens: Fact::derived(720_000),
+                last_call_at_ms: Fact::native(now - 2 * 60 * 60 * 1_000),
+                ..SeatStatus::unknown()
+            }),
+        )
+    }
+
     fn now_ms() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -303,8 +390,14 @@ mod tests {
             .as_millis() as u64
     }
 
-    /// Send SENDER -> TARGET and park it, committing `fillers` in the same
-    /// batch after the park (they overflow a small live channel).
+    async fn pool(store: &FreshStore) -> SqlitePool {
+        SqlitePool::connect(&format!("sqlite:{}", store.path()))
+            .await
+            .unwrap()
+    }
+
+    /// Send SENDER -> TARGET and park it, committing `fillers` unrelated events
+    /// in the same batch after the park (they overrun a one-slot live channel).
     async fn park(services: &Services, label: &str, fillers: usize) -> (JobId, Event) {
         services
             .delivery
@@ -360,49 +453,75 @@ mod tests {
         (job_id, parked)
     }
 
-    /// Every admitted notice job for SENDER, by its dedupe key.
-    async fn notice_jobs(store: &FreshStore) -> Vec<String> {
-        let pool = sqlx::SqlitePool::connect(&format!("sqlite:{}", store.path()))
-            .await
-            .unwrap();
-        let rows = sqlx::query_scalar(
+    /// Every queued notice job for SENDER, by its dedupe key, sorted:
+    /// admission order is not part of the contract; exactly-once per job is.
+    async fn notice_jobs(pool: &SqlitePool) -> Vec<String> {
+        let mut jobs: Vec<String> = sqlx::query_scalar(
             "SELECT dedupe_key FROM jobs WHERE serial_key = ?1 \
-             AND json_extract(payload, '$.from') = ?2 ORDER BY id",
+             AND json_extract(payload, '$.from') = ?2",
         )
         .bind(SENDER)
         .bind(BG_ACTOR)
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await
         .unwrap();
-        pool.close().await;
-        rows
+        jobs.sort();
+        jobs
+    }
+
+    /// Every FYI held for SENDER, as `(id, state)`.
+    async fn notice_fyis(pool: &SqlitePool) -> Vec<(String, String)> {
+        sqlx::query_as("SELECT id, state FROM fyis WHERE recipient = ?1 ORDER BY id")
+            .bind(SENDER)
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    fn ids(jobs: &[JobId]) -> Vec<String> {
+        let mut ids: Vec<String> = jobs.iter().map(|job| notice_id(*job)).collect();
+        ids.sort();
+        ids
     }
 
     async fn audits(services: &Services) -> usize {
         services
             .event_bus
-            .matching_since(&SENDER.into(), &[NOTICE_KIND], 0)
+            .matching_since(
+                &SENDER.into(),
+                &SpineWindow::new(NOTICE_KIND, 0, Seq(0), SpineWindow::MAX_LIMIT).unwrap(),
+            )
             .await
             .unwrap()
             .len()
     }
 
-    async fn until_notices(store: &FreshStore, expected: &[JobId]) {
-        // Admission order is not part of the contract; exactly-once per job is.
-        let mut want: Vec<String> = expected.iter().map(|job| notice_id(*job)).collect();
-        want.sort();
-        let admitted = || async {
-            let mut jobs = notice_jobs(store).await;
-            jobs.sort();
-            jobs
-        };
-        for _ in 0..500 {
-            if admitted().await == want {
-                return;
+    /// Poll by yielding, never sleeping, so it is also correct under a frozen
+    /// virtual clock; the bound is real time because SQLite IO is real.
+    async fn until(mut done: impl AsyncFnMut() -> bool) -> bool {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            if done().await {
+                return true;
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            tokio::task::yield_now().await;
         }
-        assert_eq!(admitted().await, want);
+        done().await
+    }
+
+    async fn until_notices(pool: &SqlitePool, expected: &[JobId]) {
+        let want = ids(expected);
+        until(async || notice_jobs(pool).await == want).await;
+        assert_eq!(notice_jobs(pool).await, want);
+    }
+
+    /// Keeps the paused runtime busy so virtual time moves only on `advance`.
+    fn hold_clock() -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async {
+            loop {
+                tokio::task::yield_now().await;
+            }
+        })
     }
 
     /// FT-001: a park committed before the follower attached (a restart, a
@@ -413,32 +532,71 @@ mod tests {
         let config = config(&store, 1_024);
         let before = boot(&config).await;
         let (old, _) = park(&before, "parked before restart", 0).await;
-        assert!(notice_jobs(&store).await.is_empty());
+        let pool = pool(&store).await;
+        assert!(notice_jobs(&pool).await.is_empty());
         drop(before);
 
         let services = boot(&config).await;
         let follower = tokio::spawn(follow(services.clone()));
-        until_notices(&store, &[old]).await;
+        until_notices(&pool, &[old]).await;
         let (fresh, _) = park(&services, "parked after boot", 0).await;
-        until_notices(&store, &[old, fresh]).await;
-        assert_eq!(audits(&services).await, 2);
+        until_notices(&pool, &[old, fresh]).await;
+        // Each audit follows its admission; wait for both, then for no more.
+        assert!(until(async || audits(&services).await == 2).await);
         follower.abort();
     }
 
-    /// FT-001: a follower that lags (even before handling its first park) has
-    /// no cursor to lose; it sweeps and still notifies the dropped park once.
-    #[tokio::test]
-    async fn a_lagging_follower_sweeps_the_park_it_never_received() {
+    /// FT-001 lag corner: the one-slot filtered channel drops a park and then
+    /// sees only unrelated events, so nothing ever wakes the follower. The
+    /// periodic sweep still notifies the dropped park, once, within
+    /// SWEEP_EVERY of virtual time and not before it.
+    #[tokio::test(start_paused = true)]
+    async fn a_dropped_park_followed_only_by_unrelated_events_is_swept_in_time() {
+        let clock = hold_clock();
         let store = FreshStore::new();
         let services = boot(&config(&store, 1)).await;
+        let pool = pool(&store).await;
         let follower = tokio::spawn(follow(services.clone()));
         let (first, _) = park(&services, "proves the live loop runs", 0).await;
-        until_notices(&store, &[first]).await;
-        // One batch overruns the one-slot channel: the park is never received.
-        let (dropped, _) = park(&services, "dropped by the live channel", 3).await;
-        let (next, _) = park(&services, "wakes the lagged follower", 0).await;
-        until_notices(&store, &[first, dropped, next]).await;
+        until_notices(&pool, &[first]).await;
+
+        let (dropped, _) = park(&services, "dropped; only unrelated events follow", 3).await;
+        for _ in 0..2_000 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            notice_jobs(&pool).await,
+            ids(&[first]),
+            "no live event names the dropped park"
+        );
+        // The sender is a native seat: keep its receiver lease live, as its
+        // extension would, so the notice is admitted rather than refused.
+        let sender = services
+            .registry
+            .get(&SENDER.into())
+            .await
+            .unwrap()
+            .unwrap();
+        let identity = NativeInboxIdentity {
+            native_session: sender.harness_session.clone(),
+            pid: sender.proc.map(|proc| proc.pid),
+            proc_start: sender.proc.map(|proc| proc.proc_start),
+        };
+        tokio::time::advance(SWEEP_EVERY - Duration::from_secs(1)).await;
+        services
+            .delivery
+            .heartbeat_native_receiver(&sender.id, &identity, 1, 1)
+            .await
+            .unwrap();
+        assert_eq!(
+            notice_jobs(&pool).await,
+            ids(&[first]),
+            "not before the interval"
+        );
+        tokio::time::advance(Duration::from_secs(1)).await;
+        until_notices(&pool, &[first, dropped]).await;
         follower.abort();
+        clock.abort();
     }
 
     /// FT-002: the notice is admitted, then its audit write fails. A replay on
@@ -449,9 +607,7 @@ mod tests {
         let config = config(&store, 1_024);
         let services = boot(&config).await;
         let (job, parked) = park(&services, "audit write fails", 0).await;
-        let pool = sqlx::SqlitePool::connect(&format!("sqlite:{}", store.path()))
-            .await
-            .unwrap();
+        let pool = pool(&store).await;
         sqlx::query(
             "CREATE TRIGGER fail_park_notice BEFORE INSERT ON spine_events \
              WHEN NEW.kind = 'delivery.park-notice' \
@@ -461,23 +617,185 @@ mod tests {
         .await
         .unwrap();
         assert!(notify(&services, &parked).await.is_err());
-        assert_eq!(notice_jobs(&store).await, vec![notice_id(job)]);
+        assert_eq!(notice_jobs(&pool).await, ids(&[job]));
         assert_eq!(audits(&services).await, 0);
         sqlx::query("DROP TRIGGER fail_park_notice")
             .execute(&pool)
             .await
             .unwrap();
-        pool.close().await;
         drop(services);
 
         let services = boot(&config).await;
         notify(&services, &parked).await.unwrap();
         notify(&services, &parked).await.unwrap();
-        assert_eq!(notice_jobs(&store).await, vec![notice_id(job)]);
+        assert_eq!(notice_jobs(&pool).await, ids(&[job]));
         assert_eq!(
             audits(&services).await,
             1,
             "the replay repairs the audit once"
         );
+    }
+
+    /// FT-003: a cold sender (the send guard's own check refuses an ordinary
+    /// `pij send` with E-RS-COLD-WAKE) is never woken. The notice is held as an
+    /// FYI, is not claimable, and survives an audit failure and a restart
+    /// without a second copy; its next real turn receives it exactly once, and
+    /// a replay after the seat warms queues nothing.
+    #[tokio::test]
+    async fn a_cold_sender_gets_the_notice_once_as_an_fyi_never_a_wake() {
+        let store = FreshStore::new();
+        let config = config(&store, 1_024);
+        let mut services = boot(&config).await;
+        services.session_status = Arc::new(cold_sender());
+        let pool = pool(&store).await;
+        let sender = services
+            .registry
+            .get(&SENDER.into())
+            .await
+            .unwrap()
+            .unwrap();
+        let verdict =
+            crate::bg_routing::cold_check(services.session_status.as_ref(), &sender).await;
+        assert!(
+            refusal(&sender.id, &verdict).is_some_and(|text| text.starts_with("E-RS-COLD-WAKE")),
+            "the same seat refuses an ordinary send: {verdict:?}"
+        );
+        let (job, parked) = park(&services, "parked for a cold sender", 0).await;
+
+        // The FYI is held, then its audit write fails.
+        sqlx::query(
+            "CREATE TRIGGER fail_park_notice BEFORE INSERT ON spine_events \
+             WHEN NEW.kind = 'delivery.park-notice' \
+             BEGIN SELECT RAISE(ABORT, 'scripted audit fault'); END",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(notify(&services, &parked).await.is_err());
+        sqlx::query("DROP TRIGGER fail_park_notice")
+            .execute(&pool)
+            .await
+            .unwrap();
+        drop(services);
+
+        // Restart: the replay neither holds nor queues a second copy.
+        let mut services = boot(&config).await;
+        services.session_status = Arc::new(cold_sender());
+        notify(&services, &parked).await.unwrap();
+        notify(&services, &parked).await.unwrap();
+        assert_eq!(
+            notice_fyis(&pool).await,
+            vec![(notice_id(job), "pending".to_string())]
+        );
+        assert!(
+            notice_jobs(&pool).await.is_empty(),
+            "nothing to claim, nothing woken"
+        );
+        assert_eq!(
+            audits(&services).await,
+            1,
+            "the replay repairs the audit once"
+        );
+        let identity = NativeInboxIdentity {
+            native_session: sender.harness_session.clone(),
+            pid: sender.proc.map(|proc| proc.pid),
+            proc_start: sender.proc.map(|proc| proc.proc_start),
+        };
+        assert!(
+            services
+                .delivery
+                .claim_native_inbox(&sender.id, false, &identity)
+                .await
+                .unwrap()
+                .claims
+                .is_empty()
+        );
+
+        // Its next real turn receives exactly one copy.
+        let (delivered, _) = services
+            .delivery
+            .claim_fyis(&sender.id, "hook:test")
+            .await
+            .unwrap();
+        assert_eq!(
+            delivered
+                .iter()
+                .map(|fyi| fyi.id.clone())
+                .collect::<Vec<_>>(),
+            vec![notice_id(job)]
+        );
+        services.session_status = Arc::new(FakeSessionStatus::new());
+        notify(&services, &parked).await.unwrap();
+        assert_eq!(
+            notice_fyis(&pool).await,
+            vec![(notice_id(job), "delivered".to_string())]
+        );
+        assert!(
+            notice_jobs(&pool).await.is_empty(),
+            "a warm replay queues no copy"
+        );
+        assert!(
+            services
+                .delivery
+                .claim_fyis(&sender.id, "hook:test")
+                .await
+                .unwrap()
+                .0
+                .is_empty()
+        );
+    }
+
+    /// A warm sender whose own receiver lease lapsed refuses the wake. The
+    /// notice is not lost: it is held under the same id for its next turn,
+    /// and a replay neither holds nor queues another copy.
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_notice_is_held_for_the_senders_next_turn() {
+        let clock = hold_clock();
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        let pool = pool(&store).await;
+        let (job, parked) = park(&services, "parked; the sender's receiver lapses", 0).await;
+        // Past the boot grace with no heartbeat: the sender's receiver is gone.
+        tokio::time::advance(Duration::from_secs(61)).await;
+        notify(&services, &parked).await.unwrap();
+        notify(&services, &parked).await.unwrap();
+        assert_eq!(
+            notice_fyis(&pool).await,
+            vec![(notice_id(job), "pending".to_string())]
+        );
+        assert!(notice_jobs(&pool).await.is_empty());
+        assert_eq!(audits(&services).await, 1);
+        clock.abort();
+    }
+
+    /// A sender the cold-wake check would not refuse gets an ordinary,
+    /// immediately claimable notice and no FYI.
+    #[tokio::test]
+    async fn a_warm_sender_can_claim_the_notice_at_once() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        let pool = pool(&store).await;
+        let (job, parked) = park(&services, "parked for a warm sender", 0).await;
+        notify(&services, &parked).await.unwrap();
+        let sender = services
+            .registry
+            .get(&SENDER.into())
+            .await
+            .unwrap()
+            .unwrap();
+        let identity = NativeInboxIdentity {
+            native_session: sender.harness_session.clone(),
+            pid: sender.proc.map(|proc| proc.pid),
+            proc_start: sender.proc.map(|proc| proc.proc_start),
+        };
+        let claims = services
+            .delivery
+            .claim_native_inbox(&sender.id, false, &identity)
+            .await
+            .unwrap()
+            .claims;
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].message.msg_id, notice_id(job));
+        assert!(notice_fyis(&pool).await.is_empty());
     }
 }

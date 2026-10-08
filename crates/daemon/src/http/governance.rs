@@ -2182,10 +2182,9 @@ mod tests {
         async fn matching_since(
             &self,
             seat: &SeatId,
-            kinds: &[&str],
-            since_at: u64,
+            window: &pij_core::ports::SpineWindow,
         ) -> Result<Vec<Event>> {
-            self.inner.matching_since(seat, kinds, since_at).await
+            self.inner.matching_since(seat, window).await
         }
     }
 

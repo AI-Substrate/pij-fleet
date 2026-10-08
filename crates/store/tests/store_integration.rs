@@ -18,7 +18,7 @@ use pij_core::model::{
 use pij_core::ports::{Registry, SeatFilter, Spine};
 use pij_store::{SqliteRegistry, SqliteSpine};
 use pij_testkit::FreshStore;
-use pij_testkit::contract::{registry_contract, spine_contract};
+use pij_testkit::contract::{registry_contract, spine_contract, spine_window_contract};
 use sqlx::{Column, Row};
 
 fn native_copilot(id: &str) -> SeatDescriptor {
@@ -536,6 +536,64 @@ async fn the_sqlite_spine_honours_the_same_contract_the_fake_does() {
     let fresh = FreshStore::new();
     let pool = pij_store::open(&fresh.path()).await.expect("open");
     spine_contract(&SqliteSpine::new(pool)).await;
+}
+
+#[tokio::test]
+async fn the_sqlite_spine_honours_the_same_window_contract_the_fake_does() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    spine_window_contract(&SqliteSpine::new(pool)).await;
+}
+
+/// Plan 167 review: `matching_since` costs the rows it returns, not the seat's
+/// history. With 100 and with 10,000 older rows of the same seat and kind (and
+/// fresh statistics), the plan seeks `spine_by_seat_kind_at` on the `(at, seq)`
+/// cursor instead of scanning the seat's rows and filtering `at` afterwards.
+#[tokio::test]
+async fn matching_since_seeks_the_seat_kind_time_index_whatever_the_history() {
+    for history in [100_i64, 10_000] {
+        let fresh = FreshStore::new();
+        let pool = pij_store::open(&fresh.path()).await.expect("open");
+        let mut tx = pool.begin().await.expect("begin");
+        for at in 0..history {
+            sqlx::query(
+                "INSERT INTO spine_events (v, at, kind, seat, payload) \
+                 VALUES (1, ?1, 'delivery.parked', 'pij-history', '{}')",
+            )
+            .bind(at)
+            .execute(&mut *tx)
+            .await
+            .expect("old park");
+        }
+        tx.commit().await.expect("commit");
+        sqlx::query("ANALYZE")
+            .execute(&pool)
+            .await
+            .expect("analyze");
+        let plan: Vec<String> = sqlx::query(&format!(
+            "EXPLAIN QUERY PLAN {}",
+            pij_store::spine::MATCHING_SINCE_SQL
+        ))
+        .bind("pij-history")
+        .bind("delivery.parked")
+        .bind(history)
+        .bind(0_i64)
+        .bind(256_i64)
+        .fetch_all(&pool)
+        .await
+        .expect("plan")
+        .iter()
+        .map(|row| row.get::<String, _>("detail"))
+        .collect();
+        assert_eq!(
+            plan,
+            vec![
+                "SEARCH spine_events USING INDEX spine_by_seat_kind_at (seat=? AND kind=? AND at>?)"
+                    .to_string()
+            ],
+            "history of {history}"
+        );
+    }
 }
 
 #[tokio::test]
