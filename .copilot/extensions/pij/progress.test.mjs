@@ -927,29 +927,47 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 		await run;
 	});
 
-	test("AC3: daemon stale lease is receive-held once, stops renewals and preserves outgoing tools", async (t) => {
-		const f = fixture(t);
-		const run = f.bridge.run();
-		await flush();
-		f.state.lease = {
-			state: "stale",
-			reason: "native-receiver-stale",
-			lease_ms: 60000,
-			renew_after_ms: 20000,
-		};
-		await f.tick(f.heartbeatWaits);
-		assert.equal(held(f).length, 1);
-		assert.equal(held(f)[0].safeDiagnostic, "native-receiver-stale");
-		assert.equal(
-			f.reports.some((event) => event.kind === "receiver-lease-unavailable"),
-			false,
-		);
-		await pump(f, f.heartbeatWaits);
-		assert.equal(f.heartbeats.length, 2);
-		assert.equal(f.state.claims, 1);
-		assert.equal((await f.bridge.send({ to: "pij-peer", message: "still available" })).ok, true);
-		await run;
-	});
+	for (const answer of ["stale", "unavailable"]) {
+		test(`AC3: a daemon ${answer} lease answer re-registers and resumes without a hold`, async (t) => {
+			const f = fixture(t);
+			let registrations = 0;
+			const request = f.client.request;
+			f.client.request = async (path, body) => {
+				if (path === "/v1/register") registrations++;
+				return request(path, body);
+			};
+			const run = f.bridge.run();
+			await flush();
+			const before = registrations;
+			f.state.lease = {
+				state: answer,
+				reason: `native-receiver-${answer}`,
+				lease_ms: 60000,
+				renew_after_ms: 20000,
+			};
+			await f.tick(f.heartbeatWaits);
+			f.state.lease = { state: "live", lease_ms: 60000, renew_after_ms: 20000 };
+			await f.tick(f.heartbeatWaits);
+			assert.deepEqual(held(f), [], "a lease answer is never a permanent hold");
+			assert.equal(registrations, before + 1, "the receiver re-registers once");
+			assert.equal(f.heartbeats.length, 3, "renewal resumes after re-registering");
+			assert.equal(
+				f.heartbeats[2].observed_at,
+				f.heartbeats[1].observed_at,
+				"re-registering replays nothing as observation progress",
+			);
+			// Receiving was never stopped: the turn ends and the claim is acknowledged.
+			for (const event of terminal) f.event(event);
+			await flush();
+			assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 1);
+			assert.deepEqual(
+				f.acks.map((ack) => ack.job_id),
+				[claim.job_id],
+			);
+			f.bridge.stop();
+			await run;
+		});
+	}
 
 	test("AC4: completed native work is not reported as outstanding on stop", async (t) => {
 		const f = fixture(t);

@@ -18,6 +18,7 @@ pub mod events;
 pub mod federation;
 pub mod lifecycle;
 pub mod pane_observer;
+pub mod park_notice;
 pub mod pointer;
 pub mod reaper;
 mod registration;
@@ -189,6 +190,8 @@ pub struct Daemon {
     governance_observer: tokio::task::JoinHandle<Result<()>>,
     /// One-shot warming of live seats' session cursors; aborted if still running.
     session_warmup: tokio::task::JoinHandle<()>,
+    /// Sender notices for parked deliveries; aborted, then joined, at shutdown.
+    park_notices: tokio::task::JoinHandle<()>,
 }
 
 impl Daemon {
@@ -211,6 +214,10 @@ impl Daemon {
         let _ = self.shutdown.send(());
         let _ = self.governance_shutdown.send(());
         self.session_warmup.abort();
+        self.park_notices.abort();
+        // A cancelled notice task is the expected join outcome; any admitted
+        // publication it started is drained by the event-bus flush below.
+        let _ = self.park_notices.await;
         let (served, drained, bound, observed, forwarded, background, deaths, (), governance) = tokio::join!(
             async {
                 self.joined.await.map_err(|error| PijError::Adapter {
@@ -843,6 +850,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         }
     });
     let death_sweep_loop = death_sweep::start(Arc::new(services.clone()), death_interval);
+    let park_notices = tokio::spawn(park_notice::follow(services.clone()));
     let session_warmup = session_warmup::start(
         Arc::clone(&services.registry),
         Arc::clone(&services.session_status),
@@ -886,6 +894,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         governance_shutdown,
         governance_observer,
         session_warmup,
+        park_notices,
     })
 }
 

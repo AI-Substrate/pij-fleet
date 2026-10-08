@@ -252,38 +252,28 @@ of successful delivery or model completion.
 
 Native Copilot renews `/v1/inbox/heartbeat` with
 `{seat,native_session,pid,proc_start,observed_at,observed_seq}` (no `job_id`).
-Both progress fields are required nonnegative safe integers: `observed_at` is
-the monotonic millisecond timestamp of the latest actual event observation;
-`observed_seq` counts actual observations within the receiver. Initial zeroes are valid. Empty reads,
-timer ticks, registration and claims are **not observation progress**.
+Both progress fields are required nonnegative safe integers so older extensions
+keep parsing, but they are **diagnostics only**: they never decide liveness.
 The exact registered session/PID/start tuple remains mandatory.
 
-With no outstanding deliveries, unchanged progress renews normally. With pending,
-deferred or running deliveries, `observed_at` must advance to renew;
-Working and self-reported Hold do not substitute for observation. Frozen heartbeats
-may remain live during the grace period, but **never extend the last-progress
-lease deadline**. The daemon counts at most one miss per renewal interval
-(`lease / 3`), not per request. At `NATIVE_RECEIVER_STALE_RENEWALS` (K=3) misses,
-or the exhausted lease horizon, it returns HTTP 200 with
-`data:{state:"stale",reason:"native-receiver-stale",lease_ms:60000,renew_after_ms:20000}`
-and no renewal. Thus frozen work expires within three default 20-second
-opportunities, not three opportunities plus another lease.
+**Lease liveness means heartbeats arrive, nothing more** (plan 167). Every heartbeat
+from the registered incarnation renews the whole lease and answers
+`data:{state:"live",lease_ms:60000,renew_after_ms:20000}`
+(`0 < renew_after_ms < lease_ms`). A busy host whose turn emits no native event —
+one long tool call, a `sleep 120` — is a legitimate wait: the receiver is waiting
+for the turn to end and the sender already sees `cold-check: busy`. Plan 167 removed
+the earlier frozen-progress brake (K=3 unadvanced renewals → `state:"stale"`) and
+the `stale` answer with it. That check was a **policy, not a brake**: removing it
+changes a quiet busy turn's outcome from park-and-refuse to wait, rather than making
+the operation more conservative. A dead extension still stops heartbeating, so its
+lease still expires.
 
-The accepted live shape remains
-`data:{state:"live",lease_ms:60000,renew_after_ms:20000}`; while frozen before
-the threshold it reports the remaining lease and a shorter renewal interval
-when necessary (`0 < renew_after_ms < lease_ms`).
 `PIJ_RS_EXT_CLAIM_LEASE_SECS` changes the duration. Register/claim starts the
-first lease for an incarnation, but repeated attestation cannot renew it or
-erase a stale latch. Actual strictly advancing observation can restore renewal;
-parking or an empty queue cannot clear an already-stale latch.
-The local sequence may restart only with a strictly newer observation timestamp;
-resetting counters or changing sequence alone cannot revive frozen receiving.
-If no receiver reconnects after a daemon restart, the expired boot grace is shown
-as `native-extension-unavailable`, not invented frozen-observation evidence.
+first lease for an incarnation, but repeated attestation cannot move it; only a
+heartbeat renews. If no receiver reconnects after a daemon restart, the expired
+boot grace is shown as `native-extension-unavailable`.
 A replacement child first attests its identity, then observes a bounded SDK history
-window before sending its initial progress heartbeat or claiming inbox work.
-This allows healthy same-host replacement without granting renewal to a timer alone.
+window before sending its initial heartbeat or claiming inbox work.
 
 SDK probing is workload-gated: the existing consumption/completion observation loop
 reads and checks the independent tail only while a native delivery is pending or its
@@ -295,19 +285,28 @@ a startup observation failure is `receive-held`, never a registration retry epis
 Startup hold is immediately visible in extension stderr; `pij state` exposes the
 receiver reason only after the unrenewed lease expires, up to 60 seconds later.
 
-The extension treats `stale` as `receive-held`, not a malformed response or an
-infinite retry. `pij state` reports `native_receiver_reason:"native-receiver-stale"`
-separately from host liveness; human output names the same reason. `pij inbox`
-and `--peek` include it in `details.native_receiver_reason` and human-readable
-`meta`, including a manual live-lease refusal and subsequent manual recovery.
-Inspect extension `receive-held`/`receiver-rebaselined` diagnostics; wait for the
-reported actual lease expiry before pulling. A live host or an `idle · active`
-card alone does not prove that its receiver is observing.
+The extension never holds permanently on a lease answer. A `stale` or `unavailable`
+answer (an older daemon, or the deploy window), a refused or malformed renewal all
+re-register and keep renewing with backoff; local observation counters continue and
+nothing is replayed as progress. Genuine integrity holds — malformed claims, an
+anchor gap past ten minutes, a native-target hold — still stop receiving and
+renewal. Turn-state (`working`/`idle`) publication continues during any hold.
 
-Expiry still parks native bodies with `undelivered:native-receiver-unavailable`,
+Once a lease expires, `pij state` reports
+`native_receiver_reason:"native-extension-unavailable"` separately from host
+liveness; human output names the same reason. `pij inbox` and `--peek` include it
+in `details.native_receiver_reason` and human-readable `meta`. A live host or an
+`idle · active` card alone does not prove that its receiver is renewing.
+
+Expiry parks native bodies with `undelivered:native-receiver-unavailable`,
 publishes sender-addressed `delivery.parked`, and refuses subsequent sends.
-`native-receiver-stale` is a diagnostic reason, **not a new parked outcome**;
-the enum remains `DeliveryFailure::NativeReceiverUnavailable`.
+
+**Every park tells its sender once.** For any parked outcome the daemon's
+`pij-bg` sends the sender one short message naming the msg id, the target, the
+outcome and reason, and "Resend after the target recovers", then records
+`delivery.park-notice` (`{msg_id,job_id,recipient,notice}`) so a replayed park is
+not re-sent. A sender with no live seat — missing, tombstoned, remote or `pij-bg` —
+gets no notice and no error.
 
 From the same Copilot pane/session, `pij inbox --json` uses the normal identity
 ladder and registry host tuple. While the receiver lease is live it refuses

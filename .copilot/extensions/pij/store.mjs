@@ -1,7 +1,19 @@
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import {
+	chmod,
+	lstat,
+	mkdir,
+	open,
+	readdir,
+	readFile,
+	realpath,
+	rename,
+	unlink,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { promisify } from "node:util";
 
 export const INITIAL_RETRY_MS = 250;
 export const MAX_RETRY_MS = 5000;
@@ -75,8 +87,43 @@ export function parseProcessStart(row) {
 	);
 }
 
+const git = async (args) =>
+	// A wedged git must not block extension boot.
+	(await promisify(execFile)("git", args, { encoding: "utf8", timeout: 2000 })).stdout;
+
+/**
+ * The loaded extension's identity, reported at registration like OMP's
+ * (`.omp/extensions/pij/adapters/extension-build.ts`): the git short SHA, `+dirty`
+ * when this directory has changes, else a framed hash of its runtime modules.
+ */
+export async function extensionBuildIdentity(directory) {
+	const extension_path = await realpath(directory);
+	try {
+		const sha = (await git(["-C", extension_path, "rev-parse", "--short=10", "HEAD"])).trim();
+		const dirty = (
+			await git(["-C", extension_path, "status", "--porcelain", "--", extension_path])
+		).trim();
+		return { extension_build: `${sha}${dirty ? "+dirty" : ""}`, extension_path };
+	} catch {
+		// Standalone installs (or unavailable git metadata) identify their source bytes instead.
+	}
+	const names = (await readdir(extension_path))
+		.filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"))
+		.sort();
+	const digest = createHash("sha256");
+	for (const name of names) {
+		const bytes = await readFile(join(extension_path, name));
+		// Byte-length framing prevents filenames or contents from blurring record boundaries.
+		digest.update(`${Buffer.byteLength(name)}:`);
+		digest.update(name);
+		digest.update(`${bytes.length}:`);
+		digest.update(bytes);
+	}
+	return { extension_build: `hash:${digest.digest("hex").slice(0, 12)}`, extension_path };
+}
+
 /** Native runtime identity is authoritative; launch environment is only corroborated intent. */
-export function chooseRegistration({ sessionId, host, folder, seats, env }) {
+export function chooseRegistration({ sessionId, host, folder, seats, env, extension }) {
 	if (
 		!nonempty(sessionId) ||
 		!positiveInteger(host.pid) ||
@@ -168,6 +215,9 @@ export function chooseRegistration({ sessionId, host, folder, seats, env }) {
 		...(replacing ? { supersedes: prior.id } : {}),
 		...(spawnId ? { spawn_id: spawnId } : {}),
 		...(prior?.parent ? { parent: prior.parent } : {}),
+		...(extension
+			? { extension_build: extension.extension_build, extension_path: extension.extension_path }
+			: {}),
 	});
 }
 
@@ -865,10 +915,20 @@ export class NativeBridge {
 		const signal = this.heartbeatController.signal;
 		let retry = INITIAL_RETRY_MS;
 		let unavailable = false;
+		let reregister = false;
 		let observedAt = 0;
 		let observedSeq = 0;
 		while (!signal.aborted) {
 			try {
+				// A lease answer is never a permanent hold (plan 167 R2): a refused, stale
+				// or unavailable lease re-attests and keeps renewing. Local observation
+				// counters carry on and nothing is replayed as progress, so an older
+				// daemon's frozen-progress brake clears only on a genuinely live event.
+				if (reregister) {
+					await this.register();
+					throwIfStopped(signal);
+					reregister = false;
+				}
 				if (this.observedSeq !== observedSeq) {
 					// One logical tick per changed report handles clock rollback;
 					// replaying many events must never invent future wall-clock seconds.
@@ -881,17 +941,20 @@ export class NativeBridge {
 					signal,
 				);
 				throwIfStopped(signal);
-				if (lease?.state === "stale" && lease.reason === "native-receiver-stale") {
-					this.holdReceiving(new NativeError("native-receiver-stale"));
-					return;
-				}
+				if (lease?.state === "stale" || lease?.state === "unavailable")
+					throw new NativeError(
+						`Native receiver lease answered ${lease.state}; re-registering`,
+						true,
+						`receiver lease ${lease.state}`,
+					);
 				if (
 					lease?.state !== "live" ||
 					!positiveInteger(lease.lease_ms) ||
 					!positiveInteger(lease.renew_after_ms) ||
 					lease.renew_after_ms >= lease.lease_ms
 				)
-					throw new NativeError("Native receiver lease response is malformed; receiving held");
+					throw new NativeError("Native receiver lease response is malformed; re-registering");
+				if (unavailable) this.emit("receiver-lease-restored");
 				unavailable = false;
 				retry = INITIAL_RETRY_MS;
 				await this.heartbeatDelay(lease.renew_after_ms, signal);
@@ -903,6 +966,7 @@ export class NativeBridge {
 							error instanceof NativeError ? error.safeDiagnostic : "lease renewal failed",
 					});
 				unavailable = true;
+				reregister = true;
 				// The daemon independently expires the lease if it cannot be renewed.
 				try {
 					await this.heartbeatDelay(retry, signal);
@@ -931,10 +995,15 @@ export class NativeBridge {
 				throw new NativeError(
 					"Native incremental history API eventLog.tail/read is unavailable; receiving held without acknowledgement",
 				);
+			// One subscription for the bridge's life: a receive hold stops receiving,
+			// never turn-state publication (plan 167 R4). stop() alone unsubscribes.
 			this.unsubscribe = this.native.on((event) => {
-				if (signal.aborted) return;
-				this.observeProgress(event);
 				this.observeActivity(event);
+				if (signal.aborted) {
+					if (event.type === "session.shutdown") this.stop("session.shutdown");
+					return;
+				}
+				this.observeProgress(event);
 				const completion = this.completion;
 				// Successful terminal observation clears ancestry; capture its pre-state, not the aftermath.
 				const metadata = [
@@ -1052,8 +1121,6 @@ export class NativeBridge {
 		} finally {
 			this.heartbeatController.abort();
 			this.receiverController.abort();
-			this.unsubscribe?.();
-			this.unsubscribe = undefined;
 		}
 	}
 	async waitForCompletion() {
