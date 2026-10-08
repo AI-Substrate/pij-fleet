@@ -10,3 +10,4 @@ path can never resolve into the main checkout.
 - The receiver brake lived in three places (heartbeat, `pij state` reason, an
   inbox claim hold) plus a park-time latch; removing a policy means sweeping
   every reader of its state, not just the writer.
+- Stopped my own over-limit gate run with `pkill -f` on a shared command pattern, which can kill peers' runs (D-167-3). Rule from here: kill only PIDs I started (`$!` or an owned process group); never `pkill -f` a shared pattern.
