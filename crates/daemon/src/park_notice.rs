@@ -30,7 +30,9 @@
 //! [`RETRY_AFTER`].
 //!
 //! A sender with no live seat (missing, tombstoned, remote, or `pij-bg` itself)
-//! gets nothing, and that is not an error.
+//! gets nothing, and that is not an error. A message forwarded from a paired
+//! machine is parked with no local sender seat (plan 164), so its notice is
+//! skipped: never sent back over federation, never given to a local namesake.
 //!
 //! [`DeliveryService::admitted`]: crate::delivery::DeliveryService::admitted
 
@@ -215,13 +217,19 @@ impl Pages {
 
 /// Was notice `id` held as an FYI for `seat` since the park? The `fyi.held`
 /// fact commits in the same transaction as the FYI row it describes, and the
-/// FYI row is unique by id, so this stays true after the FYI is delivered.
+/// FYI row is unique by (origin, id), so this stays true after the FYI is
+/// delivered.
+///
+/// Only a LOCAL FYI is this daemon's notice: identity is (origin, msg_id), and
+/// a paired machine may hold an FYI under any id, `park-notice-<job>`
+/// included (plan 164). A forwarded FYI's `fyi.held` names its `from_machine`.
 async fn fyi_held(services: &Services, seat: &SeatId, id: &str, since_at: u64) -> Result<bool> {
     let mut pages = Pages::new(seat, FYI_HELD_KIND, since_at)?;
     while let Some(page) = pages.next(services).await? {
         if page.iter().any(|event| {
-            serde_json::from_str::<serde_json::Value>(&event.payload)
-                .is_ok_and(|payload| payload["id"] == id)
+            serde_json::from_str::<serde_json::Value>(&event.payload).is_ok_and(|payload| {
+                payload["id"] == id && payload.get("from_machine").is_none_or(|m| m.is_null())
+            })
         }) {
             return Ok(true);
         }
