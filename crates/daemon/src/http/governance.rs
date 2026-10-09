@@ -36,6 +36,7 @@ use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope, system_time_ms};
 use crate::events::EventBus;
 use crate::orchestration_repo::{StreamCreation, reserve_and_create_stream, scan_repo_inventory};
+use crate::supervise;
 
 /// Shared governance persistence and delivery-receipt projection.
 /// Construct after raw spine -> EventBus -> registry, with the same store pool.
@@ -63,25 +64,23 @@ impl GovernanceService {
         self.store.clone()
     }
 
-    /// The daemon's delivery observer: [`Self::follow_deliveries`] until
-    /// `shutdown` resolves.
-    pub(crate) async fn observe_deliveries(
-        self: Arc<Self>,
-        shutdown: impl Future<Output = ()>,
-    ) -> Result<()> {
-        tokio::select! {
-            result = self.follow_deliveries() => {
-                if let Err(error) = &result {
-                    eprintln!("pij-rs governance delivery observer stopped: {error}");
-                }
-                result
-            }
-            () = shutdown => Ok(()),
-        }
+    /// The daemon's delivery observer: [`Self::follow_deliveries`], restarted
+    /// with [`supervise::RESTART`] backoff after every failure, until
+    /// `shutdown` resolves (pij-fleet#36). Each restart resubscribes and
+    /// reconciles, which is idempotent.
+    pub(crate) async fn observe_deliveries(self: Arc<Self>, shutdown: impl Future<Output = ()>) {
+        supervise::supervise(
+            "governance delivery observer",
+            supervise::RESTART,
+            || Arc::clone(&self).follow_deliveries(),
+            shutdown,
+        )
+        .await;
     }
 
-    /// Project real delivery outcomes. The caller supervises this future and
-    /// propagates failure; dropping it shuts the observer down. Subscribe before
+    /// Project real delivery outcomes until the first failure. Run it through
+    /// [`Self::observe_deliveries`], which restarts it; dropping it shuts the
+    /// observer down. Subscribe before
     /// reconciliation so no receipt can fall between startup and the live tail.
     pub async fn follow_deliveries(self: Arc<Self>) -> Result<()> {
         let mut events = self.event_bus.subscribe_live(EventFilter::all());
