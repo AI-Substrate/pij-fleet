@@ -802,4 +802,99 @@ mod tests {
         assert_eq!(claims[0].message.msg_id, notice_id(job));
         assert!(notice_fyis(&pool).await.is_empty());
     }
+
+    /// Plan 164 review (pij-novel-chinchilla): a paired machine may hold an FYI
+    /// for this seat under any id, `park-notice-<job>` included. Only a LOCAL
+    /// FYI is this daemon's own notice: a peer's must never count as admitted
+    /// and suppress the sender's real park notice.
+    #[tokio::test]
+    async fn a_peer_fyi_with_the_notice_id_never_suppresses_the_real_notice() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        let pool = pool(&store).await;
+        let (job, parked) = park(&services, "parked; a peer squats the notice id", 0).await;
+        services
+            .delivery
+            .hold_fyi(Msg {
+                from: SeatId::from("pij-squatter"),
+                from_machine: Some("laptop".to_string()),
+                to: SENDER.into(),
+                body: "not your notice".to_string(),
+                msg_id: notice_id(job),
+                in_reply_to: None,
+                command: None,
+            })
+            .await
+            .unwrap();
+        notify(&services, &parked).await.unwrap();
+        assert_eq!(
+            notice_jobs(&pool).await,
+            ids(&[job]),
+            "the sender still gets its own notice"
+        );
+    }
+
+    /// Plan 164: a parked message FORWARDED from a paired machine has no local
+    /// sender. Its notice is skipped, never sent back over federation and never
+    /// delivered to a local seat that merely shares the remote sender's name.
+    #[tokio::test]
+    async fn a_parked_forwarded_message_notifies_nobody_here() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        let pool = pool(&store).await;
+        services
+            .delivery
+            .accept_forwarded(Msg {
+                from: SENDER.into(),
+                from_machine: Some("laptop".to_string()),
+                to: TARGET.into(),
+                body: "from afar".to_string(),
+                msg_id: "m-afar".to_string(),
+                in_reply_to: None,
+                command: None,
+            })
+            .await
+            .unwrap();
+        let (job_id, job) = services
+            .queue
+            .peek(&[delivery_kind(&TARGET.into())])
+            .await
+            .unwrap()
+            .unwrap();
+        let queue = services.queue.clone();
+        let spine = services.event_bus.raw_spine();
+        let events = services
+            .event_bus
+            .publish_committed_batch(async move {
+                let evidence = ParkingEvidence {
+                    outcome: DeliveryFailure::NativeReceiverUnavailable,
+                    reason: "native-extension-unavailable",
+                    at: now_ms(),
+                };
+                let (parked, events) = queue
+                    .park_delivery(
+                        job_id,
+                        &TARGET.into(),
+                        job.attempt,
+                        &evidence,
+                        spine.as_ref(),
+                    )
+                    .await?;
+                assert!(parked.is_some());
+                Ok((events.clone(), events))
+            })
+            .await
+            .unwrap();
+        let parked = events
+            .into_iter()
+            .find(|event| event.kind == PARKED_KIND)
+            .unwrap();
+        assert_eq!(parked.seat, None, "attributed to no local seat");
+        notify(&services, &parked).await.unwrap();
+        assert!(
+            notice_jobs(&pool).await.is_empty(),
+            "no notice to the local namesake"
+        );
+        assert!(notice_fyis(&pool).await.is_empty());
+    }
 }
