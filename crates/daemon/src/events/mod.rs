@@ -288,6 +288,14 @@ impl Spine for EventBus {
     ) -> Result<Option<Event>> {
         self.spine.latest_matching_message(seat, kind, msg_id).await
     }
+
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        self.spine.matching_since(seat, window).await
+    }
 }
 
 /// One replay-then-live event stream with an observable lag counter.

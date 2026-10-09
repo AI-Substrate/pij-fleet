@@ -609,23 +609,23 @@
       "argv": [
         "role",
         "pij-worker",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/role",
       "http_status": 200,
-      "wire_response": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}",
+      "wire_response": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"pm\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}",
       "native": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}\n",
+        "stdout": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"pm\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}\n",
         "stderr": "",
-        "stdout_sha256": "418590c0cdb0699a95867a8c405e7c9bff7e431cbf8a6678bd243885c3a9f89f"
+        "stdout_sha256": "ee5664f07ffaffbecc7d18ac96bb2cf2816ed4210e48d6308f6bf010ae17a236"
       },
       "shim": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"reviewer\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}\n",
+        "stdout": "{\"ok\":true,\"command\":\"pij role\",\"v\":2,\"data\":{\"seat\":\"pij-worker\",\"role\":\"pm\",\"assigned_by\":\"pij-parent\",\"assigned_at\":1788739200000,\"seq\":101}}\n",
         "stderr": "",
-        "stdout_sha256": "418590c0cdb0699a95867a8c405e7c9bff7e431cbf8a6678bd243885c3a9f89f"
+        "stdout_sha256": "ee5664f07ffaffbecc7d18ac96bb2cf2816ed4210e48d6308f6bf010ae17a236"
       },
       "byte_equal": true,
       "exit_equal": true
@@ -799,23 +799,23 @@
         "--parent",
         "pij-parent",
         "--role",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/adopt",
       "http_status": 200,
-      "wire_response": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}",
+      "wire_response": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"pm\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}",
       "native": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
+        "stdout": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"pm\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
         "stderr": "",
-        "stdout_sha256": "2a0029c05c44c913919a088312256dc0985d5bbce0228322d8339a6e24ac3400"
+        "stdout_sha256": "3cfb9e04b2a4a2f8c548e723517fa69501acdc4dda515c49654b065ed50bc368"
       },
       "shim": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
+        "stdout": "{\"ok\":true,\"command\":\"pij adopt\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"pm\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
         "stderr": "",
-        "stdout_sha256": "2a0029c05c44c913919a088312256dc0985d5bbce0228322d8339a6e24ac3400"
+        "stdout_sha256": "3cfb9e04b2a4a2f8c548e723517fa69501acdc4dda515c49654b065ed50bc368"
       },
       "byte_equal": true,
       "exit_equal": true
@@ -1561,7 +1561,7 @@
       "argv": [
         "role",
         "pij-worker",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/role",
@@ -1587,7 +1587,7 @@
       "argv": [
         "role",
         "pij-worker",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/role",
@@ -1613,7 +1613,7 @@
       "argv": [
         "role",
         "pij-worker",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/role",
@@ -1639,7 +1639,7 @@
       "argv": [
         "role",
         "pij-worker",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/role",
@@ -1665,7 +1665,7 @@
       "argv": [
         "role",
         "pij-worker",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/role",
@@ -1691,7 +1691,7 @@
       "argv": [
         "role",
         "pij-worker",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/role",
@@ -1753,17 +1753,17 @@
         "--parent",
         "pij-parent",
         "--role",
-        "reviewer"
+        "pm"
       ],
       "method": "identical-scripted-http-response",
       "path": "/v1/register",
       "http_status": 200,
-      "wire_response": "{\"ok\":true,\"command\":\"pij register\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}",
+      "wire_response": "{\"ok\":true,\"command\":\"pij register\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"pm\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}",
       "native": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"command\":\"pij register\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"reviewer\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
+        "stdout": "{\"ok\":true,\"command\":\"pij register\",\"v\":2,\"data\":{\"id\":\"pij-worker\",\"harness\":\"omp\",\"session\":null,\"pane\":\"%11\",\"proc\":{\"pid\":12345,\"proc_start\":20260907090000},\"folder\":\"/work/rs-governance-port\",\"state\":\"idle\",\"semantic_state\":null,\"role\":\"pm\",\"parent\":\"pij-parent\",\"relay\":false,\"native_extension_delivery\":false}}\n",
         "stderr": "",
-        "stdout_sha256": "834b57625118df767385d1c9d5936857bf26ec60e1cb047e7dffd6bfacfb9fa2"
+        "stdout_sha256": "b2201191a9ae137b77b2d2007fc9b9361eca5a9a855fe808faac9442765611ed"
       },
       "shim": {
         "exit": 4,

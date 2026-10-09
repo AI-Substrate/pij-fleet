@@ -145,6 +145,14 @@ impl Spine for PauseAfterAppend {
     ) -> Result<Option<Event>> {
         self.raw.latest_matching_message(seat, kind, msg_id).await
     }
+
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        self.raw.matching_since(seat, window).await
+    }
 }
 
 fn report_fixture() -> Event {

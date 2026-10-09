@@ -285,6 +285,9 @@ enum Command {
         /// Governing seat.
         #[arg(long)]
         parent: Option<String>,
+        /// Stamp the child's role from above (pm, worker, pa); you become its parent.
+        #[arg(long)]
+        role: Option<String>,
         /// Configure Claude to accept cross-session inbound messages.
         /// Claude seats default to accepting; this flag affirms that default
         /// explicitly and is kept for existing callers.
@@ -465,6 +468,11 @@ enum Command {
     },
     /// Assert or unset a seat role through daemon ownership checks.
     Role {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Take a seat as your child and stamp its role: `link <seat> --role <pm|worker|pa>`.
+    Link {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -1540,6 +1548,10 @@ async fn run(cli: Cli) -> ExitCode {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             emit(&client.role(&args, &caller_context()).await, as_json)
         }
+        Command::Link { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            emit(&client.link(&args, &caller_context()).await, as_json)
+        }
         Command::Close { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             emit(&client.close(&args, &caller_context()).await, as_json)
@@ -2595,6 +2607,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         session,
         name,
         parent,
+        role,
         accept_inbound,
         no_accept_inbound,
         no_wait,
@@ -2666,6 +2679,8 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         wait_seconds: (!*no_wait).then_some(*wait_seconds),
         no_wait: *no_wait,
         resume: None,
+        role: role.clone(),
+        caller: role.is_some().then(caller_context),
     }))
 }
 
@@ -2864,6 +2879,7 @@ impl Command {
             Command::Bg { .. } => "pij bg",
             Command::Report { .. } => "pij report",
             Command::Role { .. } => "pij role",
+            Command::Link { .. } => "pij link",
             Command::Close { .. } => "pij close",
             Command::Reap { .. } => "pij reap",
             Command::Anomalies { .. } => "pij anomalies",
@@ -2978,16 +2994,16 @@ mod tests {
         let card = serde_json::from_value::<pij_daemon::http::StateCard>(serde_json::json!({
             "id":"pij-native", "state":"idle", "liveness":"active", "cwd":"/abs/tree",
             "harness":"copilot", "unsupported":[],
-            "native_receiver_reason":"native-receiver-stale",
+            "native_receiver_reason":"native-extension-unavailable",
         }))
         .unwrap();
         let response = pij_core::model::Envelope::ok("pij state", card);
-        assert!(super::render_state(&response, false).contains("native-receiver-stale"));
+        assert!(super::render_state(&response, false).contains("native-extension-unavailable"));
         let json: serde_json::Value =
             serde_json::from_str(&super::render_state(&response, true)).unwrap();
         assert_eq!(
             json["data"]["native_receiver_reason"],
-            "native-receiver-stale"
+            "native-extension-unavailable"
         );
         assert_eq!(json["data"]["liveness"], "active");
     }
@@ -3090,6 +3106,7 @@ mod tests {
                 "sidecar",
                 "report",
                 "role",
+                "link",
                 "close",
                 "reap",
                 "anomalies",

@@ -556,12 +556,26 @@ export class RustRuntimeSession {
 				parent: this.self,
 				no_wait: true,
 				accept_inbound: opts.harness === "claude",
+				...(opts.role === undefined
+					? {}
+					: {
+							role: opts.role,
+							caller: {
+								PIJ_SESSION_ID: this.self,
+								...(process.env.TMUX_PANE ? { TMUX_PANE: process.env.TMUX_PANE } : {}),
+							},
+						}),
 			});
 			if (!child.spawn_id || !child.pane)
 				return err("E-NOREG", "daemon spawn returned no spawn identity or pane");
 			if (opts.task !== undefined) await this.send(child.id, opts.task);
 			return ok({ spawnId: child.spawn_id, paneId: child.pane });
 		}
+		if (opts.role !== undefined)
+			return err(
+				"E-ARG",
+				`role on an ${opts.harness} spawn is not supported yet (pij-fleet#25); after the child's ready-ping run \`pij link <child> --role ${opts.role}\``,
+			);
 		const result = this.session.spawn(opts);
 		void this.flush();
 		return result;

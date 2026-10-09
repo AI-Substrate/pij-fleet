@@ -13,6 +13,9 @@ export type SessionId = string;
 /** Role a session plays in the parent/worker loop (rides in PIJ_ROLE). */
 export type Role = "parent" | "worker";
 
+/** Roles a governor stamps on the placement call (plan 166). */
+export type PlacementRole = "pm" | "worker" | "pa";
+
 type Exact<Left, Right> =
 	(<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
 		? true

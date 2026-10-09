@@ -26,4 +26,5 @@ pub use orchestration::{
 };
 pub use queue::SqliteQueue;
 pub use registry::SqliteRegistry;
+pub use role_assertion::{Placement, PlacementCommit};
 pub use spine::SqliteSpine;

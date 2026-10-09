@@ -474,6 +474,13 @@ mod tests {
             self.inner.put_reporting(descriptor).await
         }
 
+        async fn put_reporting_keeping_parent(
+            &self,
+            descriptor: SeatDescriptor,
+        ) -> Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+            self.inner.put_reporting_keeping_parent(descriptor).await
+        }
+
         async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {
             if self.fail.swap(false, Ordering::SeqCst) {
                 return Err(observer_error("injected registry boot race"));

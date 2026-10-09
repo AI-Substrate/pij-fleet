@@ -14,7 +14,7 @@ CREATE UNIQUE INDEX jobs_dedupe_live
 -- The delivered ledger: unique per (recipient, sender machine, msg_id). SQLite
 -- cannot change a UNIQUE constraint in place, so the bounded ledger is rebuilt
 -- with every row and sequence preserved; every existing row is local.
-ALTER TABLE delivered_messages RENAME TO delivered_messages_v26;
+ALTER TABLE delivered_messages RENAME TO delivered_messages_v27;
 
 CREATE TABLE delivered_messages (
     seq            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,11 +35,11 @@ CREATE TABLE delivered_messages (
 
 INSERT INTO delivered_messages (seq, recipient, sender_machine, msg_id, origin, delivered_at)
 SELECT seq, recipient, '', msg_id, origin, delivered_at
-FROM delivered_messages_v26;
+FROM delivered_messages_v27;
 
-DROP TABLE delivered_messages_v26;
+DROP TABLE delivered_messages_v27;
 
 CREATE INDEX delivered_messages_recipient_order
     ON delivered_messages (recipient, seq DESC);
 
-PRAGMA user_version = 27;
+PRAGMA user_version = 28;

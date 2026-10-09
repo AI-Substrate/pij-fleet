@@ -90,6 +90,41 @@ impl FakeRegistry {
     }
 }
 
+impl FakeRegistry {
+    fn put_locked(
+        &self,
+        mut descriptor: SeatDescriptor,
+        keep_parent: bool,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        let mut state = self.state.lock().expect("fake registry mutex");
+        state.recorder.record(format!("put:{}", descriptor.id));
+        state.seq += 1;
+        let seq = Seq(state.seq);
+        if keep_parent && let Some(current) = state.seats.get(descriptor.id.as_str()) {
+            descriptor.parent = current.parent.clone();
+        }
+        let parent = descriptor.parent.clone();
+        let previous = state.seats.insert(descriptor.id.0.clone(), descriptor);
+        Ok((
+            seq,
+            pij_core::ports::PutBinding {
+                inserted: previous.is_none(),
+                previous_proc: previous.and_then(|seat| seat.proc),
+                parent,
+            },
+        ))
+    }
+
+    /// The parent a seat's row holds now (`None` = no row), without recording a call.
+    pub fn row_parent(&self, seat: &SeatId) -> Option<Option<SeatId>> {
+        let state = self.state.lock().expect("fake registry mutex");
+        state
+            .seats
+            .get(seat.as_str())
+            .map(|seat| seat.parent.clone())
+    }
+}
+
 #[async_trait]
 impl Registry for FakeRegistry {
     async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
@@ -106,18 +141,14 @@ impl Registry for FakeRegistry {
         &self,
         descriptor: SeatDescriptor,
     ) -> Result<(Seq, pij_core::ports::PutBinding)> {
-        let mut state = self.state.lock().expect("fake registry mutex");
-        state.recorder.record(format!("put:{}", descriptor.id));
-        state.seq += 1;
-        let seq = Seq(state.seq);
-        let previous = state.seats.insert(descriptor.id.0.clone(), descriptor);
-        Ok((
-            seq,
-            pij_core::ports::PutBinding {
-                inserted: previous.is_none(),
-                previous_proc: previous.and_then(|seat| seat.proc),
-            },
-        ))
+        self.put_locked(descriptor, false)
+    }
+
+    async fn put_reporting_keeping_parent(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+        self.put_locked(descriptor, true)
     }
 
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {
@@ -367,6 +398,27 @@ impl Spine for FakeSpine {
         }
         Ok(None)
     }
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        let state = self.state.lock().expect("fake spine mutex");
+        let mut page = state
+            .events
+            .iter()
+            .map(|(seq, event)| {
+                let mut event = event.clone();
+                event.seq = Some(*seq);
+                event
+            })
+            .filter(|event| event.seat.as_ref() == Some(seat) && window.admits(event))
+            .collect::<Vec<_>>();
+        // The SQLite plan's order: (at, seq), whatever order rows were appended in.
+        page.sort_by_key(|event| (event.at, event.seq));
+        page.truncate(window.limit());
+        Ok(page)
+    }
 }
 
 /// Spine cost instrument: counts bounded/latest and tail reads independently.
@@ -449,6 +501,14 @@ impl Spine for CountingSpine {
     ) -> Result<Option<Event>> {
         self.latest_calls.fetch_add(1, Ordering::Relaxed);
         self.inner.latest_matching_message(seat, kind, msg_id).await
+    }
+
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        self.inner.matching_since(seat, window).await
     }
 }
 

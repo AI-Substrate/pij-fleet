@@ -620,6 +620,12 @@ pub(crate) async fn adopt(
         }
         (typed, argv) => typed.or(argv),
     };
+    if let Some(Err(reason)) = role
+        .as_deref()
+        .map(pij_core::orchestration::check_seat_role)
+    {
+        return super::role::RoleError::Invalid(reason).into_response(ADOPT);
+    }
     let pane = request
         .pane
         .or(args.pane)

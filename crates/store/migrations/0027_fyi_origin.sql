@@ -26,4 +26,4 @@ ALTER TABLE fyis_by_origin RENAME TO fyis;
 
 CREATE INDEX fyis_pending_by_recipient ON fyis (recipient, held_at_ms, id) WHERE state = 'pending';
 
-PRAGMA user_version = 26;
+PRAGMA user_version = 27;

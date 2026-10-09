@@ -52,12 +52,14 @@ pub struct SeatFilter {
 }
 
 /// The binding replaced by one committed registry write.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PutBinding {
     /// No row existed for this id before the write.
     pub inserted: bool,
     /// The old process, not the incoming claim. `None` can also mean an unbound row.
     pub previous_proc: Option<ProcIdentity>,
+    /// The parent the committed row holds (kept or written).
+    pub parent: Option<SeatId>,
 }
 
 /// The seat roster: who exists, what they are, who governs them.
@@ -80,6 +82,13 @@ pub trait Registry: Send + Sync {
     /// `self.put_reporting(descriptor).await.map(|(seq, _)| seq)`.
     /// A separate `get` before or after `put` cannot satisfy this contract.
     async fn put_reporting(&self, d: SeatDescriptor) -> Result<(Seq, PutBinding)>;
+
+    /// [`Self::put_reporting`], except an existing row keeps the `parent` it
+    /// holds at commit time (plan 166). A writer that does not claim a parent
+    /// must use this: its snapshot may predate a committed link, and a full-row
+    /// put would silently revert that placement. Read and write under the same
+    /// serialization/transaction boundary; there is no read-then-write default.
+    async fn put_reporting_keeping_parent(&self, d: SeatDescriptor) -> Result<(Seq, PutBinding)>;
 
     /// Every seat matching `filter`, ordered by id so callers can diff listings.
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>>;
@@ -141,6 +150,108 @@ pub trait Spine: Send + Sync {
         kind: &str,
         msg_id: &str,
     ) -> Result<Option<Event>>;
+
+    /// One page of one seat's events of one kind, ordered by `(at, seq)` and
+    /// strictly after the window's `(since_at, after)` cursor, at most
+    /// `window.limit()`. Seat and kind scope are mandatory so the spine seeks
+    /// its `(seat, kind, at)` index: the cost follows the rows returned, not the
+    /// seat's history. [`SpineWindow::next`] pages onward.
+    async fn matching_since(&self, seat: &SeatId, window: &SpineWindow) -> Result<Vec<Event>>;
+}
+
+/// A validated page request for [`Spine::matching_since`].
+///
+/// Validation happens once, here, so every spine implementation receives the
+/// same in-range bounds: SQLite stores `at` and `seq` as signed 64-bit integers,
+/// and a bound it cannot represent is refused rather than clamped differently by
+/// each adapter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpineWindow {
+    kind: String,
+    since_at: u64,
+    after: Seq,
+    limit: usize,
+}
+
+impl SpineWindow {
+    /// The largest page any caller may request.
+    pub const MAX_LIMIT: usize = 1_000;
+
+    /// # Errors
+    /// An empty kind, a `since_at` or `after` beyond `i64::MAX`, or a `limit`
+    /// outside `1..=MAX_LIMIT`.
+    pub fn new(kind: &str, since_at: u64, after: Seq, limit: usize) -> Result<Self> {
+        let refuse = |message: &str| {
+            Err(crate::error::PijError::Adapter {
+                adapter: "spine/window".to_string(),
+                message: message.to_string(),
+            })
+        };
+        if kind.is_empty() {
+            return refuse("matching_since requires an event kind");
+        }
+        if i64::try_from(since_at).is_err() || i64::try_from(after.0).is_err() {
+            return refuse("matching_since bounds must fit a signed 64-bit integer");
+        }
+        if !(1..=Self::MAX_LIMIT).contains(&limit) {
+            return refuse("matching_since limit must be between 1 and MAX_LIMIT");
+        }
+        Ok(Self {
+            kind: kind.to_string(),
+            since_at,
+            after,
+            limit,
+        })
+    }
+
+    /// The one event kind.
+    #[must_use]
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    /// Cursor time, epoch ms: the first page includes events at exactly this time.
+    #[must_use]
+    pub fn since_at(&self) -> u64 {
+        self.since_at
+    }
+
+    /// Cursor sequence: among events at `since_at`, only those after this one.
+    #[must_use]
+    pub fn after(&self) -> Seq {
+        self.after
+    }
+
+    /// Most events in one page.
+    #[must_use]
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
+    /// Whether an event belongs to this window: its kind, with `(at, seq)`
+    /// strictly after the cursor. The seat is the caller's scope.
+    #[must_use]
+    pub fn admits(&self, event: &Event) -> bool {
+        event.kind == self.kind
+            && event
+                .seq
+                .is_some_and(|seq| (event.at, seq) > (self.since_at, self.after))
+    }
+
+    /// The window for the page after `page`, or `None` when `page` was the last.
+    #[must_use]
+    pub fn next(&self, page: &[Event]) -> Option<Self> {
+        if page.len() < self.limit {
+            return None;
+        }
+        page.last().and_then(|event| {
+            event.seq.map(|after| Self {
+                since_at: event.at,
+                after,
+                ..self.clone()
+            })
+        })
+    }
 }
 
 /// Authority-owned identity and outcome committed by a delivery acknowledgement.

@@ -385,7 +385,7 @@ async function scenario(context: NativeSmokeContext) {
 				{ env, cwd, encoding: "utf8", timeout: 15_000 },
 			);
 			assert.equal(stateOutput.status, 0, stateOutput.stderr);
-			assert.match(stateOutput.stdout, /native-receiver-stale/);
+			assert.match(stateOutput.stdout, /native-extension-unavailable/);
 			writeFileSync(join(output, "state.txt"), stateOutput.stdout);
 			const shimState = spawnSync(
 				join(ROOT, "node_modules/.bin/tsx"),
@@ -393,12 +393,12 @@ async function scenario(context: NativeSmokeContext) {
 				{ env, cwd, encoding: "utf8", timeout: 15_000 },
 			);
 			assert.equal(shimState.status, 0, shimState.stderr);
-			assert.match(shimState.stdout, /native-receiver-stale/);
+			assert.match(shimState.stdout, /native-extension-unavailable/);
 			writeFileSync(join(output, "state-shim.txt"), shimState.stdout);
 			receipt.state_after_disconnect = await api("/v1/state", { id: target.seat.id });
 			assert.equal(
 				object(receipt.state_after_disconnect).native_receiver_reason,
-				"native-receiver-stale",
+				"native-extension-unavailable",
 			);
 			await api("/v1/report", { seat: target.seat.id, argv: ["report", "state", "ready"] });
 			const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
@@ -439,8 +439,8 @@ async function scenario(context: NativeSmokeContext) {
 			// Model the scheduled child replacement with the real host SDK, not a forged heartbeat.
 			assert.equal(
 				object(await api("/v1/state", { id: target.seat.id })).native_receiver_reason,
-				"native-receiver-stale",
-				"this SDK-enable probe starts with the stale latch, not a healthy receiver",
+				"native-extension-unavailable",
+				"this SDK-enable probe starts with an expired receiver lease, not a healthy receiver",
 			);
 			const enableStarted = Date.now();
 			writeFileSync(`${probePrefix}.command.json`, JSON.stringify({ op: "enable-pij" }), {
@@ -474,7 +474,7 @@ async function scenario(context: NativeSmokeContext) {
 					return held ? { kind: "held" as const, card, held } : undefined;
 				},
 			);
-			assert.equal(replacement.card.native_receiver_reason, "native-receiver-stale");
+			assert.equal(replacement.card.native_receiver_reason, "native-extension-unavailable");
 			receipt.recycle = {
 				kind: replacement.kind,
 				registration,
@@ -483,7 +483,7 @@ async function scenario(context: NativeSmokeContext) {
 				held_after_registration_ms: Date.parse(String(replacement.held.at)) - registeredAt,
 				budget_ms: replacementBudgetMs,
 				diagnostic: replacement.held,
-				note: "Latched-stale SDK-enable probe: startup read held at its deadline; not a healthy-reload witness.",
+				note: "Expired-lease SDK-enable probe: startup read held at its deadline; not a healthy-reload witness.",
 			};
 			console.log(JSON.stringify({ phase: "sdk-enable-held", ...object(receipt.recycle) }));
 			receipt.recycle = {

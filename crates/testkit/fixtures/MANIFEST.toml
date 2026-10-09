@@ -425,16 +425,16 @@ answer = "Both CLI surfaces emit these exact complete envelope bytes with --json
 
 [[fixture]]
 path = "golden/api/governance-routes.json"
-sha256 = "aee1eca986d65cf7a60f2bfaa951beea465c7a88d718b0c718a6d06c91a729f6"
+sha256 = "dc98b5012da8b9c1fc56ee95e8773520c1ed895981a28dc9ffb8ed6e2a73a3d0"
 bytes = 89016
-note = "DESIGNED merged governance route contract promoted from plan 139 at e22833b0d0caf00d95346008dab1587005d0173d, not a runtime capture. Historical originals remain unchanged; unsupported guidance uses docs/how/pij-rs-api.md#unsupported-status and ErrorKind retains its existing snake_case wire. Plan 145 adds selected-node state and report assignment_id/refs defaults without changing verification or answer authority."
+note = "DESIGNED merged governance route contract promoted from plan 139 at e22833b0d0caf00d95346008dab1587005d0173d, not a runtime capture. Historical originals remain unchanged; unsupported guidance uses docs/how/pij-rs-api.md#unsupported-status and ErrorKind retains its existing snake_case wire. Plan 145 adds selected-node state and report assignment_id/refs defaults without changing verification or answer authority. Plan 166 rewrote the role string `reviewer` to `pm` (closed seat-role vocabulary) by text edit; not a re-capture."
 answer = "Permanent readers consume stable complete v2 envelopes, daemon-owned attribution and role joins, observed lease-id requirements, and terminal-only answer supersede. Preserve E-RS-ANSWER-AUTHORITY-SPLIT for mixed persistence. Reports retain assignment_id and refs; the selected node exposes its latest state record, null before any declaration. Unsupported commands point to the stable ledger."
 
 [[fixture]]
 path = "golden/api/governance-events.json"
-sha256 = "a650137717eba301eeaa7735e9ff241adc0a8ce5a170bbd61ccc3c7d4f3c90cc"
+sha256 = "1cb609af6822e9d6a0a112be347f5e05106e87042808cda7382497ee3a548bc3"
 bytes = 34210
-note = "DESIGNED governance event contract promoted from plan 139 at e22833b0d0caf00d95346008dab1587005d0173d. Plan 144 adds unknown extension_build/path on seat.put; plan 145 adds assignment_id:null and refs:[] on unscoped report.state. Historical originals remain unchanged; this is not a new runtime capture."
+note = "DESIGNED governance event contract promoted from plan 139 at e22833b0d0caf00d95346008dab1587005d0173d. Plan 144 adds unknown extension_build/path on seat.put; plan 145 adds assignment_id:null and refs:[] on unscoped report.state. Historical originals remain unchanged; this is not a new runtime capture. Plan 166 rewrote the role string `reviewer` to `pm` (closed seat-role vocabulary) by text edit; not a re-capture."
 answer = "Consume shared Hello and event cases: Event retains JSON-string payload and machine-scoped cursor; since is exclusive. Shared publication prevents skipped or duplicate replay/live boundaries. Preserve superseded answers and canonical report assignment_id/refs, with serde defaults for older report.state records."
 
 [[fixture]]
@@ -446,9 +446,9 @@ answer = "Every native ErrorKind emits exactly its complete shared refusal envel
 
 [[fixture]]
 path = "golden/api/governance-client-parity.json"
-sha256 = "42435fadff05fd6f3cf7831b9894a22b3e4c3bd34937d37c3aa91751021a79a9"
+sha256 = "1f93470fc99bb32a1c986945b52e0d3651037bb94275fadf099efbf6d5e3da21"
 bytes = 122528
-note = "EXECUTED actual native binary and TS CLI captures after main integration: 29 shared mutations and 9 refusals against identical scripted HTTP responses, 18 same-daemon CLI pairs, 4 live HTTP/shim pairs, and 6 shared error-policy pairs. The additive list_here_capture records 4 native/shim byte-equal pairs plus 4 native/HTTP argument refusals against an isolated real-adapter daemon. Each record declares its method; mutation fixtures are client-boundary proof, not domain execution or production acceptance. Native binary and source snapshot hashes are retained."
+note = "EXECUTED actual native binary and TS CLI captures after main integration: 29 shared mutations and 9 refusals against identical scripted HTTP responses, 18 same-daemon CLI pairs, 4 live HTTP/shim pairs, and 6 shared error-policy pairs. The additive list_here_capture records 4 native/shim byte-equal pairs plus 4 native/HTTP argument refusals against an isolated real-adapter daemon. Each record declares its method; mutation fixtures are client-boundary proof, not domain execution or production acceptance. Native binary and source snapshot hashes are retained. Plan 166 rewrote the role string `reviewer` to `pm` (closed seat-role vocabulary) by text edit and recomputed each stdout_sha256; not a re-capture."
 answer = "The original 66 shared comparisons preserve original stdout bytes with only the declared final-newline contract and no normalization. The additional list_here_capture proves bare/true cwd scoping and false/unfiltered roster parity, with path-valued CLI and relative/bare-true HTTP scopes refused as E-RS-ARG. Preserve distinct refusal exit policies. Sessions uses its real Rust HTTP baseline; native/HTTP-only register and missing native sessions remain explicit capability probes, never failed comparisons hidden by fallback. Real workflow/fanout/OMP canary receipts separately defend domain effects."
 
 [[fixture]]

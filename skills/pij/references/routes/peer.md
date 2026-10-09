@@ -22,7 +22,7 @@ pij node show <seat> --json
 
 For an OMP seat, `pij whoami` reports the loaded OMP extension's `extension_build` and real `extension_path`; for a Pi seat it reports that Pi runtime's loaded extension. Current-daemon null means a pre-144/unreported build (older daemons omit the keys), never infer it from the seat cwd or today's HEAD. Use `pij list --json` for roster build identity.
 
-Parent is the rs descriptor's recorded `parent`, not a spawnedBy fallback. Supply `--parent` when creating/adopting within its supported admission contract. `pij link`/`tree` refuse: no existing-seat reparent/root-placement port exists, and a role change cannot stand in for a structural link.
+Parent is the rs descriptor's recorded `parent`, not a spawnedBy fallback. **Roles come from above: pass `--role pm|worker|pa` on the placement call.** On spawn, you become the parent and the role is stamped in the spawn's own transaction. For a hand-started seat (or an omp/pi `pij_spawn` child, pij-fleet#25) run `pij link <seat> --role <r>` after its ready-ping. Link takes a seat with no live parent, or re-roles one you parent. A live foreign parent refuses `E-RS-OWNERSHIP`; a prime or your own ancestor also refuses. Roles are never inferred or backfilled. `tree` still refuses.
 
 Verified external/paneless seats use `pij inbox register --json`, then `pij inbox --wait` from the same native host/session (C1). Native admission derives the matching long-lived host incarnation, never the short-lived CLI's pid; missing/conflicting evidence refuses. Paneless adopt remains unported. Never guess/discover a pane or start a competing extension receiver.
 
@@ -36,7 +36,7 @@ Verified external/paneless seats use `pij inbox register --json`, then `pij inbo
 | Pi | `--harness pi`; in-process `harness:"pi"` | `--model gpt-5.6-sol --effort high` launches Pi with `--model gpt-5.6-sol:high`; use a model from Pi's own catalog |
 
 ```bash
-pij-rs spawn --harness <omp|pi|claude|copilot|codex> --model <exact-model> [--effort <level>] [--cwd <absolute-path>] [--parent <seat>] [--session <tmux-session>] [--name <window-name>] [--allow-retired] --json
+pij-rs spawn --harness <omp|pi|claude|copilot|codex> --model <exact-model> [--effort <level>] [--cwd <absolute-path>] [--parent <seat>] [--role <pm|worker|pa>] [--session <tmux-session>] [--name <window-name>] [--allow-retired] --json
 pij attest <new-seat> --plan-id <plan-id> --json
 pij dispatch <new-seat> --packet <path> --wait --json
 pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] --json

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { EventEmitter, once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
@@ -903,6 +903,12 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		assert.equal(registration.id, "pij-bright-otter");
 		assert.equal(registration.harness, "copilot");
 		assert.equal(registration.harness_session, "native-shell-137");
+		// Plan 167 R5: the loaded build is reported the way OMP reports it.
+		assert.equal(registration.extension_path, await realpath(import.meta.dirname));
+		assert.match(
+			registration.extension_build,
+			/^(?:[0-9a-f]{7,10}(?:\+dirty)?|hash:[0-9a-f]{12})$/,
+		);
 		assert.equal(f.requests.find((r) => r.path === "/v1/send").body.from, registration.id);
 		assert.equal(f.events.filter((e) => e.kind === "native-send").length, 1);
 		assert.match(f.events.find((e) => e.kind === "native-send").input.prompt, /SHELL_NONCE_137/);

@@ -497,7 +497,7 @@ async fn all_identity_projections_agree_across_role_assert_update_and_unset_with
 
     let mut request = role_case()["request"].clone();
     let assigned = request["role"].clone();
-    let updated = json!("projection-updated-role");
+    let updated = json!("worker");
     assert_ne!(assigned, updated);
     for role in [assigned, updated, Value::Null] {
         request["role"] = role.clone();
@@ -614,5 +614,48 @@ async fn role_projection_store_failure_refuses_every_identity_surface_without_st
     assert_eq!(
         retired.role, raw.role,
         "CAS must preserve the raw descriptor role"
+    );
+}
+
+#[tokio::test]
+async fn register_and_adopt_refuse_roles_outside_the_closed_vocabulary_before_admission() {
+    let fixture = Fixture::start().await;
+    let template = event_case("seat-put")["decoded_payload"].clone();
+    let context = routes()["fixture_context"].clone();
+    let index = context["panes"]
+        .as_object()
+        .expect("panes")
+        .iter()
+        .position(|(_, id)| id == &context["worker"])
+        .expect("worker index");
+    let register = json!({"id":template["id"],"harness":template["harness"],"folder":template["folder"],
+        "pane":template["pane"],"pid":template["proc"]["pid"].as_u64().expect("pid") + index as u64,
+        "proc_start":template["proc"]["proc_start"],"role":"coder"});
+    let typed = json!({"argv":["adopt",template["pane"],"--harness",template["harness"]],"role":"reviewer"});
+    let argv =
+        json!({"argv":["adopt",template["pane"],"--harness",template["harness"],"--role","coder"]});
+    for (path, request) in [
+        ("/v1/register", &register),
+        ("/v1/adopt", &typed),
+        ("/v1/adopt", &argv),
+    ] {
+        let (status, response) = fixture.post(path, request).await;
+        assert_eq!(status, 400, "{path}: {response}");
+        assert_eq!(response["error"], "refused", "{path}: {response}");
+        assert_eq!(
+            response["details"]["code"], "E-RS-ARG",
+            "{path}: {response}"
+        );
+        assert!(
+            response["meta"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("prime, pm, worker, pa"),
+            "{path}: {response}"
+        );
+    }
+    assert!(
+        fixture.events().await.is_empty(),
+        "a refused role admits no seat and publishes nothing"
     );
 }

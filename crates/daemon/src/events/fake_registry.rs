@@ -70,22 +70,22 @@ impl PublishedFakeRegistry {
     }
 }
 
-#[async_trait]
-impl Registry for PublishedFakeRegistry {
-    async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
-        self.registry.get(seat).await
-    }
-
-    async fn put(&self, descriptor: SeatDescriptor) -> Result<Seq> {
-        self.put_reporting(descriptor).await.map(|(seq, _)| seq)
-    }
-
-    async fn put_reporting(&self, descriptor: SeatDescriptor) -> Result<(Seq, PutBinding)> {
+impl PublishedFakeRegistry {
+    /// Under the bus lock: the fake roster is read and written in the same
+    /// critical section, so keeping the parent cannot use a stale snapshot.
+    async fn put_published(
+        &self,
+        descriptor: SeatDescriptor,
+        keep_parent: bool,
+    ) -> Result<(Seq, PutBinding)> {
         let registry = self.registry.clone();
         let spine = self.bus.spine.clone();
         let (seq, binding) = self.bus.publish_registry(Box::pin(async move {
             let mut descriptor = descriptor;
             descriptor.machine = None;
+            if keep_parent && let Some(parent) = registry.row_parent(&descriptor.id) {
+                descriptor.parent = parent;
+            }
             let mut event = descriptor_event(&descriptor)?;
             let seq = spine.append(event.clone()).await?;
             let (_, binding) = registry.put_reporting(descriptor).await.map_err(|error| PijError::Adapter {
@@ -100,6 +100,28 @@ impl Registry for PublishedFakeRegistry {
             message: "fake registry publication lost the committed put binding".to_string(),
         })?;
         Ok((seq, binding))
+    }
+}
+
+#[async_trait]
+impl Registry for PublishedFakeRegistry {
+    async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
+        self.registry.get(seat).await
+    }
+
+    async fn put(&self, descriptor: SeatDescriptor) -> Result<Seq> {
+        self.put_reporting(descriptor).await.map(|(seq, _)| seq)
+    }
+
+    async fn put_reporting(&self, descriptor: SeatDescriptor) -> Result<(Seq, PutBinding)> {
+        self.put_published(descriptor, false).await
+    }
+
+    async fn put_reporting_keeping_parent(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> Result<(Seq, PutBinding)> {
+        self.put_published(descriptor, true).await
     }
 
     async fn list(&self, filter: SeatFilter) -> Result<Vec<SeatDescriptor>> {

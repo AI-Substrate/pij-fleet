@@ -27,7 +27,9 @@ use pij_core::ports::{
     ReleaseOutcome, TmuxPort, Transport,
 };
 use pij_testkit::block_on;
-use pij_testkit::contract::{queue_contract, registry_contract, sample_seat, spine_contract};
+use pij_testkit::contract::{
+    queue_contract, registry_contract, sample_seat, spine_contract, spine_window_contract,
+};
 use pij_testkit::fakes::{
     FakeHarness, FakeLiveness, FakeQueue, FakeRegistry, FakeSpine, FakeTmux, FakeTransport,
 };
@@ -42,6 +44,11 @@ fn fake_registry_honours_the_registry_contract() {
 fn fake_spine_honours_the_spine_contract() {
     let spine = FakeSpine::new();
     block_on(spine_contract(&spine));
+}
+
+#[test]
+fn fake_spine_honours_the_spine_window_contract() {
+    block_on(spine_window_contract(&FakeSpine::new()));
 }
 
 #[test]

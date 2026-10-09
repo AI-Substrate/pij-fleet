@@ -170,6 +170,8 @@ export class PijDaemonClient {
 		readonly parent: string;
 		readonly no_wait: boolean;
 		readonly accept_inbound: boolean;
+		readonly role?: string;
+		readonly caller?: { readonly PIJ_SESSION_ID: string; readonly TMUX_PANE?: string };
 	}): Promise<RustSeatDescriptor> {
 		return this.post<RustSeatDescriptor>("/v1/spawn", request);
 	}
