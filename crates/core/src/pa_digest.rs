@@ -167,6 +167,8 @@ impl FleetView {
         for (seat, why) in &flagged {
             let _ = write!(text, "\n  {seat}  {why}");
         }
+        // Said out loud so a short list is never read as "no anomalies".
+        text.push_str("\n  (anomalies here are stale cards only; `pij anomalies` has every kind)");
 
         let mut rows: Vec<&FleetRow> = self.rows.iter().collect();
         rows.sort_by(|a, b| {

@@ -399,7 +399,7 @@ export async function runWatchdogSmoke(): Promise<SmokeResult> {
 		const status = object(parseSmokeEnvelope(await fixture.shim(["watchdog", "status"])).data);
 		assert.equal((status.optins as unknown[]).length, 1, "status lists the opted-in seat");
 		const off = object(parseSmokeEnvelope(await fixture.shim(["watchdog", "off"])).data);
-		assert.equal(off.was_on, true);
+		assert.equal(off.changed, true);
 		console.error(
 			JSON.stringify({
 				smoke: "watchdog",

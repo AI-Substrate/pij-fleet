@@ -812,12 +812,14 @@ The daemon runs a watchdog for **PAs only**: seats whose asserted role is `pa`. 
 - a **Needs a look** list:
   - seats `SeatDescriptor::nudgeable` that have been quiet for a whole interval;
   - seats that declared `waiting`, `hold`, `blocked` or `question`;
-  - open `pij anomalies` on fleet seats;
+  - stale cards (`status-stale`). These come from the anomaly authority's own `StatusStaleDetector`, run over bounded reads: per fleet seat, its latest card, latest ack and latest clear, each an indexed `LIMIT 1` read. Rows read per round therefore follow the fleet's size and never the history. Other anomaly kinds stay with `pij anomalies`;
 - every seat, largest context first, with role, turn state, declared state, context, idle time, cache warmth and the cold-wake price of waking it.
 
 The digest reports facts. Policy, such as caps and exemptions, lives in the PA brief (`skills/pij/references/prime/pa.md`).
 
 **Quiet is a brake, not a policy.** A due PA whose fleet fingerprint is unchanged since its last nudge gets no message and waits another interval. The fingerprint covers, for every seat except the PA itself, its turn state, declared state, context size and attention flag, plus the open anomalies. Removing the check would only re-send the same digest. The PA's own row is excluded because answering one nudge would otherwise cause the next. A failed send leaves the old fingerprint in place, so the next interval retries.
+
+**Bounded work per round.** Transcript reads have a 3s wait, and at most one read per seat is ever outstanding. A read that outlives its wait is kept, that seat shows `?`, and no second read starts behind it until it lands. Spine reads are the per-seat `LIMIT 1` card, ack and clear reads described above.
 
 Every round for a due PA appends a `watchdog.round` event. Its payload carries `outcome` (`nudged` or `quiet`), `prime`, `scope`, `seats` and `delivery` (the receipt outcome, or the error text). Round memory is in-process and not persisted.
 
@@ -826,7 +828,7 @@ Every round for a due PA appends a `watchdog.round` event. Its payload carries `
 Any other seat is watched only while it is opted in. `pij watchdog on [<seat>] [--every <duration>]` turns it on, `pij watchdog off [<seat>]` turns it off, and `pij watchdog status [<seat>]` lists `{pas, optins}`. The seat defaults to the caller. **Any seat may switch any live seat's watchdog**; the store row (`seat_watchdogs`, migration 0029) records `set_by` and `set_at`.
 
 - `--every` defaults to the PA interval and must be at least `1m`.
-- The change is persisted before it is announced: a `watchdog.on` or `watchdog.off` event, then, when the caller is not the subject, a held FYI to the subject. The FYI names who changed it and how to undo it, and opens no turn. The receipt's `subject_told` reports that FYI.
+- The change is persisted before it is announced. A real change appends one `watchdog.on` or `watchdog.off` event. When the caller is not the subject, the subject is also sent a held FYI that names the change and points to `pij watchdog status`; it opens no turn, and the receipt's `subject_told` reports it. These notices are **coalesced**: until the subject reads its FYIs, they share the id `watchdog-control:<seat>:<seq of its latest fyi.delivered>`, which the store ignores when repeated. So on/off churn leaves at most one pending notice per seat. The receipt's `changed` says whether anything changed. A no-op, such as `off` on a seat that is already off or `on` at the current interval, notifies nobody; it is audited as `watchdog.unchanged`, with the actor and the action.
 - Refusals:
   - `E-RS-ARG` (400) for bad grammar, including the old TS leaves such as `disable-all`;
   - `E-RS-NO-SEAT` (404) for a missing or tombstoned seat;

@@ -409,7 +409,29 @@ async fn any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told() {
         .await
         .unwrap();
     let delivery = Arc::clone(&services.delivery);
+    let spine = Arc::clone(&services.spine);
     let watchdogs = services.watchdogs();
+    let audit = || {
+        let spine = Arc::clone(&spine);
+        async move {
+            spine
+                .tail(None, pij_core::model::Seq(0))
+                .await
+                .unwrap()
+                .into_iter()
+                .fold((0, 0), |(changes, unchanged), event| {
+                    match event.kind.as_str() {
+                        "watchdog.on" | "watchdog.off" => (changes + 1, unchanged),
+                        "watchdog.unchanged" => (changes, unchanged + 1),
+                        _ => (changes, unchanged),
+                    }
+                })
+        }
+    };
+    let told = |seat: &'static str| {
+        let delivery = Arc::clone(&delivery);
+        async move { delivery.pending_fyi_count(&seat.into()).await.unwrap() }
+    };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = crate::http::router_with_config(
@@ -435,6 +457,19 @@ async fn any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told() {
         )
     };
 
+    // A no-op notifies nobody; the attempt is audited as unchanged (review of #38).
+    let (status, noop) = call(vec!["watchdog", "off", "pij-worker"]).await;
+    assert_eq!(
+        (status, noop["data"]["changed"].clone()),
+        (200, false.into()),
+        "{noop}"
+    );
+    assert_eq!(
+        (told("pij-worker").await, audit().await),
+        (0, (0, 1)),
+        "off on an off seat notifies nobody"
+    );
+
     let (status, on) = call(vec!["watchdog", "on", "pij-worker", "--every", "30m"]).await;
     assert_eq!(status, 200, "{on}");
     assert_eq!(on["data"]["enabled"], true);
@@ -442,12 +477,16 @@ async fn any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told() {
     assert_eq!(on["data"]["set_by"], "pij-prime");
     assert_eq!(on["data"]["subject_told"], "held (fyi)", "{on}");
     assert_eq!(
-        delivery
-            .pending_fyi_count(&"pij-worker".into())
-            .await
-            .unwrap(),
-        1,
-        "the subject learns who changed its watchdog, without being woken"
+        (told("pij-worker").await, audit().await),
+        (1, (1, 1)),
+        "a real change tells the subject once, without waking it, and is audited once"
+    );
+    let (_, again) = call(vec!["watchdog", "on", "pij-worker", "--every", "30m"]).await;
+    assert_eq!(again["data"]["changed"], false, "{again}");
+    assert_eq!(
+        (told("pij-worker").await, audit().await),
+        (1, (1, 2)),
+        "repeating on is silent"
     );
     assert_eq!(
         watchdogs.list_watchdogs().await.unwrap(),
@@ -473,11 +512,32 @@ async fn any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told() {
     assert_eq!(
         (
             off["data"]["enabled"].clone(),
-            off["data"]["was_on"].clone()
+            off["data"]["changed"].clone()
         ),
         (false.into(), true.into())
     );
     assert!(watchdogs.list_watchdogs().await.unwrap().is_empty());
+    assert_eq!(
+        (told("pij-worker").await, audit().await),
+        (1, (2, 2)),
+        "off is a real change, audited; its notice coalesces with the unread one"
+    );
+    let (_, again) = call(vec!["watchdog", "off", "pij-worker"]).await;
+    assert_eq!(again["data"]["changed"], false);
+    assert_eq!(
+        (told("pij-worker").await, audit().await),
+        (1, (2, 3)),
+        "repeating off is silent"
+    );
+    for _ in 0..5 {
+        call(vec!["watchdog", "on", "pij-worker"]).await;
+        call(vec!["watchdog", "off", "pij-worker"]).await;
+    }
+    assert_eq!(
+        (told("pij-worker").await, audit().await.0),
+        (1, 12),
+        "churn is audited per change, but leaves one pending notice, not a backlog"
+    );
 
     let (status, missing) = call(vec!["watchdog", "on", "pij-ghost"]).await;
     assert_eq!(
@@ -485,4 +545,228 @@ async fn any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told() {
         (404, "E-RS-NO-SEAT".into())
     );
     server.abort();
+}
+
+/// Counts every row a spine read returns; writes pass through uncounted.
+struct CountingSpine {
+    inner: Arc<dyn pij_core::ports::Spine>,
+    rows: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl pij_core::ports::Spine for CountingSpine {
+    async fn append(
+        &self,
+        event: pij_core::model::Event,
+    ) -> pij_core::error::Result<pij_core::model::Seq> {
+        self.inner.append(event).await
+    }
+    async fn tail(
+        &self,
+        seat: Option<&SeatId>,
+        since: pij_core::model::Seq,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        let rows = self.inner.tail(seat, since).await?;
+        self.rows.fetch_add(rows.len(), Ordering::Relaxed);
+        Ok(rows)
+    }
+    async fn latest_matching(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        let row = self.inner.latest_matching(seat, kinds).await?;
+        self.rows
+            .fetch_add(usize::from(row.is_some()), Ordering::Relaxed);
+        Ok(row)
+    }
+    async fn latest_matching_message(
+        &self,
+        seat: &SeatId,
+        kind: &str,
+        msg_id: &str,
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        let row = self
+            .inner
+            .latest_matching_message(seat, kind, msg_id)
+            .await?;
+        self.rows
+            .fetch_add(usize::from(row.is_some()), Ordering::Relaxed);
+        Ok(row)
+    }
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        let rows = self.inner.matching_since(seat, window).await?;
+        self.rows.fetch_add(rows.len(), Ordering::Relaxed);
+        Ok(rows)
+    }
+}
+
+/// Review of #38: every round, quiet or due, folded the whole spine. Rows
+/// read per round must follow the fleet, not history: grow unrelated history
+/// by thousands of events and the count does not move.
+#[tokio::test]
+async fn rows_read_per_round_stay_flat_as_unrelated_history_grows() {
+    let repos = Repos::new();
+    let (mut services, _store) = services().await;
+    let inner = Arc::clone(&services.spine);
+    let counting = Arc::new(CountingSpine {
+        inner: Arc::clone(&inner),
+        rows: AtomicUsize::new(0),
+    });
+    // Every read path the round could take goes through the counter,
+    // including the bus that the whole-history anomaly scan used.
+    services.spine = counting.clone();
+    services.event_bus = Arc::new(crate::events::EventBus::new(counting.clone(), 64).unwrap());
+    services.anomalies = Arc::new(crate::http::anomalies::AnomalyService::new(
+        services.watchdogs(),
+        Arc::clone(&services.registry),
+        Arc::clone(&services.event_bus),
+        Arc::clone(&services.liveness),
+    ));
+    let main = repos.path("main");
+    services
+        .registry
+        .put(seat("pij-prime", &main, None))
+        .await
+        .unwrap();
+    services
+        .registry
+        .put(seat("pij-pa", &main, Some("pij-prime")))
+        .await
+        .unwrap();
+    let mut coder = seat("pij-coder", &main, None);
+    services.registry.put(coder.clone()).await.unwrap();
+    services
+        .roles
+        .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
+        .await
+        .unwrap();
+    let noise = |count: usize| {
+        let inner = Arc::clone(&inner);
+        async move {
+            for n in 0..count {
+                inner
+                    .append(pij_core::model::Event {
+                        seq: None,
+                        v: 1,
+                        at: n as u64,
+                        kind: "report.now".into(),
+                        seat: Some("pij-noise".into()),
+                        payload: "{\"did\":\"x\",\"next\":\"y\"}".into(),
+                    })
+                    .await
+                    .unwrap();
+            }
+        }
+    };
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    let at = |intervals: u64| start + intervals * INTERVAL * 1_000;
+    let round = |when: u64| {
+        let (services, watchdog, counting) = (&services, &watchdog, &counting);
+        async move {
+            let before = counting.rows.load(Ordering::Relaxed);
+            let outcome = watchdog.round(services, INTERVAL, when).await.unwrap();
+            (outcome, counting.rows.load(Ordering::Relaxed) - before)
+        }
+    };
+
+    round(start).await;
+    noise(4_096).await;
+    let (first, reads_due) = round(at(1)).await;
+    assert!(
+        matches!(first[..], [RoundOutcome::Nudged { .. }]),
+        "{first:?}"
+    );
+    assert!(
+        reads_due <= 3 * 3,
+        "at most three LIMIT 1 reads per fleet seat, got {reads_due}"
+    );
+
+    noise(4_096).await;
+    let (quiet, reads_quiet) = round(at(2)).await;
+    assert_eq!(quiet, vec![RoundOutcome::Quiet("pij-pa".into())]);
+    assert_eq!(
+        reads_quiet, reads_due,
+        "a quiet round reads the same, whatever the history"
+    );
+
+    noise(4_096).await;
+    coder.state = SystemState::Working;
+    services_put(&services, coder).await;
+    let (changed, reads_changed) = round(at(3)).await;
+    assert!(
+        matches!(changed[..], [RoundOutcome::Nudged { .. }]),
+        "{changed:?}"
+    );
+    assert_eq!(
+        reads_changed, reads_due,
+        "12k unrelated events later, rows read are flat"
+    );
+}
+
+async fn services_put(services: &crate::Services, seat: SeatDescriptor) {
+    services.registry.put(seat).await.unwrap();
+}
+
+/// Review of #38: a cold transcript read can outlive its 3s wait. The next
+/// round must not start another read behind it, so reads per seat stay at one
+/// however many rounds pass.
+#[tokio::test]
+async fn a_status_read_that_outlives_its_wait_is_never_started_twice() {
+    let repos = Repos::new();
+    let (mut services, _store) = services().await;
+    let start = now_ms();
+    let source = Arc::new(
+        FakeSessionStatus::new()
+            .with_reply("session-pij-prime", sized(400_000, start))
+            .with_reply("session-pij-pa", sized(90_000, start))
+            .with_hang("session-pij-coder"),
+    );
+    services.session_status = source.clone();
+    let main = repos.path("main");
+    services
+        .registry
+        .put(seat("pij-prime", &main, None))
+        .await
+        .unwrap();
+    services
+        .registry
+        .put(seat("pij-pa", &main, Some("pij-prime")))
+        .await
+        .unwrap();
+    services
+        .registry
+        .put(seat("pij-coder", &main, None))
+        .await
+        .unwrap();
+    services
+        .roles
+        .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
+        .await
+        .unwrap();
+    let coder_reads = || {
+        source
+            .calls()
+            .iter()
+            .filter(|call| format!("{call:?}").contains("status:pij-coder:"))
+            .count()
+    };
+    let watchdog = PaWatchdog::default();
+    watchdog.round(&services, INTERVAL, start).await.unwrap();
+    for intervals in 1..=3 {
+        watchdog
+            .round(&services, INTERVAL, start + intervals * INTERVAL * 1_000)
+            .await
+            .unwrap();
+        assert_eq!(
+            coder_reads(),
+            1,
+            "round {intervals}: one hung read, never a second"
+        );
+    }
 }

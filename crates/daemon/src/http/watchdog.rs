@@ -131,6 +131,28 @@ fn parse(body: Value) -> std::result::Result<Call, String> {
     })
 }
 
+/// Record an attempted change that changed nothing: attributed, and kept
+/// distinct from a real change, but it notifies nobody (review of #38).
+async fn audit_unchanged(
+    state: &AppState,
+    actor: &SeatId,
+    target: &SeatId,
+    action: &str,
+    now: u64,
+) {
+    let event = Event {
+        seq: None,
+        v: 1,
+        at: now,
+        kind: "watchdog.unchanged".into(),
+        seat: Some(target.clone()),
+        payload: json!({"seat": target, "actor": actor, "action": action}).to_string(),
+    };
+    if let Err(cause) = state.services.event_bus.publish(event).await {
+        eprintln!("watchdog: audit for {target} failed: {cause}");
+    }
+}
+
 pub(crate) async fn watchdog(
     State(state): State<AppState>,
     body: std::result::Result<Json<Value>, JsonRejection>,
@@ -210,9 +232,27 @@ pub(crate) async fn watchdog(
     };
 
     let (receipt, notice) = if call.action == Action::On {
+        let interval_secs = call.every_secs.unwrap_or(services.watchdog_default_secs());
+        let current = match store.list_watchdogs().await {
+            Ok(optins) => optins.into_iter().find(|optin| optin.seat == target.id),
+            Err(cause) => return store_failure(cause),
+        };
+        // Already on at this interval: a no-op notifies nobody and records
+        // nothing (review of #38).
+        if let Some(current) = current.filter(|current| current.interval_secs == interval_secs) {
+            audit_unchanged(&state, &actor.id, &target.id, "on", now).await;
+            return envelope(
+                StatusCode::OK,
+                &Envelope::ok(
+                    COMMAND,
+                    json!({"seat": current.seat, "enabled": true, "changed": false,
+                           "interval_secs": current.interval_secs, "set_by": current.set_by}),
+                ),
+            );
+        }
         let optin = WatchdogOptIn {
             seat: target.id.clone(),
-            interval_secs: call.every_secs.unwrap_or(services.watchdog_default_secs()),
+            interval_secs,
             set_by: actor.id.clone(),
             set_at_ms: now,
         };
@@ -221,23 +261,29 @@ pub(crate) async fn watchdog(
         }
         let every = pij_core::cold_wake::human_duration(optin.interval_secs * 1_000);
         (
-            json!({"seat": optin.seat, "enabled": true, "interval_secs": optin.interval_secs, "set_by": optin.set_by}),
-            format!(
-                "[pij watchdog] {} turned your watchdog on: you'll be nudged after {every} quiet. Stop it any time: `pij watchdog off`.",
-                actor.id
-            ),
+            json!({"seat": optin.seat, "enabled": true, "changed": true,
+                   "interval_secs": optin.interval_secs, "set_by": optin.set_by}),
+            format!("{} turned it on (every {every})", actor.id),
         )
     } else {
         let was_on = match store.clear_watchdog(&target.id).await {
             Ok(was_on) => was_on,
             Err(cause) => return store_failure(cause),
         };
+        // Already off: a no-op notifies nobody and records nothing.
+        if !was_on {
+            audit_unchanged(&state, &actor.id, &target.id, "off", now).await;
+            return envelope(
+                StatusCode::OK,
+                &Envelope::ok(
+                    COMMAND,
+                    json!({"seat": target.id, "enabled": false, "changed": false}),
+                ),
+            );
+        }
         (
-            json!({"seat": target.id, "enabled": false, "was_on": was_on, "set_by": actor.id}),
-            format!(
-                "[pij watchdog] {} turned your watchdog off. Turn it back on with `pij watchdog on`.",
-                actor.id
-            ),
+            json!({"seat": target.id, "enabled": false, "changed": true, "set_by": actor.id}),
+            format!("{} turned it off", actor.id),
         )
     };
 
@@ -262,16 +308,31 @@ pub(crate) async fn watchdog(
     }
 
     // Tell the subject when someone else changed its watchdog. Held, so it
-    // opens no turn: the seat reads it with its next message.
+    // opens no turn. Coalesced: until the seat reads its FYIs, every control
+    // notice shares one id (the store ignores a repeated id), so on/off churn
+    // leaves at most one pending notice per seat. The notice names the latest
+    // change but sends the seat to `status` for the current setting.
     let mut receipt = receipt;
     if target.id != actor.id {
+        let epoch = match services
+            .spine
+            .latest_matching(&target.id, &["fyi.delivered"])
+            .await
+        {
+            Ok(read) => read.and_then(|event| event.seq).map_or(0, |seq| seq.0),
+            Err(cause) => return store_failure(cause),
+        };
         let told = services
             .delivery
             .hold_fyi(Msg {
                 from: actor.id.clone(),
                 to: target.id.clone(),
-                body: notice,
-                msg_id: services.delivery.next_message_id(),
+                body: format!(
+                    "[pij watchdog] your watchdog was changed ({notice}). See the current setting: \
+                     `pij watchdog status {}`. Stop it any time: `pij watchdog off`.",
+                    target.id
+                ),
+                msg_id: format!("watchdog-control:{}:{epoch}", target.id),
                 from_machine: None,
                 in_reply_to: None,
                 command: None,

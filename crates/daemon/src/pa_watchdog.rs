@@ -14,22 +14,28 @@
 //! that has nothing to look at — the "stop polling when the work dries up"
 //! rule PAs used to enforce on themselves with timers.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use pij_core::BG_ACTOR;
+use pij_core::anomalies::{
+    ANOMALY_ACK_KIND, ANOMALY_CLEAR_KIND, AnomalyStatus, AnomalyThresholds, AnomalyView, Detector,
+    StatusStaleDetector,
+};
 use pij_core::cold_wake::seat_size;
 use pij_core::error::{PijError, Result};
+use pij_core::model::Card;
 use pij_core::model::{DeliveryOutcome, Event, SeatDescriptor, SeatId};
 use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
 use pij_core::ports::SeatFilter;
+use pij_core::report::CardRecord;
 use pij_core::session_status::SessionStatusBlock;
 use pij_core::watchdog::{
     PA_ROLE, WatchdogControl, WatchdogEntry, WatchdogService, optin_due, optin_nudge,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::sync::Mutex;
 
 use crate::{Services, lifecycle};
@@ -103,6 +109,8 @@ pub struct PaWatchdog {
     repos: Mutex<HashMap<String, String>>,
     /// When each opted-in seat was last nudged, in seconds.
     optin_nudged: Mutex<HashMap<SeatId, u64>>,
+    /// Status reads that outlived their wait, at most one per seat.
+    pending_reads: Mutex<HashMap<SeatId, tokio::task::JoinHandle<SessionStatusBlock>>>,
 }
 
 /// Start the loop. Errors are logged per tick and never stop it.
@@ -184,19 +192,12 @@ impl PaWatchdog {
             return Ok(outcomes);
         }
 
-        let anomalies = match services.anomalies.list(&BTreeMap::new(), None).await {
-            Ok(value) => anomaly_rows(&value),
-            Err(cause) => {
-                eprintln!("pa watchdog: anomalies unavailable: {cause}");
-                Vec::new()
-            }
-        };
         for nudge in due {
             let Some(pa) = seats.iter().find(|seat| seat.id == nudge.seat) else {
                 continue;
             };
             let view = self
-                .fleet(services, pa, &seats, &anomalies, interval_secs, now_ms)
+                .fleet(services, pa, &seats, interval_secs, now_ms)
                 .await;
             let fingerprint = view.fingerprint();
             let unchanged = {
@@ -333,7 +334,6 @@ impl PaWatchdog {
         services: &Services,
         pa: &SeatDescriptor,
         seats: &[SeatDescriptor],
-        anomalies: &[FleetAnomaly],
         interval_secs: u64,
         now_ms: u64,
     ) -> FleetView {
@@ -350,53 +350,71 @@ impl PaWatchdog {
             }
         }
 
-        let mut reads = tokio::task::JoinSet::new();
-        for (index, seat) in members.iter().enumerate() {
-            let source = Arc::clone(&services.session_status);
-            let (id, harness, session) =
-                (seat.id.clone(), seat.harness, seat.harness_session.clone());
-            reads.spawn(async move {
-                let block = tokio::time::timeout(
-                    STATUS_WAIT,
+        // One outstanding read per seat, ever (review of #38). A cold read can
+        // fold a whole transcript and outlive the wait; the next round must
+        // not start another behind it, so a seat whose read is still running
+        // shows `?` until that read lands.
+        let deadline = tokio::time::Instant::now() + STATUS_WAIT;
+        let mut handles = Vec::with_capacity(members.len());
+        {
+            let mut pending = self.pending_reads.lock().await;
+            pending.retain(|_, handle| !handle.is_finished());
+            for seat in &members {
+                if let Some(running) = pending.remove(&seat.id)
+                    && !running.is_finished()
+                {
+                    pending.insert(seat.id.clone(), running);
+                    handles.push(None);
+                    continue;
+                }
+                let source = Arc::clone(&services.session_status);
+                let (id, harness, session) =
+                    (seat.id.clone(), seat.harness, seat.harness_session.clone());
+                handles.push(Some(tokio::spawn(async move {
                     crate::http::session_status_block(
                         source.as_ref(),
                         &id,
                         harness,
                         session,
                         now_ms,
-                    ),
-                )
-                .await
-                .unwrap_or_else(|_| SessionStatusBlock::Failed {
-                    error: format!("no answer within {}s", STATUS_WAIT.as_secs()),
-                });
-                (index, block)
-            });
-        }
-        let mut blocks: Vec<Option<SessionStatusBlock>> = vec![None; members.len()];
-        while let Some(joined) = reads.join_next().await {
-            if let Ok((index, block)) = joined {
-                blocks[index] = Some(block);
+                    )
+                    .await
+                })));
             }
+        }
+        let mut blocks = Vec::with_capacity(members.len());
+        for (seat, handle) in members.iter().zip(handles) {
+            let Some(mut handle) = handle else {
+                blocks.push(SessionStatusBlock::Failed {
+                    error: "previous read still running".into(),
+                });
+                continue;
+            };
+            blocks.push(match tokio::time::timeout_at(deadline, &mut handle).await {
+                Ok(Ok(block)) => block,
+                Ok(Err(cause)) => SessionStatusBlock::Failed {
+                    error: format!("status read failed: {cause}"),
+                },
+                Err(_) => {
+                    self.pending_reads
+                        .lock()
+                        .await
+                        .insert(seat.id.clone(), handle);
+                    SessionStatusBlock::Failed {
+                        error: format!("no answer within {}s", STATUS_WAIT.as_secs()),
+                    }
+                }
+            });
         }
         let rows = members
             .into_iter()
             .zip(blocks)
-            .map(|(seat, block)| {
-                let block = block.unwrap_or(SessionStatusBlock::Failed {
-                    error: "status read panicked".into(),
-                });
-                FleetRow {
-                    size: seat_size(seat.state, &block, now_ms),
-                    seat,
-                }
+            .map(|(seat, block)| FleetRow {
+                size: seat_size(seat.state, &block, now_ms),
+                seat,
             })
             .collect::<Vec<_>>();
-        let anomalies = anomalies
-            .iter()
-            .filter(|anomaly| rows.iter().any(|row| row.seat.id == anomaly.seat))
-            .cloned()
-            .collect();
+        let anomalies = stale_cards(services, &rows, now_ms).await;
         FleetView {
             pa: pa.id.clone(),
             prime: prime.map(|prime| prime.id.clone()),
@@ -465,17 +483,80 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
     }
 }
 
-fn anomaly_rows(value: &Value) -> Vec<FleetAnomaly> {
-    value["anomalies"]
-        .as_array()
+/// Stale cards in the fleet, read in bounded time.
+///
+/// `AnomalyService::list` folds the whole spine on every call, which a
+/// per-tick loop cannot afford (review of #38: rows read grew with unrelated
+/// history). The digest needs one anomaly kind, so this runs the anomaly
+/// authority's own [`StatusStaleDetector`] (its threshold, parked-state
+/// suppression and ack/clear dispositions) over a bounded view: per fleet
+/// seat, its latest card and its latest ack and clear, each one indexed
+/// `LIMIT 1` read. Reads follow the fleet's size, never history. The other
+/// kinds stay with `pij anomalies`.
+async fn stale_cards(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec<FleetAnomaly> {
+    let mut seats = Vec::new();
+    let mut cards = Vec::new();
+    let mut dispositions = Vec::new();
+    for row in rows {
+        let read = async {
+            let card = services
+                .spine
+                .latest_matching(&row.seat.id, &["report.now"])
+                .await?;
+            let ack = services
+                .spine
+                .latest_matching(&row.seat.id, &[ANOMALY_ACK_KIND])
+                .await?;
+            let clear = services
+                .spine
+                .latest_matching(&row.seat.id, &[ANOMALY_CLEAR_KIND])
+                .await?;
+            Ok::<_, PijError>((card, ack, clear))
+        };
+        let (card, ack, clear) = match read.await {
+            Ok(found) => found,
+            Err(cause) => {
+                eprintln!("pa watchdog: card read for {} failed: {cause}", row.seat.id);
+                continue;
+            }
+        };
+        seats.push(row.seat.clone());
+        if let Some(event) = card
+            && let Ok(record) = serde_json::from_str::<CardRecord>(&event.payload)
+        {
+            cards.push(Card {
+                seat: row.seat.id.clone(),
+                did: record.did,
+                next: record.next,
+                at: event.at,
+                seq: event.seq,
+            });
+        }
+        dispositions.extend(ack.into_iter().chain(clear));
+    }
+    let view = AnomalyView {
+        now_ms,
+        thresholds: AnomalyThresholds::default(),
+        seats: &seats,
+        cards: &cards,
+        activity: &[],
+        dispatches: &[],
+        done: &[],
+        dispositions: &dispositions,
+        decisions: &[],
+        dead: &[],
+    };
+    StatusStaleDetector
+        .scan(&view)
         .into_iter()
-        .flatten()
-        .filter_map(|row| {
-            Some(FleetAnomaly {
-                seat: SeatId::from(row["seat"].as_str()?.to_string()),
-                kind: row["kind"].as_str()?.to_string(),
-                detail: row["detail"].as_str().unwrap_or_default().to_string(),
-            })
+        .filter(|row| row.status == AnomalyStatus::Open)
+        .map(|row| FleetAnomaly {
+            detail: format!(
+                "card {} old",
+                pij_core::cold_wake::human_duration(row.age_ms.unwrap_or_default())
+            ),
+            seat: row.seat,
+            kind: row.kind.as_str().to_string(),
         })
         .collect()
 }
