@@ -770,3 +770,89 @@ async fn a_status_read_that_outlives_its_wait_is_never_started_twice() {
         );
     }
 }
+
+/// Review of 20bcfb3 (pij-efficient-lemur): `anomaly.clear` events for every
+/// kind share one event kind, so "the seat's latest clear" can belong to a
+/// different occurrence. Clearing another anomaly must not resurrect a stale
+/// card that was already cleared.
+#[tokio::test]
+async fn clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card() {
+    let (services, _store) = services().await;
+    services
+        .registry
+        .put(seat("pij-prime", "/review-dispositions", None))
+        .await
+        .unwrap();
+    services
+        .registry
+        .put(seat("pij-pa", "/review-dispositions", Some("pij-prime")))
+        .await
+        .unwrap();
+    services
+        .roles
+        .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
+        .await
+        .unwrap();
+    let start = now_ms();
+    let card = services
+        .spine
+        .append(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: 1,
+            kind: "report.now".into(),
+            seat: Some("pij-prime".into()),
+            payload: serde_json::json!({"did": "seeded old card", "next": "continue"}).to_string(),
+        })
+        .await
+        .unwrap();
+    let clear = |occurrence: String| pij_core::model::Event {
+        seq: None,
+        v: 1,
+        at: start,
+        kind: "anomaly.clear".into(),
+        seat: Some("pij-prime".into()),
+        payload: serde_json::json!({"occurrence": occurrence, "actor": "pij-prime"}).to_string(),
+    };
+    services
+        .spine
+        .append(clear(format!("status-stale:pij-prime:{}", card.0)))
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    watchdog.round(&services, INTERVAL, start).await.unwrap();
+    assert!(matches!(
+        watchdog
+            .round(&services, INTERVAL, start + INTERVAL * 1_000)
+            .await
+            .unwrap()
+            .as_slice(),
+        [RoundOutcome::Nudged { .. }]
+    ));
+    let (_, job) = services
+        .queue
+        .peek(&["delivery:pij-pa".to_string()])
+        .await
+        .unwrap()
+        .expect("first digest queued");
+    let first = serde_json::from_str::<pij_core::model::Msg>(&job.payload)
+        .unwrap()
+        .body;
+    assert!(
+        !first.contains("pij-prime  status-stale"),
+        "a cleared stale card is not flagged: {first}"
+    );
+    services
+        .spine
+        .append(clear("dead-seat:pij-prime:99999".into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        watchdog
+            .round(&services, INTERVAL, start + 2 * INTERVAL * 1_000)
+            .await
+            .unwrap(),
+        vec![RoundOutcome::Quiet("pij-pa".into())],
+        "clearing another anomaly must not resurrect the same cleared stale card"
+    );
+}

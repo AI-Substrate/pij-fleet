@@ -21,15 +21,16 @@ use std::time::Duration;
 
 use pij_core::BG_ACTOR;
 use pij_core::anomalies::{
-    ANOMALY_ACK_KIND, ANOMALY_CLEAR_KIND, AnomalyStatus, AnomalyThresholds, AnomalyView, Detector,
+    ANOMALY_ACK_KIND, ANOMALY_CLEAR_KIND, AnomalyThresholds, AnomalyView, Detector,
     StatusStaleDetector,
 };
 use pij_core::cold_wake::seat_size;
 use pij_core::error::{PijError, Result};
 use pij_core::model::Card;
-use pij_core::model::{DeliveryOutcome, Event, SeatDescriptor, SeatId};
+use pij_core::model::{DeliveryOutcome, Event, SeatDescriptor, SeatId, Seq};
 use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
 use pij_core::ports::SeatFilter;
+use pij_core::ports::SpineWindow;
 use pij_core::report::CardRecord;
 use pij_core::session_status::SessionStatusBlock;
 use pij_core::watchdog::{
@@ -486,35 +487,30 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
 /// Stale cards in the fleet, read in bounded time.
 ///
 /// `AnomalyService::list` folds the whole spine on every call, which a
-/// per-tick loop cannot afford (review of #38: rows read grew with unrelated
-/// history). The digest needs one anomaly kind, so this runs the anomaly
-/// authority's own [`StatusStaleDetector`] (its threshold, parked-state
-/// suppression and ack/clear dispositions) over a bounded view: per fleet
-/// seat, its latest card and its latest ack and clear, each one indexed
-/// `LIMIT 1` read. Reads follow the fleet's size, never history. The other
+/// per-tick loop cannot afford (review of #38). The digest needs one anomaly
+/// kind, so this runs the anomaly authority's own [`StatusStaleDetector`]
+/// (its threshold and parked-state suppression) over bounded reads:
+///
+/// 1. per fleet seat, its latest card: one indexed `LIMIT 1` read;
+/// 2. per *stale* card only, its own disposition. Clears and acks for every
+///    anomaly kind share their event kinds, so "the seat's latest clear" can
+///    belong to another occurrence (review of 20bcfb3). Each candidate is
+///    therefore matched by occurrence key against the seat's clears and acks
+///    since that card, a seat- and kind-indexed window capped at
+///    [`DISPOSITION_PAGES`] pages.
+///
+/// Reads follow the fleet and its stale cards, never history. The other
 /// kinds stay with `pij anomalies`.
 async fn stale_cards(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec<FleetAnomaly> {
     let mut seats = Vec::new();
     let mut cards = Vec::new();
-    let mut dispositions = Vec::new();
     for row in rows {
-        let read = async {
-            let card = services
-                .spine
-                .latest_matching(&row.seat.id, &["report.now"])
-                .await?;
-            let ack = services
-                .spine
-                .latest_matching(&row.seat.id, &[ANOMALY_ACK_KIND])
-                .await?;
-            let clear = services
-                .spine
-                .latest_matching(&row.seat.id, &[ANOMALY_CLEAR_KIND])
-                .await?;
-            Ok::<_, PijError>((card, ack, clear))
-        };
-        let (card, ack, clear) = match read.await {
-            Ok(found) => found,
+        let card = match services
+            .spine
+            .latest_matching(&row.seat.id, &["report.now"])
+            .await
+        {
+            Ok(card) => card,
             Err(cause) => {
                 eprintln!("pa watchdog: card read for {} failed: {cause}", row.seat.id);
                 continue;
@@ -532,7 +528,6 @@ async fn stale_cards(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec
                 seq: event.seq,
             });
         }
-        dispositions.extend(ack.into_iter().chain(clear));
     }
     let view = AnomalyView {
         now_ms,
@@ -542,23 +537,69 @@ async fn stale_cards(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec
         activity: &[],
         dispatches: &[],
         done: &[],
-        dispositions: &dispositions,
+        dispositions: &[],
         decisions: &[],
         dead: &[],
     };
-    StatusStaleDetector
-        .scan(&view)
-        .into_iter()
-        .filter(|row| row.status == AnomalyStatus::Open)
-        .map(|row| FleetAnomaly {
+    let mut stale = Vec::new();
+    for row in StatusStaleDetector.scan(&view) {
+        let since = cards
+            .iter()
+            .find(|card| card.seat == row.seat)
+            .map_or(0, |card| card.at);
+        match disposed(services, &row.seat, &row.occurrence, since).await {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(cause) => {
+                // Unknown is not "cleared": show the card rather than hide it.
+                eprintln!(
+                    "pa watchdog: disposition read for {} failed: {cause}",
+                    row.seat
+                );
+            }
+        }
+        stale.push(FleetAnomaly {
             detail: format!(
                 "card {} old",
                 pij_core::cold_wake::human_duration(row.age_ms.unwrap_or_default())
             ),
             seat: row.seat,
             kind: row.kind.as_str().to_string(),
-        })
-        .collect()
+        });
+    }
+    stale
+}
+
+/// Pages a single disposition search may read, per kind.
+const DISPOSITION_PAGES: usize = 4;
+/// Rows per disposition page.
+const DISPOSITION_PAGE: usize = 256;
+
+/// Was this exact occurrence cleared or acknowledged since its card?
+async fn disposed(
+    services: &Services,
+    seat: &SeatId,
+    occurrence: &str,
+    since_at: u64,
+) -> Result<bool> {
+    for kind in [ANOMALY_CLEAR_KIND, ANOMALY_ACK_KIND] {
+        let mut window = Some(SpineWindow::new(kind, since_at, Seq(0), DISPOSITION_PAGE)?);
+        let mut pages = 0;
+        while let Some(current) = window.take() {
+            let page = services.spine.matching_since(seat, &current).await?;
+            if page.iter().any(|event| {
+                serde_json::from_str::<serde_json::Value>(&event.payload)
+                    .is_ok_and(|payload| payload["occurrence"] == occurrence)
+            }) {
+                return Ok(true);
+            }
+            pages += 1;
+            if pages < DISPOSITION_PAGES {
+                window = current.next(&page);
+            }
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
