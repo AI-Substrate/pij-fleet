@@ -25,6 +25,7 @@ pub mod reaper;
 mod registration;
 mod serve;
 pub mod session_warmup;
+mod supervise;
 
 // u-orchestration's git-facts gatherer: IO belongs at the runtime root, and a
 // ninth crate would have been a graph change for one module.
@@ -192,7 +193,8 @@ pub struct Daemon {
     /// rows a successor has already taken.
     sidecars: pij_sidecars::SidecarHandles,
     governance_shutdown: tokio::sync::oneshot::Sender<()>,
-    governance_observer: tokio::task::JoinHandle<Result<()>>,
+    /// Supervised: restarts after any failure and returns only on shutdown.
+    governance_observer: tokio::task::JoinHandle<()>,
     /// One-shot warming of live seats' session cursors; aborted if still running.
     session_warmup: tokio::task::JoinHandle<()>,
     /// Sender notices for parked deliveries; aborted, then joined, at shutdown.
@@ -246,7 +248,7 @@ impl Daemon {
                     .map_err(|error| PijError::Adapter {
                         adapter: "daemon/governance".to_string(),
                         message: format!("delivery observer task failed: {error}"),
-                    })?
+                    })
             },
         );
         // Join work we own first. Both this join and physical pool cleanup share
@@ -939,18 +941,10 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     };
 
     let (governance_shutdown, governance_shutdown_rx) = tokio::sync::oneshot::channel();
-    let governance = Arc::clone(&services.governance);
-    let governance_observer = tokio::spawn(async move {
-        tokio::select! {
-            result = governance.follow_deliveries() => {
-                if let Err(error) = &result {
-                    eprintln!("pij-rs governance delivery observer stopped: {error}");
-                }
-                result
-            }
-            _ = governance_shutdown_rx => Ok(()),
-        }
-    });
+    let governance_observer =
+        tokio::spawn(Arc::clone(&services.governance).observe_deliveries(async {
+            let _ = governance_shutdown_rx.await;
+        }));
 
     let pane_observer = pane_observer.start();
     let federation_worker = Arc::clone(&federation).start();

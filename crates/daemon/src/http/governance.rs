@@ -36,6 +36,7 @@ use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope, system_time_ms};
 use crate::events::EventBus;
 use crate::orchestration_repo::{StreamCreation, reserve_and_create_stream, scan_repo_inventory};
+use crate::supervise;
 
 /// Shared governance persistence and delivery-receipt projection.
 /// Construct after raw spine -> EventBus -> registry, with the same store pool.
@@ -63,8 +64,23 @@ impl GovernanceService {
         self.store.clone()
     }
 
-    /// Project real delivery outcomes. The caller supervises this future and
-    /// propagates failure; dropping it shuts the observer down. Subscribe before
+    /// The daemon's delivery observer: [`Self::follow_deliveries`], restarted
+    /// with [`supervise::RESTART`] backoff after every failure, until
+    /// `shutdown` resolves (pij-fleet#36). Each restart resubscribes and
+    /// reconciles, which is idempotent.
+    pub(crate) async fn observe_deliveries(self: Arc<Self>, shutdown: impl Future<Output = ()>) {
+        supervise::supervise(
+            "governance delivery observer",
+            supervise::RESTART,
+            || Arc::clone(&self).follow_deliveries(),
+            shutdown,
+        )
+        .await;
+    }
+
+    /// Project real delivery outcomes until the first failure. Run it through
+    /// [`Self::observe_deliveries`], which restarts it; dropping it shuts the
+    /// observer down. Subscribe before
     /// reconciliation so no receipt can fall between startup and the live tail.
     pub async fn follow_deliveries(self: Arc<Self>) -> Result<()> {
         let mut events = self.event_bus.subscribe_live(EventFilter::all());
@@ -2154,6 +2170,7 @@ mod tests {
     struct FailOnceSpine {
         inner: SqliteSpine,
         fail: AtomicBool,
+        fail_tail: AtomicBool,
     }
 
     #[async_trait]
@@ -2165,6 +2182,11 @@ mod tests {
             self.inner.append(event).await
         }
         async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>> {
+            if self.fail_tail.swap(false, Ordering::SeqCst) {
+                return Err(adapter(
+                    "injected: pool timed out while waiting for an open connection",
+                ));
+            }
             self.inner.tail(seat, since).await
         }
         async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
@@ -2194,6 +2216,7 @@ mod tests {
         let spine = Arc::new(FailOnceSpine {
             inner: SqliteSpine::new(pool.clone()),
             fail: AtomicBool::new(false),
+            fail_tail: AtomicBool::new(false),
         });
         let raw: Arc<dyn Spine> = spine.clone();
         let bus = Arc::new(EventBus::new(raw, 16).expect("bus"));
@@ -2208,6 +2231,65 @@ mod tests {
     fn delivered_event(dispatch: &Dispatch) -> Event {
         Event { seq: None, v: 1, at: dispatch.created_at + 1, kind: "delivery.outcome".into(), seat: Some(dispatch.to.clone()),
             payload: json!({"msg_id": dispatch.msg_id, "outcome": DeliveryOutcome::Delivered { origin: DeliveryOrigin::ReaderRead }, "transport": "inbox"}).to_string() }
+    }
+
+    /// pij-fleet#36: one transient store error at startup must not leave the
+    /// daemon without a delivery observer for the rest of its life.
+    #[tokio::test]
+    async fn delivery_observer_projects_deliveries_after_a_transient_store_error() {
+        let (_fresh, service, spine) = service().await;
+        let service = Arc::new(service);
+        let dispatch: Dispatch =
+            serde_json::from_value(event_record("dispatch-queued")).expect("dispatch");
+        assert!(
+            service
+                .store
+                .create_dispatch(&dispatch)
+                .await
+                .expect("dispatch")
+        );
+        spine.fail_tail.store(true, Ordering::SeqCst);
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let observer = tokio::spawn(Arc::clone(&service).observe_deliveries(async {
+            let _ = stopped.await;
+        }));
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while spine.fail_tail.load(Ordering::SeqCst) {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "observer never read the spine"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        service
+            .event_bus
+            .publish(delivered_event(&dispatch))
+            .await
+            .expect("delivery outcome after the transient failure");
+        loop {
+            let state = service
+                .store
+                .dispatch(&dispatch.id)
+                .await
+                .expect("row")
+                .expect("present")
+                .state;
+            if state == DispatchState::Delivered {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the observer died on one transient store error: dispatch stayed {state:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let _ = stop.send(());
+        tokio::time::timeout(Duration::from_secs(5), observer)
+            .await
+            .expect("observer stops on shutdown")
+            .expect("observer task joins");
     }
 
     #[tokio::test]
