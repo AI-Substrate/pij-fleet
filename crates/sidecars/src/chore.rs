@@ -56,6 +56,7 @@ pub fn job(request: &ChoreRequest, request_id: &str) -> Result<Job> {
         serial_key,
         payload: serde_json::to_string(request).map_err(codec_error)?,
         dedupe_key: request_id.to_string(),
+        dedupe_origin: None,
         attempt: 0,
     })
 }

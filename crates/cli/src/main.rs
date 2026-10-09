@@ -16,8 +16,8 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use pij_cli::{
     CallerContext, DaemonClient, IdentityRequest, Registration, ReviveRequest, SendRequest,
-    SpawnRequest, bounce, daemon_config, default_state_dir, exit_code, parse_destination, render,
-    render_frame, setup_refusal,
+    SpawnRequest, bounce, daemon_config, default_state_dir, exit_code, render, render_frame,
+    setup_refusal,
 };
 use pij_core::error::PijError;
 use pij_core::model::{Envelope, ErrorKind, Event, Harness, SeatDescriptor, SeatId, SemanticState};
@@ -67,7 +67,8 @@ enum Command {
         #[command(subcommand)]
         action: Option<DaemonAction>,
         /// Address to listen on. Resolution is `--bind`, then `PIJ_RS_BIND`,
-        /// then `127.0.0.1:7461`. Non-loopback exposes the bearer-key boundary.
+        /// then `127.0.0.1:7461`. Loopback on the same port is ALWAYS bound; a
+        /// non-loopback address is a second listener for paired machines.
         #[arg(long)]
         bind: Option<String>,
         /// Boot with every adapter FAKE: no store, no process table, nothing
@@ -75,6 +76,16 @@ enum Command {
         /// nothing is the more dangerous default.
         #[arg(long)]
         offline: bool,
+        /// Allow a non-loopback, non-Tailscale bind on a paired daemon. The
+        /// daemon speaks plain HTTP, so paired machines' keys then cross that
+        /// network in clear. Never needed for loopback or a Tailscale address.
+        #[arg(long)]
+        insecure_bind: bool,
+    },
+    /// Check or mint machine pairings (<state-dir>/peers.toml).
+    Peers {
+        #[command(subcommand)]
+        action: PeersAction,
     },
     /// Ask a running daemon whether it is healthy.
     Ping,
@@ -322,7 +333,7 @@ enum Command {
         #[arg(long)]
         from: Option<String>,
         /// `<seat>` or `<seat>@<machine>`; use `@@` for a literal seat `@`.
-        #[arg(long, value_parser = parse_destination)]
+        #[arg(long, value_parser = pij_core::address::parse_destination)]
         to: pij_core::model::Destination,
         /// Literal message body, including values beginning with `-`.
         #[arg(long, allow_hyphen_values = true, conflicts_with = "body_file")]
@@ -814,6 +825,15 @@ enum DaemonAction {
 }
 
 #[derive(Clone, Debug, Subcommand)]
+enum PeersAction {
+    /// Validate peers.toml (owner, mode 0600, unique aliases and keys) and
+    /// reach each peer with its key. Keys print as fingerprints only.
+    Check,
+    /// Print a fresh 256-bit pre-shared key for one machine pair.
+    NewKey,
+}
+
+#[derive(Clone, Debug, Subcommand)]
 enum DoctorAction {
     /// Report cross-session inbound state for every discovered Claude home.
     #[command(name = "claude-inbound")]
@@ -922,10 +942,41 @@ async fn run(cli: Cli) -> ExitCode {
             Err(message) => return emit_config_error(&cli, message),
         };
 
+    if let Command::Peers { action } = &cli.command {
+        return match action {
+            PeersAction::NewKey => match pij_daemon::pairing::new_key() {
+                Ok(key) => {
+                    if cli.json {
+                        emit(
+                            &Envelope::ok("pij peers new-key", json!({"key": key})),
+                            true,
+                        )
+                    } else {
+                        println!("{key}");
+                        ExitCode::SUCCESS
+                    }
+                }
+                Err(error) => emit(
+                    &setup_refusal::<Value>("pij peers new-key", error),
+                    cli.json,
+                ),
+            },
+            PeersAction::Check => {
+                let report =
+                    pij_cli::peers::check(&state_dir, nix::unistd::geteuid().as_raw()).await;
+                if cli.json {
+                    return emit(&report, true);
+                }
+                println!("{}", pij_cli::peers::render(&report));
+                ExitCode::from(exit_code(&report))
+            }
+        };
+    }
     if let Command::Daemon {
         action: None,
         bind,
         offline,
+        insecure_bind,
     } = &cli.command
     {
         let bind = match resolve_bind_addr(bind.as_deref(), std::env::var_os("PIJ_RS_BIND")) {
@@ -937,7 +988,15 @@ async fn run(cli: Cli) -> ExitCode {
                 Ok(harnesses) => harnesses,
                 Err(message) => return emit_config_error(&cli, message),
             };
-        return run_daemon(&bind, state_dir, hook_dir, *offline, retired_harnesses).await;
+        return run_daemon(
+            &bind,
+            state_dir,
+            hook_dir,
+            *offline,
+            *insecure_bind,
+            retired_harnesses,
+        )
+        .await;
     }
     if let Command::Daemon {
         action: Some(DaemonAction::Bounce),
@@ -1066,6 +1125,7 @@ async fn run(cli: Cli) -> ExitCode {
     match cli.command {
         Command::Daemon { .. } => unreachable!("daemon returned before client construction"),
         Command::Doctor { .. } => unreachable!("doctor returned before client construction"),
+        Command::Peers { .. } => unreachable!("peers returned before client construction"),
         Command::FleetReport { .. } => {
             unreachable!("fleet-report returned before client construction")
         }
@@ -2080,8 +2140,19 @@ async fn run_daemon(
     state_dir: PathBuf,
     hook_dir: PathBuf,
     offline: bool,
+    insecure_bind: bool,
     retired_harnesses: Vec<Harness>,
 ) -> ExitCode {
+    // Plan 164: the pairing is read BEFORE anything is installed or bound. A
+    // malformed, shared or world-readable peers.toml refuses the boot; an
+    // absent one means no machine is paired and only loopback may be bound.
+    let pairing = match pij_daemon::pairing::load(&state_dir, nix::unistd::geteuid().as_raw()) {
+        Ok(pairing) => pairing,
+        Err(error) => {
+            eprintln!("pij-rs: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
     let homes = claude_homes();
     let inbound_reports = ensure_claude_inbound_accept(&homes);
     let hook_script = install_claude_session_start_script(&hook_dir)
@@ -2130,6 +2201,11 @@ async fn run_daemon(
         .unwrap_or_default();
     let mut config = daemon_config(bind, &state_dir.join("pij.sqlite"), offline);
     config.retired_harnesses = retired_harnesses;
+    config.insecure_bind = insecure_bind;
+    if let Some(pairing) = pairing {
+        config.machine_alias = Some(pairing.machine);
+        config.peers = pairing.peers;
+    }
     match pij_daemon::boot(&config, state_dir).await {
         Ok(daemon) => {
             for (kind, label, reports) in [
@@ -2249,11 +2325,42 @@ async fn run_daemon(
                 eprintln!("pij-rs claude statusline: {error}");
             }
             println!(
-                "pij-rs daemon: listening on {} · key {} (0600) · offline={}",
+                "pij-rs daemon: listening on {} · key {} (0600) · offline={} · paired with {}",
                 daemon.addr,
                 daemon.key.path.display(),
-                config.is_fully_offline()
+                config.is_fully_offline(),
+                if config.peers.is_empty() {
+                    "no machine".to_string()
+                } else {
+                    config
+                        .peers
+                        .iter()
+                        .map(|peer| peer.alias.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
             );
+            println!(
+                "{}",
+                pij_daemon::http::boot_banner(&daemon.addr, pij_daemon::http::Exposure::Loopback)
+            );
+            match &daemon.remote {
+                pij_daemon::http::RemoteListener::None => {}
+                pij_daemon::http::RemoteListener::Listening { addr, exposure } => {
+                    let banner = pij_daemon::http::boot_banner(addr, *exposure);
+                    // Once, on stderr when insecure, so the warning is not lost.
+                    if *exposure == pij_daemon::http::Exposure::Insecure {
+                        eprintln!("{banner}");
+                    } else {
+                        println!("{banner}");
+                    }
+                }
+                pij_daemon::http::RemoteListener::Refused(reason)
+                | pij_daemon::http::RemoteListener::Failed(reason) => eprintln!(
+                    "WARNING: remote listener NOT started: {reason}. Serving loopback {} only; paired machines cannot reach this daemon until this is fixed.",
+                    daemon.addr
+                ),
+            }
             let _ = tokio::signal::ctrl_c().await;
             println!("pij-rs daemon: shutting down");
             match daemon.shutdown().await {
@@ -2751,6 +2858,7 @@ impl Command {
         match self {
             Command::Daemon { .. } => "pij daemon",
             Command::Doctor { .. } => "pij doctor",
+            Command::Peers { .. } => "pij peers",
             Command::SpawnChild { .. } => "pij spawn child",
             Command::Ping => "pij ping",
             Command::Sidecar { .. } => "pij sidecar",
@@ -2977,6 +3085,7 @@ mod tests {
                 // `report` (u-report), adopt/whoami/phonehome (u-identity) and
                 // `state` (u-readback), `doctor` (plan 126) and `fleet-report` (plan 162).
                 "daemon",
+                "peers",
                 "ping",
                 "doctor",
                 "register",

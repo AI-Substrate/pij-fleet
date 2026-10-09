@@ -633,6 +633,7 @@ impl DeliveryService {
             id: msg.msg_id.clone(),
             recipient: msg.to,
             sender: msg.from,
+            from_machine: msg.from_machine,
             body: msg.body,
             held_at_ms: at,
         };
@@ -753,10 +754,12 @@ impl DeliveryService {
     /// Whether a delivery of `msg_id` to `recipient` was ever admitted
     /// (recorded as delivered, or queued in any state). FYIs are not consulted.
     ///
+    /// Daemon-local senders only (`pij-bg`): a local message's origin is `None`.
+    ///
     /// # Errors
     /// Store failures.
     pub async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
-        self.queue.admitted(recipient, msg_id).await
+        self.queue.admitted(recipient, msg_id, None).await
     }
 
     /// How many FYIs wait for `seat`.
@@ -1039,7 +1042,12 @@ impl DeliveryService {
                         // the same message twice.
                         match self
                             .queue
-                            .note_delivered(&to, &msg.msg_id, DeliveryOrigin::InjectedToTransport)
+                            .note_delivered(
+                                &to,
+                                &msg.msg_id,
+                                msg.from_machine.as_deref(),
+                                DeliveryOrigin::InjectedToTransport,
+                            )
                             .await?
                         {
                             Some(origin) => {
@@ -1048,7 +1056,13 @@ impl DeliveryService {
                             }
                             None => match self.transport.deliver(&recipient, &msg).await {
                                 Ok(DeliveryOutcome::Queued { reason, .. }) => {
-                                    self.queue.forget_delivered(&to, &msg.msg_id).await?;
+                                    self.queue
+                                        .forget_delivered(
+                                            &to,
+                                            &msg.msg_id,
+                                            msg.from_machine.as_deref(),
+                                        )
+                                        .await?;
                                     match self
                                         .queue
                                         .enqueue_delivery(delivery_job(&msg, Some(&recipient))?)
@@ -1068,7 +1082,13 @@ impl DeliveryService {
                                 }
                                 Ok(outcome) => outcome,
                                 Err(error) => {
-                                    self.queue.forget_delivered(&to, &msg.msg_id).await?;
+                                    self.queue
+                                        .forget_delivered(
+                                            &to,
+                                            &msg.msg_id,
+                                            msg.from_machine.as_deref(),
+                                        )
+                                        .await?;
                                     return Err(error);
                                 }
                             },
@@ -1098,7 +1118,12 @@ impl DeliveryService {
                         } else {
                             match self
                                 .queue
-                                .note_delivered(&to, &msg.msg_id, DeliveryOrigin::TypedToPane)
+                                .note_delivered(
+                                    &to,
+                                    &msg.msg_id,
+                                    msg.from_machine.as_deref(),
+                                    DeliveryOrigin::TypedToPane,
+                                )
                                 .await?
                             {
                                 Some(origin) => {
@@ -1114,7 +1139,13 @@ impl DeliveryService {
                                         origin: DeliveryOrigin::TypedToPane,
                                     },
                                     Ok(StagedSubmission::Deferred { reason, draft_sha }) => {
-                                        self.queue.forget_delivered(&to, &msg.msg_id).await?;
+                                        self.queue
+                                            .forget_delivered(
+                                                &to,
+                                                &msg.msg_id,
+                                                msg.from_machine.as_deref(),
+                                            )
+                                            .await?;
                                         // Keep admission evidence ahead of a worker's completion.
                                         _delivery_order =
                                             Some(self.event_bus.socket_delivery_order.lock().await);
@@ -1152,7 +1183,13 @@ impl DeliveryService {
                                         }
                                     }
                                     Err(error) => {
-                                        self.queue.forget_delivered(&to, &msg.msg_id).await?;
+                                        self.queue
+                                            .forget_delivered(
+                                                &to,
+                                                &msg.msg_id,
+                                                msg.from_machine.as_deref(),
+                                            )
+                                            .await?;
                                         return Err(error);
                                     }
                                 },
@@ -2363,6 +2400,7 @@ fn delivery_job(msg: &Msg, recipient: Option<&SeatDescriptor>) -> Result<Job> {
         serial_key: msg.to.0.clone(),
         payload,
         dedupe_key: msg.msg_id.clone(),
+        dedupe_origin: msg.from_machine.clone(),
         attempt: 0,
     })
 }

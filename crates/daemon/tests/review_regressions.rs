@@ -673,6 +673,7 @@ async fn every_public_store_operation_rejects_a_stale_schema() {
         serial_key: "seat".to_string(),
         payload: "{}".to_string(),
         dedupe_key: "d".to_string(),
+        dedupe_origin: None,
         attempt: 0,
     };
     let event = pij_core::model::Event {

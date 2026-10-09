@@ -104,6 +104,7 @@ pub(crate) async fn enqueue_turn(
                 message: format!("could not encode injected turn: {error}"),
             })?,
             dedupe_key: msg_id,
+            dedupe_origin: None,
             attempt: 0,
         })
         .await?;

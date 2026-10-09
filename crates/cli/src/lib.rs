@@ -8,7 +8,6 @@
 //! meet a newer daemon on one machine: they are the same artifact.
 
 #![deny(missing_docs)]
-pub mod address;
 pub mod anomalies;
 pub mod bounce;
 pub mod client;
@@ -16,10 +15,10 @@ pub mod decisions;
 pub mod fleet_report;
 pub mod governance;
 pub mod lifecycle;
+pub mod peers;
 pub mod role;
 pub mod roster;
 
-pub use address::{AddressError, parse_destination, render_destination};
 pub use client::{
     CallerContext, DaemonClient, FederatedRoster, IdentityRequest, Phonehome, Registration,
     ReviveRequest, SendRequest, SpawnRequest, StreamFrame, TailError, TailStream, setup_refusal,

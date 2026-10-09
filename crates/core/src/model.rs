@@ -922,6 +922,12 @@ pub struct Job {
     /// Jobs equal on this key collapse to one live row: N rapid submits produce
     /// one unit of work, not N.
     pub dedupe_key: String,
+    /// The paired machine a forwarded message came from (plan 164 review F02).
+    /// Jobs collapse on `(kind, dedupe_origin, dedupe_key)`, origin in its own
+    /// column, so a peer's id can never collide with a local one. `None` for
+    /// local work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dedupe_origin: Option<String>,
     /// How many times this job has been retried. **Read-only to callers**: the
     /// queue is the one writer (R4-AMEND-1), and a worker needs to READ it to
     /// compute backoff that survives a restart.

@@ -1226,6 +1226,7 @@ mod tests {
             .note_delivered(
                 &f.worker,
                 "newer-message",
+                None,
                 DeliveryOrigin::InjectedToTransport,
             )
             .await
@@ -1481,7 +1482,12 @@ mod tests {
             .expect("intent");
         let queue = SqliteQueue::new(f.pool.clone(), 30, 128).expect("shared queue");
         queue
-            .note_delivered(&f.worker, &old_id, DeliveryOrigin::InjectedToTransport)
+            .note_delivered(
+                &f.worker,
+                &old_id,
+                None,
+                DeliveryOrigin::InjectedToTransport,
+            )
             .await
             .expect("pre-injection reservation");
         let error = f
@@ -1550,6 +1556,7 @@ mod tests {
             .note_delivered(
                 &f.worker,
                 "newer-message",
+                None,
                 DeliveryOrigin::InjectedToTransport,
             )
             .await

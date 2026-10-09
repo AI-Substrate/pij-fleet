@@ -78,8 +78,7 @@ async fn daemon_with_seats(
     let router = router_with_config(
         services,
         HttpConfig {
-            local_key: KEY.to_string(),
-            peer_keys: Vec::new(),
+            auth: pij_daemon::http::AuthRing::local(KEY.to_string()),
             machine_alias: "workstation".to_string(),
         },
     );
@@ -241,6 +240,67 @@ async fn a_pane_only_caller_can_send_with_no_session_id_anywhere() {
     assert!(
         receipt.get("msg_id").is_some(),
         "the receipt must name the message: {receipt}"
+    );
+
+    server.abort();
+}
+
+/// Plan 164 ruling 8: `pij send seat@alias` addresses another machine, never a
+/// local seat literally named `seat@alias`; `@@` still escapes a literal `@`.
+#[tokio::test]
+async fn a_shim_send_to_seat_at_alias_is_routed_to_that_machine() {
+    let (addr, server, _store) = daemon().await;
+    let send = |argv: serde_json::Value| {
+        post(
+            addr,
+            "/v1/shim/send",
+            serde_json::json!({ "argv": argv, "caller": { "tmuxPane": PANE } }),
+        )
+    };
+
+    let remote = send(serde_json::json!([
+        "send",
+        format!("{RECIPIENT}@laptop"),
+        "hi"
+    ]))
+    .await;
+    assert_eq!(remote.status(), reqwest::StatusCode::BAD_REQUEST);
+    let remote: Envelope<serde_json::Value> = remote.json().await.expect("envelope");
+    assert!(
+        remote
+            .meta
+            .as_deref()
+            .unwrap_or_default()
+            .contains("peers.toml"),
+        "an unpaired machine is a pairing refusal, not a missing local seat: {remote:?}"
+    );
+
+    let control = send(serde_json::json!([
+        "send",
+        format!("{RECIPIENT}@laptop"),
+        "--command",
+        "compact"
+    ]))
+    .await;
+    let control: Envelope<serde_json::Value> = control.json().await.expect("envelope");
+    assert!(
+        control
+            .meta
+            .as_deref()
+            .unwrap_or_default()
+            .starts_with("E-RS-CONTROL-IDENTITY"),
+        "{control:?}"
+    );
+
+    let escaped = send(serde_json::json!(["send", "no@@such-seat", "hi"])).await;
+    let escaped: Envelope<serde_json::Value> = escaped.json().await.expect("envelope");
+    assert!(
+        !escaped
+            .meta
+            .as_deref()
+            .unwrap_or_default()
+            .contains("peers.toml"),
+        "`@@` is a local seat id: {escaped:?}"
     );
 
     server.abort();
