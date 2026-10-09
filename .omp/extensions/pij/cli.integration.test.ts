@@ -259,7 +259,7 @@ describe("closed rs-only CLI", () => {
 		["inbox", "unknown"],
 		["daemon", "start"],
 		["watch", "src/**"],
-		["watchdog", "--help"],
+		["chore", "--help"],
 		["identity", "release", "pij-old"],
 		["unknown-command"],
 	])("refuses %j without HTTP, tmux, or legacy writes", async (...argv) => {

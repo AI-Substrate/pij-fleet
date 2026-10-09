@@ -26,7 +26,9 @@ use pij_core::model::{DeliveryOutcome, Event, SeatDescriptor, SeatId};
 use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
 use pij_core::ports::SeatFilter;
 use pij_core::session_status::SessionStatusBlock;
-use pij_core::watchdog::{PA_ROLE, WatchdogControl, WatchdogEntry, WatchdogService};
+use pij_core::watchdog::{
+    PA_ROLE, WatchdogControl, WatchdogEntry, WatchdogService, optin_due, optin_nudge,
+};
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
@@ -78,6 +80,13 @@ pub enum RoundOutcome {
     },
     /// Nothing in the fleet changed since the last nudge; nothing was sent.
     Quiet(SeatId),
+    /// An opted-in seat was quiet a whole interval and was nudged.
+    OptInNudged {
+        /// The seat.
+        seat: SeatId,
+        /// Delivery's receipt outcome, or the error that stopped it.
+        delivery: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -92,6 +101,8 @@ struct Memory {
 pub struct PaWatchdog {
     memory: Mutex<HashMap<SeatId, Memory>>,
     repos: Mutex<HashMap<String, String>>,
+    /// When each opted-in seat was last nudged, in seconds.
+    optin_nudged: Mutex<HashMap<SeatId, u64>>,
 }
 
 /// Start the loop. Errors are logged per tick and never stop it.
@@ -119,11 +130,12 @@ pub(crate) fn start(
 }
 
 impl PaWatchdog {
-    /// One pass: find due PAs, build each one's fleet, nudge on change.
+    /// One pass: nudge opted-in seats that went quiet, then find due PAs,
+    /// build each one's fleet, and nudge on change.
     ///
     /// # Errors
-    /// Registry or role-store failures. Per-PA delivery failures are reported
-    /// in the outcome and audited; they never stop the other PAs' rounds.
+    /// Registry or role-store failures. Per-seat delivery failures are
+    /// reported in the outcome and audited; they never stop other rounds.
     pub async fn round(
         &self,
         services: &Services,
@@ -133,15 +145,15 @@ impl PaWatchdog {
         let now_secs = now_ms / 1_000;
         let mut seats = services.registry.list(SeatFilter::default()).await?;
         services.roles.join_roles(&mut seats).await?;
+        let mut outcomes = self.optin_round(services, &seats, now_ms).await;
         let pas: Vec<&SeatDescriptor> = seats
             .iter()
             .filter(|seat| seat.role.as_deref() == Some(PA_ROLE) && seat.tombstoned_at.is_none())
             .collect();
         if pas.is_empty() {
-            return Ok(Vec::new());
+            return Ok(outcomes);
         }
 
-        let mut outcomes = Vec::new();
         let mut entries = Vec::new();
         {
             let mut memory = self.memory.lock().await;
@@ -208,13 +220,7 @@ impl PaWatchdog {
                         if let Some(entry) = self.memory.lock().await.get_mut(&pa.id) {
                             entry.fingerprint = Some(fingerprint);
                         }
-                        match receipt.outcome {
-                            DeliveryOutcome::Delivered { .. } => "delivered",
-                            DeliveryOutcome::Queued { .. } => "queued",
-                            DeliveryOutcome::Held { .. } => "held",
-                            DeliveryOutcome::Refused { .. } => "refused",
-                        }
-                        .to_string()
+                        outcome_word(&receipt.outcome).to_string()
                     }
                     Err(cause) => format!("error: {cause}"),
                 };
@@ -251,6 +257,74 @@ impl PaWatchdog {
             outcomes.push(outcome);
         }
         Ok(outcomes)
+    }
+
+    /// Nudge each opted-in seat that has been quiet a whole interval.
+    ///
+    /// Its clock starts at the latest of its last event, when the watchdog was
+    /// turned on, and its last nudge, so turning it on never nudges at once.
+    async fn optin_round(
+        &self,
+        services: &Services,
+        seats: &[SeatDescriptor],
+        now_ms: u64,
+    ) -> Vec<RoundOutcome> {
+        let now_secs = now_ms / 1_000;
+        let optins = match services.watchdogs().list_watchdogs().await {
+            Ok(optins) => optins,
+            Err(cause) => {
+                eprintln!("watchdog: opt-ins unavailable: {cause}");
+                return Vec::new();
+            }
+        };
+        let mut nudged = self.optin_nudged.lock().await;
+        nudged.retain(|seat, _| optins.iter().any(|optin| &optin.seat == seat));
+        let mut outcomes = Vec::new();
+        for optin in &optins {
+            let Some(seat) = seats.iter().find(|seat| seat.id == optin.seat) else {
+                continue;
+            };
+            let quiet_from = seat.last_event_at.unwrap_or(0).max(optin.set_at_ms) / 1_000;
+            let anchor = quiet_from.max(nudged.get(&seat.id).copied().unwrap_or(0));
+            if !optin_due(seat, optin, anchor, now_secs) {
+                continue;
+            }
+            nudged.insert(seat.id.clone(), now_secs);
+            let body = optin_nudge(&seat.id, now_secs.saturating_sub(quiet_from), optin);
+            let delivery = match services
+                .delivery
+                .send(BG_ACTOR.into(), seat.id.clone(), body)
+                .await
+            {
+                Ok(receipt) => outcome_word(&receipt.outcome).to_string(),
+                Err(cause) => format!("error: {cause}"),
+            };
+            let audit = services
+                .event_bus
+                .publish(Event {
+                    seq: None,
+                    v: 1,
+                    at: now_ms,
+                    kind: "watchdog.nudge".into(),
+                    seat: Some(seat.id.clone()),
+                    payload: json!({
+                        "interval_secs": optin.interval_secs,
+                        "set_by": optin.set_by,
+                        "quiet_secs": now_secs.saturating_sub(quiet_from),
+                        "delivery": delivery,
+                    })
+                    .to_string(),
+                })
+                .await;
+            if let Err(cause) = audit {
+                eprintln!("watchdog: audit for {} failed: {cause}", seat.id);
+            }
+            outcomes.push(RoundOutcome::OptInNudged {
+                seat: seat.id.clone(),
+                delivery,
+            });
+        }
+        outcomes
     }
 
     /// Every live seat in the PA's prime's repository, sized.
@@ -380,6 +454,15 @@ async fn git_common_dir(folder: &str) -> Option<String> {
     let dir = String::from_utf8(output.stdout).ok()?.trim().to_string();
     let canonical = std::fs::canonicalize(&dir).map_or(dir, |path| path.display().to_string());
     (!canonical.is_empty()).then_some(canonical)
+}
+
+const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
+    match outcome {
+        DeliveryOutcome::Delivered { .. } => "delivered",
+        DeliveryOutcome::Queued { .. } => "queued",
+        DeliveryOutcome::Held { .. } => "held",
+        DeliveryOutcome::Refused { .. } => "refused",
+    }
 }
 
 fn anomaly_rows(value: &Value) -> Vec<FleetAnomaly> {

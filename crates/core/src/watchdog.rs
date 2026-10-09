@@ -177,3 +177,56 @@ impl WatchdogService {
             .collect()
     }
 }
+
+/// A seat that opted in to the watchdog (`pij watchdog on`). PAs are watched
+/// by role and never need one. Any seat may turn any seat's watchdog on or
+/// off, so the row says who did it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WatchdogOptIn {
+    /// The watched seat.
+    pub seat: SeatId,
+    /// How long the seat may be quiet before it is nudged.
+    pub interval_secs: u64,
+    /// The seat that turned it on.
+    pub set_by: SeatId,
+    /// When, in milliseconds since the epoch.
+    pub set_at_ms: u64,
+}
+
+/// Is an opted-in, non-PA seat due a nudge?
+///
+/// Unlike a PA's clock this is a stall check, so the TS lessons hold: a seat
+/// mid-turn is not stalled however quiet it is, and a seat that declared
+/// `waiting`, `hold`, `blocked` or `question` is silent on purpose
+/// ([`SeatDescriptor::nudgeable`]). `last_activity_at_secs` is the later of
+/// the seat's last event and its last nudge.
+pub fn optin_due(
+    seat: &SeatDescriptor,
+    optin: &WatchdogOptIn,
+    last_activity_at_secs: u64,
+    now_secs: u64,
+) -> bool {
+    seat.tombstoned_at.is_none()
+        && seat.role.as_deref() != Some(PA_ROLE)
+        && seat.nudgeable()
+        && now_secs.saturating_sub(last_activity_at_secs) >= optin.interval_secs
+}
+
+/// The nudge an opted-in seat receives. Every nudge says how to stop it and
+/// that the seat should, when no more work is coming.
+pub fn optin_nudge(seat: &SeatId, quiet_secs: u64, optin: &WatchdogOptIn) -> String {
+    let who = if optin.set_by == optin.seat {
+        "you".to_string()
+    } else {
+        optin.set_by.to_string()
+    };
+    format!(
+        "[pij watchdog] {seat}: quiet {} (watchdog on every {}, set by {who}). \
+         Keep going if working, and report with `pij report now \"<did>\" \"<next>\"`. \
+         If this unit of work is finished, run `pij report state done`; \
+         if you are idle but available, run `pij report state ready`. \
+         No more work coming? Stop this watchdog: `pij watchdog off`.",
+        crate::cold_wake::human_duration(quiet_secs.saturating_mul(1_000)),
+        crate::cold_wake::human_duration(optin.interval_secs.saturating_mul(1_000)),
+    )
+}

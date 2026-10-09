@@ -198,7 +198,7 @@ fn parse(argv: &[String]) -> Result<Call, String> {
 
 /// Parse `90`, `90s`, `5m`, `2h`, `1d` or a sum such as `1h30m` into milliseconds.
 /// A bare number is seconds.
-fn parse_duration_ms(text: &str, flag: &str) -> Result<u64, String> {
+pub(crate) fn parse_duration_ms(text: &str, flag: &str) -> Result<u64, String> {
     let invalid = || format!("{flag} must be a duration such as 90s, 5m, 1h30m or 2d");
     let text = text.trim();
     if text.is_empty() {

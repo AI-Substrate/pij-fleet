@@ -19,6 +19,7 @@ mod revive;
 pub mod role;
 mod shim;
 mod types;
+mod watchdog;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -167,6 +168,8 @@ enum Endpoint {
     Activity,
     Role,
     Link,
+    /// Opt-in watchdog control (`pij watchdog on|off|status`).
+    Watchdog,
     Close,
     Reap,
     Anomalies,
@@ -186,7 +189,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 49] = [
+    const ALL: [Self; 50] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -220,6 +223,7 @@ impl Endpoint {
         Self::ShimSessions,
         Self::Role,
         Self::Link,
+        Self::Watchdog,
         Self::Close,
         Self::Reap,
         Self::Anomalies,
@@ -268,6 +272,7 @@ impl Endpoint {
             Self::Activity => "/v1/activity",
             Self::Role => "/v1/role",
             Self::Link => "/v1/link",
+            Self::Watchdog => "/v1/watchdog",
             Self::Close => "/v1/close",
             Self::Reap => "/v1/reap",
             Self::Anomalies => "/v1/anomalies",
@@ -316,6 +321,7 @@ impl Endpoint {
             Self::State | Self::FyiClaim | Self::FyiRead | Self::Activity => Method::POST,
             Self::Role
             | Self::Link
+            | Self::Watchdog
             | Self::Close
             | Self::Reap
             | Self::Anomalies
@@ -459,6 +465,7 @@ fn router_with_optional_federation(
                     | Endpoint::ShimInboxAck
                     | Endpoint::Role
                     | Endpoint::Link
+                    | Endpoint::Watchdog
                     | Endpoint::Close
                     | Endpoint::Reap
                     | Endpoint::Anomalies
@@ -521,6 +528,7 @@ fn router_with_optional_federation(
             Endpoint::Activity => router.route(endpoint.path(), post(fyi::activity)),
             Endpoint::Role => router.route(endpoint.path(), post(role::role)),
             Endpoint::Link => router.route(endpoint.path(), post(role::link)),
+            Endpoint::Watchdog => router.route(endpoint.path(), post(watchdog::watchdog)),
             Endpoint::Close => router.route(endpoint.path(), post(lifecycle::close)),
             Endpoint::Reap => router.route(endpoint.path(), post(lifecycle::reap)),
             Endpoint::Anomalies => router.route(

@@ -2255,13 +2255,13 @@
       "cli_exit_nonzero": true,
       "response": {
         "ok": false,
-        "command": "pij watchdog",
+        "command": "pij chore",
         "v": 2,
         "error": "refused",
-        "meta": "E-RS-UNPORTED watchdog: not ported to pij-rs; see docs/how/pij-rs-api.md#unsupported-status",
+        "meta": "E-RS-UNPORTED chore: not ported to pij-rs; see docs/how/pij-rs-api.md#unsupported-status",
         "details": {
           "code": "E-RS-UNPORTED",
-          "verb": "watchdog",
+          "verb": "chore",
           "ledger_item": "docs/how/pij-rs-api.md#unsupported-status"
         }
       }

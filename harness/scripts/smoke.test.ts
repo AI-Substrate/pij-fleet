@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe("runWatchdogSmoke", () => {
-	it("refuses real watchdog mutation under both routing modes without changing private authority", async () => {
+	it("refuses legacy watchdog grammar without mutation and round-trips on/status/off through the shim", async () => {
 		const result = await runWatchdogSmoke();
 		expect(result, result.reason).toEqual({ verdict: "PASS" });
 	}, 600_000);
@@ -55,10 +55,10 @@ describe("parseSmokeEnvelope", () => {
 	it("preserves a named refusal instead of rebuilding it from its code", () => {
 		const envelope = {
 			ok: false,
-			command: "pij watchdog",
+			command: "pij chore",
 			v: 2,
 			error: "refused",
-			details: { code: "E-RS-UNPORTED", verb: "watchdog", ledger_item: "native-only" },
+			details: { code: "E-RS-UNPORTED", verb: "chore", ledger_item: "native-only" },
 			meta: "no fallback",
 		};
 		expect(
@@ -92,7 +92,7 @@ describe("parseSmokeEnvelope", () => {
 	it("does not accept any failure as the requested named refusal", () => {
 		const stdout = JSON.stringify({
 			ok: false,
-			command: "pij watchdog",
+			command: "pij chore",
 			v: 2,
 			details: { code: "E-RS-AUTH" },
 		});

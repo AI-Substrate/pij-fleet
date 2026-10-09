@@ -615,6 +615,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/orchestration` | `orchestration baton define/list/show/request/grant/return/reclaim`; `prime set/retire/unset <seat>`; `role set <seat> <role>` / `role unset <seat>` | `baton-define`, `baton-list`, `baton-show`, `baton-request`, `baton-grant`, `baton-return`, `baton-reclaim`, `prime-set`, `prime-retire`, `prime-unset`, `orchestration-role-set`, `role-unset` |
 | POST `/v1/role` | `role [<seat>] <role>` / `role [<seat>] --unset`; typed `{seat?, role, caller}` | `role-set` |
 | POST `/v1/link` | `link <seat> [--parent <you>] --role <pm/worker/pa>`; argv + `caller` only | — (`crates/cli/tests/seat_roles.rs`) |
+| POST `/v1/watchdog` | `watchdog on [<seat>] [--every <duration>]`; `off [<seat>]`; `status [<seat>]`; argv + `caller` only | — ([Opt-in watchdog](#opt-in-watchdog)) |
 | POST `/v1/report` | `report now/state/question/blocked/clear/verify`; state metadata flags below | `report-question`, `report-verify` |
 | GET and POST `/v1/anomalies` | `anomalies [--here] [--project <slug>]`; GET `here=<absolute-path>&project=<slug>` | `anomalies-list`, `anomalies-argv` |
 | GET and POST `/v1/decisions` | `decisions [--state <open/answered/all>] [--asked_by <seat>] [--parent <seat>]`; GET keys `state`, `asked_by`, `parent` (literal underscore; `--asked-by` refuses) | `decisions-list`, `decisions-argv` |
@@ -820,6 +821,23 @@ The digest reports facts. Policy, such as caps and exemptions, lives in the PA b
 
 Every round for a due PA appends a `watchdog.round` event. Its payload carries `outcome` (`nudged` or `quiet`), `prime`, `scope`, `seats` and `delivery` (the receipt outcome, or the error text). Round memory is in-process and not persisted.
 
+## Opt-in watchdog
+
+Any other seat is watched only while it is opted in. `pij watchdog on [<seat>] [--every <duration>]` turns it on, `pij watchdog off [<seat>]` turns it off, and `pij watchdog status [<seat>]` lists `{pas, optins}`. The seat defaults to the caller. **Any seat may switch any live seat's watchdog**; the store row (`seat_watchdogs`, migration 0027) records `set_by` and `set_at`.
+
+- `--every` defaults to the PA interval and must be at least `1m`.
+- The change is persisted before it is announced: a `watchdog.on` or `watchdog.off` event, then, when the caller is not the subject, a held FYI to the subject. The FYI names who changed it and how to undo it, and opens no turn. The receipt's `subject_told` reports that FYI.
+- Refusals:
+  - `E-RS-ARG` (400) for bad grammar, including the old TS leaves such as `disable-all`;
+  - `E-RS-NO-SEAT` (404) for a missing or tombstoned seat;
+  - `E-RS-WATCHDOG-PA` (409) for a PA, since PAs always have the watchdog.
+
+**When it fires.** An opted-in seat is a stall check, unlike a PA's clock. It is nudged once it has been quiet for a whole interval, measured from the latest of its last event, when it was turned on, and its last nudge. A seat mid-turn, or one that declared `waiting`, `hold`, `blocked` or `question`, is never nudged (`SeatDescriptor::nudgeable`). The nudge comes from `pij-bg`, is audited as `watchdog.nudge`, and always ends with how to stop it:
+
+```text
+[pij watchdog] <seat>: quiet 20m (watchdog on every 20m, set by <who>). Keep going if working, and report with `pij report now "<did>" "<next>"`. If this unit of work is finished, run `pij report state done`; if you are idle but available, run `pij report state ready`. No more work coming? Stop this watchdog: `pij watchdog off`.
+```
+
 ## Revive
 
 ```bash
@@ -863,7 +881,7 @@ This anchor is permanent; refusals and shipped consumers must not depend on an a
 - **Shim-only gaps / different meanings:** `spawn`, `revive`, `tail` and `daemon` refuse `E-RS-UNPORTED`; native capability is not a grammar-compatible shim port. Use the documented native forms in the [peer](../../skills/pij/references/routes/peer.md) and [ops](../../skills/pij/references/routes/ops.md) routes where available. Native tail is an event stream, not a transcript. [Native revive](#revive) accepts tombstoned or observed-dead ids and the authorized `--assume-dead --evidence` override; `--print` and `--attach` remain unsupported. Native spawn has no legacy layout/task/branch/plan-id flags.
 - **List/sessions filters:** shim `pij list` forwards declared `harness`, `folder`, `parent` and `scope=local` query values to GET `/v1/seats`. Shim and native `pij-rs list --here` scope to caller cwd; path-valued `--here` refuses. Native list has no other filters. `pij sessions` routes GET `/v1/shim/sessions` with no query flags or legacy union. Unsupported `--role`, `--prime`, `--archived` and tree semantics refuse instead of being dropped. Prime designation has no dedicated list/getter projection here: use actual designation receipts/events and authoritative government/human evidence; role assertion or an empty filtered view cannot prove absence.
 - **Baton projection limits:** a blocked-time field is not provided. Automatic request notices and their honest delivered/queued/unverified/null projection are supported as described under [Baton leases](#baton-leases); a durable request alone still does not prove recipient observation.
-- **Unported command surfaces:** `agent`, `path`, `telegram`, `models`, `watch`, `unwatch`, `chore`, `watchdog`, `focus` and `tree` refuse through the shim. The `watchdog` refusal covers its old administrative grammar only; the daemon runs the [PA watchdog](#pa-watchdog) itself, with no verb. This does not remove already composed sidecar internals; it does not advertise those old administrative grammars as a native port. `link` is ported (plan 166) with a narrower grammar: the caller is always the parent, and `--role` is required.
+- **Unported command surfaces:** `agent`, `path`, `telegram`, `models`, `watch`, `unwatch`, `chore`, `focus` and `tree` refuse through the shim. `watchdog` is ported (2026-10-09) as [`on/off/status`](#opt-in-watchdog); its old TS leaves (`pause`, `exempt`, `disable-all`…) refuse with `E-RS-ARG`. This does not remove already composed sidecar internals; it does not advertise those old administrative grammars as a native port. `link` is ported (plan 166) with a narrower grammar: the caller is always the parent, and `--role` is required.
 - **Inbox/admission:** verified external `inbox register` and `inbox --wait [ms]` are [supported](#verified-paneless-external-admission), not gaps. Paneless adopt, unlisted inbox leaves, generic shim `register`, send `--wait` and attachment semantics remain refused. Never fabricate host process evidence or use a legacy fallback; extension-owned registration/receive stays owned by that extension.
 - **Control and bg are supported, not gaps:** remote compact/new/reload, compact-self and bg create/list/tail/kill remain shipped. Controls carry no body; acceptance is not execution. Copilot and paneless controls refuse; new/reload require self or recorded parent plus target arming, not a prime role. Never replace refusal with slash text or sendkeys. bg remains daemon-owned detached execution (in the caller's cwd unless `--cwd`; optional `--timeout` ends it with a TIMEOUT turn; `list` shows running time and duration; `--events` makes an event source whose child fires `pij bg emit` / `POST /v1/bg/{job}/emit`, authenticated by its per-job `PIJ_BG_TOKEN` outside the daemon-key ring, batched per `--min-interval`/`--inline-max`, held as FYIs with `--fyi`, and routed to a warm prime or Telegram instead of waking a cold owner) with durable completion injection, bounded server-side log reads and owner/parent authorization; it introduces no answer queue cancellation.
 - **Native commit-trailers data gap:** forwarding is supported, but `commit_trailers::run` currently calls `derive` with no repository-designation input and does not query current assignment. It reads role-joined self/local seats, then uses a complete recorded-parent root as the explicit interim fallback. `Pij-Plan` derives from worktree path, branch or local flow context. Do not claim designation/current-assignment lookup or use stale legacy rows to fill either gap.

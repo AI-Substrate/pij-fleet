@@ -278,3 +278,211 @@ async fn a_pa_mid_turn_is_still_nudged() {
         "the nudge is sent whenever it is due; delivery decides how it lands"
     );
 }
+
+fn optin(seat: &str, by: &str, at_ms: u64) -> pij_core::watchdog::WatchdogOptIn {
+    pij_core::watchdog::WatchdogOptIn {
+        seat: seat.into(),
+        interval_secs: INTERVAL,
+        set_by: by.into(),
+        set_at_ms: at_ms,
+    }
+}
+
+#[tokio::test]
+async fn an_opted_in_seat_is_nudged_when_quiet_and_told_how_to_stop() {
+    let (services, _store) = services().await;
+    let start = now_ms();
+    let mut worker = seat("pij-worker", "/nowhere", None);
+    services.registry.put(worker.clone()).await.unwrap();
+    services
+        .registry
+        .put(seat("pij-bystander", "/nowhere", None))
+        .await
+        .unwrap();
+    services
+        .watchdogs()
+        .set_watchdog(&optin("pij-worker", "pij-prime", start))
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let at = |secs: u64| start + secs * 1_000;
+
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, at(INTERVAL - 1))
+            .await
+            .unwrap()
+            .is_empty(),
+        "not quiet a whole interval yet"
+    );
+    assert_eq!(
+        watchdog
+            .round(&services, INTERVAL, at(INTERVAL))
+            .await
+            .unwrap(),
+        vec![RoundOutcome::OptInNudged {
+            seat: "pij-worker".into(),
+            delivery: "queued".into()
+        }],
+        "only the opted-in seat; the bystander never opted in"
+    );
+    let (_, job) = services
+        .queue
+        .peek(&["delivery:pij-worker".to_string()])
+        .await
+        .unwrap()
+        .expect("nudge queued");
+    let body = serde_json::from_str::<pij_core::model::Msg>(&job.payload)
+        .unwrap()
+        .body;
+    assert!(
+        body.starts_with("[pij watchdog] pij-worker: quiet 20m"),
+        "{body}"
+    );
+    assert!(body.contains("set by pij-prime"), "{body}");
+    assert!(
+        body.ends_with("No more work coming? Stop this watchdog: `pij watchdog off`."),
+        "every nudge says how to stop: {body}"
+    );
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, at(INTERVAL + 60))
+            .await
+            .unwrap()
+            .is_empty(),
+        "one nudge per quiet interval"
+    );
+
+    for (state, semantic, why) in [
+        (SystemState::Working, None, "mid-turn is not a stall"),
+        (
+            SystemState::Idle,
+            Some(SemanticState::Waiting),
+            "waiting is deliberate",
+        ),
+    ] {
+        worker.state = state;
+        worker.semantic_state = semantic;
+        services.registry.put(worker.clone()).await.unwrap();
+        assert!(
+            watchdog
+                .round(&services, INTERVAL, at(10 * INTERVAL))
+                .await
+                .unwrap()
+                .is_empty(),
+            "{why}"
+        );
+    }
+
+    worker.state = SystemState::Idle;
+    worker.semantic_state = None;
+    services.registry.put(worker).await.unwrap();
+    services
+        .watchdogs()
+        .clear_watchdog(&"pij-worker".into())
+        .await
+        .unwrap();
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, at(20 * INTERVAL))
+            .await
+            .unwrap()
+            .is_empty(),
+        "off means off"
+    );
+}
+
+#[tokio::test]
+async fn any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told() {
+    let (services, _store) = services().await;
+    for id in ["pij-prime", "pij-worker", "pij-pa"] {
+        let parent = (id == "pij-pa").then_some("pij-prime");
+        services
+            .registry
+            .put(seat(id, "/nowhere", parent))
+            .await
+            .unwrap();
+    }
+    services
+        .roles
+        .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
+        .await
+        .unwrap();
+    let delivery = Arc::clone(&services.delivery);
+    let watchdogs = services.watchdogs();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = crate::http::router_with_config(
+        services,
+        crate::http::HttpConfig {
+            local_key: "key".into(),
+            peer_keys: Vec::new(),
+            machine_alias: "workstation".into(),
+        },
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let call = |argv: Vec<&'static str>| async move {
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/v1/watchdog"))
+            .bearer_auth("key")
+            .json(&serde_json::json!({"argv": argv, "caller": {"PIJ_SESSION_ID": "pij-prime"}}))
+            .send()
+            .await
+            .unwrap();
+        (
+            response.status().as_u16(),
+            response.json::<serde_json::Value>().await.unwrap(),
+        )
+    };
+
+    let (status, on) = call(vec!["watchdog", "on", "pij-worker", "--every", "30m"]).await;
+    assert_eq!(status, 200, "{on}");
+    assert_eq!(on["data"]["enabled"], true);
+    assert_eq!(on["data"]["interval_secs"], 1_800);
+    assert_eq!(on["data"]["set_by"], "pij-prime");
+    assert_eq!(on["data"]["subject_told"], "held (fyi)", "{on}");
+    assert_eq!(
+        delivery
+            .pending_fyi_count(&"pij-worker".into())
+            .await
+            .unwrap(),
+        1,
+        "the subject learns who changed its watchdog, without being woken"
+    );
+    assert_eq!(
+        watchdogs.list_watchdogs().await.unwrap(),
+        vec![pij_core::watchdog::WatchdogOptIn {
+            seat: "pij-worker".into(),
+            interval_secs: 1_800,
+            set_by: "pij-prime".into(),
+            set_at_ms: watchdogs.list_watchdogs().await.unwrap()[0].set_at_ms,
+        }]
+    );
+
+    let (status, pa) = call(vec!["watchdog", "off", "pij-pa"]).await;
+    assert_eq!(status, 409, "{pa}");
+    assert_eq!(pa["details"]["code"], "E-RS-WATCHDOG-PA");
+
+    let (status, listing) = call(vec!["watchdog", "status"]).await;
+    assert_eq!(status, 200);
+    assert_eq!(listing["data"]["pas"], serde_json::json!(["pij-pa"]));
+    assert_eq!(listing["data"]["optins"][0]["seat"], "pij-worker");
+
+    let (status, off) = call(vec!["watchdog", "off", "pij-worker"]).await;
+    assert_eq!(status, 200, "{off}");
+    assert_eq!(
+        (
+            off["data"]["enabled"].clone(),
+            off["data"]["was_on"].clone()
+        ),
+        (false.into(), true.into())
+    );
+    assert!(watchdogs.list_watchdogs().await.unwrap().is_empty());
+
+    let (status, missing) = call(vec!["watchdog", "on", "pij-ghost"]).await;
+    assert_eq!(
+        (status, missing["details"]["code"].clone()),
+        (404, "E-RS-NO-SEAT".into())
+    );
+    server.abort();
+}

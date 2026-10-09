@@ -465,6 +465,11 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Opt a seat in or out of the watchdog: `watchdog on|off|status [<seat>] [--every 30m]`.
+    Watchdog {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Tombstone a seat owned by this caller without killing its process or pane.
     Close {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1491,6 +1496,10 @@ async fn run(cli: Cli) -> ExitCode {
         Command::Link { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             emit(&client.link(&args, &caller_context()).await, as_json)
+        }
+        Command::Watchdog { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            emit(&client.watchdog(&args, &caller_context()).await, as_json)
         }
         Command::Close { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
@@ -2772,6 +2781,7 @@ impl Command {
             Command::Report { .. } => "pij report",
             Command::Role { .. } => "pij role",
             Command::Link { .. } => "pij link",
+            Command::Watchdog { .. } => "pij watchdog",
             Command::Close { .. } => "pij close",
             Command::Reap { .. } => "pij reap",
             Command::Anomalies { .. } => "pij anomalies",
@@ -2998,6 +3008,7 @@ mod tests {
                 "report",
                 "role",
                 "link",
+                "watchdog",
                 "close",
                 "reap",
                 "anomalies",

@@ -159,6 +159,21 @@ pub struct Services {
     pub offline: bool,
 }
 
+impl Services {
+    /// Opt-in watchdog rows, on the spine pool that holds the other
+    /// orchestration records (roles, batons, streams).
+    pub fn watchdogs(&self) -> pij_store::SqliteOrchestration {
+        pij_store::SqliteOrchestration::new(self.store_pools[0].clone())
+    }
+
+    /// The default opt-in interval: the PA interval (`PIJ_RS_WATCHDOG_SECS`,
+    /// else the configured 20 minutes).
+    pub fn watchdog_default_secs(&self) -> u64 {
+        let configured = pij_core::config::Config::default().watchdog_interval_secs;
+        pa_watchdog::interval_secs(configured).unwrap_or(configured)
+    }
+}
+
 /// A running daemon.
 pub struct Daemon {
     /// Where it is actually listening — resolved, so a `:0` config becomes a
