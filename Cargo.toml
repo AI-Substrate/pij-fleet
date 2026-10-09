@@ -97,7 +97,7 @@ hostname = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "time", "net", "signal", "test-util"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 time = { version = "0.3", default-features = false, features = ["formatting"] }
-nix = { version = "0.30", default-features = false, features = ["fs", "resource"] }
+nix = { version = "0.31", default-features = false, features = ["fs", "resource"] }
 uuid = { version = "1", features = ["v7"] }
 
 # Warnings are errors in the gate (`clippy -D warnings`); this keeps a plain
