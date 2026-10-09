@@ -19,6 +19,13 @@ use pij_tmux::{TmuxAdapter, tap_sink_path};
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 static TRANSACTION_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// Budget for "this eventually happens" waits on real tmux. They return as
+/// soon as the condition holds, so a generous budget costs a passing run
+/// nothing. Budgets of 1-4s flaked under a loaded gate (load 40+), where a
+/// background `tmux run-shell` can be scheduled late. Nothing here measures
+/// speed: tests that prove something did NOT happen keep their fixed sleeps.
+const EVENTUALLY: Duration = Duration::from_secs(15);
+
 fn framed_text_of_size(bytes: usize) -> String {
     let sender = SeatId::from("pij-size-probe");
     let overhead = frame_message(&sender, None, "").len();
@@ -311,7 +318,7 @@ async fn staged_submit_excludes_human_input_mid_body_and_before_enter() {
     tmux.commit_submit(&staged)
         .await
         .expect("commit staged body");
-    wait_for_pane_input(&session, &pane.id, false, Duration::from_secs(1));
+    wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
 
     let observed = wait_for_file(&output_path, expected.len(), Duration::from_secs(10));
     assert_eq!(
@@ -367,7 +374,7 @@ async fn abort_leaves_recovery_notice_unsent_and_restores_input() {
         .expect("stage body");
     assert!(pane_input_off(&session, &pane.id));
     tmux.abort_submit(&staged).await.expect("abort staged body");
-    wait_for_pane_input(&session, &pane.id, false, Duration::from_secs(1));
+    wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
 
     let observed = wait_for_file(&output_path, expected.len(), Duration::from_secs(10));
     assert_eq!(observed, expected);
@@ -421,9 +428,9 @@ async fn dropped_staged_submit_restores_input_without_enter() {
     assert!(pane_input_off(&session, &pane.id));
     drop(staged);
 
-    wait_for_pane_input(&session, &pane.id, false, Duration::from_secs(3));
-    wait_for_submit_marker_clear(&session, &pane.id, Duration::from_secs(1));
-    let observed = wait_for_file(&output_path, expected.len(), Duration::from_secs(3));
+    wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
+    wait_for_submit_marker_clear(&session, &pane.id, EVENTUALLY);
+    let observed = wait_for_file(&output_path, expected.len(), EVENTUALLY);
     assert_eq!(observed, expected);
     assert_ne!(observed.last(), Some(&b'\r'), "drop must never press Enter");
     let title = session.run(["display-message", "-p", "-t", &pane.id, "#{pane_title}"]);
@@ -466,8 +473,8 @@ async fn stage_deadline_aborts_and_restores_input() {
         .expect_err("staging beyond the transaction bound must abort");
 
     assert!(error.to_string().contains("exceeded 1s"), "{error}");
-    wait_for_pane_input(&session, &pane.id, false, Duration::from_secs(1));
-    wait_for_submit_marker_clear(&session, &pane.id, Duration::from_secs(1));
+    wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
+    wait_for_submit_marker_clear(&session, &pane.id, EVENTUALLY);
 }
 
 #[test]
@@ -529,13 +536,13 @@ fn watchdog_expiry_before_disable_cannot_strand_input() {
         .env("PIJ_ACQUIRE_RACE_PANE", &pane.id)
         .spawn()
         .expect("spawn acquisition race helper");
-    wait_for_file(&ready, 1, Duration::from_secs(4));
+    wait_for_file(&ready, 1, EVENTUALLY);
     assert!(!pane_input_off(&session, &pane.id));
     assert!(submit_marker(&session, &pane.id).is_empty());
 
     signal_process(helper.id(), "-STOP");
     fs::write(&release, b"release").expect("let tmux execute atomic acquisition");
-    let acquired_deadline = Instant::now() + Duration::from_secs(1);
+    let acquired_deadline = Instant::now() + EVENTUALLY;
     while submit_marker(&session, &pane.id).is_empty() {
         assert!(
             Instant::now() < acquired_deadline,
@@ -544,7 +551,7 @@ fn watchdog_expiry_before_disable_cannot_strand_input() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert!(pane_input_off(&session, &pane.id));
-    let recovery_deadline = Instant::now() + Duration::from_secs(3);
+    let recovery_deadline = Instant::now() + EVENTUALLY;
     while !submit_marker(&session, &pane.id).is_empty() {
         assert!(
             Instant::now() < recovery_deadline,
@@ -663,13 +670,13 @@ fn forced_old_read_write_interleaving_allows_only_one_adapter() {
     }
     drop(send);
     let (first_label, first) = receive
-        .recv_timeout(Duration::from_secs(2))
+        .recv_timeout(EVENTUALLY)
         .expect("adapter A completes while B is held after its empty read");
     assert_eq!(first_label, "a");
     assert!(first.is_ok(), "adapter A must win: {first:?}");
     fs::write(&allow_b, b"go").expect("release adapter B reservation");
     let (second_label, second) = receive
-        .recv_timeout(Duration::from_secs(2))
+        .recv_timeout(EVENTUALLY)
         .expect("adapter B returns after forced interleaving");
     assert_eq!(second_label, "b");
     assert!(second.is_err(), "atomic CAS must reject adapter B");
@@ -738,7 +745,7 @@ fn stale_watchdog_cannot_release_a_later_adapter_transaction() {
     assert_ne!(first.token, second.token);
 
     let first_watchdog = format!("#{{==:#{{@pij-submit-owner}},{}}}|", first.token);
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + EVENTUALLY;
     loop {
         let observed = fs::read_to_string(&log).unwrap_or_default();
         if observed
@@ -772,7 +779,7 @@ fn submit_cas_process_helper_process() {
     let result = PathBuf::from(std::env::var("PIJ_CAS_RACE_RESULT").expect("CAS helper result"));
     let release = PathBuf::from(std::env::var("PIJ_CAS_RACE_RELEASE").expect("CAS helper release"));
     fs::write(ready, b"ready").expect("signal CAS helper readiness");
-    wait_for_file(&start, 1, Duration::from_secs(3));
+    wait_for_file(&start, 1, EVENTUALLY);
     let tmux = if let Ok(wrapper) = std::env::var("PIJ_CAS_RACE_WRAPPER") {
         TmuxAdapter::with_binary(wrapper, std::env::temp_dir())
     } else {
@@ -781,7 +788,7 @@ fn submit_cas_process_helper_process() {
     match block_on(tmux.acquire_submit(&pane)) {
         Ok(staged) => {
             fs::write(&result, format!("ok:{}", staged.token)).expect("write CAS winner");
-            wait_for_file(&release, 1, Duration::from_secs(3));
+            wait_for_file(&release, 1, EVENTUALLY);
             block_on(tmux.abort_submit(&staged)).expect("CAS winner releases pane");
         }
         Err(error) => {
@@ -847,14 +854,14 @@ fn separate_processes_cannot_both_reserve_one_pane() {
         result_paths.push((ready, result));
     }
     for (ready, _) in &result_paths {
-        wait_for_file(ready, 1, Duration::from_secs(4));
+        wait_for_file(ready, 1, EVENTUALLY);
     }
     fs::write(&start, b"start").expect("release process CAS racers");
-    let first = String::from_utf8(wait_for_file(&result_paths[0].1, 4, Duration::from_secs(4)))
+    let first = String::from_utf8(wait_for_file(&result_paths[0].1, 4, EVENTUALLY))
         .expect("UTF-8 first CAS result");
     assert!(first.starts_with("ok:"), "process A must win: {first}");
     fs::write(&allow_b, b"go").expect("release process B reservation");
-    let second = String::from_utf8(wait_for_file(&result_paths[1].1, 4, Duration::from_secs(4)))
+    let second = String::from_utf8(wait_for_file(&result_paths[1].1, 4, EVENTUALLY))
         .expect("UTF-8 second CAS result");
     let results = [first, second];
     assert_eq!(
@@ -953,7 +960,7 @@ async fn committed_marker_transition_failure_never_sends_enter() {
     );
     assert!(!pane_input_off(&session, &pane.id));
     assert!(submit_marker(&session, &pane.id).is_empty());
-    let observed = wait_for_file(&output_path, expected.len(), Duration::from_secs(3));
+    let observed = wait_for_file(&output_path, expected.len(), EVENTUALLY);
     assert_eq!(observed, expected, "marker failure must emit no CR/Enter");
     fs::remove_file(output_path).expect("remove marker-failure capture");
 }
@@ -1015,12 +1022,12 @@ async fn post_enter_cleanup_failure_remains_success_and_submits_once() {
         .await
         .expect("Enter is success despite cleanup error");
     assert!(!pane_input_off(&session, &pane.id));
-    let observed = wait_for_file(&output_path, expected.len(), Duration::from_secs(3));
+    let observed = wait_for_file(&output_path, expected.len(), EVENTUALLY);
     assert_eq!(
         observed, expected,
         "cleanup failure must not duplicate the turn"
     );
-    wait_for_submit_marker_clear(&session, &pane.id, Duration::from_secs(3));
+    wait_for_submit_marker_clear(&session, &pane.id, EVENTUALLY);
     fs::remove_file(output_path).expect("remove cleanup capture");
 }
 

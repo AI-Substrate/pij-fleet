@@ -591,6 +591,10 @@ async fn matching_since_seeks_exactly_inside_an_equal_time_run_whatever_the_hist
             .execute(&pool)
             .await
             .expect("analyze");
+        // Statistics load when a connection opens: reopen so every pooled
+        // connection plans with them (a pre-ANALYZE connection hid issue #35).
+        pool.close().await;
+        let pool = pij_store::open(&fresh.path()).await.expect("reopen");
         let cursor = [5_000_i64, history - 1, 2];
         assert_eq!(
             explain(&pool, pij_store::spine::MATCHING_AT_SQL, &cursor).await,
@@ -607,6 +611,56 @@ async fn matching_since_seeks_exactly_inside_an_equal_time_run_whatever_the_hist
                     .to_string()
             ],
             "history of {history}"
+        );
+    }
+}
+
+/// Issue #35, made hot by #38's per-tick watchdog disposition window. With
+/// 60k events for one seat and kind in three timestamp blocks (100/200/300)
+/// and fresh statistics, SQLite planned the first page at `since_at=300` as
+/// `rowid > ?`, a history scan. Both page queries now name their index.
+///
+/// The reopen is load-bearing: SQLite loads statistics when a connection
+/// opens, so a pooled connection opened before ANALYZE plans without them.
+/// Earlier probes of this issue flickered for exactly that reason, and a
+/// version of this test without the reopen passed before the fix too.
+#[tokio::test]
+async fn matching_since_stays_on_its_index_on_analyzed_skewed_history() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    sqlx::raw_sql(
+        "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<60000) \
+         INSERT INTO spine_events (v, at, kind, seat, payload) \
+         SELECT 1, CASE WHEN x<=20000 THEN 100 WHEN x<=40000 THEN 200 ELSE 300 END, \
+                'delivery.parked', 'pij-history', '{}' FROM n; \
+         ANALYZE;",
+    )
+    .execute(&pool)
+    .await
+    .expect("skewed history");
+    pool.close().await;
+    let pool = pij_store::open(&fresh.path()).await.expect("reopen");
+    for since_at in [100_i64, 250, 300, 400] {
+        assert_eq!(
+            explain(&pool, pij_store::spine::MATCHING_AT_SQL, &[since_at, 0, 256]).await,
+            vec![
+                "SEARCH spine_events USING INDEX spine_by_seat_kind_at (seat=? AND kind=? AND at=? AND seq>?)"
+                    .to_string()
+            ],
+            "first page at since_at={since_at}"
+        );
+        assert_eq!(
+            explain(
+                &pool,
+                pij_store::spine::MATCHING_AFTER_SQL,
+                &[since_at, 256]
+            )
+            .await,
+            vec![
+                "SEARCH spine_events USING INDEX spine_by_seat_kind_at (seat=? AND kind=? AND at>?)"
+                    .to_string()
+            ],
+            "rest of page after since_at={since_at}"
         );
     }
 }
