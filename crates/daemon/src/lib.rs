@@ -17,6 +17,7 @@ pub mod delivery;
 pub mod events;
 pub mod federation;
 pub mod lifecycle;
+pub mod pa_watchdog;
 pub mod pairing;
 pub mod pane_observer;
 pub mod park_notice;
@@ -159,6 +160,21 @@ pub struct Services {
     pub offline: bool,
 }
 
+impl Services {
+    /// Opt-in watchdog rows, on the spine pool that holds the other
+    /// orchestration records (roles, batons, streams).
+    pub fn watchdogs(&self) -> pij_store::SqliteOrchestration {
+        pij_store::SqliteOrchestration::new(self.store_pools[0].clone())
+    }
+
+    /// The default opt-in interval: the PA interval (`PIJ_RS_WATCHDOG_SECS`,
+    /// else the configured 20 minutes).
+    pub fn watchdog_default_secs(&self) -> u64 {
+        let configured = pij_core::config::Config::default().watchdog_interval_secs;
+        pa_watchdog::interval_secs(configured).unwrap_or(configured)
+    }
+}
+
 /// A running daemon.
 pub struct Daemon {
     /// Where it is actually listening — resolved, so a `:0` config becomes a
@@ -183,6 +199,7 @@ pub struct Daemon {
     claude_bind_loop: lifecycle::TickLoop,
     background_loop: lifecycle::TickLoop,
     death_sweep_loop: lifecycle::TickLoop,
+    pa_watchdog_loop: lifecycle::TickLoop,
     /// Owned so no tap outlives the daemon that attached it: `shutdown` joins an
     /// in-flight observation and DETACHES every pane. A tap left open is a
     /// `pipe-pane` writing into a sink nobody drains.
@@ -226,7 +243,18 @@ impl Daemon {
         // notifies it (`park_notice::LOOKBACK_MS`), and a notice admitted twice
         // is impossible because its id is derived from the parked job.
         let _ = self.park_notices.await;
-        let (served, drained, bound, observed, forwarded, background, deaths, (), governance) = tokio::join!(
+        let (
+            served,
+            drained,
+            bound,
+            observed,
+            forwarded,
+            background,
+            deaths,
+            watchdog,
+            (),
+            governance,
+        ) = tokio::join!(
             async {
                 self.joined.await.map_err(|error| PijError::Adapter {
                     adapter: "daemon".to_string(),
@@ -239,6 +267,7 @@ impl Daemon {
             self.federation_worker.shutdown(),
             self.background_loop.shutdown(),
             self.death_sweep_loop.shutdown(),
+            self.pa_watchdog_loop.shutdown(),
             self.sidecars.shutdown(),
             async {
                 self.governance_observer
@@ -284,6 +313,7 @@ impl Daemon {
         governance?;
         background?;
         deaths?;
+        watchdog?;
         forwarded
     }
 }
@@ -864,6 +894,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         lifecycle::TickInterval::new(Duration::from_secs(config.delivery_interval_secs))?;
     let background_interval = lifecycle::TickInterval::new(Duration::from_millis(100))?;
     let death_interval = death_sweep::interval()?;
+    let pa_watchdog_secs = pa_watchdog::interval_secs(config.watchdog_interval_secs)?;
+    let pa_watchdog_tick = lifecycle::TickInterval::new(pa_watchdog::TICK)?;
 
     // 8. This record can be true only after bind: it says this exact process won
     //    the port. It must also precede daemon.key, the point of no return. A
@@ -970,6 +1002,11 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         }
     });
     let death_sweep_loop = death_sweep::start(Arc::new(services.clone()), death_interval);
+    let pa_watchdog_loop = pa_watchdog::start(
+        Arc::new(services.clone()),
+        pa_watchdog_secs,
+        pa_watchdog_tick,
+    );
     let park_notices = tokio::spawn(park_notice::follow(services.clone()));
     let session_warmup = session_warmup::start(
         Arc::clone(&services.registry),
@@ -1027,6 +1064,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         claude_bind_loop,
         background_loop,
         death_sweep_loop,
+        pa_watchdog_loop,
         pane_observer,
         sidecars,
         governance_shutdown,

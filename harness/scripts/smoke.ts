@@ -371,36 +371,41 @@ export async function runWatchdogSmoke(): Promise<SmokeResult> {
 		const before = object(
 			parseSmokeEnvelope(await fixture.native(["spine", "events", "--since", "0"])).data,
 		);
-		const roster = parseSmokeEnvelope(await fixture.native(["list"]));
 		const home = join(fixture.root, "home");
 		const files = privateHomeSnapshot(home);
-		for (const generation of ["rs", "legacy"]) {
-			const refusal = parseSmokeEnvelope(
-				await fixture.shim(["watchdog", "disable-all"], {
-					...fixture.env,
-					PIJ_DAEMON_GENERATION: generation,
-				}),
-				false,
-				"E-RS-UNPORTED",
-			);
-			assert.equal(object(refusal.details).verb, "watchdog");
-		}
+		// Refusals first: forced legacy routing is retired, and rs refuses the
+		// old TS administrative leaves. Neither may write anything.
+		const legacy = parseSmokeEnvelope(
+			await fixture.shim(["watchdog", "on"], { ...fixture.env, PIJ_DAEMON_GENERATION: "legacy" }),
+			false,
+			"E-RS-UNPORTED",
+		);
+		assert.equal(object(legacy.details).verb, "watchdog");
+		parseSmokeEnvelope(await fixture.shim(["watchdog", "disable-all"]), false, "E-RS-ARG");
 		const after = object(
 			parseSmokeEnvelope(
 				await fixture.native(["spine", "events", "--since", String(sequence(before.cursor))]),
 			).data,
 		);
-		assert.equal(after.cursor, before.cursor, "refused watchdog must not append");
-		assert.deepEqual(after.events, []);
-		assert.deepEqual(parseSmokeEnvelope(await fixture.native(["list"])), roster);
+		assert.equal(after.cursor, before.cursor, "a refused watchdog call must not append");
 		assert.deepEqual(privateHomeSnapshot(home), files, "no legacy file authority was mutated");
+
+		// The wire, end to end through the shim: on → status → off for the caller.
+		const on = object(
+			parseSmokeEnvelope(await fixture.shim(["watchdog", "on", "--every", "30m"])).data,
+		);
+		assert.equal(on.enabled, true);
+		assert.equal(on.interval_secs, 1_800);
+		const status = object(parseSmokeEnvelope(await fixture.shim(["watchdog", "status"])).data);
+		assert.equal((status.optins as unknown[]).length, 1, "status lists the opted-in seat");
+		const off = object(parseSmokeEnvelope(await fixture.shim(["watchdog", "off"])).data);
+		assert.equal(off.was_on, true);
 		console.error(
 			JSON.stringify({
-				smoke: "watchdog-refusal",
-				code: "E-RS-UNPORTED",
-				cursor: after.cursor,
+				smoke: "watchdog",
 				forcedLegacy: "refused",
-				mutation: "none",
+				oldLeaf: "E-RS-ARG",
+				roundTrip: "on→status→off",
 			}),
 		);
 	});

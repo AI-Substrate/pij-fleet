@@ -8,6 +8,7 @@ use pij_core::orchestration::{
     DescriptorField, ParentAttribution, ReconcileDecision, RoleAssignment, SpawnRecord, StreamPlan,
     VerifiedDescriptor, derive_parent, plan_descriptor_reconciliation,
 };
+use pij_core::watchdog::WatchdogOptIn;
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 
@@ -329,6 +330,47 @@ impl SqliteOrchestration {
         rows.into_iter().map(role_assignment).collect()
     }
 
+    /// Read every opted-in watchdog in seat order.
+    pub async fn list_watchdogs(&self) -> Result<Vec<WatchdogOptIn>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(
+            "SELECT seat, interval_secs, set_by, set_at FROM seat_watchdogs ORDER BY seat",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        rows.into_iter().map(watchdog_optin).collect()
+    }
+
+    /// Turn a seat's watchdog on, or change its interval. Last writer wins.
+    pub async fn set_watchdog(&self, optin: &WatchdogOptIn) -> Result<()> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(
+            "INSERT INTO seat_watchdogs (seat, interval_secs, set_by, set_at) VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(seat) DO UPDATE SET interval_secs=excluded.interval_secs, \
+             set_by=excluded.set_by, set_at=excluded.set_at",
+        )
+        .bind(optin.seat.as_str())
+        .bind(i64::try_from(optin.interval_secs).map_err(|_| store_range("interval_secs"))?)
+        .bind(optin.set_by.as_str())
+        .bind(i64::try_from(optin.set_at_ms).map_err(|_| store_range("set_at"))?)
+        .execute(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(())
+    }
+
+    /// Turn a seat's watchdog off. Returns whether it was on.
+    pub async fn clear_watchdog(&self, seat: &SeatId) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let done = sqlx::query("DELETE FROM seat_watchdogs WHERE seat=?1")
+            .bind(seat.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        Ok(done.rows_affected() > 0)
+    }
+
     /// Reserve the complete stream recipe before Git mutates a worktree.
     pub async fn reserve_stream(
         &self,
@@ -548,6 +590,28 @@ fn json_error(error: serde_json::Error) -> PijError {
         adapter: "store/orchestration".to_string(),
         message: format!("could not encode descriptor merge evidence: {error}"),
     }
+}
+
+fn store_range(field: &str) -> PijError {
+    PijError::Adapter {
+        adapter: "store/orchestration".into(),
+        message: format!("{field} is out of range for the store"),
+    }
+}
+
+fn watchdog_optin(row: sqlx::sqlite::SqliteRow) -> Result<WatchdogOptIn> {
+    Ok(WatchdogOptIn {
+        seat: SeatId(row.try_get("seat").map_err(adapter_error)?),
+        interval_secs: sql_u64(
+            row.try_get("interval_secs").map_err(adapter_error)?,
+            "watchdog interval_secs",
+        )?,
+        set_by: SeatId(row.try_get("set_by").map_err(adapter_error)?),
+        set_at_ms: sql_u64(
+            row.try_get("set_at").map_err(adapter_error)?,
+            "watchdog set_at",
+        )?,
+    })
 }
 
 fn role_assignment(row: sqlx::sqlite::SqliteRow) -> Result<RoleAssignment> {

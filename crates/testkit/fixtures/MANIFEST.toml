@@ -425,9 +425,9 @@ answer = "Both CLI surfaces emit these exact complete envelope bytes with --json
 
 [[fixture]]
 path = "golden/api/governance-routes.json"
-sha256 = "dc98b5012da8b9c1fc56ee95e8773520c1ed895981a28dc9ffb8ed6e2a73a3d0"
-bytes = 89016
-note = "DESIGNED merged governance route contract promoted from plan 139 at e22833b0d0caf00d95346008dab1587005d0173d, not a runtime capture. Historical originals remain unchanged; unsupported guidance uses docs/how/pij-rs-api.md#unsupported-status and ErrorKind retains its existing snake_case wire. Plan 145 adds selected-node state and report assignment_id/refs defaults without changing verification or answer authority. Plan 166 rewrote the role string `reviewer` to `pm` (closed seat-role vocabulary) by text edit; not a re-capture."
+sha256 = "01a497a97900aacffa39575225f9802551c743f89f11b7711bc7509718df0888"
+bytes = 88953
+note = "DESIGNED merged governance route contract promoted from plan 139 at e22833b0d0caf00d95346008dab1587005d0173d, not a runtime capture. Historical originals remain unchanged; unsupported guidance uses docs/how/pij-rs-api.md#unsupported-status and ErrorKind retains its existing snake_case wire. Plan 145 adds selected-node state and report assignment_id/refs defaults without changing verification or answer authority. Plan 166 rewrote the role string `reviewer` to `pm` (closed seat-role vocabulary) by text edit; not a re-capture. 2026-10-09: the canonical unported example moved from `watchdog` (now ported, PA watchdog + opt-in) to `chore` by text edit; not a re-capture."
 answer = "Permanent readers consume stable complete v2 envelopes, daemon-owned attribution and role joins, observed lease-id requirements, and terminal-only answer supersede. Preserve E-RS-ANSWER-AUTHORITY-SPLIT for mixed persistence. Reports retain assignment_id and refs; the selected node exposes its latest state record, null before any declaration. Unsupported commands point to the stable ledger."
 
 [[fixture]]
