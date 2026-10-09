@@ -92,8 +92,7 @@ impl Fixture {
         let router = router_with_config(
             services,
             HttpConfig {
-                local_key: KEY.to_string(),
-                peer_keys: Vec::new(),
+                auth: pij_daemon::http::AuthRing::local(KEY.to_string()),
                 machine_alias: "fixture-machine".to_string(),
             },
         );

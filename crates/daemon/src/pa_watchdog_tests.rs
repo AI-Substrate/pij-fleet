@@ -415,8 +415,8 @@ async fn any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told() {
     let router = crate::http::router_with_config(
         services,
         crate::http::HttpConfig {
-            local_key: "key".into(),
-            peer_keys: Vec::new(),
+            auth: crate::http::AuthRing::new("key".to_string(), std::iter::empty())
+                .expect("local-only auth"),
             machine_alias: "workstation".into(),
         },
     );

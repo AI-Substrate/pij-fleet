@@ -75,8 +75,7 @@ async fn fixture_with_retired_harnesses(
     let app = router_with_config(
         services.clone(),
         HttpConfig {
-            local_key: "revive-key".to_string(),
-            peer_keys: Vec::new(),
+            auth: pij_daemon::http::AuthRing::local("revive-key".to_string()),
             machine_alias: "test".to_string(),
         },
     );

@@ -140,8 +140,7 @@ async fn two_hello_confirmed_http_subscribers_see_adopt_and_report_before_messag
     let router = crate::http::router_with_config(
         services,
         crate::http::HttpConfig {
-            local_key: "fixture-key".to_string(),
-            peer_keys: Vec::new(),
+            auth: crate::http::AuthRing::local("fixture-key".to_string()),
             machine_alias: machine.to_string(),
         },
     );

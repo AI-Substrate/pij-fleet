@@ -109,8 +109,7 @@ async fn shipped_cli_retired_policy_requires_explicit_override_and_records_event
             router_with_config(
                 services,
                 HttpConfig {
-                    local_key: "retired-test-key".to_string(),
-                    peer_keys: Vec::new(),
+                    auth: pij_daemon::http::AuthRing::local("retired-test-key".to_string()),
                     machine_alias: "test-machine".to_string(),
                 },
             ),
@@ -243,8 +242,7 @@ async fn shipped_spawn_revive_and_registration_do_not_attest_native_delivery() {
             router_with_config(
                 services,
                 HttpConfig {
-                    local_key: "spawn-test-key".to_string(),
-                    peer_keys: Vec::new(),
+                    auth: pij_daemon::http::AuthRing::local("spawn-test-key".to_string()),
                     machine_alias: "test-machine".to_string(),
                 },
             ),
@@ -569,8 +567,7 @@ async fn shipped_cli_native_inbox_uses_pane_session_ladder_and_acknowledges() {
             router_with_config(
                 services,
                 HttpConfig {
-                    local_key: "native-inbox-key".into(),
-                    peer_keys: Vec::new(),
+                    auth: pij_daemon::http::AuthRing::local("native-inbox-key".into()),
                     machine_alias: "native-test".into(),
                 },
             ),
@@ -736,8 +733,7 @@ async fn shipped_cli_registers_sends_reads_acks_and_does_not_read_twice() {
             router_with_config(
                 services,
                 HttpConfig {
-                    local_key: "inbox-test-key".to_string(),
-                    peer_keys: Vec::new(),
+                    auth: pij_daemon::http::AuthRing::local("inbox-test-key".to_string()),
                     machine_alias: "test-machine".to_string(),
                 },
             ),
@@ -1127,8 +1123,7 @@ async fn shipped_cli_reads_one_seat_state_back_from_the_real_store() {
             router_with_config(
                 services,
                 HttpConfig {
-                    local_key: "state-test-key".to_string(),
-                    peer_keys: Vec::new(),
+                    auth: pij_daemon::http::AuthRing::local("state-test-key".to_string()),
                     machine_alias: "test-machine".to_string(),
                 },
             ),

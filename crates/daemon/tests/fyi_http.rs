@@ -64,8 +64,7 @@ async fn serve(config: &Config, seed: bool) -> (SocketAddr, tokio::task::JoinHan
     let router = router_with_config(
         services,
         HttpConfig {
-            local_key: KEY.to_string(),
-            peer_keys: Vec::new(),
+            auth: pij_daemon::http::AuthRing::local(KEY.to_string()),
             machine_alias: "workstation".to_string(),
         },
     );
@@ -651,6 +650,7 @@ async fn a_read_returns_exactly_the_batch_one_claim_delivered() {
         id: id.to_string(),
         recipient: seat.clone(),
         sender: SeatId::from("pij-sender"),
+        from_machine: None,
         body: format!("body {id}"),
         held_at_ms,
     };

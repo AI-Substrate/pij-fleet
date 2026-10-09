@@ -76,8 +76,7 @@ async fn serve(
             router_with_config(
                 services,
                 HttpConfig {
-                    local_key: key,
-                    peer_keys: Vec::new(),
+                    auth: pij_daemon::http::AuthRing::local(key),
                     machine_alias: "test-machine".to_string(),
                 },
             ),

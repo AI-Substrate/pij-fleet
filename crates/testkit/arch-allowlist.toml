@@ -141,7 +141,9 @@ internal = [
 # `time` formats death-notice UTC timestamps only (plan 140); no clock or parsing features.
 # `hyper-util` is the accept loop axum::serve hides, so an idle keep-alive
 # connection can be closed (header read timeout); axum already depends on it.
-external = ["async-trait", "axum", "getrandom", "globset", "hostname", "hyper-util", "reqwest", "serde", "serde_json", "sha2", "sqlx@dev", "time", "tokio", "tokio-stream"]
+# `toml` parses the pairing file, <state-dir>/peers.toml (plan 164); sha2 also
+# fingerprints its keys and getrandom mints them.
+external = ["async-trait", "axum", "getrandom", "globset", "hostname", "hyper-util", "reqwest", "serde", "serde_json", "sha2", "sqlx@dev", "time", "tokio", "tokio-stream", "toml"]
 why = "Composition root #1: wires Arc<dyn Port> from config, serves HTTP, runs tick loops and job workers; cryptographic packet digests and standard fence matching support governance boundaries."
 
 [crates.pij-cli]

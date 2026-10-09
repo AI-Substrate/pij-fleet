@@ -54,12 +54,12 @@ use pij_harnesses::{SpawnPlanInput, build_spawn_plan, observed_launch_command};
 use serde::{Deserialize, Serialize};
 use tokio_stream::{Stream, StreamExt};
 
-use crate::federation::{FederationSendError, FederationService};
+use crate::federation::{FederationSendError, FederationService, FirstAttempt};
 use crate::registration::{RegistrationError, RegistrationService, requested_model_matches};
 use crate::{BUILD, Services};
-pub use auth::AuthRing;
+pub use auth::{AuthRing, AuthRingError};
 pub use client::{PeerEndpoint, get_from_peer, post_to_peer, stream_from_peer};
-pub use exposure::{Exposure, boot_banner, exposure};
+pub use exposure::{BindRefusal, Exposure, RemoteListener, boot_banner, check_bind};
 pub use identity::{CallerContext, IdentityQuery, IdentityRequest, Phonehome};
 pub use types::{
     CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest, PeerStreamState,
@@ -82,20 +82,17 @@ pub(crate) struct AppState {
 /// HTTP configuration supplied by the daemon composition root.
 #[derive(Clone)]
 pub struct HttpConfig {
-    /// Per-boot credential used by clients on this machine.
-    pub local_key: String,
-    /// Persistent credentials for manually bootstrapped peer machines.
-    pub peer_keys: Vec<String>,
+    /// The validated local key plus one `(alias, key)` per paired machine.
+    pub auth: AuthRing,
     /// This machine's configured alias, defaulted from hostname by lifecycle.
     pub machine_alias: String,
 }
 
 impl HttpConfig {
-    /// Local-only compatibility config used until lifecycle composition lands.
+    /// A daemon paired with no machine: only the local key is accepted.
     pub fn local(local_key: String) -> Self {
         Self {
-            local_key,
-            peer_keys: Vec::new(),
+            auth: AuthRing::local(local_key),
             machine_alias: "local".to_string(),
         }
     }
@@ -186,10 +183,13 @@ enum Endpoint {
     Node,
     Orchestration,
     Spine,
+    /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
+    /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
+    BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 50] = [
+    const ALL: [Self; 51] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -240,6 +240,7 @@ impl Endpoint {
         Self::Node,
         Self::Orchestration,
         Self::Spine,
+        Self::BackgroundEmit,
     ];
 
     const fn path(self) -> &'static str {
@@ -289,6 +290,7 @@ impl Endpoint {
             Self::Node => "/v1/node",
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
+            Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
             // unknown fields, so the additive shape would have an older daemon
@@ -337,7 +339,8 @@ impl Endpoint {
             | Self::Task
             | Self::Node
             | Self::Orchestration
-            | Self::Spine => Method::POST,
+            | Self::Spine
+            | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
             }
@@ -350,6 +353,95 @@ impl Endpoint {
             | Self::ShimSessions => Method::GET,
         }
     }
+
+    /// Which credential guards this route. Every route is behind the bearer
+    /// ring except the per-job-token hook, the one named exception.
+    const fn auth(self) -> RouteAuth {
+        match self {
+            Self::BackgroundEmit => RouteAuth::JobToken,
+            _ => RouteAuth::Bearer,
+        }
+    }
+
+    /// What a PEER key may do here (plan 164 ruling 4): deliver a message, read
+    /// the local roster, follow local events. Nothing else.
+    ///
+    /// Refused by default: this is a closed allowlist, so an endpoint added later
+    /// is unreachable with a peer key until someone decides otherwise here.
+    /// Roster and events are local-scope only, or one paired machine could read
+    /// through this daemon into every machine it is paired with.
+    fn peer_access(self, method: &Method) -> PeerAccess {
+        match (self, method) {
+            (Self::Send, &Method::POST) => PeerAccess::Allowed,
+            (Self::Seats | Self::Events, &Method::GET) => PeerAccess::LocalScopeOnly,
+            _ => PeerAccess::Refused,
+        }
+    }
+}
+
+/// The credential a route checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RouteAuth {
+    /// The bearer ring (local key, or a paired machine's key under scope).
+    Bearer,
+    /// A per-job secret minted for one background job; no daemon or peer key.
+    JobToken,
+}
+
+/// The answer [`Endpoint::peer_access`] gives for one method on one route.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PeerAccess {
+    Allowed,
+    /// Allowed only with `?scope=local`.
+    LocalScopeOnly,
+    Refused,
+}
+
+/// The stable code a peer key meets on any route outside its scope.
+const PEER_SCOPE_CODE: &str = "E-RS-PEER-SCOPE";
+
+fn local_scope_requested(query: Option<&str>) -> bool {
+    query.is_some_and(|query| query.split('&').any(|pair| pair == "scope=local"))
+}
+
+/// Plan 164 ruling 4, enforced in ONE place: may this machine make this call?
+///
+/// A BRAKE: it can only refuse. Removing it lets a peer key reach more routes,
+/// never different ones.
+fn peer_scope_refusal(alias: &str, request: &axum::extract::Request) -> Option<Response> {
+    let matched = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(axum::extract::MatchedPath::as_str);
+    let access = matched
+        .and_then(|path| {
+            Endpoint::ALL
+                .into_iter()
+                .find(|endpoint| endpoint.path() == path)
+        })
+        .map_or(PeerAccess::Refused, |endpoint| {
+            endpoint.peer_access(request.method())
+        });
+    let allowed = match access {
+        PeerAccess::Allowed => true,
+        PeerAccess::LocalScopeOnly => local_scope_requested(request.uri().query()),
+        PeerAccess::Refused => false,
+    };
+    if allowed {
+        return None;
+    }
+    let mut refusal = Envelope::<()>::refused(
+        "auth",
+        ErrorKind::Auth,
+        format!(
+            "{PEER_SCOPE_CODE}: paired machine `{alias}` may call only POST /v1/send, \
+             GET /v1/seats?scope=local and GET /v1/events?scope=local; {} {} is refused",
+            request.method(),
+            request.uri().path()
+        ),
+    );
+    refusal.details = Some(serde_json::json!({"code": PEER_SCOPE_CODE, "machine": alias}));
+    Some(envelope(StatusCode::FORBIDDEN, &refusal))
 }
 
 /// Build the local-only router used by the current composition root.
@@ -361,15 +453,12 @@ pub fn router(services: Services, token: String) -> Router {
 ///
 /// # Composition recipe
 ///
-/// In `crates/daemon/src/lib.rs`, import
-/// `crate::http::{HttpConfig, PeerEndpoint, boot_banner, router_with_config}`.
-/// After binding, print `boot_banner(&addr)`. Build `HttpConfig` from the local
-/// per-boot token, persistent configured peer keys, and lifecycle's hostname-
-/// defaulted machine alias, then call `router_with_config(services, http_config)`.
-/// The wave-4 federation worker owns a `BTreeMap<String, PeerEndpoint>` plus one
-/// `reqwest::Client`; it resolves a machine alias and calls `post_to_peer` once.
-/// Removing a configured peer key from `HttpConfig::peer_keys` revokes inbound
-/// access for that machine.
+/// In `crates/daemon/src/lib.rs`, build `HttpConfig` from an [`AuthRing`]
+/// (the local per-boot token plus one `(alias, key)` per pairing in
+/// `peers.toml`) and lifecycle's machine alias, then call
+/// `router_with_federation`. Every peer key authenticates AS its alias, and
+/// `require_bearer` refuses it on every route outside [`Endpoint::peer_access`].
+/// Removing a pairing, then restarting, revokes exactly that machine.
 ///
 /// Plan 136's routes are already composed here under the same bearer ring:
 /// ```text
@@ -425,7 +514,7 @@ fn router_with_optional_federation(
     .with_native_lock(services.delivery.native_lock());
     let state = AppState {
         services,
-        auth: AuthRing::new(config.local_key, config.peer_keys),
+        auth: config.auth,
         machine_alias: config.machine_alias,
         spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -434,6 +523,7 @@ fn router_with_optional_federation(
         registration,
     };
     let mut router = Router::new();
+    let mut job_token_routes = Vec::new();
     for endpoint in Endpoint::ALL {
         debug_assert_eq!(
             endpoint.method(),
@@ -482,6 +572,7 @@ fn router_with_optional_federation(
                     | Endpoint::Node
                     | Endpoint::Orchestration
                     | Endpoint::Spine
+                    | Endpoint::BackgroundEmit
             ) {
                 Method::POST
             } else {
@@ -556,17 +647,28 @@ fn router_with_optional_federation(
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),
             Endpoint::ShimInboxAck => router.route(endpoint.path(), post(shim::shim_inbox_ack)),
             Endpoint::ShimSessions => router.route(endpoint.path(), get(shim::shim_sessions)),
+            // Collected apart and merged after the bearer layer: its credential
+            // is its own per-job token (plan 163), never a daemon or peer key.
+            Endpoint::BackgroundEmit => {
+                job_token_routes.push((endpoint.path(), post(background::emit)));
+                router
+            }
         };
+        debug_assert_eq!(
+            endpoint.auth() == RouteAuth::JobToken,
+            matches!(endpoint, Endpoint::BackgroundEmit)
+        );
     }
-    router
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            require_bearer,
-        ))
-        // Added after the layer on purpose: the event hook's credential is its
-        // own per-job token (Plan 163), never the daemon key.
-        .route(background::EMIT_PATH, post(background::emit))
-        .with_state(state)
+    let mut router = router.layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        require_bearer,
+    ));
+    // Routed AFTER the layer (not merged: a merge would drop the bearer layer
+    // from the fallback, turning a keyless 401 for an unknown path into a 404).
+    for (path, method_router) in job_token_routes {
+        router = router.route(path, method_router);
+    }
+    router.with_state(state)
 }
 
 async fn require_bearer(
@@ -580,6 +682,11 @@ async fn require_bearer(
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
     if let Some(identity) = state.auth.authenticate(presented) {
+        if let auth::AuthenticatedMachine::Peer(alias) = &identity
+            && let Some(refusal) = peer_scope_refusal(alias, &request)
+        {
+            return refusal;
+        }
         request.extensions_mut().insert(identity);
         return next.run(request).await;
     }
@@ -588,7 +695,7 @@ async fn require_bearer(
         &Envelope::<()>::refused(
             "auth",
             ErrorKind::Auth,
-            "missing or wrong bearer token — local clients read <state-dir>/daemon.key and send `Authorization: Bearer <key>`; peer machines use their manually bootstrapped configured key",
+            "missing or wrong bearer token — local clients read <state-dir>/daemon.key and send `Authorization: Bearer <key>`; paired machines use the key from their peers.toml",
         ),
     )
 }
@@ -1556,18 +1663,70 @@ struct SendBodyRequest {
     caller: Option<CallerContext>,
 }
 
-async fn send(State(state): State<AppState>, Json(request): Json<SendBodyRequest>) -> Response {
+async fn send(
+    State(state): State<AppState>,
+    Extension(caller): Extension<auth::AuthenticatedMachine>,
+    Json(mut request): Json<SendBodyRequest>,
+) -> Response {
     if request.message.from.0 == pij_core::BG_ACTOR {
         return refused(
             "pij send",
             "pij-bg is a daemon-owned sender; callers cannot impersonate it",
         );
     }
+    // The sending machine comes from the KEY, never from the body (plan 164
+    // ruling 3): a peer is stamped with its configured alias, and a local
+    // caller cannot pose as a forward to slip past this daemon's rules.
+    match &caller {
+        auth::AuthenticatedMachine::Peer(alias) => {
+            if request.command.is_some() {
+                return refused(
+                    "pij send",
+                    "E-RS-CONTROL-IDENTITY: remote controls require a caller proven on the target daemon",
+                );
+            }
+            if request.message.to.machine.is_some() {
+                return refused(
+                    "pij send",
+                    format!(
+                        "{PEER_SCOPE_CODE}: paired machine `{alias}` may deliver only to this daemon's own seats; it is never relayed onward"
+                    ),
+                );
+            }
+            if let Some(claimed) = request.message.from_machine.as_deref()
+                && claimed != alias.as_ref()
+            {
+                return refused(
+                    "pij send",
+                    format!(
+                        "from_machine `{claimed}` disagrees with the key's machine `{alias}`; check that both peers.toml files use the same aliases"
+                    ),
+                );
+            }
+            // The origin is its own field, never folded into the id (review
+            // F02): every dedupe downstream keys on (from_machine, msg_id).
+            request.message.from_machine = Some(alias.to_string());
+            if let Some(refusal) = at_in_msg_id(&request.message.msg_id) {
+                return refusal;
+            }
+        }
+        auth::AuthenticatedMachine::Local => {
+            if request.message.from_machine.is_some() {
+                return refused(
+                    "pij send",
+                    "from_machine is stamped from a paired machine's key; a local caller cannot assert it",
+                );
+            }
+            if let Some(refusal) = at_in_msg_id(&request.message.msg_id) {
+                return refusal;
+            }
+        }
+    }
     if request.message.fyi {
         return hold_fyi(&state, request).await;
     }
     if let Some(command) = request.command {
-        if request.message.to.machine.is_some() || request.message.from_machine.is_some() {
+        if request.message.to.machine.is_some() {
             return refused(
                 "pij send",
                 "E-RS-CONTROL-IDENTITY: remote controls require a caller proven on the target daemon",
@@ -1590,17 +1749,7 @@ async fn send(State(state): State<AppState>, Json(request): Json<SendBodyRequest
     }
     let request = request.message;
     if request.to.machine.is_some() {
-        let Some(federation) = state.federation.as_ref() else {
-            return refused(
-                "pij send",
-                "remote destinations require configured federation peers",
-            );
-        };
-        return match federation.enqueue_remote(&request).await {
-            Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok("pij send", receipt)),
-            Err(FederationSendError::Refused(reason)) => refused("pij send", reason),
-            Err(FederationSendError::Runtime(error)) => internal("pij send", error),
-        };
+        return send_remote(&state, "pij send", request).await;
     }
     // ONE delivery path. This route used to enqueue a payload shape of its own
     // and synthesise a Queued receipt, which meant it consulted no routing
@@ -1608,32 +1757,29 @@ async fn send(State(state): State<AppState>, Json(request): Json<SendBodyRequest
     // payload the inbox reading that same queue could not decode. Two halves of
     // one round trip, each proven against itself. Found by u-extension.
     let forwarded = request.from_machine.is_some();
-    // A forward was sent on another machine, whose sender this daemon cannot
-    // offer the --fyi/--force choice; only local senders are guarded.
-    let cold_check = if forwarded {
-        None
-    } else {
-        match cold_wake::guard(
-            &state,
-            "pij send",
-            &request.from,
-            &request.to.seat,
-            &request.msg_id,
-            cold_wake::Override {
-                force: request.force,
-                reason: request.reason.as_deref(),
-            },
-        )
-        .await
-        {
-            Ok(label) => label,
-            Err(response) => return *response,
-        }
+    // A forwarded message obeys THIS daemon's rules (plan 164 ruling 6): the
+    // sender's --force and --reason travel with it, and the audit names the
+    // machine it came from.
+    let cold_check = match cold_wake::guard(
+        &state,
+        "pij send",
+        &request.from,
+        &request.to.seat,
+        &request.msg_id,
+        cold_wake::Override {
+            force: request.force,
+            reason: request.reason.as_deref(),
+            from_machine: request.from_machine.as_deref(),
+        },
+    )
+    .await
+    {
+        Ok(label) => label,
+        Err(response) => return *response,
     };
     let msg = Msg {
         from: request.from,
-        // Carried from the wire: a federation worker forwarding A's message to B
-        // stamps it, and a local client simply omits it.
+        // Stamped above from the authenticated peer key, or absent locally.
         from_machine: request.from_machine,
         to: request.to.seat,
         body: request.body,
@@ -1656,9 +1802,69 @@ async fn send(State(state): State<AppState>, Json(request): Json<SendBodyRequest
     }
 }
 
+/// `@` is the address separator, so NO msg_id carries it, local or forwarded:
+/// an id can never be read as, or collide with, a qualified `(origin, id)` a
+/// client must hold in one string.
+fn at_in_msg_id(msg_id: &str) -> Option<Response> {
+    msg_id.contains('@').then(|| {
+        refused(
+            "pij send",
+            "E-RS-ARG: msg_id cannot contain `@`, which separates a seat from its machine",
+        )
+    })
+}
+
+/// One remote send, from either the native or the shim route: durably queued
+/// for the federation worker, answered inline with the peer's receipt or
+/// refusal when it comes within the federation policy's first-attempt wait.
+///
+/// The receiver decides coldness and holds FYIs (plan 164 ruling 6); this
+/// daemon only refuses a `--force` with no reason, which the receiver would
+/// refuse anyway, so the sender hears it without a round trip.
+pub(crate) async fn send_remote(state: &AppState, command: &str, request: SendRequest) -> Response {
+    let Some(federation) = state.federation.as_ref() else {
+        return refused(
+            command,
+            "remote destinations require a pairing in peers.toml",
+        );
+    };
+    if request.force
+        && request
+            .reason
+            .as_deref()
+            .is_none_or(|reason| reason.trim().is_empty())
+    {
+        return refused(
+            command,
+            format!(
+                "{}: --force needs a non-empty --reason saying why the wake is worth it",
+                pij_core::cold_wake::COLD_WAKE_CODE
+            ),
+        );
+    }
+    let machine = request.to.machine.clone().unwrap_or_default();
+    match federation.send_remote(&request).await {
+        Ok(FirstAttempt::Forwarded(receipt) | FirstAttempt::Queued(receipt)) => {
+            envelope(StatusCode::OK, &Envelope::ok(command, receipt))
+        }
+        Ok(FirstAttempt::Refused { reason, details }) => {
+            let mut refusal = Envelope::<()>::refused(command, ErrorKind::Refused, reason);
+            let mut details = match details {
+                Some(serde_json::Value::Object(map)) => map,
+                _ => serde_json::Map::new(),
+            };
+            details.insert("machine".to_string(), serde_json::Value::String(machine));
+            refusal.details = Some(serde_json::Value::Object(details));
+            envelope(StatusCode::BAD_REQUEST, &refusal)
+        }
+        Err(FederationSendError::Refused(reason)) => refused(command, reason),
+        Err(FederationSendError::Runtime(error)) => internal(command, error),
+    }
+}
+
 /// `pij send --fyi` (plan 158): hold the message for the recipient's next real
-/// turn. Refused with a control, or for a remote seat, whose daemon would have
-/// to hold it and cannot be asked to here.
+/// turn. A remote recipient's FYI is held by ITS daemon: this one forwards it,
+/// and a forwarded FYI is held here exactly as a local one.
 async fn hold_fyi(state: &AppState, request: SendBodyRequest) -> Response {
     if request.command.is_some() {
         return refused(
@@ -1667,15 +1873,12 @@ async fn hold_fyi(state: &AppState, request: SendBodyRequest) -> Response {
         );
     }
     let request = request.message;
-    if request.to.machine.is_some() || request.from_machine.is_some() {
-        return refused(
-            "pij send",
-            "E-RS-FYI-REMOTE: --fyi is held by the recipient's own daemon; send remote seats a normal message",
-        );
+    if request.to.machine.is_some() {
+        return send_remote(state, "pij send", request).await;
     }
     let msg = Msg {
         from: request.from,
-        from_machine: None,
+        from_machine: request.from_machine,
         to: request.to.seat,
         body: request.body,
         msg_id: request.msg_id,
@@ -2276,9 +2479,9 @@ async fn operator_release_inbox(
 }
 
 #[derive(serde::Serialize)]
-struct InboxAckAudit {
+struct InboxAckAudit<'a> {
     job_id: pij_core::model::JobId,
-    authenticated_machine: &'static str,
+    authenticated_machine: &'a str,
     evidence_grade: &'static str,
     outcome: pij_core::model::DeliveryOrigin,
 }
@@ -2379,7 +2582,7 @@ async fn ack_inbox(
     };
     let payload = match serde_json::to_string(&InboxAckAudit {
         job_id: request.job_id,
-        authenticated_machine: authenticated.0,
+        authenticated_machine: authenticated.label(),
         evidence_grade: "machine",
         outcome: acknowledged.origin,
     }) {
@@ -3462,6 +3665,8 @@ pub(crate) fn envelope<T: serde::Serialize>(status: StatusCode, body: &Envelope<
 mod identity_tests;
 #[cfg(test)]
 mod native_tests;
+#[cfg(test)]
+mod peer_scope_tests;
 #[cfg(test)]
 mod tests;
 

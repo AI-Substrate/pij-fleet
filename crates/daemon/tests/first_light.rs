@@ -175,8 +175,7 @@ async fn the_event_stream_opens_with_hello_and_survives_an_unknown_kind() {
             pij_daemon::http::router_with_config(
                 services,
                 pij_daemon::http::HttpConfig {
-                    local_key: "key".to_string(),
-                    peer_keys: Vec::new(),
+                    auth: pij_daemon::http::AuthRing::local("key".to_string()),
                     machine_alias: "first-light".to_string(),
                 },
             ),

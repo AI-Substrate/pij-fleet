@@ -50,8 +50,11 @@ pub struct Adapters {
     pub session_status: AdapterChoice,
 }
 
-/// One manually bootstrapped peer machine.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One paired peer machine, from `<state-dir>/peers.toml`.
+///
+/// `Debug` is written by hand so the key can never reach a log line through
+/// `{:?}` on this or on the [`Config`] that holds it (plan 164 ruling 7).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeerDefinition {
     /// How this machine is addressed in `<seat>@<machine>`. Unique, and never
     /// equal to the local alias.
@@ -60,6 +63,17 @@ pub struct PeerDefinition {
     pub url: String,
     /// The shared bearer credential for this pair.
     pub key: String,
+}
+
+impl std::fmt::Debug for PeerDefinition {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PeerDefinition")
+            .field("alias", &self.alias)
+            .field("url", &self.url)
+            .field("key", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Everything the composition roots need to build the world.
@@ -137,6 +151,13 @@ pub struct Config {
     ///
     /// This is policy, not a safety brake: it changes when work is retried.
     pub federation_retry_max_secs: u64,
+    /// How long a remote send waits inline for its first forwarding attempt,
+    /// so a receiver's refusal (a cold wake) reaches the sender as an answer.
+    ///
+    /// A latency cap, not a brake: past it the send answers `Queued` and the
+    /// same outcome lands later as an event. Above the receiver's bounded
+    /// cold-wake reads, below the forwarder's 30 s request timeout.
+    pub federation_first_attempt_wait_secs: u64,
     /// This machine's alias on the federated wire. `None` defaults from the
     /// hostname at boot, which lifecycle resolves — a machine that never chose a
     /// name still has to be addressable, and a constant would collide.
@@ -154,6 +175,10 @@ pub struct Config {
     /// revocation succeed in one place and leave the machine reachable through the
     /// other.
     pub peers: Vec<PeerDefinition>,
+    /// Allow a non-loopback, non-Tailscale bind on a paired daemon (plan 164
+    /// ruling 5). Bearer keys then cross that network in clear, so it is an
+    /// explicit `--insecure-bind`, never a default.
+    pub insecure_bind: bool,
 }
 
 impl Default for Config {
@@ -174,8 +199,10 @@ impl Default for Config {
             event_buffer_capacity: 1_024,
             federation_poll_interval_secs: 1,
             federation_retry_max_secs: 5 * 60,
+            federation_first_attempt_wait_secs: 10,
             machine_alias: None,
             peers: Vec::new(),
+            insecure_bind: false,
         }
     }
 }

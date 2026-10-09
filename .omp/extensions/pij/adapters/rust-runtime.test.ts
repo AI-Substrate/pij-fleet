@@ -488,6 +488,30 @@ describe("RustRuntimeSession", () => {
 			runtime.shutdown("quit");
 		}
 	});
+	// Plan 164 F01b: a qualified reply reaches the paired machine, not a local seat named `seat@alias`.
+	it.each([
+		{ to: "pij-x@laptop", destination: { seat: "pij-x", machine: "laptop" } },
+		{ to: "pij-x", destination: { seat: "pij-x" } },
+		{ to: "a@@b@laptop", destination: { seat: "a@b", machine: "laptop" } },
+	])("send addresses $to as $destination", async ({ to, destination }) => {
+		const { runtime, sends } = await bootPushedEvent(PUSHED_EVENT_WIRE, new FakePiRuntime());
+		try {
+			await runtime.send(to, "reply");
+			expect(sends.at(-1)?.to).toEqual(destination);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+	it("refuses a malformed address without sending", async () => {
+		const { runtime, sends } = await bootPushedEvent(PUSHED_EVENT_WIRE, new FakePiRuntime());
+		try {
+			const before = sends.length;
+			await expect(runtime.send("a@b@c", "reply")).rejects.toThrow(/machine aliases cannot/);
+			expect(sends).toHaveLength(before);
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
 	it("does not overwrite a claude seat when omp boots in the same pane", async () => {
 		vi.stubEnv("PIJ_ANNOUNCE_TO", "");
 		vi.stubEnv("PIJ_SESSION_ID", undefined);
@@ -1170,6 +1194,8 @@ const HOLD_CONTRACT = JSON.parse(
 type GraceMessage = {
 	msg_id: string;
 	from: string;
+	/** Plan 164: stamped by the daemon on a message forwarded from a paired machine. */
+	from_machine?: string;
 	body: string;
 	command?: string;
 	urgent?: boolean;
@@ -1867,6 +1893,51 @@ describe("extension-stream delivery", () => {
 		expect(client.parks).toEqual([]);
 	});
 
+	// Plan 164 S7/F02: a forwarded message's resend names its machine, and its marker
+	// acknowledges exactly that message when consumed.
+	it.each([
+		{ machine: "laptop", sender: "pij-sender@laptop" },
+		{ machine: undefined, sender: "pij-sender" },
+	])("resend frames the sender as $sender", async ({ machine, sender }) => {
+		const { runtime, client, api } = await startSwallowing();
+		await client.push(message("swallowed", machine === undefined ? {} : { from_machine: machine }));
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(api.sendUserMessage).toHaveBeenCalledOnce();
+		const resent = String(api.sendUserMessage.mock.calls[0]?.[0]);
+		expect(resent).toMatch(/^\[pij resend 1\]\n\[pijMessageId:[^\]]+\]\n/);
+		expect(resent.endsWith(`\n[pij-rs from ${sender}]\nswallowed\n[/pij]`)).toBe(true);
+		await runtime.onMessageStart({ role: "user", content: resent });
+		expect(client.acks).toEqual([1]);
+	});
+
+	// Plan 164 F02: identity is (origin machine, msg_id); a forwarded `X` is not the local `X`.
+	it("a parked local message never suppresses a forwarded one with the same msg_id", async () => {
+		const { client, api } = await startSwallowing();
+		await client.push(message("X"));
+		expect(api.sendMessage).toHaveBeenCalledOnce();
+		await client.park(1, "undelivered:lease-exhausted");
+		await client.push(message("X", { from_machine: "laptop", body: "from the laptop" }));
+		expect(api.sendMessage).toHaveBeenCalledTimes(2);
+		expect(api.sendMessage.mock.calls[1]?.[0]).toMatchObject({
+			content: "[pij-rs from pij-sender@laptop]\nfrom the laptop\n[/pij]",
+		});
+	});
+
+	it("a local message's consumption marker never acknowledges a forwarded one with the same msg_id", async () => {
+		const { runtime, client, api } = await startSwallowing();
+		const consumed = (details: unknown) =>
+			runtime.onMessageStart({ role: "custom", customType: "pij", details });
+		await client.push(message("X"));
+		await consumed(api.sendMessage.mock.calls[0]?.[0].details);
+		expect(client.acks).toEqual([1]);
+		await client.push(message("X", { from_machine: "laptop" }));
+		expect(api.sendMessage).toHaveBeenCalledTimes(2);
+		await consumed(api.sendMessage.mock.calls[0]?.[0].details); // a late echo of the local one
+		expect(client.acks).toEqual([1]);
+		await consumed(api.sendMessage.mock.calls[1]?.[0].details);
+		expect(client.acks).toEqual([1, 2]);
+	});
+
 	it("resets the resend idle window on every turn start without treating a turn as consumption", async () => {
 		vi.stubEnv("PIJ_REDELIVER_IDLE_MS", "2000");
 		const { runtime, pi, client, api } = await startSwallowing();
@@ -2162,6 +2233,32 @@ describe("extension-stream delivery", () => {
 		]);
 		expect(pi.statuses.some((status) => status?.includes("typing"))).toBe(false);
 		expect(pi.statuses.at(-1)).toBe(busy ? "📨 1 pending" : undefined);
+	});
+
+	// Plan 164 S7: a sender forwarded from a paired machine is never shown as a local seat.
+	it.each([
+		{ machine: "laptop", sender: "pij-sender@laptop" },
+		{ machine: undefined, sender: "pij-sender" },
+	])("pushed message names its sender as $sender", async ({ machine, sender }) => {
+		const { pi, client } = await start();
+		await client.push(message("hello", machine === undefined ? {} : { from_machine: machine }));
+		expect(pi.injects.map((row) => row.text)).toEqual([`[pij-rs from ${sender}]\nhello\n[/pij]`]);
+		expect(pi.notices.map((row) => row.text)).toEqual([`📨 pij from ${sender}: hello`]);
+	});
+
+	it.each([
+		{ machine: "laptop", sender: "pij-sender@laptop" },
+		{ machine: undefined, sender: "pij-sender" },
+	])("inbox claim recovered at boot names its sender as $sender", async ({ machine, sender }) => {
+		const client = new GraceClient();
+		await client.push(
+			message("recovered", machine === undefined ? {} : { from_machine: machine }),
+			false,
+		);
+		const { pi } = await start(client);
+		expect(pi.injects.map((row) => row.text)).toEqual([
+			`[pij-rs from ${sender}]\nrecovered\n[/pij]`,
+		]);
 	});
 
 	it("delivers through the OMP adapter without clearing or submitting a human draft", async () => {

@@ -442,9 +442,10 @@ async function syncDirectory(path) {
 	}
 }
 
-function validRecord(record, msgId) {
+function validRecord(record, message) {
 	return (
-		record?.message?.msg_id === msgId &&
+		record?.message?.msg_id === message.msg_id &&
+		record.message.from_machine === message.from_machine &&
 		nonempty(record.message.from) &&
 		nonempty(record.message.to) &&
 		typeof record.message.body === "string" &&
@@ -452,7 +453,8 @@ function validRecord(record, msgId) {
 	);
 }
 
-/** Each exclusive intent file is also an inter-process duplicate barrier. Nothing is evicted. */
+/** Each exclusive intent file is also an inter-process duplicate barrier. Nothing is evicted.
+ *  A record is keyed by message identity, (origin machine, msg_id), never by a bare id. */
 export class FileJournal {
 	constructor(stateDir, registration) {
 		this.root = join(stateDir, "native-extensions");
@@ -463,17 +465,27 @@ export class FileJournal {
 			hash(JSON.stringify([registration.id, registration.harness_session])),
 		);
 	}
-	path(msgId) {
-		return join(this.directory, `${hash(msgId)}.json`);
+	/** Local records keep their pre-federation place; a forwarded one lives under its own
+	 *  machine's directory, so no id string can reach another origin's record (plan 164 F02). */
+	directoryFor(message) {
+		return message.from_machine === undefined
+			? this.directory
+			: join(this.directory, "peers", hash(message.from_machine));
 	}
-	async prepare() {
+	path(message) {
+		return join(this.directoryFor(message), `${hash(message.msg_id)}.json`);
+	}
+	async prepare(message) {
 		await privateDirectory(this.root);
 		await privateDirectory(this.base);
 		await privateDirectory(this.directory);
+		if (message.from_machine === undefined) return;
+		await privateDirectory(join(this.directory, "peers"));
+		await privateDirectory(this.directoryFor(message));
 	}
-	async load(msgId) {
-		await this.prepare();
-		const path = this.path(msgId);
+	async load(message) {
+		await this.prepare(message);
+		const path = this.path(message);
 		try {
 			const info = await lstat(path);
 			if (
@@ -484,7 +496,7 @@ export class FileJournal {
 			)
 				throw new NativeError("Unsafe acceptance record permissions or file type");
 			const record = JSON.parse(await readFile(path, "utf8"));
-			if (!validRecord(record, msgId))
+			if (!validRecord(record, message))
 				throw new NativeError("Malformed acceptance record; receive held for recovery");
 			return record;
 		} catch (error) {
@@ -493,10 +505,10 @@ export class FileJournal {
 		}
 	}
 	async begin(message) {
-		await this.prepare();
+		await this.prepare(message);
 		let handle;
 		try {
-			handle = await open(this.path(message.msg_id), "wx", 0o600);
+			handle = await open(this.path(message), "wx", 0o600);
 		} catch (error) {
 			if (error.code === "EEXIST") return false;
 			throw error;
@@ -507,11 +519,11 @@ export class FileJournal {
 		} finally {
 			await handle.close();
 		}
-		await syncDirectory(this.directory);
+		await syncDirectory(this.directoryFor(message));
 		return true;
 	}
 	async rearm(message, nativeId) {
-		const record = await this.load(message.msg_id);
+		const record = await this.load(message);
 		if (
 			record?.state !== "accepted" ||
 			record.nativeId !== nativeId ||
@@ -521,7 +533,7 @@ export class FileJournal {
 		// A lease can expire while the old consumer is still alive. Only one may retire this acceptance.
 		let handle;
 		try {
-			handle = await open(`${this.path(message.msg_id)}.${hash(nativeId)}.retry`, "wx", 0o600);
+			handle = await open(`${this.path(message)}.${hash(nativeId)}.retry`, "wx", 0o600);
 		} catch (error) {
 			if (error.code === "EEXIST") return false;
 			throw error;
@@ -532,8 +544,8 @@ export class FileJournal {
 		} finally {
 			await handle.close();
 		}
-		await syncDirectory(this.directory);
-		const current = await this.load(message.msg_id);
+		await syncDirectory(this.directoryFor(message));
+		const current = await this.load(message);
 		if (
 			current?.state !== "accepted" ||
 			current.nativeId !== nativeId ||
@@ -548,7 +560,7 @@ export class FileJournal {
 		await this.#replace({ state: "accepted", message, nativeId });
 	}
 	async #replace(record) {
-		const target = this.path(record.message.msg_id);
+		const target = this.path(record.message);
 		const temporary = `${target}.${randomUUID()}.tmp`;
 		const handle = await open(temporary, "wx", 0o600);
 		try {
@@ -559,7 +571,7 @@ export class FileJournal {
 		}
 		try {
 			await rename(temporary, target);
-			await syncDirectory(this.directory);
+			await syncDirectory(this.directoryFor(record.message));
 		} finally {
 			await unlink(temporary).catch((error) => {
 				if (error.code !== "ENOENT") throw error;
@@ -590,6 +602,7 @@ function messageFromClaim(claim, seat) {
 		!positiveInteger(claim?.job_id) ||
 		!nonempty(message?.msg_id) ||
 		!nonempty(message.from) ||
+		(message.from_machine != null && !nonempty(message.from_machine)) ||
 		message.to !== seat ||
 		typeof message.body !== "string" ||
 		message.command != null ||
@@ -598,13 +611,54 @@ function messageFromClaim(claim, seat) {
 		throw new NativeError(
 			"Malformed, unsupported command or wrong-recipient claim; receiving held without acknowledgement",
 		);
-	return { msg_id: message.msg_id, from: message.from, to: message.to, body: message.body };
+	return {
+		msg_id: message.msg_id,
+		from: message.from,
+		...(message.from_machine == null ? {} : { from_machine: message.from_machine }),
+		to: message.to,
+		body: message.body,
+	};
+}
+
+/** Parse a human seat address, `<seat>` or `<seat>@<machine-alias>`, into a daemon
+ *  destination or `{ error }`. Mirrors crates/core/src/address.rs `parse_destination`
+ *  (pinned by crates/testkit/fixtures/golden/address/cases.json): `@@` is a literal
+ *  `@` in the seat; the first unescaped `@` starts the alias, which cannot contain `@`. */
+function parseDestination(input) {
+	let seat = "";
+	let machine;
+	for (let i = 0; i < input.length; i++) {
+		const character = input.charAt(i);
+		if (machine !== undefined) {
+			if (character === "@")
+				return {
+					error: "machine aliases cannot contain '@' — escape '@' only inside the seat as '@@'",
+				};
+			machine += character;
+		} else if (character !== "@") seat += character;
+		else if (input.charAt(i + 1) === "@") {
+			i++;
+			seat += "@";
+		} else machine = "";
+	}
+	if (seat === "") return { error: "a seat address needs a seat id" };
+	if (machine === "") return { error: "a qualified seat address needs a machine alias after '@'" };
+	return machine === undefined ? { seat } : { seat, machine };
+}
+
+/** How a message's sender is shown, in the address grammar `parseDestination` reads back:
+ *  `seat@machine` when the daemon stamped the paired machine it was forwarded from, so a
+ *  remote seat never reads as a local one (plan 164 S7) and a reply to it reaches it (F01b). */
+function senderLabel(message) {
+	const seat = message.from.replaceAll("@", "@@");
+	return message.from_machine === undefined ? seat : `${seat}@${message.from_machine}`;
 }
 
 function sameMessage(left, right) {
 	return (
 		left?.msg_id === right.msg_id &&
 		left.from === right.from &&
+		left.from_machine === right.from_machine &&
 		left.to === right.to &&
 		left.body === right.body
 	);
@@ -612,8 +666,9 @@ function sameMessage(left, right) {
 
 /** Consumption and completion belong to one accepted native message, including after restart. */
 class NativeCompletion {
-	constructor(msgId, cursor, replay = false, jobId) {
-		this.msgId = msgId;
+	constructor(message, cursor, replay = false, jobId) {
+		this.msgId = message.msg_id;
+		this.fromMachine = message.from_machine;
 		this.jobId = jobId;
 		this.tailCursor = cursor;
 		this.emptyReads = 0;
@@ -1337,7 +1392,7 @@ export class NativeBridge {
 				throw new NativeError(
 					"Native discard recovery received malformed queue snapshot; receiving held",
 				);
-			const prefix = `[pij from ${JSON.stringify(message.from)}; msg_id=${JSON.stringify(message.msg_id)}]\n`;
+			const prefix = `[pij from ${JSON.stringify(senderLabel(message))}; msg_id=${JSON.stringify(message.msg_id)}]\n`;
 			if (
 				pending.items.some(
 					(item) => item.id === completion.nativeId || item.displayText.startsWith(prefix),
@@ -1373,12 +1428,12 @@ export class NativeBridge {
 			);
 		}
 	}
-	async newCompletion(msgId, replay = false, jobId) {
+	async newCompletion(message, replay = false, jobId) {
 		const tail = await this.nativeRpc("eventLog.tail", () => this.native.rpc.eventLog.tail());
 		throwIfStopped(this.receiverController.signal);
 		if (typeof tail?.cursor !== "string")
 			throw new NativeError("Native incremental history baseline is malformed; receiving held");
-		const completion = new NativeCompletion(msgId, tail.cursor, replay, jobId);
+		const completion = new NativeCompletion(message, tail.cursor, replay, jobId);
 		if (!replay) {
 			// The SDK tail cursor also counts ephemeral events, which includeEphemeral:false
 			// reads never return. Anchor the baseline to the newest durable event so the
@@ -1399,7 +1454,7 @@ export class NativeBridge {
 	async enqueue(message, completion) {
 		const signal = this.receiverController.signal;
 		throwIfStopped(signal);
-		const prompt = `[pij from ${JSON.stringify(message.from)}; msg_id=${JSON.stringify(message.msg_id)}]\n${message.body}`;
+		const prompt = `[pij from ${JSON.stringify(senderLabel(message))}; msg_id=${JSON.stringify(message.msg_id)}]\n${message.body}`;
 		this.completion = completion;
 		const nativeId = await this.nativeRpc("native.send", () =>
 			this.native.send({ prompt, mode: "immediate" }),
@@ -1437,16 +1492,16 @@ export class NativeBridge {
 				"Native consumer proof absent or mismatched; no injection or acknowledgement",
 			);
 		const message = messageFromClaim(claim, this.registration.id);
-		let record = await this.journal.load(message.msg_id);
+		let record = await this.journal.load(message);
 		throwIfStopped(signal);
 		if (!record) {
 			await this.#prepareNewSend();
 			throwIfStopped(signal);
-			const completion = await this.newCompletion(message.msg_id, false, claim.job_id);
+			const completion = await this.newCompletion(message, false, claim.job_id);
 			throwIfStopped(signal);
 			if (await this.journal.begin(message)) {
 				record = await this.enqueue(message, completion);
-			} else record = await this.journal.load(message.msg_id);
+			} else record = await this.journal.load(message);
 		}
 		throwIfStopped(signal);
 		if (!record || !sameMessage(record.message, message))
@@ -1455,15 +1510,19 @@ export class NativeBridge {
 			throw new NativeError(
 				"Previous native send is ambiguous; held without reinjection or acknowledgement",
 			);
-		if (this.completion?.msgId !== message.msg_id || this.completion.nativeId !== record.nativeId) {
-			this.completion = await this.newCompletion(message.msg_id, true, claim.job_id);
+		if (
+			this.completion?.msgId !== message.msg_id ||
+			this.completion.fromMachine !== message.from_machine ||
+			this.completion.nativeId !== record.nativeId
+		) {
+			this.completion = await this.newCompletion(message, true, claim.job_id);
 			this.completion.bind(record.nativeId);
 		}
 		while (await this.waitForObservation(this.completion, false, message)) {
 			throwIfStopped(signal);
 			await this.#prepareNewSend();
 			if (this.completion.consumption) break;
-			const completion = await this.newCompletion(message.msg_id, false, claim.job_id);
+			const completion = await this.newCompletion(message, false, claim.job_id);
 			if (!(await this.canRetryDiscarded(this.completion, message))) continue;
 			if (this.completion.consumption) break;
 			if (!(await this.journal.rearm(message, record.nativeId)))
@@ -1578,13 +1637,16 @@ export class NativeBridge {
 				ok: false,
 				error: `${COLD_WAKE_CODE}: force needs a non-empty reason saying why the wake is worth it`,
 			};
+		const destination = parseDestination(input.to);
+		if (destination.error !== undefined)
+			return { ok: false, error: `pij_send: ${destination.error}; no message sent` };
 		const msgId = randomUUID();
 		try {
 			const receipt = await this.client.request(
 				"/v1/send",
 				{
 					from: this.registration.id,
-					to: { seat: input.to },
+					to: destination,
 					body: input.message,
 					msg_id: msgId,
 					...(input.fyi === true ? { fyi: true } : {}),

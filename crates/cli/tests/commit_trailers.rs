@@ -83,8 +83,7 @@ async fn shipped_commit_trailers_uses_authoritative_identity_and_keeps_stdout_cl
             router_with_config(
                 services,
                 HttpConfig {
-                    local_key: "trailer-test-key".to_string(),
-                    peer_keys: Vec::new(),
+                    auth: pij_daemon::http::AuthRing::local("trailer-test-key".to_string()),
                     machine_alias: "test-machine".to_string(),
                 },
             ),

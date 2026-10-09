@@ -1135,3 +1135,84 @@ async fn an_older_store_gains_the_bind_evidence_columns_by_migrating_forward() {
     );
     assert_eq!(legacy.folder, "/abs/old");
 }
+
+/// Migration probe for 0029 (opt-in watchdogs): a store on main's schema 28,
+/// which is what production runs after federation, holding a seat, a role, a
+/// spine event and a pending FYI in federation's re-keyed table, moves to 29
+/// with every row intact and the new table empty and usable.
+#[tokio::test]
+async fn seat_watchdogs_migration_moves_a_schema_28_store_to_29_losing_nothing() {
+    let fresh = FreshStore::new();
+    {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(fresh.path())
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .expect("open schema-28 store");
+        let schema_28 = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                pij_store::migrate::MIGRATIONS
+                    .iter()
+                    .filter(|migration| migration.version <= 28)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        schema_28
+            .run(&pool)
+            .await
+            .expect("apply main's migrations through 0028");
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(version, 28, "0028 records its own version");
+        sqlx::raw_sql(
+            "INSERT INTO seats (id, harness, folder, state, seq) VALUES ('pij-old', 'claude', '/abs/old', 'idle', 1); \
+             INSERT INTO seat_roles (seat, role, assigned_by, assigned_at) VALUES ('pij-old', 'pa', 'pij-prime', 5); \
+             INSERT INTO spine_events (seq, v, at, kind, seat, payload) VALUES (1, 1, 10, 'seat.put', 'pij-old', '{}'); \
+             INSERT INTO fyis (origin, id, recipient, sender, body, held_at_ms, state) \
+               VALUES ('peer-box', 'fyi-1', 'pij-old', 'pij-prime', 'heads-up', 20, 'pending');",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed schema-28 rows");
+        pool.close().await;
+    }
+
+    let pool = pij_store::open(&fresh.path())
+        .await
+        .expect("this build migrates 28 → 29");
+    assert_eq!(pij_store::schema_version(&pool).await.unwrap(), 29);
+    let counts: (i64, i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM seats WHERE id='pij-old'), \
+                (SELECT count(*) FROM seat_roles WHERE seat='pij-old' AND role='pa'), \
+                (SELECT count(*) FROM spine_events WHERE seq=1), \
+                (SELECT count(*) FROM fyis WHERE origin='peer-box' AND id='fyi-1' AND state='pending')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(counts, (1, 1, 1, 1), "every schema-28 row survives");
+
+    let store = pij_store::SqliteOrchestration::new(pool);
+    assert!(store.list_watchdogs().await.unwrap().is_empty());
+    let optin = pij_core::watchdog::WatchdogOptIn {
+        seat: SeatId::from("pij-old"),
+        interval_secs: 1_800,
+        set_by: SeatId::from("pij-prime"),
+        set_at_ms: 30,
+    };
+    store.set_watchdog(&optin).await.unwrap();
+    assert_eq!(store.list_watchdogs().await.unwrap(), vec![optin]);
+    assert!(
+        store
+            .clear_watchdog(&SeatId::from("pij-old"))
+            .await
+            .unwrap()
+    );
+}

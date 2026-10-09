@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -37,6 +37,7 @@ impl Queue for CountingQueue {
         &self,
         _recipient: &SeatId,
         _msg_id: &str,
+        _sender_machine: Option<&str>,
         _origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>> {
         // The counting request fixture models no ledger. Claiming would be a lie
@@ -48,18 +49,27 @@ impl Queue for CountingQueue {
         })
     }
 
-    async fn forget_delivered(&self, _recipient: &SeatId, _msg_id: &str) -> Result<()> {
+    async fn forget_delivered(
+        &self,
+        _recipient: &SeatId,
+        _msg_id: &str,
+        _sender_machine: Option<&str>,
+    ) -> Result<()> {
         Ok(())
     }
 
-    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
+    async fn admitted(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<bool> {
         let kind = format!("delivery:{}", recipient.as_str());
-        Ok(self
-            .jobs
-            .lock()
-            .expect("queue mutex")
-            .iter()
-            .any(|job| job.kind == kind && job.dedupe_key == msg_id))
+        Ok(self.jobs.lock().expect("queue mutex").iter().any(|job| {
+            job.kind == kind
+                && job.dedupe_key == msg_id
+                && job.dedupe_origin.as_deref() == sender_machine
+        }))
     }
 
     async fn enqueue(&self, job: Job) -> Result<JobId> {
@@ -1286,10 +1296,16 @@ pub(super) async fn spawn(router: Router) -> (SocketAddr, tokio::task::JoinHandl
     (addr, joined)
 }
 
-pub(super) fn config(local_key: &str, peer_keys: &[&str]) -> HttpConfig {
+/// `peers` are `(alias, key)` pairings this test daemon accepts.
+pub(super) fn config(local_key: &str, peers: &[(&str, &str)]) -> HttpConfig {
     HttpConfig {
-        local_key: local_key.to_string(),
-        peer_keys: peer_keys.iter().map(ToString::to_string).collect(),
+        auth: AuthRing::new(
+            local_key.to_string(),
+            peers
+                .iter()
+                .map(|(alias, key)| ((*alias).to_string(), (*key).to_string())),
+        )
+        .expect("test pairing"),
         machine_alias: "workstation".to_string(),
     }
 }
@@ -1299,6 +1315,7 @@ fn federation_policy() -> FederationPolicy {
         poll_interval: Duration::from_millis(10),
         max_retry_delay: Duration::from_millis(100),
         event_buffer_capacity: 16,
+        first_attempt_wait: Duration::from_millis(50),
     }
 }
 
@@ -1356,7 +1373,7 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
         )
         .with_native_lock(services.delivery.native_lock()),
         services,
-        auth: AuthRing::new("key".to_string(), Vec::new()),
+        auth: AuthRing::local("key".to_string()),
         machine_alias: "local".to_string(),
         spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -1841,6 +1858,7 @@ async fn state_projects_live_delivery_deferrals_and_clears_success_or_terminal_r
                 serial_key: seat.to_string(),
                 payload: serde_json::to_string(&message).unwrap(),
                 dedupe_key: message.msg_id.clone(),
+                dedupe_origin: None,
                 attempt: 0,
             })
             .await
@@ -1973,7 +1991,7 @@ async fn typing_hold_projections_follow_terminal_outcomes_and_sequence() {
             )
             .with_native_lock(services.delivery.native_lock()),
             services,
-            auth: AuthRing::new("key".to_string(), Vec::new()),
+            auth: AuthRing::local("key".to_string()),
             machine_alias: "local".to_string(),
             spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
             typing_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -2349,23 +2367,6 @@ async fn typing_receipt_is_queued_until_ack_then_reader_read_for_omp_and_pi() {
 }
 
 #[test]
-fn exposure_banner_names_the_address_it_classifies() {
-    let loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7461);
-    assert_eq!(exposure(&loopback), Exposure::Loopback);
-    assert_eq!(
-        boot_banner(&loopback),
-        "pij daemon listening on 127.0.0.1:7461 (loopback; local bearer key required)"
-    );
-
-    let lan = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 7461);
-    assert_eq!(exposure(&lan), Exposure::Lan);
-    assert_eq!(
-        boot_banner(&lan),
-        "WARNING: pij daemon listening on 0.0.0.0:7461 beyond loopback; bearer keys are the only LAN access control"
-    );
-}
-
-#[test]
 fn send_request_uses_resolved_destination_object_and_optional_reply_id() {
     let request = SendRequest {
         fyi: false,
@@ -2399,7 +2400,7 @@ fn send_request_uses_resolved_destination_object_and_optional_reply_id() {
 }
 
 #[tokio::test]
-async fn auth_ring_covers_every_declared_route_and_accepts_peer_keys() {
+async fn auth_ring_covers_every_declared_route_and_scopes_peer_keys() {
     let services = test_services(
         Arc::new(FakeRegistry::new()),
         Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
@@ -2408,42 +2409,50 @@ async fn auth_ring_covers_every_declared_route_and_accepts_peer_keys() {
     .await;
     let (addr, server) = spawn(router_with_config(
         services,
-        config("local-secret", &["peer-secret"]),
+        config("local-secret", &[("laptop", "peer-secret")]),
     ))
     .await;
     let client = reqwest::Client::new();
 
-    for endpoint in Endpoint::ALL {
-        let response = client
-            .request(
+    // The per-job-token hook is the named exception; the scope walk covers it.
+    for endpoint in Endpoint::ALL
+        .into_iter()
+        .filter(|endpoint| endpoint.auth() == RouteAuth::Bearer)
+    {
+        for key in [None, Some("unpaired-secret")] {
+            let mut request = client.request(
                 endpoint.method(),
                 format!("http://{addr}{}", endpoint.path()),
-            )
-            .send()
-            .await
-            .expect("unauthenticated request");
-        assert_eq!(
-            response.status(),
-            reqwest::StatusCode::UNAUTHORIZED,
-            "{} must inherit whole-router auth",
-            endpoint.path()
-        );
-        let body = response.text().await.expect("auth body");
-        assert!(
-            body.contains("manually bootstrapped configured key"),
-            "refusal names the repair: {body}"
-        );
+            );
+            if let Some(key) = key {
+                request = request.bearer_auth(key);
+            }
+            let response = request.send().await.expect("unauthenticated request");
+            assert_eq!(
+                response.status(),
+                reqwest::StatusCode::UNAUTHORIZED,
+                "{} must inherit whole-router auth (key {key:?})",
+                endpoint.path()
+            );
+        }
     }
 
-    let health = client
-        .get(format!("http://{addr}/health"))
+    let roster = client
+        .get(format!("http://{addr}/v1/seats?scope=local"))
         .bearer_auth("peer-secret")
         .send()
         .await
-        .expect("peer-authenticated health");
-    assert_eq!(health.status(), reqwest::StatusCode::OK);
-    let body: Envelope<serde_json::Value> = health.json().await.expect("health envelope");
-    assert_eq!(body.data.expect("data")["machine"], "workstation");
+        .expect("peer-authenticated local roster");
+    assert_eq!(roster.status(), reqwest::StatusCode::OK);
+    // Without scope=local a peer could read through this daemon into every
+    // machine it is paired with.
+    let fanned = client
+        .get(format!("http://{addr}/v1/seats"))
+        .bearer_auth("peer-secret")
+        .send()
+        .await
+        .expect("peer fan-in roster");
+    assert_eq!(fanned.status(), reqwest::StatusCode::FORBIDDEN);
 
     server.abort();
 }
@@ -4431,7 +4440,7 @@ async fn send_enqueues_exactly_once_and_refuses_remote_without_federation() {
             .text()
             .await
             .expect("body")
-            .contains("require configured federation peers")
+            .contains("require a pairing in peers.toml")
     );
     assert_eq!(
         queue.jobs().len(),
@@ -4467,7 +4476,7 @@ async fn inbox_claims_without_evidence_then_ack_records_machine_graded_reader_re
         .expect("queue message");
     let (addr, server) = spawn(router_with_config(
         services,
-        config("local-key", &["peer-key"]),
+        config("local-key", &[("laptop", "peer-key")]),
     ))
     .await;
     let client = reqwest::Client::new();
@@ -4588,7 +4597,7 @@ async fn inbox_claims_without_evidence_then_ack_records_machine_graded_reader_re
 
     let empty = client
         .get(format!("http://{addr}/v1/inbox"))
-        .bearer_auth("peer-key")
+        .bearer_auth("local-key")
         .query(&[("seat", "pij-reader"), ("wait", "false")])
         .send()
         .await
@@ -4950,8 +4959,11 @@ async fn two_daemons_forward_remote_send_into_destination_queue_and_spine() {
     let (b_addr, b_server) = spawn(router_with_config(
         b_services,
         HttpConfig {
-            local_key: "b-local".to_string(),
-            peer_keys: vec!["pair-key".to_string()],
+            auth: AuthRing::new(
+                "b-local".to_string(),
+                [("desktop".to_string(), "pair-key".to_string())],
+            )
+            .expect("ring"),
             machine_alias: "laptop".to_string(),
         },
     ))
@@ -5077,8 +5089,11 @@ async fn wrong_peer_key_is_permanent_and_never_hot_loops() {
     let (b_addr, b_server) = spawn(router_with_config(
         b_services,
         HttpConfig {
-            local_key: "b-local".to_string(),
-            peer_keys: vec!["correct-key".to_string()],
+            auth: AuthRing::new(
+                "b-local".to_string(),
+                [("desktop".to_string(), "correct-key".to_string())],
+            )
+            .expect("ring"),
             machine_alias: "laptop".to_string(),
         },
     ))
@@ -5141,12 +5156,12 @@ async fn peer_key_removal_takes_effect_when_router_restarts() {
     .await;
     let (first_addr, first_server) = spawn(router_with_config(
         first_services,
-        config("local", &["revoked-key"]),
+        config("local", &[("laptop", "revoked-key")]),
     ))
     .await;
     assert_eq!(
         client
-            .get(format!("http://{first_addr}/health"))
+            .get(format!("http://{first_addr}/v1/seats?scope=local"))
             .bearer_auth("revoked-key")
             .send()
             .await
@@ -5166,7 +5181,7 @@ async fn peer_key_removal_takes_effect_when_router_restarts() {
         spawn(router_with_config(restarted_services, config("local", &[]))).await;
     assert_eq!(
         client
-            .get(format!("http://{restarted_addr}/health"))
+            .get(format!("http://{restarted_addr}/v1/seats?scope=local"))
             .bearer_auth("revoked-key")
             .send()
             .await
@@ -5277,8 +5292,11 @@ async fn roster_loop_survives_one_peer_error_and_processes_the_next_poll() {
     let (a_addr, a_server) = spawn(router_with_federation(
         a_services,
         HttpConfig {
-            local_key: "a-local".to_string(),
-            peer_keys: vec!["pair-key".to_string()],
+            auth: AuthRing::new(
+                "a-local".to_string(),
+                [("laptop".to_string(), "pair-key".to_string())],
+            )
+            .expect("ring"),
             machine_alias: "desktop".to_string(),
         },
         federation,
@@ -5324,8 +5342,11 @@ async fn roster_loop_survives_one_peer_error_and_processes_the_next_poll() {
         router_with_config(
             b_services,
             HttpConfig {
-                local_key: "b-local".to_string(),
-                peer_keys: vec!["pair-key".to_string()],
+                auth: AuthRing::new(
+                    "b-local".to_string(),
+                    [("desktop".to_string(), "pair-key".to_string())],
+                )
+                .expect("ring"),
                 machine_alias: "laptop".to_string(),
             },
         ),
@@ -5489,8 +5510,11 @@ async fn event_loop_survives_one_stream_error_and_processes_the_next_frame() {
     let (a_addr, a_server) = spawn(router_with_federation(
         a_services.clone(),
         HttpConfig {
-            local_key: "a-local".to_string(),
-            peer_keys: vec!["pair-key".to_string()],
+            auth: AuthRing::new(
+                "a-local".to_string(),
+                [("laptop".to_string(), "pair-key".to_string())],
+            )
+            .expect("ring"),
             machine_alias: "desktop".to_string(),
         },
         Arc::clone(&federation),
@@ -6319,18 +6343,34 @@ async fn cold_daemon(
     )
     .await;
     services.session_status = Arc::new(source);
-    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let (addr, server) = spawn(router_with_config(
+        services,
+        config("key", &[("laptop", COLD_PEER_KEY)]),
+    ))
+    .await;
     (addr, server, queue, spine)
 }
+
+/// The key the cold daemon's paired `laptop` presents.
+const COLD_PEER_KEY: &str = "laptop-pair-key";
 
 async fn post_json(
     addr: SocketAddr,
     path: &str,
     body: serde_json::Value,
 ) -> (u16, serde_json::Value) {
+    post_json_as(addr, path, body, "key").await
+}
+
+async fn post_json_as(
+    addr: SocketAddr,
+    path: &str,
+    body: serde_json::Value,
+    key: &str,
+) -> (u16, serde_json::Value) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}{path}"))
-        .bearer_auth("key")
+        .bearer_auth(key)
         .json(&body)
         .send()
         .await
@@ -6598,23 +6638,446 @@ async fn a_shim_fyi_to_a_cold_seat_is_held_not_refused() {
     server.abort();
 }
 
-/// Review D2: a message forwarded from another machine is not guarded here: its
-/// sender cannot be offered --fyi or --force by this daemon. Documented bypass.
+/// Plan 164 ruling 6 (reverses review D2's documented bypass): a message
+/// forwarded by a paired machine meets THIS daemon's cold-wake guard, and the
+/// refusal carries its code and cold facts as data the forwarder can relay.
 #[tokio::test]
-async fn a_forwarded_send_is_not_guarded() {
+async fn a_forwarded_send_to_a_cold_seat_is_refused_with_decodable_facts() {
+    let source =
+        pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, cold_status());
+    let (addr, server, queue, _) = cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-fwd", serde_json::json!({})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 400, "{reply}");
+    assert!(
+        reply["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("E-RS-COLD-WAKE: ❄ pij-cold is cold"),
+        "{reply}"
+    );
+    assert_eq!(reply["details"]["code"], "E-RS-COLD-WAKE", "{reply}");
+    assert_eq!(
+        reply["details"]["cold"]["contextTokens"], 720_000,
+        "{reply}"
+    );
+    assert_eq!(queue.live_len(), 0, "nothing was sent");
+    server.abort();
+}
+
+/// A forwarded `--force --reason` wakes the cold seat, and the receiver's audit
+/// names the machine the sender is on, taken from the key.
+#[tokio::test]
+async fn a_forwarded_force_is_audited_on_the_receiver_naming_the_machine() {
+    let source =
+        pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, cold_status());
+    let (addr, server, queue, spine) =
+        cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send(
+            "m-fwd-force",
+            serde_json::json!({"force": true, "reason": "prod is down"}),
+        ),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(queue.live_len(), 1);
+    let audit = spine
+        .tail(None, Seq(0))
+        .await
+        .expect("spine")
+        .into_iter()
+        .find(|event| event.kind == pij_core::cold_wake::COLD_WAKE_FORCED_KIND)
+        .expect("forced-wake audit");
+    let payload: serde_json::Value = serde_json::from_str(&audit.payload).expect("payload");
+    assert_eq!(payload["from_machine"], "laptop");
+    assert_eq!(payload["reason"], "prod is down");
+    assert_eq!(payload["from"], "pij-sender");
+    server.abort();
+}
+
+/// A forwarded FYI is held by the receiver exactly as a local one is.
+#[tokio::test]
+async fn a_forwarded_fyi_is_held_by_the_receiver() {
+    let source =
+        pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, cold_status());
+    let (addr, server, _, _) = cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-fwd-fyi", serde_json::json!({"fyi": true})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(reply["data"]["outcome"]["outcome"], "held", "{reply}");
+    server.abort();
+}
+
+/// Review S2 + S3 (plan 164): a forwarded FYI keeps its machine all the way to
+/// the rendered block (`sender@alias`, never a bare local-looking name), and it
+/// never collides with a local FYI that happens to share its msg_id.
+#[tokio::test]
+async fn a_forwarded_fyi_keeps_its_machine_and_never_collides_with_a_local_one() {
+    let source =
+        pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, cold_status());
+    let (addr, server, queue, spine) =
+        cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json(
+        addr,
+        "/v1/send",
+        cold_send(
+            "m-same",
+            serde_json::json!({"fyi": true, "body": "from next door"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send(
+            "m-same",
+            serde_json::json!({"fyi": true, "body": "from afar"}),
+        ),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    let (fyis, _) = queue
+        .claim_fyis(&SeatId::from("pij-cold"), "hook:claude", 10, spine.as_ref())
+        .await
+        .expect("claim");
+    assert_eq!(
+        fyis.len(),
+        2,
+        "both FYIs were held, so both are claimed: {fyis:?}"
+    );
+    let block = pij_core::fyi::render_block(&fyis, pij_core::fyi::Lead::Also, 10, 0);
+    assert!(block.contains("pij-sender@laptop"), "{block}");
+    server.abort();
+}
+
+/// Review F02 (plan 164): a peer's msg_id lives in that peer's namespace. A
+/// local message and a forwarded one sharing an id are two messages, and an
+/// exact retry from the same peer is still one.
+#[tokio::test]
+async fn a_forwarded_message_never_suppresses_a_local_one_with_the_same_id() {
+    let source = pij_testkit::fakes::FakeSessionStatus::new();
+    let (addr, server, queue, _) = cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-shared", serde_json::json!({"body": "from afar"})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(
+        reply["data"]["msg_id"], "m-shared",
+        "the sender's own id comes back"
+    );
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-shared", serde_json::json!({"body": "from afar"})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "an exact retry: {reply}");
+    let (status, reply) = post_json(
+        addr,
+        "/v1/send",
+        cold_send("m-shared", serde_json::json!({"body": "from next door"})),
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(
+        queue.live_len(),
+        2,
+        "one forwarded (its retry collapsed) and one local message are queued"
+    );
+    server.abort();
+}
+
+/// Review F02 ruling: origin is never folded into the id. A forwarded message
+/// keeps its raw msg_id (origin travels in from_machine, its own field), and a
+/// caller-supplied local id may not contain `@`, so no local id can ever be
+/// mistaken for, or collide with, a qualified one.
+#[tokio::test]
+async fn forwarded_ids_stay_raw_and_local_ids_cannot_contain_at() {
+    let source = pij_testkit::fakes::FakeSessionStatus::new();
+    let (addr, server, queue, spine) =
+        cold_daemon(pij_core::model::SystemState::Idle, source).await;
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-raw", serde_json::json!({"body": "from afar"})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    let pushed = spine
+        .tail(None, Seq(0))
+        .await
+        .expect("spine")
+        .into_iter()
+        .find(|event| event.kind == "message.pushed")
+        .expect("pushed");
+    let pushed: serde_json::Value = serde_json::from_str(&pushed.payload).expect("payload");
+    assert_eq!(pushed["msg_id"], "m-raw", "{pushed}");
+    assert_eq!(pushed["from_machine"], "laptop", "{pushed}");
+    let (status, reply) = post_json(
+        addr,
+        "/v1/send",
+        cold_send(
+            "m-raw@laptop",
+            serde_json::json!({"body": "from next door"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 400, "a local id with `@` is refused: {reply}");
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send("m-x@y", serde_json::json!({"body": "from afar"})),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 400, "a peer's id with `@` is refused too: {reply}");
+    assert_eq!(queue.live_len(), 1);
+    server.abort();
+}
+
+/// Review F07: two overlapping sends of one message both wait for, and both
+/// receive, the receiver's refusal; one is never left holding a dead waiter.
+#[tokio::test]
+async fn overlapping_duplicate_sends_both_receive_the_peers_refusal() {
+    async fn slow_cold_refusal() -> Response {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let mut refusal = Envelope::<()>::refused(
+            "pij send",
+            ErrorKind::Refused,
+            "E-RS-COLD-WAKE: ❄ pij-cold is cold",
+        );
+        refusal.details = Some(serde_json::json!({"code": "E-RS-COLD-WAKE"}));
+        envelope(StatusCode::BAD_REQUEST, &refusal)
+    }
+    let (b_addr, b_server) = spawn(Router::new().route("/v1/send", post(slow_cold_refusal))).await;
+    let a_services = test_services(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let federation = Arc::new(
+        FederationService::new(
+            "desktop".to_string(),
+            [peer_definition("laptop", b_addr)],
+            Arc::clone(&a_services.queue),
+            Arc::clone(&a_services.event_bus),
+            FederationPolicy {
+                first_attempt_wait: Duration::from_secs(5),
+                ..federation_policy()
+            },
+        )
+        .expect("federation"),
+    );
+    let worker = Arc::clone(&federation).start();
+    let (a_addr, a_server) = spawn(router_with_federation(
+        a_services,
+        config("a-local", &[]),
+        federation,
+    ))
+    .await;
+    let body = serde_json::json!({
+        "from": "pij-sender", "to": {"seat": "pij-cold", "machine": "laptop"},
+        "body": "wake up", "msg_id": "m-overlap",
+    });
+    let (first, second) = tokio::join!(
+        post_json_as(a_addr, "/v1/send", body.clone(), "a-local"),
+        post_json_as(a_addr, "/v1/send", body, "a-local"),
+    );
+    for (status, reply) in [first, second] {
+        assert_eq!(status, 400, "{reply}");
+        assert_eq!(reply["details"]["code"], "E-RS-COLD-WAKE", "{reply}");
+    }
+    worker.shutdown().await.expect("worker stops");
+    a_server.abort();
+    b_server.abort();
+}
+
+/// The sending machine comes from the key: a local caller cannot pose as a
+/// forward, and a peer cannot claim to be a different machine.
+#[tokio::test]
+async fn from_machine_is_stamped_from_the_key_never_asserted() {
     let source =
         pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, cold_status());
     let (addr, server, queue, _) = cold_daemon(pij_core::model::SystemState::Idle, source).await;
     let (status, reply) = post_json(
         addr,
         "/v1/send",
-        cold_send("m-fwd", serde_json::json!({"from_machine": "laptop"})),
+        cold_send("m-pose", serde_json::json!({"from_machine": "laptop"})),
+    )
+    .await;
+    assert_eq!(status, 400, "{reply}");
+    assert!(
+        reply["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cannot assert"),
+        "{reply}"
+    );
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        cold_send(
+            "m-lie",
+            serde_json::json!({"from_machine": "desktop", "fyi": true}),
+        ),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 400, "{reply}");
+    assert!(
+        reply["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("disagrees"),
+        "{reply}"
+    );
+    let (status, reply) = post_json_as(
+        addr,
+        "/v1/send",
+        serde_json::json!({
+            "from": "pij-sender", "to": {"seat": "pij-cold", "machine": "desktop"},
+            "body": "relay me", "msg_id": "m-relay", "fyi": true,
+        }),
+        COLD_PEER_KEY,
+    )
+    .await;
+    assert_eq!(status, 400, "{reply}");
+    assert!(
+        reply["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("E-RS-PEER-SCOPE"),
+        "a peer is never relayed onward: {reply}"
+    );
+    assert_eq!(queue.live_len(), 0);
+    server.abort();
+}
+
+/// Plan 164 ruling 6, end to end over two daemons: the SENDER's `pij send`
+/// answers with the receiver's cold-wake refusal (code, facts, machine), and a
+/// forced resend is audited on the receiver naming the sending machine.
+#[tokio::test]
+async fn a_remote_cold_wake_refusal_reaches_the_sender_inline() {
+    let b_queue = Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy"));
+    let b_spine = Arc::new(FakeSpine::new());
+    let mut b_services = test_services(
+        Arc::new(FakeRegistry::new().with_seat(cold_seat(pij_core::model::SystemState::Idle))),
+        b_queue.clone(),
+        b_spine.clone(),
+    )
+    .await;
+    b_services.session_status = Arc::new(
+        pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, cold_status()),
+    );
+    let mut b_config = config("b-local", &[("desktop", "pair-key")]);
+    b_config.machine_alias = "laptop".to_string();
+    let (b_addr, b_server) = spawn(router_with_config(b_services, b_config)).await;
+
+    let a_services = test_services(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let federation = Arc::new(
+        FederationService::new(
+            "desktop".to_string(),
+            [peer_definition("laptop", b_addr)],
+            Arc::clone(&a_services.queue),
+            Arc::clone(&a_services.event_bus),
+            FederationPolicy {
+                first_attempt_wait: Duration::from_secs(10),
+                ..federation_policy()
+            },
+        )
+        .expect("federation"),
+    );
+    let worker = Arc::clone(&federation).start();
+    let (a_addr, a_server) = spawn(router_with_federation(
+        a_services,
+        config("a-local", &[]),
+        federation,
+    ))
+    .await;
+    let remote = |msg_id: &str, extra: serde_json::Value| {
+        let mut body = cold_send(msg_id, extra);
+        body["to"]["machine"] = serde_json::json!("laptop");
+        body
+    };
+
+    let (status, reply) = post_json_as(
+        a_addr,
+        "/v1/send",
+        remote("m-remote-cold", serde_json::json!({})),
+        "a-local",
+    )
+    .await;
+    assert_eq!(status, 400, "{reply}");
+    assert!(
+        reply["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("E-RS-COLD-WAKE: ❄ pij-cold is cold"),
+        "{reply}"
+    );
+    assert_eq!(reply["details"]["code"], "E-RS-COLD-WAKE", "{reply}");
+    assert_eq!(reply["details"]["machine"], "laptop", "{reply}");
+    assert_eq!(
+        reply["details"]["cold"]["contextTokens"], 720_000,
+        "{reply}"
+    );
+    assert_eq!(b_queue.live_len(), 0, "the receiver delivered nothing");
+
+    let (status, reply) = post_json_as(
+        a_addr,
+        "/v1/send",
+        remote(
+            "m-remote-force",
+            serde_json::json!({"force": true, "reason": "prod is down"}),
+        ),
+        "a-local",
     )
     .await;
     assert_eq!(status, 200, "{reply}");
-    assert!(reply["data"].get("cold_check").is_none(), "{reply}");
-    assert_eq!(queue.live_len(), 1);
-    server.abort();
+    assert_eq!(reply["data"]["cold_check"], "forced", "{reply}");
+    assert_eq!(b_queue.live_len(), 1);
+    let audit = b_spine
+        .tail(None, Seq(0))
+        .await
+        .expect("spine")
+        .into_iter()
+        .find(|event| event.kind == pij_core::cold_wake::COLD_WAKE_FORCED_KIND)
+        .expect("forced-wake audit on the receiver");
+    let payload: serde_json::Value = serde_json::from_str(&audit.payload).expect("payload");
+    assert_eq!(payload["from_machine"], "desktop");
+    assert_eq!(payload["reason"], "prod is down");
+
+    worker.shutdown().await.expect("worker stops");
+    a_server.abort();
+    b_server.abort();
 }
 
 /// Review ruling (Esc fires no Claude hook): a seat that SAYS working but is
@@ -6878,6 +7341,7 @@ async fn a_stale_working_seat_refuses_a_send_and_holds_its_park_notice_alike() {
             serial_key: "pij-sender".into(),
             payload: serde_json::to_string(&lost).unwrap(),
             dedupe_key: lost.msg_id.clone(),
+            dedupe_origin: None,
             attempt: 0,
         };
         let evidence = pij_core::ports::ParkingEvidence {
@@ -7371,6 +7835,7 @@ async fn a_turn_boundary_never_flushes_even_when_warm() {
             id: format!("f-{n}"),
             recipient: SeatId::from("pij-cold"),
             sender: SeatId::from("pij-sender"),
+            from_machine: None,
             body: format!("note {n}"),
             held_at_ms: n,
         };

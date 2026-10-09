@@ -55,7 +55,7 @@ use std::time::Duration;
 
 use axum::extract::State;
 use axum::response::Response;
-use pij_core::model::{Harness, Msg, SeatDescriptor, SeatId};
+use pij_core::model::{Destination, Harness, Msg, SeatDescriptor, SeatId};
 use pij_core::ports::SeatFilter;
 
 use super::identity::{self, CallerContext, Resolved};
@@ -203,7 +203,8 @@ pub(crate) struct ShimRequest {
 /// One parsed `pij send` invocation, in the only shapes rs serves.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SendCall {
-    pub to: SeatId,
+    /// `<seat>` or `<seat>@<machine>` (plan 164); a bare id is always local.
+    pub to: Destination,
     pub body: String,
     pub command: Option<String>,
     pub in_reply_to: Option<String>,
@@ -337,6 +338,7 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
     let Some(to) = positionals.first() else {
         return Err("usage: pij send <id> \"<text>\" (no recipient was given)".to_string());
     };
+    let to = pij_core::address::parse_destination(to).map_err(|error| error.to_string())?;
 
     if fyi && command.is_some() {
         return Err("--fyi holds a message; a --command control cannot be held".to_string());
@@ -359,8 +361,14 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
         if let Some(body) = body_literal {
             pij_core::control::validate_command(&command, body)?;
         }
+        if to.machine.is_some() {
+            return Err(
+                "E-RS-CONTROL-IDENTITY: remote controls require a caller proven on the target daemon"
+                    .to_string(),
+            );
+        }
         return Ok(SendCall {
-            to: SeatId::from(*to),
+            to,
             body: String::new(),
             command: Some(command),
             in_reply_to,
@@ -404,7 +412,7 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
     }
 
     Ok(SendCall {
-        to: SeatId::from(*to),
+        to,
         body,
         command: None,
         in_reply_to,
@@ -461,7 +469,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
             &state,
             SEND,
             super::ControlRequest {
-                to: Some(call.to),
+                to: Some(call.to.seat),
                 asserted_from: None,
                 body: call.body,
                 command,
@@ -477,6 +485,27 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         Err(response) => return *response,
     };
     let msg_id = state.services.delivery.next_message_id();
+    // `seat@machine`: the receiving daemon applies its own cold-wake guard and
+    // holds its own FYIs (plan 164 ruling 6); this one only forwards.
+    if call.to.machine.is_some() {
+        return super::send_remote(
+            &state,
+            SEND,
+            super::SendRequest {
+                from,
+                to: call.to,
+                body: call.body,
+                msg_id,
+                from_machine: None,
+                in_reply_to: call.in_reply_to,
+                fyi: call.fyi,
+                force: call.force,
+                reason: call.reason,
+            },
+        )
+        .await;
+    }
+    let to = call.to.seat;
     // FYIs never wake a seat, so only a real send meets the cold-wake guard.
     let cold_check = if call.fyi {
         None
@@ -485,11 +514,12 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
             &state,
             SEND,
             &from,
-            &call.to,
+            &to,
             &msg_id,
             super::cold_wake::Override {
                 force: call.force,
                 reason: call.reason.as_deref(),
+                from_machine: None,
             },
         )
         .await
@@ -500,7 +530,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
     };
     let msg = Msg {
         from,
-        to: call.to,
+        to,
         body: call.body,
         msg_id,
         from_machine: None,

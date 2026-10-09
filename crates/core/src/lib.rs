@@ -10,6 +10,7 @@
 
 #![deny(missing_docs)]
 
+pub mod address;
 pub mod admission;
 pub mod anomalies;
 pub mod background;

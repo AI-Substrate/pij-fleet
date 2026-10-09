@@ -479,10 +479,15 @@ pub trait Queue: Send + Sync {
     /// that never arrived — a lost message wearing our most confident receipt. A
     /// synchronous failure must call [`Self::forget_delivered`]. A hard crash
     /// between the two is the NAMED residual window.
+    ///
+    /// The ledger key is `(recipient, sender_machine, msg_id)`: a forwarded
+    /// message's id lives in its machine's namespace (plan 164 review F02), and
+    /// `None` is a local sender.
     async fn note_delivered(
         &self,
         recipient: &SeatId,
         msg_id: &str,
+        sender_machine: Option<&str>,
         origin: DeliveryOrigin,
     ) -> Result<Option<DeliveryOrigin>>;
 
@@ -490,13 +495,23 @@ pub trait Queue: Send + Sync {
     ///
     /// Compensation, not deletion-as-policy: it exists so a synchronous injection
     /// failure cannot leave the ledger claiming a delivery that never happened.
-    async fn forget_delivered(&self, recipient: &SeatId, msg_id: &str) -> Result<()>;
+    async fn forget_delivered(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<()>;
 
     /// Whether a delivery of `msg_id` to `recipient` was ever admitted: recorded
     /// as delivered, or present as a delivery job in any state. Read-only.
     ///
     /// The FYI namespace is separate and deliberately not consulted.
-    async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool>;
+    async fn admitted(
+        &self,
+        recipient: &SeatId,
+        msg_id: &str,
+        sender_machine: Option<&str>,
+    ) -> Result<bool>;
 
     /// Return a CLAIMED job to pending, after `delay`, counting the attempt.
     ///

@@ -71,6 +71,7 @@ fn fake_extension_heartbeat_and_working_brake_preserve_the_silent_lease_budget()
             })
             .to_string(),
             dedupe_key: "held-body".into(),
+            dedupe_origin: None,
             attempt: 0,
         };
         let kinds = [body.kind.clone()];
@@ -147,6 +148,7 @@ fn fake_queue_defer_running_preserves_identity_body_attempt_and_delay() {
             payload: r#"{"recipient":"not-authority","msg_id":"not-authority","body":"keep me"}"#
                 .to_string(),
             dedupe_key: "stored-message".to_string(),
+            dedupe_origin: None,
             attempt: 0,
         };
         assert_eq!(
@@ -154,7 +156,8 @@ fn fake_queue_defer_running_preserves_identity_body_attempt_and_delay() {
                 .note_delivered(
                     &SeatId::from("pij-recipient"),
                     "prior-message",
-                    DeliveryOrigin::ReaderRead,
+                    None,
+                    DeliveryOrigin::ReaderRead
                 )
                 .await
                 .expect("seed prior delivery evidence"),
@@ -174,6 +177,7 @@ fn fake_queue_defer_running_preserves_identity_body_attempt_and_delay() {
         );
         queue.retry(job_id, Duration::ZERO).await.expect("retry");
         let expected = Job {
+            dedupe_origin: None,
             attempt: 1,
             ..original.clone()
         };
@@ -258,6 +262,7 @@ fn fake_queue_defer_pending_replaces_the_schedule_from_the_current_clock() {
             serial_key: "pij-pending".to_string(),
             payload: "pending body".to_string(),
             dedupe_key: "pending-message".to_string(),
+            dedupe_origin: None,
             attempt: 0,
         };
         let job_id = queue.enqueue(original.clone()).await.expect("enqueue");
@@ -321,6 +326,7 @@ fn fake_queue_defer_zero_releases_pending_and_running_without_reordering_fifo() 
                 serial_key: "pij-fifo".to_string(),
                 payload: "first body".to_string(),
                 dedupe_key: "first-message".to_string(),
+                dedupe_origin: None,
                 attempt: 0,
             };
             let second = Job {
@@ -393,6 +399,7 @@ fn fake_queue_defer_absent_or_terminal_is_not_live_and_preserves_delivery_eviden
             serial_key: "pij-terminal".to_string(),
             payload: "terminal body".to_string(),
             dedupe_key: "terminal-message".to_string(),
+            dedupe_origin: None,
             attempt: 0,
         };
         let kinds = std::slice::from_ref(&original.kind);
@@ -478,6 +485,7 @@ fn fake_queue_defer_refuses_non_delivery_without_mutating_pending_or_running_row
                     serial_key: "pij-actual-recipient".to_string(),
                     payload: "must survive rejection".to_string(),
                     dedupe_key: "non-delivery-message".to_string(),
+                    dedupe_origin: None,
                     attempt: 0,
                 };
                 let job_id = queue.enqueue(original.clone()).await.expect("enqueue");
@@ -527,6 +535,7 @@ fn fake_queue_defer_overflow_refuses_without_poisoning_or_mutating() {
             serial_key: "pij-overflow".to_string(),
             payload: "preserved".to_string(),
             dedupe_key: "overflow".to_string(),
+            dedupe_origin: None,
             attempt: 0,
         };
         let id = queue.enqueue(original.clone()).await.expect("enqueue");
@@ -557,11 +566,17 @@ fn fake_queue_release_deferred_preserves_body_attempt_ledger_and_active_reader()
             serial_key: "pij-release".to_string(),
             payload: r#"{"recipient":"not-authority","msg_id":"not-authority"}"#.to_string(),
             dedupe_key: "release-message".to_string(),
+            dedupe_origin: None,
             attempt: 0,
         };
         let recipient = SeatId::from("pij-release");
         queue
-            .note_delivered(&recipient, "prior-message", DeliveryOrigin::ReaderRead)
+            .note_delivered(
+                &recipient,
+                "prior-message",
+                None,
+                DeliveryOrigin::ReaderRead,
+            )
             .await
             .expect("seed prior delivery evidence");
         let id = queue.enqueue(original.clone()).await.expect("enqueue");
@@ -576,6 +591,7 @@ fn fake_queue_release_deferred_preserves_body_attempt_ledger_and_active_reader()
             .await
             .expect("increment retry attempt");
         let expected = Job {
+            dedupe_origin: None,
             attempt: 1,
             ..original.clone()
         };
@@ -712,6 +728,7 @@ fn fake_queue_release_deferred_distinguishes_absent_and_terminal_without_resurre
                 serial_key: "pij-terminal".to_string(),
                 payload: "terminal body".to_string(),
                 dedupe_key: "terminal-message".to_string(),
+                dedupe_origin: None,
                 attempt: 0,
             };
             let id = queue.enqueue(original.clone()).await.expect("enqueue");
@@ -747,6 +764,7 @@ fn fake_queue_release_deferred_refuses_non_delivery_without_mutation() {
                     serial_key: "pij-actual-recipient".to_string(),
                     payload: "preserve non-delivery".to_string(),
                     dedupe_key: "non-delivery-message".to_string(),
+                    dedupe_origin: None,
                     attempt: 0,
                 };
                 let id = queue.enqueue(original.clone()).await.expect("enqueue");
@@ -761,6 +779,7 @@ fn fake_queue_release_deferred_refuses_non_delivery_without_mutation() {
                     .await
                     .expect("delay non-delivery");
                 let expected = Job {
+                    dedupe_origin: None,
                     attempt: 1,
                     ..original.clone()
                 };
@@ -812,6 +831,7 @@ fn fake_queue_enforces_its_per_recipient_delivered_id_bound() {
             serial_key: recipient.to_string(),
             payload: "{}".to_string(),
             dedupe_key: msg_id.to_string(),
+            dedupe_origin: None,
             attempt: 0,
         };
         for msg_id in ["first", "second"] {

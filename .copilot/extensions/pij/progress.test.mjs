@@ -168,8 +168,8 @@ function fixture(t, { consume = true, claims = true, boundary = false } = {}) {
 		},
 	};
 	const journal = {
-		async load(id) {
-			return records.get(id);
+		async load(message) {
+			return records.get(message.msg_id);
 		},
 		async begin(message) {
 			if (records.has(message.msg_id)) return false;
