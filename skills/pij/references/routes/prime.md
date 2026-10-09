@@ -34,7 +34,7 @@ If sources conflict, stop designation and reconcile the rs receipt/event, curren
 | Need | Load exactly this |
 |---|---|
 | Stand up the seat and government | [`../prime/rituals/bootstrap.md`](../prime/rituals/bootstrap.md) |
-| **Stand up your PA** (bootstrap deliverable — Jordan, 2026-08-01) | [`../prime/rituals/bootstrap.md`](../prime/rituals/bootstrap.md) §5 → `<government-root>/briefs/pa-standup-recipe.md`, resolved for **pij's repo**, not the consuming repo |
+| **Stand up your PA** (bootstrap deliverable — Jordan, 2026-08-01) | [`../prime/rituals/bootstrap.md`](../prime/rituals/bootstrap.md) §5 → brief it with [`../prime/pa.md`](../prime/pa.md) |
 | Record governance in the platform store (ruled default; lazy self-migration) | [`../prime/rituals/store-native.md`](../prime/rituals/store-native.md) |
 | Spawn, adopt, canary, brief, or tear down a stream | [`../prime/rituals/kickoff.md`](../prime/rituals/kickoff.md) |
 | Request, grant, return, reclaim, or audit a baton | [`../prime/rituals/batons.md`](../prime/rituals/batons.md) |

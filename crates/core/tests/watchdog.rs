@@ -8,7 +8,16 @@ const NOW: u64 = 10_000;
 const INTERVAL: u64 = 1_200;
 
 fn seat(semantic: Option<SemanticState>, state: SystemState) -> SeatDescriptor {
+    role_seat(Some("pa"), semantic, state)
+}
+
+fn role_seat(
+    role: Option<&str>,
+    semantic: Option<SemanticState>,
+    state: SystemState,
+) -> SeatDescriptor {
     let mut seat = SeatDescriptor::new("pij-watchdog-target", Harness::Omp, "/abs/worktree");
+    seat.role = role.map(str::to_string);
     seat.semantic_state = semantic;
     seat.state = state;
     seat
@@ -33,8 +42,12 @@ fn nudges(entry: WatchdogEntry) -> Vec<pij_core::watchdog::Nudge> {
     WatchdogService::new(&config(), vec![entry]).tick(NOW)
 }
 
+/// PAs get the watchdog by default and nobody else does, not even primes
+/// (Jordan, 2026-10-09). A PA's declared state never suppresses its nudge:
+/// it is the fleet's watchdog, and between rounds it sits in `waiting`.
 #[test]
-fn every_pause_tier_and_declared_state_has_one_nudge_decision() {
+fn every_role_pause_tier_and_declared_state_has_one_nudge_decision() {
+    let roles = [None, Some("prime"), Some("pm"), Some("worker"), Some("pa")];
     let semantics = [
         None,
         Some(SemanticState::Ready),
@@ -52,19 +65,22 @@ fn every_pause_tier_and_declared_state_has_one_nudge_decision() {
             for exempt in [false, true] {
                 let control =
                     WatchdogControl::new(self_paused, compact_paused, exempt.then_some(NOW + 1));
-                for state in [SystemState::Idle, SystemState::Working] {
-                    for semantic in semantics {
-                        let actual =
-                            !nudges(entry(seat(semantic, state), control, INTERVAL)).is_empty();
-                        let expected = !self_paused
-                            && !compact_paused
-                            && !exempt
-                            && state == SystemState::Idle
-                            && matches!(semantic, None | Some(SemanticState::Ready));
-                        assert_eq!(
-                            actual, expected,
-                            "self={self_paused} compact={compact_paused} exempt={exempt} state={state:?} semantic={semantic:?}"
-                        );
+                for role in roles {
+                    for state in [SystemState::Idle, SystemState::Working] {
+                        for semantic in semantics {
+                            let actual =
+                                !nudges(entry(role_seat(role, semantic, state), control, INTERVAL))
+                                    .is_empty();
+                            let expected = role == Some("pa")
+                                && !self_paused
+                                && !compact_paused
+                                && !exempt
+                                && state == SystemState::Idle;
+                            assert_eq!(
+                                actual, expected,
+                                "role={role:?} self={self_paused} compact={compact_paused} exempt={exempt} state={state:?} semantic={semantic:?}"
+                            );
+                        }
                     }
                 }
             }

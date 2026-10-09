@@ -17,6 +17,7 @@ pub mod delivery;
 pub mod events;
 pub mod federation;
 pub mod lifecycle;
+pub mod pa_watchdog;
 pub mod pane_observer;
 pub mod park_notice;
 pub mod pointer;
@@ -178,6 +179,7 @@ pub struct Daemon {
     claude_bind_loop: lifecycle::TickLoop,
     background_loop: lifecycle::TickLoop,
     death_sweep_loop: lifecycle::TickLoop,
+    pa_watchdog_loop: lifecycle::TickLoop,
     /// Owned so no tap outlives the daemon that attached it: `shutdown` joins an
     /// in-flight observation and DETACHES every pane. A tap left open is a
     /// `pipe-pane` writing into a sink nobody drains.
@@ -221,7 +223,18 @@ impl Daemon {
         // notifies it (`park_notice::LOOKBACK_MS`), and a notice admitted twice
         // is impossible because its id is derived from the parked job.
         let _ = self.park_notices.await;
-        let (served, drained, bound, observed, forwarded, background, deaths, (), governance) = tokio::join!(
+        let (
+            served,
+            drained,
+            bound,
+            observed,
+            forwarded,
+            background,
+            deaths,
+            watchdog,
+            (),
+            governance,
+        ) = tokio::join!(
             async {
                 self.joined.await.map_err(|error| PijError::Adapter {
                     adapter: "daemon".to_string(),
@@ -234,6 +247,7 @@ impl Daemon {
             self.federation_worker.shutdown(),
             self.background_loop.shutdown(),
             self.death_sweep_loop.shutdown(),
+            self.pa_watchdog_loop.shutdown(),
             self.sidecars.shutdown(),
             async {
                 self.governance_observer
@@ -279,6 +293,7 @@ impl Daemon {
         governance?;
         background?;
         deaths?;
+        watchdog?;
         forwarded
     }
 }
@@ -747,6 +762,8 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         lifecycle::TickInterval::new(Duration::from_secs(config.delivery_interval_secs))?;
     let background_interval = lifecycle::TickInterval::new(Duration::from_millis(100))?;
     let death_interval = death_sweep::interval()?;
+    let pa_watchdog_secs = pa_watchdog::interval_secs(config.watchdog_interval_secs)?;
+    let pa_watchdog_tick = lifecycle::TickInterval::new(pa_watchdog::TICK)?;
 
     // 8. This record can be true only after bind: it says this exact process won
     //    the port. It must also precede daemon.key, the point of no return. A
@@ -853,6 +870,11 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         }
     });
     let death_sweep_loop = death_sweep::start(Arc::new(services.clone()), death_interval);
+    let pa_watchdog_loop = pa_watchdog::start(
+        Arc::new(services.clone()),
+        pa_watchdog_secs,
+        pa_watchdog_tick,
+    );
     let park_notices = tokio::spawn(park_notice::follow(services.clone()));
     let session_warmup = session_warmup::start(
         Arc::clone(&services.registry),
@@ -892,6 +914,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         claude_bind_loop,
         background_loop,
         death_sweep_loop,
+        pa_watchdog_loop,
         pane_observer,
         sidecars,
         governance_shutdown,

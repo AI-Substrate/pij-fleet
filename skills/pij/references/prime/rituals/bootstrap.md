@@ -53,13 +53,13 @@ Inspect the repo; derive these answers, never copy a worked example:
 
 ## 5. Stand up your PA and close your supervision graph
 
-**A cheap PA is a bootstrap deliverable, not optional context** (Jordan, 2026-08-01; vrell's first bootstrap omitted it). Follow the maintained recipe: `<government-root>/briefs/pa-standup-recipe.md`, resolving the **pij repo's** government root per §3, not the consuming repo's. Do not substitute this summary for that recipe.
+**A PA is a bootstrap deliverable, not optional context** (Jordan, 2026-08-01; vrell's first bootstrap omitted it). The PA is the fleet's **watchdog and context keeper**: the daemon nudges it, and only it, with the fleet's state (C9), and it compacts seats by the rules in its brief.
 
-1. Cheap tier is the design intent (`gemini-3.6-flash` Copilot seats); whether cheap models hold the rules during chores is still an **open experiment**.
-2. **Name the rs supervision gap before declaring the PA ready**: `pij watchdog` and `pij link` are unported; no old watch/bounds/sidecar command is a fallback. Do not claim a subscription or inspect legacy watchdog files as rs authority. Escalate the unavailable mechanism to the prime while continuing independent authorized work.
-3. Create/adopt the PA with its supported recorded parent, then the parent asserts `pij role <pa-id> pa --json`. Role alone does not create supervision or grant control authority. Existing-seat reparenting remains unsupported.
-4. Keep any separately authorized capture bounded and verify its actual content at the receiver; no claimed watchdog bounds unless the real capability exists. Model and supervision assumptions remain explicit, not production proof.
-5. **Prove delivery at the receiving end**, not just configuration.
+1. Spawn it with you as parent and the role on the placement call: `pij-rs spawn … --role pa`. For a hand-started seat, run `pij link <pa-id> --role pa`. The role is what arms the daemon's watchdog; nothing else does.
+2. Brief it with [`../pa.md`](../pa.md), filling its slots: your id, exempt seats, and the handover folder. Put repo specifics in the slots; never fork the brief.
+3. Its fleet is every seat in your repository, all worktrees included; the PA sees seats by repository, not by parentage.
+4. Don't give it timers. The watchdog nudge is its only clock, and a quiet fleet sends no nudge.
+5. **Prove delivery at the receiving end**: its first nudge arrives one interval after the daemon first sees it (default 20 minutes), and the `watchdog.round` event records each round.
 
 ## 6. Open intake and govern
 

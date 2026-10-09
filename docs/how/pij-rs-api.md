@@ -799,6 +799,27 @@ A send receipt proves only its recorded delivery strength: queued is not parent 
 
 Obituary preparation, send and audit failures are isolated per seat: log the error, continue with the remaining parents, then report `death sweep: N notice(s) failed` once. A failed obituary does not roll back retirement or gain an automatic retry.
 
+## PA watchdog
+
+The daemon runs a watchdog for **PAs only**: seats whose asserted role is `pa`. No other role is watched, primes included. Every 60 seconds it looks for a due PA. A PA is due when it is not mid-turn and a whole interval has passed since its last round or its last event. The interval is the configured `watchdog_interval_secs` (20 minutes); set `PIJ_RS_WATCHDOG_SECS` on the daemon to change it. A PA's declared state never defers it, because the PA sits in `waiting` between rounds. Pause and exemption tiers are not persisted in rs, so no PA is paused. A PA's first sighting by a daemon arms its clock without sending, so a restart does not nudge every PA at boot.
+
+**Fleet.** A PA's fleet is every live seat whose folder resolves, through `git rev-parse --git-common-dir`, to the same repository as the PA's recorded parent's folder, which covers every worktree. With no live parent, the PA's own folder anchors it. A folder git cannot place matches only itself.
+
+**Nudge.** The PA receives one message from `pij_core::BG_ACTOR` (`pij-bg`), built by `pij_core::pa_digest`:
+
+- a headline with seat, working, idle and ❄ counts;
+- a **Needs a look** list:
+  - seats `SeatDescriptor::nudgeable` that have been quiet for a whole interval;
+  - seats that declared `waiting`, `hold`, `blocked` or `question`;
+  - open `pij anomalies` on fleet seats;
+- every seat, largest context first, with role, turn state, declared state, context, idle time, cache warmth and the cold-wake price of waking it.
+
+The digest reports facts. Policy, such as caps and exemptions, lives in the PA brief (`skills/pij/references/prime/pa.md`).
+
+**Quiet is a brake, not a policy.** A due PA whose fleet fingerprint is unchanged since its last nudge gets no message and waits another interval. The fingerprint covers, for every seat except the PA itself, its turn state, declared state, context size and attention flag, plus the open anomalies. Removing the check would only re-send the same digest. The PA's own row is excluded because answering one nudge would otherwise cause the next. A failed send leaves the old fingerprint in place, so the next interval retries.
+
+Every round for a due PA appends a `watchdog.round` event. Its payload carries `outcome` (`nudged` or `quiet`), `prime`, `scope`, `seats` and `delivery` (the receipt outcome, or the error text). Round memory is in-process and not persisted.
+
 ## Revive
 
 ```bash
@@ -842,7 +863,7 @@ This anchor is permanent; refusals and shipped consumers must not depend on an a
 - **Shim-only gaps / different meanings:** `spawn`, `revive`, `tail` and `daemon` refuse `E-RS-UNPORTED`; native capability is not a grammar-compatible shim port. Use the documented native forms in the [peer](../../skills/pij/references/routes/peer.md) and [ops](../../skills/pij/references/routes/ops.md) routes where available. Native tail is an event stream, not a transcript. [Native revive](#revive) accepts tombstoned or observed-dead ids and the authorized `--assume-dead --evidence` override; `--print` and `--attach` remain unsupported. Native spawn has no legacy layout/task/branch/plan-id flags.
 - **List/sessions filters:** shim `pij list` forwards declared `harness`, `folder`, `parent` and `scope=local` query values to GET `/v1/seats`. Shim and native `pij-rs list --here` scope to caller cwd; path-valued `--here` refuses. Native list has no other filters. `pij sessions` routes GET `/v1/shim/sessions` with no query flags or legacy union. Unsupported `--role`, `--prime`, `--archived` and tree semantics refuse instead of being dropped. Prime designation has no dedicated list/getter projection here: use actual designation receipts/events and authoritative government/human evidence; role assertion or an empty filtered view cannot prove absence.
 - **Baton projection limits:** a blocked-time field is not provided. Automatic request notices and their honest delivered/queued/unverified/null projection are supported as described under [Baton leases](#baton-leases); a durable request alone still does not prove recipient observation.
-- **Unported command surfaces:** `agent`, `path`, `telegram`, `models`, `watch`, `unwatch`, `chore`, `watchdog`, `focus` and `tree` refuse through the shim. This does not remove already composed sidecar internals; it does not advertise those old administrative grammars as a native port. `link` is ported (plan 166) with a narrower grammar: the caller is always the parent, and `--role` is required.
+- **Unported command surfaces:** `agent`, `path`, `telegram`, `models`, `watch`, `unwatch`, `chore`, `watchdog`, `focus` and `tree` refuse through the shim. The `watchdog` refusal covers its old administrative grammar only; the daemon runs the [PA watchdog](#pa-watchdog) itself, with no verb. This does not remove already composed sidecar internals; it does not advertise those old administrative grammars as a native port. `link` is ported (plan 166) with a narrower grammar: the caller is always the parent, and `--role` is required.
 - **Inbox/admission:** verified external `inbox register` and `inbox --wait [ms]` are [supported](#verified-paneless-external-admission), not gaps. Paneless adopt, unlisted inbox leaves, generic shim `register`, send `--wait` and attachment semantics remain refused. Never fabricate host process evidence or use a legacy fallback; extension-owned registration/receive stays owned by that extension.
 - **Control and bg are supported, not gaps:** remote compact/new/reload, compact-self and bg create/list/tail/kill remain shipped. Controls carry no body; acceptance is not execution. Copilot and paneless controls refuse; new/reload require self or recorded parent plus target arming, not a prime role. Never replace refusal with slash text or sendkeys. bg remains daemon-owned detached execution (in the caller's cwd unless `--cwd`; optional `--timeout` ends it with a TIMEOUT turn; `list` shows running time and duration; `--events` makes an event source whose child fires `pij bg emit` / `POST /v1/bg/{job}/emit`, authenticated by its per-job `PIJ_BG_TOKEN` outside the daemon-key ring, batched per `--min-interval`/`--inline-max`, held as FYIs with `--fyi`, and routed to a warm prime or Telegram instead of waking a cold owner) with durable completion injection, bounded server-side log reads and owner/parent authorization; it introduces no answer queue cancellation.
 - **Native commit-trailers data gap:** forwarding is supported, but `commit_trailers::run` currently calls `derive` with no repository-designation input and does not query current assignment. It reads role-joined self/local seats, then uses a complete recorded-parent root as the explicit interim fallback. `Pij-Plan` derives from worktree path, branch or local flow context. Do not claim designation/current-assignment lookup or use stale legacy rows to fill either gap.
