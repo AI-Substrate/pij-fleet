@@ -244,7 +244,7 @@ async fn only_pas_are_nudged_with_their_whole_repository_and_quiet_rounds_send_n
 }
 
 #[tokio::test]
-async fn a_pa_mid_turn_is_deferred_not_interrupted() {
+async fn a_pa_mid_turn_is_still_nudged() {
     let repos = Repos::new();
     let (services, _store) = services().await;
     let start = now_ms();
@@ -266,12 +266,15 @@ async fn a_pa_mid_turn_is_deferred_not_interrupted() {
 
     pa.state = SystemState::Working;
     services.registry.put(pa).await.unwrap();
-    assert!(
+    assert_eq!(
         watchdog
-            .round(&services, INTERVAL, start + 5 * INTERVAL * 1_000)
+            .round(&services, INTERVAL, start + INTERVAL * 1_000)
             .await
-            .unwrap()
-            .is_empty(),
-        "a working PA is never nudged mid-turn"
+            .unwrap(),
+        vec![RoundOutcome::Nudged {
+            pa: "pij-pa".into(),
+            delivery: "queued".into()
+        }],
+        "the nudge is sent whenever it is due; delivery decides how it lands"
     );
 }

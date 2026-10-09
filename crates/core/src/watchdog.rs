@@ -10,23 +10,22 @@
 //! fleet's watchdog: its nudge carries the fleet's state, and the PA decides
 //! which other seats need a word. So a PA's own declared state never suppresses
 //! its nudge (it sits in `waiting` between rounds, and the nudge is what it is
-//! waiting for); only a live turn, a pause tier or recent activity defer it.
+//! waiting for), and neither does a live turn: the nudge is sent whenever it
+//! is due and delivery decides how it lands (Jordan, 2026-10-09: "just send
+//! it"). Only a pause tier or the interval defer it.
 
 use crate::config::Config;
-use crate::model::{SeatDescriptor, SeatId, SystemState};
+use crate::model::{SeatDescriptor, SeatId};
 
 /// The one role the watchdog serves.
 pub const PA_ROLE: &str = "pa";
 
-/// May the watchdog nudge this seat right now, timing and pauses aside?
+/// May the watchdog nudge this seat at all, timing and pauses aside?
 ///
 /// Role is read from the descriptor, which the composition edge must have
 /// joined from the role store (the only role authority) before calling.
 pub fn pa_nudgeable(seat: &SeatDescriptor) -> bool {
-    seat.role.as_deref() == Some(PA_ROLE)
-        && seat.tombstoned_at.is_none()
-        && !seat.relay
-        && seat.state != SystemState::Working
+    seat.role.as_deref() == Some(PA_ROLE) && seat.tombstoned_at.is_none() && !seat.relay
 }
 
 /// Why the scheduler produced a nudge.
@@ -34,7 +33,7 @@ pub fn pa_nudgeable(seat: &SeatDescriptor) -> bool {
 /// The adapter consumes this verdict instead of re-deriving it from timestamps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NudgeReason {
-    /// The seat is a PA, unpaused, not mid-turn, and one configured interval overdue.
+    /// The seat is a PA, unpaused, and one configured interval overdue.
     OverdueIdle,
 }
 

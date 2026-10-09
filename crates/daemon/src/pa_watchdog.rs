@@ -158,13 +158,11 @@ impl PaWatchdog {
                     outcomes.push(RoundOutcome::Armed(pa.id.clone()));
                     continue;
                 };
-                let last_activity = pa
-                    .last_event_at
-                    .map_or(0, |at| at / 1_000)
-                    .max(seen.last_round_secs);
+                // A fixed cadence from the last round: the PA's own activity
+                // never pushes its nudge back ("just send it").
                 entries.push(WatchdogEntry {
                     seat: (*pa).clone(),
-                    last_activity_at_secs: last_activity,
+                    last_activity_at_secs: seen.last_round_secs,
                     control: WatchdogControl::default(),
                 });
             }

@@ -71,11 +71,8 @@ fn every_role_pause_tier_and_declared_state_has_one_nudge_decision() {
                             let actual =
                                 !nudges(entry(role_seat(role, semantic, state), control, INTERVAL))
                                     .is_empty();
-                            let expected = role == Some("pa")
-                                && !self_paused
-                                && !compact_paused
-                                && !exempt
-                                && state == SystemState::Idle;
+                            let expected =
+                                role == Some("pa") && !self_paused && !compact_paused && !exempt;
                             assert_eq!(
                                 actual, expected,
                                 "role={role:?} self={self_paused} compact={compact_paused} exempt={exempt} state={state:?} semantic={semantic:?}"
@@ -147,18 +144,17 @@ fn real_working_transition_clears_only_the_compact_tier() {
     );
 }
 
+/// The PA nudge is a clock, not a stall verdict, so TS's false stall (a
+/// healthy long tool call read as stuck) cannot arise: a working PA is nudged
+/// on schedule and delivery decides how the message lands.
 #[test]
-fn healthy_long_tool_call_is_not_the_ts_false_stall() {
+fn a_working_pa_is_still_nudged_on_schedule() {
     let overdue = entry(
         seat(None, SystemState::Working),
         WatchdogControl::default(),
-        INTERVAL * 8,
+        INTERVAL,
     );
-
-    assert!(
-        nudges(overdue).is_empty(),
-        "a healthy working seat may be quiet throughout a long tool call"
-    );
+    assert_eq!(nudges(overdue).len(), 1);
 }
 
 #[test]
