@@ -1066,6 +1066,8 @@ export class NativeBridge {
 				pid: registration.pid,
 				procStart: registration.proc_start,
 				pane: registration.pane ?? null,
+				// Plan 168 evidence: the rank this session claimed with, in its own log.
+				precedence: this.precedence?.wire() ?? null,
 			});
 		}
 	}
