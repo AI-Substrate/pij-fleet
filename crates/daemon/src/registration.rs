@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -11,15 +12,18 @@ use pij_core::ports::{LivenessPort, PutBinding, Registry, SeatFilter, TmuxPort};
 use pij_core::wire;
 use pij_harnesses::ensure_claude_inbound_accept;
 
+use crate::delivery::DeliveryService;
 use crate::events::EventBus;
-use crate::http::Registration;
 use crate::http::role::RoleService;
+use crate::http::{NativePrecedence, Registration};
 
 #[derive(Debug)]
 pub(crate) enum RegistrationError {
     Refused(String),
     Retryable(String),
     NativeSessionHold(SeatId),
+    /// A same-process session with newer native history holds the seat (plan 168).
+    NativeHolderCurrent(SeatId),
     Runtime(PijError),
 }
 
@@ -30,6 +34,10 @@ impl std::fmt::Display for RegistrationError {
             Self::NativeSessionHold(owner) => write!(
                 f,
                 "native Copilot registration held: pane owned by seat `{owner}`; awaiting resumed session"
+            ),
+            Self::NativeHolderCurrent(holder) => write!(
+                f,
+                "native Copilot registration held: this process's seat belongs to `{holder}`, a live session with newer activity; standing by until this session is used or the holder's receiver lease lapses"
             ),
             Self::Runtime(error) => error.fmt(f),
         }
@@ -44,6 +52,18 @@ pub(crate) struct RegistrationService {
     roles: Arc<RoleService>,
     claude_homes: Vec<PathBuf>,
     registration_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Lease view of native receivers; absent only in isolated unit services.
+    native_receivers: Option<Arc<DeliveryService>>,
+    /// Self-reported precedence of each native incarnation since daemon start.
+    native_precedence: Arc<std::sync::Mutex<HashMap<SeatId, RecordedPrecedence>>>,
+}
+
+/// One native incarnation's report; `None` is an extension that predates plan 168.
+#[derive(Clone)]
+struct RecordedPrecedence {
+    session: Option<String>,
+    proc: Option<ProcIdentity>,
+    precedence: Option<NativePrecedence>,
 }
 
 struct NativeHandoff {
@@ -78,12 +98,69 @@ impl RegistrationService {
             claude_homes,
             roles,
             registration_lock: Arc::new(tokio::sync::Mutex::new(())),
+            native_receivers: None,
+            native_precedence: Arc::default(),
         }
     }
 
-    pub(crate) fn with_native_lock(mut self, lock: Arc<tokio::sync::Mutex<()>>) -> Self {
-        self.registration_lock = lock;
+    /// Share delivery's native exclusion and read its receiver leases.
+    pub(crate) fn with_native_delivery(mut self, delivery: Arc<DeliveryService>) -> Self {
+        self.registration_lock = delivery.native_lock();
+        self.native_receivers = Some(delivery);
         self
+    }
+
+    /// Record a renewed native incarnation's precedence (plan 168). Called only
+    /// after delivery accepted the heartbeat for exactly this incarnation.
+    pub(crate) fn note_native_precedence(
+        &self,
+        seat: &SeatId,
+        session: Option<String>,
+        proc: Option<ProcIdentity>,
+        precedence: Option<NativePrecedence>,
+    ) {
+        self.native_precedence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(
+                seat.clone(),
+                RecordedPrecedence {
+                    session,
+                    proc,
+                    precedence,
+                },
+            );
+    }
+
+    /// Plan 168 holder rule, a BRAKE on same-process supersede: it can only spare
+    /// the live holder, never retire more. Removing it restores today's behaviour
+    /// of the newest registrant retiring the other seat.
+    async fn holder_keeps_seat(&self, holder: &SeatDescriptor, claimed: NativePrecedence) -> bool {
+        if let Some(receivers) = &self.native_receivers
+            && !receivers.native_receiver_live(holder).await
+        {
+            // The holder's extension stopped heartbeating: its lease lapsed.
+            return false;
+        }
+        let recorded = self
+            .native_precedence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&holder.id)
+            .filter(|record| record.session == holder.harness_session && record.proc == holder.proc)
+            .cloned();
+        match recorded {
+            // Unreported since daemon start: wait for its next heartbeat or lapse.
+            None => true,
+            // An extension that predates plan 168 keeps today's behaviour.
+            Some(RecordedPrecedence {
+                precedence: None, ..
+            }) => false,
+            Some(RecordedPrecedence {
+                precedence: Some(holder),
+                ..
+            }) => !claimed.outranks(holder),
+        }
     }
 
     pub(crate) async fn register(
@@ -484,6 +561,7 @@ impl RegistrationService {
             ));
         }
         let reclaim = matches!(mode, RegistrationMode::Reclaim);
+        let claimed_precedence = claim.native_precedence;
         let (native, paneless, handoff) = match mode {
             RegistrationMode::Ordinary | RegistrationMode::Reclaim => (false, None, None),
             RegistrationMode::NativeExtension(proof) => (true, None, Some(proof)),
@@ -760,6 +838,17 @@ impl RegistrationService {
         if let Some(error) = native_hold {
             return Err(error);
         }
+        // Plan 168: one process can host several live Copilot sessions. A claim
+        // that does not outrank the live holder stands by instead of retiring it.
+        if native
+            && let Some(holder) = predecessor
+                .as_ref()
+                .filter(|seat| seat.tombstoned_at.is_none() && seat.native_extension_delivery)
+            && let Some(claimed) = claimed_precedence
+            && self.holder_keeps_seat(holder, claimed).await
+        {
+            return Err(RegistrationError::NativeHolderCurrent(holder.id.clone()));
+        }
         let retired = existing.filter(|seat| seat.tombstoned_at.is_some());
         if let Some(seat) = retired {
             let continuous = seat
@@ -980,6 +1069,14 @@ impl RegistrationService {
                 .await
         };
         let (_, binding) = committed.map_err(RegistrationError::Runtime)?;
+        if native {
+            self.note_native_precedence(
+                &descriptor.id,
+                descriptor.harness_session.clone(),
+                descriptor.proc,
+                claimed_precedence,
+            );
+        }
         // Report the committed parent, not the snapshot's.
         descriptor.parent = binding.parent.clone();
         if !native && let Some(previous) = retired {
@@ -1723,7 +1820,9 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
-    use pij_core::model::{Harness, PaneProcess, ProcIdentity, SeatDescriptor, SemanticState, Seq};
+    use pij_core::model::{
+        Harness, PaneProcess, ProcIdentity, SeatDescriptor, SeatId, SemanticState, Seq,
+    };
     use pij_core::ports::Queue;
     use pij_core::ports::{LivenessPort, Registry, SeatFilter, Spine};
     use pij_harnesses::InteractionGate;
@@ -1738,8 +1837,8 @@ mod tests {
         requested_model_matches,
     };
     use crate::events::EventBus;
-    use crate::http::Registration;
     use crate::http::role::RoleService;
+    use crate::http::{NativePrecedence, Registration};
 
     const HOST: ProcIdentity = ProcIdentity {
         pid: 4242,
@@ -1775,6 +1874,7 @@ mod tests {
             parent: None,
             role: None,
             relay: false,
+            native_precedence: None,
         }
     }
 
@@ -2741,6 +2841,362 @@ mod tests {
         );
     }
 
+    /// Plan 168 wire shape, built from JSON so the same claim reaches every daemon
+    /// build: `last_user_message_at` null means the session has no `user.message`.
+    fn precedence_claim(
+        id: &str,
+        supersedes: Option<&str>,
+        last_user_message_at: Option<u64>,
+        loaded_at: u64,
+    ) -> Registration {
+        let mut claim = serde_json::to_value(native_claim(id)).expect("claim json");
+        claim["native_precedence"] = serde_json::json!({
+            "last_user_message_at": last_user_message_at,
+            "loaded_at": loaded_at,
+        });
+        if let Some(previous) = supersedes {
+            claim["supersedes"] = serde_json::json!(previous);
+        }
+        serde_json::from_value(claim).expect("precedence claim")
+    }
+
+    /// Incident 2026-10-12: `copilot --resume` boots a blank session, then loads
+    /// the picked one in the SAME process, and the blank host never exits. Each
+    /// re-registration used to retire the other seat forever.
+    #[tokio::test]
+    async fn history_session_keeps_the_seat_against_a_lingering_blank_boot_session() {
+        const BLANK: &str = "blank-boot-session";
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let blank = attest(
+            &service,
+            precedence_claim("", None, None, 1_000),
+            Some(BLANK),
+            &tmux,
+        )
+        .await
+        .expect("first registrant takes the seat");
+        let resumed = attest(
+            &service,
+            precedence_claim("", Some(blank.id.as_str()), Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("a history session takes over immediately");
+        for _ in 0..5 {
+            held_by(
+                attest(
+                    &service,
+                    precedence_claim(blank.id.as_str(), None, None, 1_000),
+                    Some(BLANK),
+                    &tmux,
+                )
+                .await,
+                &resumed.id,
+            );
+            let holder = attest(
+                &service,
+                precedence_claim(resumed.id.as_str(), None, Some(500), 2_000),
+                Some(SESSION),
+                &tmux,
+            )
+            .await
+            .expect("the holder renews its own registration");
+            assert_eq!(holder.id, resumed.id);
+            let seat = registry.get(&resumed.id).await.unwrap().unwrap();
+            assert!(seat.native_extension_delivery && seat.tombstoned_at.is_none());
+            let phantom = registry.get(&blank.id).await.unwrap().unwrap();
+            assert!(phantom.tombstoned_at.is_some() && !phantom.native_extension_delivery);
+        }
+    }
+
+    fn held_by(result: std::result::Result<SeatDescriptor, RegistrationError>, holder: &SeatId) {
+        assert!(
+            matches!(&result, Err(RegistrationError::NativeHolderCurrent(owner)) if owner == holder),
+            "expected a quiet hold behind `{holder}`: {result:?}"
+        );
+    }
+
+    async fn live(registry: &FakeRegistry, id: &SeatId) -> bool {
+        let seat = registry.get(id).await.unwrap().unwrap();
+        seat.native_extension_delivery && seat.tombstoned_at.is_none()
+    }
+
+    #[tokio::test]
+    async fn blank_session_after_the_history_holder_stands_by_without_tombstoning_it() {
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("history session registers");
+        let before = registry.list(SeatFilter::default()).await.unwrap();
+        // Even a later-loaded blank host never outranks observed history.
+        held_by(
+            attest(
+                &service,
+                precedence_claim("", Some(holder.id.as_str()), None, 3_000),
+                Some("blank-boot-session"),
+                &tmux,
+            )
+            .await,
+            &holder.id,
+        );
+        assert_eq!(registry.list(SeatFilter::default()).await.unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn new_session_takes_the_seat_on_its_first_prompt_and_the_old_chat_stands_by() {
+        const NEW: &str = "user-created-new-session";
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let old = attest(
+            &service,
+            precedence_claim("", None, Some(100), 1_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("old chat");
+        // `/new`: Copilot keeps the old chat's extension host alive and heartbeating.
+        held_by(
+            attest(
+                &service,
+                precedence_claim("", Some(old.id.as_str()), None, 2_000),
+                Some(NEW),
+                &tmux,
+            )
+            .await,
+            &old.id,
+        );
+        assert!(live(&registry, &old.id).await);
+        let new = attest(
+            &service,
+            precedence_claim("", Some(old.id.as_str()), Some(200), 2_000),
+            Some(NEW),
+            &tmux,
+        )
+        .await
+        .expect("the first prompt in the new chat takes the seat");
+        assert!(live(&registry, &new.id).await && !live(&registry, &old.id).await);
+        held_by(
+            attest(
+                &service,
+                precedence_claim(old.id.as_str(), None, Some(100), 1_000),
+                Some(SESSION),
+                &tmux,
+            )
+            .await,
+            &new.id,
+        );
+        assert!(live(&registry, &new.id).await && !live(&registry, &old.id).await);
+        // Using the old chat again is newer activity, so the seat follows the human.
+        let back = attest(
+            &service,
+            precedence_claim(old.id.as_str(), None, Some(300), 1_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("switching back with a prompt restores the old address");
+        assert_eq!(back.id, old.id);
+        assert!(!live(&registry, &new.id).await);
+    }
+
+    #[tokio::test]
+    async fn blank_session_takes_over_once_the_holder_receiver_lease_lapses() {
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let delivery = Arc::new(
+            DeliveryService::new(
+                registry.clone(),
+                Arc::new(FakeQueue::new(1_024).expect("queue")),
+                Arc::new(FakeTransport::unreachable()),
+                Arc::new(InteractionGate::new(Arc::new(FakeTmux::new()))),
+                service.event_bus.clone(),
+            )
+            .expect("delivery service"),
+        );
+        let service = service.with_native_delivery(delivery);
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("holder");
+        let blank = precedence_claim("", Some(holder.id.as_str()), None, 3_000);
+        held_by(
+            attest(&service, blank.clone(), Some("blank-boot-session"), &tmux).await,
+            &holder.id,
+        );
+        // Only the lease clock jumps; the in-memory store keeps real time.
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(61)).await;
+        tokio::time::resume();
+        let successor = attest(&service, blank, Some("blank-boot-session"), &tmux)
+            .await
+            .expect("a silent holder no longer keeps the seat");
+        assert!(live(&registry, &successor.id).await && !live(&registry, &holder.id).await);
+    }
+
+    /// Resuming an empty chat: neither session has a `user.message`. The later
+    /// LOADED host wins, observed as its extension host start (`loaded_at`), which
+    /// re-registration never changes.
+    #[tokio::test]
+    async fn tie_without_history_goes_to_the_later_loaded_host_and_reregistration_never_counts() {
+        const BLANK: &str = "blank-boot-session";
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let blank = attest(
+            &service,
+            precedence_claim("", None, None, 1_000),
+            Some(BLANK),
+            &tmux,
+        )
+        .await
+        .expect("blank boot session");
+        let resumed = attest(
+            &service,
+            precedence_claim("", Some(blank.id.as_str()), None, 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("the later-loaded empty chat takes the seat");
+        for _ in 0..3 {
+            held_by(
+                attest(
+                    &service,
+                    precedence_claim(blank.id.as_str(), None, None, 1_000),
+                    Some(BLANK),
+                    &tmux,
+                )
+                .await,
+                &resumed.id,
+            );
+            attest(
+                &service,
+                precedence_claim(resumed.id.as_str(), None, None, 2_000),
+                Some(SESSION),
+                &tmux,
+            )
+            .await
+            .expect("holder renews");
+        }
+        assert!(live(&registry, &resumed.id).await && !live(&registry, &blank.id).await);
+    }
+
+    #[tokio::test]
+    async fn extensions_without_precedence_keep_todays_same_process_supersede() {
+        const BLANK: &str = "blank-boot-session";
+        // An old claimant retires even a reporting holder, exactly as before.
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("reporting holder");
+        let mut legacy = native_claim("");
+        legacy.supersedes = Some(holder.id.clone());
+        let old = attest(&service, legacy, Some(BLANK), &tmux)
+            .await
+            .expect("legacy claim supersedes");
+        assert!(live(&registry, &old.id).await && !live(&registry, &holder.id).await);
+        // An old holder is superseded by a reporting claimant, exactly as before.
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let holder = attest(&service, native_claim(""), Some(SESSION), &tmux)
+            .await
+            .expect("legacy holder");
+        let blank = attest(
+            &service,
+            precedence_claim("", Some(holder.id.as_str()), None, 3_000),
+            Some(BLANK),
+            &tmux,
+        )
+        .await
+        .expect("a legacy holder keeps today's behaviour");
+        assert!(live(&registry, &blank.id).await && !live(&registry, &holder.id).await);
+    }
+
+    #[tokio::test]
+    async fn holder_unreported_since_daemon_start_holds_until_its_heartbeat_reports() {
+        let holder = native_seat("pij-persisted-holder");
+        let (service, registry) = native_service(vec![holder.clone()], native_liveness()).await;
+        let tmux = native_tmux();
+        let blank = precedence_claim("", Some(holder.id.as_str()), None, 3_000);
+        held_by(
+            attest(&service, blank.clone(), Some("blank-boot-session"), &tmux).await,
+            &holder.id,
+        );
+        service.note_native_precedence(
+            &holder.id,
+            holder.harness_session.clone(),
+            holder.proc,
+            Some(NativePrecedence {
+                last_user_message_at: Some(10),
+                loaded_at: 5,
+            }),
+        );
+        held_by(
+            attest(&service, blank.clone(), Some("blank-boot-session"), &tmux).await,
+            &holder.id,
+        );
+        // A heartbeat without the field is an extension that predates plan 168.
+        service.note_native_precedence(
+            &holder.id,
+            holder.harness_session.clone(),
+            holder.proc,
+            None,
+        );
+        let successor = attest(&service, blank, Some("blank-boot-session"), &tmux)
+            .await
+            .expect("legacy holder: today's supersede");
+        assert!(live(&registry, &successor.id).await && !live(&registry, &holder.id).await);
+    }
+
+    #[tokio::test]
+    async fn spawned_seat_prebind_and_spawn_correlation_are_unchanged() {
+        let mut prebind = native_seat("pij-preallocated");
+        prebind.proc = None;
+        prebind.harness_session = None;
+        prebind.native_extension_delivery = false;
+        prebind.spawn_id = Some("spawn-137".to_string());
+        let (service, registry) = native_service(vec![prebind.clone()], native_liveness()).await;
+        let tmux = native_tmux();
+        let mut claim = precedence_claim("pij-preallocated", None, None, 1_000);
+        claim.spawn_id = prebind.spawn_id.clone();
+        let bound = attest(&service, claim.clone(), Some(SESSION), &tmux)
+            .await
+            .expect("the only session in its process binds its prebind");
+        assert_eq!(bound.id, prebind.id);
+        assert_eq!(bound.spawn_id, prebind.spawn_id);
+        assert_eq!(
+            attest(&service, claim, Some(SESSION), &tmux)
+                .await
+                .expect("renew"),
+            bound
+        );
+        // Spawned `/new`: the successor keeps the verified spawn correlation.
+        let mut successor = precedence_claim("", Some(bound.id.as_str()), Some(200), 2_000);
+        successor.spawn_id = prebind.spawn_id.clone();
+        let next = attest(&service, successor, Some("spawned-new-session"), &tmux)
+            .await
+            .expect("first prompt in the spawned /new chat");
+        assert_eq!(next.spawn_id, prebind.spawn_id);
+        assert!(live(&registry, &next.id).await && !live(&registry, &bound.id).await);
+    }
+
     #[tokio::test]
     async fn native_supersedes_refuses_same_id_same_session_wrong_process_or_existing_target() {
         for mismatch in 0..6 {
@@ -3297,7 +3753,7 @@ mod tests {
             )
             .expect("delivery service"),
         );
-        let service = service.with_native_lock(delivery.native_lock());
+        let service = service.with_native_delivery(delivery.clone());
         let entered = Notify::new();
         let release = Notify::new();
         let tmux = native_tmux();
@@ -3593,6 +4049,7 @@ mod tests {
             parent: None,
             role: None,
             relay: false,
+            native_precedence: None,
         };
 
         service

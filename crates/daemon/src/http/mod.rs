@@ -61,9 +61,9 @@ pub use client::{PeerEndpoint, get_from_peer, post_to_peer, stream_from_peer};
 pub use exposure::{BindRefusal, Exposure, RemoteListener, boot_banner, check_bind};
 pub use identity::{CallerContext, IdentityQuery, IdentityRequest, Phonehome};
 pub use types::{
-    CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest, PeerStreamState,
-    Registration, ReviveRequest, SendRequest, SpawnRequest, SpawnResponse, StateCard, StateRequest,
-    StreamFrame, UnavailablePeer, UnsupportedField,
+    CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest, NativePrecedence,
+    PeerStreamState, Registration, ReviveRequest, SendRequest, SpawnRequest, SpawnResponse,
+    StateCard, StateRequest, StreamFrame, UnavailablePeer, UnsupportedField,
 };
 
 #[derive(Clone)]
@@ -505,7 +505,7 @@ fn router_with_optional_federation(
         pij_harnesses::claude_homes(),
         Arc::clone(&services.roles),
     )
-    .with_native_lock(services.delivery.native_lock());
+    .with_native_delivery(Arc::clone(&services.delivery));
     let state = AppState {
         services,
         auth: config.auth,
@@ -979,6 +979,13 @@ async fn register(
                 Envelope::refused("pij register", ErrorKind::Refused, error.to_string());
             answer.details =
                 Some(serde_json::json!({ "retryable": true, "hold": "native-session" }));
+            envelope(StatusCode::CONFLICT, &answer)
+        }
+        Err(error @ RegistrationError::NativeHolderCurrent(_)) => {
+            let mut answer: Envelope<()> =
+                Envelope::refused("pij register", ErrorKind::Refused, error.to_string());
+            answer.details =
+                Some(serde_json::json!({ "retryable": true, "hold": "native-holder" }));
             envelope(StatusCode::CONFLICT, &answer)
         }
         Err(RegistrationError::Runtime(error)) => internal("pij register", error),
@@ -2488,6 +2495,7 @@ async fn heartbeat_inbox(
         pid: request.pid,
         proc_start: request.proc_start,
     };
+    let precedence = request.native_precedence;
     let Some(job_id) = request.job_id else {
         let (Some(observed_at), Some(observed_seq)) = (request.observed_at, request.observed_seq)
         else {
@@ -2502,7 +2510,18 @@ async fn heartbeat_inbox(
             .heartbeat_native_receiver(&request.seat, &identity, observed_at, observed_seq)
             .await
         {
-            Ok(heartbeat) => envelope(StatusCode::OK, &Envelope::ok("pij inbox", heartbeat)),
+            Ok(heartbeat) => {
+                state.registration.note_native_precedence(
+                    &request.seat,
+                    identity.native_session.clone(),
+                    identity
+                        .pid
+                        .zip(identity.proc_start)
+                        .map(|(pid, proc_start)| pij_core::model::ProcIdentity { pid, proc_start }),
+                    precedence,
+                );
+                envelope(StatusCode::OK, &Envelope::ok("pij inbox", heartbeat))
+            }
             Err(error) => inbox_failure(error),
         };
     };
@@ -2511,6 +2530,7 @@ async fn heartbeat_inbox(
         || identity.proc_start.is_some()
         || request.observed_at.is_some()
         || request.observed_seq.is_some()
+        || precedence.is_some()
     {
         return refused("pij inbox", "native receiver heartbeat must omit job_id");
     }

@@ -68,8 +68,8 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
         async getEvents() { return history; },
         rpc: { eventLog: {
           async tail() { return {cursor:String(history.length)}; },
-          async read({cursor='0',max}) {
-            emit({kind:'sdk-read',at:globalThis.pijNativeTestClock?.now});
+          async read({cursor='0',max,types}) {
+            emit({kind:'sdk-read',at:globalThis.pijNativeTestClock?.now,precedence:types!==undefined});
             if (process.env.PIJ_NATIVE_TEST_READ_FAIL === '1') throw new Error('Fixture SDK read unavailable');
             const events=history.slice(Number(cursor),Number(cursor)+max);
             const next=Number(cursor)+events.length;
@@ -749,8 +749,8 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 			],
 		});
 		await f.waitForRetry((event) => event.at === 0 && event.ms === 250);
-		const failure = await f.waitFor("native-log");
-		assert.match(failure.message, /unavailable: reconnecting/);
+		// The withdrawn registration re-attests before calling anything an outage.
+		assert.equal(f.events.filter((event) => event.kind === "native-log").length, 0);
 		await f.advance(250);
 		await f.waitFor(
 			"registration-wait",
@@ -760,7 +760,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		await f.advance(500);
 		await f.waitFor("registration-wait", (event) => event.elapsedMs === 500);
 		await f.waitForRetry((event) => event.at === 750 && event.ms === 1000);
-		assert.equal(f.events.filter((event) => event.kind === "native-log").length, 1);
+		assert.equal(f.events.filter((event) => event.kind === "native-log").length, 0);
 		assert.equal(
 			f.events.some((event) => event.kind === "native-send"),
 			false,
@@ -778,7 +778,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		await f.waitFor("completion-wait");
 		assert.deepEqual(
 			f.events.filter((event) => event.kind === "native-log").map((event) => event.message),
-			[failure.message, escalationMessage],
+			[escalationMessage],
 			"the hold must not cause another unavailable failure episode",
 		);
 		assert.equal(f.events.filter((event) => event.kind === "native-send").length, 1);
@@ -839,9 +839,9 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 			"idle has only inbox and lease waits, not an SDK probe timer",
 		);
 		assert.equal(
-			f.events.filter((event) => event.kind === "sdk-read").length,
+			f.events.filter((event) => event.kind === "sdk-read" && !event.precedence).length,
 			1,
-			"only startup observation",
+			"only startup observation, besides the one-time precedence scan",
 		);
 		await f.advance(250);
 		await f.waitFor("completion-wait");
@@ -1332,7 +1332,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		assert.equal(f.requests.find((request) => request.path === "/v1/send").body.from, previous.id);
 	});
 
-	test("actual HTTP native-unavailable refusal re-registers and consumes queued work", async (t) => {
+	test("actual HTTP native-unavailable refusal re-attests silently and consumes queued work", async (t) => {
 		const f = await launch(t, {
 			inboxPages: [
 				{
@@ -1346,10 +1346,8 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 				},
 			],
 		});
-		const notice = await f.waitFor("native-log");
-		assert.match(notice.message, /unavailable: reconnecting;.*retrying when available/);
-		assert.equal(f.requests.filter((r) => r.path === "/v1/inbox/ack").length, 0);
-		assert.equal(f.events.filter((event) => event.kind === "native-send").length, 0);
+		// A withdrawn registration re-attests once before it is an outage (plan 168):
+		// a newer same-process session retiring this seat is a standby, not a banner.
 		await f.waitFor("completion-wait");
 		const registrations = f.requests.filter((r) => r.path === "/v1/register");
 		assert.equal(registrations.length, 3);
@@ -1359,7 +1357,7 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		// Re-registration no longer polls typing readiness; the fresh claim still verifies incarnation.
 		assert.equal(f.requests.filter((r) => r.path.startsWith("/v1/inbox/typing?")).length, 1);
 		assert.equal(f.events.filter((event) => event.kind === "native-send").length, 1);
-		assert.equal(f.events.filter((event) => event.kind === "native-log").length, 1);
+		assert.equal(f.events.filter((event) => event.kind === "native-log").length, 0);
 		const exited = once(f.child, "exit");
 		f.child.stdin.end();
 		assert.equal((await exited)[0], 0);

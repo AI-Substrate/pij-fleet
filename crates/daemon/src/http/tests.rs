@@ -1371,7 +1371,7 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
             Vec::new(),
             Arc::clone(&services.roles),
         )
-        .with_native_lock(services.delivery.native_lock()),
+        .with_native_delivery(Arc::clone(&services.delivery)),
         services,
         auth: AuthRing::local("key".to_string()),
         machine_alias: "local".to_string(),
@@ -1989,7 +1989,7 @@ async fn typing_hold_projections_follow_terminal_outcomes_and_sequence() {
                 Vec::new(),
                 Arc::clone(&services.roles),
             )
-            .with_native_lock(services.delivery.native_lock()),
+            .with_native_delivery(Arc::clone(&services.delivery)),
             services,
             auth: AuthRing::local("key".to_string()),
             machine_alias: "local".to_string(),
@@ -2703,6 +2703,7 @@ async fn registration_corroborates_process_and_refuses_shared_process_aliases() 
         parent: None,
         role: None,
         relay: false,
+        native_precedence: None,
     };
 
     let mut registration_with_session =
@@ -2815,6 +2816,7 @@ async fn paneless_registration_returns_the_identity_export_it_requires() {
             parent: None,
             role: None,
             relay: false,
+            native_precedence: None,
         })
         .send()
         .await
@@ -3071,6 +3073,7 @@ async fn spawned_registration_adopts_prebind_row_and_preserves_port() {
             parent: None,
             role: None,
             relay: false,
+            native_precedence: None,
         })
         .send()
         .await
@@ -3536,6 +3539,7 @@ async fn spawn_wait_returns_bound_process_and_publishes_event() {
                 parent: None,
                 role: None,
                 relay: false,
+                native_precedence: None,
             })
             .send()
             .await
@@ -3649,6 +3653,7 @@ async fn spawn_reports_model_mismatch_without_killing_registered_seat() {
                 parent: None,
                 role: None,
                 relay: false,
+                native_precedence: None,
             })
             .send()
             .await
@@ -3744,6 +3749,7 @@ async fn reregistration_prefers_exact_id_over_spawn_match_without_fresh_allocati
             parent: None,
             role: None,
             relay: false,
+            native_precedence: None,
         })
         .send()
         .await
@@ -3821,6 +3827,7 @@ async fn registration_does_not_inherit_native_capability_from_another_incarnatio
             parent: None,
             role: None,
             relay: false,
+            native_precedence: None,
         })
         .send()
         .await
@@ -3890,6 +3897,7 @@ async fn registration_cannot_adopt_a_spawn_match_that_is_already_bound() {
             parent: None,
             role: None,
             relay: false,
+            native_precedence: None,
         })
         .send()
         .await
@@ -3964,6 +3972,7 @@ async fn registration_cannot_adopt_a_spawn_match_from_another_pane() {
             parent: None,
             role: None,
             relay: false,
+            native_precedence: None,
         })
         .send()
         .await
@@ -4061,6 +4070,7 @@ async fn ordinary_registration_preserves_native_attestation_and_claude_consent()
                 parent: None,
                 role: None,
                 relay: false,
+                native_precedence: None,
             })
             .send()
             .await
@@ -4119,6 +4129,7 @@ async fn registration_refuses_uncorroborated_or_half_process_identity() {
         parent: None,
         role: None,
         relay: false,
+        native_precedence: None,
     };
     for (label, claim, expected) in [
         ("uncorroborated", base.clone(), "daemon observed process 7"),

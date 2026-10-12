@@ -72,6 +72,31 @@ pub struct Registration {
     /// Whether this seat relays to an external sink.
     #[serde(default)]
     pub relay: bool,
+    /// Native Copilot precedence (plan 168); absent from extensions that predate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_precedence: Option<NativePrecedence>,
+}
+
+/// Which of one Copilot process's sessions the human is using, self-reported by
+/// each session's native extension (plan 168). Copilot keeps every session's
+/// extension host alive in the same process after `/new` or the `--resume`
+/// picker, so registration order cannot decide the seat; observed history does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativePrecedence {
+    /// Epoch milliseconds of the newest `user.message` event in this session's
+    /// own event log; null when the session has none (a blank boot or `/new`).
+    pub last_user_message_at: Option<u64>,
+    /// Epoch milliseconds at which this session's extension host process started.
+    /// Fixed for the host's life, so re-registering never counts as a later load.
+    pub loaded_at: u64,
+}
+
+impl NativePrecedence {
+    /// Newest `user.message` wins; none loses to any; a tie goes to the later load.
+    pub(crate) fn outranks(self, holder: Self) -> bool {
+        (self.last_user_message_at, self.loaded_at)
+            > (holder.last_user_message_at, holder.loaded_at)
+    }
 }
 
 pub(crate) fn deserialize_asserted_role<'de, D: serde::Deserializer<'de>>(
@@ -259,6 +284,9 @@ pub struct InboxHeartbeatRequest {
     /// Monotonic count of actual event observations, also a nonnegative safe integer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_seq: Option<u64>,
+    /// Current native precedence (plan 168), renewed with the receiver lease.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_precedence: Option<NativePrecedence>,
 }
 
 /// Acknowledgement for the single inbox claim a client decoded.

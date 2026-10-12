@@ -172,15 +172,41 @@ pub fn ensure_claude_inbound_accept(homes: &[PathBuf]) -> Vec<EnsureReport> {
         .map(|home| ensure_home(home, ACCEPT, plan_inbound_accept))
         .collect()
 }
+/// Seconds between Copilot statusline re-runs (plan 168). Copilot otherwise
+/// re-runs the command only on its own events, so a pane whose pij seat changed
+/// hands at a native session boundary kept showing the retired seat's name.
+pub const COPILOT_STATUSLINE_REFRESH_SECONDS: u64 = 10;
+
 /// Plan the minimal safe edit that points Claude at pij's managed statusline.
 #[must_use]
 pub fn plan_claude_statusline(existing: Option<&str>, command: &str) -> EnsurePlan {
+    plan_statusline(
+        existing,
+        command,
+        serde_json::json!({"type": "command", "command": command}),
+    )
+}
+
+/// Copilot's managed statusline also re-runs on a fixed interval (plan 168).
+#[must_use]
+pub fn plan_copilot_statusline(existing: Option<&str>, command: &str) -> EnsurePlan {
+    plan_statusline(
+        existing,
+        command,
+        serde_json::json!({
+            "type": "command",
+            "command": command,
+            "refreshInterval": COPILOT_STATUSLINE_REFRESH_SECONDS,
+        }),
+    )
+}
+
+fn plan_statusline(existing: Option<&str>, command: &str, desired: Value) -> EnsurePlan {
     if command.is_empty() {
         return EnsurePlan::Refuse {
             error: "statusline command must not be empty".to_string(),
         };
     }
-    let desired = serde_json::json!({"type": "command", "command": command});
     let Some(existing) = existing else {
         return EnsurePlan::Write {
             before: None,
@@ -237,6 +263,14 @@ pub fn plan_claude_statusline(existing: Option<&str>, command: &str) -> EnsurePl
 /// Ensure every named Claude home points at pij's managed statusline.
 #[must_use]
 pub fn ensure_claude_statusline(homes: &[PathBuf], script_path: &Path) -> Vec<EnsureReport> {
+    ensure_statusline(homes, script_path, plan_claude_statusline)
+}
+
+fn ensure_statusline(
+    homes: &[PathBuf],
+    script_path: &Path,
+    plan: fn(Option<&str>, &str) -> EnsurePlan,
+) -> Vec<EnsureReport> {
     let command = shell_command(script_path);
     homes
         .iter()
@@ -246,15 +280,13 @@ pub fn ensure_claude_statusline(homes: &[PathBuf], script_path: &Path) -> Vec<En
                 && let EnsurePlan::Write {
                     before: Some(previous),
                     ..
-                } = plan_claude_statusline(Some(&existing), &command)
+                } = plan(Some(&existing), &command)
                 && previous != command
                 && let Err(error) = backup_statusline_script(home, &previous)
             {
                 return report(home, Some(previous), &command, false, None, Some(error));
             }
-            ensure_home(home, &command, |existing| {
-                plan_claude_statusline(existing, &command)
-            })
+            ensure_home(home, &command, |existing| plan(existing, &command))
         })
         .collect()
 }
@@ -786,10 +818,11 @@ pub fn copilot_home() -> Option<PathBuf> {
 }
 
 /// Point Copilot's `settings.json` `statusLine` at pij's script. Copilot uses the
-/// same key and shape as Claude, so this is the same minimal, backed-up edit.
+/// same key and shape as Claude plus a refresh interval, in the same minimal,
+/// backed-up edit.
 #[must_use]
 pub fn ensure_copilot_statusline(home: &Path, script_path: &Path) -> Vec<EnsureReport> {
-    ensure_claude_statusline(&[home.to_path_buf()], script_path)
+    ensure_statusline(&[home.to_path_buf()], script_path, plan_copilot_statusline)
 }
 
 /// Inspect every named Claude home without changing any file.
@@ -1744,6 +1777,41 @@ mod tests {
             fs::read_to_string(home.join("settings.json")).expect("settings"),
             original
         );
+    }
+
+    /// Plan 168: Copilot re-runs a statusline only on its own events unless told
+    /// otherwise, so a pane kept showing a seat retired at a session boundary.
+    #[test]
+    fn copilot_statusline_gains_a_refresh_interval_then_is_a_no_op() {
+        let root = TestDir::new();
+        let home = root.path().join(".copilot");
+        fs::create_dir_all(&home).expect("home");
+        let script = Path::new("/Users/test/.pij-rs/copilot-statusline-pij.sh");
+        let command = serde_json::to_string(&script.display().to_string()).expect("path");
+        fs::write(
+            home.join("settings.json"),
+            format!(
+                r#"{{"experimental":true,"statusLine":{{"type":"command","command":{command}}}}}"#
+            ),
+        )
+        .expect("seed pre-168 settings");
+
+        let report = ensure_copilot_statusline(&home, script).remove(0);
+        assert!(report.changed, "{report:?}");
+        let settings: Value = serde_json::from_str(
+            &fs::read_to_string(home.join("settings.json")).expect("settings"),
+        )
+        .expect("json");
+        assert_eq!(settings["experimental"], true);
+        assert_eq!(
+            settings["statusLine"]["refreshInterval"],
+            COPILOT_STATUSLINE_REFRESH_SECONDS
+        );
+        assert_eq!(
+            settings["statusLine"]["command"],
+            script.display().to_string()
+        );
+        assert!(!ensure_copilot_statusline(&home, script).remove(0).changed);
     }
 
     #[test]

@@ -13,8 +13,10 @@ import {
 	FileJournal,
 	NativeBridge,
 	NativeError,
+	NativePrecedence,
 	parseProcessStart,
 	resolveRegistration,
+	STANDBY_RETRY_MS,
 } from "./store.mjs";
 
 const registration = Object.freeze({
@@ -4281,3 +4283,164 @@ for (const guard of [
 		assert.equal(f.trace.includes("retry-intent"), false);
 	});
 }
+
+const prompt = (at, extra = {}) => ({
+	type: "user.message",
+	id: `user-${at}`,
+	timestamp: new Date(at).toISOString(),
+	data: {},
+	...extra,
+});
+
+test("precedence: newest main-agent prompt from backward history; sub-agent prompts never count", async () => {
+	const pages = [
+		{
+			events: [prompt(9_000, { agentId: "sub-agent" }), { type: "assistant.message", id: "a" }],
+			cursor: "older",
+			hasMore: true,
+			cursorStatus: "ok",
+		},
+		{ events: [prompt(3_000), prompt(7_000)], cursor: "oldest", hasMore: true, cursorStatus: "ok" },
+	];
+	const reads = [];
+	const precedence = new NativePrecedence({ loadedAt: 1_000 });
+	await precedence.scan({
+		async read(request) {
+			reads.push(request);
+			return pages.shift();
+		},
+	});
+	assert.deepEqual(precedence.wire(), { last_user_message_at: 7_000, loaded_at: 1_000 });
+	assert.equal(reads.length, 2, "stops at the first page holding a main-agent prompt");
+	assert.deepEqual(reads[0].types, ["user.message"]);
+	assert.equal(reads[0].direction, "backward");
+	assert.equal(reads[1].cursor, "older");
+	await precedence.scan({ read: () => assert.fail("a completed scan never rereads") });
+	precedence.observe(prompt(6_000));
+	assert.equal(precedence.lastUserMessageAt, 7_000, "an older prompt never lowers the rank");
+	precedence.observe(prompt(8_000));
+	assert.equal(precedence.lastUserMessageAt, 8_000);
+});
+
+test("precedence: a blank session reports null, and an unreadable history stays retryable", async () => {
+	const blank = new NativePrecedence({ loadedAt: 2_000 });
+	await blank.scan({
+		read: async () => ({ events: [], cursor: "end", hasMore: false, cursorStatus: "ok" }),
+	});
+	assert.deepEqual(blank.wire(), { last_user_message_at: null, loaded_at: 2_000 });
+	const failing = new NativePrecedence({ loadedAt: 2_000 });
+	await assert.rejects(
+		failing.scan({
+			read: async () => {
+				throw new Error("SDK unavailable");
+			},
+		}),
+		(error) => error instanceof NativeError && error.retryable,
+	);
+	assert.equal(failing.scanned, false);
+});
+
+test("registration and heartbeat carry the live precedence; a reregister never moves loaded_at", async () => {
+	const precedence = new NativePrecedence({ loadedAt: 1_234 });
+	const f = fixture({ precedence, heartbeatDelay: () => new Promise(() => {}) });
+	const bodies = [];
+	const request = f.client.request.bind(f.client);
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/register" || path === "/v1/inbox/heartbeat") bodies.push({ path, body });
+		return request(path, body, signal);
+	};
+	void f.bridge.run();
+	await f.accepted.promise;
+	f.bridge.stop();
+	const register = bodies.find((row) => row.path === "/v1/register");
+	assert.deepEqual(register.body.native_precedence, {
+		last_user_message_at: null,
+		loaded_at: 1_234,
+	});
+	const heartbeat = bodies.find((row) => row.path === "/v1/inbox/heartbeat");
+	assert.deepEqual(heartbeat.body.native_precedence, register.body.native_precedence);
+	// The delivered prompt is this session's own activity from here on.
+	precedence.observe(prompt(50_000));
+	await f.bridge.register().catch(() => undefined);
+	assert.equal(precedence.wire().loaded_at, 1_234);
+});
+
+test("standby: a newer same-process holder is a quiet wait that this session's own prompt ends", async () => {
+	const precedence = new NativePrecedence({ loadedAt: 1_000 });
+	const waits = [];
+	const logs = [];
+	const captured = [];
+	const reporter = createNativeReporter({
+		log: async (message) => logs.push(message),
+		capture: (event) => captured.push(event),
+	});
+	let held = true;
+	const acknowledged = deferred();
+	const f = fixture({
+		precedence,
+		report: (event) => {
+			reporter(event);
+			if (event.kind === "inbox-acknowledged") acknowledged.resolve();
+		},
+		delay: (ms, signal) => {
+			waits.push(ms);
+			if (ms !== STANDBY_RETRY_MS) return flush();
+			return new Promise((_resolve, reject) =>
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+			);
+		},
+		heartbeatDelay: () => new Promise(() => {}),
+	});
+	const request = f.client.request.bind(f.client);
+	const registers = [];
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/register") {
+			registers.push(body.native_precedence);
+			if (held) throw new NativeError("held", true, "Pij HTTP 409", "native-holder");
+		}
+		return request(path, body, signal);
+	};
+	void f.bridge.run();
+	while (!waits.includes(STANDBY_RETRY_MS)) await flush();
+	await flush();
+	assert.equal(registers.length, 1, "standing by does not hammer registration");
+	assert.deepEqual(logs, [], "standby never reaches the native timeline");
+	assert.deepEqual(
+		captured.filter((event) => event.kind === "standby").length,
+		1,
+		"standby is logged once for diagnosis",
+	);
+	// The human types in this session: its own prompt is now the newest activity.
+	held = false;
+	precedence.observe(prompt(90_000));
+	await acknowledged.promise;
+	f.bridge.stop();
+	assert.deepEqual(registers.at(-1), { last_user_message_at: 90_000, loaded_at: 1_000 });
+	assert.deepEqual(logs, []);
+	assert.ok(captured.some((event) => event.kind === "standby-ended"));
+});
+
+test("a native-holder 409 is a typed retryable hold", async () => {
+	const client = new DaemonClient({
+		addr: "127.0.0.1:13700",
+		stateDir: "/isolated",
+		readKey: async () => "fixture-key",
+		fetch: async () =>
+			new Response(
+				JSON.stringify({
+					ok: false,
+					v: 2,
+					command: "pij register",
+					error: "refused",
+					details: { retryable: true, hold: "native-holder" },
+					meta: "native Copilot registration held",
+				}),
+				{ status: 409 },
+			),
+	});
+	await assert.rejects(client.request("/v1/register", registration), (error) => {
+		assert.equal(error.retryable, true);
+		assert.equal(error.holdKind, "native-holder");
+		return true;
+	});
+});

@@ -356,7 +356,7 @@ impl DeliveryService {
         })
     }
 
-    async fn native_receiver_live(&self, seat: &SeatDescriptor) -> bool {
+    pub(crate) async fn native_receiver_live(&self, seat: &SeatDescriptor) -> bool {
         let receivers = self.native_receivers.lock().await;
         let renewed_at = match receivers.get(&seat.id) {
             Some(receiver) if receiver.identity.matches(seat) => receiver.renewed_at,

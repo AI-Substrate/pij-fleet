@@ -17,10 +17,12 @@ import {
 	MAX_RETRY_MS,
 	NativeBridge,
 	NativeError,
+	NativePrecedence,
 	normalizeExecutable,
 	parseProcessStart,
 	resolveNativeHost,
 	resolveRegistration,
+	STANDBY_RETRY_MS,
 } from "./store.mjs";
 
 const execute = promisify(execFile);
@@ -140,7 +142,15 @@ async function startExtension() {
 		signal.throwIfAborted();
 		if (!session.sessionId || session.sessionId !== process.env.SESSION_ID)
 			throw new NativeError("Joined native session does not match extension parent context");
-		unsubscribe = session.on("session.shutdown", () => stop("session.shutdown"));
+		// Plan 168: this host's load time and its session's newest prompt rank it
+		// against any other live session of the same Copilot process.
+		const precedence = new NativePrecedence({ loadedAt: Math.floor(performance.timeOrigin) });
+		const unsubscribePrecedence = session.on((event) => precedence.observe(event));
+		const unsubscribeShutdown = session.on("session.shutdown", () => stop("session.shutdown"));
+		unsubscribe = () => {
+			unsubscribePrecedence();
+			unsubscribeShutdown();
+		};
 
 		const pane = process.env.TMUX_PANE || undefined;
 		let paneProcess;
@@ -169,8 +179,17 @@ async function startExtension() {
 		const extension = await extensionBuildIdentity(import.meta.dirname).catch(() => undefined);
 		let failureEpisode = false;
 		let holdStarted;
+		let standingBy = false;
 		while (!signal.aborted) {
 			try {
+				// An unreadable history never blocks registration: the session reports no
+				// prompt yet, live prompts still count, and the bridge rescans on re-register.
+				await precedence.scan(session.rpc?.eventLog).catch((error) =>
+					nativeReport({
+						kind: "precedence-unscanned",
+						safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
+					}),
+				);
 				const roster = await client.request("/v1/seats?scope=local", undefined, signal);
 				const registration = await resolveRegistration(
 					client,
@@ -183,15 +202,17 @@ async function startExtension() {
 						extension,
 					}),
 					signal,
+					precedence,
 				);
 				signal.throwIfAborted();
-				if (holdStarted !== undefined) nativeReport({ kind: "connection-ready" });
+				if (holdStarted !== undefined || standingBy) nativeReport({ kind: "connection-ready" });
 				bridge = new NativeBridge({
 					registration,
 					native: session,
 					client,
 					journal: new FileJournal(stateDir, registration),
 					report: nativeReport,
+					precedence,
 				});
 				// One immutable native-session consumer. Held receiving leaves the explicit outgoing tool alive.
 				await bridge.run();
@@ -199,6 +220,16 @@ async function startExtension() {
 			} catch (error) {
 				if (signal.aborted) return;
 				if (!error.retryable) throw error;
+				if (error instanceof NativeError && error.holdKind === "native-holder") {
+					// A newer same-process session holds this pane's seat: stand by
+					// quietly until this session is used or that holder goes silent.
+					standingBy = true;
+					failureEpisode = false;
+					nativeReport({ kind: "standby", retryMs: STANDBY_RETRY_MS });
+					await precedence.standby((ms, wait) => sleep(ms, undefined, { signal: wait }), signal);
+					retry = INITIAL_RETRY_MS;
+					continue;
+				}
 				if (error instanceof NativeError && error.holdKind === "native-session") {
 					const now = performance.now();
 					holdStarted ??= now;
