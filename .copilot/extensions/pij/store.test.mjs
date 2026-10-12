@@ -4478,3 +4478,146 @@ test("R8: recovery without a shown banner, or after a quiet holder standby, show
 	await report({ kind: "connection-ready" });
 	assert.deepEqual(logs, []);
 });
+
+// Plan 168 review F3-F5: the reviewer's observable smoke, kept as permanent tests.
+const reviewRegistration = {
+	id: "review-holder",
+	harness: "copilot",
+	harness_session: "own-session",
+	pid: 1,
+	proc_start: 10,
+};
+const reviewSeat = {
+	id: reviewRegistration.id,
+	harness: "copilot",
+	session: reviewRegistration.harness_session,
+	proc: { pid: 1, proc_start: 10 },
+	native_extension_delivery: true,
+};
+const historicalPrompt = prompt(Date.parse("2026-10-12T00:00:00.000Z"));
+const settle = (promise, ms = 200) =>
+	Promise.race([
+		promise.then(
+			() => "resolved",
+			() => "rejected",
+		),
+		new Promise((resolve) => setTimeout(() => resolve("still-pending"), ms)),
+	]);
+
+test("F3: a failed filtered history read falls back to plain history, never to a false null", async () => {
+	const precedence = new NativePrecedence({ loadedAt: 2_000 });
+	const reports = [];
+	let bridge;
+	bridge = new NativeBridge({
+		registration: reviewRegistration,
+		precedence,
+		report: () => {},
+		journal: {},
+		native: {
+			rpc: {
+				eventLog: {
+					read: async (options) => {
+						if (options.types) throw new Error("transient filtered-history failure");
+						return { events: [historicalPrompt], hasMore: false, cursorStatus: "ok", cursor: "h" };
+					},
+				},
+			},
+		},
+		client: {
+			request: async (path, body) => {
+				reports.push({ path, report: body.native_precedence });
+				if (path === "/v1/inbox/heartbeat") {
+					bridge.heartbeatController.abort();
+					return { state: "live", lease_ms: 60000, renew_after_ms: 20000 };
+				}
+				return reviewSeat;
+			},
+		},
+	});
+	await bridge.register();
+	await bridge.keepReceiverAlive();
+	bridge.stop();
+	const expected = {
+		last_user_message_at: Date.parse(historicalPrompt.timestamp),
+		loaded_at: 2_000,
+	};
+	assert.deepEqual(
+		reports.map((row) => row.path),
+		["/v1/register", "/v1/inbox/heartbeat"],
+	);
+	for (const row of reports) assert.deepEqual(row.report, expected, row.path);
+});
+
+test("F3/F4: an unreadable history is reported as unknown, never as null", async () => {
+	const precedence = new NativePrecedence({ loadedAt: 2_000, deadlineMs: 20 });
+	const bodies = [];
+	const bridge = new NativeBridge({
+		registration: reviewRegistration,
+		precedence,
+		report: () => {},
+		journal: {},
+		native: { rpc: { eventLog: { read: () => new Promise(() => {}) } } },
+		client: {
+			request: async (_path, body) => {
+				bodies.push(body);
+				return reviewSeat;
+			},
+		},
+	});
+	assert.equal(
+		await settle(bridge.register(), 1_000),
+		"resolved",
+		"a hung scan never blocks registration",
+	);
+	bridge.stop();
+	assert.equal(bodies.length, 1);
+	assert.equal("native_precedence" in bodies[0], false, "unknown is omitted: today's supersede");
+	assert.equal(precedence.scanned, false, "the next registration rescans");
+});
+
+test("F4: stop() ends a registration whose history scan is hung", async () => {
+	let issued = false;
+	const bridge = new NativeBridge({
+		registration: reviewRegistration,
+		precedence: new NativePrecedence({ loadedAt: 2_000 }),
+		report: () => {},
+		journal: {},
+		native: { rpc: { eventLog: { read: () => new Promise(() => {}) } } },
+		client: {
+			request: async () => {
+				issued = true;
+				return reviewSeat;
+			},
+		},
+	});
+	const registration = bridge.register();
+	bridge.stop();
+	assert.equal(await settle(registration, 50), "rejected");
+	assert.equal(issued, false, "a stopped bridge never registers");
+});
+
+test("F5: a prompt that lands while the refused report is in flight retries at once", async () => {
+	const precedence = new NativePrecedence({ loadedAt: 2_000 });
+	await precedence.scan({
+		read: async () => ({ events: [], cursor: "end", hasMore: false, cursorStatus: "ok" }),
+	});
+	assert.deepEqual(precedence.wire(), { last_user_message_at: null, loaded_at: 2_000 });
+	precedence.observe(historicalPrompt);
+	const scheduled = [];
+	const controller = new AbortController();
+	const waited = precedence.standby((ms) => {
+		scheduled.push(ms);
+		return new Promise(() => {});
+	}, controller.signal);
+	assert.equal(await settle(waited, 50), "resolved");
+	controller.abort();
+	assert.deepEqual(scheduled, [], "no 30s standby after a prompt the refused report never carried");
+	// Once a report carries that prompt, a later refusal stands by again.
+	precedence.wire();
+	const again = precedence.standby((ms) => {
+		scheduled.push(ms);
+		return new Promise(() => {});
+	}, new AbortController().signal);
+	assert.equal(await settle(again, 20), "still-pending");
+	assert.deepEqual(scheduled, [STANDBY_RETRY_MS]);
+});

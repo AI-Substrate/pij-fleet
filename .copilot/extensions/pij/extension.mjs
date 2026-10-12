@@ -182,14 +182,16 @@ async function startExtension() {
 		let standingBy = false;
 		while (!signal.aborted) {
 			try {
-				// An unreadable history never blocks registration: the session reports no
-				// prompt yet, live prompts still count, and the bridge rescans on re-register.
-				await precedence.scan(session.rpc?.eventLog).catch((error) =>
+				// An unreadable history never blocks registration: the session registers
+				// with an unknown precedence (today's supersede), live prompts still count,
+				// and the bridge rescans on re-register.
+				await precedence.scan(session.rpc?.eventLog, signal).catch((error) => {
+					if (signal.aborted) throw error;
 					nativeReport({
 						kind: "precedence-unscanned",
 						safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
-					}),
-				);
+					});
+				});
 				const roster = await client.request("/v1/seats?scope=local", undefined, signal);
 				const registration = await resolveRegistration(
 					client,

@@ -65,15 +65,20 @@ export class NativeError extends Error {
  * main-agent `user.message` event (a typed or delivered prompt) wins, a session
  * with none never outranks one with history, and a tie goes to the later-loaded
  * extension host. The load time is this host's start, so re-registering never
- * counts as a later load.
+ * counts as a later load. `last_user_message_at: null` means "observed none";
+ * a history that could not be read is unknown and is not reported at all.
  */
 export class NativePrecedence {
-	constructor({ loadedAt }) {
+	constructor({ loadedAt, deadlineMs = NATIVE_RPC_DEADLINE_MS }) {
 		if (!positiveInteger(loadedAt))
 			throw new NativeError("Native precedence requires the extension host load time");
 		this.loadedAt = loadedAt;
+		this.deadlineMs = deadlineMs;
 		this.lastUserMessageAt = null;
 		this.scanned = false;
+		// Each newer prompt bumps the generation; wire() records the one it sent.
+		this.generation = 0;
+		this.reportedGeneration = 0;
 		this.waiters = new Set();
 	}
 	observe(event) {
@@ -82,27 +87,39 @@ export class NativePrecedence {
 		if (!positiveInteger(at) || (this.lastUserMessageAt !== null && at <= this.lastUserMessageAt))
 			return;
 		this.lastUserMessageAt = at;
+		this.generation++;
 		for (const wake of [...this.waiters]) wake();
 	}
-	/** Newest main-agent `user.message` in persisted history; done once it succeeds. */
-	async scan(eventLog) {
+	/**
+	 * Newest main-agent `user.message` in persisted history; done once it succeeds.
+	 * A runtime that rejects the filtered read falls back to plain history pages.
+	 * Every read is bounded by the deadline and by `signal`.
+	 */
+	async scan(eventLog, signal) {
 		if (this.scanned) return;
 		if (typeof eventLog?.read !== "function")
 			throw new NativeError("Native history API eventLog.read is unavailable; precedence unknown");
+		try {
+			await this.scanPages(eventLog, signal, true);
+		} catch (error) {
+			if (signal?.aborted || error?.timedOut) throw error;
+			await this.scanPages(eventLog, signal, false);
+		}
+	}
+	async scanPages(eventLog, signal, filtered) {
 		let cursor;
 		for (;;) {
-			let page;
-			try {
-				page = await eventLog.read({
-					direction: "backward",
-					max: 128,
-					types: ["user.message"],
-					agentScope: "primary",
-					...(cursor === undefined ? {} : { cursor }),
-				});
-			} catch {
-				throw new NativeError("Native precedence history read failed; retrying", true);
-			}
+			const page = await boundedRead(
+				() =>
+					eventLog.read({
+						direction: "backward",
+						max: 128,
+						...(filtered ? { types: ["user.message"], agentScope: "primary" } : {}),
+						...(cursor === undefined ? {} : { cursor }),
+					}),
+				signal,
+				this.deadlineMs,
+			);
 			if (
 				!Array.isArray(page?.events) ||
 				typeof page.hasMore !== "boolean" ||
@@ -119,11 +136,24 @@ export class NativePrecedence {
 			cursor = page.cursor;
 		}
 	}
-	wire() {
+	/** The current report without marking it sent; `undefined` while unknown. */
+	snapshot() {
+		// A prompt seen live is newer than all history, so it is exact even unscanned.
+		if (this.lastUserMessageAt === null && !this.scanned) return undefined;
 		return { last_user_message_at: this.lastUserMessageAt, loaded_at: this.loadedAt };
 	}
-	/** Slow standby retry, cut short by this session's own next prompt or by stop. */
+	/** The report for a request body; records which prompt generation it carried. */
+	wire() {
+		this.reportedGeneration = this.generation;
+		return this.snapshot();
+	}
+	/**
+	 * Slow standby retry, cut short by this session's own next prompt or by stop.
+	 * A prompt that arrived after the refused report was built retries at once.
+	 */
 	async standby(delay, signal) {
+		throwIfStopped(signal);
+		if (this.generation !== this.reportedGeneration) return;
 		const done = new AbortController();
 		const linked = AbortSignal.any([signal, done.signal]);
 		let wake;
@@ -141,9 +171,42 @@ export class NativePrecedence {
 	}
 }
 
-/** Attach the current precedence, when this extension reports one, at send time. */
+/** One history read, bounded by a deadline and by the caller's stop signal. */
+function boundedRead(read, signal, deadlineMs) {
+	return new Promise((resolve, reject) => {
+		let settled = false;
+		const finish = (error, value) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", abort);
+			if (error) reject(error);
+			else resolve(value);
+		};
+		const abort = () => finish(signal.reason);
+		const timer = setTimeout(() => {
+			const error = new NativeError(
+				"Native precedence history read timed out; precedence unknown",
+				true,
+			);
+			error.timedOut = true;
+			finish(error);
+		}, deadlineMs);
+		if (signal?.aborted) return abort();
+		signal?.addEventListener("abort", abort, { once: true });
+		Promise.resolve()
+			.then(read)
+			.then(
+				(page) => finish(undefined, page),
+				() => finish(new NativeError("Native precedence history read failed; retrying", true)),
+			);
+	});
+}
+
+/** Attach the current precedence, when known, at send time; unknown is omitted. */
 function withPrecedence(body, precedence) {
-	return precedence ? { ...body, native_precedence: precedence.wire() } : body;
+	const report = precedence?.wire();
+	return report ? { ...body, native_precedence: report } : body;
 }
 
 /** Normalize the Linux kernel's unlinked executable marker before identity matching. */
@@ -1049,8 +1112,11 @@ export class NativeBridge {
 	async register() {
 		const signal = this.controller.signal;
 		const registration = this.registration;
-		// A boot-time history scan that failed retries here; it never blocks registration.
-		await this.precedence?.scan(this.native.rpc?.eventLog).catch(() => undefined);
+		// A boot-time history scan that failed retries here, bounded and stoppable;
+		// a failure registers with an unknown precedence rather than blocking.
+		await this.precedence?.scan(this.native.rpc?.eventLog, signal).catch((error) => {
+			if (signal.aborted) throw error;
+		});
 		const seat = await this.client.request(
 			"/v1/register",
 			withPrecedence(this.reconnectRegistration ?? registration, this.precedence),
@@ -1067,7 +1133,7 @@ export class NativeBridge {
 				procStart: registration.proc_start,
 				pane: registration.pane ?? null,
 				// Plan 168 evidence: the rank this session claimed with, in its own log.
-				precedence: this.precedence?.wire() ?? null,
+				precedence: this.precedence?.snapshot() ?? null,
 			});
 		}
 	}

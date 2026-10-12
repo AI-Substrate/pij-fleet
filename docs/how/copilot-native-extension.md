@@ -67,14 +67,18 @@ observed history, never by registration order:
   main-agent `user.message` event in its own event log (a typed or pij-delivered
   prompt; sub-agent events never count), or `null` when there is none.
   `loaded_at` is the extension host's process start, so re-registering never
-  counts as a later load.
+  counts as a later load. `null` means the history was read and holds no
+  prompt; a history the extension could not read (the filtered read and the
+  plain fallback both failed, or timed out) is unknown, and the field is
+  omitted, which keeps the earlier supersede.
 - The newest `user.message` holds the seat. A session with none never takes it
   from a live holder that has one. A tie (neither has one, e.g. resuming an empty
   chat) goes to the later-loaded host.
 - A claim that does not outrank the live holder gets HTTP 409
   `details:{retryable:true,hold:"native-holder"}`. The extension stands by
   quietly: one stderr line, no timeline banner, no tombstone of the holder. It
-  retries every 30 seconds and at once when its own session sees a prompt.
+  retries every 30 seconds and at once when its own session sees a prompt,
+  including a prompt that arrived while the refused registration was in flight.
 - It takes over without outranking only once the holder's receiver lease lapses,
   i.e. its extension stopped heartbeating.
 - Resume without typing: the resumed chat has older prompts and the blank boot
@@ -111,7 +115,10 @@ Loader readiness therefore does not prove Pij registration succeeded. A terminal
 registration diagnostic, and directs you to restart the Copilot CLI (`/restart`
 or relaunch). Do that when the banner requests it; restarting the Pij daemon does
 not change the host executable. Ordinary Copilot remains usable. Transient
-`registration-wait` notices still say **retrying when available**.
+`registration-wait` notices still say **retrying when available**. When a
+`[pij native] unavailable: …` banner was shown and registration then succeeds,
+one `[pij native] reconnected` line follows, so a recovered outage never reads
+as a live one. Nothing is shown when no banner was, nor for a quiet standby.
 
 ## Immediate peer-message delivery
 
