@@ -596,7 +596,7 @@ mod tests {
         tokio::time::advance(SWEEP_EVERY - Duration::from_secs(1)).await;
         services
             .delivery
-            .heartbeat_native_receiver(&sender.id, &identity, 1, 1)
+            .heartbeat_native_receiver(&sender.id, &identity, 1, 1, None)
             .await
             .unwrap();
         assert_eq!(

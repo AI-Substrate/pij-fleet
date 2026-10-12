@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use tokio_stream::StreamExt;
 
 use crate::events::EventBus;
+use crate::http::NativePrecedence;
 use crate::pointer::{POINTER_PARKED_EVENT_KIND, POINTER_UNPARKED_EVENT_KIND};
 
 const OUTCOME_EVENT_KIND: &str = "delivery.outcome";
@@ -96,6 +97,37 @@ impl NativeInboxIdentity {
 struct NativeReceiverLease {
     identity: NativeInboxIdentity,
     renewed_at: tokio::time::Instant,
+    /// Plan 168: this incarnation's precedence, `None` until it reports.
+    precedence: Option<ReportedPrecedence>,
+}
+
+/// What one native receiver incarnation reported about its precedence (plan 168).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReportedPrecedence {
+    /// An extension that predates plan 168: today's supersede applies.
+    Legacy,
+    Known(NativePrecedence),
+}
+
+impl ReportedPrecedence {
+    pub(crate) fn from_report(report: Option<NativePrecedence>) -> Self {
+        report.map_or(Self::Legacy, Self::Known)
+    }
+
+    /// Monotonic per incarnation: a delayed or out-of-order report never lowers it.
+    fn merge(self, report: Self) -> Self {
+        match (self, report) {
+            (Self::Known(held), Self::Known(newer)) if newer.outranks(held) => report,
+            (Self::Known(_), _) => self,
+            (Self::Legacy, _) => report,
+        }
+    }
+}
+
+/// The same-process holder as plan 168's registration brake sees it.
+pub(crate) enum NativeHolder {
+    Lapsed,
+    Live(Option<ReportedPrecedence>),
 }
 
 /// Native receiver observation lease, not host liveness or message acknowledgement.
@@ -284,7 +316,7 @@ impl DeliveryService {
         seat: &SeatId,
         identity: &NativeInboxIdentity,
     ) -> Result<()> {
-        self.update_native_receiver(seat, identity, false)
+        self.update_native_receiver(seat, identity, false, None)
             .await
             .map(|_| ())
     }
@@ -303,13 +335,20 @@ impl DeliveryService {
         identity: &NativeInboxIdentity,
         observed_at: u64,
         observed_seq: u64,
+        precedence: Option<NativePrecedence>,
     ) -> Result<NativeReceiverHeartbeat> {
         if observed_at > MAX_SAFE_INTEGER || observed_seq > MAX_SAFE_INTEGER {
             return Err(native_refusal(
                 "receiver progress must use nonnegative safe integers",
             ));
         }
-        self.update_native_receiver(seat, identity, true).await
+        self.update_native_receiver(
+            seat,
+            identity,
+            true,
+            Some(ReportedPrecedence::from_report(precedence)),
+        )
+        .await
     }
 
     async fn update_native_receiver(
@@ -317,6 +356,7 @@ impl DeliveryService {
         seat: &SeatId,
         identity: &NativeInboxIdentity,
         renew: bool,
+        report: Option<ReportedPrecedence>,
     ) -> Result<NativeReceiverHeartbeat> {
         let _guard = self.native_lock.lock().await;
         self.inbox_recipient(seat, identity)
@@ -328,20 +368,16 @@ impl DeliveryService {
         let now = tokio::time::Instant::now();
         let lease = Duration::from_secs(self.extension_claim_lease_secs);
         let mut receivers = self.native_receivers.lock().await;
-        let receiver = receivers
-            .entry(seat.clone())
-            .or_insert_with(|| NativeReceiverLease {
-                identity: identity.clone(),
-                renewed_at: now,
-            });
-        if receiver.identity != *identity {
-            *receiver = NativeReceiverLease {
-                identity: identity.clone(),
-                renewed_at: now,
-            };
-        }
+        let receiver = Self::receiver_entry(&mut receivers, seat, identity, now);
         if renew {
             receiver.renewed_at = now;
+        }
+        if let Some(report) = report {
+            receiver.precedence = Some(
+                receiver
+                    .precedence
+                    .map_or(report, |held| held.merge(report)),
+            );
         }
         let lease_ms = lease
             .saturating_sub(now.duration_since(receiver.renewed_at))
@@ -356,7 +392,73 @@ impl DeliveryService {
         })
     }
 
-    pub(crate) async fn native_receiver_live(&self, seat: &SeatDescriptor) -> bool {
+    /// This incarnation's lease, started afresh when the incarnation changed.
+    fn receiver_entry<'a>(
+        receivers: &'a mut HashMap<SeatId, NativeReceiverLease>,
+        seat: &SeatId,
+        identity: &NativeInboxIdentity,
+        now: tokio::time::Instant,
+    ) -> &'a mut NativeReceiverLease {
+        let receiver = receivers
+            .entry(seat.clone())
+            .or_insert_with(|| NativeReceiverLease {
+                identity: identity.clone(),
+                renewed_at: now,
+                precedence: None,
+            });
+        if receiver.identity != *identity {
+            *receiver = NativeReceiverLease {
+                identity: identity.clone(),
+                renewed_at: now,
+                precedence: None,
+            };
+        }
+        receiver
+    }
+
+    /// Plan 168: a committed native registration owns its lease and precedence
+    /// atomically with the commit, so a live holder never looks lapsed while a
+    /// separate attestation is in flight. The caller holds [`Self::native_lock`].
+    /// `takeover` starts the lease afresh; a repeat registration of the current
+    /// holder never moves an existing expiry (only heartbeats renew).
+    pub(crate) async fn attest_registered_native_receiver(
+        &self,
+        seat: &SeatId,
+        identity: &NativeInboxIdentity,
+        report: ReportedPrecedence,
+        takeover: bool,
+    ) {
+        let now = tokio::time::Instant::now();
+        let mut receivers = self.native_receivers.lock().await;
+        let receiver = Self::receiver_entry(&mut receivers, seat, identity, now);
+        if takeover {
+            receiver.renewed_at = now;
+        }
+        receiver.precedence = Some(
+            receiver
+                .precedence
+                .map_or(report, |held| held.merge(report)),
+        );
+        drop(receivers);
+        self.native_receiver_changed.notify_one();
+    }
+
+    /// The holder's lease state and reported precedence, read under the caller's
+    /// [`Self::native_lock`] so it cannot interleave with a heartbeat or commit.
+    pub(crate) async fn native_holder(&self, seat: &SeatDescriptor) -> NativeHolder {
+        if !self.native_receiver_live(seat).await {
+            return NativeHolder::Lapsed;
+        }
+        let receivers = self.native_receivers.lock().await;
+        NativeHolder::Live(
+            receivers
+                .get(&seat.id)
+                .filter(|receiver| receiver.identity.matches(seat))
+                .and_then(|receiver| receiver.precedence),
+        )
+    }
+
+    async fn native_receiver_live(&self, seat: &SeatDescriptor) -> bool {
         let receivers = self.native_receivers.lock().await;
         let renewed_at = match receivers.get(&seat.id) {
             Some(receiver) if receiver.identity.matches(seat) => receiver.renewed_at,
@@ -4881,7 +4983,7 @@ mod tests {
             .await;
             let heartbeat = fixture
                 .service
-                .heartbeat_native_receiver(&seat.id, &identity, observation, observation)
+                .heartbeat_native_receiver(&seat.id, &identity, observation, observation, None)
                 .await
                 .unwrap();
             assert_eq!(heartbeat.state, "live");
@@ -4979,7 +5081,7 @@ mod tests {
         ));
         fixture
             .service
-            .heartbeat_native_receiver(&seat.id, &identity, 1, 1)
+            .heartbeat_native_receiver(&seat.id, &identity, 1, 1, None)
             .await
             .unwrap();
         let sent = fixture
@@ -5011,7 +5113,7 @@ mod tests {
         let identity = native_identity();
         fixture
             .service
-            .heartbeat_native_receiver(&seat.id, &identity, 0, 0)
+            .heartbeat_native_receiver(&seat.id, &identity, 0, 0, None)
             .await
             .unwrap();
         let sent = fixture

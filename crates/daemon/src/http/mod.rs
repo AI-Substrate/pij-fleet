@@ -922,21 +922,6 @@ async fn register(
     };
     match registered {
         Ok((descriptor, report)) => {
-            if request.native_extension_delivery {
-                let identity = crate::delivery::NativeInboxIdentity {
-                    native_session: descriptor.harness_session.clone(),
-                    pid: descriptor.proc.map(|proc| proc.pid),
-                    proc_start: descriptor.proc.map(|proc| proc.proc_start),
-                };
-                if let Err(error) = state
-                    .services
-                    .delivery
-                    .attest_native_receiver(&descriptor.id, &identity)
-                    .await
-                {
-                    return internal("pij register", error);
-                }
-            }
             let meta = descriptor.pane.is_none().then(|| {
                 format!(
                     "verified external shim callers resolve this paneless seat from their native host/session automatically; other clients must pass id {0} explicitly or export PIJ_SESSION_ID={0}",
@@ -2507,21 +2492,16 @@ async fn heartbeat_inbox(
         return match state
             .services
             .delivery
-            .heartbeat_native_receiver(&request.seat, &identity, observed_at, observed_seq)
+            .heartbeat_native_receiver(
+                &request.seat,
+                &identity,
+                observed_at,
+                observed_seq,
+                precedence,
+            )
             .await
         {
-            Ok(heartbeat) => {
-                state.registration.note_native_precedence(
-                    &request.seat,
-                    identity.native_session.clone(),
-                    identity
-                        .pid
-                        .zip(identity.proc_start)
-                        .map(|(pid, proc_start)| pij_core::model::ProcIdentity { pid, proc_start }),
-                    precedence,
-                );
-                envelope(StatusCode::OK, &Envelope::ok("pij inbox", heartbeat))
-            }
+            Ok(heartbeat) => envelope(StatusCode::OK, &Envelope::ok("pij inbox", heartbeat)),
             Err(error) => inbox_failure(error),
         };
     };

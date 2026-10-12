@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::future::Future;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -12,7 +11,7 @@ use pij_core::ports::{LivenessPort, PutBinding, Registry, SeatFilter, TmuxPort};
 use pij_core::wire;
 use pij_harnesses::ensure_claude_inbound_accept;
 
-use crate::delivery::DeliveryService;
+use crate::delivery::{DeliveryService, NativeHolder, NativeInboxIdentity, ReportedPrecedence};
 use crate::events::EventBus;
 use crate::http::role::RoleService;
 use crate::http::{NativePrecedence, Registration};
@@ -52,18 +51,9 @@ pub(crate) struct RegistrationService {
     roles: Arc<RoleService>,
     claude_homes: Vec<PathBuf>,
     registration_lock: Arc<tokio::sync::Mutex<()>>,
-    /// Lease view of native receivers; absent only in isolated unit services.
+    /// Native receiver leases, which also hold each incarnation's reported
+    /// precedence (plan 168); absent only in services that never see native claims.
     native_receivers: Option<Arc<DeliveryService>>,
-    /// Self-reported precedence of each native incarnation since daemon start.
-    native_precedence: Arc<std::sync::Mutex<HashMap<SeatId, RecordedPrecedence>>>,
-}
-
-/// One native incarnation's report; `None` is an extension that predates plan 168.
-#[derive(Clone)]
-struct RecordedPrecedence {
-    session: Option<String>,
-    proc: Option<ProcIdentity>,
-    precedence: Option<NativePrecedence>,
 }
 
 struct NativeHandoff {
@@ -99,67 +89,32 @@ impl RegistrationService {
             roles,
             registration_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: None,
-            native_precedence: Arc::default(),
         }
     }
 
-    /// Share delivery's native exclusion and read its receiver leases.
+    /// Share delivery's native exclusion and its receiver leases.
     pub(crate) fn with_native_delivery(mut self, delivery: Arc<DeliveryService>) -> Self {
         self.registration_lock = delivery.native_lock();
         self.native_receivers = Some(delivery);
         self
     }
 
-    /// Record a renewed native incarnation's precedence (plan 168). Called only
-    /// after delivery accepted the heartbeat for exactly this incarnation.
-    pub(crate) fn note_native_precedence(
-        &self,
-        seat: &SeatId,
-        session: Option<String>,
-        proc: Option<ProcIdentity>,
-        precedence: Option<NativePrecedence>,
-    ) {
-        self.native_precedence
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(
-                seat.clone(),
-                RecordedPrecedence {
-                    session,
-                    proc,
-                    precedence,
-                },
-            );
-    }
-
     /// Plan 168 holder rule, a BRAKE on same-process supersede: it can only spare
     /// the live holder, never retire more. Removing it restores today's behaviour
-    /// of the newest registrant retiring the other seat.
+    /// of the newest registrant retiring the other seat. Called under the shared
+    /// native lock, so a heartbeat or commit cannot interleave with the decision.
     async fn holder_keeps_seat(&self, holder: &SeatDescriptor, claimed: NativePrecedence) -> bool {
-        if let Some(receivers) = &self.native_receivers
-            && !receivers.native_receiver_live(holder).await
-        {
-            // The holder's extension stopped heartbeating: its lease lapsed.
+        let Some(receivers) = &self.native_receivers else {
             return false;
-        }
-        let recorded = self
-            .native_precedence
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(&holder.id)
-            .filter(|record| record.session == holder.harness_session && record.proc == holder.proc)
-            .cloned();
-        match recorded {
+        };
+        match receivers.native_holder(holder).await {
+            // The holder's extension stopped heartbeating: its lease lapsed.
+            NativeHolder::Lapsed => false,
             // Unreported since daemon start: wait for its next heartbeat or lapse.
-            None => true,
+            NativeHolder::Live(None) => true,
             // An extension that predates plan 168 keeps today's behaviour.
-            Some(RecordedPrecedence {
-                precedence: None, ..
-            }) => false,
-            Some(RecordedPrecedence {
-                precedence: Some(holder),
-                ..
-            }) => !claimed.outranks(holder),
+            NativeHolder::Live(Some(ReportedPrecedence::Legacy)) => false,
+            NativeHolder::Live(Some(ReportedPrecedence::Known(held))) => !claimed.outranks(held),
         }
     }
 
@@ -849,6 +804,14 @@ impl RegistrationService {
         {
             return Err(RegistrationError::NativeHolderCurrent(holder.id.clone()));
         }
+        // A repeat registration of the current holder never moves its lease expiry;
+        // any other native commit is a takeover and starts the lease afresh.
+        let current_holder = existing.is_some_and(|seat| {
+            seat.native_extension_delivery
+                && seat.tombstoned_at.is_none()
+                && seat.proc == proc
+                && seat.harness_session == harness_session
+        });
         let retired = existing.filter(|seat| seat.tombstoned_at.is_some());
         if let Some(seat) = retired {
             let continuous = seat
@@ -1069,13 +1032,21 @@ impl RegistrationService {
                 .await
         };
         let (_, binding) = committed.map_err(RegistrationError::Runtime)?;
-        if native {
-            self.note_native_precedence(
-                &descriptor.id,
-                descriptor.harness_session.clone(),
-                descriptor.proc,
-                claimed_precedence,
-            );
+        if native && let Some(receivers) = &self.native_receivers {
+            // Still under the shared native lock: the committed holder is never
+            // visible without its lease and precedence (plan 168 review F2).
+            receivers
+                .attest_registered_native_receiver(
+                    &descriptor.id,
+                    &NativeInboxIdentity {
+                        native_session: descriptor.harness_session.clone(),
+                        pid: descriptor.proc.map(|proc| proc.pid),
+                        proc_start: descriptor.proc.map(|proc| proc.proc_start),
+                    },
+                    ReportedPrecedence::from_report(claimed_precedence),
+                    !current_holder,
+                )
+                .await;
         }
         // Report the committed parent, not the snapshot's.
         descriptor.parent = binding.parent.clone();
@@ -1924,10 +1895,46 @@ mod tests {
             pij_store::SqliteOrchestration::new(pool),
             bus.clone(),
         ));
+        let delivery = Arc::new(
+            DeliveryService::new(
+                registry.clone(),
+                Arc::new(FakeQueue::new(1_024).expect("queue")),
+                Arc::new(FakeTransport::unreachable()),
+                Arc::new(InteractionGate::new(Arc::new(FakeTmux::new()))),
+                bus.clone(),
+            )
+            .expect("delivery service"),
+        );
         (
-            RegistrationService::new(registry.clone(), liveness, bus, Vec::new(), roles),
+            RegistrationService::new(registry.clone(), liveness, bus, Vec::new(), roles)
+                .with_native_delivery(delivery),
             registry,
         )
+    }
+
+    /// One accepted receiver heartbeat carrying `precedence`, as the HTTP route sends it.
+    async fn heartbeat(
+        service: &RegistrationService,
+        seat: &SeatDescriptor,
+        precedence: Option<NativePrecedence>,
+    ) {
+        service
+            .native_receivers
+            .as_ref()
+            .expect("native delivery")
+            .heartbeat_native_receiver(
+                &seat.id,
+                &crate::delivery::NativeInboxIdentity {
+                    native_session: seat.harness_session.clone(),
+                    pid: seat.proc.map(|proc| proc.pid),
+                    proc_start: seat.proc.map(|proc| proc.proc_start),
+                },
+                1,
+                1,
+                precedence,
+            )
+            .await
+            .expect("accepted heartbeat");
     }
 
     fn fixture_process(
@@ -3139,30 +3146,109 @@ mod tests {
             attest(&service, blank.clone(), Some("blank-boot-session"), &tmux).await,
             &holder.id,
         );
-        service.note_native_precedence(
-            &holder.id,
-            holder.harness_session.clone(),
-            holder.proc,
-            Some(NativePrecedence {
-                last_user_message_at: Some(10),
-                loaded_at: 5,
-            }),
-        );
+        let reported = NativePrecedence {
+            last_user_message_at: Some(10),
+            loaded_at: 5,
+        };
+        heartbeat(&service, &holder, Some(reported)).await;
         held_by(
             attest(&service, blank.clone(), Some("blank-boot-session"), &tmux).await,
             &holder.id,
         );
-        // A heartbeat without the field is an extension that predates plan 168.
-        service.note_native_precedence(
+        // A later heartbeat without the field never lowers a reported precedence.
+        heartbeat(&service, &holder, None).await;
+        held_by(
+            attest(&service, blank.clone(), Some("blank-boot-session"), &tmux).await,
             &holder.id,
-            holder.harness_session.clone(),
-            holder.proc,
-            None,
         );
+        // A holder that only ever heartbeats without the field predates plan 168.
+        let (service, registry_legacy) =
+            native_service(vec![holder.clone()], native_liveness()).await;
+        heartbeat(&service, &holder, None).await;
         let successor = attest(&service, blank, Some("blank-boot-session"), &tmux)
             .await
             .expect("legacy holder: today's supersede");
-        assert!(live(&registry, &successor.id).await && !live(&registry, &holder.id).await);
+        assert!(
+            live(&registry_legacy, &successor.id).await
+                && !live(&registry_legacy, &holder.id).await
+        );
+        assert!(live(&registry, &holder.id).await);
+    }
+
+    /// Review F2 (pij-smiling-gull): once the boot grace is spent, a just-committed
+    /// holder must already own its lease, not wait for a separate attestation.
+    #[tokio::test]
+    async fn new_holder_is_protected_before_any_heartbeat_after_boot_grace() {
+        let (service, _) = native_service(Vec::new(), native_liveness()).await;
+        // A long-running daemon has exhausted its one-time boot grace.
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(61)).await;
+        tokio::time::resume();
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("holder");
+        held_by(
+            attest(
+                &service,
+                precedence_claim("", Some(holder.id.as_str()), None, 1_000),
+                Some("reviewer-blank"),
+                &tmux,
+            )
+            .await,
+            &holder.id,
+        );
+    }
+
+    /// Review F1 (pij-smiling-gull): a heartbeat accepted before a newer
+    /// registration but applied after it must not lower the holder's precedence.
+    #[tokio::test]
+    async fn delayed_heartbeat_cannot_regress_holder_precedence() {
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(100), 1_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("holder");
+        // The holder's newer report commits first...
+        attest(
+            &service,
+            precedence_claim(holder.id.as_str(), None, Some(300), 1_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("newer report");
+        // ...then an older, delayed heartbeat lands.
+        heartbeat(
+            &service,
+            &holder,
+            Some(NativePrecedence {
+                last_user_message_at: Some(100),
+                loaded_at: 1_000,
+            }),
+        )
+        .await;
+        held_by(
+            attest(
+                &service,
+                precedence_claim("", Some(holder.id.as_str()), Some(200), 2_000),
+                Some("reviewer-older-history"),
+                &tmux,
+            )
+            .await,
+            &holder.id,
+        );
+        assert!(live(&registry, &holder.id).await);
     }
 
     #[tokio::test]

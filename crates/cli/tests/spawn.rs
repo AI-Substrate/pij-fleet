@@ -629,6 +629,7 @@ async fn shipped_cli_native_inbox_uses_pane_session_ladder_and_acknowledges() {
             },
             1,
             1,
+            None,
         )
         .await
         .unwrap();
