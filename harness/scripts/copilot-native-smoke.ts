@@ -1187,6 +1187,18 @@ function prepareSmokeHome(home: string, trustedFolders: string[]) {
 			flag: "wx",
 			mode: 0o600,
 		});
+		// Copilot 1.0.96 asks once per folder before an extension may register hooks;
+		// a human answers "always allow", which persists exactly this approval.
+		const approval = { kind: "extension-permission-access", extensionName: "user:pij" };
+		writeFileSync(
+			join(copilotHome, "permissions-config.json"),
+			`${JSON.stringify({
+				locations: Object.fromEntries(
+					trustedFolders.map((folder) => [folder, { tool_approvals: [approval] }]),
+				),
+			})}\n`,
+			{ flag: "wx", mode: 0o600 },
+		);
 	}
 	const installLog: string[] = [];
 	for (const args of [[], ["--doctor-copilot"]]) {
@@ -2003,6 +2015,33 @@ export async function runSmoke(options: Options): Promise<{ code: number; output
 					verifyNativeContextHeld(oldExpected, held);
 				},
 			);
+			// Plan 168 contract: Copilot keeps the old chat's extension host alive and
+			// heartbeating after `/new`, so the old chat keeps the seat until the human's
+			// first prompt in the new chat makes it the newer session.
+			await delay(5000);
+			const standing = (await seats()).filter(
+				(row) => row.pane === target.pane && row.native_extension_delivery === true,
+			);
+			rollover.before_first_prompt = standing;
+			assert.deepEqual(
+				standing.map((row) => row.id),
+				[target.id],
+				"/new keeps the old chat's seat until the new chat's first prompt",
+			);
+			const firstPrompt = `PIJ_NEW_CHAT_FIRST_PROMPT_${randomUUID()}`;
+			await until("empty /new composer", options.timeoutMs, () =>
+				nativeComposer(capture(target)) === "" ? true : undefined,
+			);
+			tmux([
+				"send-keys",
+				"-t",
+				target.pane,
+				"-l",
+				"--",
+				`${firstPrompt}. Reply exactly PIJ_NATIVE_OBSERVED. Do not call tools.`,
+			]);
+			tmux(["send-keys", "-t", target.pane, HUMAN_KEYS.submitCommand]);
+			rollover.first_prompt = firstPrompt;
 			const successor = await until(
 				"truthful native /new registration",
 				options.timeoutMs,
@@ -2021,6 +2060,7 @@ export async function runSmoke(options: Options): Promise<{ code: number; output
 				},
 			);
 			rollover.after = successor;
+			rollover.first_prompt_turn_end = await waitTurnEnd(successor, firstPrompt);
 			verifyNativeLifecycleIdentity(target, successor, "new");
 			assert.notEqual(
 				object(successor).semantic_state,

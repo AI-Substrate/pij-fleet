@@ -2504,7 +2504,7 @@ async fn native_lease_expiry_parks_and_tells_each_live_sender_once() {
     .await;
     delivery.wait_native_receiver_deadline().await;
     delivery
-        .heartbeat_native_receiver(&sender.id, &sender_identity, 1, 1)
+        .heartbeat_native_receiver(&sender.id, &sender_identity, 1, 1, None)
         .await
         .unwrap();
     assert_eq!(delivery.reconcile_native_receivers().await.unwrap(), 2);

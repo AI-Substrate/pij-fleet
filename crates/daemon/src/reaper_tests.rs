@@ -424,7 +424,7 @@ async fn death_sweep_preserves_registration_during_old_process_observation() {
         Vec::new(),
         services.roles.clone(),
     )
-    .with_native_lock(services.delivery.native_lock());
+    .with_native_delivery(Arc::clone(&services.delivery));
     let claim = serde_json::from_value(json!({
         "id": expected.id,
         "harness": "omp",

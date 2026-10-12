@@ -791,6 +791,7 @@ async fn registration_racing_link(orphaned: bool) {
         parent: None,
         role: None,
         relay: false,
+        native_precedence: None,
     };
     let refresh = tokio::spawn(async move { registration.register(claim).await });
     // The refresh has read its roster snapshot (old parent) and is paused at its put.

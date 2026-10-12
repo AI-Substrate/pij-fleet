@@ -916,6 +916,7 @@ pub(crate) async fn adopt(
         parent,
         role,
         relay: existing.is_some_and(|seat| seat.relay),
+        native_precedence: None,
     };
     let registration = &state.registration;
     let registered = match &reclaim {
@@ -1006,6 +1007,12 @@ fn adopt_registration_error(error: RegistrationError) -> Response {
             let mut answer: Envelope<()> =
                 Envelope::refused(ADOPT, ErrorKind::Refused, error.to_string());
             answer.details = Some(json!({ "retryable": true, "hold": "native-session" }));
+            envelope(StatusCode::CONFLICT, &answer)
+        }
+        error @ RegistrationError::NativeHolderCurrent(_) => {
+            let mut answer: Envelope<()> =
+                Envelope::refused(ADOPT, ErrorKind::Refused, error.to_string());
+            answer.details = Some(json!({ "retryable": true, "hold": "native-holder" }));
             envelope(StatusCode::CONFLICT, &answer)
         }
         RegistrationError::Runtime(error) => internal(ADOPT, error),

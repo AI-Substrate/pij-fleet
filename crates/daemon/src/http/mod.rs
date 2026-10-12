@@ -61,9 +61,9 @@ pub use client::{PeerEndpoint, get_from_peer, post_to_peer, stream_from_peer};
 pub use exposure::{BindRefusal, Exposure, RemoteListener, boot_banner, check_bind};
 pub use identity::{CallerContext, IdentityQuery, IdentityRequest, Phonehome};
 pub use types::{
-    CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest, PeerStreamState,
-    Registration, ReviveRequest, SendRequest, SpawnRequest, SpawnResponse, StateCard, StateRequest,
-    StreamFrame, UnavailablePeer, UnsupportedField,
+    CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest, NativePrecedence,
+    PeerStreamState, Registration, ReviveRequest, SendRequest, SpawnRequest, SpawnResponse,
+    StateCard, StateRequest, StreamFrame, UnavailablePeer, UnsupportedField,
 };
 
 #[derive(Clone)]
@@ -505,7 +505,7 @@ fn router_with_optional_federation(
         pij_harnesses::claude_homes(),
         Arc::clone(&services.roles),
     )
-    .with_native_lock(services.delivery.native_lock());
+    .with_native_delivery(Arc::clone(&services.delivery));
     let state = AppState {
         services,
         auth: config.auth,
@@ -922,21 +922,6 @@ async fn register(
     };
     match registered {
         Ok((descriptor, report)) => {
-            if request.native_extension_delivery {
-                let identity = crate::delivery::NativeInboxIdentity {
-                    native_session: descriptor.harness_session.clone(),
-                    pid: descriptor.proc.map(|proc| proc.pid),
-                    proc_start: descriptor.proc.map(|proc| proc.proc_start),
-                };
-                if let Err(error) = state
-                    .services
-                    .delivery
-                    .attest_native_receiver(&descriptor.id, &identity)
-                    .await
-                {
-                    return internal("pij register", error);
-                }
-            }
             let meta = descriptor.pane.is_none().then(|| {
                 format!(
                     "verified external shim callers resolve this paneless seat from their native host/session automatically; other clients must pass id {0} explicitly or export PIJ_SESSION_ID={0}",
@@ -979,6 +964,13 @@ async fn register(
                 Envelope::refused("pij register", ErrorKind::Refused, error.to_string());
             answer.details =
                 Some(serde_json::json!({ "retryable": true, "hold": "native-session" }));
+            envelope(StatusCode::CONFLICT, &answer)
+        }
+        Err(error @ RegistrationError::NativeHolderCurrent(_)) => {
+            let mut answer: Envelope<()> =
+                Envelope::refused("pij register", ErrorKind::Refused, error.to_string());
+            answer.details =
+                Some(serde_json::json!({ "retryable": true, "hold": "native-holder" }));
             envelope(StatusCode::CONFLICT, &answer)
         }
         Err(RegistrationError::Runtime(error)) => internal("pij register", error),
@@ -2488,6 +2480,7 @@ async fn heartbeat_inbox(
         pid: request.pid,
         proc_start: request.proc_start,
     };
+    let precedence = request.native_precedence;
     let Some(job_id) = request.job_id else {
         let (Some(observed_at), Some(observed_seq)) = (request.observed_at, request.observed_seq)
         else {
@@ -2499,7 +2492,13 @@ async fn heartbeat_inbox(
         return match state
             .services
             .delivery
-            .heartbeat_native_receiver(&request.seat, &identity, observed_at, observed_seq)
+            .heartbeat_native_receiver(
+                &request.seat,
+                &identity,
+                observed_at,
+                observed_seq,
+                precedence,
+            )
             .await
         {
             Ok(heartbeat) => envelope(StatusCode::OK, &Envelope::ok("pij inbox", heartbeat)),
@@ -2511,6 +2510,7 @@ async fn heartbeat_inbox(
         || identity.proc_start.is_some()
         || request.observed_at.is_some()
         || request.observed_seq.is_some()
+        || precedence.is_some()
     {
         return refused("pij inbox", "native receiver heartbeat must omit job_id");
     }

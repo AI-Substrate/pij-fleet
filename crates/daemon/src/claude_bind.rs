@@ -114,6 +114,7 @@ impl ClaudeBinder {
             parent: seat.parent.clone(),
             role: None,
             relay: seat.relay,
+            native_precedence: None,
         };
         match self.registration.register(claim).await {
             Ok(_) => Ok(true),

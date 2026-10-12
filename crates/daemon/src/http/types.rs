@@ -72,6 +72,46 @@ pub struct Registration {
     /// Whether this seat relays to an external sink.
     #[serde(default)]
     pub relay: bool,
+    /// Native Copilot precedence (plan 168); absent from extensions that predate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_precedence: Option<NativePrecedence>,
+}
+
+/// Which of one Copilot process's sessions the human is using, self-reported by
+/// each session's native extension (plan 168). Copilot keeps every session's
+/// extension host alive in the same process after `/new` or the `--resume`
+/// picker, so registration order cannot decide the seat; observed history does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativePrecedence {
+    /// Epoch milliseconds of the newest `user.message` event in this session's
+    /// own event log; null when the session has none (a blank boot or `/new`).
+    pub last_user_message_at: Option<u64>,
+    /// Epoch milliseconds at which this session's extension host process started.
+    /// Fixed for the host's life, so re-registering never counts as a later load.
+    pub loaded_at: u64,
+    /// The extension could not read its history (scan failed or timed out). It
+    /// ranks lowest, like a session with no prompt: it never takes a seat from a
+    /// live holder with history, and its first live prompt sets a real value.
+    /// Distinct from an absent `native_precedence`, which marks an old extension.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub history_unknown: bool,
+}
+
+impl NativePrecedence {
+    /// Newest `user.message` wins; none or unknown loses to any; a tie goes to the
+    /// later load.
+    pub(crate) fn outranks(self, holder: Self) -> bool {
+        (self.observed(), self.loaded_at) > (holder.observed(), holder.loaded_at)
+    }
+
+    /// The newest prompt this report proves; an unknown history proves none.
+    fn observed(self) -> Option<u64> {
+        if self.history_unknown {
+            None
+        } else {
+            self.last_user_message_at
+        }
+    }
 }
 
 pub(crate) fn deserialize_asserted_role<'de, D: serde::Deserializer<'de>>(
@@ -259,6 +299,9 @@ pub struct InboxHeartbeatRequest {
     /// Monotonic count of actual event observations, also a nonnegative safe integer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_seq: Option<u64>,
+    /// Current native precedence (plan 168), renewed with the receiver lease.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_precedence: Option<NativePrecedence>,
 }
 
 /// Acknowledgement for the single inbox claim a client decoded.

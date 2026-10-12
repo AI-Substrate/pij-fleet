@@ -24,6 +24,8 @@ export const RECEIVER_EMPTY_READ_LIMIT = 3;
 export const RECEIVER_PROBE_INTERVAL_MS = 1000;
 /** A wedged daemon holds neither a typed prompt (held FYIs, plan 158) nor shutdown. */
 export const HOOK_REQUEST_TIMEOUT_MS = 3000;
+/** A session standing by behind a newer same-process holder retries this slowly (plan 168). */
+export const STANDBY_RETRY_MS = 30000;
 /** Opens every cold-wake refusal's meta (crates/core/src/cold_wake.rs, plan 157 phase 2). */
 const COLD_WAKE_CODE = "E-RS-COLD-WAKE";
 const ERROR_BODY_LIMIT = 4096;
@@ -48,8 +50,178 @@ export class NativeError extends Error {
 		this.retryable = retryable;
 		// Local NativeError text is authored here; remote/OS text must supply a safe projection.
 		this.safeDiagnostic = safeDiagnostic;
-		if (retryable && (holdKind === "native-session" || holdKind === "receiver-gap"))
+		if (
+			retryable &&
+			(holdKind === "native-session" || holdKind === "native-holder" || holdKind === "receiver-gap")
+		)
 			this.holdKind = holdKind;
+	}
+}
+
+/**
+ * Plan 168: which of one Copilot process's sessions the human is using. Copilot
+ * keeps every session's extension host alive after `/new` and the `--resume`
+ * picker, so the daemon ranks same-process sessions by this report: the newest
+ * main-agent `user.message` event (a typed or delivered prompt) wins, a session
+ * with none never outranks one with history, and a tie goes to the later-loaded
+ * extension host. The load time is this host's start, so re-registering never
+ * counts as a later load. `last_user_message_at: null` means "observed none";
+ * a history that could not be read is sent with `history_unknown: true`, which
+ * the daemon ranks lowest (never a takeover from a live holder) until this
+ * session's first live prompt sets a real value. Omitting the field entirely is
+ * reserved for extensions that predate plan 168.
+ */
+export class NativePrecedence {
+	constructor({ loadedAt, deadlineMs = NATIVE_RPC_DEADLINE_MS }) {
+		if (!positiveInteger(loadedAt))
+			throw new NativeError("Native precedence requires the extension host load time");
+		this.loadedAt = loadedAt;
+		this.deadlineMs = deadlineMs;
+		this.lastUserMessageAt = null;
+		this.scanned = false;
+		// Each newer prompt bumps the generation. A native-holder refusal records the
+		// generation its own request carried; only a newer prompt retries at once.
+		this.generation = 0;
+		this.refusedGeneration = 0;
+		this.waiters = new Set();
+	}
+	observe(event) {
+		if (event?.type !== "user.message" || event.agentId != null) return;
+		const at = Date.parse(event.timestamp);
+		if (!positiveInteger(at) || (this.lastUserMessageAt !== null && at <= this.lastUserMessageAt))
+			return;
+		this.lastUserMessageAt = at;
+		this.generation++;
+		for (const wake of [...this.waiters]) wake();
+	}
+	/**
+	 * Newest main-agent `user.message` in persisted history; done once it succeeds.
+	 * A runtime that rejects the filtered read falls back to plain history pages.
+	 * Every read is bounded by the deadline and by `signal`.
+	 */
+	async scan(eventLog, signal) {
+		if (this.scanned) return;
+		if (typeof eventLog?.read !== "function")
+			throw new NativeError("Native history API eventLog.read is unavailable; precedence unknown");
+		try {
+			await this.scanPages(eventLog, signal, true);
+		} catch (error) {
+			if (signal?.aborted || error?.timedOut) throw error;
+			await this.scanPages(eventLog, signal, false);
+		}
+	}
+	async scanPages(eventLog, signal, filtered) {
+		let cursor;
+		for (;;) {
+			const page = await boundedRead(
+				() =>
+					eventLog.read({
+						direction: "backward",
+						max: 128,
+						...(filtered ? { types: ["user.message"], agentScope: "primary" } : {}),
+						...(cursor === undefined ? {} : { cursor }),
+					}),
+				signal,
+				this.deadlineMs,
+			);
+			if (
+				!Array.isArray(page?.events) ||
+				typeof page.hasMore !== "boolean" ||
+				page.cursorStatus !== "ok" ||
+				(page.hasMore && (typeof page.cursor !== "string" || page.cursor === cursor))
+			)
+				throw new NativeError("Native precedence history page is malformed; retrying", true);
+			for (const event of page.events) this.observe(event);
+			// Pages run newest first, so the first page holding a prompt holds the newest.
+			if (this.lastUserMessageAt !== null || !page.hasMore) {
+				this.scanned = true;
+				return;
+			}
+			cursor = page.cursor;
+		}
+	}
+	/** The current report, without marking it sent. */
+	snapshot() {
+		// A prompt seen live is newer than all history, so it is exact even unscanned.
+		if (this.lastUserMessageAt === null && !this.scanned)
+			return { last_user_message_at: null, loaded_at: this.loadedAt, history_unknown: true };
+		return { last_user_message_at: this.lastUserMessageAt, loaded_at: this.loadedAt };
+	}
+	/** A native-holder refusal of a request built at `generation` (plan 168 F5). */
+	refused(generation) {
+		if (Number.isSafeInteger(generation))
+			this.refusedGeneration = Math.max(this.refusedGeneration, generation);
+	}
+	/**
+	 * Slow standby retry, cut short by this session's own next prompt or by stop.
+	 * A prompt newer than every refused request retries at once, whatever other
+	 * request (a heartbeat, the other loop) carried it in the meantime.
+	 */
+	async standby(delay, signal) {
+		throwIfStopped(signal);
+		if (this.generation > this.refusedGeneration) return;
+		const done = new AbortController();
+		const linked = AbortSignal.any([signal, done.signal]);
+		let wake;
+		const prompted = new Promise((resolve) => {
+			wake = resolve;
+			this.waiters.add(wake);
+		});
+		try {
+			await Promise.race([delay(STANDBY_RETRY_MS, linked).catch(() => undefined), prompted]);
+		} finally {
+			this.waiters.delete(wake);
+			done.abort();
+		}
+		throwIfStopped(signal);
+	}
+}
+
+/** One history read, bounded by a deadline and by the caller's stop signal. */
+function boundedRead(read, signal, deadlineMs) {
+	return new Promise((resolve, reject) => {
+		let settled = false;
+		const finish = (error, value) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", abort);
+			if (error) reject(error);
+			else resolve(value);
+		};
+		const abort = () => finish(signal.reason);
+		const timer = setTimeout(() => {
+			const error = new NativeError(
+				"Native precedence history read timed out; precedence unknown",
+				true,
+			);
+			error.timedOut = true;
+			finish(error);
+		}, deadlineMs);
+		if (signal?.aborted) return abort();
+		signal?.addEventListener("abort", abort, { once: true });
+		Promise.resolve()
+			.then(read)
+			.then(
+				(page) => finish(undefined, page),
+				() => finish(new NativeError("Native precedence history read failed; retrying", true)),
+			);
+	});
+}
+
+/** Attach the current precedence at send time; an unreadable history says so. */
+function withPrecedence(body, precedence) {
+	return precedence ? { ...body, native_precedence: precedence.snapshot() } : body;
+}
+
+/** Register with the current precedence; a holder refusal records what it refused. */
+async function registerWithPrecedence(client, body, signal, precedence) {
+	const generation = precedence?.generation;
+	try {
+		return await client.request("/v1/register", withPrecedence(body, precedence), signal);
+	} catch (error) {
+		if (error?.holdKind === "native-holder") precedence?.refused(generation);
+		throw error;
 	}
 }
 
@@ -237,9 +409,9 @@ function verifyRegisteredSeat(seat, registration) {
 }
 
 /** Resolve a new address before creating its durable journal namespace. */
-export async function resolveRegistration(client, registration, signal) {
+export async function resolveRegistration(client, registration, signal, precedence) {
 	if (registration.id !== "") return registration;
-	const seat = await client.request("/v1/register", registration, signal);
+	const seat = await registerWithPrecedence(client, registration, signal, precedence);
 	throwIfStopped(signal);
 	verifyRegisteredSeat(seat, registration);
 	const bound = { ...registration, id: seat.id };
@@ -407,11 +579,13 @@ export class DaemonClient {
 					response.status === 429 ||
 					response.status >= 500,
 				hostRefusal || coldWake ? projected : `Pij HTTP ${response.status}`,
-				registrationRetry && envelope.details.hold === "native-session"
-					? "native-session"
+				registrationRetry && ["native-session", "native-holder"].includes(envelope.details.hold)
+					? envelope.details.hold
 					: undefined,
 			);
 			error.status = response.status;
+			// The daemon withdrew this incarnation's registration; re-attest before an outage.
+			if (nativeUnavailable) error.revoked = true;
 			if (coldWake) error.coldWake = true;
 			throw error;
 		}
@@ -788,6 +962,7 @@ export class NativeBridge {
 		now = Date.now,
 		setTimer = setTimeout,
 		clearTimer = clearTimeout,
+		precedence,
 	}) {
 		this.registration = Object.freeze({ ...registration });
 		this.native = native;
@@ -797,6 +972,7 @@ export class NativeBridge {
 		this.delay = delay;
 		this.heartbeatDelay = heartbeatDelay;
 		this.now = now;
+		this.precedence = precedence;
 		this.setTimer = setTimer;
 		this.clearTimer = clearTimer;
 		this.observedAt = 0;
@@ -948,10 +1124,16 @@ export class NativeBridge {
 	async register() {
 		const signal = this.controller.signal;
 		const registration = this.registration;
-		const seat = await this.client.request(
-			"/v1/register",
+		// A boot-time history scan that failed retries here, bounded and stoppable;
+		// a failure registers with `history_unknown` (ranked lowest) rather than blocking.
+		await this.precedence?.scan(this.native.rpc?.eventLog, signal).catch((error) => {
+			if (signal.aborted) throw error;
+		});
+		const seat = await registerWithPrecedence(
+			this.client,
 			this.reconnectRegistration ?? registration,
 			signal,
+			this.precedence,
 		);
 		throwIfStopped(signal);
 		verifyRegisteredSeat(seat, registration);
@@ -963,6 +1145,8 @@ export class NativeBridge {
 				pid: registration.pid,
 				procStart: registration.proc_start,
 				pane: registration.pane ?? null,
+				// Plan 168 evidence: the rank this session claimed with, in its own log.
+				precedence: this.precedence?.snapshot() ?? null,
 			});
 		}
 	}
@@ -992,7 +1176,10 @@ export class NativeBridge {
 				}
 				const lease = await this.client.request(
 					"/v1/inbox/heartbeat",
-					{ ...this.tuple(), observed_at: observedAt, observed_seq: observedSeq },
+					withPrecedence(
+						{ ...this.tuple(), observed_at: observedAt, observed_seq: observedSeq },
+						this.precedence,
+					),
 					signal,
 				);
 				throwIfStopped(signal);
@@ -1015,6 +1202,18 @@ export class NativeBridge {
 				await this.heartbeatDelay(lease.renew_after_ms, signal);
 			} catch (error) {
 				if (signal.aborted) return;
+				if (error instanceof NativeError && error.holdKind === "native-holder") {
+					// A newer same-process session holds the seat (plan 168): stand by
+					// quietly, re-attesting on this session's own next prompt.
+					reregister = true;
+					try {
+						await this.standby(signal, this.heartbeatDelay);
+					} catch {
+						return;
+					}
+					retry = INITIAL_RETRY_MS;
+					continue;
+				}
 				if (!unavailable)
 					this.emit("receiver-lease-unavailable", {
 						safeDiagnostic:
@@ -1036,11 +1235,19 @@ export class NativeBridge {
 		const r = this.registration;
 		return { seat: r.id, native_session: r.harness_session, pid: r.pid, proc_start: r.proc_start };
 	}
+	/** Quiet standby (plan 168): a log line for diagnosis, never a timeline banner. */
+	async standby(signal, delay = this.delay) {
+		this.emit("standby", { retryMs: STANDBY_RETRY_MS });
+		if (this.precedence) await this.precedence.standby(delay, signal);
+		else await delay(STANDBY_RETRY_MS, signal);
+	}
 	async consume() {
 		const signal = this.receiverController.signal;
 		let retry = INITIAL_RETRY_MS;
 		let failureEpisode = false;
 		let holdStarted;
+		let standingBy = false;
+		let revokedOnce = false;
 		try {
 			throwIfStopped(signal);
 			if (
@@ -1097,11 +1304,12 @@ export class NativeBridge {
 				try {
 					if (!this.registered) {
 						await this.register();
-						if (holdStarted !== undefined) {
+						if (holdStarted !== undefined || standingBy) {
 							this.emit("connection-ready");
 							retry = INITIAL_RETRY_MS;
 						}
 						holdStarted = undefined;
+						standingBy = false;
 					}
 					if (!this.heartbeat) {
 						await this.observeStartup();
@@ -1115,6 +1323,7 @@ export class NativeBridge {
 						throw new NativeError("Expected zero or one native claim; receiving held");
 					if (failureEpisode) this.emit("connection-ready");
 					failureEpisode = false;
+					revokedOnce = false;
 					if (hold?.kind === "native-target") {
 						this.emit("receive-held", {
 							holdKind: hold.kind,
@@ -1143,6 +1352,14 @@ export class NativeBridge {
 						// unrelated side effect of simply waiting.
 						if (!(error instanceof NativeError && error.holdKind === "receiver-gap"))
 							this.registered = false;
+						if (error instanceof NativeError && error.holdKind === "native-holder") {
+							standingBy = true;
+							failureEpisode = false;
+							revokedOnce = false;
+							await this.standby(signal);
+							retry = INITIAL_RETRY_MS;
+							continue;
+						}
 						if (error instanceof NativeError && error.holdKind === "native-session") {
 							const now = performance.now();
 							holdStarted ??= now;
@@ -1154,6 +1371,15 @@ export class NativeBridge {
 								elapsedMs,
 								retryMs: retry,
 							});
+						} else if (
+							error instanceof NativeError &&
+							error.revoked &&
+							!failureEpisode &&
+							!revokedOnce
+						) {
+							// A withdrawn registration re-attests once before it is called an
+							// outage: a newer session holding the seat is a quiet standby.
+							revokedOnce = true;
 						} else {
 							if (holdStarted !== undefined) retry = INITIAL_RETRY_MS;
 							holdStarted = undefined;
@@ -1713,13 +1939,35 @@ export function createNativeReporter({ log, capture }) {
 	let unavailable = false;
 	let registrationWaiting = false;
 	let registrationEscalated = false;
+	let standingBy = false;
+	let bannerShown = false;
 	return (event) => {
 		if (event.kind === "registered" || event.kind === "connection-ready") {
 			unavailable = false;
 			registrationWaiting = false;
 			registrationEscalated = false;
+			if (standingBy) capture({ kind: "standby-ended" });
+			standingBy = false;
+			// Plan 168 R8: an "unavailable" line left on screen reads as a live outage,
+			// so the recovery that follows one is shown exactly once.
+			const recovered = bannerShown;
+			bannerShown = false;
+			if (event.kind === "registered") capture(event);
+			if (!recovered) return;
+			return Promise.resolve()
+				.then(() => log("[pij native] reconnected", { level: "info" }))
+				.catch(() => capture({ kind: "native-diagnostic-unavailable", failureKind: event.kind }));
 		}
-		if (event.kind === "connection-ready") return;
+		// Plan 168: standing by behind a newer same-process session is not an outage;
+		// it is logged once per episode and never shown on the native timeline.
+		if (event.kind === "standby") {
+			unavailable = false;
+			registrationWaiting = false;
+			registrationEscalated = false;
+			if (!standingBy) capture(event);
+			standingBy = true;
+			return;
+		}
 		if (event.kind === "registration-wait" && event.holdKind === "native-session") {
 			unavailable = false;
 			capture({
@@ -1755,6 +2003,7 @@ export function createNativeReporter({ log, capture }) {
 			registrationEscalated = false;
 			if (unavailable && !["receive-held", "extension-unavailable"].includes(event.kind)) return;
 			unavailable = true;
+			bannerShown = true;
 			const advice =
 				event.kind === "receive-held"
 					? event.holdKind === "native-target"

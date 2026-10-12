@@ -54,6 +54,53 @@ old attested process is dead. A live old owner, changed native session, or
 unrelated bootstrap process/pane still refuses the handoff. The saved address,
 parent, operator state, and queued messages are retained.
 
+### Several sessions in one Copilot process (plan 168)
+
+Copilot 1.0.96 keeps every session's extension host alive inside one process.
+`copilot --resume` loads a blank boot session before the picked one, and `/new`
+leaves the old chat's host heartbeating, and neither host ever gets
+`session.shutdown`. The holder of the process's seat is therefore decided by
+observed history, never by registration order:
+
+- Each extension reports `native_precedence` on `/v1/register` and on every
+  receiver heartbeat. `last_user_message_at` is the timestamp of the newest
+  main-agent `user.message` event in its own event log (a typed or pij-delivered
+  prompt; sub-agent events never count), or `null` when there is none.
+  `loaded_at` is the extension host's process start, so re-registering never
+  counts as a later load. `null` means the history was read and holds no
+  prompt. A history the extension could not read (the filtered read and the
+  plain fallback both failed, or timed out) is sent as `history_unknown: true`,
+  which ranks lowest like a blank session: it never takes the seat from a live
+  holder with history, it does take over a lapsed lease, and its first typed
+  prompt sets a real value. A resumed chat whose read failed therefore waits for
+  its first prompt.
+- The newest `user.message` holds the seat. A session with none never takes it
+  from a live holder that has one. A tie (neither has one, e.g. resuming an empty
+  chat) goes to the later-loaded host.
+- A claim that does not outrank the live holder gets HTTP 409
+  `details:{retryable:true,hold:"native-holder"}`. The extension stands by
+  quietly: one stderr line, no timeline banner, no tombstone of the holder. It
+  retries every 30 seconds and at once when its own session sees a prompt,
+  including a prompt that arrived while the refused registration was in flight.
+- It takes over without outranking only once the holder's receiver lease lapses,
+  i.e. its extension stopped heartbeating.
+- Resume without typing: the resumed chat has older prompts and the blank boot
+  session has none, so the resumed chat holds the seat as soon as it loads.
+- **`/new`: the old chat keeps the seat until the first prompt is typed in the
+  new chat.** Messages sent in between are delivered to the old chat. Typing in
+  the old chat again later moves the seat back, because it is newer activity.
+- An extension that does not report the field keeps the earlier behaviour: the
+  newest registrant supersedes. After a daemon restart, a holder whose report has
+  not arrived yet keeps the seat until its first heartbeat reports or its lease
+  lapses.
+
+The pane's identity follows the holder, so `pij whoami --pane` and the managed
+Copilot status line name the holder. The status line re-runs every
+10 seconds (`statusLine.refreshInterval`, set by the daemon), because Copilot
+otherwise re-runs it only on its own events and kept showing the phantom.
+Sessions already running when the daemon writes that setting pick it up on
+their next launch.
+
 ## In-place CLI upgrade
 
 On Linux, replacing the installed Copilot executable can leave a live host's
@@ -71,7 +118,10 @@ Loader readiness therefore does not prove Pij registration succeeded. A terminal
 registration diagnostic, and directs you to restart the Copilot CLI (`/restart`
 or relaunch). Do that when the banner requests it; restarting the Pij daemon does
 not change the host executable. Ordinary Copilot remains usable. Transient
-`registration-wait` notices still say **retrying when available**.
+`registration-wait` notices still say **retrying when available**. When a
+`[pij native] unavailable: …` banner was shown and registration then succeeds,
+one `[pij native] reconnected` line follows, so a recovered outage never reads
+as a live one. Nothing is shown when no banner was, nor for a quiet standby.
 
 ## Immediate peer-message delivery
 
