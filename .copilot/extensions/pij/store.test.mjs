@@ -4310,7 +4310,7 @@ test("precedence: newest main-agent prompt from backward history; sub-agent prom
 			return pages.shift();
 		},
 	});
-	assert.deepEqual(precedence.wire(), { last_user_message_at: 7_000, loaded_at: 1_000 });
+	assert.deepEqual(precedence.snapshot(), { last_user_message_at: 7_000, loaded_at: 1_000 });
 	assert.equal(reads.length, 2, "stops at the first page holding a main-agent prompt");
 	assert.deepEqual(reads[0].types, ["user.message"]);
 	assert.equal(reads[0].direction, "backward");
@@ -4327,7 +4327,7 @@ test("precedence: a blank session reports null, and an unreadable history stays 
 	await blank.scan({
 		read: async () => ({ events: [], cursor: "end", hasMore: false, cursorStatus: "ok" }),
 	});
-	assert.deepEqual(blank.wire(), { last_user_message_at: null, loaded_at: 2_000 });
+	assert.deepEqual(blank.snapshot(), { last_user_message_at: null, loaded_at: 2_000 });
 	const failing = new NativePrecedence({ loadedAt: 2_000 });
 	await assert.rejects(
 		failing.scan({
@@ -4362,7 +4362,7 @@ test("registration and heartbeat carry the live precedence; a reregister never m
 	// The delivered prompt is this session's own activity from here on.
 	precedence.observe(prompt(50_000));
 	await f.bridge.register().catch(() => undefined);
-	assert.equal(precedence.wire().loaded_at, 1_234);
+	assert.equal(precedence.snapshot().loaded_at, 1_234);
 });
 
 test("standby: a newer same-process holder is a quiet wait that this session's own prompt ends", async () => {
@@ -4548,7 +4548,7 @@ test("F3: a failed filtered history read falls back to plain history, never to a
 	for (const row of reports) assert.deepEqual(row.report, expected, row.path);
 });
 
-test("F3/F4: an unreadable history is reported as unknown, never as null", async () => {
+test("F3/F4: an unreadable history is reported as explicitly unknown, never omitted or null", async () => {
 	const precedence = new NativePrecedence({ loadedAt: 2_000, deadlineMs: 20 });
 	const bodies = [];
 	const bridge = new NativeBridge({
@@ -4571,8 +4571,18 @@ test("F3/F4: an unreadable history is reported as unknown, never as null", async
 	);
 	bridge.stop();
 	assert.equal(bodies.length, 1);
-	assert.equal("native_precedence" in bodies[0], false, "unknown is omitted: today's supersede");
+	assert.deepEqual(
+		bodies[0].native_precedence,
+		{ last_user_message_at: null, loaded_at: 2_000, history_unknown: true },
+		"omission is reserved for old extensions (legacy supersede)",
+	);
 	assert.equal(precedence.scanned, false, "the next registration rescans");
+	// Self-healing: the first live prompt replaces the marker with a real value.
+	precedence.observe(historicalPrompt);
+	assert.deepEqual(precedence.snapshot(), {
+		last_user_message_at: Date.parse(historicalPrompt.timestamp),
+		loaded_at: 2_000,
+	});
 });
 
 test("F4: stop() ends a registration whose history scan is hung", async () => {
@@ -4601,7 +4611,9 @@ test("F5: a prompt that lands while the refused report is in flight retries at o
 	await precedence.scan({
 		read: async () => ({ events: [], cursor: "end", hasMore: false, cursorStatus: "ok" }),
 	});
-	assert.deepEqual(precedence.wire(), { last_user_message_at: null, loaded_at: 2_000 });
+	// The refused request carried the current generation...
+	precedence.refused(precedence.generation);
+	// ...and this session's own prompt landed while it was in flight.
 	precedence.observe(historicalPrompt);
 	const scheduled = [];
 	const controller = new AbortController();
@@ -4612,12 +4624,88 @@ test("F5: a prompt that lands while the refused report is in flight retries at o
 	assert.equal(await settle(waited, 50), "resolved");
 	controller.abort();
 	assert.deepEqual(scheduled, [], "no 30s standby after a prompt the refused report never carried");
-	// Once a report carries that prompt, a later refusal stands by again.
-	precedence.wire();
+	// Once a refused request carried that prompt, standby waits again.
+	precedence.refused(precedence.generation);
 	const again = precedence.standby((ms) => {
 		scheduled.push(ms);
 		return new Promise(() => {});
 	}, new AbortController().signal);
 	assert.equal(await settle(again, 20), "still-pending");
 	assert.deepEqual(scheduled, [STANDBY_RETRY_MS]);
+});
+
+test("F5: a concurrent heartbeat carrying the newer prompt cannot swallow the refused register's wake", async () => {
+	// Reviewer witness (pij-smiling-gull, reviewer-f5-overlap.mjs), kept permanent.
+	const at = (ms) => prompt(ms);
+	const precedence = new NativePrecedence({ loadedAt: 2_000 });
+	precedence.observe(at(100));
+	let refuse;
+	let started;
+	const inFlight = new Promise((resolve) => {
+		started = resolve;
+	});
+	const waits = [];
+	const bridge = new NativeBridge({
+		registration: {
+			id: "old-chat",
+			harness: "copilot",
+			harness_session: "old",
+			pid: 1,
+			proc_start: 10,
+		},
+		precedence,
+		native: {
+			rpc: {
+				eventLog: {
+					read: async () => ({
+						events: [at(100)],
+						hasMore: false,
+						cursorStatus: "ok",
+						cursor: "h",
+					}),
+				},
+			},
+		},
+		report: () => {},
+		journal: {},
+		heartbeatDelay: (_ms, signal) =>
+			new Promise((_resolve, reject) =>
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+			),
+		client: {
+			request: (path) => {
+				if (path === "/v1/register") {
+					started();
+					return new Promise((_resolve, reject) => {
+						refuse = () => reject(new NativeError("held", true, "HTTP 409", "native-holder"));
+					});
+				}
+				const error = new NativeError("native receiver withdrawn", true);
+				error.revoked = true;
+				return Promise.reject(error);
+			},
+		},
+	});
+	const consumer = bridge
+		.register()
+		.catch(async (error) => {
+			assert.equal(error.holdKind, "native-holder");
+			await bridge.standby(bridge.controller.signal, (ms, signal) => {
+				waits.push(ms);
+				return new Promise((_resolve, reject) =>
+					signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+				);
+			});
+		})
+		.catch(() => {});
+	await inFlight;
+	precedence.observe(at(300));
+	// An unrelated heartbeat carries the newer prompt while the register is in flight.
+	const heartbeat = bridge.keepReceiverAlive();
+	refuse();
+	await flush();
+	await flush();
+	bridge.stop();
+	await Promise.all([consumer, heartbeat]);
+	assert.deepEqual(waits, [], "a prompt newer than the refused register retries at once");
 });

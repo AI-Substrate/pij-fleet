@@ -89,13 +89,28 @@ pub struct NativePrecedence {
     /// Epoch milliseconds at which this session's extension host process started.
     /// Fixed for the host's life, so re-registering never counts as a later load.
     pub loaded_at: u64,
+    /// The extension could not read its history (scan failed or timed out). It
+    /// ranks lowest, like a session with no prompt: it never takes a seat from a
+    /// live holder with history, and its first live prompt sets a real value.
+    /// Distinct from an absent `native_precedence`, which marks an old extension.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub history_unknown: bool,
 }
 
 impl NativePrecedence {
-    /// Newest `user.message` wins; none loses to any; a tie goes to the later load.
+    /// Newest `user.message` wins; none or unknown loses to any; a tie goes to the
+    /// later load.
     pub(crate) fn outranks(self, holder: Self) -> bool {
-        (self.last_user_message_at, self.loaded_at)
-            > (holder.last_user_message_at, holder.loaded_at)
+        (self.observed(), self.loaded_at) > (holder.observed(), holder.loaded_at)
+    }
+
+    /// The newest prompt this report proves; an unknown history proves none.
+    fn observed(self) -> Option<u64> {
+        if self.history_unknown {
+            None
+        } else {
+            self.last_user_message_at
+        }
     }
 }
 

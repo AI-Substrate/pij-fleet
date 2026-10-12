@@ -68,9 +68,12 @@ observed history, never by registration order:
   prompt; sub-agent events never count), or `null` when there is none.
   `loaded_at` is the extension host's process start, so re-registering never
   counts as a later load. `null` means the history was read and holds no
-  prompt; a history the extension could not read (the filtered read and the
-  plain fallback both failed, or timed out) is unknown, and the field is
-  omitted, which keeps the earlier supersede.
+  prompt. A history the extension could not read (the filtered read and the
+  plain fallback both failed, or timed out) is sent as `history_unknown: true`,
+  which ranks lowest like a blank session: it never takes the seat from a live
+  holder with history, it does take over a lapsed lease, and its first typed
+  prompt sets a real value. A resumed chat whose read failed therefore waits for
+  its first prompt.
 - The newest `user.message` holds the seat. A session with none never takes it
   from a live holder that has one. A tie (neither has one, e.g. resuming an empty
   chat) goes to the later-loaded host.

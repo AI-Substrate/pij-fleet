@@ -66,7 +66,10 @@ export class NativeError extends Error {
  * with none never outranks one with history, and a tie goes to the later-loaded
  * extension host. The load time is this host's start, so re-registering never
  * counts as a later load. `last_user_message_at: null` means "observed none";
- * a history that could not be read is unknown and is not reported at all.
+ * a history that could not be read is sent with `history_unknown: true`, which
+ * the daemon ranks lowest (never a takeover from a live holder) until this
+ * session's first live prompt sets a real value. Omitting the field entirely is
+ * reserved for extensions that predate plan 168.
  */
 export class NativePrecedence {
 	constructor({ loadedAt, deadlineMs = NATIVE_RPC_DEADLINE_MS }) {
@@ -76,9 +79,10 @@ export class NativePrecedence {
 		this.deadlineMs = deadlineMs;
 		this.lastUserMessageAt = null;
 		this.scanned = false;
-		// Each newer prompt bumps the generation; wire() records the one it sent.
+		// Each newer prompt bumps the generation. A native-holder refusal records the
+		// generation its own request carried; only a newer prompt retries at once.
 		this.generation = 0;
-		this.reportedGeneration = 0;
+		this.refusedGeneration = 0;
 		this.waiters = new Set();
 	}
 	observe(event) {
@@ -136,24 +140,26 @@ export class NativePrecedence {
 			cursor = page.cursor;
 		}
 	}
-	/** The current report without marking it sent; `undefined` while unknown. */
+	/** The current report, without marking it sent. */
 	snapshot() {
 		// A prompt seen live is newer than all history, so it is exact even unscanned.
-		if (this.lastUserMessageAt === null && !this.scanned) return undefined;
+		if (this.lastUserMessageAt === null && !this.scanned)
+			return { last_user_message_at: null, loaded_at: this.loadedAt, history_unknown: true };
 		return { last_user_message_at: this.lastUserMessageAt, loaded_at: this.loadedAt };
 	}
-	/** The report for a request body; records which prompt generation it carried. */
-	wire() {
-		this.reportedGeneration = this.generation;
-		return this.snapshot();
+	/** A native-holder refusal of a request built at `generation` (plan 168 F5). */
+	refused(generation) {
+		if (Number.isSafeInteger(generation))
+			this.refusedGeneration = Math.max(this.refusedGeneration, generation);
 	}
 	/**
 	 * Slow standby retry, cut short by this session's own next prompt or by stop.
-	 * A prompt that arrived after the refused report was built retries at once.
+	 * A prompt newer than every refused request retries at once, whatever other
+	 * request (a heartbeat, the other loop) carried it in the meantime.
 	 */
 	async standby(delay, signal) {
 		throwIfStopped(signal);
-		if (this.generation !== this.reportedGeneration) return;
+		if (this.generation > this.refusedGeneration) return;
 		const done = new AbortController();
 		const linked = AbortSignal.any([signal, done.signal]);
 		let wake;
@@ -203,10 +209,20 @@ function boundedRead(read, signal, deadlineMs) {
 	});
 }
 
-/** Attach the current precedence, when known, at send time; unknown is omitted. */
+/** Attach the current precedence at send time; an unreadable history says so. */
 function withPrecedence(body, precedence) {
-	const report = precedence?.wire();
-	return report ? { ...body, native_precedence: report } : body;
+	return precedence ? { ...body, native_precedence: precedence.snapshot() } : body;
+}
+
+/** Register with the current precedence; a holder refusal records what it refused. */
+async function registerWithPrecedence(client, body, signal, precedence) {
+	const generation = precedence?.generation;
+	try {
+		return await client.request("/v1/register", withPrecedence(body, precedence), signal);
+	} catch (error) {
+		if (error?.holdKind === "native-holder") precedence?.refused(generation);
+		throw error;
+	}
 }
 
 /** Normalize the Linux kernel's unlinked executable marker before identity matching. */
@@ -395,11 +411,7 @@ function verifyRegisteredSeat(seat, registration) {
 /** Resolve a new address before creating its durable journal namespace. */
 export async function resolveRegistration(client, registration, signal, precedence) {
 	if (registration.id !== "") return registration;
-	const seat = await client.request(
-		"/v1/register",
-		withPrecedence(registration, precedence),
-		signal,
-	);
+	const seat = await registerWithPrecedence(client, registration, signal, precedence);
 	throwIfStopped(signal);
 	verifyRegisteredSeat(seat, registration);
 	const bound = { ...registration, id: seat.id };
@@ -1113,14 +1125,15 @@ export class NativeBridge {
 		const signal = this.controller.signal;
 		const registration = this.registration;
 		// A boot-time history scan that failed retries here, bounded and stoppable;
-		// a failure registers with an unknown precedence rather than blocking.
+		// a failure registers with `history_unknown` (ranked lowest) rather than blocking.
 		await this.precedence?.scan(this.native.rpc?.eventLog, signal).catch((error) => {
 			if (signal.aborted) throw error;
 		});
-		const seat = await this.client.request(
-			"/v1/register",
-			withPrecedence(this.reconnectRegistration ?? registration, this.precedence),
+		const seat = await registerWithPrecedence(
+			this.client,
+			this.reconnectRegistration ?? registration,
 			signal,
+			this.precedence,
 		);
 		throwIfStopped(signal);
 		verifyRegisteredSeat(seat, registration);

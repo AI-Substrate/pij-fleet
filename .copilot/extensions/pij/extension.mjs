@@ -183,8 +183,8 @@ async function startExtension() {
 		while (!signal.aborted) {
 			try {
 				// An unreadable history never blocks registration: the session registers
-				// with an unknown precedence (today's supersede), live prompts still count,
-				// and the bridge rescans on re-register.
+				// with `history_unknown` (ranked lowest), its first live prompt sets a real
+				// value, and the bridge rescans on re-register.
 				await precedence.scan(session.rpc?.eventLog, signal).catch((error) => {
 					if (signal.aborted) throw error;
 					nativeReport({

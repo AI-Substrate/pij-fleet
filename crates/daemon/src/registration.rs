@@ -2867,6 +2867,14 @@ mod tests {
         serde_json::from_value(claim).expect("precedence claim")
     }
 
+    /// A new extension that could not read its history (plan 168 F3/F4 ruling).
+    fn unknown_history_claim(id: &str, supersedes: Option<&str>, loaded_at: u64) -> Registration {
+        let mut claim = serde_json::to_value(precedence_claim(id, supersedes, None, loaded_at))
+            .expect("claim json");
+        claim["native_precedence"]["history_unknown"] = serde_json::json!(true);
+        serde_json::from_value(claim).expect("unknown-history claim")
+    }
+
     /// Incident 2026-10-12: `copilot --resume` boots a blank session, then loads
     /// the picked one in the SAME process, and the blank host never exits. Each
     /// re-registration used to retire the other seat forever.
@@ -3149,6 +3157,7 @@ mod tests {
         let reported = NativePrecedence {
             last_user_message_at: Some(10),
             loaded_at: 5,
+            history_unknown: false,
         };
         heartbeat(&service, &holder, Some(reported)).await;
         held_by(
@@ -3235,6 +3244,7 @@ mod tests {
             Some(NativePrecedence {
                 last_user_message_at: Some(100),
                 loaded_at: 1_000,
+                history_unknown: false,
             }),
         )
         .await;
@@ -3249,6 +3259,129 @@ mod tests {
             &holder.id,
         );
         assert!(live(&registry, &holder.id).await);
+    }
+
+    /// Plan 168 F3/F4 ruling: an unreadable history ranks lowest. It never takes
+    /// the seat from a live holder with history, and it writes nothing.
+    #[tokio::test]
+    async fn unknown_history_never_takes_the_seat_from_a_live_history_holder() {
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("history holder");
+        let before = registry.list(SeatFilter::default()).await.unwrap();
+        // Even a later-loaded host with an unreadable history is held.
+        held_by(
+            attest(
+                &service,
+                unknown_history_claim("", Some(holder.id.as_str()), 9_000),
+                Some("unreadable-history"),
+                &tmux,
+            )
+            .await,
+            &holder.id,
+        );
+        assert_eq!(registry.list(SeatFilter::default()).await.unwrap(), before);
+    }
+
+    /// Against a blank (or equally unknown) holder, the tie rule applies.
+    #[tokio::test]
+    async fn unknown_history_against_a_blank_holder_goes_to_the_later_load() {
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let blank = attest(
+            &service,
+            precedence_claim("", None, None, 1_000),
+            Some("blank-boot-session"),
+            &tmux,
+        )
+        .await
+        .expect("blank holder");
+        held_by(
+            attest(
+                &service,
+                unknown_history_claim("", Some(blank.id.as_str()), 500),
+                Some("unreadable-history"),
+                &tmux,
+            )
+            .await,
+            &blank.id,
+        );
+        let later = attest(
+            &service,
+            unknown_history_claim("", Some(blank.id.as_str()), 2_000),
+            Some("unreadable-history"),
+            &tmux,
+        )
+        .await
+        .expect("the later-loaded unknown host wins the tie");
+        assert!(live(&registry, &later.id).await && !live(&registry, &blank.id).await);
+    }
+
+    #[tokio::test]
+    async fn unknown_history_takes_over_once_the_holder_lease_lapses() {
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("history holder");
+        let unknown = unknown_history_claim("", Some(holder.id.as_str()), 3_000);
+        held_by(
+            attest(&service, unknown.clone(), Some("unreadable-history"), &tmux).await,
+            &holder.id,
+        );
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(61)).await;
+        tokio::time::resume();
+        let successor = attest(&service, unknown, Some("unreadable-history"), &tmux)
+            .await
+            .expect("a silent holder no longer keeps the seat");
+        assert!(live(&registry, &successor.id).await && !live(&registry, &holder.id).await);
+    }
+
+    /// Self-healing: the first typed prompt gives the session a real, newer value.
+    #[tokio::test]
+    async fn unknown_history_takes_over_on_its_first_typed_prompt() {
+        let (service, registry) = native_service(Vec::new(), native_liveness()).await;
+        let tmux = native_tmux();
+        let holder = attest(
+            &service,
+            precedence_claim("", None, Some(500), 2_000),
+            Some(SESSION),
+            &tmux,
+        )
+        .await
+        .expect("history holder");
+        held_by(
+            attest(
+                &service,
+                unknown_history_claim("", Some(holder.id.as_str()), 3_000),
+                Some("unreadable-history"),
+                &tmux,
+            )
+            .await,
+            &holder.id,
+        );
+        let prompted = attest(
+            &service,
+            precedence_claim("", Some(holder.id.as_str()), Some(600), 3_000),
+            Some("unreadable-history"),
+            &tmux,
+        )
+        .await
+        .expect("a typed prompt is newer activity");
+        assert!(live(&registry, &prompted.id).await && !live(&registry, &holder.id).await);
     }
 
     #[tokio::test]
