@@ -1859,6 +1859,7 @@ export function createNativeReporter({ log, capture }) {
 	let registrationWaiting = false;
 	let registrationEscalated = false;
 	let standingBy = false;
+	let bannerShown = false;
 	return (event) => {
 		if (event.kind === "registered" || event.kind === "connection-ready") {
 			unavailable = false;
@@ -1866,8 +1867,16 @@ export function createNativeReporter({ log, capture }) {
 			registrationEscalated = false;
 			if (standingBy) capture({ kind: "standby-ended" });
 			standingBy = false;
+			// Plan 168 R8: an "unavailable" line left on screen reads as a live outage,
+			// so the recovery that follows one is shown exactly once.
+			const recovered = bannerShown;
+			bannerShown = false;
+			if (event.kind === "registered") capture(event);
+			if (!recovered) return;
+			return Promise.resolve()
+				.then(() => log("[pij native] reconnected", { level: "info" }))
+				.catch(() => capture({ kind: "native-diagnostic-unavailable", failureKind: event.kind }));
 		}
-		if (event.kind === "connection-ready") return;
 		// Plan 168: standing by behind a newer same-process session is not an outage;
 		// it is logged once per episode and never shown on the native timeline.
 		if (event.kind === "standby") {
@@ -1913,6 +1922,7 @@ export function createNativeReporter({ log, capture }) {
 			registrationEscalated = false;
 			if (unavailable && !["receive-held", "extension-unavailable"].includes(event.kind)) return;
 			unavailable = true;
+			bannerShown = true;
 			const advice =
 				event.kind === "receive-held"
 					? event.holdKind === "native-target"

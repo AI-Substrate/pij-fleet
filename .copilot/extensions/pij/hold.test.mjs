@@ -55,13 +55,16 @@ test("native diagnostic sink counts one call per failure episode and never logs 
 		await report({ kind: "reconnecting", diagnostic: "SECRET_SERVER_BODY" });
 	assert.equal(lines.length, 1);
 	await report({ kind: "connection-ready" });
+	assert.equal(lines.at(-1).message, "[pij native] reconnected");
 	await report({ kind: "reconnecting", diagnostic: "SECRET_SERVER_BODY" });
-	assert.equal(lines.length, 2);
+	assert.equal(lines.length, 3);
 	assert.ok(
-		lines.every(
-			(line) =>
-				line.message.startsWith("[pij native] unavailable:") && !line.message.includes("SECRET"),
-		),
+		lines
+			.filter((line) => line.message !== "[pij native] reconnected")
+			.every(
+				(line) =>
+					line.message.startsWith("[pij native] unavailable:") && !line.message.includes("SECRET"),
+			),
 	);
 });
 
@@ -76,10 +79,11 @@ test("a receiver-gap reconnecting episode narrates distinctly from a daemon-conn
 	assert.match(lines[0].message, /receiver progress is temporarily lagging/);
 	assert.doesNotMatch(lines[0].message, /check the Pij daemon/);
 	await report({ kind: "connection-ready" });
+	assert.equal(lines[1].message, "[pij native] reconnected");
 	await report({ kind: "reconnecting", diagnostic: "daemon unreachable", holdKind: null });
-	assert.equal(lines.length, 2);
-	assert.match(lines[1].message, /check the Pij daemon/);
-	assert.doesNotMatch(lines[1].message, /receiver progress is temporarily lagging/);
+	assert.equal(lines.length, 3);
+	assert.match(lines[2].message, /check the Pij daemon/);
+	assert.doesNotMatch(lines[2].message, /receiver progress is temporarily lagging/);
 });
 
 test("registration wait episodes reset on success and do not hide unrelated failures", async () => {

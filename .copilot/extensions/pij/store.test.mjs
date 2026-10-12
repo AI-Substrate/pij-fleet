@@ -4444,3 +4444,37 @@ test("a native-holder 409 is a typed retryable hold", async () => {
 		return true;
 	});
 });
+
+function recordingReporter() {
+	const logs = [];
+	const captured = [];
+	const report = createNativeReporter({
+		log: async (message) => logs.push(message),
+		capture: (event) => captured.push(event),
+	});
+	return { logs, captured, report };
+}
+
+test("R8: a shown unavailable banner is followed by exactly one reconnected line", async () => {
+	for (const recovery of ["connection-ready", "registered"]) {
+		const { logs, report } = recordingReporter();
+		await report({ kind: "registration-wait", diagnostic: "daemon down", retryMs: 250 });
+		await report({ kind: "registration-wait", diagnostic: "daemon down", retryMs: 500 });
+		await report({ kind: recovery });
+		await report({ kind: "connection-ready" });
+		await report({ kind: "registered" });
+		assert.equal(logs.length, 2, recovery);
+		assert.match(logs[0], /^\[pij native\] unavailable: registration-wait;/);
+		assert.equal(logs[1], "[pij native] reconnected", recovery);
+	}
+});
+
+test("R8: recovery without a shown banner, or after a quiet holder standby, shows nothing", async () => {
+	const { logs, report } = recordingReporter();
+	await report({ kind: "registered" });
+	await report({ kind: "connection-ready" });
+	await report({ kind: "standby", retryMs: STANDBY_RETRY_MS });
+	await report({ kind: "standby", retryMs: STANDBY_RETRY_MS });
+	await report({ kind: "connection-ready" });
+	assert.deepEqual(logs, []);
+});

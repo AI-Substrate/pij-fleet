@@ -654,9 +654,17 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 			await f.waitFor("registered");
 			const resumedDelay = await f.waitForRetry((event) => event.at === 1320250);
 			assert.equal(resumedDelay.ms, 250, "successful registration must restore fast inbox polling");
+			// R8: the unavailable banner on screen is closed by one recovery line.
+			await f.waitFor("native-log", (event) => event.message === "[pij native] reconnected");
 			assert.deepEqual(
 				f.events.filter((event) => event.kind === "native-log").map((event) => event.message),
-				[escalationMessage, failure.message, waitingMessage, escalationMessage],
+				[
+					escalationMessage,
+					failure.message,
+					waitingMessage,
+					escalationMessage,
+					"[pij native] reconnected",
+				],
 			);
 			await f.advance(250);
 			await f.waitFor("completion-wait");
@@ -1206,7 +1214,9 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
 		assert.equal(f.requests.filter((r) => r.path === "/v1/seats?scope=local").length, 3);
 		assert.equal(f.requests.filter((r) => r.path === "/v1/register").length, 1);
 		assert.equal(f.requests.find((r) => r.path === "/v1/register").body.id, candidate.id);
-		assert.equal(f.events.filter((e) => e.kind === "native-log").length, 1);
+		// R8: the startup banner is closed by exactly one recovery line once registered.
+		await f.waitFor("native-log", (e) => e.message === "[pij native] reconnected");
+		assert.equal(f.events.filter((e) => e.kind === "native-log").length, 2);
 		assert.equal(f.requests.find((r) => r.path === "/v1/inbox/ack").body.seat, candidate.id);
 		const exited = once(f.child, "exit");
 		f.child.stdin.end();
