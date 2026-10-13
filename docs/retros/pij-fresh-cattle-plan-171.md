@@ -20,6 +20,17 @@ in main (D-171-1, third strike of D-167-1).
 - `tmux set-environment -g PATH` does not reach a spawned pane. The extension
   passes its own environment, so a stub `omp` has to be on the spawning
   process's PATH.
+- Review round 1 (pij-yearling-regalla) found three R3 defects that my happy-path
+  tests could not see:
+  - a pane-only match accepted a recycled pane's old seat;
+  - raw pane text, which can hold secrets, was forwarded to the parent;
+  - the deadline did not cover a hung response body or a stalled `capture-pane`.
+
+  Lesson: a wait or a forwarder needs adversarial witnesses from the start (stale
+  identity, hostile content, a peer that never finishes), not only "it arrives"
+  and "it doesn't". The R2 tests passed the ordinary suite but survived mutation
+  until each exemption had its own witness. One of them was shielded by the
+  `PIJ_SESSION_ID` that boot exports.
 
 **Noteworthy:**
 - Inferred from reading `registration.rs`, not exercised: a non-native
