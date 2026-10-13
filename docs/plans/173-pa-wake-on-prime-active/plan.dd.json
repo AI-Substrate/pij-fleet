@@ -41,50 +41,58 @@
         {
           "id": "ac-0001",
           "claim": "Overnight resume: the workers work then go idle (the PA gets #52's idle nudge), the PA and the prime are then both observed idle, then the prime moves idle→working with no pij delivery to it since arming. Result: each PA in scope receives exactly one prime-active wake that carries the fleet digest and a resume-your-plan line.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0002",
           "claim": "Arming: the trigger is armed only at a tick, after the idle edge, where the PA and the prime are both observed idle. A prime turn observed before arming sends nothing. 'The prime' is the current designated prime, else the prime-role seat in scope; with neither, nothing is sent and the audit names why.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0003",
           "claim": "Causality brake: if any pij delivery to the prime is recorded on the spine after the arming tick, a following prime idle→working sends nothing and DISARMS the trigger without consuming the cap. It re-arms at the next tick where the PA and the prime are both idle. So the PA's own night report can't use up the morning wake. The PR states that this is a BRAKE (removing it only sends more).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0004",
           "claim": "Cap: at most one prime-active wake per PA per worker-idle episode. A second prime turn in the same episode sends nothing. A new worker working→idle episode (#52's re-arm) resets the cap.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0005",
           "claim": "Delivery and audit: the wake goes through the ordinary delivery path (composer and typing gates apply). It is not held for a cold PA. A cold wake is audited like the idle nudge (send.cold-wake-forced) with reason prime-active, and every outcome (sent, braked, capped, no-prime, idle-on-limit) is audited on watchdog.round.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0006",
           "claim": "Usage limit: while the scope is stopped on a usage limit, no prime-active wake is sent (the limit-reset wake owns that case), and the audit says idle-on-limit.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0007",
           "claim": "Daemon restart: a restart never sends a prime-active wake by itself. The first observation only arms the trackers, as #52's IdleEdge does.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0008",
           "claim": "Docs: docs/how/pa-watchdog.md describes the whole PA watchdog as shipped: the idle-edge nudge, the supervisor exclusion (F1), the limit-reset wake with timezone handling, this prime-active wake, its brake and cap, the audit kinds, and the cold-wake interaction. The pij skill's PA references point to it.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0009",

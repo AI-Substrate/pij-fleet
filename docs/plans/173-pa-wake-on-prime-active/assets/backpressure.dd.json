@@ -22,8 +22,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND→RUN: add prime-active cases to crates/daemon/src/pa_watchdog_tests.rs and crates/core/src/watchdog.rs tests; then nice -n 19 cargo test -j 4 -p pij-core watchdog && cargo test -j 4 -p pij-daemon pa_watchdog",
-          "state": "unchecked",
-          "probe": "the #52 fakes (fake clock, registry, delivery) in pa_watchdog_tests.rs"
+          "state": "checked",
+          "probe": "the #52 fakes (fake clock, registry, delivery) in pa_watchdog_tests.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "bp-0002",
@@ -32,8 +33,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD→RUN: write the doc; then test -s docs/how/pa-watchdog.md plus review judgement of its content",
-          "state": "unchecked",
-          "probe": "docs/how has no watchdog doc on 19953b2"
+          "state": "checked",
+          "probe": "docs/how has no watchdog doc on 19953b2",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "bp-0003",

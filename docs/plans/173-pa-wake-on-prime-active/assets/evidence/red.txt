@@ -1,0 +1,52 @@
+Red-first receipt (tk-0001, dw-0001), observed 2026-10-14 ~09:33 local by pij-evident-dog.
+Command: nice -n 19 timeout -k 30 1500 cargo test -j 4 -p pij-daemon --lib pa_watchdog | grep -E "^test |panicked|left:|right:|test result|^error"
+cwd: /Users/jordanknight/pi-hacking/fleet-173-prime-active
+Subject: daemon at 19953b2 plus the new tests (committed alone as 00b4572). The working tree also held the
+uncommitted, not-yet-wired pij-core PrimeActive additions, which nothing in the daemon used.
+Exit: 101 (8 failed).
+
+test pa_watchdog::tests::an_opted_in_seat_is_nudged_when_quiet_and_told_how_to_stop ... ok
+test pa_watchdog::tests::clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card ... ok
+test pa_watchdog::tests::any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told ... ok
+test pa_watchdog::tests::a_pa_report_between_ticks_never_wakes_the_pa ... FAILED
+test pa_watchdog::tests::a_delivery_to_the_prime_after_arming_brakes_the_wake_and_keeps_the_cap ... FAILED
+test pa_watchdog::tests::a_prime_turn_before_arming_sends_nothing_and_the_prime_role_names_the_prime ... FAILED
+test pa_watchdog::tests::a_usage_limit_stop_sends_no_prime_active_wake ... FAILED
+test pa_watchdog::tests::the_pa_resumes_once_when_the_prime_does_after_an_idle_night ... FAILED
+test pa_watchdog::tests::with_no_pa_a_late_reset_wakes_the_designated_prime_at_once ... ok
+test pa_watchdog::tests::a_second_prime_turn_is_capped_until_the_workers_work_again ... FAILED
+test pa_watchdog::tests::with_no_prime_in_scope_nothing_is_armed_and_the_audit_says_why ... FAILED
+test pa_watchdog::tests::a_fleet_idle_on_a_limit_is_woken_once_at_the_reset_not_at_the_edge ... ok
+test pa_watchdog::tests::two_pas_in_one_scope_are_each_nudged_once_per_worker_idle_episode ... ok
+test pa_watchdog::tests::a_restarted_daemon_sends_no_prime_active_wake_until_a_new_episode ... FAILED
+test pa_watchdog::tests::a_pa_is_nudged_once_each_time_its_whole_repository_goes_idle ... ok
+test pa_watchdog::tests::a_status_read_that_outlives_its_wait_is_never_started_twice ... ok
+test pa_watchdog::tests::rows_read_per_round_stay_flat_as_unrelated_history_grows ... ok
+thread 'pa_watchdog::tests::a_pa_report_between_ticks_never_wakes_the_pa' panicked at crates/daemon/src/pa_watchdog_tests.rs:881:5:
+  left: []
+ right: ["braked"]
+thread 'pa_watchdog::tests::a_delivery_to_the_prime_after_arming_brakes_the_wake_and_keeps_the_cap' panicked at crates/daemon/src/pa_watchdog_tests.rs:852:5:
+  left: []
+ right: ["braked"]
+thread 'pa_watchdog::tests::a_prime_turn_before_arming_sends_nothing_and_the_prime_role_names_the_prime' panicked at crates/daemon/src/pa_watchdog_tests.rs:815:5:
+  left: 0
+ right: 1
+thread 'pa_watchdog::tests::a_usage_limit_stop_sends_no_prime_active_wake' panicked at crates/daemon/src/pa_watchdog_tests.rs:938:5:
+  left: []
+ right: ["idle-on-limit"]
+thread 'pa_watchdog::tests::the_pa_resumes_once_when_the_prime_does_after_an_idle_night' panicked at crates/daemon/src/pa_watchdog_tests.rs:774:5:
+  left: 0
+ right: 1
+thread 'pa_watchdog::tests::a_second_prime_turn_is_capped_until_the_workers_work_again' panicked at crates/daemon/src/pa_watchdog_tests.rs:894:5:
+  left: 0
+ right: 1
+thread 'pa_watchdog::tests::with_no_prime_in_scope_nothing_is_armed_and_the_audit_says_why' panicked at crates/daemon/src/pa_watchdog_tests.rs:829:5:
+  left: Null
+ right: "no-prime"
+thread 'pa_watchdog::tests::a_restarted_daemon_sends_no_prime_active_wake_until_a_new_episode' panicked at crates/daemon/src/pa_watchdog_tests.rs:977:5:
+  left: 0
+ right: 1
+test result: FAILED. 9 passed; 8 failed; 0 ignored; 0 measured; 586 filtered out; finished in 4.39s
+
+Every new case fails because no prime-active wake (0 messages) or verdict audit ([] / Null) exists on the base.
+All 9 #52 tests stay green on the base.

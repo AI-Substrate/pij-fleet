@@ -35,10 +35,10 @@ One coder implements the prime-active wake as written in impl-guide.dd.json tk-0
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Red tests on main 19953b2 for AC1-AC7 | — | ph-a578 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | PrimeActive tracker in core plus wiring in PaWatchdog::round with the spine delivery brake and audits | — | ph-a578 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Mutation receipts | — | ph-a578 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | docs/how/pa-watchdog.md and skill pointers | — | ph-a578 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Red tests on main 19953b2 for AC1-AC7 | — | ph-a578 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0001 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | PrimeActive tracker in core plus wiring in PaWatchdog::round with the spine delivery brake and audits | — | ph-a578 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Mutation receipts | — | ph-a578 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | docs/how/pa-watchdog.md and skill pointers | — | ph-a578 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Gates and PR | — | ph-a578 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -47,29 +47,29 @@ One coder implements the prime-active wake as written in impl-guide.dd.json tk-0
 
 ### tk-0001
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0001 | cargo test -p pij-daemon pa_watchdog shows the new cases failing on the base tree for the right reason (no wake sent), with the receipt recorded in the execution log | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
-| dw-0002 | Cases covered: overnight resume, prime turn before arming, delivery after arming (disarms and keeps the cap) then a later self-start wakes, a PA report between ticks plus a delivery, a second prime turn capped, a usage-limit stop, a daemon restart, a new worker episode re-arms | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0001 | cargo test -p pij-daemon pa_watchdog shows the new cases failing on the base tree for the right reason (no wake sent), with the receipt recorded in the execution log | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0001](../../execution-log.dd.md#entries) |
+| dw-0002 | Cases covered: overnight resume, prime turn before arming, delivery after arming (disarms and keeps the cap) then a later self-start wakes, a PA report between ticks plus a delivery, a second prime turn capped, a usage-limit stop, a daemon restart, a new worker episode re-arms | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0001](../../execution-log.dd.md#entries) |
 
 ### tk-0002
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0003 | All task-1 tests are green; #52's two-PA test is updated to expect one prime-active wake per PA per episode, and every other #52 test is unchanged and green | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
-| dw-0004 | Every verdict (sent, braked, capped, no-prime, idle-on-limit) writes a watchdog.round audit, and a cold wake writes send.cold-wake-forced with reason prime-active | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0003 | All task-1 tests are green; #52's two-PA test is updated to expect one prime-active wake per PA per episode, and every other #52 test is unchanged and green | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0005](../../execution-log.dd.md#entries) |
+| dw-0004 | Every verdict (sent, braked, capped, no-prime, idle-on-limit) writes a watchdog.round audit, and a cold wake writes send.cold-wake-forced with reason prime-active | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0005](../../execution-log.dd.md#entries) |
 
 ### tk-0003
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0005 | Deleting the brake turns the delivery-brake test red; deleting the cap turns the second-turn test red; both are restored and recorded in the PR | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0005 | Deleting the brake turns the delivery-brake test red; deleting the cap turns the second-turn test red; both are restored and recorded in the PR | [x] checked | [bp-0003](../../backpressure.dd.md#rows) | [lg-0002](../../execution-log.dd.md#entries) |
 
 ### tk-0004
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0006 | docs/how/pa-watchdog.md covers the idle edge, F1, limit-reset with epoch and timezone handling, prime-active with its brake and cap, the audit kinds and the cold-wake interaction; skills/pij/references/prime/pa.md links to it | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0006 | docs/how/pa-watchdog.md covers the idle edge, F1, limit-reset with epoch and timezone handling, prime-active with its brake and cap, the audit kinds and the cold-wake interaction; skills/pij/references/prime/pa.md links to it | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | [lg-0003](../../execution-log.dd.md#entries) |
 
 ### tk-0005
 

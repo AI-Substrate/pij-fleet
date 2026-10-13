@@ -1,0 +1,21 @@
+Mutation receipts (tk-0003, dw-0005), observed 2026-10-14 ~09:37 local by pij-evident-dog.
+Command each time: nice -n 19 timeout -k 30 1500 cargo test -j 4 -p pij-daemon --lib pa_watchdog
+cwd: /Users/jordanknight/pi-hacking/fleet-173-prime-active; subject: the tree committed as 8114b28, with one mutation applied to crates/core/src/watchdog.rs PrimeActive::observe
+
+## M1 delete the brake: 'else if seen.delivered_since_arming' -> 'else if false'  (exit 101)
+test pa_watchdog::tests::a_delivery_to_the_prime_after_arming_brakes_the_wake_and_keeps_the_cap ... FAILED
+test pa_watchdog::tests::a_pa_report_between_ticks_never_wakes_the_pa ... FAILED
+thread 'pa_watchdog::tests::a_delivery_to_the_prime_after_arming_brakes_the_wake_and_keeps_the_cap' (772555728) panicked at crates/daemon/src/pa_watchdog_tests.rs:893:5:
+thread 'pa_watchdog::tests::a_pa_report_between_ticks_never_wakes_the_pa' (772555731) panicked at crates/daemon/src/pa_watchdog_tests.rs:925:5:
+test result: FAILED. 15 passed; 2 failed; 0 ignored; 0 measured; 586 filtered out; finished in 4.47s
+
+## M2 delete the cap: 'self.episode = if verdict == Wake { Spent } else { Open }' -> 'self.episode = Episode::Open'  (exit 101)
+test pa_watchdog::tests::two_pas_in_one_scope_are_each_nudged_once_per_worker_idle_episode ... FAILED
+test pa_watchdog::tests::a_second_prime_turn_is_capped_until_the_workers_work_again ... FAILED
+thread 'pa_watchdog::tests::two_pas_in_one_scope_are_each_nudged_once_per_worker_idle_episode' (772585791) panicked at crates/daemon/src/pa_watchdog_tests.rs:362:13:
+thread 'pa_watchdog::tests::a_second_prime_turn_is_capped_until_the_workers_work_again' (772585783) panicked at crates/daemon/src/pa_watchdog_tests.rs:947:5:
+test result: FAILED. 15 passed; 2 failed; 0 ignored; 0 measured; 586 filtered out; finished in 4.83s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+
+## Restored (file back to its pre-mutation snapshot), same command  (exit 0)
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 4.51s

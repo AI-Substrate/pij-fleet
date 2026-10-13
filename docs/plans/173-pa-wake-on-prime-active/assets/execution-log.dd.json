@@ -1,0 +1,74 @@
+{
+  "dd": {
+    "schema": "builder/execution-log"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Observed implementation evidence",
+        "plan": "../plan.dd.json#meta"
+      }
+    },
+    {
+      "name": "entries",
+      "value": [
+        {
+          "id": "lg-0001",
+          "at": "2026-10-14T09:42:12+10:00",
+          "text": "RED on base: cargo test -j 4 -p pij-daemon --lib pa_watchdog (cwd worktree root) at 00b4572 tests over 19953b2 daemon: exit 101, 8 new cases FAILED for no wake/no verdict, 9 #52 tests ok. Evidence: evidence/red.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0001"
+          ]
+        },
+        {
+          "id": "lg-0002",
+          "at": "2026-10-14T09:42:18+10:00",
+          "text": "MUTATION on the 8114b28 tree: cargo test -j 4 -p pij-daemon --lib pa_watchdog (cwd worktree root). Brake deleted: exit 101, a_delivery_to_the_prime_after_arming_brakes_the_wake_and_keeps_the_cap + a_pa_report_between_ticks_never_wakes_the_pa FAILED. Cap deleted: exit 101, a_second_prime_turn_is_capped_until_the_workers_work_again + two_pas_in_one_scope FAILED. Restored: exit 0, 17 passed. Evidence: evidence/mutation.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        },
+        {
+          "id": "lg-0003",
+          "at": "2026-10-14T09:42:23+10:00",
+          "text": "DOCS at ec47208: test -s docs/how/pa-watchdog.md exit 0 (cwd worktree root). It covers the idle edge, F1 supervisors, prime-active (state diagram, scope_prime, arming, BRAKE wording, cap, limit, restart, residual race, FYI-hook follow-up), limit-reset with epoch/timezone, cold wakes and an audit-kind table. Linked from skills/pij/references/prime/pa.md (1 link) and docs/how/pij-rs-api.md section PA watchdog (1 link). Content is a review judgement.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0004",
+          "at": "2026-10-14T09:51:03+10:00",
+          "text": "GATE TS stages (harness checks inventory, run one by one under C12, cwd worktree root, after npm ci): local-path-check exit 0, typecheck exit 0, lockfile-allowlist exit 0, lint exit 0 at 7d09f63 (it was exit 1 before: 682c45e vendored .dd/schemas failed Biome format; excluded like docs/plans, approved by pij-far-jackal), test exit 0 (2158 passed, 22 skipped), copilot-native-test exit 0. smoke NOT RUN: the diff has no TS or extension code; smoke drives the OMP extension and would open a pane on the live tmux server (Forbidden), per pij-far-jackal. Evidence: evidence/gate-ts.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        },
+        {
+          "id": "lg-0005",
+          "at": "2026-10-14T09:52:31+10:00",
+          "text": "GATE Rust at 7d09f63 under C12 (CARGO_BUILD_JOBS=4, nice -n 19), cwd worktree root. just rust-check: metadata, fmt --check and clippy -D warnings passed; cargo test exit 101 on a pij-tmux adapter timing test (crates/tmux untouched; a rerun failed a different tmux test, with host load 30-80). cargo test --locked --workspace --no-fail-fast: exit 0, 1520 passed, 0 failed, including pij-daemon 603 (the 17 pa_watchdog tests) and pij-tmux adapter 29/29. Evidence: evidence/gate-rust.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0001",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        }
+      ]
+    }
+  ]
+}
