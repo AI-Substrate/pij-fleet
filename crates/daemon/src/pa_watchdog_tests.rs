@@ -6,6 +6,7 @@ use pij_core::config::{AdapterChoice, Adapters, Config};
 use pij_core::model::{Harness, SeatDescriptor, SeatId, SemanticState, SystemState};
 use pij_core::session_status::{Fact, SeatStatus, SessionStatusReply};
 use pij_core::usage_limit::{LIMIT_WAKE_MARGIN_SECS, QuotaRejection, UsageLimitSource};
+use pij_core::watchdog::PrimeVerdict;
 use pij_testkit::FreshStore;
 use pij_testkit::fakes::FakeSessionStatus;
 
@@ -276,7 +277,8 @@ async fn a_pa_is_nudged_once_each_time_its_whole_repository_goes_idle() {
 /// `RoleService` allows, must not re-arm each other. The fleet is the WORKERS,
 /// so a PA's answer to its nudge, or the designated prime's turn, never opens
 /// a new idle episode. Exactly one nudge per PA per worker idle episode. Red
-/// at f5fd338: 4 extra nudges, 3 per PA.
+/// at f5fd338: 4 extra nudges, 3 per PA. Plan 173: the prime's first turn
+/// wakes each PA once, its second is capped.
 #[tokio::test]
 async fn two_pas_in_one_scope_are_each_nudged_once_per_worker_idle_episode() {
     let repos = Repos::new();
@@ -338,9 +340,9 @@ async fn two_pas_in_one_scope_are_each_nudged_once_per_worker_idle_episode() {
             "episode {episode}: the worker idle edge nudges each PA once"
         );
 
-        // Each PA answers, twice over, and the designated prime takes a turn:
-        // supervisors only, so no new episode opens.
-        for supervisor in [&pa_a, &pa_b, &pa_a, &pa_b, &prime] {
+        // Each PA answers, twice over: supervisors only, so no new episode
+        // opens and nothing is sent.
+        for supervisor in [&pa_a, &pa_b, &pa_a, &pa_b] {
             set_state(&services, supervisor, SystemState::Working).await;
             let working = round().await.unwrap();
             set_state(&services, supervisor, SystemState::Idle).await;
@@ -351,16 +353,33 @@ async fn two_pas_in_one_scope_are_each_nudged_once_per_worker_idle_episode() {
                 supervisor.id
             );
         }
-        assert_eq!(
-            drain(&services, "pij-pa-a").await.len(),
-            1,
-            "episode {episode}"
-        );
-        assert_eq!(
-            drain(&services, "pij-pa-b").await.len(),
-            1,
-            "episode {episode}"
-        );
+        // The designated prime takes two turns: the first wakes each PA
+        // once (plan 173), the second is capped. Neither opens an episode.
+        for verdict in [PrimeVerdict::Wake, PrimeVerdict::Capped] {
+            set_state(&services, &prime, SystemState::Working).await;
+            let mut working = round().await.unwrap();
+            working.sort_by_key(|outcome| format!("{outcome:?}"));
+            assert!(
+                matches!(
+                    &working[..],
+                    [
+                        RoundOutcome::PrimeActive { pa: a, verdict: va, .. },
+                        RoundOutcome::PrimeActive { pa: b, verdict: vb, .. },
+                    ] if a.as_str() == "pij-pa-a" && b.as_str() == "pij-pa-b"
+                        && *va == verdict && *vb == verdict
+                ),
+                "episode {episode}: {working:?}"
+            );
+            set_state(&services, &prime, SystemState::Idle).await;
+            assert!(round().await.unwrap().is_empty(), "episode {episode}");
+        }
+        for pa in ["pij-pa-a", "pij-pa-b"] {
+            assert_eq!(
+                drain(&services, pa).await.len(),
+                2,
+                "episode {episode}: {pa}'s nudge and one prime-active wake"
+            );
+        }
         set_state(&services, &worker, SystemState::Working).await;
     }
 }
@@ -634,6 +653,12 @@ impl PrimeFleet {
         let (mut services, store) = services().await;
         let limits = Arc::new(FakeLimits::default());
         services.usage_limits = limits.clone();
+        let start = now_ms();
+        // The PA is long and cold: every wake of it is a forced cold wake.
+        services.session_status = Arc::new(
+            FakeSessionStatus::new()
+                .with_reply("session-pij-pa", sized(500_000, start - 7_200_000)),
+        );
         let main = repos.path("main");
         let prime = seat("pij-prime", &main, None);
         let pa = seat("pij-pa", &main, Some("pij-prime"));
@@ -675,7 +700,7 @@ impl PrimeFleet {
             prime,
             pa,
             worker,
-            start: now_ms(),
+            start,
             _store: store,
             _repos: repos,
         }
@@ -784,6 +809,23 @@ async fn the_pa_resumes_once_when_the_prime_does_after_an_idle_night() {
         "the wake carries the fleet digest: {body}"
     );
     assert_eq!(fleet.verdicts().await, ["sent"]);
+    let all = events(&fleet.services).await;
+    let forced = audits(&all, pij_core::cold_wake::COLD_WAKE_FORCED_KIND);
+    assert_eq!(
+        forced
+            .iter()
+            .map(|audit| audit["reason"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [super::IDLE_WAKE_REASON, "prime-active"],
+        "a cold PA is woken anyway, audited like the idle nudge"
+    );
+    let sent = audits(&all, "watchdog.round")
+        .into_iter()
+        .find(|round| round["verdict"] == "sent")
+        .unwrap();
+    assert_eq!(sent["cold_check"], "forced", "{sent}");
+    assert_eq!(sent["reason"], "prime-active");
+    assert_eq!(sent["prime"], "pij-prime");
     for not_pa in ["pij-prime", "pij-worker"] {
         assert!(drain(&fleet.services, not_pa).await.is_empty());
     }
@@ -848,7 +890,10 @@ async fn a_delivery_to_the_prime_after_arming_brakes_the_wake_and_keeps_the_cap(
     fleet.deliver_to_prime(fleet.at(2) + 30_000).await;
     fleet.set(&fleet.prime, SystemState::Working).await;
     fleet.round(&watchdog, 3).await;
-    assert!(fleet.to_pa().await.is_empty(), "a delivered turn never wakes");
+    assert!(
+        fleet.to_pa().await.is_empty(),
+        "a delivered turn never wakes"
+    );
     assert_eq!(fleet.verdicts().await, ["braked"]);
 
     // Re-armed at the next tick where both are idle; the prime then starts
@@ -909,10 +954,7 @@ async fn a_second_prime_turn_is_capped_until_the_workers_work_again() {
     fleet.set(&fleet.prime, SystemState::Working).await;
     fleet.round(&watchdog, 11).await;
     assert_eq!(fleet.to_pa().await.len(), 1, "a new episode re-arms");
-    assert_eq!(
-        fleet.verdicts().await,
-        ["sent", "capped", "capped", "sent"]
-    );
+    assert_eq!(fleet.verdicts().await, ["sent", "capped", "capped", "sent"]);
 }
 
 /// Plan 173 AC6: while the scope is stopped on a usage limit, the prime's
@@ -966,7 +1008,10 @@ async fn a_restarted_daemon_sends_no_prime_active_wake_until_a_new_episode() {
         fleet.set(&fleet.prime, state).await;
         fleet.round(&watchdog, minute).await;
     }
-    assert!(fleet.to_pa().await.is_empty(), "no episode since the restart");
+    assert!(
+        fleet.to_pa().await.is_empty(),
+        "no episode since the restart"
+    );
     assert!(fleet.verdicts().await.is_empty());
 
     fleet.set(&fleet.prime, SystemState::Idle).await;

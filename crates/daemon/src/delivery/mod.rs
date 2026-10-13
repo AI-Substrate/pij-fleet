@@ -29,7 +29,9 @@ use crate::events::EventBus;
 use crate::http::NativePrecedence;
 use crate::pointer::{POINTER_PARKED_EVENT_KIND, POINTER_UNPARKED_EVENT_KIND};
 
-const OUTCOME_EVENT_KIND: &str = "delivery.outcome";
+/// The receipt a SENDER watches, keyed by the recipient seat. Also the PA
+/// watchdog's prime-active brake input (plan 173).
+pub(crate) const OUTCOME_EVENT_KIND: &str = "delivery.outcome";
 /// The event a RECIPIENT watches for to learn it has been spoken to.
 ///
 /// Distinct from `delivery.outcome`, which is what the SENDER watches to learn
