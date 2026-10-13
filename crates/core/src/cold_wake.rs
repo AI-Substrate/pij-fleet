@@ -17,7 +17,7 @@ use crate::model::{SeatId, SystemState};
 use crate::session_status::{CacheState, CacheTtl, Fact, SessionStatusBlock};
 
 /// A seat holding more than this many context tokens is large enough to guard.
-pub const COLD_CONTEXT_TOKENS: u64 = 300_000;
+pub const COLD_CONTEXT_TOKENS: u64 = 400_000;
 
 /// A seat whose last API call is older than this has lost its prompt cache.
 pub const COLD_IDLE_MS: u64 = 60 * 60 * 1_000;
@@ -628,16 +628,19 @@ mod tests {
     /// The ruling's values, pinned literally: a test that compared against the
     /// constants would pass if someone changed them.
     #[test]
-    fn the_thresholds_are_the_rulings_300k_and_one_hour() {
-        assert_eq!(COLD_CONTEXT_TOKENS, 300_000);
+    fn the_thresholds_are_the_rulings_400k_and_one_hour() {
+        assert_eq!(COLD_CONTEXT_TOKENS, 400_000);
         assert_eq!(COLD_IDLE_MS, 3_600_000);
-        let just_over = known(Some(300_001), Some(NOW - 3_600_001), None);
+        let just_over = known(Some(400_001), Some(NOW - 3_600_001), None);
         assert!(matches!(
             check(SystemState::Idle, &just_over, NOW),
             ColdCheck::Cold { .. }
         ));
         let recent = known(Some(900_000), Some(NOW - 59 * 60 * 1_000), None);
         assert_eq!(check(SystemState::Idle, &recent, NOW), ColdCheck::Clear);
+        // Jordan 2026-10-13: "long" is 400k, so a 350k seat idle for hours is clear.
+        let mid = known(Some(350_000), Some(NOW - 3 * 3_600_000), None);
+        assert_eq!(check(SystemState::Idle, &mid, NOW), ColdCheck::Clear);
     }
 
     /// A last call stamped after the daemon's clock (skew) is recent, never
@@ -682,12 +685,12 @@ mod tests {
     fn an_unpriced_model_still_refuses_but_says_the_price_is_unknown() {
         let check = check(
             SystemState::Idle,
-            &known(Some(400_000), Some(0), Some("some-new-model")),
+            &known(Some(450_000), Some(0), Some("some-new-model")),
             NOW,
         );
         let text = refusal(&SeatId("pij-y".into()), &check).unwrap();
         assert!(text.contains("price unknown"), "{text}");
-        assert!(text.contains("is cold (400k, idle 10h)"), "{text}");
+        assert!(text.contains("is cold (450k, idle 10h)"), "{text}");
         assert!(
             text.contains("--fyi") && text.contains("--force --reason"),
             "{text}"
