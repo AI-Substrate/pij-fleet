@@ -97,8 +97,8 @@ The existing `GET /health` v2 response adds `data.retired_harnesses`, an array o
 
 A pane is not a worker (pij-fleet#44). After any successful launch, in-process `pij_spawn` polls `GET /v1/seats` every 500ms for a bound seat (non-null `proc`) whose `spawn_id` is this launch's. The spawn id is the only proof. Pane ids reset with the tmux server and `proc_start` has one-second resolution, so a pane or time match never counts, and neither does a row with another or no `spawn_id`. Every path carries the id:
 
-- OMP and Pi children receive `PIJ_SPAWN_ID` and register with it.
-- Daemon-launched children bind to the `/v1/spawn` row, which already holds it.
+- OMP and Pi children receive `PIJ_SPAWN_ID` and register with it. The parent mints it as `s-` plus 32 lowercase hex characters from 128 random bits, the daemon's own spawn-id shape. It uses no clock or counter, so two parents launching in the same millisecond never share one.
+- Daemon-launched children bind to the `/v1/spawn` row, which already holds a daemon-minted id of the same shape.
 
 One budget, `PIJ_SPAWN_REGISTER_TIMEOUT_MS` (default `20000`, read once per extension runtime), bounds the whole wait.
 
