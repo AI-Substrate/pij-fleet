@@ -92,43 +92,41 @@ fused turn has this shape:
 - A repair phase and its commit carry a new `interactionId`, and phase parents
   are persisted-only `session.usage_record` events never seen live.
 
-So the receiver decides which turn an event belongs to by its position in the
-session's one event order, never by which channel delivered it. The live push
-channel and history reads race and either can miss events, so they are merged
-by event id. An event follows the owned prompt when it is a copy of the
-prompt, a child of an event that follows it, the prompt's own foreground turn
-(its `interactionId`, unless it is known to precede the prompt), or later on
-either channel than an event that follows it. The turn's fusion is the route
-resolved last before the prompt with no other prompt, route attempt or
-terminal between them. That reading stays revisable until the turn's own
-output names its fusion. That output must be ordered after the prompt **and**
-belong to the owned turn (its ancestry, its interaction or its routed fusion).
-Merely later is not enough: a later, unrelated prompt's fusion is after the
-prompt too. Only an event that follows the prompt ends the turn: the committed
-final turn, that fusion's `session.fusion_completed`, or, for a fused turn
-that stops before any commit, its root `session.idle`, `abort` or
-`session.error`, even across a persisted-only parent (an ephemeral idle is
-never readable from history). A terminal known to come after a later prompt is
-that later turn's, never the owned one's.
-Uncommitted phase output is never the final message, and the next queued Pij
-message waits. The clock never moves an event past the prompt: Copilot stamps
-events from one process's wall clock, but a rollback only becomes visible once
-one channel has delivered both sides of it, which can be too late. A stamp is
-therefore only a brake and a reading of which route came first, and an older
-stamp delivered after a newer one switches it off. Anything undecided waits
-rather than releasing early. A permutation test drives the recorded turn shapes,
-plus a later unrelated turn after an unfinished owned one, through every split
-across live and history and every interleaving. The turn never ends at a
-foreign or pre-commit event, and it always ends when the live channel carries
-every event. Evidence limits: the live recordings include every terminal the
-completions used and six live idles. `abort` delivery comes from the SDK types
-and has not been seen in a live recording. The proof is exhaustive over these
-shapes, not over every multi-turn stream. The seat publishes `working` from
-`session.fusion_route_started`, because the phases emit no root turn start, and
-`idle` at a root turn end, `session.idle`, `abort` or
-`session.fusion_completed`. A failed route stays `working`: its fallback model
-still runs the turn. The `critique` pattern was not observed in the plan-169
-canary; synthetic draft → critic → revision replay passes.
+So the receiver never infers completion from events. Their order across the live
+push channel and history reads, which race and can each miss events, and which
+turn an event belongs to, were reconstructed through five review rounds and
+each reconstruction left a gap. Copilot's run state decides instead:
+
+- **Consumption:** the owned message's own `user.message`, matched by
+  `messageId` on either channel.
+- **Question:** after consumption, any root `session.idle`, `assistant.idle`,
+  `abort`, `session.error`, `assistant.turn_end` or `session.fusion_completed`
+  triggers one question, `metadata.isProcessing()` plus
+  `queue.pendingItems()`. Without a trigger the question is still asked every
+  30 s (`RUN_STATE_REASK_MS`), so a lost event costs a delay, never a stuck
+  inbox. A bounded history window that shows a trigger is settled by the same
+  question instead of a receiver-gap hold.
+- **Completion:** the session is not processing, nothing is steering, no turn
+  prompt is withdrawable, and the message is not queued. The trigger only names
+  the reported completion event.
+- **Failure:** missing, failing or malformed run-state APIs hold receiving with
+  a named error. Completion is never guessed.
+
+The plan-169 canary (Copilot 1.0.97-1, 250 ms polls) found `isProcessing` true
+through every phase gap of a cascade: primary, judge `reject`, handoff, repair
+and commit. It turned false only after `assistant.idle`. A steering message
+(`delivery: "steering"`) and an abort stayed inside the run, and an abort was
+followed by `assistant.idle`, `session.idle` and then not-processing. A queued
+prompt started straight after the first run, so processing never fell between
+them: the owned message waits for the queued run too. That over-wait is safe;
+early completion is not. Uncommitted phase output is never the final message,
+and the next queued Pij message waits.
+
+The seat publishes `working` from `session.fusion_route_started`, because the
+phases emit no root turn start, and `idle` at a root turn end, `session.idle`,
+`abort` or `session.fusion_completed`. A failed route stays `working`: its
+fallback model still runs the turn. The `critique` pattern was not observed in
+the plan-169 canary; synthetic draft → critic → revision replay passes.
 
 ### Several sessions in one Copilot process (plan 168)
 

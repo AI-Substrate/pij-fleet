@@ -828,6 +828,11 @@ function senderLabel(message) {
 	return message.from_machine === undefined ? seat : `${seat}@${message.from_machine}`;
 }
 
+/** The display prefix that identifies a delivered message in Copilot's queue snapshots. */
+function queuePrefix(message) {
+	return `[pij from ${JSON.stringify(senderLabel(message))}; msg_id=${JSON.stringify(message.msg_id)}]\n`;
+}
+
 function sameMessage(left, right) {
 	return (
 		left?.msg_id === right.msg_id &&
@@ -841,37 +846,27 @@ function sameMessage(left, right) {
 /**
  * Consumption and completion belong to one accepted native message, including after restart.
  *
- * Turn ownership is decided by an event's position in the session's one event
- * order, never by which channel delivered it (plan 169, #46 review). The live
- * push channel and history reads race, and either can miss events, so they are
- * merged by event id into one partial order. An event follows the owned prompt
- * when it is:
- * - the prompt itself, in any copy;
- * - a child of an event that follows it (causality);
- * - the prompt's own foreground turn (its interactionId on a turn_start,
- *   message or tool completion that is not known to precede it);
- * - later, on either channel, than an event that follows it. Each channel's
- *   delivery order is a faithful subsequence of the session's order, and the
- *   same event id on both channels is one position.
+ * Completion is ASKED, never inferred (plan 169, #46 review). Copilot's run
+ * state is authoritative: `metadata.isProcessing()` is true for the whole run,
+ * across every HydraFusion phase, steering message and abort (canary 2026-10-13,
+ * Copilot 1.0.97-1), and `queue.pendingItems()` names what is still queued or
+ * steering. Events only TRIGGER a question; which channel delivered them, in
+ * what order, and to which turn they belong no longer decide anything.
  *
- * The clock never promotes an event past the prompt. Copilot stamps every event
- * from one process's wall clock, but a rollback is only visible once one channel
- * has delivered both sides of it, which can be after a promoted terminal had
- * already released the next message. So a stamp is only a brake (an anchor
- * stamped before the prompt never binds) and a reading of which route preceded
- * the prompt, and it stops being consulted once any channel delivers an older
- * stamp after a newer one.
- *
- * Undecided means "not after the prompt", so the receiver waits rather than
- * releasing early. A fact that arrives late (the prompt seen only through
- * history, a parent backfilled later, a route replayed) revisits every event it
- * can decide.
+ * The owned message is complete once it was consumed (its own `user.message`,
+ * by `messageId`), and a question asked after that finds the session not
+ * processing, nothing steering, no unanswered turn prompt, and the message not
+ * queued. Asking happens on a trigger ({@link RUN_TRIGGERS}) and, with or
+ * without one, at least every {@link RUN_STATE_REASK_MS}, so a lost trigger
+ * costs a delay, never a stuck inbox. A run that continues straight into a
+ * queued prompt is waited out too: over-waiting is safe, early completion is not.
  */
 export class NativeCompletion {
 	constructor(message, cursor, replay = false, jobId) {
 		this.msgId = message.msg_id;
 		this.fromMachine = message.from_machine;
 		this.jobId = jobId;
+		this.from = message.from;
 		this.tailCursor = cursor;
 		this.emptyReads = 0;
 		this.lastProbeAt = 0;
@@ -883,24 +878,10 @@ export class NativeCompletion {
 		this.cursor = replay ? undefined : cursor;
 		this.replay = replay;
 		this.pending = [];
-		this.descendants = new Set();
-		this.finalMessages = new Set();
 		this.waiters = new Set();
-		this.resetOrder();
-	}
-	resetOrder() {
-		this.nodes = new Map();
-		this.children = new Map();
-		this.byFusion = new Map();
-		this.endings = [];
-		this.order = { live: [], history: [] };
-		this.frontier = { live: Number.POSITIVE_INFINITY, history: Number.POSITIVE_INFINITY };
-		this.lastStamp = {};
-		this.promptPos = {};
-		this.laterTurn = { live: Number.POSITIVE_INFINITY, history: Number.POSITIVE_INFINITY };
-		this.laterTurnStamp = undefined;
-		this.clockOk = true;
-		this.queue = [];
+		// Each event triggers at most once, whichever channel repeats it.
+		this.triggered = new Set();
+		this.lastAskAt = Number.NEGATIVE_INFINITY;
 	}
 	notify() {
 		for (const wake of this.waiters) wake();
@@ -909,7 +890,7 @@ export class NativeCompletion {
 		let wake;
 		const observed = new Promise((resolve) => {
 			wake = () => {
-				if (terminal ? this.terminal : this.consumption) resolve();
+				if (terminal ? this.terminal || this.trigger : this.consumption) resolve();
 			};
 			this.waiters.add(wake);
 			wake();
@@ -922,22 +903,10 @@ export class NativeCompletion {
 	}
 	bind(nativeId) {
 		this.nativeId = nativeId;
-		for (const { event, finalMessage, live } of this.pending)
-			this.observe(event, finalMessage, true, true, live);
+		for (const event of this.pending) this.observe(event);
 		this.pending = undefined;
 	}
-	/** `live` is the push channel; history reads (incremental and probe) pass false. */
-	observe(
-		event,
-		// HydraFusion phase output is staged, uncommitted and never the turn's answer.
-		finalMessage = event.type === "assistant.message" &&
-			(event.data?.toolRequests === undefined ||
-				(Array.isArray(event.data.toolRequests) && event.data.toolRequests.length === 0)) &&
-			(event.data?.fusion === undefined || nonempty(event.data.fusion?.commitId)),
-		fresh = true,
-		notify = true,
-		live = true,
-	) {
+	observe(event, fresh = true, notify = true) {
 		if (this.terminal) return;
 		if (
 			fresh &&
@@ -951,347 +920,87 @@ export class NativeCompletion {
 		if (!this.nativeId) {
 			// Keep correlation metadata only, never buffered prompts, tool arguments or model text.
 			this.pending.push({
-				event: {
-					type: event.type,
-					id: event.id,
-					parentId: event.parentId,
-					agentId: event.agentId,
-					timestamp: event.timestamp,
-					data: {
-						messageId: event.data?.messageId,
-						interactionId: event.data?.interactionId,
-						fusionId: fusionIdOf(event),
-					},
-				},
-				finalMessage,
-				live,
+				type: event.type,
+				id: event.id,
+				agentId: event.agentId,
+				data: { messageId: event.data?.messageId },
 			});
 			return;
 		}
-		if (!nonempty(event.id)) return;
-		const channel = live ? "live" : "history";
-		const node = this.nodes.get(event.id) ?? this.track(event, finalMessage);
-		// A repeat on the same channel carries no new position.
-		if (node.pos[channel] !== undefined) return;
-		const consumed = this.consumption;
-		this.place(node, channel);
-		// Index walk: evaluation appends to the queue, and shift() would be quadratic.
-		for (let i = 0; i < this.queue.length && !this.terminal; i++) this.evaluate(this.queue[i]);
-		this.queue = [];
-		if (notify && (this.terminal || (!consumed && this.consumption))) this.notify();
+		if (event.agentId || !nonempty(event.id)) return;
+		if (event.type === "user.message" && event.data?.messageId === this.nativeId) {
+			if (this.consumption) return;
+			this.consumption = { eventId: event.id };
+			if (notify) this.notify();
+			return;
+		}
+		// A trigger before consumption belongs to an earlier run; if this run's own
+		// end arrived before its prompt was seen, the bounded re-ask still finds it.
+		if (this.consumption && RUN_TRIGGERS.has(event.type) && !this.triggered.has(event.id)) {
+			this.triggered.add(event.id);
+			// The earliest trigger since the last question names the completion.
+			this.trigger ??= { type: event.type, eventId: event.id };
+			if (notify) this.notify();
+		}
 	}
-	track(event, finalMessage) {
-		const stamp = Date.parse(event.timestamp);
-		const node = {
-			id: event.id,
-			type: event.type,
-			parentId: event.parentId,
-			root: !event.agentId,
-			interactionId: nonempty(event.data?.interactionId) ? event.data.interactionId : undefined,
-			fusionId: fusionIdOf(event),
-			final: !event.agentId && finalMessage,
-			stamp: Number.isFinite(stamp) ? stamp : undefined,
-			user: event.type === "user.message",
-			prompt:
-				event.type === "user.message" && !event.agentId && event.data?.messageId === this.nativeId,
-			pos: {},
-			after: false,
-			member: false,
+	/**
+	 * Whether a run-state question is due: after consumption, on a trigger, or
+	 * once {@link RUN_STATE_REASK_MS} has passed since consumption or the last ask.
+	 */
+	needsAsk(now) {
+		if (this.terminal || this.consumption === undefined) return false;
+		// The re-ask period counts from consumption, never from before it.
+		this.consumedAt ??= now;
+		if (this.lastAskAt < this.consumedAt) this.lastAskAt = this.consumedAt;
+		return this.trigger !== undefined || now - this.lastAskAt >= RUN_STATE_REASK_MS;
+	}
+	/**
+	 * Apply one run-state answer: `processing` from `metadata.isProcessing()` and
+	 * the `queue.pendingItems()` snapshot. Completes only when no run is active
+	 * and nothing of this message can still run.
+	 */
+	settle({ processing, items, steeringMessages, withdrawableTurnMessageId }, now) {
+		const trigger = this.trigger;
+		this.trigger = undefined;
+		this.lastAskAt = now;
+		const prefix = queuePrefix({
+			msg_id: this.msgId,
+			from: this.from,
+			from_machine: this.fromMachine,
+		});
+		if (
+			this.terminal ||
+			this.consumption === undefined ||
+			processing ||
+			steeringMessages.length > 0 ||
+			withdrawableTurnMessageId !== undefined ||
+			items.some(
+				(item) =>
+					item.id === this.nativeId ||
+					item.messageId === this.nativeId ||
+					item.displayText.startsWith(prefix),
+			)
+		)
+			return;
+		this.terminal = {
+			type: trigger?.type ?? "run-state",
+			eventId: trigger?.eventId ?? null,
 		};
-		this.nodes.set(node.id, node);
-		if (nonempty(node.parentId)) {
-			const siblings = this.children.get(node.parentId);
-			if (siblings) siblings.push(node);
-			else this.children.set(node.parentId, [node]);
-		}
-		if (node.root && node.fusionId !== undefined) {
-			const fused = this.byFusion.get(node.fusionId);
-			if (fused) fused.push(node);
-			else this.byFusion.set(node.fusionId, [node]);
-		}
-		if (node.root && TURN_ENDINGS.has(node.type)) this.endings.push(node);
-		return node;
-	}
-	place(node, channel) {
-		const index = this.order[channel].push(node) - 1;
-		node.pos[channel] = index;
-		// An event already known to follow the prompt anchors every later one here too.
-		if (node.after && index < this.frontier[channel]) this.frontier[channel] = index;
-		if (node.after && node.root && node.user && !node.prompt && index < this.laterTurn[channel])
-			this.laterTurn[channel] = index;
-		const clockWasOk = this.clockOk;
-		if (node.stamp !== undefined) {
-			const last = this.lastStamp[channel];
-			if (last !== undefined && node.stamp < last) this.clockOk = false;
-			if (last === undefined || node.stamp > last) this.lastStamp[channel] = node.stamp;
-		}
-		if (node.prompt) {
-			// Every copy of the owned prompt is the same position; the first one seen
-			// anchors the clock, and any copy may carry the interaction.
-			const learned =
-				this.prompt === undefined ||
-				(this.interactionId === undefined && node.interactionId !== undefined);
-			this.prompt ??= node;
-			this.promptPos[channel] ??= index;
-			this.interactionId ??= node.interactionId;
-			this.consumption ??= { eventId: node.id };
-			// The prompt decides interaction and clock position for everything seen so far.
-			if (learned) for (const seen of this.nodes.values()) this.queue.push(seen);
-		}
-		if (
-			node.prompt ||
-			clockWasOk !== this.clockOk ||
-			(node.root &&
-				(node.user || node.type === "session.fusion_resolved" || ROUTE_ENDS.has(node.type)))
-		)
-			this.refreshRoute();
-		this.queue.push(node);
-	}
-	/**
-	 * Copilot routes a HydraFusion turn just before adding its user message: the
-	 * turn's fusion is the route resolved last before the owned prompt, with no
-	 * other prompt, route attempt or terminal between them. On the clock when it
-	 * is usable, otherwise on each channel's own order (every channel that
-	 * carries a route before the prompt must agree). Either channel can lack the
-	 * events in between, so this stays a revisable reading until the turn's own
-	 * output names its fusion ({@link lockFusion}).
-	 */
-	refreshRoute() {
-		if (this.fusionLocked || this.prompt === undefined) return;
-		const routed =
-			this.clockOk && this.prompt.stamp !== undefined ? this.routeByClock() : this.routeByOrder();
-		if (routed !== this.fusionId) this.setFusion(routed);
-	}
-	routeByClock() {
-		const at = this.prompt.stamp;
-		let route;
-		for (const node of this.nodes.values())
-			if (
-				node.root &&
-				node.type === "session.fusion_resolved" &&
-				node.stamp !== undefined &&
-				node.stamp < at &&
-				(route === undefined || node.stamp > route.stamp)
-			)
-				route = node;
-		if (route === undefined) return undefined;
-		for (const node of this.nodes.values())
-			if (
-				node.root &&
-				!node.prompt &&
-				(node.user || ROUTE_ENDS.has(node.type)) &&
-				node.stamp !== undefined &&
-				node.stamp > route.stamp &&
-				node.stamp < at
-			)
-				return undefined;
-		return route.fusionId;
-	}
-	routeByOrder() {
-		const candidates = [];
-		for (const channel of ["live", "history"]) {
-			const prompt = this.promptPos[channel];
-			for (let i = (prompt ?? 0) - 1; i >= 0; i--) {
-				const node = this.order[channel][i];
-				if (!node.root) continue;
-				if (node.type === "session.fusion_resolved") {
-					candidates.push(node);
-					break;
-				}
-				if (node.user || ROUTE_ENDS.has(node.type)) break;
-			}
-		}
-		// A channel can lack the events in between. A route that some channel
-		// orders before another candidate was not the last one before the prompt.
-		const precedes = (earlier, later) =>
-			["live", "history"].some(
-				(channel) =>
-					earlier.pos[channel] !== undefined &&
-					later.pos[channel] !== undefined &&
-					earlier.pos[channel] < later.pos[channel],
-			);
-		const last = candidates.filter(
-			(node) => !candidates.some((other) => other !== node && precedes(node, other)),
-		);
-		const routes = new Set(last.map((node) => node.fusionId));
-		return routes.size === 1 ? [...routes][0] : undefined;
-	}
-	/** This turn's own output (after the prompt, in its ancestry) names its fusion. */
-	lockFusion(fusionId) {
-		if (this.fusionLocked) return;
-		this.fusionLocked = true;
-		if (fusionId !== this.fusionId) this.setFusion(fusionId);
-	}
-	setFusion(fusionId) {
-		this.fusionId = fusionId;
-		for (const node of this.byFusion.get(fusionId) ?? []) this.queue.push(node);
-		for (const node of this.endings) this.queue.push(node);
-	}
-	/**
-	 * The owned prompt's foreground turn re-anchors a gap in its ancestry, but
-	 * only after the prompt: matching metadata ordered before it never binds.
-	 */
-	sameInteraction(node) {
-		return (
-			node.root &&
-			this.interactionId !== undefined &&
-			node.interactionId === this.interactionId &&
-			INTERACTION_ANCHORS.has(node.type) &&
-			!this.beforePrompt(node)
-		);
-	}
-	/** Known to precede the owned prompt: earlier on a shared channel, or by clock. */
-	beforePrompt(node) {
-		for (const channel of ["live", "history"]) {
-			const prompt = this.promptPos[channel];
-			if (prompt !== undefined && node.pos[channel] !== undefined && node.pos[channel] < prompt)
-				return true;
-		}
-		return (
-			this.clockOk &&
-			this.prompt?.stamp !== undefined &&
-			node.stamp !== undefined &&
-			node.stamp < this.prompt.stamp
-		);
-	}
-	sameFusion(node) {
-		return node.root && this.fusionId !== undefined && node.fusionId === this.fusionId;
-	}
-	evaluate(node) {
-		const parent = this.nodes.get(node.parentId);
-		if (
-			!node.after &&
-			(node.prompt ||
-				parent?.after ||
-				(this.prompt !== undefined && this.sameInteraction(node)) ||
-				this.pastFrontier(node))
-		)
-			this.markAfter(node);
-		// Native callbacks can omit permission ancestors; only the matched user's
-		// foreground turn re-anchors, and another prompt starts another turn.
-		if (
-			!node.member &&
-			(!node.user || node.prompt) &&
-			(node.prompt ||
-				parent?.member ||
-				(this.prompt !== undefined && this.sameInteraction(node)) ||
-				this.sameFusion(node))
-		)
-			this.markMember(node);
-		// The owned turn's own output names its fusion for good: a member (in the
-		// prompt's ancestry, its foreground interaction or its routed fusion) that is
-		// ordered after the prompt. Merely later is not enough, because a later
-		// unrelated prompt's fusion output is after the prompt too, and a route
-		// resolved after the prompt is a later turn's.
-		if (
-			node.root &&
-			node.after &&
-			node.member &&
-			node.fusionId !== undefined &&
-			node.type !== "session.fusion_resolved"
-		)
-			this.lockFusion(node.fusionId);
-		this.checkTerminal(node);
-	}
-	pastFrontier(node) {
-		return (
-			(node.pos.live !== undefined && node.pos.live > this.frontier.live) ||
-			(node.pos.history !== undefined && node.pos.history > this.frontier.history)
-		);
-	}
-	markAfter(node) {
-		node.after = true;
-		// Another root prompt ordered after the owned one starts a later turn.
-		if (node.root && node.user && !node.prompt) {
-			for (const channel of ["live", "history"]) {
-				const index = node.pos[channel];
-				if (index !== undefined && index < this.laterTurn[channel]) this.laterTurn[channel] = index;
-			}
-			if (
-				node.stamp !== undefined &&
-				(this.laterTurnStamp === undefined || node.stamp < this.laterTurnStamp)
-			)
-				this.laterTurnStamp = node.stamp;
-		}
-		for (const channel of ["live", "history"]) {
-			const index = node.pos[channel];
-			if (index === undefined || index >= this.frontier[channel]) continue;
-			const end = Math.min(this.frontier[channel], this.order[channel].length);
-			this.frontier[channel] = index;
-			for (let i = index + 1; i < end; i++) this.queue.push(this.order[channel][i]);
-		}
-		for (const child of this.children.get(node.id) ?? []) this.queue.push(child);
-	}
-	markMember(node) {
-		node.member = true;
-		this.descendants.add(node.id);
-		if (node.final) this.finalMessages.add(node.id);
-		for (const child of this.children.get(node.id) ?? []) this.queue.push(child);
-	}
-	/**
-	 * Known to belong to a turn that started after the owned one: later than a
-	 * later prompt on a shared channel, or stamped after it (a brake only).
-	 */
-	inLaterTurn(node) {
-		return (
-			(node.pos.live !== undefined && node.pos.live > this.laterTurn.live) ||
-			(node.pos.history !== undefined && node.pos.history > this.laterTurn.history) ||
-			(this.clockOk &&
-				this.laterTurnStamp !== undefined &&
-				node.stamp !== undefined &&
-				node.stamp > this.laterTurnStamp)
-		);
-	}
-	/**
-	 * Only an event ordered after the owned prompt can end its turn: a prompt's
-	 * descendant idle/error/abort, a turn_end after a final owned message, its own
-	 * fusion's aggregate completion, or, once the turn is fused, a root
-	 * idle/error/abort that is not known to belong to a later turn (they carry no
-	 * fusion id and may follow persisted-only parents, and an ephemeral idle is
-	 * never readable from history).
-	 */
-	checkTerminal(node) {
-		if (this.terminal || !node.root || !node.after) return;
-		if (
-			(TURN_ENDINGS.has(node.type) &&
-				(node.member || (this.fusionId !== undefined && !this.inLaterTurn(node)))) ||
-			(node.type === "assistant.turn_end" && this.finalMessages.has(node.parentId)) ||
-			(node.type === "session.fusion_completed" && this.sameFusion(node))
-		) {
-			this.terminal = { type: node.type, eventId: node.id };
-			this.descendants.clear();
-			this.finalMessages.clear();
-			this.resetOrder();
-		}
 	}
 }
 
-/** A HydraFusion turn's id: on fusion session/phase events, or a message's `fusion` stamp. */
-function fusionIdOf(event) {
-	const fusionId = event.data?.fusionId ?? event.data?.fusion?.fusionId;
-	return nonempty(fusionId) ? fusionId : undefined;
-}
-
-/** Root events that end a turn without naming it. */
-const TURN_ENDINGS = new Set(["session.idle", "session.error", "abort"]);
-
-/** The foreground turn events that carry the owned prompt's interactionId. */
-const INTERACTION_ANCHORS = new Set([
-	"assistant.turn_start",
-	"assistant.message",
-	"tool.execution_complete",
-]);
-
-/** Root events between a route and a prompt that make the route another turn's. */
-const ROUTE_ENDS = new Set([
-	"session.fusion_route_started",
-	"session.fusion_route_failed",
-	"session.fusion_completed",
+/** Root events after which the run may have ended, so run state is asked again. */
+export const RUN_TRIGGERS = new Set([
 	"session.idle",
-	"session.error",
-	"session.shutdown",
+	"assistant.idle",
 	"abort",
+	"session.error",
+	"assistant.turn_end",
+	"session.fusion_completed",
 ]);
+
+/** Run state is asked at least this often after consumption, trigger or not. */
+export const RUN_STATE_REASK_MS = 30_000;
 
 export class NativeBridge {
 	constructor({
@@ -1610,7 +1319,7 @@ export class NativeBridge {
 				}
 				this.observeProgress(event);
 				const completion = this.completion;
-				// Successful terminal observation clears ancestry; capture its pre-state, not the aftermath.
+				// Capture the completion's pre-state, not the aftermath of this event.
 				const metadata = [
 					"user.message",
 					"assistant.message",
@@ -1620,8 +1329,7 @@ export class NativeBridge {
 					? {
 							completionNativeId: completion?.nativeId ?? null,
 							completionLive: completion?.live ?? false,
-							parentKnown: completion?.descendants.has(event.parentId) ?? false,
-							descendantCount: completion?.descendants.size ?? 0,
+							consumed: completion?.consumption !== undefined,
 						}
 					: undefined;
 				completion?.observe(event);
@@ -1792,7 +1500,7 @@ export class NativeBridge {
 					);
 				for (const event of page.events) {
 					this.observeProgress(event);
-					completion.observe(event, undefined, !completion.replay, true, false);
+					completion.observe(event, !completion.replay);
 					if (nonempty(event.id)) completion.lastEventId = event.id;
 				}
 				completion.cursor = page.cursor;
@@ -1871,8 +1579,12 @@ export class NativeBridge {
 			this.observeProgress(event);
 			// A recovered historical boundary is never authority to re-inject an
 			// accepted message whose consumption may have fallen in the gap.
-			completion.observe(event, undefined, false, false, false);
+			completion.observe(event, false, false);
 		}
+		// A window that shows a consumed run's possible end is settled by asking,
+		// not by holding on the missing anchor: run state, not ancestry, decides.
+		if (completion.msgId && anchor < 0 && !completion.terminal && completion.trigger)
+			await this.askRunEnded(completion);
 		if (completion.msgId && anchor < 0 && !completion.terminal) {
 			completion.gapFirstSeenAt ??= this.now();
 			const elapsedMs = this.now() - completion.gapFirstSeenAt;
@@ -1915,6 +1627,11 @@ export class NativeBridge {
 		let retry = INITIAL_RETRY_MS;
 		while (!(terminal ? completion.terminal : completion.consumption)) {
 			throwIfStopped(signal);
+			// Ask before reading: a history gap must not keep an ended run waiting.
+			if (terminal && completion.needsAsk(this.now())) {
+				await this.askRunEnded(completion);
+				if (completion.terminal) return;
+			}
 			try {
 				await completion.wait(this.readEvents(completion), terminal, signal);
 			} catch (error) {
@@ -1925,6 +1642,7 @@ export class NativeBridge {
 			}
 			throwIfStopped(signal);
 			if (terminal ? completion.terminal : completion.consumption) return;
+			if (terminal && completion.needsAsk(this.now())) continue;
 			if (completion.hasMore) continue;
 			if (message && completion.boundary && (await this.canRetryDiscarded(completion, message)))
 				return true;
@@ -1932,36 +1650,68 @@ export class NativeBridge {
 			retry = Math.min(retry * 2, MAX_RETRY_MS);
 		}
 	}
+	/**
+	 * Ask Copilot whether the consumed message's run has ended
+	 * ({@link NativeCompletion#settle}). Unsupported or malformed answers hold
+	 * receiving: completion is never guessed without them.
+	 */
+	async askRunEnded(completion) {
+		const signal = this.receiverController.signal;
+		const label = "Native completion";
+		try {
+			const pending = await this.readQueueSnapshot(label);
+			const processing = await this.readProcessing(label);
+			completion.settle({ ...pending, processing }, this.now());
+		} catch (error) {
+			if (signal.aborted || error instanceof NativeError) throw error;
+			throw new NativeError(
+				`${label} run-state snapshot failed; receiving held without acknowledgement`,
+			);
+		}
+	}
+	/** A validated `queue.pendingItems()` snapshot. */
+	async readQueueSnapshot(label) {
+		const queue = this.native.rpc?.queue;
+		const metadata = this.native.rpc?.metadata;
+		if (typeof queue?.pendingItems !== "function" || typeof metadata?.isProcessing !== "function")
+			throw new NativeError(
+				`${label} requires supported queue and processing APIs; receiving held`,
+			);
+		const pending = await this.nativeRpc("queue.pendingItems", () => queue.pendingItems());
+		throwIfStopped(this.receiverController.signal);
+		if (
+			!Array.isArray(pending?.items) ||
+			!pending.items.every((item) => nonempty(item?.id) && typeof item.displayText === "string") ||
+			!Array.isArray(pending.steeringMessages) ||
+			!pending.steeringMessages.every((item) => typeof item === "string") ||
+			(pending.inFlightSteeringCount !== undefined &&
+				(!Number.isSafeInteger(pending.inFlightSteeringCount) ||
+					pending.inFlightSteeringCount < 0)) ||
+			(pending.withdrawableTurnMessageId !== undefined &&
+				!nonempty(pending.withdrawableTurnMessageId))
+		)
+			throw new NativeError(`${label} received malformed queue snapshot; receiving held`);
+		return pending;
+	}
+	/** A validated `metadata.isProcessing()` answer. */
+	async readProcessing(label) {
+		const metadata = this.native.rpc.metadata;
+		const state = await this.nativeRpc("metadata.isProcessing", () => metadata.isProcessing());
+		throwIfStopped(this.receiverController.signal);
+		if (typeof state?.processing !== "boolean")
+			throw new NativeError(`${label} received malformed processing snapshot; receiving held`);
+		return state.processing;
+	}
 	async canRetryDiscarded(completion, message) {
 		const signal = this.receiverController.signal;
 		if (completion.discardUncertain)
 			throw new NativeError(
 				"Native receiver progress gap cannot prove discarded consumption; receiving held without reinjection",
 			);
-		const queue = this.native.rpc?.queue;
-		const metadata = this.native.rpc?.metadata;
-		if (typeof queue?.pendingItems !== "function" || typeof metadata?.isProcessing !== "function")
-			throw new NativeError(
-				"Native discard recovery requires supported queue and processing APIs; receiving held",
-			);
+		const label = "Native discard recovery";
 		try {
-			const pending = await this.nativeRpc("queue.pendingItems", () => queue.pendingItems());
-			throwIfStopped(signal);
-			if (
-				!Array.isArray(pending?.items) ||
-				!pending.items.every(
-					(item) => nonempty(item?.id) && typeof item.displayText === "string",
-				) ||
-				!Array.isArray(pending.steeringMessages) ||
-				!pending.steeringMessages.every((item) => typeof item === "string") ||
-				(pending.inFlightSteeringCount !== undefined &&
-					(!Number.isSafeInteger(pending.inFlightSteeringCount) ||
-						pending.inFlightSteeringCount < 0))
-			)
-				throw new NativeError(
-					"Native discard recovery received malformed queue snapshot; receiving held",
-				);
-			const prefix = `[pij from ${JSON.stringify(senderLabel(message))}; msg_id=${JSON.stringify(message.msg_id)}]\n`;
+			const pending = await this.readQueueSnapshot(label);
+			const prefix = queuePrefix(message);
 			if (
 				pending.items.some(
 					(item) => item.id === completion.nativeId || item.displayText.startsWith(prefix),
@@ -1970,13 +1720,7 @@ export class NativeBridge {
 				pending.inFlightSteeringCount > 0
 			)
 				return false;
-			const state = await this.nativeRpc("metadata.isProcessing", () => metadata.isProcessing());
-			throwIfStopped(signal);
-			if (typeof state?.processing !== "boolean")
-				throw new NativeError(
-					"Native discard recovery received malformed processing snapshot; receiving held",
-				);
-			if (state.processing) return false;
+			if (await this.readProcessing(label)) return false;
 			// A fresh cursor read after both snapshots catches consumption whose
 			// live callback was omitted. Drain pages before concluding absence.
 			do {

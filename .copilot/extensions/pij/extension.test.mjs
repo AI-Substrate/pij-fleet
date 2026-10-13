@@ -75,7 +75,10 @@ if (process.env.PIJ_NATIVE_EXTENSION_TEST === "1") {
             const next=Number(cursor)+events.length;
             return {events,cursor:String(next),hasMore:next<history.length,cursorStatus:'ok'};
           }
-        } },
+        },
+        // The fixture's turns end inside the events the test pushes: never busy when asked.
+        queue: { async pendingItems() { return {items:[],steeringMessages:[]}; } },
+        metadata: { async isProcessing() { return {processing:false}; } } },
         async log(message, options) { emit({kind:'native-log',message,options}); },
         async disconnect() {}
       };

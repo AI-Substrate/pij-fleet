@@ -128,6 +128,15 @@ function fixture(overrides = {}) {
 			return true;
 		},
 	};
+	// Copilot's run state. A test that delivers events from a run still in flight
+	// sets `processing` and ends the run with `endRun()`; by default the session is
+	// idle whenever it is asked, as after a run that has finished.
+	const runState = {
+		processing: false,
+		items: [],
+		steeringMessages: [],
+		withdrawableTurnMessageId: undefined,
+	};
 	const native = {
 		on(fn) {
 			trace.push("subscribe");
@@ -170,6 +179,23 @@ function fixture(overrides = {}) {
 						cursor: String(next),
 						hasMore: next < snapshot.length,
 						cursorStatus: "ok",
+					};
+				},
+			},
+			// Copilot's run state, read through the same RPCs the bridge asks.
+			metadata: {
+				async isProcessing() {
+					return { processing: runState.processing };
+				},
+			},
+			queue: {
+				async pendingItems() {
+					return {
+						items: runState.items,
+						steeringMessages: runState.steeringMessages,
+						...(runState.withdrawableTurnMessageId === undefined
+							? {}
+							: { withdrawableTurnMessageId: runState.withdrawableTurnMessageId }),
 					};
 				},
 			},
@@ -238,6 +264,12 @@ function fixture(overrides = {}) {
 		client,
 		reports,
 		event: (event) => observer(event),
+		runState,
+		/** The run ends: Copilot stops processing, then emits `event` (a trigger). */
+		endRun: (event) => {
+			runState.processing = false;
+			if (event) observer(event);
+		},
 	};
 }
 
@@ -923,6 +955,8 @@ test("native consumption: replayed tool turns and unrelated final turns cannot c
 		{ type: "abort", id: "global-abort", parentId: "foreign-root", data: { reason: "user" } },
 	];
 	f.native.getEvents = async () => (f.trace.includes("send") ? history : []);
+	// The owned run is still in flight while the others' turns are replayed.
+	f.runState.processing = true;
 	const run = f.bridge.run();
 	await f.accepted.promise;
 	await flush();
@@ -932,6 +966,7 @@ test("native consumption: replayed tool turns and unrelated final turns cannot c
 		f.reports.some((event) => event.kind === "native-completed"),
 		false,
 	);
+	f.runState.processing = false;
 	history.push(
 		{
 			type: "assistant.message",
@@ -1163,6 +1198,8 @@ test("busy native turn consumes immediate steering and journals its returned mes
 		}
 		return nativeId;
 	};
+	// The human's run is in flight; the steering message joins it.
+	f.runState.processing = true;
 	const run = f.bridge.run();
 	await flush();
 	assert.equal(f.history.at(-1).data.delivery, "steering");
@@ -1183,6 +1220,7 @@ test("busy native turn consumes immediate steering and journals its returned mes
 	nativeTerminal(f, "human-turn");
 	await flush();
 	assert.equal(f.trace.filter((step) => step === "claim").length, 1);
+	f.endRun();
 	nativeTerminal(f, "steering-user");
 	await flush();
 	assert.equal(f.trace.filter((step) => step === "claim").length, 2);
@@ -2856,7 +2894,7 @@ function nativeTerminal(f, parentId, type = "session.idle", extra = {}) {
 }
 
 for (const type of ["session.idle", "session.error"]) {
-	test(`native-event diagnostics retain pre-observe ancestry for healthy ${type}`, async (t) => {
+	test(`native-event diagnostics report the completion's pre-state for a healthy ${type}`, async (t) => {
 		const f = fixture();
 		const run = f.bridge.run();
 		t.after(async () => {
@@ -2886,24 +2924,20 @@ for (const type of ["session.idle", "session.error"]) {
 			interactionId: null,
 			completionNativeId: "native-message-137",
 			completionLive: true,
-			parentKnown: true,
-			descendantCount: 3,
-			terminal: { type, eventId: "terminal-diagnostic-assistant" },
+			consumed: true,
+			// The trigger only asks; completion follows the run-state answer.
+			terminal: null,
 			grade: "native-event-not-pij-ack",
 		});
-		assert.equal(events[0].parentKnown, false);
-		assert.equal(events[0].descendantCount, 1);
 		assert.equal(events[0].interactionId, "diagnostic-interaction");
-		assert.equal(events[1].parentKnown, true);
-		assert.equal(events[1].descendantCount, 2);
-		assert.equal(f.bridge.completion.descendants.size, 0);
+		assert.equal(events[1].consumed, true);
 		await flush();
 		assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 1);
 		assert.equal(f.trace.filter((event) => event === "claim").length, 2);
 	});
 }
 
-test("native-event diagnostics identify rejected idle without declaring a stall", async (t) => {
+test("native-event diagnostics report an idle during a running turn without declaring a stall", async (t) => {
 	const f = fixture();
 	const run = f.bridge.run();
 	t.after(async () => {
@@ -2911,12 +2945,13 @@ test("native-event diagnostics identify rejected idle without declaring a stall"
 		await run;
 	});
 	await f.accepted.promise;
+	f.runState.processing = true;
 	const root = nativeUser(f, "native-message-137", "diagnostic-user", "owned-interaction");
 	nativeTerminal(f, "missing-parent", "session.idle", {
 		data: { interactionId: "foreign-interaction" },
 	});
-	const rejected = f.reports.filter((event) => event.kind === "native-event").at(-1);
-	assert.deepEqual(rejected, {
+	const idle = f.reports.filter((event) => event.kind === "native-event").at(-1);
+	assert.deepEqual(idle, {
 		kind: "native-event",
 		seat: registration.id,
 		nativeSession: registration.harness_session,
@@ -2928,15 +2963,13 @@ test("native-event diagnostics identify rejected idle without declaring a stall"
 		interactionId: "foreign-interaction",
 		completionNativeId: "native-message-137",
 		completionLive: true,
-		parentKnown: false,
-		descendantCount: 2,
+		consumed: true,
 		terminal: null,
 		grade: "native-event-not-pij-ack",
 	});
 	nativeTerminal(f, root, "session.idle", { agentId: "subagent" });
 	const subagent = f.reports.filter((event) => event.kind === "native-event").at(-1);
 	assert.equal(subagent.agentId, "subagent");
-	assert.equal(subagent.parentKnown, true);
 	assert.equal(subagent.terminal, null);
 	await flush();
 	assert.equal(f.reports.filter((event) => event.kind === "native-event").length, 3);
@@ -2967,8 +3000,7 @@ test("native-event diagnostics expose only scalar IDs and never callback or buff
 	const before = f.reports.find((event) => event.kind === "native-event");
 	assert.equal(before.completionNativeId, null);
 	assert.equal(before.completionLive, false);
-	assert.equal(before.parentKnown, false);
-	assert.equal(before.descendantCount, 0);
+	assert.equal(before.consumed, false);
 	assert.equal(before.terminal, null);
 	await sending.promise;
 	const secret = "NEVER_LOG_BODY_ARGS_OR_CREDENTIALS";
@@ -3007,8 +3039,7 @@ test("native-event diagnostics expose only scalar IDs and never callback or buff
 	for (const event of events.slice(1)) {
 		assert.equal(event.completionNativeId, null);
 		assert.equal(event.completionLive, true);
-		assert.equal(event.parentKnown, false);
-		assert.equal(event.descendantCount, 0);
+		assert.equal(event.consumed, false);
 		assert.equal(event.terminal, null);
 		assert.deepEqual(
 			Object.keys(event).sort(),
@@ -3024,8 +3055,7 @@ test("native-event diagnostics expose only scalar IDs and never callback or buff
 				"interactionId",
 				"completionNativeId",
 				"completionLive",
-				"parentKnown",
-				"descendantCount",
+				"consumed",
 				"terminal",
 				"grade",
 			].sort(),
@@ -3041,6 +3071,7 @@ test("post-ack barrier blocks next claim until current native completion, not ou
 	t.after(() => f.bridge.stop());
 	const run = f.bridge.run();
 	await f.accepted.promise;
+	f.runState.processing = true;
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
 	assert.equal(f.trace.includes("ack"), true);
@@ -3060,6 +3091,7 @@ test("post-ack barrier blocks next claim until current native completion, not ou
 	});
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	f.endRun();
 	nativeTerminal(f, "assistant-current");
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 2);
@@ -3150,6 +3182,8 @@ test("post-ack barrier cannot release a later send from earlier generation event
 	await flush();
 	assert.equal(sends, 2);
 	assert.equal(claims, 2);
+	// The second message's run is in flight while the first one's stragglers arrive.
+	f.runState.processing = true;
 	const currentUser = nativeUser(f, "native-2", "user-native-2", "interaction-2");
 	nativeTerminal(f, "user-native-1");
 	f.event({
@@ -3174,6 +3208,7 @@ test("post-ack barrier cannot release a later send from earlier generation event
 		parentId: "omitted-current-parent",
 		data: { interactionId: "interaction-2", turnId: "0" },
 	});
+	f.endRun();
 	nativeTerminal(f, "current-interaction");
 	await flush();
 	assert.equal(claims, 3);
@@ -3315,7 +3350,8 @@ function hydraFusionCascade(f, { user = "fused-user" } = {}) {
 			parentId: "checkpoint",
 			data: fusion({ commitId: "fusion-1:commit", outcome: "completed" }),
 		});
-		f.event({ type: "session.idle", id: "idle", parentId: "gap-8", ephemeral: true, data: {} });
+		// Copilot stops processing only after the fused run's last event (canary 2026-10-13).
+		f.endRun({ type: "session.idle", id: "idle", parentId: "gap-8", ephemeral: true, data: {} });
 	};
 	return { before, commit };
 }
@@ -3325,6 +3361,7 @@ test("hydrafusion cascade: the committed repair turn completes owned work, never
 	t.after(() => f.bridge.stop());
 	const run = f.bridge.run();
 	await f.accepted.promise;
+	f.runState.processing = true;
 	const cascade = hydraFusionCascade(f);
 	cascade.before();
 	await flush();
@@ -3334,12 +3371,9 @@ test("hydrafusion cascade: the committed repair turn completes owned work, never
 	assert.equal(
 		f.trace.filter((x) => x === "claim").length,
 		2,
-		"the next message waits only for the commit",
+		"the next message waits only for the run to end",
 	);
-	assert.deepEqual(
-		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
-		["commit-end-2"],
-	);
+	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 1);
 	f.bridge.stop();
 	await run;
 });
@@ -3349,6 +3383,7 @@ test("hydrafusion: uncommitted phase output never ends the turn", async (t) => {
 	t.after(() => f.bridge.stop());
 	const run = f.bridge.run();
 	await f.accepted.promise;
+	f.runState.processing = true;
 	hydraFusionCascade(f).before();
 	f.event({ type: "assistant.turn_end", id: "phase-end", parentId: "primary-draft", data: {} });
 	await flush();
@@ -3363,6 +3398,7 @@ test("hydrafusion: another fusion's completion never completes owned work", asyn
 	t.after(() => f.bridge.stop());
 	const run = f.bridge.run();
 	await f.accepted.promise;
+	f.runState.processing = true;
 	hydraFusionCascade(f).before();
 	f.event({
 		type: "session.fusion_completed",
@@ -3427,6 +3463,7 @@ test("hydrafusion: idle before the owned prompt, or from a sub-agent, never ends
 	t.after(() => f.bridge.stop());
 	const run = f.bridge.run();
 	await f.accepted.promise;
+	f.runState.processing = true;
 	// A previous fused turn routed and completed before this prompt was dequeued.
 	f.event({ type: "session.fusion_resolved", id: "old-resolved", data: { fusionId: "fusion-0" } });
 	f.event({ type: "session.fusion_completed", id: "old-done", data: { fusionId: "fusion-0" } });
@@ -3470,6 +3507,7 @@ for (const type of ["abort", "session.error"]) {
 		f.event(resolved);
 		f.event(user);
 		await f.accepted.promise;
+		f.runState.processing = true;
 		page.resolve({
 			events: [
 				{ type, id: "previous-terminal", parentId: "previous-user", data: {} },
@@ -3515,6 +3553,7 @@ for (const stop of ["abort", "session.idle", "session.error"]) {
 		t.after(() => f.bridge.stop());
 		const run = f.bridge.run();
 		await f.accepted.promise;
+		f.runState.processing = true;
 		f.event({ type: "session.fusion_resolved", id: "prior-resolved", data: { fusionId: "prior" } });
 		f.event({ type: stop, id: "prior-stop", parentId: "prior-gap", data: {} });
 		f.event({ type: "session.fusion_route_failed", id: "route-failed", data: {} });
@@ -3532,6 +3571,7 @@ test("hydrafusion: a late history page's old route is never adopted by a live pl
 	t.after(() => f.bridge.stop());
 	const run = f.bridge.run();
 	await f.accepted.promise;
+	f.runState.processing = true;
 	f.history.push({
 		type: "session.fusion_resolved",
 		id: "old-resolved",
@@ -3618,7 +3658,11 @@ test("hydrafusion: a bounded history window's fused output orders its abort afte
 		request.direction === "backward"
 			? { events: window, cursor: "before-window", cursorStatus: "ok", hasMore: true }
 			: read(request);
-	await f.bridge.probeReceiver(f.bridge.completion);
+	// The bounded window has no anchor, so the probe still reports its gap; the
+	// abort it delivered is enough to ask, and the run has ended.
+	await f.bridge.probeReceiver(f.bridge.completion).catch((error) => {
+		assert.equal(error.holdKind, "receiver-gap");
+	});
 	await flush();
 	assert.deepEqual(
 		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
@@ -3706,6 +3750,7 @@ test("hydrafusion: a critique (draft, critic, revision) waits for the revision's
 	t.after(() => f.bridge.stop());
 	const run = f.bridge.run();
 	await f.accepted.promise;
+	f.runState.processing = true;
 	const fusion = (extra = {}) => ({ fusionId: "critique", ...extra });
 	f.event({
 		type: "session.fusion_resolved",
@@ -3748,6 +3793,7 @@ test("hydrafusion: a critique (draft, critic, revision) waits for the revision's
 			fusion: fusion({ commitId: "critique:commit" }),
 		},
 	});
+	f.endRun();
 	f.event({
 		type: "assistant.turn_end",
 		id: "revision-commit-end",
@@ -3763,49 +3809,11 @@ test("hydrafusion: a critique (draft, critic, revision) waits for the revision's
 	await run;
 });
 
-// #46 review r4: merely later is not owned; a later prompt's fusion never
-// names or ends the owned plain prompt's turn, even all-live on one clock.
-test("hydrafusion: a later unrelated fusion never completes the owned plain prompt", () => {
-	const completion = new NativeCompletion({ msg_id: "owned" }, "0");
-	completion.bind("owned-native");
-	for (const [i, event] of [
-		{
-			type: "user.message",
-			id: "owned-user",
-			data: { messageId: "owned-native", interactionId: "I" },
-		},
-		{ type: "session.fusion_resolved", id: "later-route", data: { fusionId: "later" } },
-		{
-			type: "user.message",
-			id: "later-user",
-			data: { messageId: "later-native", interactionId: "K" },
-		},
-		{
-			type: "assistant.message",
-			id: "later-phase",
-			parentId: "gap",
-			data: { interactionId: "K", toolRequests: [], fusion: { fusionId: "later" } },
-		},
-		{
-			type: "session.fusion_completed",
-			id: "later-done",
-			parentId: "gap",
-			data: { fusionId: "later" },
-		},
-	].entries())
-		completion.observe({
-			...event,
-			timestamp: new Date(Date.UTC(2026, 9, 13, 0, 0, i)).toISOString(),
-		});
-	assert.equal(completion.terminal, undefined);
-	assert.equal(completion.fusionId, undefined);
-});
-
 /**
- * #46 round 3: recorded turn shapes (ids shortened, `g*` parents are
- * persisted-only events never seen live), each with the terminals that may end
- * it. Every allowed terminal is ordered after the commit, or is the turn's own
- * abort/fallback end.
+ * #46: recorded turn shapes (ids shortened, `g*` parents are persisted-only
+ * events never seen live), each with `end`, the event at which Copilot stops
+ * processing. The run-state oracle answers `processing` from the latest event
+ * that has occurred, the way `metadata.isProcessing()` reflects the runtime.
  */
 const PERMUTATION_TURNS = (() => {
 	const fused = (extra = {}) => ({ fusionId: "F", ...extra });
@@ -3838,7 +3846,7 @@ const PERMUTATION_TURNS = (() => {
 	return {
 		single: {
 			events: [route, prompt, phase("PH", "g1", "I"), commit("I"), commitEnd, completed],
-			allowed: ["CE", "FC"],
+			end: "FC",
 		},
 		"cascade with repair": {
 			events: [
@@ -3850,7 +3858,7 @@ const PERMUTATION_TURNS = (() => {
 				commitEnd,
 				completed,
 			],
-			allowed: ["CE", "FC"],
+			end: "FC",
 		},
 		"abort behind a missing parent": {
 			events: [
@@ -3860,7 +3868,7 @@ const PERMUTATION_TURNS = (() => {
 				{ type: "assistant.turn_end", id: "PE", parentId: "PH", data: {} },
 				{ type: "abort", id: "A", parentId: "g2", data: { reason: "user_initiated" } },
 			],
-			allowed: ["A"],
+			end: "A",
 		},
 		"route_failed fallback": {
 			events: [
@@ -3876,7 +3884,7 @@ const PERMUTATION_TURNS = (() => {
 				{ type: "assistant.turn_end", id: "T", parentId: "M", data: {} },
 				{ type: "session.idle", id: "IDLE", parentId: "T", ephemeral: true, data: {} },
 			],
-			allowed: ["T", "IDLE"],
+			end: "IDLE",
 		},
 		"prior turn's fusion and abort": {
 			events: [
@@ -3888,7 +3896,7 @@ const PERMUTATION_TURNS = (() => {
 				commitEnd,
 				completed,
 			],
-			allowed: ["CE", "FC"],
+			end: "FC",
 		},
 		"plain turn": {
 			events: [
@@ -3903,10 +3911,10 @@ const PERMUTATION_TURNS = (() => {
 				{ type: "assistant.turn_end", id: "T", parentId: "M", data: {} },
 				{ type: "session.idle", id: "IDLE", parentId: "T", ephemeral: true, data: {} },
 			],
-			allowed: ["T", "IDLE"],
+			end: "IDLE",
 		},
-		// #46 round 4: the owned plain prompt never finishes; a later unrelated
-		// prompt's fusion output and completion are after it but never its own.
+		// The owned plain prompt never ends on its own; a later unrelated fused turn
+		// runs, and the session only stops processing at that turn's idle.
 		"unfinished plain prompt, then a later unrelated fusion": {
 			events: [
 				prompt,
@@ -3931,12 +3939,10 @@ const PERMUTATION_TURNS = (() => {
 				{ type: "session.fusion_completed", id: "XFC", parentId: "gx3", data: { fusionId: "X" } },
 				{ type: "session.idle", id: "XIDLE", parentId: "gx4", ephemeral: true, data: {} },
 			],
-			allowed: [],
+			end: "XIDLE",
 		},
-		// The owned fused turn never finishes; a later plain turn's idle has no
-		// ancestry. Only the order shows it is the later turn's, so this holds
-		// for real channels: the push channel carries every event and history
-		// never carries an ephemeral one.
+		// The owned fused turn never ends on its own; a later plain turn runs, and
+		// the session only stops processing at that turn's idle.
 		"unfinished fusion, then a later plain turn": {
 			events: [
 				route,
@@ -3952,16 +3958,15 @@ const PERMUTATION_TURNS = (() => {
 				{ type: "assistant.turn_end", id: "XT", parentId: "XM", data: {} },
 				{ type: "session.idle", id: "XIDLE", parentId: "gx4", ephemeral: true, data: {} },
 			],
-			allowed: [],
-			realChannels: true,
+			end: "XIDLE",
 		},
 	};
 })();
 
 /**
  * Every split of `count` events across live, history or both, in every
- * interleaving that keeps each channel's order. `visit(path, liveComplete)`
- * gets `[index, live]` deliveries.
+ * interleaving that keeps each channel's order. `visit(path)` gets
+ * `[index, live]` deliveries.
  */
 function forEachDelivery(count, visit) {
 	for (let code = 0; code < 3 ** count; code++) {
@@ -3974,10 +3979,9 @@ function forEachDelivery(count, visit) {
 			if (split !== 1) live.push(i);
 			if (split !== 0) history.push(i);
 		}
-		const liveComplete = live.length === count;
 		const path = [];
 		const walk = (a, b) => {
-			if (a === live.length && b === history.length) return visit(path, liveComplete);
+			if (a === live.length && b === history.length) return visit(path);
 			if (a < live.length) {
 				path.push([live[a], true]);
 				walk(a + 1, b);
@@ -3993,85 +3997,39 @@ function forEachDelivery(count, visit) {
 	}
 }
 
-for (const [clock, stampOf, only] of [
-	["stamped", (i) => Date.UTC(2026, 9, 13, 0, 0, i)],
-	["unstamped", undefined],
-	// The clock steps back after the prior turn: its stale abort is stamped later
-	// than this prompt. Only that shape has a prior turn for the clock to misplace.
-	[
-		"rolled-back",
-		(i) => Date.UTC(2026, 9, 13, 0, 0, i < 2 ? 50 + i : i),
-		["prior turn's fusion and abort"],
-	],
-]) {
-	for (const [name, { events, allowed, realChannels }] of Object.entries(PERMUTATION_TURNS)) {
-		if (only && !only.includes(name)) continue;
-		test(`hydrafusion permutations (${clock}): ${name} completes once, only at its own terminal`, () => {
-			const delivered = events.map((event, i) =>
-				stampOf ? { ...event, timestamp: new Date(stampOf(i)).toISOString() } : event,
-			);
-			const failures = [];
-			forEachDelivery(events.length, (path, liveComplete) => {
-				const completion = new NativeCompletion({ msg_id: "pij-1" }, "0");
-				completion.bind("native-1");
-				// History never carries an ephemeral event.
-				if (realChannels && path.some(([index, live]) => !live && events[index].ephemeral)) return;
-				for (const [index, live] of path) {
-					completion.observe(delivered[index], undefined, true, false, live);
+// Safety: never complete while the run is processing. Liveness: complete once
+// it is not, after a trigger or the bounded re-ask. Any split, any interleaving,
+// duplicates included: which channel delivered what no longer decides anything.
+for (const [name, { events, end }] of Object.entries(PERMUTATION_TURNS)) {
+	test(`run-state permutations: ${name} completes only after its run stops processing`, () => {
+		const endIndex = events.findIndex((event) => event.id === end);
+		const failures = [];
+		forEachDelivery(events.length, (path) => {
+			const completion = new NativeCompletion({ msg_id: "pij-1", from: "pij-peer" }, "0");
+			completion.bind("native-1");
+			let occurred = -1;
+			const ask = (now) => {
+				if (completion.needsAsk(now))
+					completion.settle(
+						{ processing: occurred < endIndex, items: [], steeringMessages: [] },
+						now,
+					);
+			};
+			const trace = () => path.map(([i, live]) => `${live ? "L" : "H"}:${events[i].id}`).join(" ");
+			for (const [step, [index]] of path.entries()) {
+				occurred = Math.max(occurred, index);
+				completion.observe(events[index]);
+				ask(step);
+				if (completion.terminal && occurred < endIndex) {
+					failures.push(`completed while processing: ${trace()}`);
+					return;
 				}
-				const trace = () =>
-					path.map(([i, live]) => `${live ? "L" : "H"}:${events[i].id}`).join(" ");
-				// Safety: never a terminal that is not this turn's own; in every split,
-				// or for real channels whenever the push channel carries every event.
-				if (
-					(!realChannels || liveComplete) &&
-					completion.terminal &&
-					!allowed.includes(completion.terminal.eventId)
-				)
-					failures.push(`ended at ${completion.terminal.eventId}: ${trace()}`);
-				// Liveness whenever the push channel carries every event, as it does.
-				if (liveComplete && allowed.length > 0 && !completion.terminal)
-					failures.push(`never ended: ${trace()}`);
-			});
-			assert.deepEqual(failures.slice(0, 5), []);
+			}
+			// No further trigger: the bounded re-ask still finds the ended run.
+			ask(Number.MAX_SAFE_INTEGER);
+			if (!completion.terminal) failures.push(`never ended: ${trace()}`);
 		});
-	}
-}
-
-for (const changed of [
-	{ parentId: "unrelated-end" },
-	{ parentId: "owned-user" },
-	{ agentId: "subagent" },
-	{ data: { messageId: "next-native" } },
-]) {
-	test(`post-ack barrier rejects unproven foreground transition ${JSON.stringify(changed)}`, async (t) => {
-		const f = fixture();
-		t.after(() => f.bridge.stop());
-		const run = f.bridge.run();
-		await f.accepted.promise;
-		const user = nativeUser(f, "native-message-137", "owned-user", "owned-interaction");
-		f.event({ type: "assistant.turn_end", id: "owned-end", parentId: user, data: {} });
-		f.event({
-			type: "user.message",
-			id: "next-user",
-			parentId: "owned-end",
-			data: { messageId: "next-native", interactionId: "next-interaction" },
-			...changed,
-		});
-		f.event({
-			type: "assistant.message",
-			id: "next-answer",
-			parentId: "next-user",
-			data: { interactionId: "next-interaction" },
-		});
-		nativeTerminal(f, "next-answer");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
-		nativeTerminal(f, "owned-end");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 2);
-		f.bridge.stop();
-		await run;
+		assert.deepEqual(failures.slice(0, 5), []);
 	});
 }
 
@@ -4237,7 +4195,12 @@ test("post-ack interaction anchor repairs the direct product permission gap with
 		{ type: "assistant.turn_end", id: "product-41", parentId: "product-38", data: { turnId: "1" } },
 		{ type: "assistant.idle", id: "product-43", parentId: "product-41", ephemeral: true, data: {} },
 	];
-	for (const event of events) f.event(event);
+	// The run spans both turns; Copilot stops processing at the second turn's end.
+	f.runState.processing = true;
+	for (const event of events) {
+		if (event.id === "product-41") f.runState.processing = false;
+		f.event(event);
+	}
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 2);
 	assert.equal(f.trace.filter((x) => x === "ack").length, 1);
@@ -4254,95 +4217,13 @@ test("post-ack interaction anchor repairs the direct product permission gap with
 	});
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 2);
-	assert.equal(
-		f.reports.filter((e) => e.kind === "native-completed" && e.eventId === "product-41").length,
-		1,
-	);
+	// Completed once, when the run ended, never at the later session.idle.
+	const completed = f.reports.filter((e) => e.kind === "native-completed");
+	assert.equal(completed.length, 1);
+	assert.notEqual(completed[0].eventId, "product-44");
 	f.bridge.stop();
 	await run;
 });
-
-for (const type of ["assistant.turn_start", "assistant.message", "tool.execution_complete"]) {
-	test(`post-ack interaction anchor accepts only the matched foreground ${type}`, async (t) => {
-		const f = fixture();
-		t.after(() => f.bridge.stop());
-		const run = f.bridge.run();
-		await f.accepted.promise;
-		const anchor = {
-			type,
-			id: "unbound",
-			parentId: "omitted-parent",
-			data: { interactionId: "owned-interaction", turnId: "0" },
-		};
-		// Neither pre-root metadata nor a foreign/subagent user may establish the binding.
-		f.event(anchor);
-		nativeTerminal(f, anchor.id);
-		nativeUser(f, "foreign-native", "foreign-user", "owned-interaction");
-		f.event({
-			type: "user.message",
-			id: "child-user",
-			agentId: "child",
-			data: { messageId: "native-message-137", interactionId: "owned-interaction" },
-		});
-		f.event({ ...anchor, id: "still-unbound" });
-		nativeTerminal(f, "still-unbound");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
-		nativeUser(f, "native-message-137", "owned-user", "owned-interaction");
-		for (const terminal of ["session.idle", "session.error"]) {
-			f.event({ ...anchor, type: terminal, id: terminal });
-		}
-		for (const rejected of [
-			{ ...anchor, id: "foreign", data: { interactionId: "foreign-interaction", turnId: "0" } },
-			{ ...anchor, id: "child", agentId: "child" },
-			{ ...anchor, id: "turn-only", data: { turnId: "0" } },
-		]) {
-			f.event(rejected);
-			nativeTerminal(f, rejected.id);
-		}
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
-		f.event({ ...anchor, id: "owned-anchor" });
-		f.event({
-			type: "assistant.turn_end",
-			id: "owned-end",
-			parentId: "owned-anchor",
-			data: { turnId: "0" },
-		});
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, type === "assistant.message" ? 2 : 1);
-		nativeTerminal(f, "owned-end");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 2);
-		f.bridge.stop();
-		await run;
-	});
-}
-
-for (const interactionId of [undefined, "", "   "]) {
-	test(`post-ack interaction anchor rejects absent or blank binding ${JSON.stringify(interactionId)}`, async (t) => {
-		const f = fixture();
-		t.after(() => f.bridge.stop());
-		const run = f.bridge.run();
-		await f.accepted.promise;
-		const root = nativeUser(f, "native-message-137", "owned-user", interactionId);
-		f.event({
-			type: "assistant.message",
-			id: "unbound-message",
-			parentId: "omitted-parent",
-			data: { interactionId },
-		});
-		nativeTerminal(f, "unbound-message");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
-		// Existing complete ancestry still works without interaction metadata.
-		nativeTerminal(f, root);
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 2);
-		f.bridge.stop();
-		await run;
-	});
-}
 
 test("post-ack interaction anchor retains correlation before send acceptance", async (t) => {
 	const f = fixture();
