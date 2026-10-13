@@ -379,6 +379,13 @@ impl FakeLimits {
             },
         );
     }
+
+    fn clear(&self, seat: &str) {
+        self.0
+            .lock()
+            .expect("fake limits")
+            .remove(&format!("session-{seat}"));
+    }
 }
 
 impl UsageLimitSource for FakeLimits {
@@ -595,6 +602,380 @@ async fn with_no_pa_a_late_reset_wakes_the_designated_prime_at_once() {
         services.watchdogs().limit_wakes().await.unwrap()[0].target_source,
         "prime-designation"
     );
+}
+
+/// How plan 173's fleets name their prime.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PrimeBy {
+    /// The current prime designation.
+    Designation,
+    /// The seat's own `prime` role.
+    Role,
+    /// Neither: the PA's parent is just a seat.
+    Nobody,
+}
+
+/// Plan 173: a prime, its PA and one working worker in one repository, on a
+/// fake clock of whole minutes from `start`.
+struct PrimeFleet {
+    services: crate::Services,
+    limits: Arc<FakeLimits>,
+    prime: SeatDescriptor,
+    pa: SeatDescriptor,
+    worker: SeatDescriptor,
+    start: u64,
+    _store: FreshStore,
+    _repos: Repos,
+}
+
+impl PrimeFleet {
+    async fn new(by: PrimeBy) -> Self {
+        let repos = Repos::new();
+        let (mut services, store) = services().await;
+        let limits = Arc::new(FakeLimits::default());
+        services.usage_limits = limits.clone();
+        let main = repos.path("main");
+        let prime = seat("pij-prime", &main, None);
+        let pa = seat("pij-pa", &main, Some("pij-prime"));
+        let mut worker = seat("pij-worker", &repos.path("feature"), Some("pij-prime"));
+        worker.state = SystemState::Working;
+        for descriptor in [prime.clone(), pa.clone(), worker.clone()] {
+            services.registry.put(descriptor).await.unwrap();
+        }
+        services
+            .roles
+            .assert_role(&prime.id, &pa.id, Some("pa".into()))
+            .await
+            .unwrap();
+        match by {
+            PrimeBy::Designation => {
+                services
+                    .watchdogs()
+                    .designate_prime(&pij_core::orchestration::PrimeDesignation {
+                        seat: prime.id.clone(),
+                        designated_by: "pij-human".into(),
+                        designated_at: 1,
+                        state: pij_core::orchestration::PrimeState::Current,
+                    })
+                    .await
+                    .unwrap();
+            }
+            PrimeBy::Role => {
+                services
+                    .roles
+                    .assert_role(&prime.id, &prime.id, Some("prime".into()))
+                    .await
+                    .unwrap();
+            }
+            PrimeBy::Nobody => {}
+        }
+        Self {
+            services,
+            limits,
+            prime,
+            pa,
+            worker,
+            start: now_ms(),
+            _store: store,
+            _repos: repos,
+        }
+    }
+
+    fn at(&self, minute: u64) -> u64 {
+        self.start + minute * 60_000
+    }
+
+    async fn round(&self, watchdog: &PaWatchdog, minute: u64) -> Vec<RoundOutcome> {
+        watchdog
+            .round(&self.services, INTERVAL, self.at(minute))
+            .await
+            .unwrap()
+    }
+
+    async fn set(&self, seat: &SeatDescriptor, state: SystemState) {
+        set_state(&self.services, seat, state).await;
+    }
+
+    /// The workers worked, then went idle: #52's edge nudges the PA at
+    /// `minute`. The nudge is drained.
+    async fn overnight(&self, watchdog: &PaWatchdog, minute: u64) {
+        self.set(&self.worker, SystemState::Working).await;
+        self.round(watchdog, minute - 1).await;
+        self.set(&self.worker, SystemState::Idle).await;
+        self.round(watchdog, minute).await;
+        let nudges = drain(&self.services, self.pa.id.as_str()).await;
+        assert_eq!(nudges.len(), 1, "#52's idle-edge nudge");
+        assert!(nudges[0].body.starts_with("[pij watchdog] fleet idle"));
+    }
+
+    /// A pij message delivered to the prime: the receipt on the spine, at
+    /// `at` on the fake clock.
+    async fn deliver_to_prime(&self, at: u64) {
+        crate::delivery::publish_delivery_outcome(
+            &self.services.event_bus,
+            &self.prime.id,
+            &pij_core::model::Receipt {
+                msg_id: format!("report-{at}"),
+                outcome: pij_core::model::DeliveryOutcome::Delivered {
+                    origin: pij_core::model::DeliveryOrigin::TypedToPane,
+                },
+                at,
+                cold_check: None,
+                warning: None,
+            },
+            "tmux",
+        )
+        .await
+        .unwrap();
+    }
+
+    /// Messages the PA was sent since the last drain.
+    async fn to_pa(&self) -> Vec<pij_core::model::Msg> {
+        drain(&self.services, self.pa.id.as_str()).await
+    }
+
+    /// Each prime-active verdict audited on `watchdog.round`, oldest first.
+    async fn verdicts(&self) -> Vec<String> {
+        audits(&events(&self.services).await, "watchdog.round")
+            .into_iter()
+            .filter(|round| round["outcome"] == "prime-active")
+            .map(|round| round["verdict"].as_str().unwrap().to_string())
+            .collect()
+    }
+}
+
+/// Plan 173 AC1 (Jordan, 2026-10-14): overnight the workers go idle and the
+/// PA is nudged, answers and reports to the prime. In the morning Jordan
+/// talks to the prime, and the PA resumes too: one wake, with the digest.
+#[tokio::test]
+async fn the_pa_resumes_once_when_the_prime_does_after_an_idle_night() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+
+    // The PA handles its nudge and reports; the report starts a prime turn.
+    // Neither is armed yet: the PA was not idle, then the prime was busy.
+    fleet.set(&fleet.pa, SystemState::Working).await;
+    fleet.round(&watchdog, 2).await;
+    fleet.set(&fleet.pa, SystemState::Idle).await;
+    fleet.deliver_to_prime(fleet.at(2) + 30_000).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    fleet.set(&fleet.prime, SystemState::Idle).await;
+    for minute in 4..10 {
+        fleet.round(&watchdog, minute).await;
+    }
+    assert!(fleet.to_pa().await.is_empty(), "the night is quiet");
+
+    // Morning: Jordan talks to the prime.
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 600).await;
+    let wakes = fleet.to_pa().await;
+    assert_eq!(wakes.len(), 1, "one prime-active wake");
+    assert_eq!(wakes[0].from.as_str(), "pij-bg");
+    let body = &wakes[0].body;
+    assert!(
+        body.starts_with("[pij watchdog] pij-prime is active again after the fleet went idle"),
+        "{body}"
+    );
+    assert!(body.contains("resume your plan"), "{body}");
+    assert!(
+        body.contains("[pij watchdog] fleet idle for pij-prime") && body.contains("pij-worker"),
+        "the wake carries the fleet digest: {body}"
+    );
+    assert_eq!(fleet.verdicts().await, ["sent"]);
+    for not_pa in ["pij-prime", "pij-worker"] {
+        assert!(drain(&fleet.services, not_pa).await.is_empty());
+    }
+}
+
+/// Plan 173 AC2: armed only at a tick, after the edge, where the PA and the
+/// prime are both idle, so a prime turn seen before that sends nothing. With
+/// no designation, the prime is the `prime`-role seat in scope.
+#[tokio::test]
+async fn a_prime_turn_before_arming_sends_nothing_and_the_prime_role_names_the_prime() {
+    let fleet = PrimeFleet::new(PrimeBy::Role).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+
+    // The PA is still answering its nudge when the prime starts a turn.
+    fleet.set(&fleet.pa, SystemState::Working).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 2).await;
+    fleet.set(&fleet.pa, SystemState::Idle).await;
+    fleet.round(&watchdog, 3).await;
+    assert!(fleet.to_pa().await.is_empty(), "not armed: nothing sent");
+    assert!(fleet.verdicts().await.is_empty());
+
+    // Both idle: armed. The prime's next turn is its own.
+    fleet.set(&fleet.prime, SystemState::Idle).await;
+    fleet.round(&watchdog, 4).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 5).await;
+    assert_eq!(fleet.to_pa().await.len(), 1);
+    assert_eq!(fleet.verdicts().await, ["sent"]);
+}
+
+/// Plan 173 AC2: with no designated prime and no `prime`-role seat in scope
+/// there is nobody to watch. Nothing is sent and the edge's audit says why.
+#[tokio::test]
+async fn with_no_prime_in_scope_nothing_is_armed_and_the_audit_says_why() {
+    let fleet = PrimeFleet::new(PrimeBy::Nobody).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    let rounds = audits(&events(&fleet.services).await, "watchdog.round");
+    assert_eq!(rounds.len(), 1, "{rounds:?}");
+    assert_eq!(rounds[0]["outcome"], "nudged");
+    assert_eq!(rounds[0]["prime_active"], "no-prime", "{}", rounds[0]);
+    for minute in 2..5 {
+        fleet.round(&watchdog, minute).await;
+    }
+    assert!(fleet.to_pa().await.is_empty());
+    assert!(fleet.verdicts().await.is_empty());
+}
+
+/// Plan 173 AC3: a pij message delivered to the prime after arming means
+/// the prime's next turn is that message's, not Jordan's. It is BRAKED: no
+/// wake, the trigger disarms and the cap is kept, so the episode's one wake
+/// is still there when the prime later starts on its own.
+#[tokio::test]
+async fn a_delivery_to_the_prime_after_arming_brakes_the_wake_and_keeps_the_cap() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    fleet.round(&watchdog, 2).await; // both idle: armed
+
+    fleet.deliver_to_prime(fleet.at(2) + 30_000).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    assert!(fleet.to_pa().await.is_empty(), "a delivered turn never wakes");
+    assert_eq!(fleet.verdicts().await, ["braked"]);
+
+    // Re-armed at the next tick where both are idle; the prime then starts
+    // on its own, and the episode's one wake goes.
+    fleet.set(&fleet.prime, SystemState::Idle).await;
+    fleet.round(&watchdog, 4).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 5).await;
+    assert_eq!(fleet.to_pa().await.len(), 1);
+    assert_eq!(fleet.verdicts().await, ["braked", "sent"]);
+}
+
+/// Plan 173 AC3 (#52 analysis, pij-willing-coyote): the PA's report can fall
+/// between ticks, so the PA is never seen working and the trigger arms while
+/// the report is on its way. The delivery receipt brakes it.
+#[tokio::test]
+async fn a_pa_report_between_ticks_never_wakes_the_pa() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    // Minute 2: the PA has already answered, unseen; both look idle.
+    fleet.round(&watchdog, 2).await;
+    // Its report lands on the prime, which starts a turn.
+    fleet.deliver_to_prime(fleet.at(2) + 1).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    fleet.set(&fleet.prime, SystemState::Idle).await;
+    fleet.round(&watchdog, 4).await;
+    assert!(fleet.to_pa().await.is_empty());
+    assert_eq!(fleet.verdicts().await, ["braked"]);
+}
+
+/// Plan 173 AC4: one wake per PA per worker-idle episode. A second prime
+/// turn sends nothing; a new worker episode (#52's re-arm) resets the cap.
+#[tokio::test]
+async fn a_second_prime_turn_is_capped_until_the_workers_work_again() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    fleet.round(&watchdog, 2).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    assert_eq!(fleet.to_pa().await.len(), 1, "the first turn wakes");
+
+    for minute in [4, 6] {
+        fleet.set(&fleet.prime, SystemState::Idle).await;
+        fleet.round(&watchdog, minute).await;
+        fleet.set(&fleet.prime, SystemState::Working).await;
+        fleet.round(&watchdog, minute + 1).await;
+    }
+    assert!(fleet.to_pa().await.is_empty(), "capped");
+    assert_eq!(fleet.verdicts().await, ["sent", "capped", "capped"]);
+
+    // The workers work and stop again: a new episode, one more wake.
+    fleet.set(&fleet.prime, SystemState::Idle).await;
+    fleet.overnight(&watchdog, 9).await;
+    fleet.round(&watchdog, 10).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 11).await;
+    assert_eq!(fleet.to_pa().await.len(), 1, "a new episode re-arms");
+    assert_eq!(
+        fleet.verdicts().await,
+        ["sent", "capped", "capped", "sent"]
+    );
+}
+
+/// Plan 173 AC6: while the scope is stopped on a usage limit, the prime's
+/// turn wakes nobody; the limit-reset wake owns that case. Once the limit
+/// is gone the episode's one wake is still there.
+#[tokio::test]
+async fn a_usage_limit_stop_sends_no_prime_active_wake() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.round(&watchdog, 0).await;
+    fleet
+        .limits
+        .stop(fleet.worker.id.as_str(), "five_hour", fleet.at(600) / 1_000);
+    fleet.set(&fleet.worker, SystemState::Idle).await;
+    assert_eq!(
+        fleet.round(&watchdog, 1).await,
+        vec![RoundOutcome::IdleOnLimit(fleet.pa.id.clone())]
+    );
+    fleet.round(&watchdog, 2).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    assert!(fleet.to_pa().await.is_empty(), "no wake on a limit");
+    assert_eq!(fleet.verdicts().await, ["idle-on-limit"]);
+
+    fleet.limits.clear(fleet.worker.id.as_str());
+    fleet.set(&fleet.prime, SystemState::Idle).await;
+    fleet.round(&watchdog, 4).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 5).await;
+    assert_eq!(fleet.to_pa().await.len(), 1);
+    assert_eq!(fleet.verdicts().await, ["idle-on-limit", "sent"]);
+}
+
+/// Plan 173 AC7: a restart never wakes the PA by itself. A new tracker sees
+/// no episode, so the prime's turn sends nothing until the workers work and
+/// stop again.
+#[tokio::test]
+async fn a_restarted_daemon_sends_no_prime_active_wake_until_a_new_episode() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let before = PaWatchdog::default();
+    fleet.overnight(&before, 1).await;
+    fleet.round(&before, 2).await; // armed, then the daemon restarts
+
+    let watchdog = PaWatchdog::default();
+    for (minute, state) in [
+        (3, SystemState::Idle),
+        (4, SystemState::Working),
+        (5, SystemState::Idle),
+        (6, SystemState::Working),
+    ] {
+        fleet.set(&fleet.prime, state).await;
+        fleet.round(&watchdog, minute).await;
+    }
+    assert!(fleet.to_pa().await.is_empty(), "no episode since the restart");
+    assert!(fleet.verdicts().await.is_empty());
+
+    fleet.set(&fleet.prime, SystemState::Idle).await;
+    fleet.overnight(&watchdog, 8).await;
+    fleet.round(&watchdog, 9).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 10).await;
+    assert_eq!(fleet.to_pa().await.len(), 1);
+    assert_eq!(fleet.verdicts().await, ["sent"]);
 }
 
 fn optin(seat: &str, by: &str, at_ms: u64) -> pij_core::watchdog::WatchdogOptIn {
