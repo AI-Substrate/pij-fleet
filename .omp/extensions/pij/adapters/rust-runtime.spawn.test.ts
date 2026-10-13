@@ -1,10 +1,14 @@
 import { once } from "node:events";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PijDaemonClient } from "./daemon-http.js";
 import { FakeTmux } from "./fakes.js";
 import { describeSpawnedWorker, RustRuntimeSession } from "./rust-runtime.js";
+import { TmuxAdapter } from "./tmux.js";
 
 // The registration wait is read at construction; keep it short in every test.
 beforeEach(() => vi.stubEnv("PIJ_SPAWN_REGISTER_TIMEOUT_MS", "50"));
@@ -78,7 +82,8 @@ it("classifies a pane without the marker as no-registration, still without its t
 	});
 	expect(JSON.stringify(result)).not.toContain(SECRET);
 	if (!result.ok || result.value.registration.registered) throw new Error("expected unregistered");
-	expect(result.value.registration.waitedMs).toBeGreaterThanOrEqual(50);
+	// It polled for the whole budget less the quarter kept for the pane check.
+	expect(result.value.registration.waitedMs).toBeGreaterThanOrEqual(50 - Math.floor(50 / 4) - 1);
 });
 
 it.each([
@@ -86,11 +91,17 @@ it.each([
 		"an older spawn id",
 		{ spawn_id: "s-old", proc: { pid: 7, proc_start: stamp(Date.now() + 60_000) } },
 	],
+	["no spawn id and an older process", { proc: { pid: 7, proc_start: 20200101000000 } }],
+	// Round 2: an old row started 400ms before the launch shares its second.
 	[
-		"no spawn id and a process older than the launch",
-		{ proc: { pid: 7, proc_start: 20200101000000 } },
+		"no spawn id and a process from the launch's own second",
+		{ proc: { pid: 7, proc_start: stamp(Date.now()) } },
 	],
-])("never confirms a recycled pane held by a seat with %s (#44 B1)", async (_label, row) => {
+	[
+		"no spawn id even with a process newer than the launch",
+		{ proc: { pid: 7, proc_start: stamp(Date.now() + 60_000) } },
+	],
+])("never confirms a seat on the new pane with %s (#44 B1)", async (_label, row) => {
 	const runtime = new RustRuntimeSession(
 		registeringDaemon(() => [
 			{
@@ -113,27 +124,76 @@ it.each([
 	});
 });
 
-it("confirms a spawn-id-less seat on the new pane whose process started after the launch", async () => {
-	const runtime = new RustRuntimeSession(
-		registeringDaemon(() => [
-			{
-				id: "pij-kid",
-				harness: "omp",
-				folder: "/repo",
-				state: "idle",
-				pane: "%900",
-				proc: { pid: 7, proc_start: stamp(Date.now() + 1_000) },
-			},
-		]),
-		new FakeTmux(),
-		[],
-	);
+it("starts no roster read at the exact polling expiry and gives capture only the budget left (#44 B3b)", async () => {
+	vi.stubEnv("PIJ_SPAWN_REGISTER_TIMEOUT_MS", "1000");
+	let now = 0;
+	let rosterReads = 0;
+	const captureBudgets: number[] = [];
+	const client = new PijDaemonClient({ addr: "127.0.0.1:1", stateDir: "/unused" }, "key", {
+		fetch: async (url) => {
+			const path = new URL(String(url)).pathname;
+			if (path === "/health")
+				return new Response(
+					JSON.stringify({ ok: true, command: path, v: 2, data: { retired_harnesses: [] } }),
+				);
+			rosterReads += 1;
+			// The read lands exactly on the polling expiry: 1000ms less the capture slice.
+			now += 750;
+			return new Response(
+				JSON.stringify({ ok: true, command: path, v: 2, data: { seats: [], unavailable: [] } }),
+			);
+		},
+		readFile: async () => "key",
+		processStart: () => 1,
+	});
+	const tmux = new (class extends FakeTmux {
+		override capturePane(_paneId: string, timeoutMs: number): string | null {
+			captureBudgets.push(timeoutMs);
+			now += timeoutMs;
+			return null;
+		}
+	})();
+	const runtime = new RustRuntimeSession(client, tmux, [], () => now);
+	const result = await runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window" });
+	expect(rosterReads).toBe(1);
+	expect(captureBudgets).toEqual([250]);
+	expect(result).toMatchObject({
+		ok: true,
+		value: { registration: { registered: false, waitedMs: 1000, diagnosis: "no-registration" } },
+	});
+});
+
+it("skips the capture when no budget is left", async () => {
+	vi.stubEnv("PIJ_SPAWN_REGISTER_TIMEOUT_MS", "1000");
+	let now = 0;
+	const client = new PijDaemonClient({ addr: "127.0.0.1:1", stateDir: "/unused" }, "key", {
+		fetch: async (url) => {
+			const path = new URL(String(url)).pathname;
+			if (path !== "/health") now += 5_000;
+			return new Response(
+				JSON.stringify({
+					ok: true,
+					command: path,
+					v: 2,
+					data: path === "/health" ? { retired_harnesses: [] } : { seats: [], unavailable: [] },
+				}),
+			);
+		},
+		readFile: async () => "key",
+		processStart: () => 1,
+	});
+	let captured = false;
+	const tmux = new (class extends FakeTmux {
+		override capturePane(): string | null {
+			captured = true;
+			return "pij: boot registration failed";
+		}
+	})();
+	const runtime = new RustRuntimeSession(client, tmux, [], () => now);
 	await expect(
 		runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window" }),
-	).resolves.toMatchObject({
-		ok: true,
-		value: { registration: { registered: true, id: "pij-kid" } },
-	});
+	).resolves.toMatchObject({ value: { registration: { diagnosis: "no-registration" } } });
+	expect(captured).toBe(false);
 });
 
 it("hard-bounds the wait when a roster body never finishes (#44 B3)", async () => {
@@ -169,6 +229,64 @@ it("hard-bounds the wait when a roster body never finishes (#44 B3)", async () =
 		server.close();
 	}
 }, 3_000);
+
+describe("one budget for the whole wait (#44 B3b)", () => {
+	let dir: string | undefined;
+	afterEach(() => {
+		if (dir) rmSync(dir, { recursive: true, force: true });
+		dir = undefined;
+	});
+
+	it("returns within the configured deadline when the roster hangs AND tmux capture stalls", async () => {
+		dir = mkdtempSync(join(tmpdir(), "pij-spawn-stall-"));
+		const bin = join(dir, "tmux");
+		writeFileSync(
+			bin,
+			`#!/bin/sh
+case "$1" in
+new-window) printf '%%900 @1\\n' ;;
+display-message) printf 'stub\\n' ;;
+capture-pane) exec sleep 10 ;;
+esac
+exit 0
+`,
+		);
+		chmodSync(bin, 0o755);
+		vi.stubEnv("PATH", `${dir}:${process.env.PATH ?? ""}`);
+		vi.stubEnv("TMUX_PANE", "%1");
+		vi.stubEnv("PIJ_SPAWN_REGISTER_TIMEOUT_MS", "300");
+		const server = createServer((request, response) => {
+			if (request.url === "/health") {
+				response.end(
+					JSON.stringify({ ok: true, command: "health", v: 2, data: { retired_harnesses: [] } }),
+				);
+				return;
+			}
+			response.writeHead(200, { "content-type": "application/json" });
+			response.write('{"ok":true,');
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const { port } = server.address() as AddressInfo;
+		try {
+			const client = new PijDaemonClient(
+				{ addr: `127.0.0.1:${port}`, stateDir: "/unused" },
+				"key",
+				{ fetch, readFile: async () => "key", processStart: () => 1 },
+			);
+			const runtime = new RustRuntimeSession(client, new TmuxAdapter(), []);
+			const result = await runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window" });
+			if (!result.ok || result.value.registration.registered)
+				throw new Error("expected unregistered");
+			// Deadline plus a fixed epsilon for process exit and timer slack.
+			expect(result.value.registration.waitedMs).toBeLessThan(300 + 150);
+			expect(result.value.registration.diagnosis).toBe("no-registration");
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
+	}, 5_000);
+});
 
 it("confirms a spawn once a bound seat carries its spawn id; an unbound row is not enough", async () => {
 	vi.stubEnv("PIJ_SPAWN_REGISTER_TIMEOUT_MS", "5000");

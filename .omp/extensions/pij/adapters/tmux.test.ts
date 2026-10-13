@@ -103,7 +103,7 @@ exit 0
 		previousPath = process.env.PATH;
 		process.env.PATH = `${dir}:${previousPath ?? ""}`;
 		const started = performance.now();
-		expect(new TmuxAdapter().capturePane("%1")).toBeNull();
-		expect(performance.now() - started).toBeLessThan(3_000);
+		expect(new TmuxAdapter().capturePane("%1", 200)).toBeNull();
+		expect(performance.now() - started).toBeLessThan(1_500);
 	}, 15_000);
 });

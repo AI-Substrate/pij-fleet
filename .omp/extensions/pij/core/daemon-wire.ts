@@ -385,20 +385,6 @@ export function parseProcessStart(row: string): number {
 	);
 }
 
-/** The same YYYYMMDDhhmmss packing for an instant, in local time like `ps`:
- *  "did this process start after that moment" compares like numbers. */
-export function processStartAt(ms: number): number {
-	const at = new Date(ms);
-	return (
-		at.getFullYear() * 10_000_000_000 +
-		(at.getMonth() + 1) * 100_000_000 +
-		at.getDate() * 1_000_000 +
-		at.getHours() * 10_000 +
-		at.getMinutes() * 100 +
-		at.getSeconds()
-	);
-}
-
 function daysInMonth(year: number, month: number): number {
 	if (month === 2) {
 		return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0) ? 29 : 28;

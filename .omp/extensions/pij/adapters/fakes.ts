@@ -469,7 +469,7 @@ export class FakeTmux implements TmuxPort {
 	}
 
 	/** Fake panes have no text; a test needing some overrides this. */
-	capturePane(_paneId: string): string | null {
+	capturePane(_paneId: string, _timeoutMs: number): string | null {
 		return null;
 	}
 }

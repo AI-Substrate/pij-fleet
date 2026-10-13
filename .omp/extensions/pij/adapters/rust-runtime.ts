@@ -7,7 +7,6 @@ import {
 	type FyiClaimRequest,
 	isHeldFyi,
 	isRetiredSeatRefusal,
-	processStartAt,
 	type Registration,
 	type RustSeatDescriptor,
 } from "../core/daemon-wire.js";
@@ -158,6 +157,8 @@ const MAX_SELF_NAME_ATTEMPTS = 8;
 /** How long pij_spawn waits for its child to register before saying it did not. */
 const DEFAULT_SPAWN_REGISTER_TIMEOUT_MS = 20_000;
 const SPAWN_REGISTER_POLL_MS = 500;
+/** The end of the wait kept for the pane check: at most 1s, at most a quarter. */
+const SPAWN_CAPTURE_RESERVE_MS = 1_000;
 
 /** The child's R4 notice. The spawner's wait looks for it in the pane and
  *  forwards only the classification, never the pane's text. */
@@ -637,7 +638,6 @@ export class RustRuntimeSession {
 				"E-ARG",
 				`harness ${opts.harness} is retired on this machine; ${opts.harness === "omp" ? "use another harness" : "use omp"} (or pass --allow-retired)`,
 			);
-		const launchedAt = this.clock();
 		if (opts.harness !== "pi" && opts.harness !== "omp") {
 			if (opts.layout === "split")
 				return err("E-ARG", `${opts.harness} uses daemon windows; pass layout:'window'`);
@@ -664,7 +664,7 @@ export class RustRuntimeSession {
 				return err("E-NOREG", "daemon spawn returned no spawn identity or pane");
 			if (opts.task !== undefined) await this.send(child.id, opts.task);
 			const spawned = { spawnId: child.spawn_id, paneId: child.pane };
-			return ok({ ...spawned, registration: await this.awaitRegistration(spawned, launchedAt) });
+			return ok({ ...spawned, registration: await this.awaitRegistration(spawned) });
 		}
 		if (opts.role !== undefined)
 			return err(
@@ -674,51 +674,46 @@ export class RustRuntimeSession {
 		const result = this.session.spawn(opts);
 		void this.flush();
 		if (!result.ok) return result;
-		return ok({
-			...result.value,
-			registration: await this.awaitRegistration(result.value, launchedAt),
-		});
+		return ok({ ...result.value, registration: await this.awaitRegistration(result.value) });
 	}
 
 	/**
-	 * A pane is not a worker (#44): poll the roster, hard-bounded by one deadline
-	 * that also cancels a hung read, for a bound seat THIS launch created. Pane
-	 * text never leaves this method; only a fixed diagnosis does.
+	 * A pane is not a worker (#44): poll the roster for a bound seat carrying THIS
+	 * launch's spawn id, the only proof the child is ours. Pane ids reset with the
+	 * tmux server and process starts have one-second resolution, so neither can
+	 * stand in for it. One budget covers the polls (each read aborts at its share)
+	 * and the pane check; with nothing left, the check is skipped. Pane text never
+	 * leaves this method; only a fixed diagnosis does.
 	 */
-	private async awaitRegistration(
-		spawned: { readonly spawnId: string; readonly paneId: string },
-		launchedAt: number,
-	): Promise<SpawnRegistration> {
+	private async awaitRegistration(spawned: {
+		readonly spawnId: string;
+		readonly paneId: string;
+	}): Promise<SpawnRegistration> {
 		const started = this.clock();
 		const deadline = started + this.spawnRegisterTimeoutMs;
-		// Pane ids reset with the tmux server, so a pane match alone proves nothing:
-		// a spawn-id-less row counts only if its process started after this launch.
-		const launchedStamp = processStartAt(launchedAt);
+		const pollUntil =
+			deadline - Math.min(SPAWN_CAPTURE_RESERVE_MS, Math.floor(this.spawnRegisterTimeoutMs / 4));
 		let rosterError: string | undefined;
 		for (
-			let remaining = deadline - this.clock();
+			let remaining = pollUntil - this.clock();
 			remaining > 0;
-			remaining = deadline - this.clock()
+			remaining = pollUntil - this.clock()
 		) {
 			try {
 				const seat = (await this.client.seats(AbortSignal.timeout(remaining))).find(
-					(row) =>
-						row.proc?.pid !== undefined &&
-						(row.spawn_id === spawned.spawnId ||
-							(row.spawn_id === undefined &&
-								row.pane === spawned.paneId &&
-								row.proc.proc_start >= launchedStamp)),
+					(row) => row.proc?.pid !== undefined && row.spawn_id === spawned.spawnId,
 				);
 				if (seat) return { registered: true, id: seat.id };
 				rosterError = undefined;
 			} catch (error) {
 				rosterError = error instanceof Error ? error.message : String(error);
 			}
-			const left = deadline - this.clock();
+			const left = pollUntil - this.clock();
 			if (left > 0) await sleep(Math.min(SPAWN_REGISTER_POLL_MS, left));
 		}
 		// Classified, never forwarded: the pane may hold anything, credentials included.
-		const shown = this.tmux.capturePane(spawned.paneId);
+		const captureBudget = deadline - this.clock();
+		const shown = captureBudget > 0 ? this.tmux.capturePane(spawned.paneId, captureBudget) : null;
 		return {
 			registered: false,
 			waitedMs: this.clock() - started,
