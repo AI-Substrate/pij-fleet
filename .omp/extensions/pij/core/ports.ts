@@ -247,6 +247,8 @@ export interface TmuxPort {
 	currentPane(): string | null;
 	/** Pane ids in the orchestrator's current window (for the split cap count). */
 	currentWindowPanes(): string[];
+	/** The pane's visible text, or null when it cannot be read (gone, no tmux). */
+	capturePane(paneId: string): string | null;
 }
 
 /** OS-level seams: pid, liveness probe, clock, env. */

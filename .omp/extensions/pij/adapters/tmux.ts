@@ -226,4 +226,13 @@ export class TmuxAdapter implements TmuxPort {
 			return false;
 		}
 	}
+
+	/** `capture-pane -p -J`: the pane's visible text, null if tmux cannot read it. */
+	capturePane(paneId: string): string | null {
+		try {
+			return tmux(["capture-pane", "-t", paneId, "-p", "-J"]);
+		} catch {
+			return null;
+		}
+	}
 }

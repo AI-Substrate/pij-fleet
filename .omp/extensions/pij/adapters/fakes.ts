@@ -467,6 +467,11 @@ export class FakeTmux implements TmuxPort {
 	currentWindowPanes(): string[] {
 		return [...this.windowPanes];
 	}
+
+	/** Fake panes have no text; a test needing some overrides this. */
+	capturePane(_paneId: string): string | null {
+		return null;
+	}
 }
 
 // ─── platform stores (plan 054, T008) ───────────────────────────────────────

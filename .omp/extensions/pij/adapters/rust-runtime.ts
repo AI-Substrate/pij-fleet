@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { parseDestination, renderDestination } from "../core/address.js";
 import { type ControlOutcome, isControlCommand, validateCommand } from "../core/commands.js";
 import {
 	COLD_WAKE_CODE,
 	type FyiClaimRequest,
 	isHeldFyi,
+	isRetiredSeatRefusal,
 	type Registration,
 	type RustSeatDescriptor,
 } from "../core/daemon-wire.js";
@@ -45,6 +47,31 @@ interface RustBootInput extends Omit<BootInput, "id">, ExtensionBuildIdentity {
 	readonly actualModel?: string | null;
 	readonly reason: SessionShutdownReason | "startup";
 	readonly notice?: (text: string) => void;
+}
+
+/** A boot identity; `candidates` is present only for a self-chosen name. */
+interface IdentityChoice {
+	readonly id: string;
+	readonly candidates?: Iterator<string, void>;
+}
+
+/** Whether a spawned child registered a seat within the bounded wait. */
+export type SpawnRegistration =
+	| { readonly registered: true; readonly id: string }
+	| {
+			readonly registered: false;
+			readonly waitedMs: number;
+			/** The child pane's last lines, where its boot error is shown. */
+			readonly paneTail?: string;
+			/** The last roster read failure, when the roster itself was unreadable. */
+			readonly rosterError?: string;
+	  };
+
+export interface SpawnedWorker {
+	readonly spawnId: string;
+	readonly paneId: string;
+	readonly notice?: string;
+	readonly registration: SpawnRegistration;
 }
 
 /** How a send may deviate from a plain waking message. */
@@ -105,6 +132,13 @@ const ANNOUNCE_BODY_CHARS = 80;
 /** A hung daemon must hold neither the human's typed turn (FYI claim) nor shutdown. */
 const HOOK_CALL_TIMEOUT_MS = 3_000;
 
+/** Claims a self-named boot makes before a retired-seat refusal is final (#44). */
+const MAX_SELF_NAME_ATTEMPTS = 8;
+
+/** How long pij_spawn waits for its child to register before saying it did not. */
+const DEFAULT_SPAWN_REGISTER_TIMEOUT_MS = 20_000;
+const SPAWN_REGISTER_POLL_MS = 500;
+
 /**
  * Snap-in recipe (composition owner: PM, index.ts unchanged):
  *
@@ -148,6 +182,8 @@ export class RustRuntimeSession {
 	private readonly redeliverIdleMs: number;
 	private readonly compactionLatchMaxMs: number;
 	private readonly boundaryGraceMs: number;
+	private readonly spawnRegisterTimeoutMs: number;
+	private readonly tmux: TmuxPort;
 	private mailTicker: ReturnType<typeof setInterval> | undefined;
 	private lifecycle = 0;
 	/** A pushed or startup-discovered backlog, never composer activity. */
@@ -190,6 +226,12 @@ export class RustRuntimeSession {
 			Number.isSafeInteger(configuredBoundaryMs) && configuredBoundaryMs > 0
 				? configuredBoundaryMs
 				: BOUNDARY_RESEND_GRACE_MS;
+		const configuredRegisterMs = Number(process.env.PIJ_SPAWN_REGISTER_TIMEOUT_MS);
+		this.spawnRegisterTimeoutMs =
+			Number.isSafeInteger(configuredRegisterMs) && configuredRegisterMs > 0
+				? configuredRegisterMs
+				: DEFAULT_SPAWN_REGISTER_TIMEOUT_MS;
+		this.tmux = tmux;
 		this.pi = new MutablePiRuntime();
 		this.session = new PijSession({
 			registry: this.registry,
@@ -233,14 +275,10 @@ export class RustRuntimeSession {
 			previousSelf !== undefined && (input.reason === "new" || input.reason === "fork");
 		const procStart = this.client.processStart(process.pid);
 		const seats = await this.client.seats();
-		const id = this.chooseIdentity(input, procStart, seats, replacing);
-		const registration = registrationFor(
-			id,
-			procStart,
-			input,
-			replacing ? previousSelf : undefined,
+		const choice = this.chooseIdentity(input, procStart, seats, replacing);
+		const accepted = await this.registerIdentity(choice, input.notice, (id) =>
+			registrationFor(id, procStart, input, replacing ? previousSelf : undefined),
 		);
-		const accepted = await this.client.register(registration);
 		if (accepted.proc_source === "pane") {
 			input.notice?.(
 				`pij: harness discovery fell back to the pane; registered pid ${accepted.proc?.pid ?? "unbound"}.`,
@@ -380,6 +418,37 @@ export class RustRuntimeSession {
 		this.mailTicker.unref?.();
 		this.refreshFyiCount(acceptedId, this.client, lifecycle);
 		return { id: boot.id, role: boot.role };
+	}
+
+	/**
+	 * A failed boot registration leaves a seatless session (#44). Say so at error
+	 * level here, and tell the spawner when this session knows one. The announce
+	 * is best effort and bounded: it never throws and never holds boot.
+	 */
+	async reportBootFailure(error: unknown): Promise<void> {
+		const message = error instanceof Error ? error.message : String(error);
+		this.pi.notify(`pij: boot registration failed; this session has no seat. ${message}`, "error");
+		const spawner = process.env.PIJ_ANNOUNCE_TO?.trim() || process.env.PIJ_PARENT_ID?.trim();
+		if (!spawner) return;
+		const spawnId = process.env.PIJ_SPAWN_ID?.trim() || "none";
+		const pane = process.env.TMUX_PANE || "none";
+		try {
+			await Promise.race([
+				this.client.send({
+					// No seat exists to send from; this sender names the failure, not an address.
+					from: `pij-boot-failed-${process.pid}`,
+					to: { seat: spawner },
+					body: `pij boot failed (spawn ${spawnId}, pane ${pane}): ${message}`,
+					msg_id: randomUUID(),
+				}),
+				sleep(HOOK_CALL_TIMEOUT_MS, undefined, { ref: false }),
+			]);
+		} catch (sendError) {
+			this.session.capture("daemon_event_error", {
+				message: sendError instanceof Error ? sendError.message : String(sendError),
+				stage: "boot-failure-announce",
+			});
+		}
 	}
 
 	async send(
@@ -532,7 +601,7 @@ export class RustRuntimeSession {
 		});
 	}
 
-	async spawn(opts: SpawnOpts): Promise<ReturnType<PijSession["spawn"]>> {
+	async spawn(opts: SpawnOpts): Promise<Result<SpawnedWorker>> {
 		const health = await this.client.health();
 		if (!Array.isArray(health.retired_harnesses))
 			return err(
@@ -569,7 +638,8 @@ export class RustRuntimeSession {
 			if (!child.spawn_id || !child.pane)
 				return err("E-NOREG", "daemon spawn returned no spawn identity or pane");
 			if (opts.task !== undefined) await this.send(child.id, opts.task);
-			return ok({ spawnId: child.spawn_id, paneId: child.pane });
+			const spawned = { spawnId: child.spawn_id, paneId: child.pane };
+			return ok({ ...spawned, registration: await this.awaitRegistration(spawned) });
 		}
 		if (opts.role !== undefined)
 			return err(
@@ -578,7 +648,44 @@ export class RustRuntimeSession {
 			);
 		const result = this.session.spawn(opts);
 		void this.flush();
-		return result;
+		if (!result.ok) return result;
+		return ok({ ...result.value, registration: await this.awaitRegistration(result.value) });
+	}
+
+	/**
+	 * A pane is not a worker (#44): poll the roster, bounded, for a bound seat
+	 * carrying this spawn id or pane. Unregistered, it returns the pane's last
+	 * lines, where the child's own boot error is shown.
+	 */
+	private async awaitRegistration(spawned: {
+		readonly spawnId: string;
+		readonly paneId: string;
+	}): Promise<SpawnRegistration> {
+		const started = this.clock();
+		let rosterError: string | undefined;
+		for (;;) {
+			try {
+				const seat = (await this.client.seats()).find(
+					(row) =>
+						row.proc?.pid !== undefined &&
+						(row.spawn_id === spawned.spawnId || row.pane === spawned.paneId),
+				);
+				if (seat) return { registered: true, id: seat.id };
+				rosterError = undefined;
+			} catch (error) {
+				rosterError = error instanceof Error ? error.message : String(error);
+			}
+			const remaining = started + this.spawnRegisterTimeoutMs - this.clock();
+			if (remaining <= 0) break;
+			await sleep(Math.min(SPAWN_REGISTER_POLL_MS, remaining));
+		}
+		const paneTail = this.tmux.capturePane(spawned.paneId)?.trimEnd();
+		return {
+			registered: false,
+			waitedMs: this.clock() - started,
+			...(paneTail ? { paneTail } : {}),
+			...(rosterError === undefined ? {} : { rosterError }),
+		};
 	}
 
 	close(id: SessionId): ReturnType<PijSession["close"]> {
@@ -1173,25 +1280,32 @@ export class RustRuntimeSession {
 		);
 	}
 
+	/**
+	 * An assigned identity (reload self, same pane, same process, PIJ_SESSION_ID)
+	 * carries no `candidates`: its refusal stays a refusal. A self-chosen startup
+	 * name carries the rest of its candidate sequence, because `/v1/seats` omits
+	 * retired seats and the daemon refuses their ids (#44). A replacement never
+	 * advances: its claim supersedes the predecessor by this exact id.
+	 */
 	private chooseIdentity(
 		input: RustBootInput,
 		procStart: number,
 		seats: readonly RustSeatDescriptor[],
 		replacing: boolean,
-	): string {
-		if (this.self !== "" && !replacing) return this.self;
+	): IdentityChoice {
+		if (this.self !== "" && !replacing) return { id: this.self };
 		if (!replacing) {
 			const samePane =
 				input.paneId === undefined
 					? undefined
 					: seats.find((seat) => seat.pane === input.paneId && seat.harness === input.runtimeBin);
-			if (samePane) return samePane.id;
+			if (samePane) return { id: samePane.id };
 			const sameProcess = seats.find(
 				(seat) => seat.proc?.pid === process.pid && seat.proc.proc_start === procStart,
 			);
-			if (sameProcess) return sameProcess.id;
+			if (sameProcess) return { id: sameProcess.id };
 			const spawnedId = process.env.PIJ_SESSION_ID?.trim();
-			if (spawnedId) return spawnedId;
+			if (spawnedId) return { id: spawnedId };
 		}
 		const used = new Set(seats.map((seat) => seat.id));
 		if (replacing && this.self !== "") used.add(this.self);
@@ -1199,10 +1313,40 @@ export class RustRuntimeSession {
 			"pi",
 			input.piSessionId ?? `pid:${process.pid}:${procStart}`,
 		);
-		for (const candidate of memorablePijIdCandidates(seed)) {
-			if (!used.has(candidate)) return candidate;
+		const unused = (function* () {
+			for (const candidate of memorablePijIdCandidates(seed)) {
+				if (!used.has(candidate)) yield candidate;
+			}
+		})();
+		const first = unused.next();
+		if (first.done) throw new Error("pij memorable id space is exhausted");
+		return replacing ? { id: first.value } : { id: first.value, candidates: unused };
+	}
+
+	/** Register `choice`, advancing a self-chosen name past typed retired-seat
+	 *  refusals only, at most MAX_SELF_NAME_ATTEMPTS claims in total. */
+	private async registerIdentity(
+		choice: IdentityChoice,
+		notice: ((text: string) => void) | undefined,
+		claimFor: (id: string) => Registration,
+	): Promise<RustSeatDescriptor> {
+		let id = choice.id;
+		for (let attempt = 1; ; attempt++) {
+			try {
+				return await this.client.register(claimFor(id));
+			} catch (error) {
+				if (
+					choice.candidates === undefined ||
+					attempt >= MAX_SELF_NAME_ATTEMPTS ||
+					!isRetiredSeatRefusal(error, id)
+				)
+					throw error;
+				const next = choice.candidates.next();
+				if (next.done) throw error;
+				notice?.(`pij: ${id} belongs to a retired seat; registering as ${next.value} instead.`);
+				id = next.value;
+			}
 		}
-		throw new Error("pij memorable id space is exhausted");
 	}
 
 	private flush(): Promise<void> {
