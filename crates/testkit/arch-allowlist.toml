@@ -114,8 +114,8 @@ why = "Session facts behind SessionStatusPort (R3-AMEND-10): per-seat transcript
 
 [crates.pij-sidecars]
 internal = ["pij-core", "pij-store@dev", "pij-testkit@dev"]
-external = ["async-trait@dev", "axum@dev", "nix", "reqwest", "serde", "serde_json", "tokio"]
-why = "Queue consumers over the seven frozen ports plus concrete Telegram HTTP, process-group, and shell/file adapters; store, testkit, async-trait, and axum remain dev-only proof dependencies."
+external = ["async-trait@dev", "axum@dev", "nix", "reqwest", "serde", "serde_json", "sha2", "tokio"]
+why = "Queue consumers over the seven frozen ports plus concrete Telegram HTTP, process-group, and shell/file adapters; sha2 content-addresses staged Telegram documents and re-verifies them before upload; store, testkit, async-trait, and axum remain dev-only proof dependencies."
 
 [crates.pij-daemon]
 # The widest row in the workspace, and deliberately so: a composition root is the

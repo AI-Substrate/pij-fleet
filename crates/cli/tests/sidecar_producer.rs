@@ -49,3 +49,54 @@ async fn the_shipped_client_can_complete_one_sidecar_call() {
     daemon.shutdown().await.expect("shutdown");
     let _ = std::fs::remove_dir_all(&state_dir);
 }
+
+/// A document is staged under the daemon's OWN state dir (composition root),
+/// and a missing file is refused before any row exists.
+#[tokio::test]
+async fn the_shipped_client_queues_a_staged_telegram_document() {
+    let state_dir = std::env::temp_dir().join(format!("pij-rs-sidecar-doc-{}", std::process::id()));
+    std::fs::create_dir_all(&state_dir).expect("state dir");
+    let store_path = state_dir.join("pij.sqlite");
+    let config = daemon_config("127.0.0.1:0", &store_path, false);
+    let daemon = pij_daemon::boot(&config, state_dir.clone())
+        .await
+        .expect("boot");
+    let source = state_dir.join("canary.html");
+    std::fs::write(&source, b"<p>pij attachment canary</p>").expect("source");
+
+    let client = DaemonClient::new(&state_dir, &daemon.addr.to_string()).expect("client");
+    let reply = client
+        .sidecar(&serde_json::json!({
+            "sidecar": "telegram_document",
+            "request": {"from": "pij-test", "path": source, "caption": "pij attachment canary", "msg_id": "doc-e2e"}
+        }))
+        .await;
+    assert!(reply.ok, "{reply:?}");
+    let data = reply.data.expect("queued document");
+    assert!(data["job_id"].is_u64(), "{data}");
+    let staged = std::path::PathBuf::from(data["document"]["staged"].as_str().expect("staged"));
+    assert!(
+        staged.starts_with(state_dir.join("sidecars").join("telegram-attachments")),
+        "{}",
+        staged.display()
+    );
+    assert_eq!(
+        std::fs::read(&staged).expect("staged"),
+        b"<p>pij attachment canary</p>"
+    );
+
+    let missing = client
+        .sidecar(&serde_json::json!({
+            "sidecar": "telegram_document",
+            "request": {"from": "pij-test", "path": state_dir.join("absent.html"), "msg_id": "doc-missing"}
+        }))
+        .await;
+    assert!(!missing.ok, "a missing file must refuse: {missing:?}");
+    assert!(
+        format!("{missing:?}").contains("cannot be read"),
+        "{missing:?}"
+    );
+
+    daemon.shutdown().await.expect("shutdown");
+    let _ = std::fs::remove_dir_all(&state_dir);
+}
