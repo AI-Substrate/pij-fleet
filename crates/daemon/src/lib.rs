@@ -156,6 +156,8 @@ pub struct Services {
     /// Claude configuration homes whose `sessions/<pid>.json` records the
     /// daemon reads as each Claude process's own report of its conversation.
     pub claude_homes: Arc<[std::path::PathBuf]>,
+    /// Where Telegram document sends are staged by content before queueing.
+    pub telegram_attachments: PathBuf,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -518,6 +520,12 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         store_pools,
         retired_harnesses: config.retired_harnesses.clone().into(),
         claude_homes: pij_harnesses::claude_homes().into(),
+        // Beside the sidecars' own state (`<state>/sidecars`), as `bg` is.
+        telegram_attachments: pane_signal_dir
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("sidecars")
+            .join("telegram-attachments"),
         offline: config.is_fully_offline(),
     })
 }

@@ -214,6 +214,20 @@ pub(crate) struct SendCall {
     pub force: bool,
     /// Why the forced wake is worth it.
     pub reason: Option<String>,
+    /// `--file <path> [--caption <text>]`, served only for `pij-telegram`.
+    pub attachment: Option<Attachment>,
+}
+
+/// The recipient whose renderer is Telegram: it is not a seat, it is the
+/// operator's phone, reached through the Telegram sidecar.
+pub(crate) const TELEGRAM_RECIPIENT: &str = "pij-telegram";
+
+/// One `pij send pij-telegram --file` attachment, as typed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Attachment {
+    /// As typed: absolute, or relative to the caller's cwd.
+    pub path: String,
+    pub caption: Option<String>,
 }
 
 /// Parse a body send or one allowlisted, bodyless control command.
@@ -225,9 +239,11 @@ pub(crate) struct SendCall {
 /// pij send <id> "<text>" | <id> --body-file <path|-> | --to <id> --to <id> "<text>"
 ///          | <id> --command <name> [--wait] | <id> --fyi "<text>"
 ///          | <id> --force --reason "<why>" "<text>"
+///          | pij-telegram --file <path> [--caption "<text>"]
 /// ```
 ///
-/// Unsupported broadcast, attachment and wait shapes refuse by name.
+/// Unsupported broadcast, attachment and wait shapes refuse by name. An
+/// attachment is served for `pij-telegram` alone, as a Telegram document.
 pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<SendCall, String> {
     let mut tokens = argv.iter().map(String::as_str);
     match tokens.next() {
@@ -243,6 +259,8 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
     let mut fyi = false;
     let mut force = false;
     let mut reason = None;
+    let mut file: Option<String> = None;
+    let mut caption: Option<String> = None;
     let mut rest = tokens.collect::<Vec<_>>().into_iter().peekable();
     while let Some(token) = rest.next() {
         let flag = token
@@ -317,12 +335,26 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
                 in_reply_to = Some(value.to_string());
             }
             "file" | "caption" => {
-                return Err(format!(
-                    "rs cannot serve `pij send --{name}`: it attaches a path BY REFERENCE and \
-                     only a pull/telegram peer renders it. rs has no attachment model, and \
-                     dropping the attachment while reporting the send as sent would be worse \
-                     than refusing. Use --body-file to send a file's CONTENTS."
-                ));
+                let slot = if name == "file" {
+                    &mut file
+                } else {
+                    &mut caption
+                };
+                if slot.is_some() {
+                    return Err(format!("--{name} may be supplied only once"));
+                }
+                let value = token
+                    .split_once('=')
+                    .map(|(_, value)| value)
+                    .or_else(|| rest.next())
+                    .ok_or_else(|| {
+                        if name == "file" {
+                            "--file needs a path".to_string()
+                        } else {
+                            "--caption needs its text".to_string()
+                        }
+                    })?;
+                *slot = Some(value.to_string());
             }
             "wait" => {
                 return Err(
@@ -340,6 +372,24 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
     };
     let to = pij_core::address::parse_destination(to).map_err(|error| error.to_string())?;
 
+    if caption.is_some() && file.is_none() {
+        return Err(
+            "--caption labels a --file attachment; without --file there is nothing to caption"
+                .to_string(),
+        );
+    }
+    if let Some(path) = file {
+        return attachment_call(
+            to,
+            Attachment { path, caption },
+            AttachmentConflicts {
+                body: saw_body_file || positionals.len() > 1,
+                command: command.is_some(),
+                in_reply_to: in_reply_to.is_some(),
+                wake: fyi || force || reason.is_some(),
+            },
+        );
+    }
     if fyi && command.is_some() {
         return Err("--fyi holds a message; a --command control cannot be held".to_string());
     }
@@ -375,6 +425,7 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
             fyi: false,
             force: false,
             reason: None,
+            attachment: None,
         });
     }
     // The two body channels are exclusive, and BOTH must be refused rather than
@@ -419,7 +470,130 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
         fyi,
         force,
         reason,
+        attachment: None,
     })
+}
+
+/// What else was typed beside `--file`; each is refused rather than dropped.
+struct AttachmentConflicts {
+    body: bool,
+    command: bool,
+    in_reply_to: bool,
+    wake: bool,
+}
+
+fn attachment_call(
+    to: Destination,
+    attachment: Attachment,
+    conflicts: AttachmentConflicts,
+) -> Result<SendCall, String> {
+    if to.machine.is_some() || to.seat.as_str() != TELEGRAM_RECIPIENT {
+        return Err(format!(
+            "rs serves `pij send --file` only to `{TELEGRAM_RECIPIENT}`, which uploads it as a \
+             Telegram document. `{}` has no attachment renderer, and dropping the attachment \
+             while reporting the send as sent would be worse than refusing. Use --body-file to \
+             send a file's CONTENTS.",
+            match &to.machine {
+                Some(machine) => format!("{}@{machine}", to.seat),
+                None => to.seat.to_string(),
+            }
+        ));
+    }
+    let clash = if conflicts.body {
+        Some("a message body (inline text or --body-file); put the words in --caption")
+    } else if conflicts.command {
+        Some("--command")
+    } else if conflicts.in_reply_to {
+        Some("--in-reply-to")
+    } else if conflicts.wake {
+        Some("--fyi/--force/--reason, which steer seat wakes; Telegram has none")
+    } else {
+        None
+    };
+    if let Some(clash) = clash {
+        return Err(format!("--file cannot be combined with {clash}"));
+    }
+    if attachment.path.trim().is_empty() {
+        return Err("--file needs a path".to_string());
+    }
+    Ok(SendCall {
+        to,
+        body: String::new(),
+        command: None,
+        in_reply_to: None,
+        fyi: false,
+        force: false,
+        reason: None,
+        attachment: Some(attachment),
+    })
+}
+
+/// Resolve a typed attachment path the way the caller's shell would have.
+fn attachment_path(typed: &str, caller: Option<&CallerContext>) -> Result<PathBuf, String> {
+    let path = Path::new(typed);
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    match caller.and_then(|caller| caller.cwd.as_deref()) {
+        Some(cwd) if Path::new(cwd).is_absolute() => Ok(Path::new(cwd).join(path)),
+        _ => Err(format!(
+            "--file `{typed}` is relative and the caller sent no absolute cwd to resolve it \
+             against; pass an absolute path"
+        )),
+    }
+}
+
+/// `pij send pij-telegram --file …`: stage and queue a Telegram document.
+///
+/// The receipt says QUEUED, never delivered: the upload happens on the sidecar
+/// worker, and a rejected upload fails that job and records
+/// `telegram.outbound-delivery-failed` on the spine.
+async fn send_attachment(
+    state: &AppState,
+    caller: Option<&CallerContext>,
+    attachment: Attachment,
+) -> Response {
+    let path = match attachment_path(&attachment.path, caller) {
+        Ok(path) => path,
+        Err(why) => return refused(SEND, why),
+    };
+    let from = match subject(state, SEND, caller).await {
+        Ok(seat) => seat.id,
+        Err(response) => return *response,
+    };
+    let msg_id = state.services.delivery.next_message_id();
+    let request = pij_sidecars::telegram::TelegramDocumentRequest {
+        from,
+        path,
+        caption: attachment.caption,
+        msg_id,
+        chat_id: None,
+    };
+    match super::enqueue_telegram_document(state, request).await {
+        Ok(queued) => {
+            let reason = format!(
+                "telegram document {} ({} bytes, sha256 {}) queued as sidecar job {}",
+                queued.document.file_name,
+                queued.document.size,
+                &queued.document.sha256[..12],
+                queued.job_id.0
+            );
+            envelope(
+                axum::http::StatusCode::OK,
+                &pij_core::model::Envelope::ok(
+                    SEND,
+                    serde_json::json!({
+                        "msg_id": queued.msg_id,
+                        "outcome": {"outcome": "queued", "reason": reason},
+                        "job_id": queued.job_id,
+                        "document": queued.document,
+                    }),
+                ),
+            )
+        }
+        Err(super::DocumentRefusal::Refused(error)) => refused(SEND, error),
+        Err(super::DocumentRefusal::Internal(error)) => internal(SEND, error),
+    }
 }
 
 /// `POST /v1/shim/send` — one message, sender DERIVED.
@@ -464,6 +638,9 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         Ok(call) => call,
         Err(why) => return refused(SEND, why),
     };
+    if let Some(attachment) = call.attachment {
+        return send_attachment(&state, request.caller.as_ref(), attachment).await;
+    }
     if let Some(command) = call.command {
         return super::send_control(
             &state,

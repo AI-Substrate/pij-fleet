@@ -3673,6 +3673,10 @@ mod tests;
 pub enum SidecarRequest {
     /// Outbound Telegram message; also binds the reply target for this seat.
     Telegram(pij_sidecars::telegram::TelegramSend),
+    /// Outbound Telegram document, staged by content before it is queued.
+    /// A daemon older than this variant refuses the tag rather than sending
+    /// the caption alone.
+    TelegramDocument(pij_sidecars::telegram::TelegramDocumentRequest),
     /// Background command start or cancel.
     Bg(pij_sidecars::background::BgRequest),
     /// Chore definition, run, or baseline acknowledgement.
@@ -3693,6 +3697,16 @@ async fn sidecar(
     );
     let job = match &request {
         SidecarRequest::Telegram(send) => pij_sidecars::telegram::send_job(send),
+        SidecarRequest::TelegramDocument(document) => {
+            return match enqueue_telegram_document(&state, document.clone()).await {
+                Ok(queued) => envelope(
+                    StatusCode::OK,
+                    &Envelope::ok("pij sidecar", serde_json::json!(queued)),
+                ),
+                Err(DocumentRefusal::Refused(error)) => refused("pij sidecar", error),
+                Err(DocumentRefusal::Internal(error)) => internal("pij sidecar", error),
+            };
+        }
         SidecarRequest::Bg(bg) => pij_sidecars::background::job(bg, &request_id),
         SidecarRequest::Chore(chore) => pij_sidecars::chore::job(chore, &request_id),
     };
@@ -3715,5 +3729,56 @@ async fn sidecar(
             ),
         ),
         Err(error) => internal("pij sidecar", error),
+    }
+}
+
+/// A queued Telegram document: the job and exactly which bytes it will send.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct QueuedDocument {
+    pub serial_key: String,
+    pub job_id: pij_core::model::JobId,
+    pub msg_id: String,
+    pub document: pij_sidecars::telegram::StagedDocument,
+}
+
+/// Why a document was not queued: the caller's mistake, or ours.
+pub(crate) enum DocumentRefusal {
+    Refused(PijError),
+    Internal(PijError),
+}
+
+/// Stage a document by content and queue it; the one producer for both the
+/// `/v1/sidecar` route and `pij send pij-telegram --file`.
+///
+/// Every refusal (missing, empty, oversized, caption too long) is answered
+/// here, before a row exists, so a caller is never told "queued" for a file
+/// the worker could not send.
+pub(crate) async fn enqueue_telegram_document(
+    state: &AppState,
+    request: pij_sidecars::telegram::TelegramDocumentRequest,
+) -> std::result::Result<QueuedDocument, DocumentRefusal> {
+    let staging = state.services.telegram_attachments.clone();
+    let msg_id = request.msg_id.clone();
+    // Up to 50 MB of copy and hash: off the async runtime.
+    let staged = tokio::task::spawn_blocking(move || {
+        pij_sidecars::telegram::stage_document(&request, &staging)
+    })
+    .await
+    .map_err(|error| {
+        DocumentRefusal::Internal(PijError::Adapter {
+            adapter: "sidecars/telegram".to_string(),
+            message: format!("document staging task failed: {error}"),
+        })
+    })?;
+    let (job, document) = staged.map_err(DocumentRefusal::Refused)?;
+    let serial_key = job.serial_key.clone();
+    match state.services.queue.enqueue(job).await {
+        Ok(job_id) => Ok(QueuedDocument {
+            serial_key,
+            job_id,
+            msg_id,
+            document,
+        }),
+        Err(error) => Err(DocumentRefusal::Internal(error)),
     }
 }
