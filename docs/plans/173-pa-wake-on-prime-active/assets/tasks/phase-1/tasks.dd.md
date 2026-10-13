@@ -39,7 +39,7 @@ One coder implements the prime-active wake as written in impl-guide.dd.json tk-0
 | tk-0002 | PrimeActive tracker in core plus wiring in PaWatchdog::round with the spine delivery brake and audits | — | ph-a578 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0003 | Mutation receipts | — | ph-a578 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | docs/how/pa-watchdog.md and skill pointers | — | ph-a578 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | Gates and PR | — | ph-a578 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Gates and PR | — | ph-a578 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0006 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -73,6 +73,6 @@ One coder implements the prime-active wake as written in impl-guide.dd.json tk-0
 
 ### tk-0005
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0007 | harness checks passes (stage by stage under C12); a PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green; git ls-remote origin 'refs/notes/*' is empty | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0007 | harness checks passes (stage by stage under C12); a PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green; git ls-remote origin 'refs/notes/*' is empty | [x] checked | [bp-0003](../../backpressure.dd.md#rows) | [lg-0006](../../execution-log.dd.md#entries) |

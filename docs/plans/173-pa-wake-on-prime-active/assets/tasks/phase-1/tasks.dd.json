@@ -78,11 +78,12 @@
           "id": "tk-0005",
           "title": "Gates and PR",
           "phase": "ph-a578",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
-          "done": "tasks.dd.json#done_when/tk-0005"
+          "done": "tasks.dd.json#done_when/tk-0005",
+          "receipt": "../../execution-log.dd.json#entries/lg-0006"
         }
       ]
     },
@@ -143,8 +144,9 @@
           {
             "id": "dw-0007",
             "assertion": "harness checks passes (stage by stage under C12); a PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green; git ls-remote origin 'refs/notes/*' is empty",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0006"
           }
         ]
       }

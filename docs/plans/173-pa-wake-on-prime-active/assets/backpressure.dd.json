@@ -44,8 +44,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "RUN: harness checks; gh pr checks",
-          "state": "unchecked",
-          "probe": ".harness/extensions/checks, GitHub Actions on pij-fleet"
+          "state": "checked",
+          "probe": ".harness/extensions/checks, GitHub Actions on pij-fleet",
+          "receipt": "execution-log.dd.json#entries/lg-0006"
         }
       ]
     },

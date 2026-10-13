@@ -67,6 +67,15 @@
             "backpressure.dd.json#rows/bp-0001",
             "backpressure.dd.json#rows/bp-0003"
           ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-14T09:56:35+10:00",
+          "text": "PR https://github.com/AI-Substrate/pij-fleet/pull/53 opened at a6b2d121d1dd42d3dc8afa61f39b08d4a70a9039. gh pr checks 53 --watch: check (22) pass, check (24) pass, rust-lint pass, rust-test pass (run 38486994300). git ls-remote origin 'refs/notes/*' after push: empty. Gates in lg-0004/lg-0005; mutation in lg-0002; red in lg-0001.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
         }
       ]
     }

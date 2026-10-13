@@ -22,7 +22,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | bp-0001 | AC1-AC7: tracker and round behaviour (wake, arm, brake, cap, audit, limit, restart) | ph-a578 | EXTEND | computational | EXTEND→RUN: add prime-active cases to crates/daemon/src/pa_watchdog_tests.rs and crates/core/src/watchdog.rs tests; then nice -n 19 cargo test -j 4 -p pij-core watchdog && cargo test -j 4 -p pij-daemon pa_watchdog | [x] checked | — | execution-log.dd.json#entries/lg-0005 | the #52 fakes (fake clock, registry, delivery) in pa_watchdog_tests.rs |
 | bp-0002 | AC8: docs/how/pa-watchdog.md exists and covers the watchdog as shipped | ph-a578 | BUILD | computational | BUILD→RUN: write the doc; then test -s docs/how/pa-watchdog.md plus review judgement of its content | [x] checked | — | execution-log.dd.json#entries/lg-0003 | docs/how has no watchdog doc on 19953b2 |
-| bp-0003 | AC9: red-first, mutation receipts, full gate, CI | ph-a578 | EXISTS | computational | RUN: harness checks; gh pr checks | [ ] unchecked | — | — | .harness/extensions/checks, GitHub Actions on pij-fleet |
+| bp-0003 | AC9: red-first, mutation receipts, full gate, CI | ph-a578 | EXISTS | computational | RUN: harness checks; gh pr checks | [x] checked | — | execution-log.dd.json#entries/lg-0006 | .harness/extensions/checks, GitHub Actions on pij-fleet |
 
 <a id="sensors"></a>
 
