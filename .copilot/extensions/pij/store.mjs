@@ -926,6 +926,18 @@ class NativeCompletion {
 			this.routedFusionId = fusionIdOf(event);
 			return;
 		}
+		// A routed fusion that completes before the owned prompt adopts it was
+		// another turn's; forget it so a later unrouted prompt cannot claim it.
+		if (
+			!event.agentId &&
+			event.type === "session.fusion_completed" &&
+			this.routedFusionId !== undefined &&
+			fusionIdOf(event) === this.routedFusionId &&
+			this.fusionId !== this.routedFusionId
+		) {
+			this.routedFusionId = undefined;
+			return;
+		}
 		if (event.type === "user.message") {
 			if (!event.agentId && event.data?.messageId === this.nativeId) {
 				this.descendants.add(event.id);
@@ -950,7 +962,16 @@ class NativeCompletion {
 			(event.type === "assistant.turn_start" ||
 				event.type === "assistant.message" ||
 				event.type === "tool.execution_complete");
-		if (!sameFusion && !sameInteraction && !this.descendants.has(event.parentId)) return;
+		// An owned fused turn can stop before its commit; idle, error and abort carry
+		// no fusion id, may follow a persisted-only parent, and an ephemeral idle is
+		// never readable from history. The fusion id is adopted only at the owned
+		// prompt, after which every root terminal is this turn's.
+		const ownedFusionEnd =
+			!event.agentId &&
+			this.fusionId !== undefined &&
+			["session.idle", "session.error", "abort"].includes(event.type);
+		if (!sameFusion && !sameInteraction && !ownedFusionEnd && !this.descendants.has(event.parentId))
+			return;
 		this.descendants.add(event.id);
 		if (!event.agentId && finalMessage) this.finalMessages.add(event.id);
 		if (
@@ -1815,10 +1836,15 @@ export class NativeBridge {
 	 */
 	observeActivity(event) {
 		if (event?.agentId) return;
+		// A fused turn that ends without a commit has no root turn_end, so its
+		// aggregate completion and abort end the work too. A failed route does not:
+		// its fallback model still runs the turn.
 		const state =
 			event?.type === "assistant.turn_start" || event?.type === "session.fusion_route_started"
 				? "working"
-				: event?.type === "assistant.turn_end" || event?.type === "session.idle"
+				: ["assistant.turn_end", "session.idle", "session.fusion_completed", "abort"].includes(
+							event?.type,
+						)
 					? "idle"
 					: undefined;
 		if (!state || state === this.activityState || this.activityUnsupported) return;

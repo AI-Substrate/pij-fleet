@@ -1487,6 +1487,30 @@ test("activity: a HydraFusion turn is working from routing, not only at its comm
 	assert.deepEqual(states(), ["working", "idle"]);
 });
 
+// #46 review: a fused turn that ends without a commit has no root turn_end.
+for (const terminal of ["abort", "session.fusion_completed"]) {
+	test(`activity: routing's working is settled by ${terminal}`, async (t) => {
+		const { f, states } = await activityBridge(t);
+		f.event({ type: "session.fusion_route_started", id: "route", ephemeral: true, data: {} });
+		await flush();
+		f.event({
+			type: terminal,
+			id: "end",
+			data: { reason: "user_initiated", outcome: "cancelled", fusionId: "fusion-1" },
+		});
+		await flush();
+		assert.deepEqual(states(), ["working", "idle"]);
+	});
+}
+
+test("activity: a failed route keeps working, because its fallback still runs", async (t) => {
+	const { f, states } = await activityBridge(t);
+	f.event({ type: "session.fusion_route_started", id: "route", ephemeral: true, data: {} });
+	f.event({ type: "session.fusion_route_failed", id: "failed", data: { fallbackModel: "m" } });
+	await flush();
+	assert.deepEqual(states(), ["working"]);
+});
+
 test("activity: session.idle settles a working seat to idle", async (t) => {
 	const { f, states } = await activityBridge(t);
 	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
@@ -3352,6 +3376,66 @@ test("hydrafusion: another fusion's completion never completes owned work", asyn
 	});
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	f.bridge.stop();
+	await run;
+});
+
+/**
+ * #46 review: an owned fused turn that stops before any commit. The terminal's
+ * parent is a persisted-only event; an ephemeral idle is never readable from
+ * history, so a later backfill of that parent cannot replay it.
+ */
+for (const [terminal, data] of [
+	["session.idle", { aborted: true }],
+	["abort", { reason: "user_initiated" }],
+	["session.error", { errorType: "model_call" }],
+]) {
+	test(`hydrafusion: ${terminal} ends an owned fused turn across a parent gap`, async (t) => {
+		const f = fixture();
+		t.after(() => f.bridge.stop());
+		const run = f.bridge.run();
+		await f.accepted.promise;
+		hydraFusionCascade(f).before();
+		f.event({
+			type: terminal,
+			id: "terminal-with-gap",
+			parentId: "persisted-only-checkpoint",
+			ephemeral: terminal === "session.idle",
+			data,
+		});
+		await flush();
+		f.history.push({
+			type: "session.usage_checkpoint",
+			id: "persisted-only-checkpoint",
+			parentId: "repair-draft",
+			data: {},
+		});
+		for (let attempt = 0; attempt < 4; attempt++) await f.bridge.readEvents(f.bridge.completion);
+		assert.deepEqual(
+			f.reports.filter((event) => event.kind === "native-completed").map((event) => event.type),
+			[terminal],
+		);
+		assert.equal(f.trace.filter((x) => x === "claim").length, 2);
+		f.bridge.stop();
+		await run;
+	});
+}
+
+test("hydrafusion: idle before the owned prompt, or from a sub-agent, never ends it", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	// A previous fused turn routed and completed before this prompt was dequeued.
+	f.event({ type: "session.fusion_resolved", id: "old-resolved", data: { fusionId: "fusion-0" } });
+	f.event({ type: "session.fusion_completed", id: "old-done", data: { fusionId: "fusion-0" } });
+	f.event({ type: "session.idle", id: "old-idle", parentId: "old-gap", data: {} });
+	nativeUser(f, "native-message-137", "plain-user", "plain-interaction");
+	f.event({ type: "session.idle", id: "sub-idle", parentId: "gap", agentId: "sub", data: {} });
+	f.event({ type: "session.idle", id: "gap-idle", parentId: "unrelated-gap", data: {} });
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
 	f.bridge.stop();
 	await run;
 });

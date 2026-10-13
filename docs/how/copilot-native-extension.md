@@ -94,9 +94,15 @@ fused turn has this shape:
 So the receiver adopts the `fusionId` routed for its own prompt and re-anchors
 on it. The turn ends at the committed final turn or that fusion's
 `session.fusion_completed`; uncommitted phase output is never the final
-message, and the next queued Pij message waits for it. The seat publishes
-`working` from `session.fusion_route_started`, because the phases emit no root
-turn start. The `critique` pattern was not observed in the plan-169 canary.
+message, and the next queued Pij message waits for it. A fused turn that stops
+before any commit ends at its root `session.idle`, `abort` or `session.error`,
+even across a persisted-only parent (an ephemeral idle is never readable from
+history). The seat publishes `working` from `session.fusion_route_started`,
+because the phases emit no root turn start, and `idle` at a root turn end,
+`session.idle`, `abort` or `session.fusion_completed`. A failed route stays
+`working`: its fallback model still runs the turn. The `critique` pattern was
+not observed in the plan-169 canary; synthetic draft → critic → revision
+replay passes.
 
 ### Several sessions in one Copilot process (plan 168)
 
