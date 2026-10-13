@@ -639,6 +639,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/orchestration` | `orchestration baton define/list/show/request/grant/return/reclaim`; `prime set/retire/unset <seat>`; `role set <seat> <role>` / `role unset <seat>` | `baton-define`, `baton-list`, `baton-show`, `baton-request`, `baton-grant`, `baton-return`, `baton-reclaim`, `prime-set`, `prime-retire`, `prime-unset`, `orchestration-role-set`, `role-unset` |
 | POST `/v1/role` | `role [<seat>] <role>` / `role [<seat>] --unset`; typed `{seat?, role, caller}` | `role-set` |
 | POST `/v1/link` | `link <seat> [--parent <you>] --role <pm/worker/pa>`; argv + `caller` only | — (`crates/cli/tests/seat_roles.rs`) |
+| POST `/v1/watchdog` | `watchdog on [<seat>] [--every <duration>]`; `off [<seat>]`; `status [<seat>]`; argv + `caller` only | — ([Opt-in watchdog](#opt-in-watchdog)) |
 | POST `/v1/report` | `report now/state/question/blocked/clear/verify`; state metadata flags below | `report-question`, `report-verify` |
 | GET and POST `/v1/anomalies` | `anomalies [--here] [--project <slug>]`; GET `here=<absolute-path>&project=<slug>` | `anomalies-list`, `anomalies-argv` |
 | GET and POST `/v1/decisions` | `decisions [--state <open/answered/all>] [--asked_by <seat>] [--parent <seat>]`; GET keys `state`, `asked_by`, `parent` (literal underscore; `--asked-by` refuses) | `decisions-list`, `decisions-argv` |
@@ -823,6 +824,59 @@ A send receipt proves only its recorded delivery strength: queued is not parent 
 
 Obituary preparation, send and audit failures are isolated per seat: log the error, continue with the remaining parents, then report `death sweep: N notice(s) failed` once. A failed obituary does not roll back retirement or gain an automatic retry.
 
+## PA watchdog
+
+The daemon runs a watchdog for **PAs only**: seats whose asserted role is `pa`. No other role is watched, primes included. It has **no fixed cadence** (plan 172, 2026-10-13). Every 60 seconds it checks each PA's fleet and nudges each PA on the **idle edge**: the round in which the fleet's **workers** go from someone `working` to no one working. Only the daemon's own turn observation (`SeatDescriptor::state == working`) counts.
+
+**Supervisors never count** (#52 F1): every `pa`-role seat, every `prime`-role seat and the designated prime in scope are supervisors. Their turns are answers to nudges. If they counted, two PAs in one repository would re-arm each other's episode forever, and a lone PA would re-arm its own. Each PA gets one nudge per worker idle episode, and a new episode starts only after some worker has worked again. While any worker works, nothing is sent. The edge state is in-process: a daemon's first look at a PA only arms it, so a restart, or a PA appointed to an idle fleet, sends nothing until the next edge.
+
+The nudge goes out promptly at the edge, while the PA is most likely still warm. It is **not held for a cold or long PA**, because waking the PA is the point. It goes through the ordinary delivery path, so the composer and typing gates still apply. When the send guard's own verdict (`http::cold_wake::verdict`) says the PA is cold, the wake is audited before it is sent, exactly like a forced `pij send`: a `send.cold-wake-forced` event with reason `pa-watchdog: fleet idle`.
+
+**Fleet.** A PA's fleet is every live seat whose folder resolves, through `git rev-parse --git-common-dir`, to the same repository as the PA's recorded parent's folder, which covers every worktree. With no live parent, the PA's own folder anchors it. A folder git cannot place matches only itself.
+
+**Nudge.** The PA receives one message from `pij_core::BG_ACTOR` (`pij-bg`), built by `pij_core::pa_digest`:
+
+- a headline with seat, working, idle and ❄ counts;
+- a **Needs a look** list:
+  - seats `SeatDescriptor::nudgeable` that have been quiet for a whole interval;
+  - seats that declared `waiting`, `hold`, `blocked` or `question`;
+  - stale cards (`status-stale`). These come from the anomaly authority's own `StatusStaleDetector`, run over bounded reads. Each fleet seat gets one indexed `LIMIT 1` read for its latest card. Only for a card that is stale, the round then looks for its own clear or ack, matched by occurrence key, among the seat's `anomaly.clear` and `anomaly.ack` events since that card. That search uses a seat- and kind-indexed window of at most 4 pages of 256 rows. A clear for a different anomaly on the same seat never stands in for the card's own clear. Rows read per round follow the fleet and its stale cards, never the history. Other anomaly kinds stay with `pij anomalies`;
+- every seat, largest context first, with role, turn state, declared state, context, idle time, cache warmth and the cold-wake price of waking it.
+
+The digest reports facts. Policy, such as caps and exemptions, lives in the PA brief (`skills/pij/references/prime/pa.md`).
+
+**Usage-limit reset.** A fleet idle on a usage limit gets no edge nudge, because nothing can run. If any live Claude Code seat in the PA's scope is stopped by a quota rejection when the edge comes, the round records `watchdog.round` `{outcome: "idle-on-limit"}` and sends nothing. The reset wake follows instead:
+
+- **Source.** The source is the seat's transcript entry with `isApiErrorMessage: true`, `error: "rate_limit"`, `apiErrorStatus: 429` and `quotaLimits: {status: "rejected", rateLimitType, resetsAt}`, where `resetsAt` is UTC epoch seconds (`pij_core::usage_limit`, `pij_harnesses::ClaudeUsageLimits`). The display text ("resets 3:10pm …") is never parsed, and panes are never scraped.
+- **Which entry counts.** Only the transcript's *last* assistant entry counts, read from its final 64 KiB. So a seat that got past the limit, or an old rejection deeper in its history, does not count.
+- **Other harnesses.** OMP, Codex, Copilot and Pi record no equivalent structured field that pij knows of, so their seats are not read.
+- **When.** There is one wake per `(scope, resetsAt)`, at `resetsAt` plus `LIMIT_WAKE_MARGIN_SECS` (120 s). Every seat stopped by that reset in that scope is named in the one wake. It is claimed in the store's `limit_wakes` table (migration 0030) before it is sent, so several seats, overlapping rounds and restarts never wake twice. A reset that has already passed when first seen wakes at once, and the wake says it was seen late. The first sighting of each `(scope, resetsAt)` is audited as `watchdog.limit-scheduled`, with `due_at_ms`.
+- **Target.** The PA in scope; with no PA, the prime. The prime is the current `prime_designation` if that seat is live in scope (`prime-designation`), else a live seat in scope with role `prime` (`prime-role`); ties go to the lowest id. The source is recorded as `target_source`. No target still claims the reset and records `delivery: "no-target"`.
+- **Guard exemption.** The wake is exempt from the cold-wake guard with reason `limit-reset`, because the target is cold by necessity: a cold target gets a `send.cold-wake-forced` audit with that reason. The woken seat decides which workers to restart. The watchdog never wakes a worker.
+- **Audit.** Each wake appends `watchdog.limit-wake` with `scope`, `resets_at`, `limit_type`, `target`, `target_source`, `reason`, `late`, `stopped`, `cold_check` and `delivery`.
+- **Time.** Times are epoch values throughout. The wake shows the reset in the daemon's local zone with its name, rendered at that instant, so a reset across a daylight-saving change shows the zone in force then (e.g. `Wed 07 Oct 2026 03:00 AEDT`).
+
+**Bounded work per round.** Between edges a round reads no spine history. It does one registry list, one role join, and a size and mtime check of each Claude transcript; a transcript is re-read only when it changed. At an edge, transcript reads have a 3s wait, and at most one read per seat is ever outstanding. A read that outlives its wait is kept, that seat shows `?`, and no second read starts behind it until it lands. Spine reads are the per-seat card read and the per-stale-card disposition window described above.
+
+Every edge appends a `watchdog.round` event. Its payload carries `outcome` (`nudged` or `idle-on-limit`), `prime`, `scope`, `seats`, `delivery` (the receipt outcome, or the error text) and `cold_check`. `PIJ_RS_WATCHDOG_SECS` (default `watchdog_interval_secs`, 20 minutes) is the stall threshold: it decides when a ready seat is "quiet a whole interval" in the digest, and it is the default opt-in interval. It never schedules a PA nudge.
+
+## Opt-in watchdog
+
+Any other seat is watched only while it is opted in. `pij watchdog on [<seat>] [--every <duration>]` turns it on, `pij watchdog off [<seat>]` turns it off, and `pij watchdog status [<seat>]` lists `{pas, optins}`. The seat defaults to the caller. **Any seat may switch any live seat's watchdog**; the store row (`seat_watchdogs`, migration 0029) records `set_by` and `set_at`.
+
+- `--every` defaults to the PA interval and must be at least `1m`.
+- The change is persisted before it is announced. A real change appends one `watchdog.on` or `watchdog.off` event. When the caller is not the subject, the subject is also sent a held FYI that names the change and points to `pij watchdog status`; it opens no turn, and the receipt's `subject_told` reports it. These notices are **coalesced**: until the subject reads its FYIs, they share the id `watchdog-control:<seat>:<seq of its latest fyi.delivered>`, which the store ignores when repeated. So on/off churn leaves at most one pending notice per seat. The receipt's `changed` says whether anything changed. A no-op, such as `off` on a seat that is already off or `on` at the current interval, notifies nobody; it is audited as `watchdog.unchanged`, with the actor and the action.
+- Refusals:
+  - `E-RS-ARG` (400) for bad grammar, including the old TS leaves such as `disable-all`;
+  - `E-RS-NO-SEAT` (404) for a missing or tombstoned seat;
+  - `E-RS-WATCHDOG-PA` (409) for a PA, since PAs always have the watchdog.
+
+**When it fires.** An opted-in seat is a stall check, unlike a PA's clock. It is nudged once it has been quiet for a whole interval, measured from the latest of its last event, when it was turned on, and its last nudge. A seat mid-turn, or one that declared `waiting`, `hold`, `blocked` or `question`, is never nudged (`SeatDescriptor::nudgeable`). The nudge comes from `pij-bg`, is audited as `watchdog.nudge`, and always ends with how to stop it:
+
+```text
+[pij watchdog] <seat>: quiet 20m (watchdog on every 20m, set by <who>). Keep going if working, and report with `pij report now "<did>" "<next>"`. If this unit of work is finished, run `pij report state done`; if you are idle but available, run `pij report state ready`. No more work coming? Stop this watchdog: `pij watchdog off`.
+```
+
 ## Revive
 
 ```bash
@@ -866,7 +920,7 @@ This anchor is permanent; refusals and shipped consumers must not depend on an a
 - **Shim-only gaps / different meanings:** `spawn`, `revive`, `tail` and `daemon` refuse `E-RS-UNPORTED`; native capability is not a grammar-compatible shim port. Use the documented native forms in the [peer](../../skills/pij/references/routes/peer.md) and [ops](../../skills/pij/references/routes/ops.md) routes where available. Native tail is an event stream, not a transcript. [Native revive](#revive) accepts tombstoned or observed-dead ids and the authorized `--assume-dead --evidence` override; `--print` and `--attach` remain unsupported. Native spawn has no legacy layout/task/branch/plan-id flags.
 - **List/sessions filters:** shim `pij list` forwards declared `harness`, `folder`, `parent` and `scope=local` query values to GET `/v1/seats`. Shim and native `pij-rs list --here` scope to caller cwd; path-valued `--here` refuses. Native list has no other filters. `pij sessions` routes GET `/v1/shim/sessions` with no query flags or legacy union. Unsupported `--role`, `--prime`, `--archived` and tree semantics refuse instead of being dropped. Prime designation has no dedicated list/getter projection here: use actual designation receipts/events and authoritative government/human evidence; role assertion or an empty filtered view cannot prove absence.
 - **Baton projection limits:** a blocked-time field is not provided. Automatic request notices and their honest delivered/queued/unverified/null projection are supported as described under [Baton leases](#baton-leases); a durable request alone still does not prove recipient observation.
-- **Unported command surfaces:** `agent`, `path`, `telegram`, `models`, `watch`, `unwatch`, `chore`, `watchdog`, `focus` and `tree` refuse through the shim. This does not remove already composed sidecar internals; it does not advertise those old administrative grammars as a native port. `link` is ported (plan 166) with a narrower grammar: the caller is always the parent, and `--role` is required.
+- **Unported command surfaces:** `agent`, `path`, `telegram`, `models`, `watch`, `unwatch`, `chore`, `focus` and `tree` refuse through the shim. `watchdog` is ported (2026-10-09) as [`on/off/status`](#opt-in-watchdog); its old TS leaves (`pause`, `exempt`, `disable-all`…) refuse with `E-RS-ARG`. This does not remove already composed sidecar internals; it does not advertise those old administrative grammars as a native port. `link` is ported (plan 166) with a narrower grammar: the caller is always the parent, and `--role` is required.
 - **Inbox/admission:** verified external `inbox register` and `inbox --wait [ms]` are [supported](#verified-paneless-external-admission), not gaps. Paneless adopt, unlisted inbox leaves, generic shim `register`, send `--wait` and attachment semantics remain refused. Never fabricate host process evidence or use a legacy fallback; extension-owned registration/receive stays owned by that extension.
 - **Control and bg are supported, not gaps:** remote compact/new/reload, compact-self and bg create/list/tail/kill remain shipped. Controls carry no body; acceptance is not execution. Copilot and paneless controls refuse; new/reload require self or recorded parent plus target arming, not a prime role. Never replace refusal with slash text or sendkeys. bg remains daemon-owned detached execution (in the caller's cwd unless `--cwd`; optional `--timeout` ends it with a TIMEOUT turn; `list` shows running time and duration; `--events` makes an event source whose child fires `pij bg emit` / `POST /v1/bg/{job}/emit`, authenticated by its per-job `PIJ_BG_TOKEN` outside the daemon-key ring, batched per `--min-interval`/`--inline-max`, held as FYIs with `--fyi`, and routed to a warm prime or Telegram instead of waking a cold owner) with durable completion injection, bounded server-side log reads and owner/parent authorization; it introduces no answer queue cancellation.
 - **Native commit-trailers data gap:** forwarding is supported, but `commit_trailers::run` currently calls `derive` with no repository-designation input and does not query current assignment. It reads role-joined self/local seats, then uses a complete recorded-parent root as the explicit interim fallback. `Pij-Plan` derives from worktree path, branch or local flow context. Do not claim designation/current-assignment lookup or use stale legacy rows to fill either gap.

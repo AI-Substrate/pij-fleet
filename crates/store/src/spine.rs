@@ -25,11 +25,18 @@ use crate::orchestration::{SqliteOrchestration, sql_u64};
 /// cursor deep inside a run of equal `at` would re-read the run; splitting the
 /// predicate keeps both seeks exact.
 ///
+/// Both name their index (issue #35). With fresh statistics on skewed history
+/// the planner chose `rowid > ?` for the first query, because `seq` is the
+/// rowid, and that is a history scan. `INDEXED BY` makes the seek a contract,
+/// not a planner preference.
+///
 /// First the rest of the cursor's own time: `at = ? AND seq > ?`.
 pub const MATCHING_AT_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     INDEXED BY spine_by_seat_kind_at \
      WHERE seat = ?1 AND kind = ?2 AND at = ?3 AND seq > ?4 ORDER BY seq LIMIT ?5";
 /// Then later times, filling the page: `at > ?`.
 pub const MATCHING_AFTER_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     INDEXED BY spine_by_seat_kind_at \
      WHERE seat = ?1 AND kind = ?2 AND at > ?3 ORDER BY at, seq LIMIT ?4";
 
 /// An owned, lazy registry transaction returning its committed event and binding.

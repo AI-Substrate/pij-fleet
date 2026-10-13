@@ -591,6 +591,10 @@ async fn matching_since_seeks_exactly_inside_an_equal_time_run_whatever_the_hist
             .execute(&pool)
             .await
             .expect("analyze");
+        // Statistics load when a connection opens: reopen so every pooled
+        // connection plans with them (a pre-ANALYZE connection hid issue #35).
+        pool.close().await;
+        let pool = pij_store::open(&fresh.path()).await.expect("reopen");
         let cursor = [5_000_i64, history - 1, 2];
         assert_eq!(
             explain(&pool, pij_store::spine::MATCHING_AT_SQL, &cursor).await,
@@ -607,6 +611,56 @@ async fn matching_since_seeks_exactly_inside_an_equal_time_run_whatever_the_hist
                     .to_string()
             ],
             "history of {history}"
+        );
+    }
+}
+
+/// Issue #35, made hot by #38's per-tick watchdog disposition window. With
+/// 60k events for one seat and kind in three timestamp blocks (100/200/300)
+/// and fresh statistics, SQLite planned the first page at `since_at=300` as
+/// `rowid > ?`, a history scan. Both page queries now name their index.
+///
+/// The reopen is load-bearing: SQLite loads statistics when a connection
+/// opens, so a pooled connection opened before ANALYZE plans without them.
+/// Earlier probes of this issue flickered for exactly that reason, and a
+/// version of this test without the reopen passed before the fix too.
+#[tokio::test]
+async fn matching_since_stays_on_its_index_on_analyzed_skewed_history() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    sqlx::raw_sql(
+        "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<60000) \
+         INSERT INTO spine_events (v, at, kind, seat, payload) \
+         SELECT 1, CASE WHEN x<=20000 THEN 100 WHEN x<=40000 THEN 200 ELSE 300 END, \
+                'delivery.parked', 'pij-history', '{}' FROM n; \
+         ANALYZE;",
+    )
+    .execute(&pool)
+    .await
+    .expect("skewed history");
+    pool.close().await;
+    let pool = pij_store::open(&fresh.path()).await.expect("reopen");
+    for since_at in [100_i64, 250, 300, 400] {
+        assert_eq!(
+            explain(&pool, pij_store::spine::MATCHING_AT_SQL, &[since_at, 0, 256]).await,
+            vec![
+                "SEARCH spine_events USING INDEX spine_by_seat_kind_at (seat=? AND kind=? AND at=? AND seq>?)"
+                    .to_string()
+            ],
+            "first page at since_at={since_at}"
+        );
+        assert_eq!(
+            explain(
+                &pool,
+                pij_store::spine::MATCHING_AFTER_SQL,
+                &[since_at, 256]
+            )
+            .await,
+            vec![
+                "SEARCH spine_events USING INDEX spine_by_seat_kind_at (seat=? AND kind=? AND at>?)"
+                    .to_string()
+            ],
+            "rest of page after since_at={since_at}"
         );
     }
 }
@@ -1134,4 +1188,109 @@ async fn an_older_store_gains_the_bind_evidence_columns_by_migrating_forward() {
         "a pre-0003 row has no bind evidence, not a fake one"
     );
     assert_eq!(legacy.folder, "/abs/old");
+}
+
+/// Migration probe for 0029 (opt-in watchdogs) and 0030 (limit-reset wakes):
+/// a store on main's schema 28, which is what production runs after
+/// federation, holding a seat, a role, a spine event and a pending FYI in
+/// federation's re-keyed table, moves to the current schema with every row
+/// intact and both new tables empty and usable.
+#[tokio::test]
+async fn watchdog_migrations_move_a_schema_28_store_to_current_losing_nothing() {
+    let fresh = FreshStore::new();
+    {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(fresh.path())
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .expect("open schema-28 store");
+        let schema_28 = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                pij_store::migrate::MIGRATIONS
+                    .iter()
+                    .filter(|migration| migration.version <= 28)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        schema_28
+            .run(&pool)
+            .await
+            .expect("apply main's migrations through 0028");
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(version, 28, "0028 records its own version");
+        sqlx::raw_sql(
+            "INSERT INTO seats (id, harness, folder, state, seq) VALUES ('pij-old', 'claude', '/abs/old', 'idle', 1); \
+             INSERT INTO seat_roles (seat, role, assigned_by, assigned_at) VALUES ('pij-old', 'pa', 'pij-prime', 5); \
+             INSERT INTO spine_events (seq, v, at, kind, seat, payload) VALUES (1, 1, 10, 'seat.put', 'pij-old', '{}'); \
+             INSERT INTO fyis (origin, id, recipient, sender, body, held_at_ms, state) \
+               VALUES ('peer-box', 'fyi-1', 'pij-old', 'pij-prime', 'heads-up', 20, 'pending');",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed schema-28 rows");
+        pool.close().await;
+    }
+
+    let pool = pij_store::open(&fresh.path())
+        .await
+        .expect("this build migrates 28 → current");
+    assert_eq!(
+        pij_store::schema_version(&pool).await.unwrap(),
+        pij_store::SCHEMA_VERSION
+    );
+    let counts: (i64, i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM seats WHERE id='pij-old'), \
+                (SELECT count(*) FROM seat_roles WHERE seat='pij-old' AND role='pa'), \
+                (SELECT count(*) FROM spine_events WHERE seq=1), \
+                (SELECT count(*) FROM fyis WHERE origin='peer-box' AND id='fyi-1' AND state='pending')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(counts, (1, 1, 1, 1), "every schema-28 row survives");
+
+    let store = pij_store::SqliteOrchestration::new(pool);
+    assert!(store.list_watchdogs().await.unwrap().is_empty());
+    let optin = pij_core::watchdog::WatchdogOptIn {
+        seat: SeatId::from("pij-old"),
+        interval_secs: 1_800,
+        set_by: SeatId::from("pij-prime"),
+        set_at_ms: 30,
+    };
+    store.set_watchdog(&optin).await.unwrap();
+    assert_eq!(store.list_watchdogs().await.unwrap(), vec![optin]);
+    assert!(
+        store
+            .clear_watchdog(&SeatId::from("pij-old"))
+            .await
+            .unwrap()
+    );
+
+    // One limit-reset wake per (scope, resetsAt): the second claim loses.
+    assert!(store.limit_wakes().await.unwrap().is_empty());
+    let wake = pij_core::usage_limit::LimitWake {
+        scope: "/repo/.git".into(),
+        resets_at_secs: 1_791_021_600,
+        limit_type: "seven_day".into(),
+        target: Some(SeatId::from("pij-old")),
+        target_source: "pa-role".into(),
+        fired_at_ms: 40,
+    };
+    assert!(store.claim_limit_wake(&wake).await.unwrap());
+    let again = pij_core::usage_limit::LimitWake {
+        target: None,
+        target_source: "none".into(),
+        fired_at_ms: 50,
+        ..wake.clone()
+    };
+    assert!(!store.claim_limit_wake(&again).await.unwrap());
+    assert_eq!(store.limit_wakes().await.unwrap(), vec![wake]);
 }

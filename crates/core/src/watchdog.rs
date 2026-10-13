@@ -4,9 +4,67 @@
 //! activity observations, and persisted watchdog controls. Core receives that
 //! immutable view and decides which seats are due; it reads no clock and performs
 //! no persistence or delivery.
+//!
+//! **PAs** (Jordan, 2026-10-09) are not scheduled here. A PA is the fleet's
+//! watchdog, and it is nudged when its fleet goes idle (plan 172, 2026-10-13:
+//! "an idle fleet means nobody doing anything"), never on a fixed cadence:
+//! see [`fleet_working`] and [`IdleEdge`]. A fleet that went idle on a usage
+//! limit is woken at the reset instead ([`crate::usage_limit`]).
 
 use crate::config::Config;
-use crate::model::{SeatDescriptor, SeatId};
+use crate::model::{SeatDescriptor, SeatId, SystemState};
+
+/// The one role the PA watchdog serves.
+pub const PA_ROLE: &str = "pa";
+
+/// The role a prime asserts.
+pub const PRIME_ROLE: &str = "prime";
+
+/// Is this seat a live PA the watchdog serves? Role is read from the
+/// descriptor, which the composition edge must have joined from the role
+/// store (the only role authority) before calling.
+pub fn is_watched_pa(seat: &SeatDescriptor) -> bool {
+    seat.role.as_deref() == Some(PA_ROLE) && seat.tombstoned_at.is_none() && !seat.relay
+}
+
+/// Is any WORKER in the scope working? "The fleet" is the workers
+/// (pij-far-jackal ruling on #52 F1): every supervisor in scope is excluded,
+/// meaning every `pa`-role seat, every `prime`-role seat and the designated
+/// prime, not just the PA being evaluated. A supervisor's turn is its answer
+/// to a nudge. If it counted, two PAs in one repository would re-arm each
+/// other's idle episode forever, and a lone PA would re-arm its own.
+/// Tombstoned seats never count. Roles must already be joined from the
+/// role store.
+pub fn fleet_working<'a>(
+    scope: impl IntoIterator<Item = &'a SeatDescriptor>,
+    designated_prime: Option<&SeatId>,
+) -> bool {
+    scope.into_iter().any(|seat| {
+        let supervisor = matches!(seat.role.as_deref(), Some(PA_ROLE | PRIME_ROLE))
+            || designated_prime == Some(&seat.id);
+        !supervisor && seat.tombstoned_at.is_none() && seat.state == SystemState::Working
+    })
+}
+
+/// One PA's idle-edge tracker: the fleet's working state as last observed.
+///
+/// A nudge goes on the EDGE from working to all-idle, once per idle episode;
+/// a new episode starts only after some seat has worked again. A first
+/// observation only arms the tracker, so a daemon (re)start or a newly
+/// appointed PA never nudges a fleet that was already idle.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct IdleEdge {
+    working: Option<bool>,
+}
+
+impl IdleEdge {
+    /// Record this round's observation. `true` exactly on working → idle.
+    pub fn observe(&mut self, working: bool) -> bool {
+        let edge = self.working == Some(true) && !working;
+        self.working = Some(working);
+        edge
+    }
+}
 
 /// Why the scheduler produced a nudge.
 ///
@@ -148,4 +206,57 @@ impl WatchdogService {
             })
             .collect()
     }
+}
+
+/// A seat that opted in to the watchdog (`pij watchdog on`). PAs are watched
+/// by role and never need one. Any seat may turn any seat's watchdog on or
+/// off, so the row says who did it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WatchdogOptIn {
+    /// The watched seat.
+    pub seat: SeatId,
+    /// How long the seat may be quiet before it is nudged.
+    pub interval_secs: u64,
+    /// The seat that turned it on.
+    pub set_by: SeatId,
+    /// When, in milliseconds since the epoch.
+    pub set_at_ms: u64,
+}
+
+/// Is an opted-in, non-PA seat due a nudge?
+///
+/// Unlike a PA's clock this is a stall check, so the TS lessons hold: a seat
+/// mid-turn is not stalled however quiet it is, and a seat that declared
+/// `waiting`, `hold`, `blocked` or `question` is silent on purpose
+/// ([`SeatDescriptor::nudgeable`]). `last_activity_at_secs` is the later of
+/// the seat's last event and its last nudge.
+pub fn optin_due(
+    seat: &SeatDescriptor,
+    optin: &WatchdogOptIn,
+    last_activity_at_secs: u64,
+    now_secs: u64,
+) -> bool {
+    seat.tombstoned_at.is_none()
+        && seat.role.as_deref() != Some(PA_ROLE)
+        && seat.nudgeable()
+        && now_secs.saturating_sub(last_activity_at_secs) >= optin.interval_secs
+}
+
+/// The nudge an opted-in seat receives. Every nudge says how to stop it and
+/// that the seat should, when no more work is coming.
+pub fn optin_nudge(seat: &SeatId, quiet_secs: u64, optin: &WatchdogOptIn) -> String {
+    let who = if optin.set_by == optin.seat {
+        "you".to_string()
+    } else {
+        optin.set_by.to_string()
+    };
+    format!(
+        "[pij watchdog] {seat}: quiet {} (watchdog on every {}, set by {who}). \
+         Keep going if working, and report with `pij report now \"<did>\" \"<next>\"`. \
+         If this unit of work is finished, run `pij report state done`; \
+         if you are idle but available, run `pij report state ready`. \
+         No more work coming? Stop this watchdog: `pij watchdog off`.",
+        crate::cold_wake::human_duration(quiet_secs.saturating_mul(1_000)),
+        crate::cold_wake::human_duration(optin.interval_secs.saturating_mul(1_000)),
+    )
 }

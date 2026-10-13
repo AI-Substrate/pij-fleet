@@ -20,6 +20,19 @@ impl DaemonClient {
         .await
     }
 
+    /// Forward watchdog arguments (without the leading verb) and caller evidence.
+    pub async fn watchdog(&self, args: &[String], caller: &CallerContext) -> Envelope<Value> {
+        let argv: Vec<&str> = std::iter::once("watchdog")
+            .chain(args.iter().map(String::as_str))
+            .collect();
+        self.post(
+            "pij watchdog",
+            "/v1/watchdog",
+            &json!({"argv":argv,"caller":caller}),
+        )
+        .await
+    }
+
     /// Forward link arguments (without the leading verb) and caller evidence.
     pub async fn link(&self, args: &[String], caller: &CallerContext) -> Envelope<Value> {
         let argv: Vec<&str> = std::iter::once("link")

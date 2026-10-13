@@ -265,8 +265,8 @@ handover="$SKILL/references/prime/templates/seat-handover.md"
 
 for marker in \
   'pij node show <seat> --json' \
-  '`pij link`/`tree` refuse' \
-  'no existing-seat reparent/root-placement port exists' \
+  '`tree` still refuses' \
+  'Link takes a seat with no live parent, or re-roles one you parent.' \
   'pij adopt "$TMUX_PANE" --harness <h> ${PIJ_PARENT_ID:+--parent "$PIJ_PARENT_ID"}' \
   'recorded `parent`, not a spawnedBy fallback' \
   'Close requires self or the current recorded parent.' \
@@ -283,7 +283,7 @@ done
 for marker in \
   '`pij list --json` is the unfiltered active rs roster' \
   '`pij node show <id> --json` is its governed subtree' \
-  'List `--prime`/`--archived`, tree and link are unported, not alternative probes.' \
+  'List `--prime`/`--archived` and tree are unported, not alternative probes.' \
   '**not prime designation**' \
   'There is no dedicated rs prime-list/getter projection in this cutover' \
   'A missing local directory or empty active roster never proves no prime exists.' \

@@ -28,10 +28,12 @@ pub mod liveness;
 pub mod model;
 pub mod names;
 pub mod orchestration;
+pub mod pa_digest;
 pub mod ports;
 pub mod report;
 pub mod session_status;
 pub mod status;
+pub mod usage_limit;
 pub mod watchdog;
 pub mod wire;
 

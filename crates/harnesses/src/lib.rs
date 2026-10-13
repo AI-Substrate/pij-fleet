@@ -7,6 +7,7 @@ mod composer;
 mod interaction;
 mod models;
 mod spawn;
+mod usage_limit;
 
 pub mod proc;
 
@@ -34,3 +35,4 @@ pub use spawn::{
     SpawnPlan, SpawnPlanInput, build_spawn_plan, observed_launch_command,
     validate_executable_override,
 };
+pub use usage_limit::{ClaudeUsageLimits, TAIL_BYTES, local_clock_text};
