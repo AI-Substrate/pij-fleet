@@ -116,6 +116,9 @@ pub struct Services {
     pub liveness: Arc<dyn LivenessPort>,
     /// Session facts from harness transcripts, for `pij state`'s `sessionStatus`.
     pub session_status: Arc<dyn SessionStatusPort>,
+    /// Usage-limit rejections from harness transcripts (plan 172 R3): the PA
+    /// watchdog's limit-reset wake. Blocking; called off the reactor.
+    pub usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource>,
     /// The ONE delivery path.
     ///
     /// `/v1/send` used to enqueue a private payload shape of its own and
@@ -461,6 +464,15 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             session_roots(),
         )),
     };
+    // Follows the session-status choice: a daemon that reads no transcripts
+    // reads no quota records either.
+    let usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource> =
+        match config.adapters.session_status {
+            AdapterChoice::Fake => Arc::new(pij_core::usage_limit::NoUsageLimits),
+            AdapterChoice::Real => Arc::new(pij_harnesses::ClaudeUsageLimits::new(
+                pij_harnesses::claude_homes(),
+            )),
+        };
 
     let orchestration = Arc::new(OrchestrationService::new());
 
@@ -538,6 +550,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         harnesses,
         liveness,
         session_status,
+        usage_limits,
         delivery,
         roles,
         governance,

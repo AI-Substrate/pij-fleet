@@ -8,6 +8,7 @@ use pij_core::orchestration::{
     DescriptorField, ParentAttribution, ReconcileDecision, RoleAssignment, SpawnRecord, StreamPlan,
     VerifiedDescriptor, derive_parent, plan_descriptor_reconciliation,
 };
+use pij_core::usage_limit::LimitWake;
 use pij_core::watchdog::WatchdogOptIn;
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
@@ -371,6 +372,40 @@ impl SqliteOrchestration {
         Ok(done.rows_affected() > 0)
     }
 
+    /// Claim the one usage-limit-reset wake for `(scope, resets_at)`, before
+    /// it is sent. `false` means it was already claimed and must not be sent.
+    pub async fn claim_limit_wake(&self, wake: &LimitWake) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let done = sqlx::query(
+            "INSERT OR IGNORE INTO limit_wakes \
+             (scope, resets_at, limit_type, target, target_source, fired_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )
+        .bind(&wake.scope)
+        .bind(i64::try_from(wake.resets_at_secs).map_err(|_| store_range("resets_at"))?)
+        .bind(&wake.limit_type)
+        .bind(wake.target.as_ref().map(SeatId::as_str))
+        .bind(&wake.target_source)
+        .bind(i64::try_from(wake.fired_at_ms).map_err(|_| store_range("fired_at"))?)
+        .execute(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    /// Every fired limit-reset wake, oldest reset first.
+    pub async fn limit_wakes(&self) -> Result<Vec<LimitWake>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(
+            "SELECT scope, resets_at, limit_type, target, target_source, fired_at \
+             FROM limit_wakes ORDER BY resets_at, scope",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        rows.into_iter().map(limit_wake).collect()
+    }
+
     /// Reserve the complete stream recipe before Git mutates a worktree.
     pub async fn reserve_stream(
         &self,
@@ -610,6 +645,26 @@ fn watchdog_optin(row: sqlx::sqlite::SqliteRow) -> Result<WatchdogOptIn> {
         set_at_ms: sql_u64(
             row.try_get("set_at").map_err(adapter_error)?,
             "watchdog set_at",
+        )?,
+    })
+}
+
+fn limit_wake(row: sqlx::sqlite::SqliteRow) -> Result<LimitWake> {
+    Ok(LimitWake {
+        scope: row.try_get("scope").map_err(adapter_error)?,
+        resets_at_secs: sql_u64(
+            row.try_get("resets_at").map_err(adapter_error)?,
+            "limit wake resets_at",
+        )?,
+        limit_type: row.try_get("limit_type").map_err(adapter_error)?,
+        target: row
+            .try_get::<Option<String>, _>("target")
+            .map_err(adapter_error)?
+            .map(SeatId),
+        target_source: row.try_get("target_source").map_err(adapter_error)?,
+        fired_at_ms: sql_u64(
+            row.try_get("fired_at").map_err(adapter_error)?,
+            "limit wake fired_at",
         )?,
     })
 }

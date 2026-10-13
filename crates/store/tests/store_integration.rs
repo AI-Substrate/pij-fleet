@@ -1190,12 +1190,13 @@ async fn an_older_store_gains_the_bind_evidence_columns_by_migrating_forward() {
     assert_eq!(legacy.folder, "/abs/old");
 }
 
-/// Migration probe for 0029 (opt-in watchdogs): a store on main's schema 28,
-/// which is what production runs after federation, holding a seat, a role, a
-/// spine event and a pending FYI in federation's re-keyed table, moves to 29
-/// with every row intact and the new table empty and usable.
+/// Migration probe for 0029 (opt-in watchdogs) and 0030 (limit-reset wakes):
+/// a store on main's schema 28, which is what production runs after
+/// federation, holding a seat, a role, a spine event and a pending FYI in
+/// federation's re-keyed table, moves to the current schema with every row
+/// intact and both new tables empty and usable.
 #[tokio::test]
-async fn seat_watchdogs_migration_moves_a_schema_28_store_to_29_losing_nothing() {
+async fn watchdog_migrations_move_a_schema_28_store_to_current_losing_nothing() {
     let fresh = FreshStore::new();
     {
         let options = sqlx::sqlite::SqliteConnectOptions::new()
@@ -1240,8 +1241,11 @@ async fn seat_watchdogs_migration_moves_a_schema_28_store_to_29_losing_nothing()
 
     let pool = pij_store::open(&fresh.path())
         .await
-        .expect("this build migrates 28 → 29");
-    assert_eq!(pij_store::schema_version(&pool).await.unwrap(), 29);
+        .expect("this build migrates 28 → current");
+    assert_eq!(
+        pij_store::schema_version(&pool).await.unwrap(),
+        pij_store::SCHEMA_VERSION
+    );
     let counts: (i64, i64, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM seats WHERE id='pij-old'), \
                 (SELECT count(*) FROM seat_roles WHERE seat='pij-old' AND role='pa'), \
@@ -1269,4 +1273,24 @@ async fn seat_watchdogs_migration_moves_a_schema_28_store_to_29_losing_nothing()
             .await
             .unwrap()
     );
+
+    // One limit-reset wake per (scope, resetsAt): the second claim loses.
+    assert!(store.limit_wakes().await.unwrap().is_empty());
+    let wake = pij_core::usage_limit::LimitWake {
+        scope: "/repo/.git".into(),
+        resets_at_secs: 1_791_021_600,
+        limit_type: "seven_day".into(),
+        target: Some(SeatId::from("pij-old")),
+        target_source: "pa-role".into(),
+        fired_at_ms: 40,
+    };
+    assert!(store.claim_limit_wake(&wake).await.unwrap());
+    let again = pij_core::usage_limit::LimitWake {
+        target: None,
+        target_source: "none".into(),
+        fired_at_ms: 50,
+        ..wake.clone()
+    };
+    assert!(!store.claim_limit_wake(&again).await.unwrap());
+    assert_eq!(store.limit_wakes().await.unwrap(), vec![wake]);
 }

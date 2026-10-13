@@ -1,4 +1,4 @@
-//! The PA watchdog digest: what counts as fleet change, and what the PA reads.
+//! The PA watchdog digest: what the PA reads when its fleet goes idle.
 
 use pij_core::cold_wake::{ColdWakeView, SeatSize};
 use pij_core::model::{Harness, SeatDescriptor, SeatId, SemanticState, SystemState};
@@ -7,8 +7,6 @@ use pij_core::session_status::CacheState;
 
 const MIN: u64 = 60_000;
 
-/// One edit to the fleet: its rows, and the view that holds anomalies.
-type Edit = dyn Fn(&mut Vec<FleetRow>, &mut FleetView);
 const INTERVAL_MS: u64 = 20 * MIN;
 
 fn row(
@@ -67,71 +65,6 @@ fn fleet() -> Vec<FleetRow> {
         ),
         row("pij-coder", None, SystemState::Working, None, 650_000, 0),
     ]
-}
-
-#[test]
-fn the_pas_own_activity_never_counts_as_fleet_change() {
-    let before = view(fleet());
-    let mut rows = fleet();
-    rows[0].size.context_used = Some(140_000);
-    rows[0].seat.state = SystemState::Working;
-    rows[0].seat.semantic_state = None;
-    assert_eq!(
-        before.fingerprint(),
-        view(rows).fingerprint(),
-        "answering one nudge must not manufacture the next"
-    );
-}
-
-#[test]
-fn passing_time_alone_is_quiet() {
-    let before = view(fleet());
-    let mut rows = fleet();
-    rows[1].size.idle_ms = Some(9 * MIN);
-    rows[1].size.cache_state = Some(CacheState::Cold {
-        expired_for_ms: MIN,
-    });
-    assert_eq!(before.fingerprint(), view(rows).fingerprint());
-}
-
-#[test]
-fn every_real_change_is_a_change() {
-    let base = view(fleet()).fingerprint();
-    let changed = |edit: &Edit| {
-        let mut rows = fleet();
-        let mut target = view(Vec::new());
-        edit(&mut rows, &mut target);
-        target.rows = rows;
-        target.fingerprint()
-    };
-
-    let cases: [(&str, &Edit); 6] = [
-        ("context grew", &|rows, _| {
-            rows[2].size.context_used = Some(700_000)
-        }),
-        ("turn ended", &|rows, _| {
-            rows[2].seat.state = SystemState::Idle
-        }),
-        ("declared a state", &|rows, _| {
-            rows[1].seat.semantic_state = Some(SemanticState::Question);
-        }),
-        ("went quiet past the interval", &|rows, _| {
-            rows[1].size.idle_ms = Some(INTERVAL_MS);
-        }),
-        ("a seat joined", &|rows, _| {
-            rows.push(row("pij-new", None, SystemState::Idle, None, 10_000, 0));
-        }),
-        ("an anomaly opened", &|_, target| {
-            target.anomalies.push(FleetAnomaly {
-                seat: SeatId::from("pij-coder".to_string()),
-                kind: "status-stale".into(),
-                detail: "card 2h old".into(),
-            });
-        }),
-    ];
-    for (name, edit) in cases {
-        assert_ne!(base, changed(edit), "{name} must count as change");
-    }
 }
 
 #[test]
@@ -206,7 +139,7 @@ fn digest_lists_every_seat_largest_first_and_marks_the_pa_and_cold_wakes() {
     let text = view(rows).digest();
 
     assert!(text.starts_with(
-        "[pij watchdog] fleet round for pij-prime (/repo/.git) — 3 seats: 1 working, 2 idle, 1 cold ❄"
+        "[pij watchdog] fleet idle for pij-prime (/repo/.git) — 3 seats: 1 working, 2 idle, 1 cold ❄"
     ));
     let order: Vec<&str> = ["pij-coder", "pij-prime", "pij-pa"]
         .into_iter()
@@ -228,6 +161,6 @@ fn digest_lists_every_seat_largest_first_and_marks_the_pa_and_cold_wakes() {
     assert!(order[1].contains("❄ $6.20 to wake"), "{text}");
     assert!(order[2].ends_with("(you)"), "{text}");
     assert!(text.ends_with(
-        "Set no timers or background loops; pij nudges you again when the fleet changes."
+        "Set no timers or background loops; pij nudges you again the next time the fleet goes idle."
     ));
 }

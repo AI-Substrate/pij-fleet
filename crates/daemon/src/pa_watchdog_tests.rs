@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use pij_core::config::{AdapterChoice, Adapters, Config};
 use pij_core::model::{Harness, SeatDescriptor, SeatId, SemanticState, SystemState};
 use pij_core::session_status::{Fact, SeatStatus, SessionStatusReply};
+use pij_core::usage_limit::{LIMIT_WAKE_MARGIN_SECS, QuotaRejection, UsageLimitSource};
 use pij_testkit::FreshStore;
 use pij_testkit::fakes::FakeSessionStatus;
 
@@ -107,8 +108,51 @@ fn now_ms() -> u64 {
     crate::http::system_time_ms().unwrap()
 }
 
+/// Every message queued for `seat`, oldest first, drained from the queue.
+async fn drain(services: &crate::Services, seat: &str) -> Vec<pij_core::model::Msg> {
+    let mut messages = Vec::new();
+    while let Some((job, payload)) = services
+        .queue
+        .claim(&[format!("delivery:{seat}")], "test-drain")
+        .await
+        .unwrap()
+    {
+        messages.push(serde_json::from_str(&payload.payload).unwrap());
+        services
+            .queue
+            .ack(job, pij_core::model::Outcome::Done)
+            .await
+            .unwrap();
+    }
+    messages
+}
+
+async fn set_state(services: &crate::Services, seat: &SeatDescriptor, state: SystemState) {
+    let mut seat = seat.clone();
+    seat.state = state;
+    services.registry.put(seat).await.unwrap();
+}
+
+fn audits(events: &[pij_core::model::Event], kind: &str) -> Vec<serde_json::Value> {
+    events
+        .iter()
+        .filter(|event| event.kind == kind)
+        .map(|event| serde_json::from_str(&event.payload).unwrap())
+        .collect()
+}
+
+async fn events(services: &crate::Services) -> Vec<pij_core::model::Event> {
+    services
+        .spine
+        .tail(None, pij_core::model::Seq(0))
+        .await
+        .unwrap()
+}
+
+/// Plan 172 (Jordan, 2026-10-13): the PA is nudged on the EDGE from working
+/// to all-idle, once per idle episode; while anyone works, nothing is sent.
 #[tokio::test]
-async fn only_pas_are_nudged_with_their_whole_repository_and_quiet_rounds_send_nothing() {
+async fn a_pa_is_nudged_once_each_time_its_whole_repository_goes_idle() {
     let repos = Repos::new();
     let (mut services, _store) = services().await;
     let start = now_ms();
@@ -124,60 +168,46 @@ async fn only_pas_are_nudged_with_their_whole_repository_and_quiet_rounds_send_n
     let pa = seat("pij-pa", &main, Some("pij-prime"));
     let mut coder = seat("pij-coder", &repos.path("feature"), None);
     coder.semantic_state = Some(SemanticState::Question);
+    coder.state = SystemState::Working;
     let outsider = seat("pij-outsider", &repos.path("elsewhere"), Some("pij-prime"));
-    for descriptor in [prime, pa, coder.clone(), outsider] {
+    for descriptor in [prime, pa.clone(), coder.clone(), outsider.clone()] {
         services.registry.put(descriptor).await.unwrap();
     }
     let watchdog = PaWatchdog::default();
+    let round = |at: u64| watchdog.round(&services, INTERVAL, at);
 
     // No PA yet: a prime and its other children are never watchdog targets.
-    assert!(
-        watchdog
-            .round(&services, INTERVAL, start)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    set_state(&services, &coder, SystemState::Idle).await;
+    assert!(round(start).await.unwrap().is_empty());
+    set_state(&services, &coder, SystemState::Working).await;
 
     services
         .roles
         .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
         .await
         .expect("parent asserts its child's role");
-    assert_eq!(
-        watchdog.round(&services, INTERVAL, start).await.unwrap(),
-        vec![RoundOutcome::Armed("pij-pa".into())],
-        "first sighting starts the clock rather than nudging at boot"
-    );
-    let at = |intervals: u64| start + intervals * INTERVAL * 1_000;
-    assert!(
-        watchdog
-            .round(&services, INTERVAL, at(1) - 1_000)
-            .await
-            .unwrap()
-            .is_empty(),
-        "not due before a whole interval"
-    );
+    for minute in 0..3 {
+        assert!(
+            round(start + minute * 60_000).await.unwrap().is_empty(),
+            "a busy fleet sends nothing"
+        );
+    }
 
-    let nudged = watchdog.round(&services, INTERVAL, at(1)).await.unwrap();
+    // The one working seat, in a sibling worktree, stops: the edge.
+    set_state(&services, &coder, SystemState::Idle).await;
     assert_eq!(
-        nudged,
+        round(start + 180_000).await.unwrap(),
         vec![RoundOutcome::Nudged {
             pa: "pij-pa".into(),
             delivery: "queued".into()
         }]
     );
-    let (_, job) = services
-        .queue
-        .peek(&["delivery:pij-pa".to_string()])
-        .await
-        .unwrap()
-        .expect("the nudge is queued for the PA");
-    let message: pij_core::model::Msg = serde_json::from_str(&job.payload).unwrap();
-    assert_eq!(message.from.as_str(), "pij-bg");
-    let body = message.body;
+    let nudges = drain(&services, "pij-pa").await;
+    assert_eq!(nudges.len(), 1);
+    assert_eq!(nudges[0].from.as_str(), "pij-bg");
+    let body = &nudges[0].body;
     assert!(
-        body.starts_with("[pij watchdog] fleet round for pij-prime"),
+        body.starts_with("[pij watchdog] fleet idle for pij-prime"),
         "{body}"
     );
     assert!(
@@ -192,90 +222,285 @@ async fn only_pas_are_nudged_with_their_whole_repository_and_quiet_rounds_send_n
         !body.contains("pij-outsider"),
         "a child in another repository is not this fleet: {body}"
     );
-    for not_pa in ["pij-prime", "pij-coder", "pij-outsider"] {
+
+    // Staying idle sends no more; neither does the PA's own turn, nor work
+    // in another repository.
+    for (at, who, state) in [
+        (240_000, &pa, SystemState::Working),
+        (300_000, &pa, SystemState::Idle),
+        (360_000, &outsider, SystemState::Working),
+        (420_000, &outsider, SystemState::Idle),
+    ] {
+        set_state(&services, who, state).await;
         assert!(
-            services
-                .queue
-                .peek(&[format!("delivery:{not_pa}")])
-                .await
-                .unwrap()
-                .is_none(),
-            "{not_pa} is not a PA and gets no watchdog"
+            round(start + at).await.unwrap().is_empty(),
+            "{} {:?}: still one idle episode",
+            who.id,
+            state
         );
     }
 
+    // Work again, then idle again: one more nudge.
+    set_state(&services, &coder, SystemState::Working).await;
+    assert!(round(start + 480_000).await.unwrap().is_empty());
+    set_state(&services, &coder, SystemState::Idle).await;
+    assert_eq!(round(start + 540_000).await.unwrap().len(), 1);
+    assert_eq!(drain(&services, "pij-pa").await.len(), 1);
+    for not_pa in ["pij-prime", "pij-coder", "pij-outsider"] {
+        assert!(
+            drain(&services, not_pa).await.is_empty(),
+            "{not_pa} is not a PA and gets no watchdog"
+        );
+    }
+    let rounds = audits(&events(&services).await, "watchdog.round");
     assert_eq!(
-        watchdog.round(&services, INTERVAL, at(2)).await.unwrap(),
-        vec![RoundOutcome::Quiet("pij-pa".into())],
-        "nothing changed, so no PA turn is paid for"
+        rounds
+            .iter()
+            .map(|round| round["outcome"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["nudged", "nudged"],
+        "every nudge is audited, and only nudges"
     );
 
-    coder.state = SystemState::Working;
-    coder.semantic_state = None;
-    services.registry.put(coder).await.unwrap();
-    assert_eq!(
-        watchdog.round(&services, INTERVAL, at(3)).await.unwrap(),
-        vec![RoundOutcome::Nudged {
-            pa: "pij-pa".into(),
-            delivery: "queued".into()
-        }],
-        "a real change brings the next nudge"
-    );
-
-    let rounds: Vec<String> = services
-        .spine
-        .tail(None, pij_core::model::Seq(0))
-        .await
-        .unwrap()
-        .into_iter()
-        .filter(|event| event.kind == "watchdog.round")
-        .map(|event| {
-            serde_json::from_str::<serde_json::Value>(&event.payload).unwrap()["outcome"]
-                .as_str()
-                .unwrap()
-                .to_string()
-        })
-        .collect();
-    assert_eq!(
-        rounds,
-        ["nudged", "quiet", "nudged"],
-        "every round is audited"
+    // A restarted daemon never nudges a fleet that is already idle.
+    assert!(
+        PaWatchdog::default()
+            .round(&services, INTERVAL, start + 600_000)
+            .await
+            .unwrap()
+            .is_empty()
     );
 }
 
+/// A fake transcript source: the quota rejection each session is stopped on.
+#[derive(Default)]
+struct FakeLimits(std::sync::Mutex<std::collections::HashMap<String, QuotaRejection>>);
+
+impl FakeLimits {
+    fn stop(&self, seat: &str, limit_type: &str, resets_at_secs: u64) {
+        self.0.lock().expect("fake limits").insert(
+            format!("session-{seat}"),
+            QuotaRejection {
+                limit_type: limit_type.into(),
+                resets_at_secs,
+            },
+        );
+    }
+}
+
+impl UsageLimitSource for FakeLimits {
+    fn latest_rejection(
+        &self,
+        harness: Harness,
+        session: &str,
+    ) -> pij_core::error::Result<Option<QuotaRejection>> {
+        assert_eq!(harness, Harness::Claude, "only Claude seats are read");
+        Ok(self.0.lock().expect("fake limits").get(session).cloned())
+    }
+}
+
+/// 2026-10-01T00:00:00Z: Australia/Sydney is still on AEST.
+const OCT_1_MS: u64 = 1_790_812_800_000;
+/// A seven_day reset several days out, after Sydney moves to AEDT on 4 Oct:
+/// 2026-10-06T16:00:00Z, 03:00 AEDT in Sydney and 02:00 AEST in Brisbane.
+/// The wake is scheduled on the epoch alone, so neither zone moves it.
+const SEVEN_DAY_RESET: u64 = 1_791_302_400;
+
+/// R3: a fleet that went idle on a usage limit gets no edge nudge (nothing
+/// can run), and ONE wake at resetsAt plus the margin to its PA, however many
+/// seats share that limit, however many rounds or restarts pass.
 #[tokio::test]
-async fn a_pa_mid_turn_is_still_nudged() {
+async fn a_fleet_idle_on_a_limit_is_woken_once_at_the_reset_not_at_the_edge() {
     let repos = Repos::new();
-    let (services, _store) = services().await;
-    let start = now_ms();
+    let (mut services, _store) = services().await;
     let main = repos.path("main");
+    // The PA is long and cold: the reset wake is exempt from the guard and
+    // audited as forced with the reason limit-reset.
+    services.session_status = Arc::new(
+        FakeSessionStatus::new().with_reply("session-pij-pa", sized(500_000, OCT_1_MS - 7_200_000)),
+    );
+    let limits = Arc::new(FakeLimits::default());
+    services.usage_limits = limits.clone();
+    let mut workers = Vec::new();
+    for (id, folder) in [("pij-a", &main), ("pij-b", &repos.path("feature"))] {
+        let mut worker = seat(id, folder, None);
+        worker.state = SystemState::Working;
+        services.registry.put(worker.clone()).await.unwrap();
+        workers.push(worker);
+    }
     services
         .registry
         .put(seat("pij-prime", &main, None))
         .await
         .unwrap();
-    let mut pa = seat("pij-pa", &main, Some("pij-prime"));
-    services.registry.put(pa.clone()).await.unwrap();
+    services
+        .registry
+        .put(seat("pij-pa", &main, Some("pij-prime")))
+        .await
+        .unwrap();
     services
         .roles
         .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
         .await
         .unwrap();
     let watchdog = PaWatchdog::default();
-    watchdog.round(&services, INTERVAL, start).await.unwrap();
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, OCT_1_MS)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
-    pa.state = SystemState::Working;
-    services.registry.put(pa).await.unwrap();
+    // Both workers hit the same seven_day limit and stop.
+    for worker in &workers {
+        limits.stop(worker.id.as_str(), "seven_day", SEVEN_DAY_RESET);
+        set_state(&services, worker, SystemState::Idle).await;
+    }
     assert_eq!(
         watchdog
-            .round(&services, INTERVAL, start + INTERVAL * 1_000)
+            .round(&services, INTERVAL, OCT_1_MS + 60_000)
             .await
             .unwrap(),
-        vec![RoundOutcome::Nudged {
-            pa: "pij-pa".into(),
-            delivery: "queued".into()
-        }],
-        "the nudge is sent whenever it is due; delivery decides how it lands"
+        vec![RoundOutcome::IdleOnLimit("pij-pa".into())],
+        "an idle fleet on a limit is not nudged at the edge"
+    );
+    let due = (SEVEN_DAY_RESET + LIMIT_WAKE_MARGIN_SECS) * 1_000;
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, due - 1)
+            .await
+            .unwrap()
+            .is_empty(),
+        "nothing before resetsAt plus the margin"
+    );
+    assert!(drain(&services, "pij-pa").await.is_empty());
+
+    let scope = std::fs::canonicalize(repos.root.join("main/.git"))
+        .unwrap()
+        .display()
+        .to_string();
+    assert_eq!(
+        watchdog.round(&services, INTERVAL, due).await.unwrap(),
+        vec![RoundOutcome::LimitWoke {
+            scope: scope.clone(),
+            resets_at_secs: SEVEN_DAY_RESET,
+            target: Some("pij-pa".into()),
+            delivery: "queued".into(),
+        }]
+    );
+    let wakes = drain(&services, "pij-pa").await;
+    assert_eq!(wakes.len(), 1);
+    let body = &wakes[0].body;
+    assert!(
+        body.contains("seven_day")
+            && body.contains("pij-a, pij-b")
+            && body.contains(&format!("epoch {SEVEN_DAY_RESET}"))
+            && !body.contains("seen only now"),
+        "{body}"
+    );
+
+    // One wake per (scope, resetsAt): later rounds and a restart send nothing.
+    for (watchdog, at) in [
+        (&watchdog, due + 60_000),
+        (&PaWatchdog::default(), due + 120_000),
+    ] {
+        assert!(
+            watchdog
+                .round(&services, INTERVAL, at)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    assert!(drain(&services, "pij-pa").await.is_empty());
+    for worker in ["pij-a", "pij-b"] {
+        assert!(
+            drain(&services, worker).await.is_empty(),
+            "the watchdog never wakes a worker"
+        );
+    }
+    let recorded = services.watchdogs().limit_wakes().await.unwrap();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].target_source, "pa-role");
+
+    let all = events(&services).await;
+    let scheduled = audits(&all, "watchdog.limit-scheduled");
+    assert_eq!(
+        scheduled.len(),
+        2,
+        "first sight, then again after the restart"
+    );
+    assert_eq!(scheduled[0]["due_at_ms"], due);
+    let forced = audits(&all, pij_core::cold_wake::COLD_WAKE_FORCED_KIND);
+    assert_eq!(forced.len(), 1, "{forced:?}");
+    assert_eq!(forced[0]["reason"], "limit-reset");
+    let woke = audits(&all, "watchdog.limit-wake");
+    assert_eq!(woke.len(), 1);
+    assert_eq!(woke[0]["reason"], "limit-reset");
+    assert_eq!(woke[0]["cold_check"], "forced");
+}
+
+/// R3: with no PA in scope the wake goes to the prime, named by its recorded
+/// designation; a reset already past when first seen wakes at once, once.
+#[tokio::test]
+async fn with_no_pa_a_late_reset_wakes_the_designated_prime_at_once() {
+    let repos = Repos::new();
+    let (mut services, _store) = services().await;
+    let main = repos.path("main");
+    let limits = Arc::new(FakeLimits::default());
+    services.usage_limits = limits.clone();
+    let now = now_ms();
+    let resets_at = now / 1_000 - 3_600;
+    limits.stop("pij-worker", "five_hour", resets_at);
+    services
+        .registry
+        .put(seat("pij-worker", &repos.path("feature"), None))
+        .await
+        .unwrap();
+    services
+        .registry
+        .put(seat("pij-prime", &main, None))
+        .await
+        .unwrap();
+    services
+        .registry
+        .put(seat("pij-elsewhere-prime", &repos.path("elsewhere"), None))
+        .await
+        .unwrap();
+    services
+        .watchdogs()
+        .designate_prime(&pij_core::orchestration::PrimeDesignation {
+            seat: "pij-prime".into(),
+            designated_by: "pij-human".into(),
+            designated_at: 1,
+            state: pij_core::orchestration::PrimeState::Current,
+        })
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let outcome = watchdog.round(&services, INTERVAL, now).await.unwrap();
+    assert!(
+        matches!(
+            &outcome[..],
+            [RoundOutcome::LimitWoke { target: Some(target), resets_at_secs, .. }]
+                if target.as_str() == "pij-prime" && *resets_at_secs == resets_at
+        ),
+        "{outcome:?}"
+    );
+    let wakes = drain(&services, "pij-prime").await;
+    assert_eq!(wakes.len(), 1);
+    assert!(wakes[0].body.contains("seen only now"), "{}", wakes[0].body);
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, now + 60_000)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        services.watchdogs().limit_wakes().await.unwrap()[0].target_source,
+        "prime-designation"
     );
 }
 
@@ -639,6 +864,7 @@ async fn rows_read_per_round_stay_flat_as_unrelated_history_grows() {
         .await
         .unwrap();
     let mut coder = seat("pij-coder", &main, None);
+    coder.state = SystemState::Working;
     services.registry.put(coder.clone()).await.unwrap();
     services
         .roles
@@ -665,7 +891,7 @@ async fn rows_read_per_round_stay_flat_as_unrelated_history_grows() {
     };
     let watchdog = PaWatchdog::default();
     let start = now_ms();
-    let at = |intervals: u64| start + intervals * INTERVAL * 1_000;
+    let at = |minutes: u64| start + minutes * 60_000;
     let round = |when: u64| {
         let (services, watchdog, counting) = (&services, &watchdog, &counting);
         async move {
@@ -677,6 +903,7 @@ async fn rows_read_per_round_stay_flat_as_unrelated_history_grows() {
 
     round(start).await;
     noise(4_096).await;
+    set_state(&services, &coder, SystemState::Idle).await;
     let (first, reads_due) = round(at(1)).await;
     assert!(
         matches!(first[..], [RoundOutcome::Nudged { .. }]),
@@ -689,28 +916,22 @@ async fn rows_read_per_round_stay_flat_as_unrelated_history_grows() {
 
     noise(4_096).await;
     let (quiet, reads_quiet) = round(at(2)).await;
-    assert_eq!(quiet, vec![RoundOutcome::Quiet("pij-pa".into())]);
-    assert_eq!(
-        reads_quiet, reads_due,
-        "a quiet round reads the same, whatever the history"
-    );
+    assert!(quiet.is_empty(), "{quiet:?}");
+    assert_eq!(reads_quiet, 0, "between edges a round reads no history");
 
     noise(4_096).await;
-    coder.state = SystemState::Working;
-    services_put(&services, coder).await;
-    let (changed, reads_changed) = round(at(3)).await;
+    set_state(&services, &coder, SystemState::Working).await;
+    round(at(3)).await;
+    set_state(&services, &coder, SystemState::Idle).await;
+    let (again, reads_again) = round(at(4)).await;
     assert!(
-        matches!(changed[..], [RoundOutcome::Nudged { .. }]),
-        "{changed:?}"
+        matches!(again[..], [RoundOutcome::Nudged { .. }]),
+        "{again:?}"
     );
     assert_eq!(
-        reads_changed, reads_due,
+        reads_again, reads_due,
         "12k unrelated events later, rows read are flat"
     );
-}
-
-async fn services_put(services: &crate::Services, seat: SeatDescriptor) {
-    services.registry.put(seat).await.unwrap();
 }
 
 /// Review of #38: a cold transcript read can outlive its 3s wait. The next
@@ -756,17 +977,24 @@ async fn a_status_read_that_outlives_its_wait_is_never_started_twice() {
             .filter(|call| format!("{call:?}").contains("status:pij-coder:"))
             .count()
     };
+    let coder = seat("pij-coder", &main, None);
     let watchdog = PaWatchdog::default();
-    watchdog.round(&services, INTERVAL, start).await.unwrap();
-    for intervals in 1..=3 {
+    for episode in 1..=3 {
+        set_state(&services, &coder, SystemState::Working).await;
         watchdog
-            .round(&services, INTERVAL, start + intervals * INTERVAL * 1_000)
+            .round(&services, INTERVAL, start + episode * 120_000)
             .await
             .unwrap();
+        set_state(&services, &coder, SystemState::Idle).await;
+        let nudged = watchdog
+            .round(&services, INTERVAL, start + episode * 120_000 + 60_000)
+            .await
+            .unwrap();
+        assert_eq!(nudged.len(), 1, "episode {episode}: {nudged:?}");
         assert_eq!(
             coder_reads(),
             1,
-            "round {intervals}: one hung read, never a second"
+            "episode {episode}: one hung read, never a second"
         );
     }
 }
@@ -819,25 +1047,28 @@ async fn clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card() {
         .append(clear(format!("status-stale:pij-prime:{}", card.0)))
         .await
         .unwrap();
+    let prime = seat("pij-prime", "/review-dispositions", None);
     let watchdog = PaWatchdog::default();
-    watchdog.round(&services, INTERVAL, start).await.unwrap();
-    assert!(matches!(
-        watchdog
-            .round(&services, INTERVAL, start + INTERVAL * 1_000)
-            .await
-            .unwrap()
-            .as_slice(),
-        [RoundOutcome::Nudged { .. }]
-    ));
-    let (_, job) = services
-        .queue
-        .peek(&["delivery:pij-pa".to_string()])
-        .await
-        .unwrap()
-        .expect("first digest queued");
-    let first = serde_json::from_str::<pij_core::model::Msg>(&job.payload)
-        .unwrap()
-        .body;
+    let episode = |at: u64| {
+        let (services, watchdog, prime) = (&services, &watchdog, &prime);
+        async move {
+            set_state(services, prime, SystemState::Working).await;
+            watchdog.round(services, INTERVAL, at).await.unwrap();
+            set_state(services, prime, SystemState::Idle).await;
+            let outcome = watchdog
+                .round(services, INTERVAL, at + 60_000)
+                .await
+                .unwrap();
+            assert!(
+                matches!(outcome.as_slice(), [RoundOutcome::Nudged { .. }]),
+                "{outcome:?}"
+            );
+            let digests = drain(services, "pij-pa").await;
+            assert_eq!(digests.len(), 1);
+            digests[0].body.clone()
+        }
+    };
+    let first = episode(start).await;
     assert!(
         !first.contains("pij-prime  status-stale"),
         "a cleared stale card is not flagged: {first}"
@@ -847,12 +1078,9 @@ async fn clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card() {
         .append(clear("dead-seat:pij-prime:99999".into()))
         .await
         .unwrap();
-    assert_eq!(
-        watchdog
-            .round(&services, INTERVAL, start + 2 * INTERVAL * 1_000)
-            .await
-            .unwrap(),
-        vec![RoundOutcome::Quiet("pij-pa".into())],
-        "clearing another anomaly must not resurrect the same cleared stale card"
+    let second = episode(start + 120_000).await;
+    assert!(
+        !second.contains("pij-prime  status-stale"),
+        "clearing another anomaly must not resurrect the same cleared stale card: {second}"
     );
 }

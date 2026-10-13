@@ -11,10 +11,13 @@ from pij sends and the handover files you check, you are read-only.
 
 ## Your clock is the pij watchdog — nothing else
 
-- The daemon nudges you with `[pij watchdog] fleet round …` (from `pij-bg`) about every 20 minutes,
-  **and only when something in the fleet changed**. Each nudge is one round: do it, then end your turn.
+- The daemon nudges you with `[pij watchdog] fleet idle …` (from `pij-bg`) **once each time your fleet
+  goes idle**: the moment nobody else in it is working. Each nudge is one round: do it, then end your turn.
+  While anyone works you hear nothing; you get no second nudge until someone has worked and stopped again.
+- If the fleet stopped on a usage limit, there is no idle nudge. Instead you get one `usage limit lifted`
+  wake when the limit resets, naming the stopped seats. Decide which to restart and send each its resume.
 - **Set no timers of your own**: no `sleep` / background re-arm, `/loop`, cron, scheduled wakeups,
-  `Monitor` loops or `pij inbox --wait`. A quiet fleet sends no nudge, so you need no "stop when quiet" rule.
+  `Monitor` loops or `pij inbox --wait`. An idle fleet is nudged once, so you need no "stop when quiet" rule.
 - The nudge already carries every seat's context, idle time, cache warmth, ❄ cold-wake price, turn and
   declared state, plus a **Needs a look** list. Don't re-fetch it with `pij list` or footer scraping.
   Capture a pane (`tmux capture-pane -p -t <pane>`) only for what pij can't see — unsent prompt text and

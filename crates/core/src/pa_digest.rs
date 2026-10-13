@@ -3,7 +3,8 @@
 //! A PA is the fleet's watchdog and context keeper. Its nudge brings the
 //! fleet's sizes, coldness and attention flags with it, so the PA acts on the
 //! nudge without a second `pij list` call. Pure: the daemon assembles the
-//! rows; this module decides the quiet fingerprint and the text. Policy (caps,
+//! rows and decides WHEN to nudge (the fleet's idle edge, `crate::watchdog`);
+//! this module writes the text. Policy (caps,
 //! exemptions, when to compact) lives in the PA brief, never here — the digest
 //! reports facts and flags states, it does not tell the PA what to do.
 
@@ -36,7 +37,7 @@ pub struct FleetAnomaly {
 /// A PA's fleet: every live seat sharing its prime's repository.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FleetView {
-    /// The PA being nudged. Its own row is listed but never counts as change.
+    /// The PA being nudged. Its own row is listed but never counts as work.
     pub pa: SeatId,
     /// The PA's recorded parent, when it has one.
     pub prime: Option<SeatId>,
@@ -90,41 +91,6 @@ fn attention(row: &FleetRow, interval_ms: u64) -> Option<String> {
 }
 
 impl FleetView {
-    /// What must differ between two rounds for the PA to be nudged again.
-    ///
-    /// Turn state, declared state, context size, attention flags and open
-    /// anomalies of every seat except the PA itself. Idle time and cache
-    /// warmth are excluded: they change on every read without anything
-    /// happening. The PA's own row is excluded because answering one nudge
-    /// would otherwise manufacture the change that causes the next.
-    pub fn fingerprint(&self) -> String {
-        let mut lines: Vec<String> = self
-            .rows
-            .iter()
-            .filter(|row| row.seat.id != self.pa)
-            .map(|row| {
-                format!(
-                    "{}|{}|{}|{}|{}",
-                    row.seat.id,
-                    row.seat.state.as_str(),
-                    row.seat.semantic_state.map_or("-", SemanticState::as_str),
-                    row.size
-                        .context_used
-                        .map_or_else(|| "?".to_string(), |tokens| tokens.to_string()),
-                    attention(row, self.interval_ms).is_some(),
-                )
-            })
-            .collect();
-        lines.extend(
-            self.anomalies
-                .iter()
-                .filter(|anomaly| anomaly.seat != self.pa)
-                .map(|anomaly| format!("!{}|{}", anomaly.seat, anomaly.kind)),
-        );
-        lines.sort();
-        lines.join("\n")
-    }
-
     /// The nudge text: a headline, what needs a look, and every seat by size.
     pub fn digest(&self) -> String {
         let working = self
@@ -138,7 +104,7 @@ impl FleetView {
             .filter(|row| row.size.cold_wake.would_refuse)
             .count();
         let mut text = format!(
-            "[pij watchdog] fleet round for {} ({}) — {} seats: {working} working, {} idle, {cold} cold ❄",
+            "[pij watchdog] fleet idle for {} ({}) — {} seats: {working} working, {} idle, {cold} cold ❄",
             self.prime.as_ref().map_or("your fleet", SeatId::as_str),
             self.scope,
             self.rows.len(),
@@ -222,7 +188,7 @@ impl FleetView {
         }
         text.push_str(
             "\nThis nudge is your clock: act per your PA brief, then end your turn. \
-             Set no timers or background loops; pij nudges you again when the fleet changes.",
+             Set no timers or background loops; pij nudges you again the next time the fleet goes idle.",
         );
         text
     }

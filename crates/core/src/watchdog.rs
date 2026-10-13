@@ -5,27 +5,53 @@
 //! immutable view and decides which seats are due; it reads no clock and performs
 //! no persistence or delivery.
 //!
-//! **PAs only** (Jordan, 2026-10-09): the watchdog serves seats whose asserted
-//! role is `pa` and nobody else — not primes, PMs or workers. A PA is the
-//! fleet's watchdog: its nudge carries the fleet's state, and the PA decides
-//! which other seats need a word. So a PA's own declared state never suppresses
-//! its nudge (it sits in `waiting` between rounds, and the nudge is what it is
-//! waiting for), and neither does a live turn: the nudge is sent whenever it
-//! is due and delivery decides how it lands (Jordan, 2026-10-09: "just send
-//! it"). Only a pause tier or the interval defer it.
+//! **PAs** (Jordan, 2026-10-09) are not scheduled here. A PA is the fleet's
+//! watchdog, and it is nudged when its fleet goes idle (plan 172, 2026-10-13:
+//! "an idle fleet means nobody doing anything"), never on a fixed cadence:
+//! see [`fleet_working`] and [`IdleEdge`]. A fleet that went idle on a usage
+//! limit is woken at the reset instead ([`crate::usage_limit`]).
 
 use crate::config::Config;
-use crate::model::{SeatDescriptor, SeatId};
+use crate::model::{SeatDescriptor, SeatId, SystemState};
 
-/// The one role the watchdog serves.
+/// The one role the PA watchdog serves.
 pub const PA_ROLE: &str = "pa";
 
-/// May the watchdog nudge this seat at all, timing and pauses aside?
-///
-/// Role is read from the descriptor, which the composition edge must have
-/// joined from the role store (the only role authority) before calling.
-pub fn pa_nudgeable(seat: &SeatDescriptor) -> bool {
+/// Is this seat a live PA the watchdog serves? Role is read from the
+/// descriptor, which the composition edge must have joined from the role
+/// store (the only role authority) before calling.
+pub fn is_watched_pa(seat: &SeatDescriptor) -> bool {
     seat.role.as_deref() == Some(PA_ROLE) && seat.tombstoned_at.is_none() && !seat.relay
+}
+
+/// Is anyone in the PA's fleet working? `scope` is every seat in the PA's
+/// scope; tombstoned seats and the PA itself never count. The PA's own turn
+/// is excluded because answering one idle nudge would otherwise end in the
+/// very idle edge that sends the next.
+pub fn fleet_working<'a>(pa: &SeatId, scope: impl IntoIterator<Item = &'a SeatDescriptor>) -> bool {
+    scope.into_iter().any(|seat| {
+        &seat.id != pa && seat.tombstoned_at.is_none() && seat.state == SystemState::Working
+    })
+}
+
+/// One PA's idle-edge tracker: the fleet's working state as last observed.
+///
+/// A nudge goes on the EDGE from working to all-idle, once per idle episode;
+/// a new episode starts only after some seat has worked again. A first
+/// observation only arms the tracker, so a daemon (re)start or a newly
+/// appointed PA never nudges a fleet that was already idle.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct IdleEdge {
+    working: Option<bool>,
+}
+
+impl IdleEdge {
+    /// Record this round's observation. `true` exactly on working → idle.
+    pub fn observe(&mut self, working: bool) -> bool {
+        let edge = self.working == Some(true) && !working;
+        self.working = Some(working);
+        edge
+    }
 }
 
 /// Why the scheduler produced a nudge.
@@ -33,7 +59,7 @@ pub fn pa_nudgeable(seat: &SeatDescriptor) -> bool {
 /// The adapter consumes this verdict instead of re-deriving it from timestamps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NudgeReason {
-    /// The seat is a PA, unpaused, and one configured interval overdue.
+    /// The seat is eligible, unpaused, idle, and one configured interval overdue.
     OverdueIdle,
 }
 
@@ -149,15 +175,6 @@ impl WatchdogService {
         }
     }
 
-    /// Build a scheduler with an explicit interval: the daemon's override of
-    /// the configured default (`PIJ_RS_WATCHDOG_SECS`).
-    pub const fn with_interval(interval_secs: u64, entries: Vec<WatchdogEntry>) -> Self {
-        Self {
-            interval_secs,
-            entries,
-        }
-    }
-
     /// Return every nudge due at `now_secs`, preserving registry-view order.
     ///
     /// Same service and timestamp always produce the same verdicts. Parking only
@@ -165,7 +182,8 @@ impl WatchdogService {
     pub fn tick(&self, now_secs: u64) -> Vec<Nudge> {
         self.entries
             .iter()
-            .filter(|entry| pa_nudgeable(&entry.seat))
+            .filter(|entry| entry.seat.tombstoned_at.is_none())
+            .filter(|entry| entry.seat.nudgeable())
             .filter(|entry| entry.control.effective_pause(now_secs).is_none())
             .filter(|entry| {
                 now_secs.saturating_sub(entry.last_activity_at_secs) >= self.interval_secs
