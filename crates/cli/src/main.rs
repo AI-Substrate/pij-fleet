@@ -713,11 +713,18 @@ enum SidecarAction {
         #[arg(long)]
         from: Option<String>,
         /// Literal message body, including values beginning with `-`.
-        #[arg(long, allow_hyphen_values = true, conflicts_with = "body_file")]
+        #[arg(long, allow_hyphen_values = true, conflicts_with_all = ["body_file", "file"])]
         body: Option<String>,
         /// Read the literal body from a path, or from stdin with `-`.
-        #[arg(long, conflicts_with = "body")]
+        #[arg(long, conflicts_with_all = ["body", "file"])]
         body_file: Option<String>,
+        /// Send this file as a Telegram document (max 50 MB). The daemon copies
+        /// it at enqueue, so later edits cannot change what is sent.
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Caption for `--file`; the sender tag is prefixed.
+        #[arg(long, allow_hyphen_values = true, requires = "file")]
+        caption: Option<String>,
         /// Correlation id. Omit to mint a UUIDv7.
         #[arg(long)]
         msg_id: Option<String>,
@@ -786,14 +793,27 @@ impl SidecarAction {
                 from,
                 body,
                 body_file,
+                file,
+                caption,
                 msg_id,
                 chat_id,
             } => {
-                let body = resolve_send_body(body, body_file)?;
+                let file = file.map(|path| resolve_attachment(&path)).transpose()?;
+                let body = match file {
+                    Some(_) => None,
+                    None => Some(resolve_send_body(body, body_file)?),
+                };
                 let from =
                     resolve_command_seat(client, "pij sidecar telegram", from.as_deref()).await?;
                 let msg_id = msg_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
-                json!({"sidecar": "telegram", "request": {"from": from, "body": body, "msg_id": msg_id, "chat_id": chat_id}})
+                match (file, body) {
+                    (Some(path), _) => {
+                        json!({"sidecar": "telegram_document", "request": {"from": from, "path": path, "caption": caption, "msg_id": msg_id, "chat_id": chat_id}})
+                    }
+                    (None, body) => {
+                        json!({"sidecar": "telegram", "request": {"from": from, "body": body, "msg_id": msg_id, "chat_id": chat_id}})
+                    }
+                }
             }
             Self::BgStart {
                 id,
@@ -1995,6 +2015,15 @@ async fn resolve_command_seat(
         });
     }
     Ok(derived)
+}
+
+/// An absolute, existing path for `--file`; a missing file fails here, loudly,
+/// before anything reaches the daemon.
+fn resolve_attachment(path: &Path) -> Result<PathBuf, PijError> {
+    std::fs::canonicalize(path).map_err(|error| PijError::Adapter {
+        adapter: "pij sidecar telegram".to_string(),
+        message: format!("could not read --file `{}`: {error}", path.display()),
+    })
 }
 
 fn resolve_send_body(body: Option<String>, body_file: Option<String>) -> Result<String, PijError> {
@@ -3277,6 +3306,62 @@ mod tests {
             panic!("expected send");
         };
         assert_eq!(body_file.as_deref(), Some("-"));
+    }
+
+    #[test]
+    fn telegram_file_excludes_bodies_and_caption_requires_a_file() {
+        for argv in [
+            &[
+                "pij-rs", "sidecar", "telegram", "--file", "r.html", "--body", "x",
+            ][..],
+            &[
+                "pij-rs",
+                "sidecar",
+                "telegram",
+                "--file",
+                "r.html",
+                "--body-file",
+                "-",
+            ][..],
+        ] {
+            let error = Cli::try_parse_from(argv).err().expect("must conflict");
+            assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
+        let error = Cli::try_parse_from(["pij-rs", "sidecar", "telegram", "--caption", "c"])
+            .err()
+            .expect("caption alone");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+        let cli = Cli::try_parse_from([
+            "pij-rs",
+            "sidecar",
+            "telegram",
+            "--file",
+            "r.html",
+            "--caption",
+            "-leading dash",
+        ])
+        .expect("file with caption");
+        let Command::Sidecar {
+            action: super::SidecarAction::Telegram { file, caption, .. },
+        } = cli.command
+        else {
+            panic!("expected sidecar telegram");
+        };
+        assert_eq!(file.as_deref(), Some(std::path::Path::new("r.html")));
+        assert_eq!(caption.as_deref(), Some("-leading dash"));
+    }
+
+    #[test]
+    fn a_missing_attachment_fails_before_the_daemon() {
+        let error = super::resolve_attachment(std::path::Path::new("/definitely/not/here.html"))
+            .expect_err("missing file");
+        assert!(
+            error.to_string().contains("could not read --file"),
+            "{error}"
+        );
     }
 
     #[test]

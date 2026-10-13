@@ -10,11 +10,25 @@ use pij_core::error::{PijError, Result};
 use pij_core::model::{Event, Job, Outcome, SeatId};
 use pij_core::ports::{Queue, Registry, Spine};
 use serde::{Deserialize, Serialize};
+use sha2::Digest as _;
 
 use crate::common::{LoopHandle, Processed, enqueue_turn, now_ms, start_resilient_loop};
 
+#[path = "telegram_document.rs"]
+mod document;
+
+pub use document::{
+    CAPTION_LIMIT, DOCUMENT_LIMIT_BYTES, StagedDocument, TelegramDocumentRequest, stage_document,
+};
+
 /// Queue kind for outbound Telegram work.
 pub const TELEGRAM_SEND_KIND: &str = "sidecar:telegram:send";
+/// Queue kind for an outbound Telegram document.
+///
+/// Its own kind, not a field on [`TELEGRAM_SEND_KIND`]: a daemon that predates
+/// documents never claims it, so the row waits rather than being decoded as a
+/// text send with the attachment silently dropped.
+pub const TELEGRAM_DOCUMENT_KIND: &str = "sidecar:telegram:document";
 const WORKER_ID: &str = "sidecar-telegram";
 const BINDING_KIND: &str = "telegram.binding";
 const CURSOR_KIND: &str = "telegram.cursor";
@@ -301,12 +315,23 @@ impl TelegramWorker {
         while count < limit {
             let Some((id, job)) = self
                 .queue
-                .claim(&[TELEGRAM_SEND_KIND.to_string()], WORKER_ID)
+                .claim(
+                    &[
+                        TELEGRAM_SEND_KIND.to_string(),
+                        TELEGRAM_DOCUMENT_KIND.to_string(),
+                    ],
+                    WORKER_ID,
+                )
                 .await?
             else {
                 break;
             };
-            match self.process_send(&job).await {
+            let outcome = if job.kind == TELEGRAM_DOCUMENT_KIND {
+                self.process_document(&job).await
+            } else {
+                self.process_send(&job).await
+            };
+            match outcome {
                 SendOutcome::Done => self.queue.ack(id, Outcome::Done).await?,
                 SendOutcome::Retry(error) => {
                     self.queue.retry(id, Duration::from_millis(100)).await?;
@@ -436,6 +461,185 @@ impl TelegramWorker {
                 });
             }
         }
+        self.bind_reply(&chat_id, request.from, request.msg_id)
+            .await
+    }
+
+    /// Upload one staged document with `sendDocument`, then bind the reply
+    /// target exactly as a text send does.
+    ///
+    /// Failure classes: a staged copy that is missing or no longer hashes to
+    /// what was enqueued, a foreign chat, or a 4xx other than 429 is TERMINAL
+    /// (the job fails, never "sent"); transport errors, 429 and 5xx retry the
+    /// whole job. Every failed attempt is a durable spine event.
+    async fn process_document(&self, job: &Job) -> SendOutcome {
+        let request: document::DocumentJob = match serde_json::from_str(&job.payload) {
+            Ok(request) => request,
+            Err(error) => {
+                return SendOutcome::Terminal(PijError::Adapter {
+                    adapter: "sidecars/telegram".to_string(),
+                    message: format!("job payload is not a Telegram document: {error}"),
+                });
+            }
+        };
+        let chat_id = request
+            .chat_id
+            .as_deref()
+            .unwrap_or(&self.config.chat_id)
+            .to_string();
+        let fail = |http_status: Option<u16>, terminal: bool, reason: String| {
+            serde_json::json!({
+                "conversation": chat_id,
+                "from": request.from,
+                "msg_id": request.msg_id,
+                "attempt": u64::from(job.attempt) + 1,
+                "document": {
+                    "file_name": request.document.file_name,
+                    "size": request.document.size,
+                    "sha256": request.document.sha256,
+                },
+                "http_status": http_status,
+                "terminal": terminal,
+                "reason": reason,
+            })
+        };
+        if chat_id != self.config.chat_id {
+            let reason = format!(
+                "refusing Telegram egress to chat `{chat_id}`: configured operator chat is `{}`",
+                self.config.chat_id
+            );
+            return self
+                .document_failure(&chat_id, fail(None, true, reason))
+                .await;
+        }
+        let staged = &request.document.staged;
+        let bytes = match tokio::fs::read(staged).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let reason = format!("staged copy {} is unreadable: {error}", staged.display());
+                return self
+                    .document_failure(&chat_id, fail(None, true, reason))
+                    .await;
+            }
+        };
+        let sha256 = document::hex(&sha2::Sha256::digest(&bytes));
+        if bytes.len() as u64 != request.document.size || sha256 != request.document.sha256 {
+            let reason = format!(
+                "staged copy {} changed since enqueue (sha256 {sha256}, {} bytes; enqueued {}, {} bytes)",
+                staged.display(),
+                bytes.len(),
+                request.document.sha256,
+                request.document.size
+            );
+            return self
+                .document_failure(&chat_id, fail(None, true, reason))
+                .await;
+        }
+        let sender = match self.registry.get(&request.from).await {
+            Ok(sender) => sender,
+            Err(error) => return SendOutcome::Retry(error),
+        };
+        let context = sender
+            .as_ref()
+            .and_then(|seat| Path::new(&seat.folder).file_name())
+            .and_then(|name| name.to_str());
+        let caption = match document::prefixed_caption(&request.from, context, &request.caption) {
+            Ok(caption) => caption,
+            Err(error) => {
+                return self
+                    .document_failure(&chat_id, fail(None, true, error.to_string()))
+                    .await;
+            }
+        };
+        let boundary = document::boundary_for(&sha256, &[&bytes, caption.as_bytes()]);
+        let (content_type, body) = document::document_multipart(
+            &boundary,
+            &chat_id,
+            &caption,
+            &request.document.file_name,
+            &bytes,
+        );
+        drop(bytes);
+        let url = format!(
+            "{}/bot{}/sendDocument",
+            self.config.api_root, self.config.token
+        );
+        let response = match self
+            .client
+            .post(&url)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .body(body)
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                let reason = http_error(error).to_string();
+                return self
+                    .document_failure(&chat_id, fail(None, false, reason))
+                    .await;
+            }
+        };
+        let status = response.status();
+        let reply: Option<ApiReply> = response.json().await.ok();
+        let accepted = status.is_success() && reply.as_ref().is_some_and(|reply| reply.ok);
+        if !accepted {
+            let description = reply
+                .and_then(|reply| reply.description)
+                .unwrap_or_else(|| "no description".to_string());
+            let reason = format!("sendDocument returned HTTP {status}: {description}");
+            let retryable = status.is_server_error() || status.as_u16() == 429;
+            return self
+                .document_failure(&chat_id, fail(Some(status.as_u16()), !retryable, reason))
+                .await;
+        }
+        let outcome = self
+            .bind_reply(&chat_id, request.from.clone(), request.msg_id.clone())
+            .await;
+        if matches!(outcome, SendOutcome::Done)
+            && let Err(error) = tokio::fs::remove_file(staged).await
+        {
+            eprintln!(
+                "pij-rs telegram: sent {} but could not release staged copy {}: {error}",
+                request.msg_id,
+                staged.display()
+            );
+        }
+        outcome
+    }
+
+    /// Record one failed document attempt, then answer retry or terminal.
+    async fn document_failure(&self, chat_id: &str, mut detail: serde_json::Value) -> SendOutcome {
+        let recorded = async {
+            self.spine
+                .append(Event {
+                    seq: None,
+                    v: 1,
+                    at: now_ms()?,
+                    kind: OUTBOUND_FAILED_KIND.to_string(),
+                    seat: Some(conversation_seat(chat_id)),
+                    payload: detail.to_string(),
+                })
+                .await
+        }
+        .await;
+        if let Err(error) = recorded {
+            detail["persistence_error"] = serde_json::json!(error.to_string());
+        }
+        let terminal = detail["terminal"].as_bool().unwrap_or(true);
+        let error = PijError::Adapter {
+            adapter: "sidecars/telegram".to_string(),
+            message: detail.to_string(),
+        };
+        if terminal {
+            SendOutcome::Terminal(error)
+        } else {
+            SendOutcome::Retry(error)
+        }
+    }
+
+    /// Persist the reply binding for one delivered outbound send.
+    async fn bind_reply(&self, chat_id: &str, target: SeatId, msg_id: String) -> SendOutcome {
         let binding = Event {
             seq: None,
             v: 1,
@@ -444,10 +648,10 @@ impl TelegramWorker {
                 Err(error) => return SendOutcome::Terminal(error),
             },
             kind: BINDING_KIND.to_string(),
-            seat: Some(conversation_seat(&chat_id)),
+            seat: Some(conversation_seat(chat_id)),
             payload: match serde_json::to_string(&Binding {
-                target: request.from,
-                outbound_msg_id: request.msg_id,
+                target,
+                outbound_msg_id: msg_id,
             }) {
                 Ok(payload) => payload,
                 Err(error) => return SendOutcome::Terminal(codec_error(error)),
@@ -458,7 +662,7 @@ impl TelegramWorker {
             Err(error) => SendOutcome::Terminal(PijError::Adapter {
                 adapter: "sidecars/telegram".to_string(),
                 message: format!(
-                    "sendMessage succeeded but binding persistence failed; refusing duplicate retry: {error}"
+                    "Telegram accepted the send but binding persistence failed; refusing duplicate retry: {error}"
                 ),
             }),
         }
@@ -701,6 +905,13 @@ enum SendOutcome {
 #[derive(Deserialize)]
 struct SendResponse {
     ok: bool,
+}
+
+#[derive(Deserialize)]
+struct ApiReply {
+    ok: bool,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Deserialize)]
