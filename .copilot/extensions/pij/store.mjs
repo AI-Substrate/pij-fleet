@@ -884,9 +884,11 @@ class NativeCompletion {
 	}
 	observe(
 		event,
+		// HydraFusion phase output is staged, uncommitted and never the turn's answer.
 		finalMessage = event.type === "assistant.message" &&
 			(event.data?.toolRequests === undefined ||
-				(Array.isArray(event.data.toolRequests) && event.data.toolRequests.length === 0)),
+				(Array.isArray(event.data.toolRequests) && event.data.toolRequests.length === 0)) &&
+			(event.data?.fusion === undefined || nonempty(event.data.fusion?.commitId)),
 		fresh = true,
 		notify = true,
 	) {
@@ -908,17 +910,27 @@ class NativeCompletion {
 					id: event.id,
 					parentId: event.parentId,
 					agentId: event.agentId,
-					data: { messageId: event.data?.messageId, interactionId: event.data?.interactionId },
+					data: {
+						messageId: event.data?.messageId,
+						interactionId: event.data?.interactionId,
+						fusionId: fusionIdOf(event),
+					},
 				},
 				finalMessage,
 			});
 			return;
 		}
 		if (!nonempty(event.id) || this.descendants.has(event.id)) return;
+		// Plan 169: Copilot routes a HydraFusion turn just before adding its user message.
+		if (!event.agentId && event.type === "session.fusion_resolved") {
+			this.routedFusionId = fusionIdOf(event);
+			return;
+		}
 		if (event.type === "user.message") {
 			if (!event.agentId && event.data?.messageId === this.nativeId) {
 				this.descendants.add(event.id);
 				if (nonempty(event.data.interactionId)) this.interactionId ??= event.data.interactionId;
+				this.fusionId ??= this.routedFusionId;
 				if (!this.consumption) {
 					this.consumption = { eventId: event.id };
 					if (notify) this.notify();
@@ -926,6 +938,10 @@ class NativeCompletion {
 			}
 			return;
 		}
+		// The fused turn's id re-anchors phases whose interactionIds differ and
+		// whose parents are persisted-only usage records never seen live.
+		const sameFusion =
+			!event.agentId && this.fusionId !== undefined && fusionIdOf(event) === this.fusionId;
 		// Native callbacks can omit permission ancestors; only the matched user's foreground turn can re-anchor.
 		const sameInteraction =
 			!event.agentId &&
@@ -934,13 +950,14 @@ class NativeCompletion {
 			(event.type === "assistant.turn_start" ||
 				event.type === "assistant.message" ||
 				event.type === "tool.execution_complete");
-		if (!sameInteraction && !this.descendants.has(event.parentId)) return;
+		if (!sameFusion && !sameInteraction && !this.descendants.has(event.parentId)) return;
 		this.descendants.add(event.id);
 		if (!event.agentId && finalMessage) this.finalMessages.add(event.id);
 		if (
 			!event.agentId &&
 			(["session.idle", "session.error", "abort"].includes(event.type) ||
-				(event.type === "assistant.turn_end" && this.finalMessages.has(event.parentId)))
+				(event.type === "assistant.turn_end" && this.finalMessages.has(event.parentId)) ||
+				(sameFusion && event.type === "session.fusion_completed"))
 		) {
 			this.terminal = { type: event.type, eventId: event.id };
 			this.descendants.clear();
@@ -948,6 +965,12 @@ class NativeCompletion {
 			if (notify) this.notify();
 		}
 	}
+}
+
+/** A HydraFusion turn's id: on fusion session/phase events, or a message's `fusion` stamp. */
+function fusionIdOf(event) {
+	const fusionId = event.data?.fusionId ?? event.data?.fusion?.fusionId;
+	return nonempty(fusionId) ? fusionId : undefined;
 }
 
 export class NativeBridge {
@@ -1785,11 +1808,15 @@ export class NativeBridge {
 			grade: "native-consumed-not-model-complete",
 		});
 	}
-	/** Foreground turns only: sub-agent turns never flip the seat's busy/idle state. */
+	/**
+	 * Foreground turns only: sub-agent turns never flip the seat's busy/idle state.
+	 * A HydraFusion turn emits no root turn_start until its commit, so its routing
+	 * is the start of work (plan 169).
+	 */
 	observeActivity(event) {
 		if (event?.agentId) return;
 		const state =
-			event?.type === "assistant.turn_start"
+			event?.type === "assistant.turn_start" || event?.type === "session.fusion_route_started"
 				? "working"
 				: event?.type === "assistant.turn_end" || event?.type === "session.idle"
 					? "idle"

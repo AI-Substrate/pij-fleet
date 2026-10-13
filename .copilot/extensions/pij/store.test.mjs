@@ -1474,6 +1474,19 @@ test("activity: sub-agent turns never flip the seat's state", async (t) => {
 	assert.deepEqual(states(), ["working"]);
 });
 
+test("activity: a HydraFusion turn is working from routing, not only at its commit", async (t) => {
+	const { f, states } = await activityBridge(t);
+	// Recorded Copilot 1.0.97: phases emit no root turn_start; only the commit does.
+	f.event({ type: "session.fusion_route_started", id: "route", ephemeral: true, data: {} });
+	f.event({ type: "assistant.fusion_phase_completed", id: "primary-done", data: {} });
+	await flush();
+	assert.deepEqual(states(), ["working"]);
+	f.event({ type: "assistant.turn_start", id: "commit-start", data: {} });
+	f.event({ type: "assistant.turn_end", id: "commit-end", data: {} });
+	await flush();
+	assert.deepEqual(states(), ["working", "idle"]);
+});
+
 test("activity: session.idle settles a working seat to idle", async (t) => {
 	const { f, states } = await activityBridge(t);
 	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
@@ -3167,6 +3180,178 @@ test("post-ack barrier completes the owned final turn before a following foregro
 	nativeTerminal(f, "next-user");
 	await flush();
 	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 1);
+	f.bridge.stop();
+	await run;
+});
+
+/**
+ * Plan 169 R3: the live root stream of a recorded `hydrafusion-max` cascade
+ * (Copilot 1.0.97-1, ids shortened). Phase output streams as ephemeral,
+ * uncommitted root messages; the persisted-only `session.usage_record` never
+ * reaches the live stream, so parents named `gap-*` are never observed; the
+ * repair phase and its commit carry a new interactionId.
+ */
+function hydraFusionCascade(f, { user = "fused-user" } = {}) {
+	const fusion = (extra = {}) => ({ fusionId: "fusion-1", pattern: "cascade", ...extra });
+	const phaseMessage = (id, parentId, interactionId, tools) =>
+		f.event({
+			type: "assistant.message",
+			id,
+			parentId,
+			ephemeral: true,
+			data: {
+				interactionId,
+				toolRequests: Array.from({ length: tools }, (_, i) => ({ toolCallId: `${id}-${i}` })),
+				fusion: fusion({ phaseKind: "primary" }),
+			},
+		});
+	const before = () => {
+		f.event({ type: "session.fusion_route_started", id: "route", ephemeral: true, data: {} });
+		f.event({ type: "session.fusion_resolved", id: "resolved", parentId: "route", data: fusion() });
+		nativeUser(f, "native-message-137", user, "primary-interaction");
+		phaseMessage("primary-tools", "gap-1", "primary-interaction", 1);
+		phaseMessage("primary-draft", "gap-2", "primary-interaction", 0);
+		f.event({
+			type: "assistant.fusion_phase_completed",
+			id: "primary-done",
+			parentId: "gap-3",
+			data: fusion({ phaseKind: "primary", conversationScope: "root" }),
+		});
+		f.event({
+			type: "assistant.fusion_phase_completed",
+			id: "judge-done",
+			parentId: "gap-4",
+			data: fusion({ phaseKind: "judge", conversationScope: "review", verdict: "reject" }),
+		});
+		phaseMessage("repair-tools", "gap-5", "repair-interaction", 1);
+		phaseMessage("repair-draft", "gap-6", "repair-interaction", 0);
+	};
+	const commit = () => {
+		f.event({
+			type: "assistant.fusion_phase_completed",
+			id: "repair-done",
+			parentId: "gap-7",
+			data: fusion({ phaseKind: "repair", conversationScope: "root" }),
+		});
+		f.event({
+			type: "session.fusion_commit_started",
+			id: "commit",
+			parentId: "repair-done",
+			data: fusion(),
+		});
+		f.event({
+			type: "assistant.turn_start",
+			id: "commit-start-1",
+			parentId: "commit",
+			data: { interactionId: "repair-interaction" },
+		});
+		f.event({
+			type: "assistant.message",
+			id: "commit-tools",
+			parentId: "commit-start-1",
+			data: {
+				interactionId: "repair-interaction",
+				toolRequests: [{ toolCallId: "commit-tool" }],
+				fusion: fusion({ commitId: "fusion-1:commit" }),
+			},
+		});
+		f.event({
+			type: "tool.execution_complete",
+			id: "commit-tool-done",
+			parentId: "commit-tools",
+			data: { interactionId: "repair-interaction" },
+		});
+		f.event({
+			type: "assistant.turn_end",
+			id: "commit-end-1",
+			parentId: "commit-tool-done",
+			data: {},
+		});
+		f.event({
+			type: "assistant.turn_start",
+			id: "commit-start-2",
+			parentId: "commit-end-1",
+			data: { interactionId: "repair-interaction" },
+		});
+		f.event({
+			type: "assistant.message",
+			id: "commit-final",
+			parentId: "commit-start-2",
+			data: {
+				interactionId: "repair-interaction",
+				toolRequests: [],
+				fusion: fusion({ commitId: "fusion-1:commit" }),
+			},
+		});
+		f.event({ type: "assistant.turn_end", id: "commit-end-2", parentId: "commit-final", data: {} });
+		f.event({
+			type: "session.fusion_completed",
+			id: "fusion-done",
+			parentId: "checkpoint",
+			data: fusion({ commitId: "fusion-1:commit", outcome: "completed" }),
+		});
+		f.event({ type: "session.idle", id: "idle", parentId: "gap-8", ephemeral: true, data: {} });
+	};
+	return { before, commit };
+}
+
+test("hydrafusion cascade: the committed repair turn completes owned work, never a phase", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	const cascade = hydraFusionCascade(f);
+	cascade.before();
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1, "no completion between phases");
+	cascade.commit();
+	await flush();
+	assert.equal(
+		f.trace.filter((x) => x === "claim").length,
+		2,
+		"the next message waits only for the commit",
+	);
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["commit-end-2"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: uncommitted phase output never ends the turn", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	hydraFusionCascade(f).before();
+	f.event({ type: "assistant.turn_end", id: "phase-end", parentId: "primary-draft", data: {} });
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: another fusion's completion never completes owned work", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	hydraFusionCascade(f).before();
+	f.event({
+		type: "session.fusion_completed",
+		id: "other-done",
+		data: { fusionId: "fusion-other", outcome: "completed" },
+	});
+	f.event({
+		type: "session.fusion_completed",
+		id: "sub-done",
+		agentId: "sub-agent",
+		data: { fusionId: "fusion-1", outcome: "completed" },
+	});
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
 	f.bridge.stop();
 	await run;
 });

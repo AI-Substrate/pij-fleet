@@ -54,6 +54,47 @@ old attested process is dead. A live old owner, changed native session, or
 unrelated bootstrap process/pane still refuses the handoff. The saved address,
 parent, operator state, and queued messages are retained.
 
+### HydraFusion models (plan 169)
+
+`hydrafusion` (policy `standard`) and `hydrafusion-max` (policy `max`) are
+Copilot's per-turn model router. Spawn them by model id:
+
+```sh
+pij-rs spawn --harness copilot --model hydrafusion-max --cwd "$PWD"
+```
+
+Pij launches `copilot --yolo --model hydrafusion-max --context default`. Copilot
+refuses every other context tier for these models ("HydraFusion models do not
+support context tiers"), and omitting `--context` would inherit a persisted
+`long_context` tier, so the explicit `default` tier is required. Copilot also
+refuses reasoning effort for them, so `--effort` with a HydraFusion model is
+refused before launch: `HydraFusion routes effort itself; omit --effort`.
+`--model auto --auto-tier hydrafusion` is refused by Copilot 1.0.97 ("requires
+dynamic Auto tiers"). `pij state` reports the seat's `boundModel` as the
+synthetic id; the routed per-phase model is not reported.
+
+Each turn is routed to a pattern: `single`, `cascade` (primary, review-scope
+judge, conditional repair) or `critique`. On Copilot 1.0.97 the live stream of a
+fused turn has this shape:
+
+- `session.fusion_route_started` and `session.fusion_resolved` (with `fusionId`)
+  arrive just before the turn's `user.message`.
+- Phase output streams as ephemeral root `assistant.message` events stamped
+  `data.fusion` without `commitId`. No root `assistant.turn_start`/`turn_end`
+  fires before the commit, and a review-scope judge emits no root message or
+  `user.message`.
+- The commit replays the winning phase as ordinary root turns whose messages
+  carry `data.fusion.commitId`, then `session.fusion_completed`.
+- A repair phase and its commit carry a new `interactionId`, and phase parents
+  are persisted-only `session.usage_record` events never seen live.
+
+So the receiver adopts the `fusionId` routed for its own prompt and re-anchors
+on it. The turn ends at the committed final turn or that fusion's
+`session.fusion_completed`; uncommitted phase output is never the final
+message, and the next queued Pij message waits for it. The seat publishes
+`working` from `session.fusion_route_started`, because the phases emit no root
+turn start. The `critique` pattern was not observed in the plan-169 canary.
+
 ### Several sessions in one Copilot process (plan 168)
 
 Copilot 1.0.96 keeps every session's extension host alive inside one process.
