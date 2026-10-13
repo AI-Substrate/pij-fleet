@@ -897,6 +897,8 @@ export class NativeCompletion {
 		this.frontier = { live: Number.POSITIVE_INFINITY, history: Number.POSITIVE_INFINITY };
 		this.lastStamp = {};
 		this.promptPos = {};
+		this.laterTurn = { live: Number.POSITIVE_INFINITY, history: Number.POSITIVE_INFINITY };
+		this.laterTurnStamp = undefined;
 		this.clockOk = true;
 		this.queue = [];
 	}
@@ -1015,6 +1017,8 @@ export class NativeCompletion {
 		node.pos[channel] = index;
 		// An event already known to follow the prompt anchors every later one here too.
 		if (node.after && index < this.frontier[channel]) this.frontier[channel] = index;
+		if (node.after && node.root && node.user && !node.prompt && index < this.laterTurn[channel])
+			this.laterTurn[channel] = index;
 		const clockWasOk = this.clockOk;
 		if (node.stamp !== undefined) {
 			const last = this.lastStamp[channel];
@@ -1084,21 +1088,33 @@ export class NativeCompletion {
 		return route.fusionId;
 	}
 	routeByOrder() {
-		let routed;
+		const candidates = [];
 		for (const channel of ["live", "history"]) {
 			const prompt = this.promptPos[channel];
 			for (let i = (prompt ?? 0) - 1; i >= 0; i--) {
 				const node = this.order[channel][i];
 				if (!node.root) continue;
 				if (node.type === "session.fusion_resolved") {
-					if (routed !== undefined && routed !== node.fusionId) return undefined;
-					routed = node.fusionId;
+					candidates.push(node);
 					break;
 				}
 				if (node.user || ROUTE_ENDS.has(node.type)) break;
 			}
 		}
-		return routed;
+		// A channel can lack the events in between. A route that some channel
+		// orders before another candidate was not the last one before the prompt.
+		const precedes = (earlier, later) =>
+			["live", "history"].some(
+				(channel) =>
+					earlier.pos[channel] !== undefined &&
+					later.pos[channel] !== undefined &&
+					earlier.pos[channel] < later.pos[channel],
+			);
+		const last = candidates.filter(
+			(node) => !candidates.some((other) => other !== node && precedes(node, other)),
+		);
+		const routes = new Set(last.map((node) => node.fusionId));
+		return routes.size === 1 ? [...routes][0] : undefined;
 	}
 	/** This turn's own output (after the prompt, in its ancestry) names its fusion. */
 	lockFusion(fusionId) {
@@ -1162,11 +1178,15 @@ export class NativeCompletion {
 				this.sameFusion(node))
 		)
 			this.markMember(node);
-		// A fusion stamp ordered after the owned prompt names this turn's fusion for
-		// good. A route resolved after the prompt is a later turn's, never this one's.
+		// The owned turn's own output names its fusion for good: a member (in the
+		// prompt's ancestry, its foreground interaction or its routed fusion) that is
+		// ordered after the prompt. Merely later is not enough, because a later
+		// unrelated prompt's fusion output is after the prompt too, and a route
+		// resolved after the prompt is a later turn's.
 		if (
 			node.root &&
 			node.after &&
+			node.member &&
 			node.fusionId !== undefined &&
 			node.type !== "session.fusion_resolved"
 		)
@@ -1181,6 +1201,18 @@ export class NativeCompletion {
 	}
 	markAfter(node) {
 		node.after = true;
+		// Another root prompt ordered after the owned one starts a later turn.
+		if (node.root && node.user && !node.prompt) {
+			for (const channel of ["live", "history"]) {
+				const index = node.pos[channel];
+				if (index !== undefined && index < this.laterTurn[channel]) this.laterTurn[channel] = index;
+			}
+			if (
+				node.stamp !== undefined &&
+				(this.laterTurnStamp === undefined || node.stamp < this.laterTurnStamp)
+			)
+				this.laterTurnStamp = node.stamp;
+		}
 		for (const channel of ["live", "history"]) {
 			const index = node.pos[channel];
 			if (index === undefined || index >= this.frontier[channel]) continue;
@@ -1197,16 +1229,32 @@ export class NativeCompletion {
 		for (const child of this.children.get(node.id) ?? []) this.queue.push(child);
 	}
 	/**
+	 * Known to belong to a turn that started after the owned one: later than a
+	 * later prompt on a shared channel, or stamped after it (a brake only).
+	 */
+	inLaterTurn(node) {
+		return (
+			(node.pos.live !== undefined && node.pos.live > this.laterTurn.live) ||
+			(node.pos.history !== undefined && node.pos.history > this.laterTurn.history) ||
+			(this.clockOk &&
+				this.laterTurnStamp !== undefined &&
+				node.stamp !== undefined &&
+				node.stamp > this.laterTurnStamp)
+		);
+	}
+	/**
 	 * Only an event ordered after the owned prompt can end its turn: a prompt's
 	 * descendant idle/error/abort, a turn_end after a final owned message, its own
-	 * fusion's aggregate completion, or, once the turn is fused, any root
-	 * idle/error/abort (they carry no fusion id and may follow persisted-only
-	 * parents, and an ephemeral idle is never readable from history).
+	 * fusion's aggregate completion, or, once the turn is fused, a root
+	 * idle/error/abort that is not known to belong to a later turn (they carry no
+	 * fusion id and may follow persisted-only parents, and an ephemeral idle is
+	 * never readable from history).
 	 */
 	checkTerminal(node) {
 		if (this.terminal || !node.root || !node.after) return;
 		if (
-			(TURN_ENDINGS.has(node.type) && (node.member || this.fusionId !== undefined)) ||
+			(TURN_ENDINGS.has(node.type) &&
+				(node.member || (this.fusionId !== undefined && !this.inLaterTurn(node)))) ||
 			(node.type === "assistant.turn_end" && this.finalMessages.has(node.parentId)) ||
 			(node.type === "session.fusion_completed" && this.sameFusion(node))
 		) {

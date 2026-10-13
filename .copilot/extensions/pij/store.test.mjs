@@ -3545,6 +3545,261 @@ test("hydrafusion: a late history page's old route is never adopted by a live pl
 	f.bridge.stop();
 	await run;
 });
+// #46 review r3 (pij-psychiatric-chameleon): the channels race, so neither may
+// decide alone which turn an event belongs to.
+test("hydrafusion: a prompt seen only in history still owns the live fused output and idle", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	f.native.send = async () => {
+		f.trace.push("send");
+		f.history.push(
+			{ type: "session.fusion_resolved", id: "history-route", data: { fusionId: "current" } },
+			{
+				type: "user.message",
+				id: "history-user",
+				data: { messageId: "native-message-137", interactionId: "current-interaction" },
+			},
+		);
+		return "native-message-137";
+	};
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.event({
+		type: "assistant.message",
+		id: "live-phase",
+		parentId: "usage-gap",
+		ephemeral: true,
+		data: {
+			interactionId: "current-interaction",
+			toolRequests: [],
+			fusion: { fusionId: "current" },
+		},
+	});
+	f.event({ type: "session.idle", id: "live-idle", parentId: "gap", ephemeral: true, data: {} });
+	for (let i = 0; i < 4; i++) await f.bridge.readEvents(f.bridge.completion);
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["live-idle"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: a bounded history window's fused output orders its abort after a live prompt", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	f.native.send = async () => {
+		f.trace.push("send");
+		return "native-message-137";
+	};
+	const run = f.bridge.run();
+	await flush();
+	f.event({ type: "session.fusion_resolved", id: "live-route", data: { fusionId: "current" } });
+	nativeUser(f, "native-message-137", "live-user", "current-interaction");
+	await f.accepted.promise;
+	// The prompt itself is outside the backward window.
+	const window = [
+		{
+			type: "assistant.message",
+			id: "history-phase",
+			parentId: "usage-gap",
+			data: {
+				interactionId: "current-interaction",
+				toolRequests: [],
+				fusion: { fusionId: "current" },
+			},
+		},
+		{ type: "abort", id: "history-abort", parentId: "another-gap", data: {} },
+	];
+	f.native.rpc.eventLog.tail = async () => ({ cursor: "after-abort" });
+	const read = f.native.rpc.eventLog.read;
+	f.native.rpc.eventLog.read = async (request) =>
+		request.direction === "backward"
+			? { events: window, cursor: "before-window", cursorStatus: "ok", hasMore: true }
+			: read(request);
+	await f.bridge.probeReceiver(f.bridge.completion);
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["history-abort"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: a route seen only in history is adopted when the live prompt is replayed there", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	f.native.send = async () => {
+		f.trace.push("send");
+		return "native-message-137";
+	};
+	const run = f.bridge.run();
+	await flush();
+	f.history.push({
+		type: "session.fusion_resolved",
+		id: "history-route",
+		data: { fusionId: "current" },
+	});
+	await f.bridge.readEvents(f.bridge.completion);
+	const user = {
+		type: "user.message",
+		id: "same-user",
+		data: { messageId: "native-message-137", interactionId: "primary-interaction" },
+	};
+	f.event(user);
+	await f.accepted.promise;
+	f.history.push(user);
+	await f.bridge.readEvents(f.bridge.completion);
+	// The repair commit changes interaction and follows a persisted-only parent.
+	f.event({
+		type: "assistant.message",
+		id: "repair-commit",
+		parentId: "repair-gap",
+		data: {
+			interactionId: "repair-interaction",
+			toolRequests: [],
+			fusion: { fusionId: "current", commitId: "current:commit" },
+		},
+	});
+	f.event({ type: "assistant.turn_end", id: "repair-end", parentId: "repair-commit", data: {} });
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["repair-end"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: a failed route's concrete fallback completes by the ordinary rule", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.event({ type: "session.fusion_route_started", id: "routing", data: {} });
+	f.event({
+		type: "session.fusion_route_failed",
+		id: "routing-failed",
+		data: { fallbackModel: "m" },
+	});
+	nativeUser(f, "native-message-137", "fallback-user", "fallback-interaction");
+	f.event({
+		type: "assistant.message",
+		id: "fallback-final",
+		parentId: "missing",
+		data: { interactionId: "fallback-interaction", toolRequests: [] },
+	});
+	f.event({ type: "assistant.turn_end", id: "fallback-end", parentId: "fallback-final", data: {} });
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["fallback-end"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: a critique (draft, critic, revision) waits for the revision's commit", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	const fusion = (extra = {}) => ({ fusionId: "critique", ...extra });
+	f.event({
+		type: "session.fusion_resolved",
+		id: "resolved",
+		data: fusion({ pattern: "critique" }),
+	});
+	nativeUser(f, "native-message-137", "critique-user", "draft-interaction");
+	for (const [kind, scope] of [
+		["draft", "root"],
+		["critic", "review"],
+		["revision", "root"],
+	]) {
+		f.event({
+			type: "assistant.message",
+			id: `${kind}-message`,
+			parentId: "gap",
+			ephemeral: true,
+			data: {
+				interactionId: `${kind}-interaction`,
+				toolRequests: [],
+				fusion: fusion({ phaseKind: kind, conversationScope: scope }),
+			},
+		});
+		f.event({
+			type: "assistant.turn_end",
+			id: `${kind}-end`,
+			parentId: `${kind}-message`,
+			data: {},
+		});
+	}
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	f.event({
+		type: "assistant.message",
+		id: "revision-commit",
+		parentId: "gap",
+		data: {
+			interactionId: "revision-interaction",
+			toolRequests: [],
+			fusion: fusion({ commitId: "critique:commit" }),
+		},
+	});
+	f.event({
+		type: "assistant.turn_end",
+		id: "revision-commit-end",
+		parentId: "revision-commit",
+		data: {},
+	});
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["revision-commit-end"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+// #46 review r4: merely later is not owned; a later prompt's fusion never
+// names or ends the owned plain prompt's turn, even all-live on one clock.
+test("hydrafusion: a later unrelated fusion never completes the owned plain prompt", () => {
+	const completion = new NativeCompletion({ msg_id: "owned" }, "0");
+	completion.bind("owned-native");
+	for (const [i, event] of [
+		{
+			type: "user.message",
+			id: "owned-user",
+			data: { messageId: "owned-native", interactionId: "I" },
+		},
+		{ type: "session.fusion_resolved", id: "later-route", data: { fusionId: "later" } },
+		{
+			type: "user.message",
+			id: "later-user",
+			data: { messageId: "later-native", interactionId: "K" },
+		},
+		{
+			type: "assistant.message",
+			id: "later-phase",
+			parentId: "gap",
+			data: { interactionId: "K", toolRequests: [], fusion: { fusionId: "later" } },
+		},
+		{
+			type: "session.fusion_completed",
+			id: "later-done",
+			parentId: "gap",
+			data: { fusionId: "later" },
+		},
+	].entries())
+		completion.observe({
+			...event,
+			timestamp: new Date(Date.UTC(2026, 9, 13, 0, 0, i)).toISOString(),
+		});
+	assert.equal(completion.terminal, undefined);
+	assert.equal(completion.fusionId, undefined);
+});
 
 /**
  * #46 round 3: recorded turn shapes (ids shortened, `g*` parents are
@@ -3650,6 +3905,56 @@ const PERMUTATION_TURNS = (() => {
 			],
 			allowed: ["T", "IDLE"],
 		},
+		// #46 round 4: the owned plain prompt never finishes; a later unrelated
+		// prompt's fusion output and completion are after it but never its own.
+		"unfinished plain prompt, then a later unrelated fusion": {
+			events: [
+				prompt,
+				{ type: "session.fusion_resolved", id: "XR", data: { fusionId: "X" } },
+				{ type: "user.message", id: "XU", data: { messageId: "other", interactionId: "K" } },
+				{
+					type: "assistant.message",
+					id: "XPH",
+					parentId: "gx1",
+					data: { interactionId: "K", toolRequests: [], fusion: { fusionId: "X" } },
+				},
+				{
+					type: "assistant.message",
+					id: "XC",
+					parentId: "gx2",
+					data: {
+						interactionId: "K",
+						toolRequests: [],
+						fusion: { fusionId: "X", commitId: "X:commit" },
+					},
+				},
+				{ type: "session.fusion_completed", id: "XFC", parentId: "gx3", data: { fusionId: "X" } },
+				{ type: "session.idle", id: "XIDLE", parentId: "gx4", ephemeral: true, data: {} },
+			],
+			allowed: [],
+		},
+		// The owned fused turn never finishes; a later plain turn's idle has no
+		// ancestry. Only the order shows it is the later turn's, so this holds
+		// for real channels: the push channel carries every event and history
+		// never carries an ephemeral one.
+		"unfinished fusion, then a later plain turn": {
+			events: [
+				route,
+				prompt,
+				phase("PH", "g1", "I"),
+				{ type: "user.message", id: "XU", data: { messageId: "other", interactionId: "K" } },
+				{
+					type: "assistant.message",
+					id: "XM",
+					parentId: "XU",
+					data: { interactionId: "K", toolRequests: [] },
+				},
+				{ type: "assistant.turn_end", id: "XT", parentId: "XM", data: {} },
+				{ type: "session.idle", id: "XIDLE", parentId: "gx4", ephemeral: true, data: {} },
+			],
+			allowed: [],
+			realChannels: true,
+		},
 	};
 })();
 
@@ -3699,7 +4004,7 @@ for (const [clock, stampOf, only] of [
 		["prior turn's fusion and abort"],
 	],
 ]) {
-	for (const [name, { events, allowed }] of Object.entries(PERMUTATION_TURNS)) {
+	for (const [name, { events, allowed, realChannels }] of Object.entries(PERMUTATION_TURNS)) {
 		if (only && !only.includes(name)) continue;
 		test(`hydrafusion permutations (${clock}): ${name} completes once, only at its own terminal`, () => {
 			const delivered = events.map((event, i) =>
@@ -3709,16 +4014,24 @@ for (const [clock, stampOf, only] of [
 			forEachDelivery(events.length, (path, liveComplete) => {
 				const completion = new NativeCompletion({ msg_id: "pij-1" }, "0");
 				completion.bind("native-1");
+				// History never carries an ephemeral event.
+				if (realChannels && path.some(([index, live]) => !live && events[index].ephemeral)) return;
 				for (const [index, live] of path) {
 					completion.observe(delivered[index], undefined, true, false, live);
 				}
 				const trace = () =>
 					path.map(([i, live]) => `${live ? "L" : "H"}:${events[i].id}`).join(" ");
-				// Safety in every split: never a terminal that is not this turn's own.
-				if (completion.terminal && !allowed.includes(completion.terminal.eventId))
+				// Safety: never a terminal that is not this turn's own; in every split,
+				// or for real channels whenever the push channel carries every event.
+				if (
+					(!realChannels || liveComplete) &&
+					completion.terminal &&
+					!allowed.includes(completion.terminal.eventId)
+				)
 					failures.push(`ended at ${completion.terminal.eventId}: ${trace()}`);
 				// Liveness whenever the push channel carries every event, as it does.
-				if (liveComplete && !completion.terminal) failures.push(`never ended: ${trace()}`);
+				if (liveComplete && allowed.length > 0 && !completion.terminal)
+					failures.push(`never ended: ${trace()}`);
 			});
 			assert.deepEqual(failures.slice(0, 5), []);
 		});
