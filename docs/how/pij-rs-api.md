@@ -86,6 +86,10 @@ Sources: [`identity.rs`](../../crates/daemon/src/http/identity.rs), [`role.rs`](
 |---|---|---|
 | OMP | `--harness omp` or `"harness":"omp"` | `--model github-copilot/gpt-6-astra --effort high` becomes OMP `--model github-copilot/gpt-6-astra --thinking high` |
 | Pi | `--harness pi` or `"harness":"pi"` | `--model gpt-5.6-sol --effort high` becomes Pi `--model gpt-5.6-sol:high` |
+| Copilot | `--harness copilot` or `"harness":"copilot"` | `--model claude-opus-5 --effort high` becomes Copilot `--model claude-opus-5 --context long_context --effort high` |
+| Copilot HydraFusion | `--harness copilot --model hydrafusion` (or `hydrafusion-max`) | becomes Copilot `--model hydrafusion --context default`; adding `--effort` refuses with `HydraFusion routes effort itself; omit --effort` |
+
+HydraFusion ids (`hydrafusion`, `hydrafusion-max`) are Copilot's per-turn model router. Copilot refuses every other context tier for them ("HydraFusion models do not support context tiers"), and omitting `--context` would inherit a persisted `long_context` config tier, so pij passes the explicit `default` tier. Copilot also refuses reasoning effort for them, so pij refuses `--effort` before launch rather than dropping it. The `--model auto --auto-tier hydrafusion` form is refused by Copilot 1.0.97 ("requires dynamic Auto tiers"); use the model id. The seat's recorded model stays the synthetic id; the per-turn routed model is not reported.
 
 These are argument-shape examples, not catalog or runtime receipts. `pij models` catalog enumeration remains unported (`E-RS-UNPORTED`): agents still cannot enumerate per-harness catalogs through pij, and no native catalog command is supplied. Consult the selected harness's installed catalog, then prove the choice with a canary and actual runtime evidence. Existing native launch flags are otherwise unchanged; native spawn still has no legacy layout/task/branch/plan-id flags.
 

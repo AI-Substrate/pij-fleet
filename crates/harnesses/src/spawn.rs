@@ -105,6 +105,7 @@ pub fn validate_executable_override(harness: Harness, executable: Option<&str>) 
 ///
 /// Refuses `accept_inbound` for non-Claude harnesses because those runtimes do
 /// not establish the capability represented by the descriptor stamp.
+/// Refuses `--effort` with a Copilot HydraFusion model, which routes effort itself.
 /// Executable overrides must be absolute paths and cannot name another harness.
 pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
     validate_executable_override(input.harness, input.executable.as_deref())?;
@@ -176,10 +177,23 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
             push_option(&mut args, "--effort", input.effort.as_deref());
         }
         Harness::Copilot => {
+            let fusion = input.model.as_deref().is_some_and(is_copilot_fusion_model);
+            if fusion && input.effort.is_some() {
+                return Err(PijError::Adapter {
+                    adapter: "spawn".to_string(),
+                    message: format!(
+                        "HydraFusion routes effort itself; omit --effort (Copilot refuses reasoning effort for {})",
+                        input.model.as_deref().unwrap_or_default()
+                    ),
+                });
+            }
             args.push("--yolo".to_string());
             push_option(&mut args, "--model", input.model.as_deref());
             if input.model.is_some() {
-                args.extend(["--context".to_string(), "long_context".to_string()]);
+                // Omitting --context would inherit the persisted config tier,
+                // so a fusion model needs the explicit default tier.
+                let tier = if fusion { "default" } else { "long_context" };
+                args.extend(["--context".to_string(), tier.to_string()]);
             }
             push_option(&mut args, "--effort", input.effort.as_deref());
         }
@@ -253,6 +267,15 @@ fn push_option(args: &mut Vec<String>, flag: &str, value: Option<&str>) {
     if let Some(value) = value {
         args.extend([flag.to_string(), value.to_string()]);
     }
+}
+
+/// Copilot's HydraFusion router ids (`hydrafusion`, `hydrafusion-max`).
+///
+/// Copilot refuses any other context tier for them with "HydraFusion models
+/// do not support context tiers", and refuses `--effort` with `Model
+/// "hydrafusion" does not support reasoning effort configuration`.
+fn is_copilot_fusion_model(model: &str) -> bool {
+    model == "hydrafusion" || model.starts_with("hydrafusion-")
 }
 
 #[cfg(test)]
@@ -509,5 +532,55 @@ mod tests {
         assert_eq!(plan.provider, None);
         assert_eq!(plan.effort, None);
         assert!(!plan.cross_session_inbound_accept);
+    }
+
+    #[test]
+    fn copilot_fusion_model_selects_default_tier_without_effort() {
+        for model in ["hydrafusion", "hydrafusion-max"] {
+            let mut request = input(Harness::Copilot);
+            request.model = Some(model.to_string());
+            request.effort = None;
+            let plan = build_spawn_plan(request).expect("fusion plan");
+            assert_eq!(
+                &plan.args[2..],
+                [
+                    "copilot",
+                    "--yolo",
+                    "--model",
+                    model,
+                    "--context",
+                    "default"
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn copilot_fusion_model_refuses_effort_by_name() {
+        let mut request = input(Harness::Copilot);
+        request.model = Some("hydrafusion-max".to_string());
+        let error = build_spawn_plan(request).expect_err("fusion effort must refuse");
+        assert!(
+            error
+                .to_string()
+                .contains("HydraFusion routes effort itself; omit --effort")
+        );
+    }
+
+    #[test]
+    fn copilot_fusion_lookalike_keeps_long_context_and_effort() {
+        let mut request = input(Harness::Copilot);
+        request.model = Some("hydrafusionx".to_string());
+        let plan = build_spawn_plan(request).expect("ordinary model plan");
+        assert!(
+            plan.args
+                .windows(2)
+                .any(|pair| pair == ["--context", "long_context"])
+        );
+        assert!(
+            plan.args
+                .windows(2)
+                .any(|pair| pair == ["--effort", "high"])
+        );
     }
 }
