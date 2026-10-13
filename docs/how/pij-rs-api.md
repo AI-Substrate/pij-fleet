@@ -95,7 +95,17 @@ An intentional native `pij-rs spawn --harness pi --allow-retired …` sends HTTP
 
 The existing `GET /health` v2 response adds `data.retired_harnesses`, an array of harness names (`[]` for the generic configuration, `["pi"]` for this machine's recipe). In-process spawn reads this through `client.health()` before local pane or spawn-expectation mutation; it does not re-read `PIJ_RETIRED_HARNESSES` in the extension environment or infer policy from the parent harness. OMP and Pi use their distinct local launch paths; external harness choices use native `/v1/spawn`. Use native `--allow-retired` when deliberately overriding retirement, never a `bin` selector. `pij-rs spawn --role pm|worker|pa` (HTTP `role` plus `caller`; in-process `pij_spawn({role})` for claude/copilot/codex) stamps the child's role from above; see [Seat roles](#governance-route-inventory). In-process omp/pi spawn refuses `role` until pij-fleet#25.
 
-A pane is not a worker (pij-fleet#44). After any successful launch, in-process `pij_spawn` polls `GET /v1/seats` every 500ms for a bound seat (non-null `proc`) that **this launch** created. The seat must carry the new `spawn_id`. A row with no `spawn_id` counts only on the new pane with a `proc_start` at or after the launch second, because pane ids reset with the tmux server. A row with a different `spawn_id` never counts. One deadline, `PIJ_SPAWN_REGISTER_TIMEOUT_MS` (default `20000`, read once per extension runtime), bounds the whole wait. Each roster read carries an abort signal for the time left, response body included, and no poll starts after expiry. The one diagnostic `tmux capture-pane` is capped at 1s, so the total is at most the deadline plus 1s.
+A pane is not a worker (pij-fleet#44). After any successful launch, in-process `pij_spawn` polls `GET /v1/seats` every 500ms for a bound seat (non-null `proc`) whose `spawn_id` is this launch's. The spawn id is the only proof. Pane ids reset with the tmux server and `proc_start` has one-second resolution, so a pane or time match never counts, and neither does a row with another or no `spawn_id`. Every path carries the id:
+
+- OMP and Pi children receive `PIJ_SPAWN_ID` and register with it.
+- Daemon-launched children bind to the `/v1/spawn` row, which already holds it.
+
+One budget, `PIJ_SPAWN_REGISTER_TIMEOUT_MS` (default `20000`, read once per extension runtime), bounds the whole wait.
+
+- Polling stops a quarter of the budget before the deadline (at most 1s). That last slice is kept for the pane check.
+- Each roster read carries an abort signal for the polling time left, response body included. No read starts at or after that point.
+- The one `tmux capture-pane` gets only the time left in the budget, and is skipped when none is left. The diagnosis is then `no-registration`.
+- The wait therefore ends at the deadline, plus process-exit and timer slack.
 
 A match reports `spawned pij worker <id>`. Otherwise the tool reports `spawned, NOT registered (<diagnosis>)` with the spawn id, the pane, the milliseconds waited and any roster read failure, plus a local `tmux capture-pane` command for inspection. `details.registration` is `{registered:false, waitedMs, diagnosis, rosterError?}`. The diagnosis is fixed: `boot-failed` when the child's own `pij: boot registration failed` notice is visible in its pane, otherwise `no-registration`. Pane text is never forwarded, in `content` or in `details`, because a pane can show credentials. The child's reason reaches the spawner through its own boot-failure message. The tool never claims plain success for a seatless pane, and it neither kills the pane nor retries the spawn.
 
