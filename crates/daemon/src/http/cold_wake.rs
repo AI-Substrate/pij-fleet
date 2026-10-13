@@ -124,9 +124,14 @@ pub(crate) async fn verdict(
     .unwrap_or_else(|_| SessionStatusBlock::Failed {
         error: format!("no answer within {}s", STATUS_WAIT.as_secs()),
     });
-    let verdict = check(seat.state, &block, now_ms);
+    let verdict = check(seat.state, &block, now_ms, seat.model.as_deref());
     if verdict == ColdCheck::Busy {
-        let as_idle = check(pij_core::model::SystemState::Idle, &block, now_ms);
+        let as_idle = check(
+            pij_core::model::SystemState::Idle,
+            &block,
+            now_ms,
+            seat.model.as_deref(),
+        );
         if matches!(as_idle, ColdCheck::Cold { .. })
             && working_is_old(services, &seat.id, now_ms).await
             && pane_is_idle(services, seat).await
@@ -212,6 +217,7 @@ pub(crate) async fn guard(
         idle_ms,
         model,
         estimate_usd,
+        not_estimable,
     } = &verdict
     {
         // Persist the audit before the wake it records.
@@ -230,6 +236,7 @@ pub(crate) async fn guard(
                 "idle_ms": idle_ms,
                 "model": model,
                 "estimate_usd": estimate_usd,
+                "not_estimable": not_estimable,
             })
             .to_string(),
         };

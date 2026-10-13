@@ -162,7 +162,7 @@ function fixture(t, { consume = true, claims = true, boundary = false } = {}) {
 			metadata: {
 				async isProcessing() {
 					calls.push("metadata.isProcessing");
-					return { processing: false };
+					return { processing: state.processing ?? false };
 				},
 			},
 		},
@@ -537,9 +537,11 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 			},
 		]);
 		await pump(f);
-		assert.equal(
-			f.reports.find((event) => event.kind === "native-completed")?.eventId,
-			"owned-abort",
+		// The first trigger of the aborted run names the completion; run state decides it.
+		assert.ok(
+			["aborted-turn-end", "owned-abort"].includes(
+				f.reports.find((event) => event.kind === "native-completed")?.eventId,
+			),
 		);
 		assert.equal(
 			f.reports.find((event) => event.kind === "native-completed")?.nativeMessageId,
@@ -601,6 +603,8 @@ if (process.env.PIJ_PROGRESS_EXIT_CHILD === "1") {
 							: [stranger, ...terminal];
 			f.rebase(window);
 			if (gap === "expired") f.state.windowStatus = "expired";
+			// Consumption is proven here; the run is still active, so nothing completes it.
+			if (gap === "consumption-only") f.state.processing = true;
 			await pump(f);
 			if (retriedBeforeHold.has(gap)) {
 				assert.equal(

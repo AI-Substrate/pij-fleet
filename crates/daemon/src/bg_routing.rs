@@ -101,7 +101,7 @@ impl ColdRouting for DaemonColdRouting {
         .unwrap_or_else(|_| SessionStatusBlock::Failed {
             error: format!("no answer within {}s", STATUS_WAIT.as_secs()),
         });
-        check(seat.state, &block, now)
+        check(seat.state, &block, now, seat.model.as_deref())
     }
 
     async fn prime(&self, seat: &SeatDescriptor) -> Result<Option<SeatId>> {

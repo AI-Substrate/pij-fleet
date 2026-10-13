@@ -828,6 +828,11 @@ function senderLabel(message) {
 	return message.from_machine === undefined ? seat : `${seat}@${message.from_machine}`;
 }
 
+/** The display prefix that identifies a delivered message in Copilot's queue snapshots. */
+function queuePrefix(message) {
+	return `[pij from ${JSON.stringify(senderLabel(message))}; msg_id=${JSON.stringify(message.msg_id)}]\n`;
+}
+
 function sameMessage(left, right) {
 	return (
 		left?.msg_id === right.msg_id &&
@@ -838,12 +843,30 @@ function sameMessage(left, right) {
 	);
 }
 
-/** Consumption and completion belong to one accepted native message, including after restart. */
-class NativeCompletion {
+/**
+ * Consumption and completion belong to one accepted native message, including after restart.
+ *
+ * Completion is ASKED, never inferred (plan 169, #46 review). Copilot's run
+ * state is authoritative: `metadata.isProcessing()` is true for the whole run,
+ * across every HydraFusion phase, steering message and abort (canary 2026-10-13,
+ * Copilot 1.0.97-1), and `queue.pendingItems()` names what is still queued or
+ * steering. Events only TRIGGER a question; which channel delivered them, in
+ * what order, and to which turn they belong no longer decide anything.
+ *
+ * The owned message is complete once it was consumed (its own `user.message`,
+ * by `messageId`), and a question asked after that finds the session not
+ * processing, nothing steering, no unanswered turn prompt, and the message not
+ * queued. Asking happens on a trigger ({@link RUN_TRIGGERS}) and, with or
+ * without one, at least every {@link RUN_STATE_REASK_MS}, so a lost trigger
+ * costs a delay, never a stuck inbox. A run that continues straight into a
+ * queued prompt is waited out too: over-waiting is safe, early completion is not.
+ */
+export class NativeCompletion {
 	constructor(message, cursor, replay = false, jobId) {
 		this.msgId = message.msg_id;
 		this.fromMachine = message.from_machine;
 		this.jobId = jobId;
+		this.from = message.from;
 		this.tailCursor = cursor;
 		this.emptyReads = 0;
 		this.lastProbeAt = 0;
@@ -855,9 +878,10 @@ class NativeCompletion {
 		this.cursor = replay ? undefined : cursor;
 		this.replay = replay;
 		this.pending = [];
-		this.descendants = new Set();
-		this.finalMessages = new Set();
 		this.waiters = new Set();
+		// Each event triggers at most once, whichever channel repeats it.
+		this.triggered = new Set();
+		this.lastAskAt = Number.NEGATIVE_INFINITY;
 	}
 	notify() {
 		for (const wake of this.waiters) wake();
@@ -866,7 +890,7 @@ class NativeCompletion {
 		let wake;
 		const observed = new Promise((resolve) => {
 			wake = () => {
-				if (terminal ? this.terminal : this.consumption) resolve();
+				if (terminal ? this.terminal || this.trigger : this.consumption) resolve();
 			};
 			this.waiters.add(wake);
 			wake();
@@ -879,17 +903,10 @@ class NativeCompletion {
 	}
 	bind(nativeId) {
 		this.nativeId = nativeId;
-		for (const { event, finalMessage } of this.pending) this.observe(event, finalMessage);
+		for (const event of this.pending) this.observe(event);
 		this.pending = undefined;
 	}
-	observe(
-		event,
-		finalMessage = event.type === "assistant.message" &&
-			(event.data?.toolRequests === undefined ||
-				(Array.isArray(event.data.toolRequests) && event.data.toolRequests.length === 0)),
-		fresh = true,
-		notify = true,
-	) {
+	observe(event, fresh = true, notify = true) {
 		if (this.terminal) return;
 		if (
 			fresh &&
@@ -903,52 +920,87 @@ class NativeCompletion {
 		if (!this.nativeId) {
 			// Keep correlation metadata only, never buffered prompts, tool arguments or model text.
 			this.pending.push({
-				event: {
-					type: event.type,
-					id: event.id,
-					parentId: event.parentId,
-					agentId: event.agentId,
-					data: { messageId: event.data?.messageId, interactionId: event.data?.interactionId },
-				},
-				finalMessage,
+				type: event.type,
+				id: event.id,
+				agentId: event.agentId,
+				data: { messageId: event.data?.messageId },
 			});
 			return;
 		}
-		if (!nonempty(event.id) || this.descendants.has(event.id)) return;
-		if (event.type === "user.message") {
-			if (!event.agentId && event.data?.messageId === this.nativeId) {
-				this.descendants.add(event.id);
-				if (nonempty(event.data.interactionId)) this.interactionId ??= event.data.interactionId;
-				if (!this.consumption) {
-					this.consumption = { eventId: event.id };
-					if (notify) this.notify();
-				}
-			}
+		if (event.agentId || !nonempty(event.id)) return;
+		if (event.type === "user.message" && event.data?.messageId === this.nativeId) {
+			if (this.consumption) return;
+			this.consumption = { eventId: event.id };
+			if (notify) this.notify();
 			return;
 		}
-		// Native callbacks can omit permission ancestors; only the matched user's foreground turn can re-anchor.
-		const sameInteraction =
-			!event.agentId &&
-			this.interactionId !== undefined &&
-			event.data?.interactionId === this.interactionId &&
-			(event.type === "assistant.turn_start" ||
-				event.type === "assistant.message" ||
-				event.type === "tool.execution_complete");
-		if (!sameInteraction && !this.descendants.has(event.parentId)) return;
-		this.descendants.add(event.id);
-		if (!event.agentId && finalMessage) this.finalMessages.add(event.id);
-		if (
-			!event.agentId &&
-			(["session.idle", "session.error", "abort"].includes(event.type) ||
-				(event.type === "assistant.turn_end" && this.finalMessages.has(event.parentId)))
-		) {
-			this.terminal = { type: event.type, eventId: event.id };
-			this.descendants.clear();
-			this.finalMessages.clear();
+		// A trigger before consumption belongs to an earlier run; if this run's own
+		// end arrived before its prompt was seen, the bounded re-ask still finds it.
+		if (this.consumption && RUN_TRIGGERS.has(event.type) && !this.triggered.has(event.id)) {
+			this.triggered.add(event.id);
+			// The earliest trigger since the last question names the completion.
+			this.trigger ??= { type: event.type, eventId: event.id };
 			if (notify) this.notify();
 		}
 	}
+	/**
+	 * Whether a run-state question is due: after consumption, on a trigger, or
+	 * once {@link RUN_STATE_REASK_MS} has passed since consumption or the last ask.
+	 */
+	needsAsk(now) {
+		if (this.terminal || this.consumption === undefined) return false;
+		// The re-ask period counts from consumption, never from before it.
+		this.consumedAt ??= now;
+		if (this.lastAskAt < this.consumedAt) this.lastAskAt = this.consumedAt;
+		return this.trigger !== undefined || now - this.lastAskAt >= RUN_STATE_REASK_MS;
+	}
+	/**
+	 * Apply one run-state answer: `processing` from `metadata.isProcessing()` and
+	 * the `queue.pendingItems()` snapshot. Completes only when no run is active
+	 * and nothing of this message can still run.
+	 */
+	settle({ processing, items, steeringMessages, withdrawableTurnMessageId }, now) {
+		const trigger = this.trigger;
+		this.trigger = undefined;
+		this.lastAskAt = now;
+		const prefix = queuePrefix({
+			msg_id: this.msgId,
+			from: this.from,
+			from_machine: this.fromMachine,
+		});
+		if (
+			this.terminal ||
+			this.consumption === undefined ||
+			processing ||
+			steeringMessages.length > 0 ||
+			withdrawableTurnMessageId !== undefined ||
+			items.some(
+				(item) =>
+					item.id === this.nativeId ||
+					item.messageId === this.nativeId ||
+					item.displayText.startsWith(prefix),
+			)
+		)
+			return;
+		this.terminal = {
+			type: trigger?.type ?? "run-state",
+			eventId: trigger?.eventId ?? null,
+		};
+	}
 }
+
+/** Root events after which the run may have ended, so run state is asked again. */
+export const RUN_TRIGGERS = new Set([
+	"session.idle",
+	"assistant.idle",
+	"abort",
+	"session.error",
+	"assistant.turn_end",
+	"session.fusion_completed",
+]);
+
+/** Run state is asked at least this often after consumption, trigger or not. */
+export const RUN_STATE_REASK_MS = 30_000;
 
 export class NativeBridge {
 	constructor({
@@ -1267,7 +1319,7 @@ export class NativeBridge {
 				}
 				this.observeProgress(event);
 				const completion = this.completion;
-				// Successful terminal observation clears ancestry; capture its pre-state, not the aftermath.
+				// Capture the completion's pre-state, not the aftermath of this event.
 				const metadata = [
 					"user.message",
 					"assistant.message",
@@ -1277,8 +1329,7 @@ export class NativeBridge {
 					? {
 							completionNativeId: completion?.nativeId ?? null,
 							completionLive: completion?.live ?? false,
-							parentKnown: completion?.descendants.has(event.parentId) ?? false,
-							descendantCount: completion?.descendants.size ?? 0,
+							consumed: completion?.consumption !== undefined,
 						}
 					: undefined;
 				completion?.observe(event);
@@ -1449,7 +1500,7 @@ export class NativeBridge {
 					);
 				for (const event of page.events) {
 					this.observeProgress(event);
-					completion.observe(event, undefined, !completion.replay);
+					completion.observe(event, !completion.replay);
 					if (nonempty(event.id)) completion.lastEventId = event.id;
 				}
 				completion.cursor = page.cursor;
@@ -1528,8 +1579,12 @@ export class NativeBridge {
 			this.observeProgress(event);
 			// A recovered historical boundary is never authority to re-inject an
 			// accepted message whose consumption may have fallen in the gap.
-			completion.observe(event, undefined, false, false);
+			completion.observe(event, false, false);
 		}
+		// A window that shows a consumed run's possible end is settled by asking,
+		// not by holding on the missing anchor: run state, not ancestry, decides.
+		if (completion.msgId && anchor < 0 && !completion.terminal && completion.trigger)
+			await this.askRunEnded(completion);
 		if (completion.msgId && anchor < 0 && !completion.terminal) {
 			completion.gapFirstSeenAt ??= this.now();
 			const elapsedMs = this.now() - completion.gapFirstSeenAt;
@@ -1572,6 +1627,11 @@ export class NativeBridge {
 		let retry = INITIAL_RETRY_MS;
 		while (!(terminal ? completion.terminal : completion.consumption)) {
 			throwIfStopped(signal);
+			// Ask before reading: a history gap must not keep an ended run waiting.
+			if (terminal && completion.needsAsk(this.now())) {
+				await this.askRunEnded(completion);
+				if (completion.terminal) return;
+			}
 			try {
 				await completion.wait(this.readEvents(completion), terminal, signal);
 			} catch (error) {
@@ -1582,6 +1642,7 @@ export class NativeBridge {
 			}
 			throwIfStopped(signal);
 			if (terminal ? completion.terminal : completion.consumption) return;
+			if (terminal && completion.needsAsk(this.now())) continue;
 			if (completion.hasMore) continue;
 			if (message && completion.boundary && (await this.canRetryDiscarded(completion, message)))
 				return true;
@@ -1589,36 +1650,68 @@ export class NativeBridge {
 			retry = Math.min(retry * 2, MAX_RETRY_MS);
 		}
 	}
+	/**
+	 * Ask Copilot whether the consumed message's run has ended
+	 * ({@link NativeCompletion#settle}). Unsupported or malformed answers hold
+	 * receiving: completion is never guessed without them.
+	 */
+	async askRunEnded(completion) {
+		const signal = this.receiverController.signal;
+		const label = "Native completion";
+		try {
+			const pending = await this.readQueueSnapshot(label);
+			const processing = await this.readProcessing(label);
+			completion.settle({ ...pending, processing }, this.now());
+		} catch (error) {
+			if (signal.aborted || error instanceof NativeError) throw error;
+			throw new NativeError(
+				`${label} run-state snapshot failed; receiving held without acknowledgement`,
+			);
+		}
+	}
+	/** A validated `queue.pendingItems()` snapshot. */
+	async readQueueSnapshot(label) {
+		const queue = this.native.rpc?.queue;
+		const metadata = this.native.rpc?.metadata;
+		if (typeof queue?.pendingItems !== "function" || typeof metadata?.isProcessing !== "function")
+			throw new NativeError(
+				`${label} requires supported queue and processing APIs; receiving held`,
+			);
+		const pending = await this.nativeRpc("queue.pendingItems", () => queue.pendingItems());
+		throwIfStopped(this.receiverController.signal);
+		if (
+			!Array.isArray(pending?.items) ||
+			!pending.items.every((item) => nonempty(item?.id) && typeof item.displayText === "string") ||
+			!Array.isArray(pending.steeringMessages) ||
+			!pending.steeringMessages.every((item) => typeof item === "string") ||
+			(pending.inFlightSteeringCount !== undefined &&
+				(!Number.isSafeInteger(pending.inFlightSteeringCount) ||
+					pending.inFlightSteeringCount < 0)) ||
+			(pending.withdrawableTurnMessageId !== undefined &&
+				!nonempty(pending.withdrawableTurnMessageId))
+		)
+			throw new NativeError(`${label} received malformed queue snapshot; receiving held`);
+		return pending;
+	}
+	/** A validated `metadata.isProcessing()` answer. */
+	async readProcessing(label) {
+		const metadata = this.native.rpc.metadata;
+		const state = await this.nativeRpc("metadata.isProcessing", () => metadata.isProcessing());
+		throwIfStopped(this.receiverController.signal);
+		if (typeof state?.processing !== "boolean")
+			throw new NativeError(`${label} received malformed processing snapshot; receiving held`);
+		return state.processing;
+	}
 	async canRetryDiscarded(completion, message) {
 		const signal = this.receiverController.signal;
 		if (completion.discardUncertain)
 			throw new NativeError(
 				"Native receiver progress gap cannot prove discarded consumption; receiving held without reinjection",
 			);
-		const queue = this.native.rpc?.queue;
-		const metadata = this.native.rpc?.metadata;
-		if (typeof queue?.pendingItems !== "function" || typeof metadata?.isProcessing !== "function")
-			throw new NativeError(
-				"Native discard recovery requires supported queue and processing APIs; receiving held",
-			);
+		const label = "Native discard recovery";
 		try {
-			const pending = await this.nativeRpc("queue.pendingItems", () => queue.pendingItems());
-			throwIfStopped(signal);
-			if (
-				!Array.isArray(pending?.items) ||
-				!pending.items.every(
-					(item) => nonempty(item?.id) && typeof item.displayText === "string",
-				) ||
-				!Array.isArray(pending.steeringMessages) ||
-				!pending.steeringMessages.every((item) => typeof item === "string") ||
-				(pending.inFlightSteeringCount !== undefined &&
-					(!Number.isSafeInteger(pending.inFlightSteeringCount) ||
-						pending.inFlightSteeringCount < 0))
-			)
-				throw new NativeError(
-					"Native discard recovery received malformed queue snapshot; receiving held",
-				);
-			const prefix = `[pij from ${JSON.stringify(senderLabel(message))}; msg_id=${JSON.stringify(message.msg_id)}]\n`;
+			const pending = await this.readQueueSnapshot(label);
+			const prefix = queuePrefix(message);
 			if (
 				pending.items.some(
 					(item) => item.id === completion.nativeId || item.displayText.startsWith(prefix),
@@ -1627,13 +1720,7 @@ export class NativeBridge {
 				pending.inFlightSteeringCount > 0
 			)
 				return false;
-			const state = await this.nativeRpc("metadata.isProcessing", () => metadata.isProcessing());
-			throwIfStopped(signal);
-			if (typeof state?.processing !== "boolean")
-				throw new NativeError(
-					"Native discard recovery received malformed processing snapshot; receiving held",
-				);
-			if (state.processing) return false;
+			if (await this.readProcessing(label)) return false;
 			// A fresh cursor read after both snapshots catches consumption whose
 			// live callback was omitted. Drain pages before concluding absence.
 			do {
@@ -1785,13 +1872,22 @@ export class NativeBridge {
 			grade: "native-consumed-not-model-complete",
 		});
 	}
-	/** Foreground turns only: sub-agent turns never flip the seat's busy/idle state. */
+	/**
+	 * Foreground turns only: sub-agent turns never flip the seat's busy/idle state.
+	 * A HydraFusion turn emits no root turn_start until its commit, so its routing
+	 * is the start of work (plan 169).
+	 */
 	observeActivity(event) {
 		if (event?.agentId) return;
+		// A fused turn that ends without a commit has no root turn_end, so its
+		// aggregate completion and abort end the work too. A failed route does not:
+		// its fallback model still runs the turn.
 		const state =
-			event?.type === "assistant.turn_start"
+			event?.type === "assistant.turn_start" || event?.type === "session.fusion_route_started"
 				? "working"
-				: event?.type === "assistant.turn_end" || event?.type === "session.idle"
+				: ["assistant.turn_end", "session.idle", "session.fusion_completed", "abort"].includes(
+							event?.type,
+						)
 					? "idle"
 					: undefined;
 		if (!state || state === this.activityState || this.activityUnsupported) return;
