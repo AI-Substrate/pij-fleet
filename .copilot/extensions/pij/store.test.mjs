@@ -3440,6 +3440,111 @@ test("hydrafusion: idle before the owned prompt, or from a sub-agent, never ends
 	await run;
 });
 
+// #46 review r2: a history page requested before the owned prompt resolves after
+// its live callbacks and replays the previous turn's terminal first.
+for (const type of ["abort", "session.error"]) {
+	test(`hydrafusion: a late history page's prior ${type} never ends the live fused turn`, async (t) => {
+		const f = fixture();
+		t.after(() => f.bridge.stop());
+		const page = deferred();
+		const read = f.native.rpc.eventLog.read;
+		f.native.send = async () => {
+			f.trace.push("send");
+			return "native-message-137";
+		};
+		f.native.rpc.eventLog.read = async (request) =>
+			request.direction === "backward" || !f.trace.includes("send") ? read(request) : page.promise;
+		const run = f.bridge.run();
+		await flush();
+		const resolved = {
+			type: "session.fusion_resolved",
+			id: "current-resolved",
+			data: { fusionId: "current-fusion" },
+		};
+		const user = {
+			type: "user.message",
+			id: "current-user",
+			data: { messageId: "native-message-137", interactionId: "current-interaction" },
+		};
+		f.event(resolved);
+		f.event(user);
+		await f.accepted.promise;
+		page.resolve({
+			events: [
+				{ type, id: "previous-terminal", parentId: "previous-user", data: {} },
+				resolved,
+				user,
+			],
+			cursor: "3",
+			hasMore: false,
+			cursorStatus: "ok",
+		});
+		await flush();
+		await flush();
+		assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+		f.bridge.stop();
+		await run;
+	});
+}
+
+test("hydrafusion: a durable abort after the owned prompt in history ends the turn across a gap", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	hydraFusionCascade(f).before();
+	// Seen only through history, after the prompt the send recorded there.
+	f.history.push({ type: "abort", id: "durable-abort", parentId: "persisted-only", data: {} });
+	for (let attempt = 0; attempt < 4; attempt++) await f.bridge.readEvents(f.bridge.completion);
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["durable-abort"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+// #46 review r2: a routed fusion id lives for one turn. An earlier fusion that
+// stopped at abort/idle, or a late history page's old route, must not lend its
+// id to the next plain (failed-route fallback) prompt.
+for (const stop of ["abort", "session.idle", "session.error"]) {
+	test(`hydrafusion: a fusion stopped by ${stop} never lends its id to the next plain prompt`, async (t) => {
+		const f = fixture();
+		t.after(() => f.bridge.stop());
+		const run = f.bridge.run();
+		await f.accepted.promise;
+		f.event({ type: "session.fusion_resolved", id: "prior-resolved", data: { fusionId: "prior" } });
+		f.event({ type: stop, id: "prior-stop", parentId: "prior-gap", data: {} });
+		f.event({ type: "session.fusion_route_failed", id: "route-failed", data: {} });
+		nativeUser(f, "native-message-137", "plain-user", "plain-interaction");
+		f.event({ type: "session.idle", id: "unrelated-idle", parentId: "foreign", data: {} });
+		await flush();
+		assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+		f.bridge.stop();
+		await run;
+	});
+}
+
+test("hydrafusion: a late history page's old route is never adopted by a live plain prompt", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.history.push({
+		type: "session.fusion_resolved",
+		id: "old-resolved",
+		data: { fusionId: "old" },
+	});
+	await f.bridge.readEvents(f.bridge.completion);
+	nativeUser(f, "native-message-137", "plain-user", "plain-interaction");
+	f.event({ type: "session.idle", id: "unrelated-idle", parentId: "foreign", data: {} });
+	await flush();
+	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+	f.bridge.stop();
+	await run;
+});
+
 for (const changed of [
 	{ parentId: "unrelated-end" },
 	{ parentId: "owned-user" },

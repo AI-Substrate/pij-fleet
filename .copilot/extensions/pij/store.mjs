@@ -858,6 +858,8 @@ class NativeCompletion {
 		this.descendants = new Set();
 		this.finalMessages = new Set();
 		this.waiters = new Set();
+		// The fusion id routed for the pending turn, per channel (see observe).
+		this.routed = {};
 	}
 	notify() {
 		for (const wake of this.waiters) wake();
@@ -879,9 +881,15 @@ class NativeCompletion {
 	}
 	bind(nativeId) {
 		this.nativeId = nativeId;
-		for (const { event, finalMessage } of this.pending) this.observe(event, finalMessage);
+		for (const { event, finalMessage, live } of this.pending)
+			this.observe(event, finalMessage, true, true, live);
 		this.pending = undefined;
 	}
+	/**
+	 * `live` is the push channel, which delivers in real time; history pages
+	 * (`live` false) can arrive late and replay events from before the owned
+	 * prompt, so they are ordered against that prompt within their own stream.
+	 */
 	observe(
 		event,
 		// HydraFusion phase output is staged, uncommitted and never the turn's answer.
@@ -891,6 +899,7 @@ class NativeCompletion {
 			(event.data?.fusion === undefined || nonempty(event.data.fusion?.commitId)),
 		fresh = true,
 		notify = true,
+		live = true,
 	) {
 		if (this.terminal) return;
 		if (
@@ -917,32 +926,43 @@ class NativeCompletion {
 					},
 				},
 				finalMessage,
+				live,
 			});
 			return;
 		}
-		if (!nonempty(event.id) || this.descendants.has(event.id)) return;
-		// Plan 169: Copilot routes a HydraFusion turn just before adding its user message.
-		if (!event.agentId && event.type === "session.fusion_resolved") {
-			this.routedFusionId = fusionIdOf(event);
-			return;
-		}
-		// A routed fusion that completes before the owned prompt adopts it was
-		// another turn's; forget it so a later unrouted prompt cannot claim it.
+		// Each channel reaches the owned prompt in its own order; a history page's
+		// earlier events predate this turn even when they resolve after its live prompt.
 		if (
+			event.type === "user.message" &&
 			!event.agentId &&
-			event.type === "session.fusion_completed" &&
-			this.routedFusionId !== undefined &&
-			fusionIdOf(event) === this.routedFusionId &&
-			this.fusionId !== this.routedFusionId
+			event.data?.messageId === this.nativeId
 		) {
-			this.routedFusionId = undefined;
-			return;
+			if (live) this.livePastPrompt = true;
+			else this.historyPastPrompt = true;
+		}
+		if (!nonempty(event.id) || this.descendants.has(event.id)) return;
+		// Plan 169: Copilot routes a HydraFusion turn just before adding its user
+		// message. A routed id lives for exactly one turn on its own channel: any
+		// other turn's prompt, a new route attempt, a failed route (its fallback
+		// is concrete) or any terminal ends it, so a later prompt never adopts a
+		// fusion that belonged to an earlier turn.
+		const channel = live ? "live" : "history";
+		if (!event.agentId) {
+			if (event.type === "session.fusion_resolved") {
+				this.routed[channel] = fusionIdOf(event);
+				return;
+			}
+			if (
+				ROUTE_ENDS.has(event.type) ||
+				(event.type === "user.message" && event.data?.messageId !== this.nativeId)
+			)
+				this.routed[channel] = undefined;
 		}
 		if (event.type === "user.message") {
 			if (!event.agentId && event.data?.messageId === this.nativeId) {
 				this.descendants.add(event.id);
 				if (nonempty(event.data.interactionId)) this.interactionId ??= event.data.interactionId;
-				this.fusionId ??= this.routedFusionId;
+				this.fusionId ??= this.routed[channel];
 				if (!this.consumption) {
 					this.consumption = { eventId: event.id };
 					if (notify) this.notify();
@@ -964,11 +984,13 @@ class NativeCompletion {
 				event.type === "tool.execution_complete");
 		// An owned fused turn can stop before its commit; idle, error and abort carry
 		// no fusion id, may follow a persisted-only parent, and an ephemeral idle is
-		// never readable from history. The fusion id is adopted only at the owned
-		// prompt, after which every root terminal is this turn's.
+		// never readable from history. Such a terminal is this turn's only when its
+		// own channel delivered it after the owned prompt: a history page resolving
+		// late can still replay a prior turn's abort.
 		const ownedFusionEnd =
 			!event.agentId &&
 			this.fusionId !== undefined &&
+			(live ? this.livePastPrompt : this.historyPastPrompt) === true &&
 			["session.idle", "session.error", "abort"].includes(event.type);
 		if (!sameFusion && !sameInteraction && !ownedFusionEnd && !this.descendants.has(event.parentId))
 			return;
@@ -993,6 +1015,17 @@ function fusionIdOf(event) {
 	const fusionId = event.data?.fusionId ?? event.data?.fusion?.fusionId;
 	return nonempty(fusionId) ? fusionId : undefined;
 }
+
+/** Root events after which a routed fusion id can no longer belong to the next prompt. */
+const ROUTE_ENDS = new Set([
+	"session.fusion_route_started",
+	"session.fusion_route_failed",
+	"session.fusion_completed",
+	"session.idle",
+	"session.error",
+	"session.shutdown",
+	"abort",
+]);
 
 export class NativeBridge {
 	constructor({
@@ -1493,7 +1526,7 @@ export class NativeBridge {
 					);
 				for (const event of page.events) {
 					this.observeProgress(event);
-					completion.observe(event, undefined, !completion.replay);
+					completion.observe(event, undefined, !completion.replay, true, false);
 					if (nonempty(event.id)) completion.lastEventId = event.id;
 				}
 				completion.cursor = page.cursor;
@@ -1572,7 +1605,7 @@ export class NativeBridge {
 			this.observeProgress(event);
 			// A recovered historical boundary is never authority to re-inject an
 			// accepted message whose consumption may have fallen in the gap.
-			completion.observe(event, undefined, false, false);
+			completion.observe(event, undefined, false, false, false);
 		}
 		if (completion.msgId && anchor < 0 && !completion.terminal) {
 			completion.gapFirstSeenAt ??= this.now();
