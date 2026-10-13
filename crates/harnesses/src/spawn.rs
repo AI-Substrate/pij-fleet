@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use pij_core::error::{PijError, Result};
-use pij_core::model::{Harness, SeatId};
+use pij_core::model::{Harness, SeatId, is_copilot_fusion_model};
 use pij_core::ports::LaunchCommand;
 
 const PIJ_SESSION_ID: &str = "PIJ_SESSION_ID";
@@ -267,15 +267,6 @@ fn push_option(args: &mut Vec<String>, flag: &str, value: Option<&str>) {
     if let Some(value) = value {
         args.extend([flag.to_string(), value.to_string()]);
     }
-}
-
-/// Copilot's HydraFusion router ids (`hydrafusion`, `hydrafusion-max`).
-///
-/// Copilot refuses any other context tier for them with "HydraFusion models
-/// do not support context tiers", and refuses `--effort` with `Model
-/// "hydrafusion" does not support reasoning effort configuration`.
-fn is_copilot_fusion_model(model: &str) -> bool {
-    model == "hydrafusion" || model.starts_with("hydrafusion-")
 }
 
 #[cfg(test)]
