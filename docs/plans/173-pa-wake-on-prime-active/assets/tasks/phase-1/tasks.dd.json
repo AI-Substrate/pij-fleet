@@ -1,0 +1,29 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "PA wakes once on prime activity after a worker-idle episode",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    }
+  ],
+  "references": []
+}
