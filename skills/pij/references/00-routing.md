@@ -203,21 +203,13 @@ Two things it is NOT: not a way to message yourself (`pij send <self>` is still 
 
 ### C8 — Terminal and no-show interpretation
 
-Do not call an absent peer a crash from pane/PID absence alone. A persisted
-pij-owned close is **requested**; an observed absence without that intent is
-**unrequested-by-pij**; a failed probe is **unavailable**. Daemon reports label
-its initial boot reconciliation **historical** and later evidence **live**.
+Do not call an absent peer a crash from pane/PID absence alone. A persisted pij-owned close is **requested**; an observed absence without that intent is **unrequested-by-pij**; a failed probe is **unavailable**. Daemon reports label its initial boot reconciliation **historical** and later evidence **live**.
 
-Each launch has a bounded expectation keyed by `spawnId`; expiry means only that
-that expected registration did not appear. If a descriptor with the same key is
-present, it suppresses the no-show. Never substitute a guessed harness, cause, or
-owner for either observation.
+Each launch has a bounded expectation keyed by `spawnId`; expiry means only that that expected registration did not appear. If a descriptor with the same key is present, it suppresses the no-show. Never substitute a guessed harness, cause, or owner for either observation.
 
 ### C9 — Watchdog etiquette (you may be watched; some peers must never be)
 
-The `pij watchdog` administrative family is unported and returns `E-RS-UNPORTED`; do not execute its former watch/pause/exempt/reset/interval controls or manipulate legacy sidecars. This does not remove already-shipped daemon mechanisms. Do not claim the old universal 20-minute setup, pause tiers or PA subscription grammar as rs contracts.
-
-If a real nudge arrives, report actual now/next or the truthful question/blocked state and continue independent work. If done, run `pij report state done`. Reporting at both work edges remains the primary cadence; a nudge is only a backstop. Use shipped `pij bg` (C7) for slow commands rather than keeping a coordinating seat blocked. An unavailable PA watchdog subscription is a named operational gap, never a fabricated supervision graph.
+**PAs are always watched** (Jordan, 2026-10-09). The daemon nudges every seat with role `pa` with a fleet digest about every 20 minutes, and only when its fleet changed; no other role gets one by default, primes included ([API](../../../docs/how/pij-rs-api.md#pa-watchdog)). The PA is the fleet's watchdog: it reads the digest's **Needs a look** list and decides who needs a word. Any other seat is watched only when opted in: `pij watchdog on [<seat>] [--every 30m]`, `off [<seat>]`, `status`. Any seat may switch any seat, and the subject gets a held FYI naming who did it ([API](../../../docs/how/pij-rs-api.md#opt-in-watchdog)). Every opt-in nudge ends with how to stop it: when no more work is coming, run `pij watchdog off`. The old TS leaves (pause/exempt/disable-all) refuse; don't touch legacy sidecars. If a PA messages you about a stall, report actual now/next or the truthful question/blocked state and continue independent work. If done, run `pij report state done`. Reporting at both work edges remains the primary cadence; a PA's nudge is only a backstop. Use shipped `pij bg` (C7) for slow commands rather than keeping a coordinating seat blocked.
 
 ### C10 — Wire discipline (A2A messages)
 
