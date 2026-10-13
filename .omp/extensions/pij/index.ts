@@ -16,7 +16,11 @@ import {
 	registerOmpReloadCompletion,
 	reloadWithCompletion,
 } from "./adapters/pi-runtime.js";
-import { consumedMessageId, RustRuntimeSession } from "./adapters/rust-runtime.js";
+import {
+	consumedMessageId,
+	describeSpawnedWorker,
+	RustRuntimeSession,
+} from "./adapters/rust-runtime.js";
 import { TmuxAdapter } from "./adapters/tmux.js";
 import { ALLOWED_COMMANDS } from "./core/commands.js";
 import { detectPiRuntime, isSubagentChild } from "./core/discovery.js";
@@ -351,14 +355,10 @@ export default function (pi: ExtensionAPI): void {
 			if (!res.ok) {
 				throw new Error(`pij_spawn failed (${res.code}): ${res.message}`);
 			}
+			const { spawnId, paneId, registration } = res.value;
 			return {
-				content: [
-					{
-						type: "text",
-						text: `spawned pij worker — spawnId=${res.value.spawnId} paneId=${res.value.paneId}${res.value.notice ? `\n${res.value.notice}` : ""}`,
-					},
-				],
-				details: {},
+				content: [{ type: "text", text: describeSpawnedWorker(res.value) }],
+				details: { spawnId, paneId, registration },
 			};
 		},
 	});
@@ -443,25 +443,33 @@ export default function (pi: ExtensionAPI): void {
 			rustRuntime.setClient(generation.client);
 		}
 		rustRuntime.setPi(new PiRuntimeAdapter(pi, ctx, runtimeBin, () => commandControl));
-		const boot = await rustRuntime.boot({
-			...extensionIdentity,
-			role,
-			folder,
-			dataDir: "",
-			eventsPath: "",
-			harness: "pi",
-			harnessSessionId: piSessionId,
-			piSessionId,
-			actualModel: ctx.model === undefined ? null : `${ctx.model.provider}/${ctx.model.id}`,
-			runtimeBin,
-			paneId: process.env.TMUX_PANE,
-			...(process.env.PIJ_PARENT_ID !== undefined ? { parentId: process.env.PIJ_PARENT_ID } : {}),
-			...(gitCommonDir !== null ? { gitCommonDir } : {}),
-			...(process.env.PIJ_PLAN_ID !== undefined ? { planId: process.env.PIJ_PLAN_ID } : {}),
-			resetRuntimeState: event.reason !== "reload",
-			notice: (text) => ctx.ui.notify(text, "info"),
-			reason: event.reason,
-		});
+		const runtime = rustRuntime;
+		const boot = await runtime
+			.boot({
+				...extensionIdentity,
+				role,
+				folder,
+				dataDir: "",
+				eventsPath: "",
+				harness: "pi",
+				harnessSessionId: piSessionId,
+				piSessionId,
+				actualModel: ctx.model === undefined ? null : `${ctx.model.provider}/${ctx.model.id}`,
+				runtimeBin,
+				paneId: process.env.TMUX_PANE,
+				...(process.env.PIJ_PARENT_ID !== undefined ? { parentId: process.env.PIJ_PARENT_ID } : {}),
+				...(gitCommonDir !== null ? { gitCommonDir } : {}),
+				...(process.env.PIJ_PLAN_ID !== undefined ? { planId: process.env.PIJ_PLAN_ID } : {}),
+				resetRuntimeState: event.reason !== "reload",
+				notice: (text) => ctx.ui.notify(text, "info"),
+				reason: event.reason,
+			})
+			.catch(async (error: unknown) => {
+				// #44: a seatless session must say so, here and at its spawner.
+				ctx.ui.setStatus(PIJ_STATUS_KEY, "boot failed");
+				await runtime.reportBootFailure(error);
+				throw error;
+			});
 		session = rustRuntime;
 		self = boot.id;
 		role = boot.role === "parent" || boot.role === "worker" ? boot.role : undefined;

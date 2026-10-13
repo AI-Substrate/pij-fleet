@@ -247,6 +247,9 @@ export interface TmuxPort {
 	currentPane(): string | null;
 	/** Pane ids in the orchestrator's current window (for the split cap count). */
 	currentWindowPanes(): string[];
+	/** The pane's visible text, or null when it cannot be read within
+	 *  `timeoutMs` (gone, no tmux, or a stalled server). */
+	capturePane(paneId: string, timeoutMs: number): string | null;
 }
 
 /** OS-level seams: pid, liveness probe, clock, env. */
@@ -259,6 +262,8 @@ export interface ProcessPort {
 	now(): number;
 	/** Read an environment variable (e.g. PIJ_SESSION_ID). */
 	env(key: string): string | undefined;
+	/** `bytes` cryptographically random bytes as lowercase hex. */
+	randomHex(bytes: number): string;
 }
 
 /** Launches a detached background job. The child outlives this process — the

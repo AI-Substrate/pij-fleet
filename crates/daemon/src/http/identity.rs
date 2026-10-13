@@ -39,7 +39,7 @@ use serde_json::{Value, json};
 
 use super::{
     AppState, Registration, RegistrationResponse, allocate_memorable_id, envelope, internal,
-    pane_harness_identity, refused,
+    pane_harness_identity, refused, retired_seat_refused,
 };
 use crate::registration::RegistrationError;
 
@@ -998,6 +998,7 @@ pub(crate) async fn adopt(
 fn adopt_registration_error(error: RegistrationError) -> Response {
     match error {
         RegistrationError::Refused(reason) => refused(ADOPT, reason),
+        RegistrationError::Retired { seat, reason } => retired_seat_refused(ADOPT, &seat, reason),
         RegistrationError::Retryable(reason) => {
             let mut answer: Envelope<()> = Envelope::refused(ADOPT, ErrorKind::Refused, reason);
             answer.details = Some(json!({ "retryable": true }));

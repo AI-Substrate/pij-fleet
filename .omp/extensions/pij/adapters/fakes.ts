@@ -1,6 +1,7 @@
 // pij-messaging — in-memory fake adapters (Pattern P8: tests target these,
 // not the wiring). Mock-free: real small implementations of every port.
 
+import { randomBytes } from "node:crypto";
 import { filterEvents } from "../core/events.js";
 import {
 	type BatonDefinition,
@@ -372,6 +373,9 @@ export class FakeProcess implements ProcessPort {
 	env(key: string): string | undefined {
 		return this.vars[key];
 	}
+	randomHex(bytes: number): string {
+		return randomBytes(bytes).toString("hex");
+	}
 
 	// ─── test helpers ───────────────────────────────────────────────
 	advance(ms: number): void {
@@ -466,6 +470,11 @@ export class FakeTmux implements TmuxPort {
 
 	currentWindowPanes(): string[] {
 		return [...this.windowPanes];
+	}
+
+	/** Fake panes have no text; a test needing some overrides this. */
+	capturePane(_paneId: string, _timeoutMs: number): string | null {
+		return null;
 	}
 }
 
