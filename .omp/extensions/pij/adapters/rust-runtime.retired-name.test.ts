@@ -27,23 +27,32 @@ function ok(command: string, data: unknown): Response {
 
 function daemon(options: {
 	readonly live?: readonly string[];
+	/** Full live rows, for same-pane and same-process matches. */
+	readonly rows?: readonly RustSeatDescriptor[];
 	readonly retired?: ReadonlySet<string>;
 	readonly typed?: boolean;
+	/** The seat the typed refusal names, when it is not the claimed id. */
+	readonly refusedSeat?: string;
 }) {
 	const claims: string[] = [];
+	const registrations: Registration[] = [];
 	const sends: Array<Record<string, unknown>> = [];
-	const live: RustSeatDescriptor[] = (options.live ?? []).map((id) => ({
-		id,
-		harness: "omp",
-		folder: "/abs/tree",
-		state: "idle",
-	}));
+	const live: RustSeatDescriptor[] = [
+		...(options.live ?? []).map((id) => ({
+			id,
+			harness: "omp",
+			folder: "/abs/tree",
+			state: "idle",
+		})),
+		...(options.rows ?? []),
+	];
 	const fetchMock = async (url: string | URL | Request, init?: RequestInit) => {
 		const path = new URL(String(url)).pathname;
 		if (path === "/v1/seats") return ok("pij seats", { seats: live, unavailable: [] });
 		if (path === "/v1/register") {
 			const claim = JSON.parse(String(init?.body)) as Registration;
 			claims.push(claim.id);
+			registrations.push(claim);
 			if (options.retired?.has(claim.id)) {
 				return new Response(
 					JSON.stringify({
@@ -54,7 +63,7 @@ function daemon(options: {
 						meta: `seat ${claim.id} is retired (plan 128 cleanup, 1); a different session may not take it; harness mismatch: row pi, claim omp`,
 						...(options.typed === false
 							? {}
-							: { details: { code: "E-RS-SEAT-RETIRED", seat: claim.id } }),
+							: { details: { code: "E-RS-SEAT-RETIRED", seat: options.refusedSeat ?? claim.id } }),
 					}),
 					{ status: 400 },
 				);
@@ -84,12 +93,12 @@ function daemon(options: {
 	const client = new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir: "/tmp/state" }, "key", {
 		fetch: fetchMock as typeof fetch,
 		readFile: async () => "key",
-		processStart: () => 20260916000000,
+		processStart: () => PROC_START,
 	});
 	const runtime = new RustRuntimeSession(client, new FakeTmux(), []);
 	const pi = new NotifyingPi();
 	runtime.setPi(pi);
-	const boot = () =>
+	const boot = (reason: "startup" | "reload" | "new" | "fork" = "startup") =>
 		runtime.boot({
 			extension_build: "0123456789",
 			extension_path: "/abs/extension",
@@ -101,11 +110,14 @@ function daemon(options: {
 			piSessionId: SESSION,
 			runtimeBin: "omp",
 			paneId: "%4400",
-			resetRuntimeState: true,
-			reason: "startup",
+			resetRuntimeState: reason !== "reload",
+			reason,
 		});
-	return { runtime, pi, claims, sends, boot };
+	return { runtime, pi, claims, registrations, sends, boot };
 }
+
+/** The daemon's process-start fixture, so a row can match this very process. */
+const PROC_START = 20260916000000;
 
 const runtimes: RustRuntimeSession[] = [];
 beforeEach(() => {
@@ -163,6 +175,64 @@ describe("self-chosen seat name vs retired seats (#44)", () => {
 		runtimes.push(fake.runtime);
 		await expect(fake.boot()).rejects.toThrow(/is retired/);
 		expect(fake.claims).toEqual(CANDIDATES.slice(0, 8));
+	});
+
+	it("never advances when the typed refusal names a different seat", async () => {
+		const fake = daemon({ retired: new Set([FIRST]), refusedSeat: SECOND });
+		runtimes.push(fake.runtime);
+		await expect(fake.boot()).rejects.toThrow(/is retired/);
+		expect(fake.claims).toEqual([FIRST]);
+	});
+});
+
+// R2: every assigned identity keeps a typed retired refusal terminal. Each case
+// goes red if its branch is given a candidate sequence to advance through.
+describe("assigned identities never advance (#44 R2)", () => {
+	const OWNED = "pij-owned-row";
+	it.each([
+		[
+			"the same pane",
+			{ id: OWNED, harness: "omp", folder: "/abs/tree", state: "idle", pane: "%4400" },
+		],
+		[
+			"the same process",
+			{
+				id: OWNED,
+				harness: "pi",
+				folder: "/abs/tree",
+				state: "idle",
+				proc: { pid: process.pid, proc_start: PROC_START },
+			},
+		],
+	] as const)("keeps %s's seat refusal terminal", async (_label, row) => {
+		const fake = daemon({ rows: [row], retired: new Set([OWNED]) });
+		runtimes.push(fake.runtime);
+		await expect(fake.boot()).rejects.toThrow(/is retired/);
+		expect(fake.claims).toEqual([OWNED]);
+	});
+
+	it("keeps a reload's own id refusal terminal", async () => {
+		const retired = new Set<string>();
+		const fake = daemon({ retired });
+		runtimes.push(fake.runtime);
+		expect((await fake.boot()).id).toBe(FIRST);
+		retired.add(FIRST);
+		await expect(fake.boot("reload")).rejects.toThrow(/is retired/);
+		expect(fake.claims).toEqual([FIRST, FIRST]);
+	});
+
+	it.each([
+		"new",
+		"fork",
+	] as const)("keeps a /%s replacement's refusal terminal and its predecessor", async (reason) => {
+		const retired = new Set<string>();
+		const fake = daemon({ retired });
+		runtimes.push(fake.runtime);
+		expect((await fake.boot()).id).toBe(FIRST);
+		retired.add(SECOND);
+		await expect(fake.boot(reason)).rejects.toThrow(/is retired/);
+		expect(fake.claims).toEqual([FIRST, SECOND]);
+		expect(fake.registrations[1]?.supersedes).toBe(FIRST);
 	});
 });
 
