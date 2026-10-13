@@ -217,6 +217,8 @@ describe("assigned identities never advance (#44 R2)", () => {
 		runtimes.push(fake.runtime);
 		expect((await fake.boot()).id).toBe(FIRST);
 		retired.add(FIRST);
+		// Boot exports PIJ_SESSION_ID; clear it so only the reload's own id is assigned.
+		vi.stubEnv("PIJ_SESSION_ID", undefined);
 		await expect(fake.boot("reload")).rejects.toThrow(/is retired/);
 		expect(fake.claims).toEqual([FIRST, FIRST]);
 	});
