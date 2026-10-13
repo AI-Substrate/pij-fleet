@@ -13,11 +13,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{SeatId, SystemState};
+use crate::model::{SeatId, SystemState, is_copilot_fusion_model};
 use crate::session_status::{CacheState, CacheTtl, Fact, SessionStatusBlock};
 
 /// A seat holding more than this many context tokens is large enough to guard.
-pub const COLD_CONTEXT_TOKENS: u64 = 300_000;
+pub const COLD_CONTEXT_TOKENS: u64 = 400_000;
 
 /// A seat whose last API call is older than this has lost its prompt cache.
 pub const COLD_IDLE_MS: u64 = 60 * 60 * 1_000;
@@ -27,6 +27,10 @@ pub const COLD_WAKE_CODE: &str = "E-RS-COLD-WAKE";
 
 /// The spine kind recording every forced cold wake: the audit trail.
 pub const COLD_WAKE_FORCED_KIND: &str = "send.cold-wake-forced";
+
+/// Why a router seat's wake has no price (plan 169 R7): the router picks the
+/// model per call, so no single model's list price describes the wake.
+pub const ROUTER_NOT_ESTIMABLE: &str = "not estimable: router, per-call models";
 
 /// One model's list prices, in US dollars per million tokens.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -121,13 +125,17 @@ pub enum ColdCheck {
         context_tokens: u64,
         /// Milliseconds since the seat's last API call.
         idle_ms: u64,
-        /// The seat's current model, when known.
+        /// The seat's current model, when known; a router seat's router id.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
         /// Estimated list cost of the wake ([`wake_estimate_usd`]), when the
         /// model is priced.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         estimate_usd: Option<f64>,
+        /// Why no estimate can exist ([`ROUTER_NOT_ESTIMABLE`]), as opposed to
+        /// a single model that is merely unpriced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        not_estimable: Option<String>,
     },
     /// A fact the rule needs is unknown, so the send is allowed.
     Unknown {
@@ -150,8 +158,14 @@ impl ColdCheck {
 }
 
 /// Decide one recipient. `state` is the daemon's own busy/idle observation;
-/// `status` is the `pij state` session block; `now_ms` is the daemon clock.
-pub fn check(state: SystemState, status: &SessionStatusBlock, now_ms: u64) -> ColdCheck {
+/// `status` is the `pij state` session block; `now_ms` is the daemon clock;
+/// `seat_model` is the model the seat was bound with.
+pub fn check(
+    state: SystemState,
+    status: &SessionStatusBlock,
+    now_ms: u64,
+    seat_model: Option<&str>,
+) -> ColdCheck {
     if state == SystemState::Working {
         return ColdCheck::Busy;
     }
@@ -182,6 +196,22 @@ pub fn check(state: SystemState, status: &SessionStatusBlock, now_ms: u64) -> Co
         Fact::Known { value, .. } => Some(value.clone()),
         Fact::Unknown => None,
     };
+    // A router seat's last served model is one of several it may route to, so
+    // pricing the wake at that model would be a guess presented as a number.
+    let router = seat_model
+        .filter(|model| is_copilot_fusion_model(model))
+        .or(model
+            .as_deref()
+            .filter(|model| is_copilot_fusion_model(model)));
+    if let Some(router) = router {
+        return ColdCheck::Cold {
+            context_tokens,
+            idle_ms,
+            model: Some(router.to_string()),
+            estimate_usd: None,
+            not_estimable: Some(ROUTER_NOT_ESTIMABLE.to_string()),
+        };
+    }
     let estimate_usd = model
         .as_deref()
         .and_then(|model| wake_estimate_usd(model, context_tokens));
@@ -190,6 +220,16 @@ pub fn check(state: SystemState, status: &SessionStatusBlock, now_ms: u64) -> Co
         idle_ms,
         model,
         estimate_usd,
+        not_estimable: None,
+    }
+}
+
+/// A wake's price as shown: the estimate, the reason none can exist, or unknown.
+fn wake_price(estimate_usd: Option<f64>, not_estimable: Option<&str>) -> String {
+    match (estimate_usd, not_estimable) {
+        (Some(usd), _) => format!("~${usd:.2}"),
+        (None, Some(why)) => format!("? ({why})"),
+        (None, None) => "price unknown".to_string(),
     }
 }
 
@@ -223,13 +263,13 @@ pub fn refusal(recipient: &SeatId, check: &ColdCheck) -> Option<String> {
         context_tokens,
         idle_ms,
         estimate_usd,
+        not_estimable,
         ..
     } = check
     else {
         return None;
     };
-    let wake =
-        estimate_usd.map_or_else(|| "price unknown".to_string(), |usd| format!("~${usd:.2}"));
+    let wake = wake_price(*estimate_usd, not_estimable.as_deref());
     let options = [
         ("--fyi", "hold for its next turn", "$0 now".to_string()),
         ("--force --reason \"…\"", "wake on its current model", wake),
@@ -298,15 +338,28 @@ pub struct ColdWakeView {
     /// The wake's list-price estimate when it would refuse and the model is priced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimate_usd: Option<f64>,
+    /// Why no estimate can exist, e.g. [`ROUTER_NOT_ESTIMABLE`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_estimable: Option<String>,
 }
 
 /// Derive a seat's [`SeatSize`]. The refusal verdict is [`check`] itself, so
 /// a ❄ row is exactly a seat the guard would refuse now.
-pub fn seat_size(state: SystemState, status: &SessionStatusBlock, now_ms: u64) -> SeatSize {
-    let cold_wake = match check(state, status, now_ms) {
-        ColdCheck::Cold { estimate_usd, .. } => ColdWakeView {
+pub fn seat_size(
+    state: SystemState,
+    status: &SessionStatusBlock,
+    now_ms: u64,
+    seat_model: Option<&str>,
+) -> SeatSize {
+    let cold_wake = match check(state, status, now_ms, seat_model) {
+        ColdCheck::Cold {
+            estimate_usd,
+            not_estimable,
+            ..
+        } => ColdWakeView {
             would_refuse: true,
             estimate_usd,
+            not_estimable,
         },
         _ => ColdWakeView::default(),
     };
@@ -388,10 +441,10 @@ pub fn size_lines(status: &SessionStatusBlock, size: &SeatSize) -> Vec<String> {
         known(status.compactions.value().map(u64::to_string)),
     )];
     if size.cold_wake.would_refuse {
-        let price = size
-            .cold_wake
-            .estimate_usd
-            .map_or_else(|| "price unknown".to_string(), |usd| format!("~${usd:.2}"));
+        let price = wake_price(
+            size.cold_wake.estimate_usd,
+            size.cold_wake.not_estimable.as_deref(),
+        );
         lines.push(format!(
             "❄ cold-wake guard: a normal send is refused; waking it costs {price} (--fyi holds it for $0 now)"
         ));
@@ -439,6 +492,7 @@ mod tests {
                 SystemState::Idle,
                 &known(Some(500_000), Some(NOW - idle), Some(model)),
                 NOW,
+                None,
             ) else {
                 panic!("{model}: expected cold");
             };
@@ -470,7 +524,7 @@ mod tests {
     #[test]
     fn a_seat_is_marked_cold_exactly_when_the_guard_would_refuse() {
         let two_hours = 2 * COLD_IDLE_MS;
-        let cold = seat_size(SystemState::Idle, &full(two_hours), NOW);
+        let cold = seat_size(SystemState::Idle, &full(two_hours), NOW, None);
         assert!(cold.cold_wake.would_refuse);
         assert_eq!(
             cold.cold_wake.estimate_usd,
@@ -485,17 +539,17 @@ mod tests {
             (SystemState::Working, two_hours),
             (SystemState::Idle, 60_000),
         ] {
-            let size = seat_size(state, &full(ago), NOW);
+            let size = seat_size(state, &full(ago), NOW, None);
             assert!(!size.cold_wake.would_refuse, "{state:?} {ago}");
             assert_eq!(size_columns(&size)[3], "");
         }
-        let warm = seat_size(SystemState::Idle, &full(60_000), NOW);
+        let warm = seat_size(SystemState::Idle, &full(60_000), NOW, None);
         assert_eq!(
             size_columns(&warm),
             ["720k", "1m", "warm", ""].map(String::from)
         );
         // Nothing known: every column is `?`, never a guess.
-        let unknown = seat_size(SystemState::Idle, &SessionStatusBlock::Unbound, NOW);
+        let unknown = seat_size(SystemState::Idle, &SessionStatusBlock::Unbound, NOW, None);
         assert_eq!(
             size_columns(&unknown),
             ["?", "?", "?", ""].map(String::from)
@@ -505,7 +559,7 @@ mod tests {
     #[test]
     fn the_state_lines_name_size_cache_and_the_guard() {
         let block = full(2 * COLD_IDLE_MS);
-        let size = seat_size(SystemState::Idle, &block, NOW);
+        let size = seat_size(SystemState::Idle, &block, NOW, None);
         assert_eq!(
             size_lines(&block, &size),
             [
@@ -516,7 +570,7 @@ mod tests {
         );
         let warm = full(60_000);
         assert_eq!(
-            size_lines(&warm, &seat_size(SystemState::Idle, &warm, NOW)),
+            size_lines(&warm, &seat_size(SystemState::Idle, &warm, NOW, None)),
             [
                 "context 720k / 1M · last call 1m ago · cache 1h (warm) · 3 compactions"
                     .to_string()
@@ -560,12 +614,14 @@ mod tests {
             SystemState::Idle,
             &known(Some(720_000), Some(NOW - idle), Some("claude-opus-5-5")),
             NOW,
+            None,
         );
         let ColdCheck::Cold {
             context_tokens,
             idle_ms,
             model,
             estimate_usd,
+            not_estimable: None,
         } = &check
         else {
             panic!("expected cold: {check:?}");
@@ -604,20 +660,26 @@ mod tests {
             Some(NOW - COLD_IDLE_MS),
             None,
         );
-        assert_eq!(check(SystemState::Idle, &at_ttl, NOW), ColdCheck::Clear);
+        assert_eq!(
+            check(SystemState::Idle, &at_ttl, NOW, None),
+            ColdCheck::Clear
+        );
         let at_size = known(
             Some(COLD_CONTEXT_TOKENS),
             Some(NOW - COLD_IDLE_MS - 1),
             None,
         );
-        assert_eq!(check(SystemState::Idle, &at_size, NOW), ColdCheck::Clear);
+        assert_eq!(
+            check(SystemState::Idle, &at_size, NOW, None),
+            ColdCheck::Clear
+        );
         let over_both = known(
             Some(COLD_CONTEXT_TOKENS + 1),
             Some(NOW - COLD_IDLE_MS - 1),
             None,
         );
         assert!(matches!(
-            check(SystemState::Idle, &over_both, NOW),
+            check(SystemState::Idle, &over_both, NOW, None),
             ColdCheck::Cold {
                 estimate_usd: None,
                 ..
@@ -628,16 +690,22 @@ mod tests {
     /// The ruling's values, pinned literally: a test that compared against the
     /// constants would pass if someone changed them.
     #[test]
-    fn the_thresholds_are_the_rulings_300k_and_one_hour() {
-        assert_eq!(COLD_CONTEXT_TOKENS, 300_000);
+    fn the_thresholds_are_the_rulings_400k_and_one_hour() {
+        assert_eq!(COLD_CONTEXT_TOKENS, 400_000);
         assert_eq!(COLD_IDLE_MS, 3_600_000);
-        let just_over = known(Some(300_001), Some(NOW - 3_600_001), None);
+        let just_over = known(Some(400_001), Some(NOW - 3_600_001), None);
         assert!(matches!(
-            check(SystemState::Idle, &just_over, NOW),
+            check(SystemState::Idle, &just_over, NOW, None),
             ColdCheck::Cold { .. }
         ));
         let recent = known(Some(900_000), Some(NOW - 59 * 60 * 1_000), None);
-        assert_eq!(check(SystemState::Idle, &recent, NOW), ColdCheck::Clear);
+        assert_eq!(
+            check(SystemState::Idle, &recent, NOW, None),
+            ColdCheck::Clear
+        );
+        // Jordan 2026-10-13: "long" is 400k, so a 350k seat idle for hours is clear.
+        let mid = known(Some(350_000), Some(NOW - 3 * 3_600_000), None);
+        assert_eq!(check(SystemState::Idle, &mid, NOW, None), ColdCheck::Clear);
     }
 
     /// A last call stamped after the daemon's clock (skew) is recent, never
@@ -645,13 +713,19 @@ mod tests {
     #[test]
     fn a_future_last_call_is_not_cold() {
         let skewed = known(Some(900_000), Some(NOW + 60 * 60 * 1_000), None);
-        assert_eq!(check(SystemState::Idle, &skewed, NOW), ColdCheck::Clear);
+        assert_eq!(
+            check(SystemState::Idle, &skewed, NOW, None),
+            ColdCheck::Clear
+        );
     }
 
     #[test]
     fn a_working_seat_is_never_cold() {
         let cold = known(Some(900_000), Some(0), Some("claude-opus-5-5"));
-        assert_eq!(check(SystemState::Working, &cold, NOW), ColdCheck::Busy);
+        assert_eq!(
+            check(SystemState::Working, &cold, NOW, None),
+            ColdCheck::Busy
+        );
     }
 
     #[test]
@@ -668,7 +742,7 @@ mod tests {
             known(None, Some(0), None),
             known(Some(900_000), None, None),
         ] {
-            let check = check(SystemState::Idle, &block, NOW);
+            let check = check(SystemState::Idle, &block, NOW, None);
             assert!(
                 matches!(check, ColdCheck::Unknown { .. }),
                 "{block:?} -> {check:?}"
@@ -682,15 +756,58 @@ mod tests {
     fn an_unpriced_model_still_refuses_but_says_the_price_is_unknown() {
         let check = check(
             SystemState::Idle,
-            &known(Some(400_000), Some(0), Some("some-new-model")),
+            &known(Some(450_000), Some(0), Some("some-new-model")),
             NOW,
+            None,
         );
         let text = refusal(&SeatId("pij-y".into()), &check).unwrap();
         assert!(text.contains("price unknown"), "{text}");
-        assert!(text.contains("is cold (400k, idle 10h)"), "{text}");
+        assert!(text.contains("is cold (450k, idle 10h)"), "{text}");
         assert!(
             text.contains("--fyi") && text.contains("--force --reason"),
             "{text}"
         );
+    }
+
+    /// Plan 169 R7: a router seat still refuses on size and idle, but its wake
+    /// has no single model to price, even when its last call ran on a priced one.
+    #[test]
+    fn a_router_seat_refuses_without_a_price_and_says_why() {
+        let served_by_opus = known(Some(720_000), Some(0), Some("claude-opus-5-5"));
+        for (block, seat_model) in [
+            (&served_by_opus, Some("hydrafusion-max")),
+            (&known(Some(720_000), Some(0), Some("hydrafusion")), None),
+        ] {
+            let verdict = check(SystemState::Idle, block, NOW, seat_model);
+            let ColdCheck::Cold {
+                estimate_usd,
+                not_estimable,
+                ..
+            } = &verdict
+            else {
+                panic!("a large idle router seat is still cold: {verdict:?}");
+            };
+            assert_eq!(*estimate_usd, None);
+            assert_eq!(not_estimable.as_deref(), Some(ROUTER_NOT_ESTIMABLE));
+            let text = refusal(&SeatId("pij-router".into()), &verdict).unwrap();
+            assert!(
+                text.contains("? (not estimable: router, per-call models)"),
+                "{text}"
+            );
+            assert!(!text.contains("~$"), "{text}");
+            let size = seat_size(SystemState::Idle, block, NOW, seat_model);
+            assert!(size.cold_wake.would_refuse);
+            assert_eq!(size.cold_wake.estimate_usd, None);
+            assert!(size_lines(block, &size)[1].contains(ROUTER_NOT_ESTIMABLE));
+        }
+        let ColdCheck::Cold { estimate_usd, .. } = check(
+            SystemState::Idle,
+            &served_by_opus,
+            NOW,
+            Some("claude-opus-5-5"),
+        ) else {
+            panic!("an ordinary large idle seat is cold");
+        };
+        assert_eq!(estimate_usd, wake_estimate_usd("claude-opus-5-5", 720_000));
     }
 }

@@ -85,6 +85,16 @@ impl fmt::Display for Harness {
     }
 }
 
+/// Copilot's HydraFusion router ids (`hydrafusion`, `hydrafusion-max`).
+///
+/// The router picks a model per call, so such a seat has no single model to
+/// price. Copilot refuses any context tier but `default` for these ids
+/// ("HydraFusion models do not support context tiers") and refuses `--effort`
+/// (`Model "hydrafusion" does not support reasoning effort configuration`).
+pub fn is_copilot_fusion_model(model: &str) -> bool {
+    model == "hydrafusion" || model.starts_with("hydrafusion-")
+}
+
 // Keep each axis's variants, wire spellings and published vocabulary together.
 macro_rules! state_enum {
     (

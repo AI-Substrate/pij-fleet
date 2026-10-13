@@ -89,7 +89,8 @@ if (!process.env.PIJ_NATIVE_MEMORY_CHILD) {
 				},
 				metadata: {
 					async isProcessing() {
-						return { processing: true };
+						// Turns 1-49 end inside send; the 50th stays busy for discard observation.
+						return { processing: sends >= 50 };
 					},
 				},
 			},
@@ -307,6 +308,16 @@ if (!process.env.PIJ_NATIVE_MEMORY_CHILD) {
 							hasMore: eventsRead < historyEvents + proof.length,
 							cursorStatus: "ok",
 						};
+					},
+				},
+				queue: {
+					async pendingItems() {
+						return { items: [], steeringMessages: [] };
+					},
+				},
+				metadata: {
+					async isProcessing() {
+						return { processing: false };
 					},
 				},
 			},

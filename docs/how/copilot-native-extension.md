@@ -54,6 +54,80 @@ old attested process is dead. A live old owner, changed native session, or
 unrelated bootstrap process/pane still refuses the handoff. The saved address,
 parent, operator state, and queued messages are retained.
 
+### HydraFusion models (plan 169)
+
+`hydrafusion` (policy `standard`) and `hydrafusion-max` (policy `max`) are
+Copilot's per-turn model router. Spawn them by model id:
+
+```sh
+pij-rs spawn --harness copilot --model hydrafusion-max --cwd "$PWD"
+```
+
+Pij launches `copilot --yolo --model hydrafusion-max --context default`. Copilot
+refuses every other context tier for these models ("HydraFusion models do not
+support context tiers"), and omitting `--context` would inherit a persisted
+`long_context` tier, so the explicit `default` tier is required. Copilot also
+refuses reasoning effort for them, so `--effort` with a HydraFusion model is
+refused before launch: `HydraFusion routes effort itself; omit --effort`.
+`--model auto --auto-tier hydrafusion` is refused by Copilot 1.0.97 ("requires
+dynamic Auto tiers"). `pij state` reports the seat's `boundModel` as the
+synthetic id, and its `session:` line reads `model hydrafusion-max · last call
+<routed model>`: the reported model is only the last call's. The cold-wake guard
+still refuses a large, idle fusion seat, but it never prices the wake: the
+router picks the model per call, so the price reads `? (not estimable: router,
+per-call models)` rather than a number for one model.
+
+Each turn is routed to a pattern: `single`, `cascade` (primary, review-scope
+judge, conditional repair) or `critique`. On Copilot 1.0.97 the live stream of a
+fused turn has this shape:
+
+- `session.fusion_route_started` and `session.fusion_resolved` (with `fusionId`)
+  arrive just before the turn's `user.message`.
+- Phase output streams as ephemeral root `assistant.message` events stamped
+  `data.fusion` without `commitId`. No root `assistant.turn_start`/`turn_end`
+  fires before the commit, and a review-scope judge emits no root message or
+  `user.message`.
+- The commit replays the winning phase as ordinary root turns whose messages
+  carry `data.fusion.commitId`, then `session.fusion_completed`.
+- A repair phase and its commit carry a new `interactionId`, and phase parents
+  are persisted-only `session.usage_record` events never seen live.
+
+So the receiver never infers completion from events. Their order across the live
+push channel and history reads, which race and can each miss events, and which
+turn an event belongs to, were reconstructed through five review rounds and
+each reconstruction left a gap. Copilot's run state decides instead:
+
+- **Consumption:** the owned message's own `user.message`, matched by
+  `messageId` on either channel.
+- **Question:** after consumption, any root `session.idle`, `assistant.idle`,
+  `abort`, `session.error`, `assistant.turn_end` or `session.fusion_completed`
+  triggers one question, `metadata.isProcessing()` plus
+  `queue.pendingItems()`. Without a trigger the question is still asked every
+  30 s (`RUN_STATE_REASK_MS`), so a lost event costs a delay, never a stuck
+  inbox. A bounded history window that shows a trigger is settled by the same
+  question instead of a receiver-gap hold.
+- **Completion:** the session is not processing, nothing is steering, no turn
+  prompt is withdrawable, and the message is not queued. The trigger only names
+  the reported completion event.
+- **Failure:** missing, failing or malformed run-state APIs hold receiving with
+  a named error. Completion is never guessed.
+
+The plan-169 canary (Copilot 1.0.97-1, 250 ms polls) found `isProcessing` true
+through every phase gap of a cascade: primary, judge `reject`, handoff, repair
+and commit. It turned false only after `assistant.idle`. A steering message
+(`delivery: "steering"`) and an abort stayed inside the run, and an abort was
+followed by `assistant.idle`, `session.idle` and then not-processing. A queued
+prompt started straight after the first run, so processing never fell between
+them: the owned message waits for the queued run too. That over-wait is safe;
+early completion is not. Uncommitted phase output is never the final message,
+and the next queued Pij message waits.
+
+The seat publishes `working` from `session.fusion_route_started`, because the
+phases emit no root turn start, and `idle` at a root turn end, `session.idle`,
+`abort` or `session.fusion_completed`. A failed route stays `working`: its
+fallback model still runs the turn. The `critique` pattern was not observed in
+the plan-169 canary; synthetic draft → critic → revision replay passes.
+
 ### Several sessions in one Copilot process (plan 168)
 
 Copilot 1.0.96 keeps every session's extension host alive inside one process.

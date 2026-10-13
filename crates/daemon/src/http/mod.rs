@@ -2721,7 +2721,8 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
         clock,
     )
     .await;
-    let size = pij_core::cold_wake::seat_size(seat.state, &session_status, clock);
+    let size =
+        pij_core::cold_wake::seat_size(seat.state, &session_status, clock, seat.model.as_deref());
     let size_lines = pij_core::cold_wake::size_lines(&session_status, &size);
     let mut projection = state_card(seat, liveness, &state.machine_alias, card, state_record);
     projection.card.session_status = Some(session_status);
@@ -2998,11 +2999,12 @@ async fn list_sizes(
             continue;
         }
         let source = Arc::clone(&state.services.session_status);
-        let (id, harness, session, seat_state) = (
+        let (id, harness, session, seat_state, seat_model) = (
             seat.id.clone(),
             seat.harness,
             seat.harness_session.clone(),
             seat.state,
+            seat.model.clone(),
         );
         reads.spawn(async move {
             let block = tokio::time::timeout(
@@ -3013,7 +3015,8 @@ async fn list_sizes(
             .unwrap_or_else(|_| pij_core::session_status::SessionStatusBlock::Failed {
                 error: format!("no answer within {} ms", LIST_STATUS_WAIT.as_millis()),
             });
-            let size = pij_core::cold_wake::seat_size(seat_state, &block, now_ms);
+            let size =
+                pij_core::cold_wake::seat_size(seat_state, &block, now_ms, seat_model.as_deref());
             (index, block, size)
         });
     }

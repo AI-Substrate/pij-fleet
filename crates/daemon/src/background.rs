@@ -1751,6 +1751,7 @@ mod tests {
                     idle_ms: *idle_ms,
                     model: None,
                     estimate_usd: None,
+                    not_estimable: None,
                 },
                 None => ColdCheck::Clear,
             }

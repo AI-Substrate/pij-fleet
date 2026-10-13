@@ -12,6 +12,7 @@ import {
 	DaemonClient,
 	FileJournal,
 	NativeBridge,
+	NativeCompletion,
 	NativeError,
 	NativePrecedence,
 	parseProcessStart,
@@ -127,6 +128,15 @@ function fixture(overrides = {}) {
 			return true;
 		},
 	};
+	// Copilot's run state. A test that delivers events from a run still in flight
+	// sets `processing` and ends the run with `endRun()`; by default the session is
+	// idle whenever it is asked, as after a run that has finished.
+	const runState = {
+		processing: false,
+		items: [],
+		steeringMessages: [],
+		withdrawableTurnMessageId: undefined,
+	};
 	const native = {
 		on(fn) {
 			trace.push("subscribe");
@@ -169,6 +179,23 @@ function fixture(overrides = {}) {
 						cursor: String(next),
 						hasMore: next < snapshot.length,
 						cursorStatus: "ok",
+					};
+				},
+			},
+			// Copilot's run state, read through the same RPCs the bridge asks.
+			metadata: {
+				async isProcessing() {
+					return { processing: runState.processing };
+				},
+			},
+			queue: {
+				async pendingItems() {
+					return {
+						items: runState.items,
+						steeringMessages: runState.steeringMessages,
+						...(runState.withdrawableTurnMessageId === undefined
+							? {}
+							: { withdrawableTurnMessageId: runState.withdrawableTurnMessageId }),
 					};
 				},
 			},
@@ -237,6 +264,12 @@ function fixture(overrides = {}) {
 		client,
 		reports,
 		event: (event) => observer(event),
+		runState,
+		/** The run ends: Copilot stops processing, then emits `event` (a trigger). */
+		endRun: (event) => {
+			runState.processing = false;
+			if (event) observer(event);
+		},
 	};
 }
 
@@ -922,6 +955,8 @@ test("native consumption: replayed tool turns and unrelated final turns cannot c
 		{ type: "abort", id: "global-abort", parentId: "foreign-root", data: { reason: "user" } },
 	];
 	f.native.getEvents = async () => (f.trace.includes("send") ? history : []);
+	// The owned run is still in flight while the others' turns are replayed.
+	f.runState.processing = true;
 	const run = f.bridge.run();
 	await f.accepted.promise;
 	await flush();
@@ -931,6 +966,7 @@ test("native consumption: replayed tool turns and unrelated final turns cannot c
 		f.reports.some((event) => event.kind === "native-completed"),
 		false,
 	);
+	f.runState.processing = false;
 	history.push(
 		{
 			type: "assistant.message",
@@ -1162,6 +1198,8 @@ test("busy native turn consumes immediate steering and journals its returned mes
 		}
 		return nativeId;
 	};
+	// The human's run is in flight; the steering message joins it.
+	f.runState.processing = true;
 	const run = f.bridge.run();
 	await flush();
 	assert.equal(f.history.at(-1).data.delivery, "steering");
@@ -1182,6 +1220,7 @@ test("busy native turn consumes immediate steering and journals its returned mes
 	nativeTerminal(f, "human-turn");
 	await flush();
 	assert.equal(f.trace.filter((step) => step === "claim").length, 1);
+	f.endRun();
 	nativeTerminal(f, "steering-user");
 	await flush();
 	assert.equal(f.trace.filter((step) => step === "claim").length, 2);
@@ -1470,6 +1509,43 @@ test("activity: sub-agent turns never flip the seat's state", async (t) => {
 	f.event({ type: "assistant.turn_start", id: "sub-start", agentId: "sub-agent-9", data: {} });
 	f.event({ type: "assistant.turn_end", id: "sub-end", agentId: "sub-agent-9", data: {} });
 	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	assert.deepEqual(states(), ["working"]);
+});
+
+test("activity: a HydraFusion turn is working from routing, not only at its commit", async (t) => {
+	const { f, states } = await activityBridge(t);
+	// Recorded Copilot 1.0.97: phases emit no root turn_start; only the commit does.
+	f.event({ type: "session.fusion_route_started", id: "route", ephemeral: true, data: {} });
+	f.event({ type: "assistant.fusion_phase_completed", id: "primary-done", data: {} });
+	await flush();
+	assert.deepEqual(states(), ["working"]);
+	f.event({ type: "assistant.turn_start", id: "commit-start", data: {} });
+	f.event({ type: "assistant.turn_end", id: "commit-end", data: {} });
+	await flush();
+	assert.deepEqual(states(), ["working", "idle"]);
+});
+
+// #46 review: a fused turn that ends without a commit has no root turn_end.
+for (const terminal of ["abort", "session.fusion_completed"]) {
+	test(`activity: routing's working is settled by ${terminal}`, async (t) => {
+		const { f, states } = await activityBridge(t);
+		f.event({ type: "session.fusion_route_started", id: "route", ephemeral: true, data: {} });
+		await flush();
+		f.event({
+			type: terminal,
+			id: "end",
+			data: { reason: "user_initiated", outcome: "cancelled", fusionId: "fusion-1" },
+		});
+		await flush();
+		assert.deepEqual(states(), ["working", "idle"]);
+	});
+}
+
+test("activity: a failed route keeps working, because its fallback still runs", async (t) => {
+	const { f, states } = await activityBridge(t);
+	f.event({ type: "session.fusion_route_started", id: "route", ephemeral: true, data: {} });
+	f.event({ type: "session.fusion_route_failed", id: "failed", data: { fallbackModel: "m" } });
 	await flush();
 	assert.deepEqual(states(), ["working"]);
 });
@@ -2818,7 +2894,7 @@ function nativeTerminal(f, parentId, type = "session.idle", extra = {}) {
 }
 
 for (const type of ["session.idle", "session.error"]) {
-	test(`native-event diagnostics retain pre-observe ancestry for healthy ${type}`, async (t) => {
+	test(`native-event diagnostics report the completion's pre-state for a healthy ${type}`, async (t) => {
 		const f = fixture();
 		const run = f.bridge.run();
 		t.after(async () => {
@@ -2848,24 +2924,20 @@ for (const type of ["session.idle", "session.error"]) {
 			interactionId: null,
 			completionNativeId: "native-message-137",
 			completionLive: true,
-			parentKnown: true,
-			descendantCount: 3,
-			terminal: { type, eventId: "terminal-diagnostic-assistant" },
+			consumed: true,
+			// The trigger only asks; completion follows the run-state answer.
+			terminal: null,
 			grade: "native-event-not-pij-ack",
 		});
-		assert.equal(events[0].parentKnown, false);
-		assert.equal(events[0].descendantCount, 1);
 		assert.equal(events[0].interactionId, "diagnostic-interaction");
-		assert.equal(events[1].parentKnown, true);
-		assert.equal(events[1].descendantCount, 2);
-		assert.equal(f.bridge.completion.descendants.size, 0);
+		assert.equal(events[1].consumed, true);
 		await flush();
 		assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 1);
 		assert.equal(f.trace.filter((event) => event === "claim").length, 2);
 	});
 }
 
-test("native-event diagnostics identify rejected idle without declaring a stall", async (t) => {
+test("native-event diagnostics report an idle during a running turn without declaring a stall", async (t) => {
 	const f = fixture();
 	const run = f.bridge.run();
 	t.after(async () => {
@@ -2873,12 +2945,13 @@ test("native-event diagnostics identify rejected idle without declaring a stall"
 		await run;
 	});
 	await f.accepted.promise;
+	f.runState.processing = true;
 	const root = nativeUser(f, "native-message-137", "diagnostic-user", "owned-interaction");
 	nativeTerminal(f, "missing-parent", "session.idle", {
 		data: { interactionId: "foreign-interaction" },
 	});
-	const rejected = f.reports.filter((event) => event.kind === "native-event").at(-1);
-	assert.deepEqual(rejected, {
+	const idle = f.reports.filter((event) => event.kind === "native-event").at(-1);
+	assert.deepEqual(idle, {
 		kind: "native-event",
 		seat: registration.id,
 		nativeSession: registration.harness_session,
@@ -2890,15 +2963,13 @@ test("native-event diagnostics identify rejected idle without declaring a stall"
 		interactionId: "foreign-interaction",
 		completionNativeId: "native-message-137",
 		completionLive: true,
-		parentKnown: false,
-		descendantCount: 2,
+		consumed: true,
 		terminal: null,
 		grade: "native-event-not-pij-ack",
 	});
 	nativeTerminal(f, root, "session.idle", { agentId: "subagent" });
 	const subagent = f.reports.filter((event) => event.kind === "native-event").at(-1);
 	assert.equal(subagent.agentId, "subagent");
-	assert.equal(subagent.parentKnown, true);
 	assert.equal(subagent.terminal, null);
 	await flush();
 	assert.equal(f.reports.filter((event) => event.kind === "native-event").length, 3);
@@ -2929,8 +3000,7 @@ test("native-event diagnostics expose only scalar IDs and never callback or buff
 	const before = f.reports.find((event) => event.kind === "native-event");
 	assert.equal(before.completionNativeId, null);
 	assert.equal(before.completionLive, false);
-	assert.equal(before.parentKnown, false);
-	assert.equal(before.descendantCount, 0);
+	assert.equal(before.consumed, false);
 	assert.equal(before.terminal, null);
 	await sending.promise;
 	const secret = "NEVER_LOG_BODY_ARGS_OR_CREDENTIALS";
@@ -2969,8 +3039,7 @@ test("native-event diagnostics expose only scalar IDs and never callback or buff
 	for (const event of events.slice(1)) {
 		assert.equal(event.completionNativeId, null);
 		assert.equal(event.completionLive, true);
-		assert.equal(event.parentKnown, false);
-		assert.equal(event.descendantCount, 0);
+		assert.equal(event.consumed, false);
 		assert.equal(event.terminal, null);
 		assert.deepEqual(
 			Object.keys(event).sort(),
@@ -2986,8 +3055,7 @@ test("native-event diagnostics expose only scalar IDs and never callback or buff
 				"interactionId",
 				"completionNativeId",
 				"completionLive",
-				"parentKnown",
-				"descendantCount",
+				"consumed",
 				"terminal",
 				"grade",
 			].sort(),
@@ -3003,6 +3071,7 @@ test("post-ack barrier blocks next claim until current native completion, not ou
 	t.after(() => f.bridge.stop());
 	const run = f.bridge.run();
 	await f.accepted.promise;
+	f.runState.processing = true;
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
 	assert.equal(f.trace.includes("ack"), true);
@@ -3022,6 +3091,7 @@ test("post-ack barrier blocks next claim until current native completion, not ou
 	});
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	f.endRun();
 	nativeTerminal(f, "assistant-current");
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 2);
@@ -3112,6 +3182,8 @@ test("post-ack barrier cannot release a later send from earlier generation event
 	await flush();
 	assert.equal(sends, 2);
 	assert.equal(claims, 2);
+	// The second message's run is in flight while the first one's stragglers arrive.
+	f.runState.processing = true;
 	const currentUser = nativeUser(f, "native-2", "user-native-2", "interaction-2");
 	nativeTerminal(f, "user-native-1");
 	f.event({
@@ -3136,6 +3208,7 @@ test("post-ack barrier cannot release a later send from earlier generation event
 		parentId: "omitted-current-parent",
 		data: { interactionId: "interaction-2", turnId: "0" },
 	});
+	f.endRun();
 	nativeTerminal(f, "current-interaction");
 	await flush();
 	assert.equal(claims, 3);
@@ -3171,40 +3244,792 @@ test("post-ack barrier completes the owned final turn before a following foregro
 	await run;
 });
 
-for (const changed of [
-	{ parentId: "unrelated-end" },
-	{ parentId: "owned-user" },
-	{ agentId: "subagent" },
-	{ data: { messageId: "next-native" } },
+/**
+ * Plan 169 R3: the live root stream of a recorded `hydrafusion-max` cascade
+ * (Copilot 1.0.97-1, ids shortened). Phase output streams as ephemeral,
+ * uncommitted root messages; the persisted-only `session.usage_record` never
+ * reaches the live stream, so parents named `gap-*` are never observed; the
+ * repair phase and its commit carry a new interactionId.
+ */
+function hydraFusionCascade(f, { user = "fused-user" } = {}) {
+	const fusion = (extra = {}) => ({ fusionId: "fusion-1", pattern: "cascade", ...extra });
+	const phaseMessage = (id, parentId, interactionId, tools) =>
+		f.event({
+			type: "assistant.message",
+			id,
+			parentId,
+			ephemeral: true,
+			data: {
+				interactionId,
+				toolRequests: Array.from({ length: tools }, (_, i) => ({ toolCallId: `${id}-${i}` })),
+				fusion: fusion({ phaseKind: "primary" }),
+			},
+		});
+	const before = () => {
+		f.event({ type: "session.fusion_route_started", id: "route", ephemeral: true, data: {} });
+		f.event({ type: "session.fusion_resolved", id: "resolved", parentId: "route", data: fusion() });
+		nativeUser(f, "native-message-137", user, "primary-interaction");
+		phaseMessage("primary-tools", "gap-1", "primary-interaction", 1);
+		phaseMessage("primary-draft", "gap-2", "primary-interaction", 0);
+		f.event({
+			type: "assistant.fusion_phase_completed",
+			id: "primary-done",
+			parentId: "gap-3",
+			data: fusion({ phaseKind: "primary", conversationScope: "root" }),
+		});
+		f.event({
+			type: "assistant.fusion_phase_completed",
+			id: "judge-done",
+			parentId: "gap-4",
+			data: fusion({ phaseKind: "judge", conversationScope: "review", verdict: "reject" }),
+		});
+		phaseMessage("repair-tools", "gap-5", "repair-interaction", 1);
+		phaseMessage("repair-draft", "gap-6", "repair-interaction", 0);
+	};
+	const commit = () => {
+		f.event({
+			type: "assistant.fusion_phase_completed",
+			id: "repair-done",
+			parentId: "gap-7",
+			data: fusion({ phaseKind: "repair", conversationScope: "root" }),
+		});
+		f.event({
+			type: "session.fusion_commit_started",
+			id: "commit",
+			parentId: "repair-done",
+			data: fusion(),
+		});
+		f.event({
+			type: "assistant.turn_start",
+			id: "commit-start-1",
+			parentId: "commit",
+			data: { interactionId: "repair-interaction" },
+		});
+		f.event({
+			type: "assistant.message",
+			id: "commit-tools",
+			parentId: "commit-start-1",
+			data: {
+				interactionId: "repair-interaction",
+				toolRequests: [{ toolCallId: "commit-tool" }],
+				fusion: fusion({ commitId: "fusion-1:commit" }),
+			},
+		});
+		f.event({
+			type: "tool.execution_complete",
+			id: "commit-tool-done",
+			parentId: "commit-tools",
+			data: { interactionId: "repair-interaction" },
+		});
+		f.event({
+			type: "assistant.turn_end",
+			id: "commit-end-1",
+			parentId: "commit-tool-done",
+			data: {},
+		});
+		f.event({
+			type: "assistant.turn_start",
+			id: "commit-start-2",
+			parentId: "commit-end-1",
+			data: { interactionId: "repair-interaction" },
+		});
+		f.event({
+			type: "assistant.message",
+			id: "commit-final",
+			parentId: "commit-start-2",
+			data: {
+				interactionId: "repair-interaction",
+				toolRequests: [],
+				fusion: fusion({ commitId: "fusion-1:commit" }),
+			},
+		});
+		f.event({ type: "assistant.turn_end", id: "commit-end-2", parentId: "commit-final", data: {} });
+		f.event({
+			type: "session.fusion_completed",
+			id: "fusion-done",
+			parentId: "checkpoint",
+			data: fusion({ commitId: "fusion-1:commit", outcome: "completed" }),
+		});
+		// Copilot stops processing only after the fused run's last event (canary 2026-10-13).
+		f.endRun({ type: "session.idle", id: "idle", parentId: "gap-8", ephemeral: true, data: {} });
+	};
+	return { before, commit };
+}
+
+test("hydrafusion cascade: the committed repair turn completes owned work, never a phase", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.runState.processing = true;
+	const cascade = hydraFusionCascade(f);
+	cascade.before();
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1, "no completion between phases");
+	cascade.commit();
+	await flush();
+	assert.equal(
+		f.trace.filter((x) => x === "claim").length,
+		2,
+		"the next message waits only for the run to end",
+	);
+	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 1);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: uncommitted phase output never ends the turn", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.runState.processing = true;
+	hydraFusionCascade(f).before();
+	f.event({ type: "assistant.turn_end", id: "phase-end", parentId: "primary-draft", data: {} });
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: another fusion's completion never completes owned work", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.runState.processing = true;
+	hydraFusionCascade(f).before();
+	f.event({
+		type: "session.fusion_completed",
+		id: "other-done",
+		data: { fusionId: "fusion-other", outcome: "completed" },
+	});
+	f.event({
+		type: "session.fusion_completed",
+		id: "sub-done",
+		agentId: "sub-agent",
+		data: { fusionId: "fusion-1", outcome: "completed" },
+	});
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	f.bridge.stop();
+	await run;
+});
+
+/**
+ * #46 review: an owned fused turn that stops before any commit. The terminal's
+ * parent is a persisted-only event; an ephemeral idle is never readable from
+ * history, so a later backfill of that parent cannot replay it.
+ */
+for (const [terminal, data] of [
+	["session.idle", { aborted: true }],
+	["abort", { reason: "user_initiated" }],
+	["session.error", { errorType: "model_call" }],
 ]) {
-	test(`post-ack barrier rejects unproven foreground transition ${JSON.stringify(changed)}`, async (t) => {
+	test(`hydrafusion: ${terminal} ends an owned fused turn across a parent gap`, async (t) => {
 		const f = fixture();
 		t.after(() => f.bridge.stop());
 		const run = f.bridge.run();
 		await f.accepted.promise;
-		const user = nativeUser(f, "native-message-137", "owned-user", "owned-interaction");
-		f.event({ type: "assistant.turn_end", id: "owned-end", parentId: user, data: {} });
+		hydraFusionCascade(f).before();
 		f.event({
-			type: "user.message",
-			id: "next-user",
-			parentId: "owned-end",
-			data: { messageId: "next-native", interactionId: "next-interaction" },
-			...changed,
+			type: terminal,
+			id: "terminal-with-gap",
+			parentId: "persisted-only-checkpoint",
+			ephemeral: terminal === "session.idle",
+			data,
 		});
-		f.event({
-			type: "assistant.message",
-			id: "next-answer",
-			parentId: "next-user",
-			data: { interactionId: "next-interaction" },
+		await flush();
+		f.history.push({
+			type: "session.usage_checkpoint",
+			id: "persisted-only-checkpoint",
+			parentId: "repair-draft",
+			data: {},
 		});
-		nativeTerminal(f, "next-answer");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
-		nativeTerminal(f, "owned-end");
-		await flush();
+		for (let attempt = 0; attempt < 4; attempt++) await f.bridge.readEvents(f.bridge.completion);
+		assert.deepEqual(
+			f.reports.filter((event) => event.kind === "native-completed").map((event) => event.type),
+			[terminal],
+		);
 		assert.equal(f.trace.filter((x) => x === "claim").length, 2);
 		f.bridge.stop();
 		await run;
+	});
+}
+
+test("hydrafusion: idle before the owned prompt, or from a sub-agent, never ends it", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.runState.processing = true;
+	// A previous fused turn routed and completed before this prompt was dequeued.
+	f.event({ type: "session.fusion_resolved", id: "old-resolved", data: { fusionId: "fusion-0" } });
+	f.event({ type: "session.fusion_completed", id: "old-done", data: { fusionId: "fusion-0" } });
+	f.event({ type: "session.idle", id: "old-idle", parentId: "old-gap", data: {} });
+	nativeUser(f, "native-message-137", "plain-user", "plain-interaction");
+	f.event({ type: "session.idle", id: "sub-idle", parentId: "gap", agentId: "sub", data: {} });
+	f.event({ type: "session.idle", id: "gap-idle", parentId: "unrelated-gap", data: {} });
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+	f.bridge.stop();
+	await run;
+});
+
+// #46 review r2: a history page requested before the owned prompt resolves after
+// its live callbacks and replays the previous turn's terminal first.
+for (const type of ["abort", "session.error"]) {
+	test(`hydrafusion: a late history page's prior ${type} never ends the live fused turn`, async (t) => {
+		const f = fixture();
+		t.after(() => f.bridge.stop());
+		const page = deferred();
+		const read = f.native.rpc.eventLog.read;
+		f.native.send = async () => {
+			f.trace.push("send");
+			return "native-message-137";
+		};
+		f.native.rpc.eventLog.read = async (request) =>
+			request.direction === "backward" || !f.trace.includes("send") ? read(request) : page.promise;
+		const run = f.bridge.run();
+		await flush();
+		const resolved = {
+			type: "session.fusion_resolved",
+			id: "current-resolved",
+			data: { fusionId: "current-fusion" },
+		};
+		const user = {
+			type: "user.message",
+			id: "current-user",
+			data: { messageId: "native-message-137", interactionId: "current-interaction" },
+		};
+		f.event(resolved);
+		f.event(user);
+		await f.accepted.promise;
+		f.runState.processing = true;
+		page.resolve({
+			events: [
+				{ type, id: "previous-terminal", parentId: "previous-user", data: {} },
+				resolved,
+				user,
+			],
+			cursor: "3",
+			hasMore: false,
+			cursorStatus: "ok",
+		});
+		await flush();
+		await flush();
+		assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+		f.bridge.stop();
+		await run;
+	});
+}
+
+test("hydrafusion: a durable abort after the owned prompt in history ends the turn across a gap", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	hydraFusionCascade(f).before();
+	// Seen only through history, after the prompt the send recorded there.
+	f.history.push({ type: "abort", id: "durable-abort", parentId: "persisted-only", data: {} });
+	for (let attempt = 0; attempt < 4; attempt++) await f.bridge.readEvents(f.bridge.completion);
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["durable-abort"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+// #46 review r2: a routed fusion id lives for one turn. An earlier fusion that
+// stopped at abort/idle, or a late history page's old route, must not lend its
+// id to the next plain (failed-route fallback) prompt.
+for (const stop of ["abort", "session.idle", "session.error"]) {
+	test(`hydrafusion: a fusion stopped by ${stop} never lends its id to the next plain prompt`, async (t) => {
+		const f = fixture();
+		t.after(() => f.bridge.stop());
+		const run = f.bridge.run();
+		await f.accepted.promise;
+		f.runState.processing = true;
+		f.event({ type: "session.fusion_resolved", id: "prior-resolved", data: { fusionId: "prior" } });
+		f.event({ type: stop, id: "prior-stop", parentId: "prior-gap", data: {} });
+		f.event({ type: "session.fusion_route_failed", id: "route-failed", data: {} });
+		nativeUser(f, "native-message-137", "plain-user", "plain-interaction");
+		f.event({ type: "session.idle", id: "unrelated-idle", parentId: "foreign", data: {} });
+		await flush();
+		assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+		f.bridge.stop();
+		await run;
+	});
+}
+
+test("hydrafusion: a late history page's old route is never adopted by a live plain prompt", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.runState.processing = true;
+	f.history.push({
+		type: "session.fusion_resolved",
+		id: "old-resolved",
+		data: { fusionId: "old" },
+	});
+	await f.bridge.readEvents(f.bridge.completion);
+	nativeUser(f, "native-message-137", "plain-user", "plain-interaction");
+	f.event({ type: "session.idle", id: "unrelated-idle", parentId: "foreign", data: {} });
+	await flush();
+	assert.equal(f.reports.filter((event) => event.kind === "native-completed").length, 0);
+	f.bridge.stop();
+	await run;
+});
+// #46 review r3 (pij-psychiatric-chameleon): the channels race, so neither may
+// decide alone which turn an event belongs to.
+test("hydrafusion: a prompt seen only in history still owns the live fused output and idle", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	f.native.send = async () => {
+		f.trace.push("send");
+		f.history.push(
+			{ type: "session.fusion_resolved", id: "history-route", data: { fusionId: "current" } },
+			{
+				type: "user.message",
+				id: "history-user",
+				data: { messageId: "native-message-137", interactionId: "current-interaction" },
+			},
+		);
+		return "native-message-137";
+	};
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.event({
+		type: "assistant.message",
+		id: "live-phase",
+		parentId: "usage-gap",
+		ephemeral: true,
+		data: {
+			interactionId: "current-interaction",
+			toolRequests: [],
+			fusion: { fusionId: "current" },
+		},
+	});
+	f.event({ type: "session.idle", id: "live-idle", parentId: "gap", ephemeral: true, data: {} });
+	for (let i = 0; i < 4; i++) await f.bridge.readEvents(f.bridge.completion);
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["live-idle"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: a bounded history window's fused output orders its abort after a live prompt", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	f.native.send = async () => {
+		f.trace.push("send");
+		return "native-message-137";
+	};
+	const run = f.bridge.run();
+	await flush();
+	f.event({ type: "session.fusion_resolved", id: "live-route", data: { fusionId: "current" } });
+	nativeUser(f, "native-message-137", "live-user", "current-interaction");
+	await f.accepted.promise;
+	// The prompt itself is outside the backward window.
+	const window = [
+		{
+			type: "assistant.message",
+			id: "history-phase",
+			parentId: "usage-gap",
+			data: {
+				interactionId: "current-interaction",
+				toolRequests: [],
+				fusion: { fusionId: "current" },
+			},
+		},
+		{ type: "abort", id: "history-abort", parentId: "another-gap", data: {} },
+	];
+	f.native.rpc.eventLog.tail = async () => ({ cursor: "after-abort" });
+	const read = f.native.rpc.eventLog.read;
+	f.native.rpc.eventLog.read = async (request) =>
+		request.direction === "backward"
+			? { events: window, cursor: "before-window", cursorStatus: "ok", hasMore: true }
+			: read(request);
+	// The bounded window has no anchor, so the probe still reports its gap; the
+	// abort it delivered is enough to ask, and the run has ended.
+	await f.bridge.probeReceiver(f.bridge.completion).catch((error) => {
+		assert.equal(error.holdKind, "receiver-gap");
+	});
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["history-abort"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: a route seen only in history is adopted when the live prompt is replayed there", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	f.native.send = async () => {
+		f.trace.push("send");
+		return "native-message-137";
+	};
+	const run = f.bridge.run();
+	await flush();
+	f.history.push({
+		type: "session.fusion_resolved",
+		id: "history-route",
+		data: { fusionId: "current" },
+	});
+	await f.bridge.readEvents(f.bridge.completion);
+	const user = {
+		type: "user.message",
+		id: "same-user",
+		data: { messageId: "native-message-137", interactionId: "primary-interaction" },
+	};
+	f.event(user);
+	await f.accepted.promise;
+	f.history.push(user);
+	await f.bridge.readEvents(f.bridge.completion);
+	// The repair commit changes interaction and follows a persisted-only parent.
+	f.event({
+		type: "assistant.message",
+		id: "repair-commit",
+		parentId: "repair-gap",
+		data: {
+			interactionId: "repair-interaction",
+			toolRequests: [],
+			fusion: { fusionId: "current", commitId: "current:commit" },
+		},
+	});
+	f.event({ type: "assistant.turn_end", id: "repair-end", parentId: "repair-commit", data: {} });
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["repair-end"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: a failed route's concrete fallback completes by the ordinary rule", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.event({ type: "session.fusion_route_started", id: "routing", data: {} });
+	f.event({
+		type: "session.fusion_route_failed",
+		id: "routing-failed",
+		data: { fallbackModel: "m" },
+	});
+	nativeUser(f, "native-message-137", "fallback-user", "fallback-interaction");
+	f.event({
+		type: "assistant.message",
+		id: "fallback-final",
+		parentId: "missing",
+		data: { interactionId: "fallback-interaction", toolRequests: [] },
+	});
+	f.event({ type: "assistant.turn_end", id: "fallback-end", parentId: "fallback-final", data: {} });
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["fallback-end"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+test("hydrafusion: a critique (draft, critic, revision) waits for the revision's commit", async (t) => {
+	const f = fixture();
+	t.after(() => f.bridge.stop());
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	f.runState.processing = true;
+	const fusion = (extra = {}) => ({ fusionId: "critique", ...extra });
+	f.event({
+		type: "session.fusion_resolved",
+		id: "resolved",
+		data: fusion({ pattern: "critique" }),
+	});
+	nativeUser(f, "native-message-137", "critique-user", "draft-interaction");
+	for (const [kind, scope] of [
+		["draft", "root"],
+		["critic", "review"],
+		["revision", "root"],
+	]) {
+		f.event({
+			type: "assistant.message",
+			id: `${kind}-message`,
+			parentId: "gap",
+			ephemeral: true,
+			data: {
+				interactionId: `${kind}-interaction`,
+				toolRequests: [],
+				fusion: fusion({ phaseKind: kind, conversationScope: scope }),
+			},
+		});
+		f.event({
+			type: "assistant.turn_end",
+			id: `${kind}-end`,
+			parentId: `${kind}-message`,
+			data: {},
+		});
+	}
+	await flush();
+	assert.equal(f.trace.filter((x) => x === "claim").length, 1);
+	f.event({
+		type: "assistant.message",
+		id: "revision-commit",
+		parentId: "gap",
+		data: {
+			interactionId: "revision-interaction",
+			toolRequests: [],
+			fusion: fusion({ commitId: "critique:commit" }),
+		},
+	});
+	f.endRun();
+	f.event({
+		type: "assistant.turn_end",
+		id: "revision-commit-end",
+		parentId: "revision-commit",
+		data: {},
+	});
+	await flush();
+	assert.deepEqual(
+		f.reports.filter((event) => event.kind === "native-completed").map((event) => event.eventId),
+		["revision-commit-end"],
+	);
+	f.bridge.stop();
+	await run;
+});
+
+/**
+ * #46: recorded turn shapes (ids shortened, `g*` parents are persisted-only
+ * events never seen live), each with `end`, the event at which Copilot stops
+ * processing. The run-state oracle answers `processing` from the latest event
+ * that has occurred, the way `metadata.isProcessing()` reflects the runtime.
+ */
+const PERMUTATION_TURNS = (() => {
+	const fused = (extra = {}) => ({ fusionId: "F", ...extra });
+	const prompt = {
+		type: "user.message",
+		id: "P",
+		data: { messageId: "native-1", interactionId: "I" },
+	};
+	const route = { type: "session.fusion_resolved", id: "R", data: fused() };
+	const phase = (id, parentId, interactionId) => ({
+		type: "assistant.message",
+		id,
+		parentId,
+		ephemeral: true,
+		data: { interactionId, toolRequests: [], fusion: fused() },
+	});
+	const commit = (interactionId) => ({
+		type: "assistant.message",
+		id: "C",
+		parentId: "g-commit",
+		data: { interactionId, toolRequests: [], fusion: fused({ commitId: "F:commit" }) },
+	});
+	const commitEnd = { type: "assistant.turn_end", id: "CE", parentId: "C", data: {} };
+	const completed = {
+		type: "session.fusion_completed",
+		id: "FC",
+		parentId: "g-done",
+		data: fused(),
+	};
+	return {
+		single: {
+			events: [route, prompt, phase("PH", "g1", "I"), commit("I"), commitEnd, completed],
+			end: "FC",
+		},
+		"cascade with repair": {
+			events: [
+				route,
+				prompt,
+				phase("PH1", "g1", "I"),
+				phase("PH2", "g2", "J"),
+				commit("J"),
+				commitEnd,
+				completed,
+			],
+			end: "FC",
+		},
+		"abort behind a missing parent": {
+			events: [
+				route,
+				prompt,
+				phase("PH", "g1", "I"),
+				{ type: "assistant.turn_end", id: "PE", parentId: "PH", data: {} },
+				{ type: "abort", id: "A", parentId: "g2", data: { reason: "user_initiated" } },
+			],
+			end: "A",
+		},
+		"route_failed fallback": {
+			events: [
+				{ type: "session.fusion_route_started", id: "RS", ephemeral: true, data: {} },
+				{ type: "session.fusion_route_failed", id: "RF", data: {} },
+				prompt,
+				{
+					type: "assistant.message",
+					id: "M",
+					parentId: "g1",
+					data: { interactionId: "I", toolRequests: [] },
+				},
+				{ type: "assistant.turn_end", id: "T", parentId: "M", data: {} },
+				{ type: "session.idle", id: "IDLE", parentId: "T", ephemeral: true, data: {} },
+			],
+			end: "IDLE",
+		},
+		"prior turn's fusion and abort": {
+			events: [
+				{ type: "session.fusion_resolved", id: "R0", data: { fusionId: "F0" } },
+				{ type: "abort", id: "A0", parentId: "g0", data: { reason: "user_initiated" } },
+				route,
+				prompt,
+				commit("J"),
+				commitEnd,
+				completed,
+			],
+			end: "FC",
+		},
+		"plain turn": {
+			events: [
+				prompt,
+				{ type: "assistant.turn_start", id: "TS", parentId: "P", data: { interactionId: "I" } },
+				{
+					type: "assistant.message",
+					id: "M",
+					parentId: "TS",
+					data: { interactionId: "I", toolRequests: [] },
+				},
+				{ type: "assistant.turn_end", id: "T", parentId: "M", data: {} },
+				{ type: "session.idle", id: "IDLE", parentId: "T", ephemeral: true, data: {} },
+			],
+			end: "IDLE",
+		},
+		// The owned plain prompt never ends on its own; a later unrelated fused turn
+		// runs, and the session only stops processing at that turn's idle.
+		"unfinished plain prompt, then a later unrelated fusion": {
+			events: [
+				prompt,
+				{ type: "session.fusion_resolved", id: "XR", data: { fusionId: "X" } },
+				{ type: "user.message", id: "XU", data: { messageId: "other", interactionId: "K" } },
+				{
+					type: "assistant.message",
+					id: "XPH",
+					parentId: "gx1",
+					data: { interactionId: "K", toolRequests: [], fusion: { fusionId: "X" } },
+				},
+				{
+					type: "assistant.message",
+					id: "XC",
+					parentId: "gx2",
+					data: {
+						interactionId: "K",
+						toolRequests: [],
+						fusion: { fusionId: "X", commitId: "X:commit" },
+					},
+				},
+				{ type: "session.fusion_completed", id: "XFC", parentId: "gx3", data: { fusionId: "X" } },
+				{ type: "session.idle", id: "XIDLE", parentId: "gx4", ephemeral: true, data: {} },
+			],
+			end: "XIDLE",
+		},
+		// The owned fused turn never ends on its own; a later plain turn runs, and
+		// the session only stops processing at that turn's idle.
+		"unfinished fusion, then a later plain turn": {
+			events: [
+				route,
+				prompt,
+				phase("PH", "g1", "I"),
+				{ type: "user.message", id: "XU", data: { messageId: "other", interactionId: "K" } },
+				{
+					type: "assistant.message",
+					id: "XM",
+					parentId: "XU",
+					data: { interactionId: "K", toolRequests: [] },
+				},
+				{ type: "assistant.turn_end", id: "XT", parentId: "XM", data: {} },
+				{ type: "session.idle", id: "XIDLE", parentId: "gx4", ephemeral: true, data: {} },
+			],
+			end: "XIDLE",
+		},
+	};
+})();
+
+/**
+ * Every split of `count` events across live, history or both, in every
+ * interleaving that keeps each channel's order. `visit(path)` gets
+ * `[index, live]` deliveries.
+ */
+function forEachDelivery(count, visit) {
+	for (let code = 0; code < 3 ** count; code++) {
+		const live = [];
+		const history = [];
+		let rest = code;
+		for (let i = 0; i < count; i++) {
+			const split = rest % 3;
+			rest = (rest - split) / 3;
+			if (split !== 1) live.push(i);
+			if (split !== 0) history.push(i);
+		}
+		const path = [];
+		const walk = (a, b) => {
+			if (a === live.length && b === history.length) return visit(path);
+			if (a < live.length) {
+				path.push([live[a], true]);
+				walk(a + 1, b);
+				path.pop();
+			}
+			if (b < history.length) {
+				path.push([history[b], false]);
+				walk(a, b + 1);
+				path.pop();
+			}
+		};
+		walk(0, 0);
+	}
+}
+
+// Safety: never complete while the run is processing. Liveness: complete once
+// it is not, after a trigger or the bounded re-ask. Any split, any interleaving,
+// duplicates included: which channel delivered what no longer decides anything.
+for (const [name, { events, end }] of Object.entries(PERMUTATION_TURNS)) {
+	test(`run-state permutations: ${name} completes only after its run stops processing`, () => {
+		const endIndex = events.findIndex((event) => event.id === end);
+		const failures = [];
+		forEachDelivery(events.length, (path) => {
+			const completion = new NativeCompletion({ msg_id: "pij-1", from: "pij-peer" }, "0");
+			completion.bind("native-1");
+			let occurred = -1;
+			const ask = (now) => {
+				if (completion.needsAsk(now))
+					completion.settle(
+						{ processing: occurred < endIndex, items: [], steeringMessages: [] },
+						now,
+					);
+			};
+			const trace = () => path.map(([i, live]) => `${live ? "L" : "H"}:${events[i].id}`).join(" ");
+			for (const [step, [index]] of path.entries()) {
+				occurred = Math.max(occurred, index);
+				completion.observe(events[index]);
+				ask(step);
+				if (completion.terminal && occurred < endIndex) {
+					failures.push(`completed while processing: ${trace()}`);
+					return;
+				}
+			}
+			// No further trigger: the bounded re-ask still finds the ended run.
+			ask(Number.MAX_SAFE_INTEGER);
+			if (!completion.terminal) failures.push(`never ended: ${trace()}`);
+		});
+		assert.deepEqual(failures.slice(0, 5), []);
 	});
 }
 
@@ -3370,7 +4195,12 @@ test("post-ack interaction anchor repairs the direct product permission gap with
 		{ type: "assistant.turn_end", id: "product-41", parentId: "product-38", data: { turnId: "1" } },
 		{ type: "assistant.idle", id: "product-43", parentId: "product-41", ephemeral: true, data: {} },
 	];
-	for (const event of events) f.event(event);
+	// The run spans both turns; Copilot stops processing at the second turn's end.
+	f.runState.processing = true;
+	for (const event of events) {
+		if (event.id === "product-41") f.runState.processing = false;
+		f.event(event);
+	}
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 2);
 	assert.equal(f.trace.filter((x) => x === "ack").length, 1);
@@ -3387,95 +4217,13 @@ test("post-ack interaction anchor repairs the direct product permission gap with
 	});
 	await flush();
 	assert.equal(f.trace.filter((x) => x === "claim").length, 2);
-	assert.equal(
-		f.reports.filter((e) => e.kind === "native-completed" && e.eventId === "product-41").length,
-		1,
-	);
+	// Completed once, when the run ended, never at the later session.idle.
+	const completed = f.reports.filter((e) => e.kind === "native-completed");
+	assert.equal(completed.length, 1);
+	assert.notEqual(completed[0].eventId, "product-44");
 	f.bridge.stop();
 	await run;
 });
-
-for (const type of ["assistant.turn_start", "assistant.message", "tool.execution_complete"]) {
-	test(`post-ack interaction anchor accepts only the matched foreground ${type}`, async (t) => {
-		const f = fixture();
-		t.after(() => f.bridge.stop());
-		const run = f.bridge.run();
-		await f.accepted.promise;
-		const anchor = {
-			type,
-			id: "unbound",
-			parentId: "omitted-parent",
-			data: { interactionId: "owned-interaction", turnId: "0" },
-		};
-		// Neither pre-root metadata nor a foreign/subagent user may establish the binding.
-		f.event(anchor);
-		nativeTerminal(f, anchor.id);
-		nativeUser(f, "foreign-native", "foreign-user", "owned-interaction");
-		f.event({
-			type: "user.message",
-			id: "child-user",
-			agentId: "child",
-			data: { messageId: "native-message-137", interactionId: "owned-interaction" },
-		});
-		f.event({ ...anchor, id: "still-unbound" });
-		nativeTerminal(f, "still-unbound");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
-		nativeUser(f, "native-message-137", "owned-user", "owned-interaction");
-		for (const terminal of ["session.idle", "session.error"]) {
-			f.event({ ...anchor, type: terminal, id: terminal });
-		}
-		for (const rejected of [
-			{ ...anchor, id: "foreign", data: { interactionId: "foreign-interaction", turnId: "0" } },
-			{ ...anchor, id: "child", agentId: "child" },
-			{ ...anchor, id: "turn-only", data: { turnId: "0" } },
-		]) {
-			f.event(rejected);
-			nativeTerminal(f, rejected.id);
-		}
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
-		f.event({ ...anchor, id: "owned-anchor" });
-		f.event({
-			type: "assistant.turn_end",
-			id: "owned-end",
-			parentId: "owned-anchor",
-			data: { turnId: "0" },
-		});
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, type === "assistant.message" ? 2 : 1);
-		nativeTerminal(f, "owned-end");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 2);
-		f.bridge.stop();
-		await run;
-	});
-}
-
-for (const interactionId of [undefined, "", "   "]) {
-	test(`post-ack interaction anchor rejects absent or blank binding ${JSON.stringify(interactionId)}`, async (t) => {
-		const f = fixture();
-		t.after(() => f.bridge.stop());
-		const run = f.bridge.run();
-		await f.accepted.promise;
-		const root = nativeUser(f, "native-message-137", "owned-user", interactionId);
-		f.event({
-			type: "assistant.message",
-			id: "unbound-message",
-			parentId: "omitted-parent",
-			data: { interactionId },
-		});
-		nativeTerminal(f, "unbound-message");
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 1);
-		// Existing complete ancestry still works without interaction metadata.
-		nativeTerminal(f, root);
-		await flush();
-		assert.equal(f.trace.filter((x) => x === "claim").length, 2);
-		f.bridge.stop();
-		await run;
-	});
-}
 
 test("post-ack interaction anchor retains correlation before send acceptance", async (t) => {
 	const f = fixture();

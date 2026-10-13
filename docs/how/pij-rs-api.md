@@ -22,6 +22,8 @@ Native `pij-rs --json` also preserves the original response buffer after version
 
 `fleet-report` (plan 162) is the second native pass-through: `pij fleet-report <FOLDER>` forwards to `pij-rs fleet-report`, which folds the project's transcripts in-process through Unisphere, reads seats from the store **read-only** (never created, never migrated) and writes `index.html`, `report.json`, `report.js`, `manifest.json` and `tables/` to one folder. It never contacts the daemon. P1 refuses `--format parquet` (`E-RS-FLEET-FORMAT`) and `--prep-target` (`E-RS-FLEET-PREP-TARGET`) by name; the output folder carries names and paths unless `--anonymise`.
 
+Known limit (plan 169): fleet-report prices every call at the default table; router sessions are not modelled per served model.
+
 ### Exit policy
 
 AC4 asserts **JSON byte parity**, not exit-code parity. Existing client policies remain distinct; scripts must inspect the complete envelope and use the policy of the executable they invoked.
@@ -86,6 +88,10 @@ Sources: [`identity.rs`](../../crates/daemon/src/http/identity.rs), [`role.rs`](
 |---|---|---|
 | OMP | `--harness omp` or `"harness":"omp"` | `--model github-copilot/gpt-6-astra --effort high` becomes OMP `--model github-copilot/gpt-6-astra --thinking high` |
 | Pi | `--harness pi` or `"harness":"pi"` | `--model gpt-5.6-sol --effort high` becomes Pi `--model gpt-5.6-sol:high` |
+| Copilot | `--harness copilot` or `"harness":"copilot"` | `--model claude-opus-5 --effort high` becomes Copilot `--model claude-opus-5 --context long_context --effort high` |
+| Copilot HydraFusion | `--harness copilot --model hydrafusion` (or `hydrafusion-max`) | becomes Copilot `--model hydrafusion --context default`; adding `--effort` refuses with `HydraFusion routes effort itself; omit --effort` |
+
+HydraFusion ids (`hydrafusion`, `hydrafusion-max`) are Copilot's per-turn model router. Copilot refuses every other context tier for them ("HydraFusion models do not support context tiers"), and omitting `--context` would inherit a persisted `long_context` config tier, so pij passes the explicit `default` tier. Copilot also refuses reasoning effort for them, so pij refuses `--effort` before launch rather than dropping it. The `--model auto --auto-tier hydrafusion` form is refused by Copilot 1.0.97 ("requires dynamic Auto tiers"); use the model id. The seat's recorded model stays the synthetic id; the per-turn routed model is not reported.
 
 These are argument-shape examples, not catalog or runtime receipts. `pij models` catalog enumeration remains unported (`E-RS-UNPORTED`): agents still cannot enumerate per-harness catalogs through pij, and no native catalog command is supplied. Consult the selected harness's installed catalog, then prove the choice with a canary and actual runtime evidence. Existing native launch flags are otherwise unchanged; native spawn still has no legacy layout/task/branch/plan-id flags.
 
@@ -476,7 +482,7 @@ Busy/idle is `state`, never this block. The human CLI prints one `session:` line
 - `contextUsed`: context tokens in use.
 - `idleMs`: milliseconds since the last API call.
 - `cacheState`: `{state: warm|cold, expiresInMs|expiredForMs}`.
-- `coldWake`: `{wouldRefuse, estimateUsd?}`. This is `cold_wake::check` itself, so it is exactly what the guard would do with a normal send now.
+- `coldWake`: `{wouldRefuse, estimateUsd?, notEstimable?}`. This is `cold_wake::check` itself, so it is exactly what the guard would do with a normal send now. A HydraFusion router seat (plan 169 R7, bound model `hydrafusion`/`hydrafusion-max`) refuses on the same size and idle rules but never carries `estimateUsd`: `notEstimable` reads `not estimable: router, per-call models`, because the router picks the model per call and no single model's price describes the wake. Its refusal and `pij state` line show the price as `? (not estimable: router, per-call models)`.
 
 `sizeLines` holds the rendered human lines, which every client prints verbatim:
 - `context 720k / 1M · last call 2h ago · cache 1h (cold 1h) · 3 compactions`;
@@ -604,7 +610,7 @@ pij-rs send --to <seat> --force --reason '<why>' --body 'text'   # native form
 |---|---|
 | Refusal | HTTP 400, `{ok:false, error:"refused", meta:…}`. Nothing is sent. Since plan 160 the meta lists the sender's options, each priced (golden [`cold-wake/refusal.txt`](../../crates/testkit/fixtures/golden/cold-wake/refusal.txt)):<br>`E-RS-COLD-WAKE: ❄ pij-x is cold (720k, idle 1h52m). Options:`<br>`  --fyi                  hold for its next turn          $0 now`<br>`  --force --reason "…"   wake on its current model       ~$6.45`<br>`Estimates at list price: a 1-hour cache write of the whole context, plus about 5 calls.`<br>The wake estimate is `cold_wake::wake_estimate_usd`. The first call writes the whole context to the 1-hour cache. Each of the 4 further calls reads the context so far, writes ~1,585 new tokens and outputs ~590, which are the 2026-09-28 usage study's means. Every call outputs ~590. Prices come from the `PRICES_USD_PER_MTOK` table (Opus 5.5, Sonnet 5.5, Haiku 4.5, list prices checked 2026-10-01). Model ids are normalised first, and an unpriced model says `price unknown`. The shim prints the meta alone on stderr; the OMP/Pi and Copilot `pij_send` tools return it verbatim as the tool error. |
 | POST `/v1/send` `"force": true, "reason": "<why>"` | Wakes a cold recipient anyway. `force` without a non-empty `reason` is refused with a meta starting `E-RS-COLD-WAKE:` that names `--reason`. The tools refuse it too, before any request. |
-| Spine `send.cold-wake-forced` | The audit of every forced cold wake, persisted before the wake. `seat` is the recipient; payload `{from, from_machine, msg_id, reason, context_tokens, idle_ms, model, estimate_usd}`; `from_machine` is null for a local sender and the paired machine's alias for a forwarded one. |
+| Spine `send.cold-wake-forced` | The audit of every forced cold wake, persisted before the wake. `seat` is the recipient; payload `{from, from_machine, msg_id, reason, context_tokens, idle_ms, model, estimate_usd, not_estimable}`; `from_machine` is null for a local sender and the paired machine's alias for a forwarded one. |
 | Receipt `data.cold_check` | `clear`, `busy`, `forced` or `unknown: <why>` on every guarded send; absent when the guard did not run. The shim prints `— cold-check: <verdict>`; the OMP/Pi tool appends `(cold-check: <verdict>)`. |
 | Unknown ⇒ allow | Any fact the rule needs but cannot establish (unbound or unsupported harness, no transcript, a source error, unknown context or last-call time) allows the send as `unknown: <why>`. The guard waits 3 s for the recipient's session facts; after that the send is allowed as `unknown: no answer within 3s`. |
 | Never guarded | FYIs (`fyi:true` opens no turn) and controls (`command`). |

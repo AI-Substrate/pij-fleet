@@ -2499,7 +2499,11 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
             let _ = write!(output, "\nFYIs held: {}", card.pending_fyis);
         }
         if let Some(block) = &card.session_status {
-            let _ = write!(output, "\nsession: {}", render_session_status(block));
+            let _ = write!(
+                output,
+                "\nsession: {}",
+                render_session_status(block, card.bound_model.as_deref())
+            );
         }
         for line in &card.size_lines {
             let _ = write!(output, "\n{line}");
@@ -2509,7 +2513,14 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
 }
 
 /// One line of session facts: model, context used of window, cache state.
-fn render_session_status(block: &pij_core::session_status::SessionStatusBlock) -> String {
+///
+/// A HydraFusion seat's model is its bound router id; the reported model is
+/// only the last call's routed model, so it is labelled as such (plan 169 R5).
+fn render_session_status(
+    block: &pij_core::session_status::SessionStatusBlock,
+    bound_model: Option<&str>,
+) -> String {
+    use pij_core::model::is_copilot_fusion_model;
     use pij_core::session_status::{CacheState, Fact, SessionStatusBlock};
     fn known<T: std::fmt::Display>(fact: &Fact<T>) -> String {
         fact.value()
@@ -2530,9 +2541,12 @@ fn render_session_status(block: &pij_core::session_status::SessionStatusBlock) -
                 }
                 None => "unknown".to_string(),
             };
+            let model = match bound_model.filter(|model| is_copilot_fusion_model(model)) {
+                Some(router) => format!("{router} · last call {}", known(&status.model)),
+                None => known(&status.model),
+            };
             format!(
-                "model {} · context {}/{} tokens · cache {cache} · read in {elapsed_ms} ms",
-                known(&status.model),
+                "model {model} · context {}/{} tokens · cache {cache} · read in {elapsed_ms} ms",
                 known(&status.context_used_tokens),
                 known(&status.context_window_tokens),
             )
@@ -2974,6 +2988,45 @@ mod tests {
         let human = super::render_state(&pij_core::model::Envelope::ok("pij state", card), false);
         for line in lines {
             assert!(human.contains(&format!("\n{line}")), "{human}");
+        }
+    }
+
+    /// Plan 169 R5: a HydraFusion seat's model is its router; the reported
+    /// model is only the last call's, and says so. Other seats are unchanged.
+    #[test]
+    fn a_fusion_seat_labels_the_routed_model_as_the_last_call() {
+        use pij_core::session_status::{Fact, SeatStatus, SessionStatusBlock};
+        for (bound, expected) in [
+            (
+                Some("hydrafusion-max"),
+                "session: model hydrafusion-max · last call claude-opus-5.5 · context",
+            ),
+            (
+                Some("hydrafusion"),
+                "session: model hydrafusion · last call claude-opus-5.5 · context",
+            ),
+            (
+                Some("claude-opus-5.5"),
+                "session: model claude-opus-5.5 · context",
+            ),
+            (None, "session: model claude-opus-5.5 · context"),
+        ] {
+            let mut card: pij_daemon::http::StateCard = serde_json::from_value(serde_json::json!({
+                "id": "pij-router", "state": "idle", "liveness": "active", "cwd": "/abs/tree",
+                "harness": "copilot", "unsupported": [], "held": [], "boundModel": bound,
+            }))
+            .expect("typed daemon state");
+            card.session_status = Some(SessionStatusBlock::Known {
+                status: Box::new(SeatStatus {
+                    model: Fact::native("claude-opus-5.5".to_string()),
+                    ..SeatStatus::unknown()
+                }),
+                cache_state: Fact::Unknown,
+                elapsed_ms: 0,
+            });
+            let human =
+                super::render_state(&pij_core::model::Envelope::ok("pij state", card), false);
+            assert!(human.contains(expected), "{bound:?}: {human}");
         }
     }
 
