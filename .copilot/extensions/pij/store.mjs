@@ -838,8 +838,36 @@ function sameMessage(left, right) {
 	);
 }
 
-/** Consumption and completion belong to one accepted native message, including after restart. */
-class NativeCompletion {
+/**
+ * Consumption and completion belong to one accepted native message, including after restart.
+ *
+ * Turn ownership is decided by an event's position in the session's one event
+ * order, never by which channel delivered it (plan 169, #46 review). The live
+ * push channel and history reads race, and either can miss events, so they are
+ * merged by event id into one partial order. An event follows the owned prompt
+ * when it is:
+ * - the prompt itself, in any copy;
+ * - a child of an event that follows it (causality);
+ * - the prompt's own foreground turn (its interactionId on a turn_start,
+ *   message or tool completion that is not known to precede it);
+ * - later, on either channel, than an event that follows it. Each channel's
+ *   delivery order is a faithful subsequence of the session's order, and the
+ *   same event id on both channels is one position.
+ *
+ * The clock never promotes an event past the prompt. Copilot stamps every event
+ * from one process's wall clock, but a rollback is only visible once one channel
+ * has delivered both sides of it, which can be after a promoted terminal had
+ * already released the next message. So a stamp is only a brake (an anchor
+ * stamped before the prompt never binds) and a reading of which route preceded
+ * the prompt, and it stops being consulted once any channel delivers an older
+ * stamp after a newer one.
+ *
+ * Undecided means "not after the prompt", so the receiver waits rather than
+ * releasing early. A fact that arrives late (the prompt seen only through
+ * history, a parent backfilled later, a route replayed) revisits every event it
+ * can decide.
+ */
+export class NativeCompletion {
 	constructor(message, cursor, replay = false, jobId) {
 		this.msgId = message.msg_id;
 		this.fromMachine = message.from_machine;
@@ -858,8 +886,19 @@ class NativeCompletion {
 		this.descendants = new Set();
 		this.finalMessages = new Set();
 		this.waiters = new Set();
-		// The fusion id routed for the pending turn, per channel (see observe).
-		this.routed = {};
+		this.resetOrder();
+	}
+	resetOrder() {
+		this.nodes = new Map();
+		this.children = new Map();
+		this.byFusion = new Map();
+		this.endings = [];
+		this.order = { live: [], history: [] };
+		this.frontier = { live: Number.POSITIVE_INFINITY, history: Number.POSITIVE_INFINITY };
+		this.lastStamp = {};
+		this.promptPos = {};
+		this.clockOk = true;
+		this.queue = [];
 	}
 	notify() {
 		for (const wake of this.waiters) wake();
@@ -885,11 +924,7 @@ class NativeCompletion {
 			this.observe(event, finalMessage, true, true, live);
 		this.pending = undefined;
 	}
-	/**
-	 * `live` is the push channel, which delivers in real time; history pages
-	 * (`live` false) can arrive late and replay events from before the owned
-	 * prompt, so they are ordered against that prompt within their own stream.
-	 */
+	/** `live` is the push channel; history reads (incremental and probe) pass false. */
 	observe(
 		event,
 		// HydraFusion phase output is staged, uncommitted and never the turn's answer.
@@ -919,6 +954,7 @@ class NativeCompletion {
 					id: event.id,
 					parentId: event.parentId,
 					agentId: event.agentId,
+					timestamp: event.timestamp,
 					data: {
 						messageId: event.data?.messageId,
 						interactionId: event.data?.interactionId,
@@ -930,82 +966,254 @@ class NativeCompletion {
 			});
 			return;
 		}
-		// Each channel reaches the owned prompt in its own order; a history page's
-		// earlier events predate this turn even when they resolve after its live prompt.
-		if (
-			event.type === "user.message" &&
-			!event.agentId &&
-			event.data?.messageId === this.nativeId
-		) {
-			if (live) this.livePastPrompt = true;
-			else this.historyPastPrompt = true;
-		}
-		if (!nonempty(event.id) || this.descendants.has(event.id)) return;
-		// Plan 169: Copilot routes a HydraFusion turn just before adding its user
-		// message. A routed id lives for exactly one turn on its own channel: any
-		// other turn's prompt, a new route attempt, a failed route (its fallback
-		// is concrete) or any terminal ends it, so a later prompt never adopts a
-		// fusion that belonged to an earlier turn.
+		if (!nonempty(event.id)) return;
 		const channel = live ? "live" : "history";
-		if (!event.agentId) {
-			if (event.type === "session.fusion_resolved") {
-				this.routed[channel] = fusionIdOf(event);
-				return;
-			}
-			if (
-				ROUTE_ENDS.has(event.type) ||
-				(event.type === "user.message" && event.data?.messageId !== this.nativeId)
-			)
-				this.routed[channel] = undefined;
+		const node = this.nodes.get(event.id) ?? this.track(event, finalMessage);
+		// A repeat on the same channel carries no new position.
+		if (node.pos[channel] !== undefined) return;
+		const consumed = this.consumption;
+		this.place(node, channel);
+		// Index walk: evaluation appends to the queue, and shift() would be quadratic.
+		for (let i = 0; i < this.queue.length && !this.terminal; i++) this.evaluate(this.queue[i]);
+		this.queue = [];
+		if (notify && (this.terminal || (!consumed && this.consumption))) this.notify();
+	}
+	track(event, finalMessage) {
+		const stamp = Date.parse(event.timestamp);
+		const node = {
+			id: event.id,
+			type: event.type,
+			parentId: event.parentId,
+			root: !event.agentId,
+			interactionId: nonempty(event.data?.interactionId) ? event.data.interactionId : undefined,
+			fusionId: fusionIdOf(event),
+			final: !event.agentId && finalMessage,
+			stamp: Number.isFinite(stamp) ? stamp : undefined,
+			user: event.type === "user.message",
+			prompt:
+				event.type === "user.message" && !event.agentId && event.data?.messageId === this.nativeId,
+			pos: {},
+			after: false,
+			member: false,
+		};
+		this.nodes.set(node.id, node);
+		if (nonempty(node.parentId)) {
+			const siblings = this.children.get(node.parentId);
+			if (siblings) siblings.push(node);
+			else this.children.set(node.parentId, [node]);
 		}
-		if (event.type === "user.message") {
-			if (!event.agentId && event.data?.messageId === this.nativeId) {
-				this.descendants.add(event.id);
-				if (nonempty(event.data.interactionId)) this.interactionId ??= event.data.interactionId;
-				this.fusionId ??= this.routed[channel];
-				if (!this.consumption) {
-					this.consumption = { eventId: event.id };
-					if (notify) this.notify();
-				}
-			}
-			return;
+		if (node.root && node.fusionId !== undefined) {
+			const fused = this.byFusion.get(node.fusionId);
+			if (fused) fused.push(node);
+			else this.byFusion.set(node.fusionId, [node]);
 		}
-		// The fused turn's id re-anchors phases whose interactionIds differ and
-		// whose parents are persisted-only usage records never seen live.
-		const sameFusion =
-			!event.agentId && this.fusionId !== undefined && fusionIdOf(event) === this.fusionId;
-		// Native callbacks can omit permission ancestors; only the matched user's foreground turn can re-anchor.
-		const sameInteraction =
-			!event.agentId &&
-			this.interactionId !== undefined &&
-			event.data?.interactionId === this.interactionId &&
-			(event.type === "assistant.turn_start" ||
-				event.type === "assistant.message" ||
-				event.type === "tool.execution_complete");
-		// An owned fused turn can stop before its commit; idle, error and abort carry
-		// no fusion id, may follow a persisted-only parent, and an ephemeral idle is
-		// never readable from history. Such a terminal is this turn's only when its
-		// own channel delivered it after the owned prompt: a history page resolving
-		// late can still replay a prior turn's abort.
-		const ownedFusionEnd =
-			!event.agentId &&
-			this.fusionId !== undefined &&
-			(live ? this.livePastPrompt : this.historyPastPrompt) === true &&
-			["session.idle", "session.error", "abort"].includes(event.type);
-		if (!sameFusion && !sameInteraction && !ownedFusionEnd && !this.descendants.has(event.parentId))
-			return;
-		this.descendants.add(event.id);
-		if (!event.agentId && finalMessage) this.finalMessages.add(event.id);
+		if (node.root && TURN_ENDINGS.has(node.type)) this.endings.push(node);
+		return node;
+	}
+	place(node, channel) {
+		const index = this.order[channel].push(node) - 1;
+		node.pos[channel] = index;
+		// An event already known to follow the prompt anchors every later one here too.
+		if (node.after && index < this.frontier[channel]) this.frontier[channel] = index;
+		const clockWasOk = this.clockOk;
+		if (node.stamp !== undefined) {
+			const last = this.lastStamp[channel];
+			if (last !== undefined && node.stamp < last) this.clockOk = false;
+			if (last === undefined || node.stamp > last) this.lastStamp[channel] = node.stamp;
+		}
+		if (node.prompt) {
+			// Every copy of the owned prompt is the same position; the first one seen
+			// anchors the clock, and any copy may carry the interaction.
+			const learned =
+				this.prompt === undefined ||
+				(this.interactionId === undefined && node.interactionId !== undefined);
+			this.prompt ??= node;
+			this.promptPos[channel] ??= index;
+			this.interactionId ??= node.interactionId;
+			this.consumption ??= { eventId: node.id };
+			// The prompt decides interaction and clock position for everything seen so far.
+			if (learned) for (const seen of this.nodes.values()) this.queue.push(seen);
+		}
 		if (
-			!event.agentId &&
-			(["session.idle", "session.error", "abort"].includes(event.type) ||
-				(event.type === "assistant.turn_end" && this.finalMessages.has(event.parentId)) ||
-				(sameFusion && event.type === "session.fusion_completed"))
+			node.prompt ||
+			clockWasOk !== this.clockOk ||
+			(node.root &&
+				(node.user || node.type === "session.fusion_resolved" || ROUTE_ENDS.has(node.type)))
+		)
+			this.refreshRoute();
+		this.queue.push(node);
+	}
+	/**
+	 * Copilot routes a HydraFusion turn just before adding its user message: the
+	 * turn's fusion is the route resolved last before the owned prompt, with no
+	 * other prompt, route attempt or terminal between them. On the clock when it
+	 * is usable, otherwise on each channel's own order (every channel that
+	 * carries a route before the prompt must agree). Either channel can lack the
+	 * events in between, so this stays a revisable reading until the turn's own
+	 * output names its fusion ({@link lockFusion}).
+	 */
+	refreshRoute() {
+		if (this.fusionLocked || this.prompt === undefined) return;
+		const routed =
+			this.clockOk && this.prompt.stamp !== undefined ? this.routeByClock() : this.routeByOrder();
+		if (routed !== this.fusionId) this.setFusion(routed);
+	}
+	routeByClock() {
+		const at = this.prompt.stamp;
+		let route;
+		for (const node of this.nodes.values())
+			if (
+				node.root &&
+				node.type === "session.fusion_resolved" &&
+				node.stamp !== undefined &&
+				node.stamp < at &&
+				(route === undefined || node.stamp > route.stamp)
+			)
+				route = node;
+		if (route === undefined) return undefined;
+		for (const node of this.nodes.values())
+			if (
+				node.root &&
+				!node.prompt &&
+				(node.user || ROUTE_ENDS.has(node.type)) &&
+				node.stamp !== undefined &&
+				node.stamp > route.stamp &&
+				node.stamp < at
+			)
+				return undefined;
+		return route.fusionId;
+	}
+	routeByOrder() {
+		let routed;
+		for (const channel of ["live", "history"]) {
+			const prompt = this.promptPos[channel];
+			for (let i = (prompt ?? 0) - 1; i >= 0; i--) {
+				const node = this.order[channel][i];
+				if (!node.root) continue;
+				if (node.type === "session.fusion_resolved") {
+					if (routed !== undefined && routed !== node.fusionId) return undefined;
+					routed = node.fusionId;
+					break;
+				}
+				if (node.user || ROUTE_ENDS.has(node.type)) break;
+			}
+		}
+		return routed;
+	}
+	/** This turn's own output (after the prompt, in its ancestry) names its fusion. */
+	lockFusion(fusionId) {
+		if (this.fusionLocked) return;
+		this.fusionLocked = true;
+		if (fusionId !== this.fusionId) this.setFusion(fusionId);
+	}
+	setFusion(fusionId) {
+		this.fusionId = fusionId;
+		for (const node of this.byFusion.get(fusionId) ?? []) this.queue.push(node);
+		for (const node of this.endings) this.queue.push(node);
+	}
+	/**
+	 * The owned prompt's foreground turn re-anchors a gap in its ancestry, but
+	 * only after the prompt: matching metadata ordered before it never binds.
+	 */
+	sameInteraction(node) {
+		return (
+			node.root &&
+			this.interactionId !== undefined &&
+			node.interactionId === this.interactionId &&
+			INTERACTION_ANCHORS.has(node.type) &&
+			!this.beforePrompt(node)
+		);
+	}
+	/** Known to precede the owned prompt: earlier on a shared channel, or by clock. */
+	beforePrompt(node) {
+		for (const channel of ["live", "history"]) {
+			const prompt = this.promptPos[channel];
+			if (prompt !== undefined && node.pos[channel] !== undefined && node.pos[channel] < prompt)
+				return true;
+		}
+		return (
+			this.clockOk &&
+			this.prompt?.stamp !== undefined &&
+			node.stamp !== undefined &&
+			node.stamp < this.prompt.stamp
+		);
+	}
+	sameFusion(node) {
+		return node.root && this.fusionId !== undefined && node.fusionId === this.fusionId;
+	}
+	evaluate(node) {
+		const parent = this.nodes.get(node.parentId);
+		if (
+			!node.after &&
+			(node.prompt ||
+				parent?.after ||
+				(this.prompt !== undefined && this.sameInteraction(node)) ||
+				this.pastFrontier(node))
+		)
+			this.markAfter(node);
+		// Native callbacks can omit permission ancestors; only the matched user's
+		// foreground turn re-anchors, and another prompt starts another turn.
+		if (
+			!node.member &&
+			(!node.user || node.prompt) &&
+			(node.prompt ||
+				parent?.member ||
+				(this.prompt !== undefined && this.sameInteraction(node)) ||
+				this.sameFusion(node))
+		)
+			this.markMember(node);
+		// A fusion stamp ordered after the owned prompt names this turn's fusion for
+		// good. A route resolved after the prompt is a later turn's, never this one's.
+		if (
+			node.root &&
+			node.after &&
+			node.fusionId !== undefined &&
+			node.type !== "session.fusion_resolved"
+		)
+			this.lockFusion(node.fusionId);
+		this.checkTerminal(node);
+	}
+	pastFrontier(node) {
+		return (
+			(node.pos.live !== undefined && node.pos.live > this.frontier.live) ||
+			(node.pos.history !== undefined && node.pos.history > this.frontier.history)
+		);
+	}
+	markAfter(node) {
+		node.after = true;
+		for (const channel of ["live", "history"]) {
+			const index = node.pos[channel];
+			if (index === undefined || index >= this.frontier[channel]) continue;
+			const end = Math.min(this.frontier[channel], this.order[channel].length);
+			this.frontier[channel] = index;
+			for (let i = index + 1; i < end; i++) this.queue.push(this.order[channel][i]);
+		}
+		for (const child of this.children.get(node.id) ?? []) this.queue.push(child);
+	}
+	markMember(node) {
+		node.member = true;
+		this.descendants.add(node.id);
+		if (node.final) this.finalMessages.add(node.id);
+		for (const child of this.children.get(node.id) ?? []) this.queue.push(child);
+	}
+	/**
+	 * Only an event ordered after the owned prompt can end its turn: a prompt's
+	 * descendant idle/error/abort, a turn_end after a final owned message, its own
+	 * fusion's aggregate completion, or, once the turn is fused, any root
+	 * idle/error/abort (they carry no fusion id and may follow persisted-only
+	 * parents, and an ephemeral idle is never readable from history).
+	 */
+	checkTerminal(node) {
+		if (this.terminal || !node.root || !node.after) return;
+		if (
+			(TURN_ENDINGS.has(node.type) && (node.member || this.fusionId !== undefined)) ||
+			(node.type === "assistant.turn_end" && this.finalMessages.has(node.parentId)) ||
+			(node.type === "session.fusion_completed" && this.sameFusion(node))
 		) {
-			this.terminal = { type: event.type, eventId: event.id };
+			this.terminal = { type: node.type, eventId: node.id };
 			this.descendants.clear();
 			this.finalMessages.clear();
-			if (notify) this.notify();
+			this.resetOrder();
 		}
 	}
 }
@@ -1016,7 +1224,17 @@ function fusionIdOf(event) {
 	return nonempty(fusionId) ? fusionId : undefined;
 }
 
-/** Root events after which a routed fusion id can no longer belong to the next prompt. */
+/** Root events that end a turn without naming it. */
+const TURN_ENDINGS = new Set(["session.idle", "session.error", "abort"]);
+
+/** The foreground turn events that carry the owned prompt's interactionId. */
+const INTERACTION_ANCHORS = new Set([
+	"assistant.turn_start",
+	"assistant.message",
+	"tool.execution_complete",
+]);
+
+/** Root events between a route and a prompt that make the route another turn's. */
 const ROUTE_ENDS = new Set([
 	"session.fusion_route_started",
 	"session.fusion_route_failed",

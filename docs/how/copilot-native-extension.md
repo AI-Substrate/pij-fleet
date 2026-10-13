@@ -92,22 +92,35 @@ fused turn has this shape:
 - A repair phase and its commit carry a new `interactionId`, and phase parents
   are persisted-only `session.usage_record` events never seen live.
 
-So the receiver adopts the `fusionId` routed for its own prompt and re-anchors
-on it. The turn ends at the committed final turn or that fusion's
-`session.fusion_completed`; uncommitted phase output is never the final
-message, and the next queued Pij message waits for it. A fused turn that stops
-before any commit ends at its root `session.idle`, `abort` or `session.error`,
-even across a persisted-only parent (an ephemeral idle is never readable from
-history), but only when that channel (live push or history read) delivers it
-after the owned prompt. A late history page can replay the previous turn's abort
-first. A routed fusion id lives for one turn on its own channel: another prompt,
-a new or failed route, or any terminal clears it. The seat publishes `working`
-from `session.fusion_route_started`,
-because the phases emit no root turn start, and `idle` at a root turn end,
-`session.idle`, `abort` or `session.fusion_completed`. A failed route stays
-`working`: its fallback model still runs the turn. The `critique` pattern was
-not observed in the plan-169 canary; synthetic draft → critic → revision
-replay passes.
+So the receiver decides which turn an event belongs to by its position in the
+session's one event order, never by which channel delivered it. The live push
+channel and history reads race and either can miss events, so they are merged
+by event id. An event follows the owned prompt when it is a copy of the
+prompt, a child of an event that follows it, the prompt's own foreground turn
+(its `interactionId`, unless it is known to precede the prompt), or later on
+either channel than an event that follows it. The turn's fusion is the route
+resolved last before the prompt with no other prompt, route attempt or
+terminal between them. That reading stays revisable until the turn's own
+output, ordered after the prompt, names its fusion. Only an event that follows
+the prompt ends the turn: the committed final turn, that fusion's
+`session.fusion_completed`, or, for a fused turn that stops before any commit,
+its root `session.idle`, `abort` or `session.error`, even across a
+persisted-only parent (an ephemeral idle is never readable from history).
+Uncommitted phase output is never the final message, and the next queued Pij
+message waits. The clock never moves an event past the prompt: Copilot stamps
+events from one process's wall clock, but a rollback only becomes visible once
+one channel has delivered both sides of it, which can be too late. A stamp is
+therefore only a brake and a reading of which route came first, and an older
+stamp delivered after a newer one switches it off. Anything undecided waits
+rather than releasing early. A permutation test drives the recorded turn shapes
+through every split across live and history and every interleaving. The turn
+never ends at a foreign or pre-commit event, and it always ends when the live
+channel carries every event. The seat publishes `working` from
+`session.fusion_route_started`, because the phases emit no root turn start, and
+`idle` at a root turn end, `session.idle`, `abort` or
+`session.fusion_completed`. A failed route stays `working`: its fallback model
+still runs the turn. The `critique` pattern was not observed in the plan-169
+canary; synthetic draft → critic → revision replay passes.
 
 ### Several sessions in one Copilot process (plan 168)
 

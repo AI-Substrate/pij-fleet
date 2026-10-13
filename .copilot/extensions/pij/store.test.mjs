@@ -12,6 +12,7 @@ import {
 	DaemonClient,
 	FileJournal,
 	NativeBridge,
+	NativeCompletion,
 	NativeError,
 	NativePrecedence,
 	parseProcessStart,
@@ -3544,6 +3545,185 @@ test("hydrafusion: a late history page's old route is never adopted by a live pl
 	f.bridge.stop();
 	await run;
 });
+
+/**
+ * #46 round 3: recorded turn shapes (ids shortened, `g*` parents are
+ * persisted-only events never seen live), each with the terminals that may end
+ * it. Every allowed terminal is ordered after the commit, or is the turn's own
+ * abort/fallback end.
+ */
+const PERMUTATION_TURNS = (() => {
+	const fused = (extra = {}) => ({ fusionId: "F", ...extra });
+	const prompt = {
+		type: "user.message",
+		id: "P",
+		data: { messageId: "native-1", interactionId: "I" },
+	};
+	const route = { type: "session.fusion_resolved", id: "R", data: fused() };
+	const phase = (id, parentId, interactionId) => ({
+		type: "assistant.message",
+		id,
+		parentId,
+		ephemeral: true,
+		data: { interactionId, toolRequests: [], fusion: fused() },
+	});
+	const commit = (interactionId) => ({
+		type: "assistant.message",
+		id: "C",
+		parentId: "g-commit",
+		data: { interactionId, toolRequests: [], fusion: fused({ commitId: "F:commit" }) },
+	});
+	const commitEnd = { type: "assistant.turn_end", id: "CE", parentId: "C", data: {} };
+	const completed = {
+		type: "session.fusion_completed",
+		id: "FC",
+		parentId: "g-done",
+		data: fused(),
+	};
+	return {
+		single: {
+			events: [route, prompt, phase("PH", "g1", "I"), commit("I"), commitEnd, completed],
+			allowed: ["CE", "FC"],
+		},
+		"cascade with repair": {
+			events: [
+				route,
+				prompt,
+				phase("PH1", "g1", "I"),
+				phase("PH2", "g2", "J"),
+				commit("J"),
+				commitEnd,
+				completed,
+			],
+			allowed: ["CE", "FC"],
+		},
+		"abort behind a missing parent": {
+			events: [
+				route,
+				prompt,
+				phase("PH", "g1", "I"),
+				{ type: "assistant.turn_end", id: "PE", parentId: "PH", data: {} },
+				{ type: "abort", id: "A", parentId: "g2", data: { reason: "user_initiated" } },
+			],
+			allowed: ["A"],
+		},
+		"route_failed fallback": {
+			events: [
+				{ type: "session.fusion_route_started", id: "RS", ephemeral: true, data: {} },
+				{ type: "session.fusion_route_failed", id: "RF", data: {} },
+				prompt,
+				{
+					type: "assistant.message",
+					id: "M",
+					parentId: "g1",
+					data: { interactionId: "I", toolRequests: [] },
+				},
+				{ type: "assistant.turn_end", id: "T", parentId: "M", data: {} },
+				{ type: "session.idle", id: "IDLE", parentId: "T", ephemeral: true, data: {} },
+			],
+			allowed: ["T", "IDLE"],
+		},
+		"prior turn's fusion and abort": {
+			events: [
+				{ type: "session.fusion_resolved", id: "R0", data: { fusionId: "F0" } },
+				{ type: "abort", id: "A0", parentId: "g0", data: { reason: "user_initiated" } },
+				route,
+				prompt,
+				commit("J"),
+				commitEnd,
+				completed,
+			],
+			allowed: ["CE", "FC"],
+		},
+		"plain turn": {
+			events: [
+				prompt,
+				{ type: "assistant.turn_start", id: "TS", parentId: "P", data: { interactionId: "I" } },
+				{
+					type: "assistant.message",
+					id: "M",
+					parentId: "TS",
+					data: { interactionId: "I", toolRequests: [] },
+				},
+				{ type: "assistant.turn_end", id: "T", parentId: "M", data: {} },
+				{ type: "session.idle", id: "IDLE", parentId: "T", ephemeral: true, data: {} },
+			],
+			allowed: ["T", "IDLE"],
+		},
+	};
+})();
+
+/**
+ * Every split of `count` events across live, history or both, in every
+ * interleaving that keeps each channel's order. `visit(path, liveComplete)`
+ * gets `[index, live]` deliveries.
+ */
+function forEachDelivery(count, visit) {
+	for (let code = 0; code < 3 ** count; code++) {
+		const live = [];
+		const history = [];
+		let rest = code;
+		for (let i = 0; i < count; i++) {
+			const split = rest % 3;
+			rest = (rest - split) / 3;
+			if (split !== 1) live.push(i);
+			if (split !== 0) history.push(i);
+		}
+		const liveComplete = live.length === count;
+		const path = [];
+		const walk = (a, b) => {
+			if (a === live.length && b === history.length) return visit(path, liveComplete);
+			if (a < live.length) {
+				path.push([live[a], true]);
+				walk(a + 1, b);
+				path.pop();
+			}
+			if (b < history.length) {
+				path.push([history[b], false]);
+				walk(a, b + 1);
+				path.pop();
+			}
+		};
+		walk(0, 0);
+	}
+}
+
+for (const [clock, stampOf, only] of [
+	["stamped", (i) => Date.UTC(2026, 9, 13, 0, 0, i)],
+	["unstamped", undefined],
+	// The clock steps back after the prior turn: its stale abort is stamped later
+	// than this prompt. Only that shape has a prior turn for the clock to misplace.
+	[
+		"rolled-back",
+		(i) => Date.UTC(2026, 9, 13, 0, 0, i < 2 ? 50 + i : i),
+		["prior turn's fusion and abort"],
+	],
+]) {
+	for (const [name, { events, allowed }] of Object.entries(PERMUTATION_TURNS)) {
+		if (only && !only.includes(name)) continue;
+		test(`hydrafusion permutations (${clock}): ${name} completes once, only at its own terminal`, () => {
+			const delivered = events.map((event, i) =>
+				stampOf ? { ...event, timestamp: new Date(stampOf(i)).toISOString() } : event,
+			);
+			const failures = [];
+			forEachDelivery(events.length, (path, liveComplete) => {
+				const completion = new NativeCompletion({ msg_id: "pij-1" }, "0");
+				completion.bind("native-1");
+				for (const [index, live] of path) {
+					completion.observe(delivered[index], undefined, true, false, live);
+				}
+				const trace = () =>
+					path.map(([i, live]) => `${live ? "L" : "H"}:${events[i].id}`).join(" ");
+				// Safety in every split: never a terminal that is not this turn's own.
+				if (completion.terminal && !allowed.includes(completion.terminal.eventId))
+					failures.push(`ended at ${completion.terminal.eventId}: ${trace()}`);
+				// Liveness whenever the push channel carries every event, as it does.
+				if (liveComplete && !completion.terminal) failures.push(`never ended: ${trace()}`);
+			});
+			assert.deepEqual(failures.slice(0, 5), []);
+		});
+	}
+}
 
 for (const changed of [
 	{ parentId: "unrelated-end" },
