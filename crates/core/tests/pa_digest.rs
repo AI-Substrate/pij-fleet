@@ -135,6 +135,7 @@ fn digest_lists_every_seat_largest_first_and_marks_the_pa_and_cold_wakes() {
     rows[1].size.cold_wake = ColdWakeView {
         would_refuse: true,
         estimate_usd: Some(6.2),
+        not_estimable: None,
     };
     let text = view(rows).digest();
 

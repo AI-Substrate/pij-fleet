@@ -227,6 +227,7 @@ async fn audit_cold_wake(
         idle_ms,
         model,
         estimate_usd,
+        not_estimable,
     } = &verdict
     {
         services
@@ -246,6 +247,7 @@ async fn audit_cold_wake(
                     "idle_ms": idle_ms,
                     "model": model,
                     "estimate_usd": estimate_usd,
+                    "not_estimable": not_estimable,
                 })
                 .to_string(),
             })
@@ -753,7 +755,7 @@ impl PaWatchdog {
             .into_iter()
             .zip(blocks)
             .map(|(seat, block)| FleetRow {
-                size: seat_size(seat.state, &block, now_ms),
+                size: seat_size(seat.state, &block, now_ms, seat.model.as_deref()),
                 seat,
             })
             .collect::<Vec<_>>();
