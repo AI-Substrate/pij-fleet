@@ -185,8 +185,6 @@ export class PijSession {
 	private self: SessionId = "";
 	private role: Role | undefined;
 	private seq = new SeqCounter(0);
-	/** Monotonic counter for deterministic spawnId generation (§M4). */
-	private spawnCounter = 0;
 	/** Pane ids this session has split into the current window (the default side
 	 *  stack), in spawn order. Tracked parent-side because the child's registry
 	 *  descriptor is written only when it boots — a registry-only count would race
@@ -352,8 +350,10 @@ export class PijSession {
 		if (this.ports.tmux.currentSession() === null) {
 			return err("E-NOTMUX", "not inside a tmux session — cannot spawn a pij worker window");
 		}
-		// §M4: deterministic spawnId via clock + per-session counter (not crypto.randomUUID)
-		const spawnId = `s${this.ports.process.now()}-${this.spawnCounter++}`;
+		// The spawn id is the only proof a registered seat is this launch's child
+		// (#44), so it must be unique across parents: the daemon's own shape,
+		// `s-` + 128 random bits, with no clock or counter two parents could share.
+		const spawnId = `s-${this.ports.process.randomHex(16)}`;
 		const requestedAt = this.nowIso();
 		const expectation = createSpawnExpectation({
 			spawnId,

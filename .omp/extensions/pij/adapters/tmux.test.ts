@@ -94,4 +94,16 @@ exit 0
 		expect(result).toMatchObject({ ok: false });
 		expect(readFileSync(log, "utf8")).toContain("kill-pane -t %43");
 	});
+
+	it("bounds a stalled capture-pane and reads it as unreadable (#44 B3)", () => {
+		dir = mkdtempSync(join(tmpdir(), "pij-tmux-capture-stall-"));
+		const bin = join(dir, "tmux");
+		writeFileSync(bin, "#!/bin/sh\nexec sleep 10\n");
+		chmodSync(bin, 0o755);
+		previousPath = process.env.PATH;
+		process.env.PATH = `${dir}:${previousPath ?? ""}`;
+		const started = performance.now();
+		expect(new TmuxAdapter().capturePane("%1", 200)).toBeNull();
+		expect(performance.now() - started).toBeLessThan(1_500);
+	}, 15_000);
 });

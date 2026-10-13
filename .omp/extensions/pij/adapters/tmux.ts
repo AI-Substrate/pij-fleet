@@ -226,4 +226,18 @@ export class TmuxAdapter implements TmuxPort {
 			return false;
 		}
 	}
+
+	/** `capture-pane -p -J`: the pane's visible text, or null when tmux cannot read
+	 *  it within `timeoutMs` (a stalled server is unreadable, not a hang). */
+	capturePane(paneId: string, timeoutMs: number): string | null {
+		try {
+			const out = execFileSync("tmux", ["capture-pane", "-t", paneId, "-p", "-J"], {
+				...EXEC_OPTS,
+				timeout: Math.max(1, Math.ceil(timeoutMs)),
+			});
+			return typeof out === "string" ? out : out.toString("utf8");
+		} catch {
+			return null;
+		}
+	}
 }

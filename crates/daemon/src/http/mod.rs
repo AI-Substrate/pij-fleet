@@ -953,6 +953,9 @@ async fn register(
         }
 
         Err(RegistrationError::Refused(reason)) => refused("pij register", reason),
+        Err(RegistrationError::Retired { seat, reason }) => {
+            retired_seat_refused("pij register", &seat, reason)
+        }
         Err(RegistrationError::Retryable(reason)) => {
             let mut answer: Envelope<()> =
                 Envelope::refused("pij register", ErrorKind::Refused, reason);
@@ -3631,6 +3634,16 @@ pub(crate) fn refused(command: &str, reason: impl std::fmt::Display) -> Response
         StatusCode::BAD_REQUEST,
         &Envelope::<()>::refused(command, ErrorKind::Refused, reason.to_string()),
     )
+}
+
+/// The stable code for a claim on a retired seat's id (#44). A client that chose
+/// its own name advances to its next candidate on this code, never on prose.
+pub(crate) const SEAT_RETIRED_CODE: &str = "E-RS-SEAT-RETIRED";
+
+pub(crate) fn retired_seat_refused(command: &str, seat: &SeatId, reason: String) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(command, ErrorKind::Refused, reason);
+    answer.details = Some(serde_json::json!({ "code": SEAT_RETIRED_CODE, "seat": seat }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
 }
 
 pub(crate) fn internal(command: &str, error: impl std::fmt::Display) -> Response {

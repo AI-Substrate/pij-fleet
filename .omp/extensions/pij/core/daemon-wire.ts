@@ -213,10 +213,24 @@ export class DaemonRefusalError extends Error {
 		readonly kind: DaemonErrorKind | undefined,
 		message: string,
 		readonly rawEnvelope?: string,
+		/** The envelope's typed `details`, e.g. `{ code: "E-RS-SEAT-RETIRED" }`. */
+		readonly details?: Readonly<Record<string, unknown>>,
 	) {
 		super(message);
 		this.name = "DaemonRefusalError";
 	}
+}
+
+/** The daemon's typed code for a claim on a retired seat's id (#44). */
+export const SEAT_RETIRED_CODE = "E-RS-SEAT-RETIRED";
+
+/** True only for the typed retired-seat refusal naming `seat`; prose never matches. */
+export function isRetiredSeatRefusal(error: unknown, seat: string): boolean {
+	return (
+		error instanceof DaemonRefusalError &&
+		error.details?.code === SEAT_RETIRED_CODE &&
+		error.details.seat === seat
+	);
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -273,11 +287,16 @@ export function decodeEnvelope<T>(text: string): SuccessfulDaemonEnvelope<T> {
 		...(kind === undefined ? {} : { error: kind }),
 	};
 	if (!envelope.ok) {
+		const details =
+			typeof value.details === "object" && value.details !== null && !Array.isArray(value.details)
+				? (value.details as Record<string, unknown>)
+				: undefined;
 		throw new DaemonRefusalError(
 			command,
 			envelope.error,
 			envelope.meta ?? `${command} failed`,
 			text,
+			details,
 		);
 	}
 	if (envelope.data === undefined) throw new Error(`${command} succeeded without data`);

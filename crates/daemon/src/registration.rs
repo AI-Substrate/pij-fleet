@@ -19,6 +19,13 @@ use crate::http::{NativePrecedence, Registration};
 #[derive(Debug)]
 pub(crate) enum RegistrationError {
     Refused(String),
+    /// The claimed id belongs to a retired seat this session may not take. A
+    /// distinct variant so the wire carries a typed code (`E-RS-SEAT-RETIRED`):
+    /// a self-named client advances to its next candidate on this alone (#44).
+    Retired {
+        seat: SeatId,
+        reason: String,
+    },
     Retryable(String),
     NativeSessionHold(SeatId),
     /// A same-process session with newer native history holds the seat (plan 168).
@@ -29,7 +36,9 @@ pub(crate) enum RegistrationError {
 impl std::fmt::Display for RegistrationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Refused(reason) | Self::Retryable(reason) => f.write_str(reason),
+            Self::Refused(reason) | Self::Retryable(reason) | Self::Retired { reason, .. } => {
+                f.write_str(reason)
+            }
             Self::NativeSessionHold(owner) => write!(
                 f,
                 "native Copilot registration held: pane owned by seat `{owner}`; awaiting resumed session"
@@ -1135,7 +1144,10 @@ fn retired_refusal(seat: &SeatDescriptor, claimed_harness: &str) -> Registration
         reason.push_str(", claim ");
         reason.push_str(claimed_harness);
     }
-    RegistrationError::Refused(reason)
+    RegistrationError::Retired {
+        seat: seat.id.clone(),
+        reason,
+    }
 }
 
 fn native_refusal(reason: impl std::fmt::Display) -> RegistrationError {
@@ -1969,7 +1981,10 @@ mod tests {
 
     fn refused<T: std::fmt::Debug>(result: std::result::Result<T, RegistrationError>) {
         assert!(
-            matches!(result, Err(RegistrationError::Refused(_))),
+            matches!(
+                result,
+                Err(RegistrationError::Refused(_) | RegistrationError::Retired { .. })
+            ),
             "{result:?}"
         );
     }

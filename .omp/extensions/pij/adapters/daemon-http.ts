@@ -180,8 +180,9 @@ export class PijDaemonClient {
 		return this.post<RustSeatDescriptor>("/v1/register", claim);
 	}
 
-	async seats(): Promise<readonly RustSeatDescriptor[]> {
-		return (await this.get<FederatedRoster>("/v1/seats")).seats;
+	/** `signal` bounds the whole read, response body included. */
+	async seats(signal?: AbortSignal): Promise<readonly RustSeatDescriptor[]> {
+		return (await this.get<FederatedRoster>("/v1/seats", signal)).seats;
 	}
 
 	send(request: SendRequest): Promise<QueueReceipt> {
@@ -418,8 +419,8 @@ export class PijDaemonClient {
 		return response.body;
 	}
 
-	private async get<T>(path: string): Promise<T> {
-		const response = await this.request(path);
+	private async get<T>(path: string, signal?: AbortSignal): Promise<T> {
+		const response = await this.request(path, signal === undefined ? {} : { signal });
 		return decodeEnvelope<T>(await response.text()).data;
 	}
 

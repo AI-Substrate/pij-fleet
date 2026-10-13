@@ -101,6 +101,20 @@ An intentional native `pij-rs spawn --harness pi --allow-retired …` sends HTTP
 
 The existing `GET /health` v2 response adds `data.retired_harnesses`, an array of harness names (`[]` for the generic configuration, `["pi"]` for this machine's recipe). In-process spawn reads this through `client.health()` before local pane or spawn-expectation mutation; it does not re-read `PIJ_RETIRED_HARNESSES` in the extension environment or infer policy from the parent harness. OMP and Pi use their distinct local launch paths; external harness choices use native `/v1/spawn`. Use native `--allow-retired` when deliberately overriding retirement, never a `bin` selector. `pij-rs spawn --role pm|worker|pa` (HTTP `role` plus `caller`; in-process `pij_spawn({role})` for claude/copilot/codex) stamps the child's role from above; see [Seat roles](#governance-route-inventory). In-process omp/pi spawn refuses `role` until pij-fleet#25.
 
+A pane is not a worker (pij-fleet#44). After any successful launch, in-process `pij_spawn` polls `GET /v1/seats` every 500ms for a bound seat (non-null `proc`) whose `spawn_id` is this launch's. The spawn id is the only proof. Pane ids reset with the tmux server and `proc_start` has one-second resolution, so a pane or time match never counts, and neither does a row with another or no `spawn_id`. Every path carries the id:
+
+- OMP and Pi children receive `PIJ_SPAWN_ID` and register with it. The parent mints it as `s-` plus 32 lowercase hex characters from 128 random bits, the daemon's own spawn-id shape. It uses no clock or counter, so two parents launching in the same millisecond never share one.
+- Daemon-launched children bind to the `/v1/spawn` row, which already holds a daemon-minted id of the same shape.
+
+One budget, `PIJ_SPAWN_REGISTER_TIMEOUT_MS` (default `20000`, read once per extension runtime), bounds the whole wait.
+
+- Polling stops a quarter of the budget before the deadline (at most 1s). That last slice is kept for the pane check.
+- Each roster read carries an abort signal for the polling time left, response body included. No read starts at or after that point.
+- The one `tmux capture-pane` gets only the time left in the budget, and is skipped when none is left. The diagnosis is then `no-registration`.
+- The wait therefore ends at the deadline, plus process-exit and timer slack.
+
+A match reports `spawned pij worker <id>`. Otherwise the tool reports `spawned, NOT registered (<diagnosis>)` with the spawn id, the pane, the milliseconds waited and any roster read failure, plus a local `tmux capture-pane` command for inspection. `details.registration` is `{registered:false, waitedMs, diagnosis, rosterError?}`. The diagnosis is fixed: `boot-failed` when the child's own `pij: boot registration failed` notice is visible in its pane, otherwise `no-registration`. Pane text is never forwarded, in `content` or in `details`, because a pane can show credentials. The child's reason reaches the spawner through its own boot-failure message. The tool never claims plain success for a seatless pane, and it neither kills the pane nor retries the spawn.
+
 ## Registration and tombstone continuity
 
 Native registration bounds each `ps` observation to **1 second** and the complete
@@ -111,6 +125,8 @@ are unchanged. Timeout refusals name the observed PID and return HTTP 409 with
 with ordinary registration backoff; it is not a `native-session` Hold.
 
 Every successful `/v1/register` returns and stores a live descriptor (`tombstoned_at: None`). An existing retired address is resumed only with the **same harness AND** at least one continuity witness: the same nonempty harness session (`HARNESS_SESSION_ID`, `harness_session` or `harnessSession`), the same nonempty `spawn_id`, or the recorded process incarnation corroborated by the daemon. Missing values and a matching pane alone prove nothing. Without continuity it returns HTTP400, v2 `error:"refused"`, with `seat <id> is retired (<reason>, <at>); a different session may not take it`, without changing the row; a different harness adds `; harness mismatch: row <h1>, claim <h2>` and is never adopted by a lift. Paneless Claude/Codex/Copilot session selection includes retired addresses, preferring live rows, then greatest `proc_start`, then ascending id; historical duplicates are not host owners. Their existing live-owner, session and pull-shape restrictions remain stronger than the continuity ladder. A lift clears both tombstone fields, keeps the address, harness, parent, authoritative role and Telegram bindings, updates the claimed process/pane, and emits exactly one resume event with `prior_reason`, `old_proc`, `new_proc`, `old_pane` and `new_pane`: `seat.native-resumed` for native Copilot, `seat.resumed` otherwise. Native ownership/HOLD checks, the verified spawn-prebind exception and the `revive` verb are unchanged.
+
+That refusal carries the typed discriminator `details:{code:"E-RS-SEAT-RETIRED",seat:"<id>"}`, on `/v1/register` and `/v1/adopt` alike; match the code, never the prose (pij-fleet#44). `GET /v1/seats` omits retired rows, so an OMP or Pi extension choosing its own startup name can pick a retired seat's id. Only that self-chosen name advances to its next memorable candidate on this code, for at most 8 claims in total. An assigned identity never advances: `PIJ_SESSION_ID`, a reload's own id, a same-pane or same-process match, or a `/new`/`/fork` replacement keeps the refusal terminal. A boot that still fails notifies at error level, sets the footer to `boot failed` and, when `PIJ_ANNOUNCE_TO` or `PIJ_PARENT_ID` names a spawner, sends it one best-effort `pij boot failed (spawn <id>, pane <pane>): <reason>` message from the non-seat sender `pij-boot-failed-<pid>`.
 
 ## Adopt continuity order (plan 156)
 
