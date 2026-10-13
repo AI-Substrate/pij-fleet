@@ -9,6 +9,7 @@
 			"!**/*.template",
 			"!agents",
 			"!docs/plans",
+			"!.dd",
 			"!scratch",
 			"!.harness",
 			"!**/prime-flow.json",
