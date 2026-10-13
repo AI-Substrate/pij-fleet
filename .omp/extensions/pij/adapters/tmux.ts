@@ -18,6 +18,9 @@ const EXEC_OPTS: ExecFileSyncOptions = {
 	stdio: ["ignore", "pipe", "pipe"],
 };
 
+/** A diagnostic read must never hold its caller: capture-pane gets this long. */
+const CAPTURE_PANE_TIMEOUT_MS = 1_000;
+
 function tmux(args: string[]): string {
 	// AC-09: argv array — never args.join(" "). No shell interpretation.
 	const out = execFileSync("tmux", args, EXEC_OPTS);
@@ -227,10 +230,15 @@ export class TmuxAdapter implements TmuxPort {
 		}
 	}
 
-	/** `capture-pane -p -J`: the pane's visible text, null if tmux cannot read it. */
+	/** `capture-pane -p -J`: the pane's visible text, or null when tmux cannot read
+	 *  it within CAPTURE_PANE_TIMEOUT_MS (a stalled server is unreadable, not a hang). */
 	capturePane(paneId: string): string | null {
 		try {
-			return tmux(["capture-pane", "-t", paneId, "-p", "-J"]);
+			const out = execFileSync("tmux", ["capture-pane", "-t", paneId, "-p", "-J"], {
+				...EXEC_OPTS,
+				timeout: CAPTURE_PANE_TIMEOUT_MS,
+			});
+			return typeof out === "string" ? out : out.toString("utf8");
 		} catch {
 			return null;
 		}

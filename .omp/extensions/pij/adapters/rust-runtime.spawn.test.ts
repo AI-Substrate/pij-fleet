@@ -1,7 +1,10 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PijDaemonClient } from "./daemon-http.js";
 import { FakeTmux } from "./fakes.js";
-import { RustRuntimeSession } from "./rust-runtime.js";
+import { describeSpawnedWorker, RustRuntimeSession } from "./rust-runtime.js";
 
 // The registration wait is read at construction; keep it short in every test.
 beforeEach(() => vi.stubEnv("PIJ_SPAWN_REGISTER_TIMEOUT_MS", "50"));
@@ -20,14 +23,30 @@ function registeringDaemon(seats: () => readonly Record<string, unknown>[]) {
 	});
 }
 
-it("reports a spawned pane whose child never registers as spawned, not registered (#44)", async () => {
-	const tmux = new (class extends FakeTmux {
+/** A tmux whose new pane (%900) shows `text`. */
+function paneShowing(text: string): FakeTmux {
+	return new (class extends FakeTmux {
 		override capturePane(paneId: string): string | null {
-			return paneId === "%900"
-				? "omp v18\npij: boot registration failed; this session has no seat.\n\n"
-				: null;
+			return paneId === "%900" ? text : null;
 		}
 	})();
+}
+
+/** `ps -o lstart` packed as YYYYMMDDhhmmss, local time: the proc_start shape. */
+function stamp(ms: number): number {
+	const at = new Date(ms);
+	const two = (value: number) => String(value).padStart(2, "0");
+	return Number(
+		`${at.getFullYear()}${two(at.getMonth() + 1)}${two(at.getDate())}${two(at.getHours())}${two(at.getMinutes())}${two(at.getSeconds())}`,
+	);
+}
+
+const SECRET = "review45_SYNTHETIC_SECRET";
+
+it("never forwards pane text; the child's own boot-failure marker classifies it (#44 B2)", async () => {
+	const tmux = paneShowing(
+		`startup failed\nTOKEN=${SECRET}\npij: boot registration failed; this session has no seat. seat x is retired\n`,
+	);
 	const runtime = new RustRuntimeSession(
 		registeringDaemon(() => []),
 		tmux,
@@ -36,18 +55,120 @@ it("reports a spawned pane whose child never registers as spawned, not registere
 	const result = await runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window" });
 	expect(result).toMatchObject({
 		ok: true,
-		value: {
-			paneId: "%900",
-			registration: {
-				registered: false,
-				waitedMs: expect.any(Number),
-				paneTail: "omp v18\npij: boot registration failed; this session has no seat.",
-			},
-		},
+		value: { paneId: "%900", registration: { registered: false, diagnosis: "boot-failed" } },
 	});
+	if (!result.ok) throw new Error("expected a launch");
+	expect(JSON.stringify(result)).not.toContain(SECRET);
+	const text = describeSpawnedWorker(result.value);
+	expect(text).toMatch(/^spawned, NOT registered \(boot-failed\)/);
+	expect(text).toContain("%900");
+	expect(text).not.toContain(SECRET);
+});
+
+it("classifies a pane without the marker as no-registration, still without its text", async () => {
+	const runtime = new RustRuntimeSession(
+		registeringDaemon(() => []),
+		paneShowing(`TOKEN=${SECRET}\n`),
+		[],
+	);
+	const result = await runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window" });
+	expect(result).toMatchObject({
+		ok: true,
+		value: { registration: { registered: false, diagnosis: "no-registration" } },
+	});
+	expect(JSON.stringify(result)).not.toContain(SECRET);
 	if (!result.ok || result.value.registration.registered) throw new Error("expected unregistered");
 	expect(result.value.registration.waitedMs).toBeGreaterThanOrEqual(50);
 });
+
+it.each([
+	[
+		"an older spawn id",
+		{ spawn_id: "s-old", proc: { pid: 7, proc_start: stamp(Date.now() + 60_000) } },
+	],
+	[
+		"no spawn id and a process older than the launch",
+		{ proc: { pid: 7, proc_start: 20200101000000 } },
+	],
+])("never confirms a recycled pane held by a seat with %s (#44 B1)", async (_label, row) => {
+	const runtime = new RustRuntimeSession(
+		registeringDaemon(() => [
+			{
+				id: "pij-old-incarnation",
+				harness: "omp",
+				folder: "/repo",
+				state: "idle",
+				pane: "%900",
+				...row,
+			},
+		]),
+		new FakeTmux(),
+		[],
+	);
+	await expect(
+		runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window" }),
+	).resolves.toMatchObject({
+		ok: true,
+		value: { paneId: "%900", registration: { registered: false } },
+	});
+});
+
+it("confirms a spawn-id-less seat on the new pane whose process started after the launch", async () => {
+	const runtime = new RustRuntimeSession(
+		registeringDaemon(() => [
+			{
+				id: "pij-kid",
+				harness: "omp",
+				folder: "/repo",
+				state: "idle",
+				pane: "%900",
+				proc: { pid: 7, proc_start: stamp(Date.now() + 1_000) },
+			},
+		]),
+		new FakeTmux(),
+		[],
+	);
+	await expect(
+		runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window" }),
+	).resolves.toMatchObject({
+		ok: true,
+		value: { registration: { registered: true, id: "pij-kid" } },
+	});
+});
+
+it("hard-bounds the wait when a roster body never finishes (#44 B3)", async () => {
+	const server = createServer((request, response) => {
+		if (request.url === "/health") {
+			response.end(
+				JSON.stringify({ ok: true, command: "health", v: 2, data: { retired_harnesses: [] } }),
+			);
+			return;
+		}
+		response.writeHead(200, { "content-type": "application/json" });
+		response.write('{"ok":true,');
+	});
+	server.listen(0, "127.0.0.1");
+	await once(server, "listening");
+	const { port } = server.address() as AddressInfo;
+	try {
+		const client = new PijDaemonClient({ addr: `127.0.0.1:${port}`, stateDir: "/unused" }, "key", {
+			fetch,
+			readFile: async () => "key",
+			processStart: () => 1,
+		});
+		const runtime = new RustRuntimeSession(client, new FakeTmux(), []);
+		const started = performance.now();
+		const result = await runtime.spawn({ harness: "omp", cwd: "/repo", layout: "window" });
+		expect(performance.now() - started).toBeLessThan(1_000);
+		expect(result).toMatchObject({
+			ok: true,
+			value: { registration: { registered: false, rosterError: expect.any(String) } },
+		});
+	} finally {
+		server.closeAllConnections();
+		server.close();
+	}
+}, 3_000);
 
 it("confirms a spawn once a bound seat carries its spawn id; an unbound row is not enough", async () => {
 	vi.stubEnv("PIJ_SPAWN_REGISTER_TIMEOUT_MS", "5000");

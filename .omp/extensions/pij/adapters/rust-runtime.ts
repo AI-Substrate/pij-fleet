@@ -7,6 +7,7 @@ import {
 	type FyiClaimRequest,
 	isHeldFyi,
 	isRetiredSeatRefusal,
+	processStartAt,
 	type Registration,
 	type RustSeatDescriptor,
 } from "../core/daemon-wire.js";
@@ -61,8 +62,8 @@ export type SpawnRegistration =
 	| {
 			readonly registered: false;
 			readonly waitedMs: number;
-			/** The child pane's last lines, where its boot error is shown. */
-			readonly paneTail?: string;
+			/** A fixed classification. Pane text is never forwarded: it may hold secrets. */
+			readonly diagnosis: "boot-failed" | "no-registration";
 			/** The last roster read failure, when the roster itself was unreadable. */
 			readonly rosterError?: string;
 	  };
@@ -72,6 +73,25 @@ export interface SpawnedWorker {
 	readonly paneId: string;
 	readonly notice?: string;
 	readonly registration: SpawnRegistration;
+}
+
+/** The pij_spawn result text. It names the spawn and pane, never their contents. */
+export function describeSpawnedWorker(worker: SpawnedWorker): string {
+	const { spawnId, paneId, notice, registration } = worker;
+	const where = `spawnId=${spawnId} paneId=${paneId}`;
+	const lines = registration.registered
+		? [`spawned pij worker ${registration.id} — ${where}`]
+		: [
+				`spawned, NOT registered (${registration.diagnosis}): no seat bound within ${registration.waitedMs}ms — ${where}. The pane exists but the worker has no seat, so it cannot receive messages. ${
+					registration.diagnosis === "boot-failed"
+						? "The child reported a pij boot failure; its own message to you carries the reason."
+						: "The child showed no pij boot error."
+				} Inspect it locally (tmux capture-pane -p -t ${paneId}) or close it; do not assume it is working.`,
+				...(registration.rosterError === undefined
+					? []
+					: [`roster read failed: ${registration.rosterError}`]),
+			];
+	return [...lines, ...(notice ? [notice] : [])].join("\n");
 }
 
 /** How a send may deviate from a plain waking message. */
@@ -138,6 +158,10 @@ const MAX_SELF_NAME_ATTEMPTS = 8;
 /** How long pij_spawn waits for its child to register before saying it did not. */
 const DEFAULT_SPAWN_REGISTER_TIMEOUT_MS = 20_000;
 const SPAWN_REGISTER_POLL_MS = 500;
+
+/** The child's R4 notice. The spawner's wait looks for it in the pane and
+ *  forwards only the classification, never the pane's text. */
+const BOOT_FAILED_MARKER = "pij: boot registration failed";
 
 /**
  * Snap-in recipe (composition owner: PM, index.ts unchanged):
@@ -427,7 +451,7 @@ export class RustRuntimeSession {
 	 */
 	async reportBootFailure(error: unknown): Promise<void> {
 		const message = error instanceof Error ? error.message : String(error);
-		this.pi.notify(`pij: boot registration failed; this session has no seat. ${message}`, "error");
+		this.pi.notify(`${BOOT_FAILED_MARKER}; this session has no seat. ${message}`, "error");
 		const spawner = process.env.PIJ_ANNOUNCE_TO?.trim() || process.env.PIJ_PARENT_ID?.trim();
 		if (!spawner) return;
 		const spawnId = process.env.PIJ_SPAWN_ID?.trim() || "none";
@@ -613,6 +637,7 @@ export class RustRuntimeSession {
 				"E-ARG",
 				`harness ${opts.harness} is retired on this machine; ${opts.harness === "omp" ? "use another harness" : "use omp"} (or pass --allow-retired)`,
 			);
+		const launchedAt = this.clock();
 		if (opts.harness !== "pi" && opts.harness !== "omp") {
 			if (opts.layout === "split")
 				return err("E-ARG", `${opts.harness} uses daemon windows; pass layout:'window'`);
@@ -639,7 +664,7 @@ export class RustRuntimeSession {
 				return err("E-NOREG", "daemon spawn returned no spawn identity or pane");
 			if (opts.task !== undefined) await this.send(child.id, opts.task);
 			const spawned = { spawnId: child.spawn_id, paneId: child.pane };
-			return ok({ ...spawned, registration: await this.awaitRegistration(spawned) });
+			return ok({ ...spawned, registration: await this.awaitRegistration(spawned, launchedAt) });
 		}
 		if (opts.role !== undefined)
 			return err(
@@ -649,41 +674,55 @@ export class RustRuntimeSession {
 		const result = this.session.spawn(opts);
 		void this.flush();
 		if (!result.ok) return result;
-		return ok({ ...result.value, registration: await this.awaitRegistration(result.value) });
+		return ok({
+			...result.value,
+			registration: await this.awaitRegistration(result.value, launchedAt),
+		});
 	}
 
 	/**
-	 * A pane is not a worker (#44): poll the roster, bounded, for a bound seat
-	 * carrying this spawn id or pane. Unregistered, it returns the pane's last
-	 * lines, where the child's own boot error is shown.
+	 * A pane is not a worker (#44): poll the roster, hard-bounded by one deadline
+	 * that also cancels a hung read, for a bound seat THIS launch created. Pane
+	 * text never leaves this method; only a fixed diagnosis does.
 	 */
-	private async awaitRegistration(spawned: {
-		readonly spawnId: string;
-		readonly paneId: string;
-	}): Promise<SpawnRegistration> {
+	private async awaitRegistration(
+		spawned: { readonly spawnId: string; readonly paneId: string },
+		launchedAt: number,
+	): Promise<SpawnRegistration> {
 		const started = this.clock();
+		const deadline = started + this.spawnRegisterTimeoutMs;
+		// Pane ids reset with the tmux server, so a pane match alone proves nothing:
+		// a spawn-id-less row counts only if its process started after this launch.
+		const launchedStamp = processStartAt(launchedAt);
 		let rosterError: string | undefined;
-		for (;;) {
+		for (
+			let remaining = deadline - this.clock();
+			remaining > 0;
+			remaining = deadline - this.clock()
+		) {
 			try {
-				const seat = (await this.client.seats()).find(
+				const seat = (await this.client.seats(AbortSignal.timeout(remaining))).find(
 					(row) =>
 						row.proc?.pid !== undefined &&
-						(row.spawn_id === spawned.spawnId || row.pane === spawned.paneId),
+						(row.spawn_id === spawned.spawnId ||
+							(row.spawn_id === undefined &&
+								row.pane === spawned.paneId &&
+								row.proc.proc_start >= launchedStamp)),
 				);
 				if (seat) return { registered: true, id: seat.id };
 				rosterError = undefined;
 			} catch (error) {
 				rosterError = error instanceof Error ? error.message : String(error);
 			}
-			const remaining = started + this.spawnRegisterTimeoutMs - this.clock();
-			if (remaining <= 0) break;
-			await sleep(Math.min(SPAWN_REGISTER_POLL_MS, remaining));
+			const left = deadline - this.clock();
+			if (left > 0) await sleep(Math.min(SPAWN_REGISTER_POLL_MS, left));
 		}
-		const paneTail = this.tmux.capturePane(spawned.paneId)?.trimEnd();
+		// Classified, never forwarded: the pane may hold anything, credentials included.
+		const shown = this.tmux.capturePane(spawned.paneId);
 		return {
 			registered: false,
 			waitedMs: this.clock() - started,
-			...(paneTail ? { paneTail } : {}),
+			diagnosis: shown?.includes(BOOT_FAILED_MARKER) ? "boot-failed" : "no-registration",
 			...(rosterError === undefined ? {} : { rosterError }),
 		};
 	}

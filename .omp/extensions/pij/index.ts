@@ -16,7 +16,11 @@ import {
 	registerOmpReloadCompletion,
 	reloadWithCompletion,
 } from "./adapters/pi-runtime.js";
-import { consumedMessageId, RustRuntimeSession } from "./adapters/rust-runtime.js";
+import {
+	consumedMessageId,
+	describeSpawnedWorker,
+	RustRuntimeSession,
+} from "./adapters/rust-runtime.js";
 import { TmuxAdapter } from "./adapters/tmux.js";
 import { ALLOWED_COMMANDS } from "./core/commands.js";
 import { detectPiRuntime, isSubagentChild } from "./core/discovery.js";
@@ -351,23 +355,9 @@ export default function (pi: ExtensionAPI): void {
 			if (!res.ok) {
 				throw new Error(`pij_spawn failed (${res.code}): ${res.message}`);
 			}
-			const { spawnId, paneId, notice, registration } = res.value;
-			const where = `spawnId=${spawnId} paneId=${paneId}`;
-			const text = registration.registered
-				? `spawned pij worker ${registration.id} — ${where}`
-				: [
-						`spawned, NOT registered: no seat bound within ${registration.waitedMs}ms — ${where}. The pane exists but the worker has no seat, so it cannot receive messages. Inspect or close the pane; do not assume it is working.`,
-						...(registration.rosterError === undefined
-							? []
-							: [`roster read failed: ${registration.rosterError}`]),
-						...(registration.paneTail === undefined
-							? []
-							: [
-									`pane ${paneId} tail:\n${registration.paneTail.split("\n").slice(-15).join("\n")}`,
-								]),
-					].join("\n");
+			const { spawnId, paneId, registration } = res.value;
 			return {
-				content: [{ type: "text", text: notice ? `${text}\n${notice}` : text }],
+				content: [{ type: "text", text: describeSpawnedWorker(res.value) }],
 				details: { spawnId, paneId, registration },
 			};
 		},
