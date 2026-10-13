@@ -17,6 +17,9 @@ use crate::model::{SeatDescriptor, SeatId, SystemState};
 /// The one role the PA watchdog serves.
 pub const PA_ROLE: &str = "pa";
 
+/// The role a prime asserts.
+pub const PRIME_ROLE: &str = "prime";
+
 /// Is this seat a live PA the watchdog serves? Role is read from the
 /// descriptor, which the composition edge must have joined from the role
 /// store (the only role authority) before calling.
@@ -24,13 +27,22 @@ pub fn is_watched_pa(seat: &SeatDescriptor) -> bool {
     seat.role.as_deref() == Some(PA_ROLE) && seat.tombstoned_at.is_none() && !seat.relay
 }
 
-/// Is anyone in the PA's fleet working? `scope` is every seat in the PA's
-/// scope; tombstoned seats and the PA itself never count. The PA's own turn
-/// is excluded because answering one idle nudge would otherwise end in the
-/// very idle edge that sends the next.
-pub fn fleet_working<'a>(pa: &SeatId, scope: impl IntoIterator<Item = &'a SeatDescriptor>) -> bool {
+/// Is any WORKER in the scope working? "The fleet" is the workers
+/// (pij-far-jackal ruling on #52 F1): every supervisor in scope is excluded,
+/// meaning every `pa`-role seat, every `prime`-role seat and the designated
+/// prime, not just the PA being evaluated. A supervisor's turn is its answer
+/// to a nudge. If it counted, two PAs in one repository would re-arm each
+/// other's idle episode forever, and a lone PA would re-arm its own.
+/// Tombstoned seats never count. Roles must already be joined from the
+/// role store.
+pub fn fleet_working<'a>(
+    scope: impl IntoIterator<Item = &'a SeatDescriptor>,
+    designated_prime: Option<&SeatId>,
+) -> bool {
     scope.into_iter().any(|seat| {
-        &seat.id != pa && seat.tombstoned_at.is_none() && seat.state == SystemState::Working
+        let supervisor = matches!(seat.role.as_deref(), Some(PA_ROLE | PRIME_ROLE))
+            || designated_prime == Some(&seat.id);
+        !supervisor && seat.tombstoned_at.is_none() && seat.state == SystemState::Working
     })
 }
 

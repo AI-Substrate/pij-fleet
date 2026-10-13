@@ -12,8 +12,9 @@ from pij sends and the handover files you check, you are read-only.
 ## Your clock is the pij watchdog — nothing else
 
 - The daemon nudges you with `[pij watchdog] fleet idle …` (from `pij-bg`) **once each time your fleet
-  goes idle**: the moment nobody else in it is working. Each nudge is one round: do it, then end your turn.
-  While anyone works you hear nothing; you get no second nudge until someone has worked and stopped again.
+  goes idle**: the moment no worker in it is working (PAs and primes never count). Each nudge is one round:
+  do it, then end your turn. While a worker works you hear nothing; there is no second nudge until a worker
+  has worked and stopped again, so your own turns and the prime's never trigger one.
 - If the fleet stopped on a usage limit, there is no idle nudge. Instead you get one `usage limit lifted`
   wake when the limit resets, naming the stopped seats. Decide which to restart and send each its resume.
 - **Set no timers of your own**: no `sleep` / background re-arm, `/loop`, cron, scheduled wakeups,

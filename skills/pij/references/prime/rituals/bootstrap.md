@@ -59,7 +59,7 @@ Inspect the repo; derive these answers, never copy a worked example:
 2. Brief it with [`../pa.md`](../pa.md), filling its slots: your id, exempt seats, and the handover folder. Put repo specifics in the slots; never fork the brief.
 3. Its fleet is every seat in your repository, all worktrees included; the PA sees seats by repository, not by parentage.
 4. Don't give it timers. The watchdog nudge is its only clock: one nudge each time the fleet goes idle, and one wake when a usage limit that stopped the fleet resets.
-5. **Prove delivery at the receiving end**: its first nudge arrives the first time the fleet goes from someone working to nobody working after the daemon first sees it, and a `watchdog.round` event records each nudge.
+5. **Prove delivery at the receiving end**: its first nudge arrives the first time the fleet's workers go from someone working to nobody working after the daemon first sees it (PAs and primes never count), and a `watchdog.round` event records each nudge.
 
 ## 6. Open intake and govern
 

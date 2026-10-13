@@ -272,6 +272,99 @@ async fn a_pa_is_nudged_once_each_time_its_whole_repository_goes_idle() {
     );
 }
 
+/// #52 F1 (review by pij-yappy-hippopotamus): two PAs in one repository, which
+/// `RoleService` allows, must not re-arm each other. The fleet is the WORKERS,
+/// so a PA's answer to its nudge, or the designated prime's turn, never opens
+/// a new idle episode. Exactly one nudge per PA per worker idle episode. Red
+/// at f5fd338: 4 extra nudges, 3 per PA.
+#[tokio::test]
+async fn two_pas_in_one_scope_are_each_nudged_once_per_worker_idle_episode() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let main = repos.path("main");
+    let prime = seat("pij-prime", &main, None);
+    let pa_a = seat("pij-pa-a", &main, Some("pij-prime"));
+    let pa_b = seat("pij-pa-b", &main, Some("pij-prime"));
+    let mut worker = seat("pij-worker", &repos.path("feature"), Some("pij-prime"));
+    worker.state = SystemState::Working;
+    for descriptor in [prime.clone(), pa_a.clone(), pa_b.clone(), worker.clone()] {
+        services.registry.put(descriptor).await.unwrap();
+    }
+    for pa in [&pa_a, &pa_b] {
+        services
+            .roles
+            .assert_role(&"pij-prime".into(), &pa.id, Some("pa".into()))
+            .await
+            .unwrap();
+    }
+    services
+        .watchdogs()
+        .designate_prime(&pij_core::orchestration::PrimeDesignation {
+            seat: "pij-prime".into(),
+            designated_by: "pij-human".into(),
+            designated_at: 1,
+            state: pij_core::orchestration::PrimeState::Current,
+        })
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    let mut minute = 0;
+    let mut round = || {
+        minute += 1;
+        watchdog.round(&services, INTERVAL, start + minute * 60_000)
+    };
+    let nudged = |outcomes: Vec<RoundOutcome>| {
+        let mut pas: Vec<String> = outcomes
+            .into_iter()
+            .map(|outcome| match outcome {
+                RoundOutcome::Nudged { pa, .. } => pa.to_string(),
+                other => panic!("unexpected {other:?}"),
+            })
+            .collect();
+        pas.sort();
+        pas
+    };
+
+    for episode in 1..=2 {
+        assert!(
+            round().await.unwrap().is_empty(),
+            "a working worker: nothing"
+        );
+        set_state(&services, &worker, SystemState::Idle).await;
+        assert_eq!(
+            nudged(round().await.unwrap()),
+            ["pij-pa-a", "pij-pa-b"],
+            "episode {episode}: the worker idle edge nudges each PA once"
+        );
+
+        // Each PA answers, twice over, and the designated prime takes a turn:
+        // supervisors only, so no new episode opens.
+        for supervisor in [&pa_a, &pa_b, &pa_a, &pa_b, &prime] {
+            set_state(&services, supervisor, SystemState::Working).await;
+            let working = round().await.unwrap();
+            set_state(&services, supervisor, SystemState::Idle).await;
+            let idle = round().await.unwrap();
+            assert!(
+                working.is_empty() && idle.is_empty(),
+                "episode {episode}: {} working then idle re-armed an episode: {working:?} {idle:?}",
+                supervisor.id
+            );
+        }
+        assert_eq!(
+            drain(&services, "pij-pa-a").await.len(),
+            1,
+            "episode {episode}"
+        );
+        assert_eq!(
+            drain(&services, "pij-pa-b").await.len(),
+            1,
+            "episode {episode}"
+        );
+        set_state(&services, &worker, SystemState::Working).await;
+    }
+}
+
 /// A fake transcript source: the quota rejection each session is stopped on.
 #[derive(Default)]
 struct FakeLimits(std::sync::Mutex<std::collections::HashMap<String, QuotaRejection>>);

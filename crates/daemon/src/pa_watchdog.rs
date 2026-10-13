@@ -8,10 +8,12 @@
 //! PA acts on the nudge without a second `pij list`.
 //!
 //! **When: the fleet's idle edge** (plan 172, Jordan 2026-10-13: "an idle
-//! fleet means nobody doing anything"). While any seat in scope other than the
-//! PA is working, nothing is sent. When the last one stops, the PA is nudged
-//! once, promptly, while it is most likely still warm; a new idle episode
-//! starts only after some seat has worked again ([`IdleEdge`]). There is no
+//! fleet means nobody doing anything"). The fleet is the WORKERS in scope:
+//! every PA, every `prime`-role seat and the designated prime are supervisors
+//! and never count ([`fleet_working`], #52 F1). While any worker is working,
+//! nothing is sent. When the last one stops, each PA in scope is nudged once,
+//! promptly, while it is most likely still warm; a new idle episode starts
+//! only after some worker has worked again ([`IdleEdge`]). There is no
 //! fixed cadence and no change detection. The nudge goes through the ordinary
 //! delivery path, so the composer and typing gates still apply. It is not held
 //! for a cold PA, because waking the PA is the point; a cold wake is audited
@@ -51,7 +53,9 @@ use pij_core::usage_limit::{
     LIMIT_RESET_REASON, LIMIT_WAKE_MARGIN_SECS, LimitWake, QuotaRejection, WakeTarget, wake_body,
     wake_due_ms,
 };
-use pij_core::watchdog::{IdleEdge, fleet_working, is_watched_pa, optin_due, optin_nudge};
+use pij_core::watchdog::{
+    IdleEdge, PRIME_ROLE, fleet_working, is_watched_pa, optin_due, optin_nudge,
+};
 use serde_json::json;
 use tokio::sync::Mutex;
 
@@ -63,9 +67,6 @@ pub const TICK: Duration = Duration::from_secs(60);
 
 /// The reason recorded when an idle-edge nudge wakes a cold PA.
 pub const IDLE_WAKE_REASON: &str = "pa-watchdog: fleet idle";
-
-/// The role a prime holds, for a scope with no PA and no designation in it.
-const PRIME_ROLE: &str = "prime";
 
 /// How long one seat's session facts may take before the row says `?`.
 const STATUS_WAIT: Duration = Duration::from_secs(3);
@@ -285,13 +286,25 @@ impl PaWatchdog {
         outcomes.extend(self.limit_round(services, &seats, &stops, now_ms).await);
 
         let pas: Vec<&SeatDescriptor> = seats.iter().filter(|seat| is_watched_pa(seat)).collect();
+        // The designated prime is a supervisor whatever its role says: its
+        // turns never open or re-arm an idle episode (#52 F1).
+        let designated = if pas.is_empty() {
+            None
+        } else {
+            services
+                .watchdogs()
+                .prime()
+                .await?
+                .filter(|designation| designation.state == PrimeState::Current)
+                .map(|designation| designation.seat)
+        };
         self.edges
             .lock()
             .await
             .retain(|id, _| pas.iter().any(|pa| &pa.id == id));
         for pa in pas {
             let scope = self.scope_of(pa, &seats).await;
-            let working = fleet_working(&pa.id, &scope.members);
+            let working = fleet_working(&scope.members, designated.as_ref());
             let edge = self
                 .edges
                 .lock()
