@@ -15,8 +15,13 @@ from pij sends and the handover files you check, you are read-only.
   goes idle**: the moment no worker in it is working (PAs and primes never count). Each nudge is one round:
   do it, then end your turn. While a worker works you hear nothing; there is no second nudge until a worker
   has worked and stopped again, so your own turns and the prime's never trigger one.
+- After that, when the prime starts working again on its own (e.g. Jordan is back in the morning), you get
+  **one** `[pij watchdog] <prime> is active again after the fleet went idle: resume your plan.` wake, with
+  the same digest. Resume your plan from it. A prime turn caused by a pij message, including your own
+  report, never sends it.
 - If the fleet stopped on a usage limit, there is no idle nudge. Instead you get one `usage limit lifted`
   wake when the limit resets, naming the stopped seats. Decide which to restart and send each its resume.
+- Exactly when each wake fires, and why: [`docs/how/pa-watchdog.md`](../../../../docs/how/pa-watchdog.md).
 - **Set no timers of your own**: no `sleep` / background re-arm, `/loop`, cron, scheduled wakeups,
   `Monitor` loops or `pij inbox --wait`. An idle fleet is nudged once, so you need no "stop when quiet" rule.
 - The nudge already carries every seat's context, idle time, cache warmth, ❄ cold-wake price, turn and
