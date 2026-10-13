@@ -1,0 +1,93 @@
+{
+  "dd_schema": 1,
+  "description": "A Builder implementation guide: the architecture-enabled delivery contract, separate from the product plan; units, interfaces, ownership, waves, role settings and composition proof are explicit.",
+  "enums": {
+    "delivery_mode": { "values": ["solo-pm", "coders"] },
+    "unit_role": { "values": ["pm", "coder"] },
+    "isolation_mode": { "values": ["worktree-per-coder", "clone-per-coder", "solo"] },
+    "allocation_owner": { "values": ["harness", "external", "pij"] }
+  },
+  "sections": {
+    "meta": { "required": true, "shape": { "type": "object", "required": ["title", "plan", "version"], "fields": {
+      "title": { "type": "string" },
+      "plan": { "type": "link", "target": "builder/plan/section/meta", "rel": "ref" },
+      "version": { "type": "int" },
+      "updated": { "type": "string" }
+    } } },
+    "architecture": { "required": true, "shape": { "type": "object", "required": ["principles", "composition_root", "contracts"], "fields": {
+      "principles": { "type": "text" },
+      "composition_root": { "type": "text" },
+      "contracts": { "type": "array", "items": { "type": "text" } }
+    } } },
+    "fan_out": { "required": true, "shape": { "type": "object", "required": ["decision", "rationale"], "fields": {
+      "decision": { "type": "enum", "enum": "delivery_mode" },
+      "rationale": { "type": "text" }
+    } } },
+    "capabilities": { "required": true, "shape": { "type": "array", "items": { "type": "object", "required": ["id", "criterion", "owner", "path", "proof"], "fields": {
+      "id": { "type": "string" },
+      "criterion": { "type": "link", "target": "builder/plan/section/acceptance_criteria", "rel": "satisfies" },
+      "owner": { "type": "string" },
+      "path": { "type": "text" },
+      "proof": { "type": "array", "items": { "type": "link", "target": "builder/impl-guide/section/checks", "rel": "ref" } }
+    } } } },
+    "units": { "required": true, "shape": { "type": "array", "items": { "type": "object", "required": ["id", "name", "role", "responsibility", "paths", "reads", "interface", "depends_on", "wave", "acceptance", "proof"], "fields": {
+      "id": { "type": "string" },
+      "name": { "type": "string" },
+      "role": { "type": "enum", "enum": "unit_role" },
+      "responsibility": { "type": "text" },
+      "paths": { "type": "array", "items": { "type": "string" } },
+      "reads": { "type": "array", "items": { "type": "object", "required": ["owner", "paths"], "fields": {
+        "owner": { "type": "string" },
+        "paths": { "type": "array", "items": { "type": "string" } }
+      } } },
+      "interface": { "type": "text" },
+      "depends_on": { "type": "array", "items": { "type": "string" } },
+      "wave": { "type": "int" },
+      "acceptance": { "type": "array", "items": { "type": "link", "target": "builder/plan/section/acceptance_criteria", "rel": "satisfies" } },
+      "proof": { "type": "array", "items": { "type": "link", "target": "builder/impl-guide/section/checks", "rel": "ref" } },
+      "notes": { "type": "text" }
+    } } } },
+    "baseline": { "required": true, "shape": { "type": "object", "required": ["files", "proof", "receipt"], "fields": {
+      "files": { "type": "array", "items": { "type": "string" } },
+      "proof": { "type": "array", "items": { "type": "link", "target": "builder/impl-guide/section/checks", "rel": "ref" } },
+      "receipt": { "type": "string" }
+    } } },
+    "isolation": { "required": true, "shape": { "type": "object", "required": ["mode", "allocation_owner", "note"], "fields": {
+      "mode": { "type": "enum", "enum": "isolation_mode" },
+      "allocation_owner": { "type": "enum", "enum": "allocation_owner" },
+      "note": { "type": "text" }
+    } } },
+    "roles": { "required": true, "shape": { "type": "array", "items": { "type": "object", "required": ["id", "role", "harness", "model"], "fields": {
+      "id": { "type": "string" },
+      "role": { "type": "string" },
+      "harness": { "type": "string" },
+      "model": { "type": "string" },
+      "effort": { "type": "string" },
+      "note": { "type": "text" }
+    } } } },
+    "checks": { "required": true, "shape": { "type": "array", "items": { "type": "object", "required": ["id", "description", "command", "args", "cwd", "timeout_ms"], "fields": {
+      "id": { "type": "string" },
+      "description": { "type": "text" },
+      "command": { "type": "string" },
+      "args": { "type": "array", "items": { "type": "string" } },
+      "cwd": { "type": "string" },
+      "timeout_ms": { "type": "int" }
+    } } } },
+    "composition": { "required": true, "shape": { "type": "object", "required": ["owner", "order", "steps", "proof"], "fields": {
+      "owner": { "type": "string" },
+      "order": { "type": "array", "items": { "type": "string" } },
+      "steps": { "type": "array", "items": { "type": "text" } },
+      "proof": { "type": "array", "items": { "type": "link", "target": "builder/impl-guide/section/checks", "rel": "ref" } }
+    } } },
+    "review": { "required": true, "shape": { "type": "object", "required": ["when", "inputs", "proof"], "fields": {
+      "when": { "type": "text" },
+      "inputs": { "type": "array", "items": { "type": "text" } },
+      "proof": { "type": "array", "items": { "type": "text" } }
+    } } },
+    "risks": { "shape": { "type": "array", "items": { "type": "object", "required": ["id", "text", "check"], "fields": {
+      "id": { "type": "string" },
+      "text": { "type": "text" },
+      "check": { "type": "text" }
+    } } } }
+  }
+}

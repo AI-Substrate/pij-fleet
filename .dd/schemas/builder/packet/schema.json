@@ -1,0 +1,391 @@
+{
+  "dd_schema": 1,
+  "description": "Immutable Builder dispatch packets and exact peer acknowledgements.",
+  "sections": {
+    "packet": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "nonce",
+          "unit",
+          "plan",
+          "guide",
+          "baseline",
+          "allocation",
+          "workspace",
+          "parent",
+          "requested",
+          "forbidden",
+          "canary",
+          "instructions"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "role",
+              "responsibility",
+              "paths",
+              "reads",
+              "interface",
+              "depends_on",
+              "wave",
+              "acceptance",
+              "proof"
+            ],
+            "fields": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "enum",
+                "enum": "unit_role"
+              },
+              "responsibility": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reads": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "owner",
+                    "paths"
+                  ],
+                  "fields": {
+                    "owner": {
+                      "type": "string"
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "interface": {
+                "type": "string"
+              },
+              "depends_on": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "wave": {
+                "type": "int"
+              },
+              "acceptance": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "proof": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          },
+          "plan": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "guide": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "baseline": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "allocation": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "parent": {
+            "type": "string"
+          },
+          "requested": {
+            "type": "object",
+            "required": [
+              "role",
+              "harness",
+              "model",
+              "source"
+            ],
+            "fields": {
+              "role": {
+                "type": "enum",
+                "enum": "builder_role"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "source": {
+                "type": "object",
+                "required": [
+                  "harness",
+                  "model"
+                ],
+                "fields": {
+                  "harness": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  },
+                  "model": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  },
+                  "effort": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  }
+                }
+              }
+            }
+          },
+          "forbidden": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "canary": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              }
+            },
+            "allowAdditional": false
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "ack": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "unit_id",
+          "peer_id",
+          "nonce",
+          "packet_sha256",
+          "baseline_sha",
+          "native_root",
+          "shell_cwd",
+          "canary_nonce",
+          "observed"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "unit_id": {
+            "type": "string"
+          },
+          "peer_id": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "packet_sha256": {
+            "type": "string"
+          },
+          "baseline_sha": {
+            "type": "string"
+          },
+          "native_root": {
+            "type": "string"
+          },
+          "shell_cwd": {
+            "type": "string"
+          },
+          "canary_nonce": {
+            "type": "string"
+          },
+          "observed": {
+            "type": "object",
+            "required": [
+              "peer_id",
+              "root",
+              "ready",
+              "evidence",
+              "gaps"
+            ],
+            "fields": {
+              "peer_id": {
+                "type": "string"
+              },
+              "root": {
+                "type": "string"
+              },
+              "ready": {
+                "type": "bool"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "native_session": {
+                "type": "string"
+              },
+              "pid": {
+                "type": "int"
+              },
+              "argv": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "gaps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "enums": {
+    "builder_role": {
+      "values": [
+        "coder",
+        "reviewer"
+      ]
+    },
+    "unit_role": {
+      "values": [
+        "pm",
+        "coder"
+      ]
+    },
+    "setting_source": {
+      "values": [
+        "repo",
+        "guide",
+        "override"
+      ]
+    }
+  }
+}

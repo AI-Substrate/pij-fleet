@@ -1,0 +1,1015 @@
+{
+  "dd_schema": 1,
+  "description": "Digest-bound Builder evidence. No independent lifecycle position; canonical flow remains authoritative.",
+  "sections": {
+    "baseline": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "source_sha",
+          "plan",
+          "guide",
+          "files",
+          "checks",
+          "review"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "source_sha": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "guide": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "fields": {
+                "path": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "command",
+                "args",
+                "cwd",
+                "exit_code",
+                "stdout",
+                "stderr",
+                "recorded_at"
+              ],
+              "fields": {
+                "id": {
+                  "type": "string"
+                },
+                "command": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cwd": {
+                  "type": "string"
+                },
+                "exit_code": {
+                  "type": "int"
+                },
+                "stdout": {
+                  "type": "string"
+                },
+                "stderr": {
+                  "type": "string"
+                },
+                "recorded_at": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["file", "owning_unit", "stage"],
+              "fields": {
+                "file": { "type": "string" },
+                "owning_unit": { "type": "string" },
+                "stage": { "type": "string" },
+                "unit_id": { "type": "string" },
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "next_action": { "type": "string" }
+              }
+            }
+          },
+          "review": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "dispatch": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "unit_id",
+          "packet",
+          "baseline",
+          "allocation",
+          "requested",
+          "observed",
+          "seed_files"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "unit_id": {
+            "type": "string"
+          },
+          "packet": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "baseline": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "allocation": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "requested": {
+            "type": "object",
+            "required": [
+              "role",
+              "harness",
+              "model",
+              "source"
+            ],
+            "fields": {
+              "role": {
+                "type": "enum",
+                "enum": "builder_role"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "source": {
+                "type": "object",
+                "required": [
+                  "harness",
+                  "model"
+                ],
+                "fields": {
+                  "harness": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  },
+                  "model": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  },
+                  "effort": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  }
+                }
+              }
+            }
+          },
+          "observed": {
+            "type": "object",
+            "required": [
+              "peer_id",
+              "root",
+              "ready",
+              "evidence",
+              "gaps"
+            ],
+            "fields": {
+              "peer_id": {
+                "type": "string"
+              },
+              "root": {
+                "type": "string"
+              },
+              "ready": {
+                "type": "bool"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "native_session": {
+                "type": "string"
+              },
+              "pid": {
+                "type": "int"
+              },
+              "argv": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "gaps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "seed_files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "fields": {
+                "path": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["file", "owning_unit", "stage"],
+              "fields": {
+                "file": { "type": "string" },
+                "owning_unit": { "type": "string" },
+                "stage": { "type": "string" },
+                "unit_id": { "type": "string" },
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "next_action": { "type": "string" }
+              }
+            }
+          },
+          "delivery": {
+            "type": "object",
+            "required": ["message_id", "outcome", "recorded_at"],
+            "fields": {
+              "message_id": { "type": "string" },
+              "outcome": { "type": "enum", "enum": "delivery_outcome" },
+              "recorded_at": { "type": "string" }
+            }
+          },
+          "acknowledgement": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "release": {
+            "type": "object",
+            "required": [
+              "message_id",
+              "outcome",
+              "recorded_at"
+            ],
+            "fields": {
+              "message_id": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "enum",
+                "enum": "delivery_outcome"
+              },
+              "recorded_at": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "composition": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "baseline",
+          "units",
+          "integration_sha",
+          "files",
+          "checks"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "baseline": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "units": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "unit_id",
+                "peer_id",
+                "workspace",
+                "commit_sha",
+                "packet_sha256",
+                "baseline_sha"
+              ],
+              "fields": {
+                "unit_id": {
+                  "type": "string"
+                },
+                "peer_id": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                },
+                "commit_sha": {
+                  "type": "string"
+                },
+                "packet_sha256": {
+                  "type": "string"
+                },
+                "baseline_sha": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "integration_sha": {
+            "type": "string"
+          },
+          "integration_method": {
+            "type": "enum",
+            "enum": "integration_method"
+          },
+          "integration_proofs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "unit_id",
+                "delivery_sha",
+                "scope",
+                "compared_paths",
+                "tree_sha256"
+              ],
+              "fields": {
+                "unit_id": {
+                  "type": "string"
+                },
+                "delivery_sha": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "enum",
+                  "enum": "integration_scope"
+                },
+                "compared_paths": {
+                  "type": "int"
+                },
+                "tree_sha256": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "artifact_sha": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["file", "owning_unit", "stage"],
+              "fields": {
+                "file": { "type": "string" },
+                "owning_unit": { "type": "string" },
+                "stage": { "type": "string" },
+                "unit_id": { "type": "string" },
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "next_action": { "type": "string" }
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "fields": {
+                "path": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "command",
+                "args",
+                "cwd",
+                "exit_code",
+                "stdout",
+                "stderr",
+                "recorded_at"
+              ],
+              "fields": {
+                "id": {
+                  "type": "string"
+                },
+                "command": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cwd": {
+                  "type": "string"
+                },
+                "exit_code": {
+                  "type": "int"
+                },
+                "stdout": {
+                  "type": "string"
+                },
+                "stderr": {
+                  "type": "string"
+                },
+                "recorded_at": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "review": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "scope",
+          "subject_sha",
+          "plan",
+          "guide",
+          "reviewer_id",
+          "requested",
+          "observed",
+          "verdict",
+          "report",
+          "findings"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "enum",
+            "enum": "review_scope"
+          },
+          "subject_sha": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "guide": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "reviewer_id": {
+            "type": "string"
+          },
+          "requested": {
+            "type": "object",
+            "required": [
+              "role",
+              "harness",
+              "model",
+              "source"
+            ],
+            "fields": {
+              "role": {
+                "type": "enum",
+                "enum": "builder_role"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "source": {
+                "type": "object",
+                "required": [
+                  "harness",
+                  "model"
+                ],
+                "fields": {
+                  "harness": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  },
+                  "model": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  },
+                  "effort": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  }
+                }
+              }
+            }
+          },
+          "observed": {
+            "type": "object",
+            "required": [
+              "peer_id",
+              "root",
+              "ready",
+              "evidence",
+              "gaps"
+            ],
+            "fields": {
+              "peer_id": {
+                "type": "string"
+              },
+              "root": {
+                "type": "string"
+              },
+              "ready": {
+                "type": "bool"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "native_session": {
+                "type": "string"
+              },
+              "pid": {
+                "type": "int"
+              },
+              "argv": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "gaps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "verdict": {
+            "type": "enum",
+            "enum": "review_verdict"
+          },
+          "report": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "severity",
+                "description",
+                "disposition"
+              ],
+              "fields": {
+                "id": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "enum",
+                  "enum": "finding_severity"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "enum",
+                  "enum": "finding_disposition"
+                },
+                "evidence": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "preservation": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "allocation_ids",
+          "source_root",
+          "source_sha",
+          "composed_sha",
+          "archived_plan",
+          "survivor_root",
+          "retiring_roots",
+          "inventory",
+          "refs"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "allocation_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_root": {
+            "type": "string"
+          },
+          "source_sha": {
+            "type": "string"
+          },
+          "composed_sha": {
+            "type": "string"
+          },
+          "archived_plan": {
+            "type": "string"
+          },
+          "survivor_root": {
+            "type": "string"
+          },
+          "retiring_roots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inventory": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "source",
+                "destination",
+                "sha256",
+                "bytes",
+                "category"
+              ],
+              "fields": {
+                "source": {
+                  "type": "string"
+                },
+                "destination": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "bytes": {
+                  "type": "int"
+                },
+                "category": {
+                  "type": "enum",
+                  "enum": "evidence_category"
+                }
+              }
+            }
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "source_repo",
+                "source_ref",
+                "oid",
+                "destination_repo",
+                "destination_ref"
+              ],
+              "fields": {
+                "source_repo": {
+                  "type": "string"
+                },
+                "source_ref": {
+                  "type": "string"
+                },
+                "oid": {
+                  "type": "string"
+                },
+                "destination_repo": {
+                  "type": "string"
+                },
+                "destination_ref": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "enums": {
+    "integration_method": {
+      "values": [
+        "replayed",
+        "already-integrated"
+      ]
+    },
+    "integration_scope": {
+      "values": [
+        "unit-map",
+        "delivery-changes"
+      ]
+    },
+    "builder_role": {
+      "values": [
+        "coder",
+        "reviewer"
+      ]
+    },
+    "setting_source": {
+      "values": [
+        "repo",
+        "guide",
+        "override"
+      ]
+    },
+    "delivery_outcome": {
+      "values": [
+        "queued",
+        "delivered"
+      ]
+    },
+    "review_scope": {
+      "values": [
+        "decomposition",
+        "composition"
+      ]
+    },
+    "review_verdict": {
+      "values": [
+        "approved",
+        "changes-requested",
+        "blocked"
+      ]
+    },
+    "finding_severity": {
+      "values": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "finding_disposition": {
+      "values": [
+        "open",
+        "fixed",
+        "accepted"
+      ]
+    },
+    "evidence_category": {
+      "values": [
+        "artifact",
+        "wip",
+        "report",
+        "observation",
+        "telemetry"
+      ]
+    }
+  }
+}

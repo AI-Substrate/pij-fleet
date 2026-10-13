@@ -1,0 +1,59 @@
+{
+  "dd_schema": 1,
+  "description": "An append-by-convention execution log: minted id, timestamp, free text, and zero or more addresses.",
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "link",
+            "target": "builder/plan/section/meta",
+            "rel": "ref"
+          },
+          "phase": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "entries": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "at",
+            "text"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "text": {
+              "type": "text"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "rel": "ref"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

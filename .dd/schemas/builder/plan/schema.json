@@ -1,0 +1,615 @@
+{
+  "dd_schema": 1,
+  "description": "A builder plan: goals, acceptance criteria, phases, tasks, and one assertion list per task. Assertion lists live in `done_when`, where `pressure` is MANDATORY (a backpressure row, or the literal `not-applicable`), and `tasks[].done` is target-pinned at it so a task's state is derived from assertions and can be derived from nothing else. The deprecated `evidence` alias was dropped in tk-7161 (plan 071, ph-7103) \u2014 the same commit that migrated the exemplar \u2014 after serving its one purpose: letting frozen corpora keep validating while they moved.",
+  "enums": {
+    "plan_status": {
+      "values": [
+        "draft",
+        "ready",
+        "in-progress",
+        "shipped",
+        "abandoned"
+      ]
+    },
+    "complexity": {
+      "values": [
+        "CS-1",
+        "CS-2",
+        "CS-3",
+        "CS-4",
+        "CS-5"
+      ]
+    },
+    "plan_mode": {
+      "values": [
+        "Simple",
+        "Full"
+      ]
+    },
+    "gate_status": {
+      "values": [
+        "PASS",
+        "FAIL",
+        "N/A"
+      ]
+    },
+    "impact": {
+      "values": [
+        "Critical",
+        "High",
+        "Medium",
+        "Low"
+      ]
+    },
+    "likelihood": {
+      "values": [
+        "Low",
+        "Medium",
+        "High"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "int"
+          },
+          "status": {
+            "type": "enum",
+            "enum": "plan_status"
+          },
+          "complexity": {
+            "type": "enum",
+            "enum": "complexity"
+          },
+          "summary": {
+            "type": "text"
+          },
+          "backpressure": {
+            "type": "link",
+            "target": "builder/backpressure/section/rows",
+            "rel": "pressure"
+          },
+          "log": {
+            "type": "link",
+            "target": "builder/execution-log/section/entries",
+            "rel": "ref"
+          },
+          "mode": {
+            "type": "enum",
+            "enum": "plan_mode"
+          },
+          "plan_version": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "complexity_breakdown": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "goals": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "text"
+        }
+      }
+    },
+    "non_goals": {
+      "title": "Non-goals",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "text"
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "claim",
+            "state"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "claim": {
+              "type": "text"
+            },
+            "state": {
+              "type": "state"
+            },
+            "note": {
+              "type": "string"
+            },
+            "receipt": {
+              "type": "string"
+            },
+            "pressure": {
+              "type": "link",
+              "target": "builder/backpressure/section/rows",
+              "rel": "pressure"
+            },
+            "proven_by": {
+              "type": "link",
+              "target": "builder/execution-log/section/entries",
+              "rel": "proven_by"
+            }
+          }
+        }
+      }
+    },
+    "phases": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "state"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "brief": {
+              "type": "text"
+            },
+            "state": {
+              "type": "state"
+            },
+            "note": {
+              "type": "string"
+            },
+            "receipt": {
+              "type": "string"
+            },
+            "depends_on": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tasks": {
+              "type": "link",
+              "rel": "derives"
+            },
+            "objective": {
+              "type": "text"
+            },
+            "delivers": {
+              "type": "array",
+              "items": {
+                "type": "text"
+              }
+            },
+            "key_risks": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "tasks": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "state"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "phase": {
+              "type": "string"
+            },
+            "state": {
+              "type": "state"
+            },
+            "note": {
+              "type": "string"
+            },
+            "receipt": {
+              "type": "string"
+            },
+            "done": {
+              "type": "link",
+              "target": "builder/plan/section/done_when",
+              "rel": "derives"
+            },
+            "success": {
+              "type": "text"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "satisfies": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "builder/plan/section/acceptance_criteria",
+                "rel": "satisfies"
+              }
+            },
+            "satisfies_toward": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "builder/plan/section/acceptance_criteria",
+                "rel": "satisfies-toward"
+              }
+            }
+          }
+        }
+      }
+    },
+    "done_when": {
+      "shape": {
+        "type": "object",
+        "allowAdditional": true,
+        "fields": {},
+        "valuesShape": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "assertion",
+              "state",
+              "pressure"
+            ],
+            "fields": {
+              "id": {
+                "type": "string"
+              },
+              "assertion": {
+                "type": "text"
+              },
+              "state": {
+                "type": "state"
+              },
+              "note": {
+                "type": "string"
+              },
+              "receipt": {
+                "type": "string"
+              },
+              "proven_by": {
+                "type": "link",
+                "target": "builder/execution-log/section/entries",
+                "rel": "proven_by"
+              },
+              "pressure": {
+                "type": "link",
+                "target": "builder/backpressure/section/rows",
+                "rel": "pressure"
+              }
+            }
+          }
+        }
+      },
+      "title": "Done when"
+    },
+    "research_context": {
+      "title": "Research Context",
+      "shape": {
+        "type": "text"
+      }
+    },
+    "summary": {
+      "title": "Summary",
+      "required": true,
+      "shape": {
+        "type": "text"
+      }
+    },
+    "testing_strategy": {
+      "title": "Testing Strategy",
+      "shape": {
+        "type": "object",
+        "fields": {
+          "approach": {
+            "type": "text"
+          },
+          "rationale": {
+            "type": "text"
+          },
+          "focus_areas": {
+            "type": "text"
+          },
+          "excluded": {
+            "type": "text"
+          },
+          "mock_usage": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "documentation_strategy": {
+      "title": "Documentation Strategy",
+      "shape": {
+        "type": "object",
+        "fields": {
+          "location": {
+            "type": "text"
+          },
+          "rationale": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "risks_assumptions": {
+      "title": "Risks & Assumptions",
+      "shape": {
+        "type": "text"
+      }
+    },
+    "open_questions": {
+      "title": "Open Questions",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "question",
+            "state"
+          ],
+          "fields": {
+            "question": {
+              "type": "text"
+            },
+            "state": {
+              "type": "state"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "workshop_opportunities": {
+      "title": "Workshop Opportunities",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "topic"
+          ],
+          "fields": {
+            "topic": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "why": {
+              "type": "text"
+            },
+            "key_questions": {
+              "type": "text"
+            },
+            "status": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "clarifications": {
+      "title": "Clarifications",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "question",
+            "answer"
+          ],
+          "fields": {
+            "session": {
+              "type": "string"
+            },
+            "question": {
+              "type": "text"
+            },
+            "answer": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "planning_seam": {
+      "title": "Planning Seam",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "artifact"
+          ],
+          "fields": {
+            "artifact": {
+              "type": "string"
+            },
+            "present": {
+              "type": "string"
+            },
+            "effect": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "gate_matrix": {
+      "title": "Gate Matrix",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "gate",
+            "check",
+            "status"
+          ],
+          "fields": {
+            "gate": {
+              "type": "string"
+            },
+            "check": {
+              "type": "string"
+            },
+            "status": {
+              "type": "enum",
+              "enum": "gate_status"
+            },
+            "notes": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "implementation_summary": {
+      "title": "Implementation Summary",
+      "shape": {
+        "type": "text"
+      }
+    },
+    "key_findings": {
+      "title": "Key Findings",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "impact",
+            "finding",
+            "action"
+          ],
+          "fields": {
+            "impact": {
+              "type": "enum",
+              "enum": "impact"
+            },
+            "finding": {
+              "type": "text"
+            },
+            "action": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "acceptance_coverage": {
+      "title": "Acceptance Coverage Map",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "ac",
+            "covered_by"
+          ],
+          "fields": {
+            "ac": {
+              "type": "string"
+            },
+            "covered_by": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "verified_in": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "risks": {
+      "title": "Risks",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "risk"
+          ],
+          "fields": {
+            "risk": {
+              "type": "text"
+            },
+            "likelihood": {
+              "type": "enum",
+              "enum": "likelihood"
+            },
+            "impact": {
+              "type": "enum",
+              "enum": "impact"
+            },
+            "mitigation": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "execution_guardrails": {
+      "title": "Execution Guardrails",
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "text"
+        }
+      }
+    }
+  }
+}

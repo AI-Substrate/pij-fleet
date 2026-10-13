@@ -14,16 +14,130 @@
     },
     {
       "name": "summary",
-      "value": ""
+      "value": "One coder implements the prime-active wake as written in impl-guide.dd.json tk-0001: red tests first, then the tracker, the wiring, mutation receipts, docs, gates and the PR. Context: PaWatchdog::round (crates/daemon/src/pa_watchdog.rs:278) is the composition root; IdleEdge and fleet_working are in crates/core/src/watchdog.rs; tests use the fakes in pa_watchdog_tests.rs. Hazard: #42, so edit by absolute path only."
     },
     {
       "name": "tasks",
-      "value": []
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Red tests on main 19953b2 for AC1-AC7",
+          "phase": "ph-a578",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "PrimeActive tracker in core plus wiring in PaWatchdog::round with the spine delivery brake and audits",
+          "phase": "ph-a578",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Mutation receipts",
+          "phase": "ph-a578",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "docs/how/pa-watchdog.md and skill pointers",
+          "phase": "ph-a578",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Gates and PR",
+          "phase": "ph-a578",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        }
+      ]
     },
     {
       "name": "done_when",
-      "value": {}
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "cargo test -p pij-daemon pa_watchdog shows the new cases failing on the base tree for the right reason (no wake sent), with the receipt recorded in the execution log",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0002",
+            "assertion": "Cases covered: overnight resume, prime turn before arming, delivery after arming (disarms and keeps the cap) then a later self-start wakes, a PA report between ticks plus a delivery, a second prime turn capped, a usage-limit stop, a daemon restart, a new worker episode re-arms",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0003",
+            "assertion": "All task-1 tests are green; #52's two-PA test is updated to expect one prime-active wake per PA per episode, and every other #52 test is unchanged and green",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0004",
+            "assertion": "Every verdict (sent, braked, capped, no-prime, idle-on-limit) writes a watchdog.round audit, and a cold wake writes send.cold-wake-forced with reason prime-active",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0005",
+            "assertion": "Deleting the brake turns the delivery-brake test red; deleting the cap turns the second-turn test red; both are restored and recorded in the PR",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0006",
+            "assertion": "docs/how/pa-watchdog.md covers the idle edge, F1, limit-reset with epoch and timezone handling, prime-active with its brake and cap, the audit kinds and the cold-wake interaction; skills/pij/references/prime/pa.md links to it",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0007",
+            "assertion": "harness checks passes (stage by stage under C12); a PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green; git ls-remote origin 'refs/notes/*' is empty",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ]
+      }
     }
-  ],
-  "references": []
+  ]
 }

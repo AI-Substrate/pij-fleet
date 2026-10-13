@@ -1,0 +1,47 @@
+{
+  "dd_schema": 1,
+  "description": "A dispatch fence: the paths a delegated agent may and may not touch, as DATA rather than prose. Each row carries its pattern, whether it allows or forbids, the owner who may change it, the cause it exists for, and an expiry — so a fence row cannot quietly outlive its reason, and an amendment is a row edit with an author rather than a paragraph appended to a brief. `harness plan fence` compares a change's touched paths against these rows and refuses out-of-fence work by naming both the path and the row that refused it.",
+  "enums": {
+    "fence_mode": {
+      "values": ["allow", "forbid"]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": ["title", "issuer"],
+        "fields": {
+          "title": { "type": "string" },
+          "issuer": { "type": "string" },
+          "subject": { "type": "string" },
+          "plan": { "type": "link", "rel": "ref" },
+          "note": { "type": "text" }
+        }
+      }
+    },
+    "rows": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "pattern", "mode", "owner", "cause"],
+          "fields": {
+            "id": { "type": "string" },
+            "pattern": { "type": "string" },
+            "mode": { "type": "enum", "enum": "fence_mode" },
+            "owner": { "type": "string" },
+            "cause": { "type": "text" },
+            "expiry": { "type": "string" },
+            "note": { "type": "text" },
+            "links": {
+              "type": "array",
+              "items": { "type": "link", "rel": "ref" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

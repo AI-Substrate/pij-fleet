@@ -1,0 +1,274 @@
+{
+  "dd_schema": 1,
+  "description": "Current map-first Builder work packets; the legacy packet schema remains readable without consumer edits.",
+  "sections": {
+    "packet": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "nonce",
+          "unit",
+          "plan",
+          "guide",
+          "baseline",
+          "allocation",
+          "workspace",
+          "parent",
+          "requested",
+          "forbidden",
+          "instructions",
+          "source_sha"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "source_sha": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "role",
+              "responsibility",
+              "paths",
+              "reads",
+              "interface",
+              "depends_on",
+              "wave",
+              "acceptance",
+              "proof"
+            ],
+            "fields": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "enum",
+                "enum": "unit_role"
+              },
+              "responsibility": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reads": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "owner",
+                    "paths"
+                  ],
+                  "fields": {
+                    "owner": {
+                      "type": "string"
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "interface": {
+                "type": "string"
+              },
+              "depends_on": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "wave": {
+                "type": "int"
+              },
+              "acceptance": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "proof": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          },
+          "plan": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "guide": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "baseline": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "allocation": {
+            "type": "object",
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "fields": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "parent": {
+            "type": "string"
+          },
+          "requested": {
+            "type": "object",
+            "required": [
+              "role",
+              "harness",
+              "model",
+              "source"
+            ],
+            "fields": {
+              "role": {
+                "type": "enum",
+                "enum": "builder_role"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "source": {
+                "type": "object",
+                "required": [
+                  "harness",
+                  "model"
+                ],
+                "fields": {
+                  "harness": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  },
+                  "model": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  },
+                  "effort": {
+                    "type": "enum",
+                    "enum": "setting_source"
+                  }
+                }
+              }
+            }
+          },
+          "forbidden": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "enums": {
+    "builder_role": {
+      "values": [
+        "coder",
+        "reviewer"
+      ]
+    },
+    "unit_role": {
+      "values": [
+        "pm",
+        "coder"
+      ]
+    },
+    "setting_source": {
+      "values": [
+        "repo",
+        "guide",
+        "override"
+      ]
+    }
+  }
+}

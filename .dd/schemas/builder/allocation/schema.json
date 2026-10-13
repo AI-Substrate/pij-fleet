@@ -1,0 +1,118 @@
+{
+  "dd_schema": 1,
+  "description": "Builder allocation provenance and tombstone; owner and workspace kind are distinct facts.",
+  "enums": {
+    "allocation_owner": {
+      "values": [
+        "harness",
+        "external",
+        "pij"
+      ]
+    },
+    "workspace_kind": {
+      "values": [
+        "worktree",
+        "clone"
+      ]
+    },
+    "allocation_purpose": {
+      "values": [
+        "plan",
+        "unit"
+      ]
+    }
+  },
+  "sections": {
+    "allocation": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "record_type",
+          "id",
+          "recorded_at",
+          "owner",
+          "kind",
+          "purpose",
+          "root",
+          "authority_root",
+          "git_dir",
+          "branch",
+          "base_sha",
+          "ordinal",
+          "slug",
+          "actor",
+          "journal"
+        ],
+        "fields": {
+          "record_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "enum",
+            "enum": "allocation_owner"
+          },
+          "kind": {
+            "type": "enum",
+            "enum": "workspace_kind"
+          },
+          "purpose": {
+            "type": "enum",
+            "enum": "allocation_purpose"
+          },
+          "root": {
+            "type": "string"
+          },
+          "authority_root": {
+            "type": "string"
+          },
+          "git_dir": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "base_sha": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "int"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "journal": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "plan_path": {
+            "type": "string"
+          },
+          "parent_id": {
+            "type": "string"
+          },
+          "unit_id": {
+            "type": "string"
+          },
+          "peer_id": {
+            "type": "string"
+          },
+          "retired_at": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

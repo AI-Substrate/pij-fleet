@@ -1,0 +1,169 @@
+{
+  "dd_schema": 1,
+  "description": "A review round as a document: findings as addressed rows, and a verdict that links every one of them to what was decided about it. Review history is normally prose in a chat log — unqueryable, and gone the moment the window scrolls. As rows, 'which findings were refuted, and on what grounds' is a jq one-liner, across reviews and across models. Dim-0 rows record what happened when a reviewer mutated a control on purpose, and carry a `pressure` link to the fixture that fired — so 'the tests would have caught it' is a citation rather than a claim.",
+  "enums": {
+    "finding_kind": {
+      "values": [
+        "defect",
+        "dim0",
+        "question"
+      ]
+    },
+    "finding_severity": {
+      "values": [
+        "MAJOR",
+        "MINOR",
+        "NIT",
+        "NA"
+      ]
+    },
+    "resolution": {
+      "values": [
+        "confirmed",
+        "refuted",
+        "fixed",
+        "deferred"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "title",
+          "reviewer",
+          "round"
+        ],
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "reviewer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "round": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "link",
+            "rel": "ref"
+          },
+          "note": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "findings": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "kind",
+            "severity",
+            "finding"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "enum",
+              "enum": "finding_kind"
+            },
+            "severity": {
+              "type": "enum",
+              "enum": "finding_severity"
+            },
+            "finding": {
+              "type": "text"
+            },
+            "address": {
+              "type": "string"
+            },
+            "state": {
+              "type": "state"
+            },
+            "note": {
+              "type": "text"
+            },
+            "pressure": {
+              "type": "link",
+              "rel": "pressure"
+            },
+            "proven_by": {
+              "type": "link",
+              "rel": "proven_by"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "rel": "ref"
+              }
+            },
+            "receipt": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "verdict": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "finding",
+            "resolution"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "finding": {
+              "type": "link",
+              "target": "builder/review/section/findings",
+              "rel": "ref"
+            },
+            "resolution": {
+              "type": "enum",
+              "enum": "resolution"
+            },
+            "rationale": {
+              "type": "text"
+            },
+            "state": {
+              "type": "state"
+            },
+            "note": {
+              "type": "text"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "rel": "ref"
+              }
+            },
+            "receipt": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
