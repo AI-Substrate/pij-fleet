@@ -262,6 +262,8 @@ export interface ProcessPort {
 	now(): number;
 	/** Read an environment variable (e.g. PIJ_SESSION_ID). */
 	env(key: string): string | undefined;
+	/** `bytes` cryptographically random bytes as lowercase hex. */
+	randomHex(bytes: number): string;
 }
 
 /** Launches a detached background job. The child outlives this process — the

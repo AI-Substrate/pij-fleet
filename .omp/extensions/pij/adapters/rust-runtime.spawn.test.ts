@@ -288,6 +288,55 @@ exit 0
 	}, 5_000);
 });
 
+it("two parents launching in the same millisecond never share a spawn id (#44 B1c)", async () => {
+	let now = 1_000;
+	let bindSecond = false;
+	const first = new FakeTmux({ paneStart: 900 });
+	const second = new FakeTmux({ paneStart: 901 });
+	const spawnIds = (tmux: FakeTmux) => tmux.windows.map((window) => window.opts.env.PIJ_SPAWN_ID);
+	const bound = (id: string, spawnId: string | undefined) => ({
+		id,
+		harness: "omp",
+		folder: "/repo",
+		state: "idle",
+		spawn_id: spawnId,
+		proc: { pid: 7, proc_start: 1 },
+	});
+	const daemon = () =>
+		registeringDaemon(() => {
+			// The clock stands still until both parents have launched: one shared instant.
+			if (first.windows.length > 0 && second.windows.length > 0) now += 10;
+			return [
+				bound("pij-first-child", spawnIds(first)[0]),
+				...(bindSecond ? [bound("pij-second-child", spawnIds(second).at(-1))] : []),
+			];
+		});
+	const parentA = new RustRuntimeSession(daemon(), first, [], () => now);
+	const parentB = new RustRuntimeSession(daemon(), second, [], () => now);
+	const [a, b] = await Promise.all([
+		parentA.spawn({ harness: "omp", cwd: "/repo", layout: "window" }),
+		parentB.spawn({ harness: "omp", cwd: "/repo", layout: "window" }),
+	]);
+	expect(a).toMatchObject({
+		ok: true,
+		value: { registration: { registered: true, id: "pij-first-child" } },
+	});
+	expect(b).toMatchObject({
+		ok: true,
+		value: { paneId: "%901", registration: { registered: false } },
+	});
+	expect(spawnIds(first)[0]).toMatch(/^s-[0-9a-f]{32}$/);
+	expect(spawnIds(second)[0]).toMatch(/^s-[0-9a-f]{32}$/);
+	expect(spawnIds(first)[0]).not.toBe(spawnIds(second)[0]);
+	bindSecond = true;
+	await expect(
+		parentB.spawn({ harness: "omp", cwd: "/repo", layout: "window" }),
+	).resolves.toMatchObject({
+		ok: true,
+		value: { registration: { registered: true, id: "pij-second-child" } },
+	});
+});
+
 it("confirms a spawn once a bound seat carries its spawn id; an unbound row is not enough", async () => {
 	vi.stubEnv("PIJ_SPAWN_REGISTER_TIMEOUT_MS", "5000");
 	const tmux = new FakeTmux();

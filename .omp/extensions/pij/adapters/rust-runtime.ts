@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseDestination, renderDestination } from "../core/address.js";
 import { type ControlOutcome, isControlCommand, validateCommand } from "../core/commands.js";
@@ -275,6 +275,7 @@ export class RustRuntimeSession {
 				},
 				now: clock,
 				env: (key) => process.env[key],
+				randomHex: (bytes) => randomBytes(bytes).toString("hex"),
 			},
 			tmux,
 			models,
