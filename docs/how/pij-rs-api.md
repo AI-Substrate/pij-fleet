@@ -22,6 +22,8 @@ Native `pij-rs --json` also preserves the original response buffer after version
 
 `fleet-report` (plan 162) is the second native pass-through: `pij fleet-report <FOLDER>` forwards to `pij-rs fleet-report`, which folds the project's transcripts in-process through Unisphere, reads seats from the store **read-only** (never created, never migrated) and writes `index.html`, `report.json`, `report.js`, `manifest.json` and `tables/` to one folder. It never contacts the daemon. P1 refuses `--format parquet` (`E-RS-FLEET-FORMAT`) and `--prep-target` (`E-RS-FLEET-PREP-TARGET`) by name; the output folder carries names and paths unless `--anonymise`.
 
+Known limit (plan 169): fleet-report prices every call at the default table; router sessions are not modelled per served model.
+
 ### Exit policy
 
 AC4 asserts **JSON byte parity**, not exit-code parity. Existing client policies remain distinct; scripts must inspect the complete envelope and use the policy of the executable they invoked.

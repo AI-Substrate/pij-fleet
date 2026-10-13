@@ -71,7 +71,8 @@ refuses reasoning effort for them, so `--effort` with a HydraFusion model is
 refused before launch: `HydraFusion routes effort itself; omit --effort`.
 `--model auto --auto-tier hydrafusion` is refused by Copilot 1.0.97 ("requires
 dynamic Auto tiers"). `pij state` reports the seat's `boundModel` as the
-synthetic id; the routed per-phase model is not reported. The cold-wake guard
+synthetic id, and its `session:` line reads `model hydrafusion-max · last call
+<routed model>`: the reported model is only the last call's. The cold-wake guard
 still refuses a large, idle fusion seat, but it never prices the wake: the
 router picks the model per call, so the price reads `? (not estimable: router,
 per-call models)` rather than a number for one model.
