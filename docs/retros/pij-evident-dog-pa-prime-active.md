@@ -33,3 +33,14 @@ the brake window.
   preflight line, "no node_modules: run npm ci", in `harness checks`.
 - Load hit 70-80 mid-run, which is past C12's 40 ceiling. The Rust gate waited
   on a load-polling loop. Nothing in the harness encodes that ceiling.
+- Fix round (PR #53 review): `ddocs add --mint lg` mints **hex** ids (`lg-0009` →
+  `lg-000a`). I assumed decimal and linked `lg-0010`. Both `ddocs set` and
+  `harness plan validate` accepted the dangling `proven_by` without a word, so it
+  landed in 125fdcd and was relinked in the next commit. `stretch:` validate
+  should fail an address that doesn't resolve, and `add` could print the id it
+  minted as its only stdout line.
+- The reviewer's C12 wrapper gates launch on the max of the 1/5/15-minute
+  load averages. At a sustained load of ~45 it blocked for its whole 20-minute
+  deadline. Gating on the 1-minute average (and pausing on it) worked. A pause
+  during a timing-sensitive test can still contaminate the run, so a paused test
+  run is evidence only once it has been re-run clean.

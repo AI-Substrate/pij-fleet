@@ -101,7 +101,7 @@
           "claim": "Proof: tests that run red on main 19953b2 and green on the branch, using a fake clock and registry, cover the cases in AC1-AC7, including a PA report that falls between ticks. Deleting the brake turns the delivery-brake test red, and deleting the cap turns the second-turn test red (mutation receipts in the PR). The existing two-PA test is updated to expect one prime-active wake per PA per episode. Every harness checks stage passes except smoke, which is NOT RUN under the named exception (the diff has no TS or extension code; smoke drives the OMP extension and would open a pane on the live tmux server, which is Forbidden), so this is no full-gate pass. GitHub CI is green.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0010"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-000a"
         }
       ]
     },

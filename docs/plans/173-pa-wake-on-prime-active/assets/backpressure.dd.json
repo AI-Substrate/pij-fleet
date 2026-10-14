@@ -46,7 +46,7 @@
           "proof": "RUN: harness checks stage by stage, except smoke (NOT RUN: named no-live-pane exception, Forbidden); gh pr checks",
           "state": "checked",
           "probe": ".harness/extensions/checks, GitHub Actions on pij-fleet",
-          "receipt": "execution-log.dd.json#entries/lg-0010"
+          "receipt": "execution-log.dd.json#entries/lg-000a"
         }
       ]
     },
