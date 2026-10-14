@@ -832,9 +832,18 @@ The daemon runs a watchdog for **PAs only**: seats whose asserted role is `pa`. 
 
 The nudge goes out promptly at the edge, while the PA is most likely still warm. It is **not held for a cold or long PA**, because waking the PA is the point. It goes through the ordinary delivery path, so the composer and typing gates still apply. When the send guard's own verdict (`http::cold_wake::verdict`) says the PA is cold, the wake is audited before it is sent, exactly like a forced `pij send`: a `send.cold-wake-forced` event with reason `pa-watchdog: fleet idle`.
 
-**Prime-active wake** (plan 173). After an edge, each PA is woken **once more** when its prime starts working on its own. The prime is the current designation if that seat is live in scope, else the lowest-id `prime`-role seat in scope. A per-PA `pij_core::watchdog::PrimeActive` tracker arms at the first round after the edge where the PA and the prime are both idle, and fires on the prime's next `working` round. A `delivery.outcome` `delivered` receipt to the prime since arming is a **brake**: removing it only sends more. Nothing is sent, the trigger disarms, and the cap is kept, so the PA's own report never spends the wake. At most one wake per PA per worker-idle episode. None is sent while the scope is stopped on a usage limit, and none after a restart until the next edge. The body is `[pij watchdog] <prime> is active again after the fleet went idle: resume your plan.` followed by the digest. A cold PA is audited with reason `prime-active`. The full behaviour, state diagram and known residual are in [pa-watchdog.md](pa-watchdog.md).
+**Prime-active wake** (plan 173). After an edge, each PA is woken **once more** when its prime starts working on its own. The prime is the current designation if that seat is live in scope, else the lowest-id `prime`-role seat in scope.
 
-**Fleet.** A PA's fleet is every live seat whose folder resolves, through `git rev-parse --git-common-dir`, to the same repository as the PA's recorded parent's folder, which covers every worktree. With no live parent, the PA's own folder anchors it. A folder git cannot place matches only itself.
+- **Arming.** A per-PA `pij_core::watchdog::PrimeActive` tracker arms at the first round after the edge where the PA and the prime are both observed `idle`. It needs positive evidence: `unknown` or any other state never arms.
+- **Firing.** It fires on that same prime's next `working` round. The arming belongs to the prime observed idle, so a different prime, or any other observation of it, drops the arming.
+- **Brake.** A `delivery.outcome` `delivered` receipt to the prime since arming is a **brake**: removing it only sends more. Nothing is sent, the trigger disarms, and the cap is kept, so a report delivered after arming never spends the wake.
+- **Cap.** At most one wake per PA per worker-idle episode, whoever the prime is.
+- **None sent** while the scope is stopped on a usage limit, and none after a restart until the next edge.
+- **Body.** `[pij watchdog] <prime> is active again after the fleet went idle: resume your plan.` followed by the digest. A cold PA is audited with reason `prime-active`.
+
+The full behaviour, state diagram and known residual are in [pa-watchdog.md](pa-watchdog.md).
+
+**Fleet.** A PA's fleet is every live seat whose folder resolves, through `git rev-parse --git-common-dir`, to the same repository as the PA's anchor, which covers every worktree. The anchor is the recorded parent's folder whenever the parent has a registry row, even a tombstoned one. Only with no recorded parent, or no row for it, does the PA's own folder anchor it. A folder git cannot place matches only itself.
 
 **Nudge.** The PA receives one message from `pij_core::BG_ACTOR` (`pij-bg`), built by `pij_core::pa_digest`:
 

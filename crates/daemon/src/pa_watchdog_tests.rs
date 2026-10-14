@@ -1023,6 +1023,185 @@ async fn a_restarted_daemon_sends_no_prime_active_wake_until_a_new_episode() {
     assert_eq!(fleet.verdicts().await, ["sent"]);
 }
 
+impl PrimeFleet {
+    /// Retire the designated prime and designate `id` instead: a live
+    /// `prime`-role seat in scope, working throughout until told otherwise.
+    async fn replace_prime(&self, id: &str, minute: u64) -> SeatDescriptor {
+        let mut replacement = seat(id, &self.prime.folder, None);
+        replacement.state = SystemState::Working;
+        self.services
+            .registry
+            .put(replacement.clone())
+            .await
+            .unwrap();
+        self.services
+            .roles
+            .assert_role(&replacement.id, &replacement.id, Some("prime".into()))
+            .await
+            .unwrap();
+        let watchdogs = self.services.watchdogs();
+        watchdogs.retire_prime(&self.prime.id).await.unwrap();
+        watchdogs
+            .designate_prime(&pij_core::orchestration::PrimeDesignation {
+                seat: replacement.id.clone(),
+                designated_by: "pij-human".into(),
+                designated_at: self.at(minute) + 1,
+                state: pij_core::orchestration::PrimeState::Current,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            watchdogs.prime().await.unwrap().unwrap().seat,
+            replacement.id,
+            "the replacement is the current designation"
+        );
+        replacement
+    }
+}
+
+/// Review of #53 F002 (pij-excellent-marmoset): arming needs POSITIVE idle
+/// evidence. A PA whose state is unknown was not observed idle.
+#[tokio::test]
+async fn an_unknown_pa_observation_never_arms_the_wake() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    fleet.set(&fleet.pa, SystemState::Unknown).await;
+    fleet.round(&watchdog, 2).await;
+    fleet.set(&fleet.pa, SystemState::Idle).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    assert!(
+        fleet.to_pa().await.is_empty(),
+        "AC2: the PA was never observed idle together with the prime after the edge"
+    );
+    assert!(fleet.verdicts().await.is_empty());
+}
+
+/// Review of #53 F002: an unknown prime is not an observed idle prime.
+#[tokio::test]
+async fn an_unknown_prime_observation_never_arms_the_wake() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    fleet.set(&fleet.prime, SystemState::Unknown).await;
+    fleet.round(&watchdog, 2).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    assert!(
+        fleet.to_pa().await.is_empty(),
+        "AC2: unknown is not an observed prime idle tick"
+    );
+    assert!(fleet.verdicts().await.is_empty());
+}
+
+/// Review of #53 F001: arming belongs to the prime observed idle. A
+/// replacement prime that was working all along never inherits it; it wakes
+/// the PA only on its own observed idle→working.
+#[tokio::test]
+async fn a_replacement_prime_must_be_observed_idle_before_it_wakes_the_pa() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    fleet.round(&watchdog, 2).await; // armed for pij-prime
+    let replacement = fleet.replace_prime("pij-prime-b", 2).await;
+    fleet.round(&watchdog, 3).await;
+    assert!(
+        fleet.to_pa().await.is_empty(),
+        "AC1/AC2: the replacement was working all along, never observed idle or starting a turn"
+    );
+    assert!(fleet.verdicts().await.is_empty());
+
+    // The replacement goes idle with the PA: armed for it. Its own turn wakes.
+    fleet.set(&replacement, SystemState::Idle).await;
+    fleet.round(&watchdog, 4).await;
+    fleet.set(&replacement, SystemState::Working).await;
+    fleet.round(&watchdog, 5).await;
+    let wakes = fleet.to_pa().await;
+    assert_eq!(wakes.len(), 1, "the episode's one wake is still there");
+    assert!(
+        wakes[0]
+            .body
+            .starts_with("[pij watchdog] pij-prime-b is active again")
+    );
+    assert_eq!(fleet.verdicts().await, ["sent"]);
+}
+
+/// Review of #53 F001: a new prime never re-opens a spent episode.
+#[tokio::test]
+async fn a_replacement_prime_keeps_the_spent_cap() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    fleet.round(&watchdog, 2).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    assert_eq!(fleet.to_pa().await.len(), 1, "the first prime's turn wakes");
+
+    let replacement = fleet.replace_prime("pij-prime-b", 3).await;
+    fleet.round(&watchdog, 4).await;
+    fleet.set(&replacement, SystemState::Idle).await;
+    fleet.round(&watchdog, 5).await;
+    fleet.set(&replacement, SystemState::Working).await;
+    fleet.round(&watchdog, 6).await;
+    assert!(
+        fleet.to_pa().await.is_empty(),
+        "one wake per episode, whoever the prime is"
+    );
+    assert_eq!(fleet.verdicts().await, ["sent", "capped"]);
+}
+
+/// Review of #53: the brake's receipt read fails safe. A window it cannot
+/// build counts as delivered.
+#[tokio::test]
+async fn a_brake_window_that_cannot_be_built_counts_as_delivered() {
+    let (services, _store) = services().await;
+    assert!(super::delivered_since(&services, &"pij-prime".into(), u64::MAX).await);
+}
+
+/// Review of #53: a spine that cannot answer counts as delivered.
+#[tokio::test]
+async fn a_brake_read_that_fails_counts_as_delivered() {
+    let (services, store) = services().await;
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query("DROP TABLE spine_events")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(super::delivered_since(&services, &"pij-prime".into(), 0).await);
+}
+
+/// Review of #53: the brake reads at most four pages of 256. A window that
+/// ends inside them is a proven "no delivery"; one that fills them all counts
+/// as delivered.
+#[tokio::test]
+async fn a_brake_read_that_runs_out_of_pages_counts_as_delivered() {
+    let (services, _store) = services().await;
+    let prime = SeatId::from("pij-prime");
+    for at in 1..=1024 {
+        services
+            .event_bus
+            .publish(pij_core::model::Event {
+                seq: None,
+                v: 1,
+                at,
+                kind: crate::delivery::OUTCOME_EVENT_KIND.into(),
+                seat: Some(prime.clone()),
+                payload: "{\"outcome\":{\"outcome\":\"queued\"}}".into(),
+            })
+            .await
+            .unwrap();
+    }
+    assert!(
+        !super::delivered_since(&services, &prime, 2).await,
+        "1023 queued rows reach a proven end without a delivered receipt"
+    );
+    assert!(
+        super::delivered_since(&services, &prime, 1).await,
+        "1024 rows exhaust the four-page cap: brake conservatively"
+    );
+}
+
 fn optin(seat: &str, by: &str, at_ms: u64) -> pij_core::watchdog::WatchdogOptIn {
     pij_core::watchdog::WatchdogOptIn {
         seat: seat.into(),

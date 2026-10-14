@@ -24,8 +24,9 @@
 //! (plan 173, Jordan 2026-10-14: the PA resumes when the prime does). The
 //! prime is a supervisor, so its turn never re-arms the idle edge; instead a
 //! per-PA [`PrimeActive`] tracker arms at the first tick after the edge where
-//! the PA and the prime ([`scope_prime`]) are both idle, and wakes the PA on
-//! the prime's next working tick, at most once per worker-idle episode. A pij
+//! the PA and the prime ([`scope_prime`]) are both observed `idle` (unknown
+//! never arms), and wakes the PA on that same prime's next working tick, at
+//! most once per worker-idle episode whoever the prime becomes. A pij
 //! message delivered to the prime since arming is a BRAKE (removing it only
 //! sends more): the turn was that message's, so nothing is sent and the
 //! trigger re-arms. The wake carries the fleet digest and goes like the idle
@@ -406,13 +407,15 @@ impl PaWatchdog {
             let working = fleet_working(&scope.members, designated.as_ref());
             let on_limit = stops.keys().any(|(stopped, _)| stopped == &scope.key);
             let prime = scope_prime(&scope.members, designated.as_ref()).cloned();
-            let prime_working = prime
-                .as_ref()
-                .map(|prime| prime.state == SystemState::Working);
             let (edge, armed_at) = {
                 let mut trackers = self.trackers.lock().await;
                 let tracker = trackers.entry(pa.id.clone()).or_default();
-                (tracker.edge.observe(working), tracker.prime.armed_at_ms())
+                (
+                    tracker.edge.observe(working),
+                    prime
+                        .as_ref()
+                        .and_then(|prime| tracker.prime.armed_at_ms(&prime.id)),
+                )
             };
             // The brake reads the spine only on a would-be wake.
             let delivered_since_arming = match (armed_at, &prime) {
@@ -432,8 +435,8 @@ impl PaWatchdog {
                 .prime
                 .observe(PrimeObservation {
                     edge,
-                    pa_idle: pa.state != SystemState::Working,
-                    prime_working,
+                    pa: pa.state,
+                    prime: prime.as_ref().map(|prime| (&prime.id, prime.state)),
                     on_limit,
                     delivered_since_arming,
                     now_ms,
