@@ -9,7 +9,8 @@
         "title": "PA wakes once on prime activity after a worker-idle episode",
         "slug": "phase-1",
         "status": "draft",
-        "summary": ""
+        "summary": "",
+        "log": "../../execution-log.dd.json#entries"
       }
     },
     {
@@ -50,7 +51,8 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0007"
           ],
           "done": "tasks.dd.json#done_when/tk-0002",
-          "receipt": "../../execution-log.dd.json#entries/lg-0005"
+          "receipt": "../../execution-log.dd.json#entries/lg-0005",
+          "note": "PR #53 review F001/F002 fixed in 67b29a3 (identity-bound, positive-idle arming); see lg-0007, lg-0008"
         },
         {
           "id": "tk-0003",
@@ -72,7 +74,8 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0008"
           ],
           "done": "tasks.dd.json#done_when/tk-0004",
-          "receipt": "../../execution-log.dd.json#entries/lg-0003"
+          "receipt": "../../execution-log.dd.json#entries/lg-0003",
+          "note": "PR #53 review F003 docs corrections in 67b29a3; see lg-0008"
         },
         {
           "id": "tk-0005",
@@ -83,7 +86,8 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
           "done": "tasks.dd.json#done_when/tk-0005",
-          "receipt": "../../execution-log.dd.json#entries/lg-0006"
+          "receipt": "../../execution-log.dd.json#entries/lg-0006",
+          "note": "PR #53 review F004: claims scoped; smoke NOT RUN under the named no-live-pane exception, so no full-gate pass is claimed"
         }
       ]
     },
@@ -112,7 +116,7 @@
             "assertion": "All task-1 tests are green; #52's two-PA test is updated to expect one prime-active wake per PA per episode, and every other #52 test is unchanged and green",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001",
-            "proven_by": "../../execution-log.dd.json#entries/lg-0005"
+            "proven_by": "../../execution-log.dd.json#entries/lg-0008"
           },
           {
             "id": "dw-0004",
@@ -128,7 +132,7 @@
             "assertion": "Deleting the brake turns the delivery-brake test red; deleting the cap turns the second-turn test red; both are restored and recorded in the PR",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003",
-            "proven_by": "../../execution-log.dd.json#entries/lg-0002"
+            "proven_by": "../../execution-log.dd.json#entries/lg-0008"
           }
         ],
         "tk-0004": [
@@ -137,13 +141,13 @@
             "assertion": "docs/how/pa-watchdog.md covers the idle edge, F1, limit-reset with epoch and timezone handling, prime-active with its brake and cap, the audit kinds and the cold-wake interaction; skills/pij/references/prime/pa.md links to it",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002",
-            "proven_by": "../../execution-log.dd.json#entries/lg-0003"
+            "proven_by": "../../execution-log.dd.json#entries/lg-0008"
           }
         ],
         "tk-0005": [
           {
             "id": "dw-0007",
-            "assertion": "harness checks passes (stage by stage under C12); a PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green; git ls-remote origin 'refs/notes/*' is empty",
+            "assertion": "Each harness checks stage passes, run stage by stage under C12, except smoke, which is NOT RUN under the named no-live-pane exception (no full-gate pass is claimed); a PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green; git ls-remote origin 'refs/notes/*' is empty",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003",
             "proven_by": "../../execution-log.dd.json#entries/lg-0006"

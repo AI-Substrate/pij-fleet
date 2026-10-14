@@ -1,0 +1,91 @@
+PR #53 review fix round (pij-evident-dog), observed 2026-10-14. C12 wrapper: nice -n 19, timeout -k, CARGO_BUILD_JOBS=1 (-j 1), launches only when 1-min load <= 40, pauses the process group above 40. Warm target: fleet-173-prime-active/target.
+
+## fix-red
+Subject: git archive 6e99ede (the reviewed head), with only crates/daemon/src/pa_watchdog_tests.rs replaced by the fix-round tests; cwd /tmp/plan173/red-6e99ede. Sources were touched so the shared target recompiled pij-core from the export.
+cwd=/tmp/plan173/red-6e99ede
+command=['cargo', 'test', '--locked', '-j', '1', '-p', 'pij-daemon', '--lib', 'pa_watchdog']
+   Compiling pij-core v0.1.0 (/private/tmp/plan173/red-6e99ede/crates/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 19s
+test pa_watchdog::tests::a_replacement_prime_must_be_observed_idle_before_it_wakes_the_pa ... FAILED
+test pa_watchdog::tests::an_unknown_pa_observation_never_arms_the_wake ... FAILED
+test pa_watchdog::tests::an_unknown_prime_observation_never_arms_the_wake ... FAILED
+test result: FAILED. 21 passed; 3 failed; 0 ignored; 0 measured; 586 filtered out; finished in 6.08s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+exit=101
+load_max=(31.32275390625, 41.12548828125, 45.33154296875)
+
+## fix-mutation-brake
+Subject: the 67b29a3 tree with 'else if seen.delivered_since_arming' -> 'else if false'
+cwd=/Users/jordanknight/pi-hacking/fleet-173-prime-active
+command=['cargo', 'test', '--locked', '-j', '1', '-p', 'pij-daemon', '--lib', 'pa_watchdog']
+   Compiling pij-core v0.1.0 (/Users/jordanknight/pi-hacking/fleet-173-prime-active/crates/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 02s
+test pa_watchdog::tests::a_delivery_to_the_prime_after_arming_brakes_the_wake_and_keeps_the_cap ... FAILED
+test pa_watchdog::tests::a_pa_report_between_ticks_never_wakes_the_pa ... FAILED
+test result: FAILED. 22 passed; 2 failed; 0 ignored; 0 measured; 586 filtered out; finished in 6.41s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+exit=101
+load_max=(33.958984375, 35.48876953125, 42.630859375)
+
+## fix-mutation-cap
+Subject: the 67b29a3 tree with the Spent transition replaced by 'self.episode = Episode::Open'
+cwd=/Users/jordanknight/pi-hacking/fleet-173-prime-active
+command=['cargo', 'test', '--locked', '-j', '1', '-p', 'pij-daemon', '--lib', 'pa_watchdog']
+   Compiling pij-core v0.1.0 (/Users/jordanknight/pi-hacking/fleet-173-prime-active/crates/core)
+warning: variant `Spent` is never constructed
+warning: `pij-core` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.67s
+test pa_watchdog::tests::a_replacement_prime_keeps_the_spent_cap ... FAILED
+test pa_watchdog::tests::a_second_prime_turn_is_capped_until_the_workers_work_again ... FAILED
+test pa_watchdog::tests::two_pas_in_one_scope_are_each_nudged_once_per_worker_idle_episode ... FAILED
+test result: FAILED. 21 passed; 3 failed; 0 ignored; 0 measured; 586 filtered out; finished in 6.43s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+exit=101
+load_max=(35.00048828125, 35.48046875, 41.8876953125)
+
+## fix-restored
+Subject: the 67b29a3 tree (mutations reverted; one doc-comment line differs, changed afterwards)
+cwd=/Users/jordanknight/pi-hacking/fleet-173-prime-active
+command=['cargo', 'test', '--locked', '-j', '1', '-p', 'pij-daemon', '--lib', 'pa_watchdog']
+   Compiling pij-core v0.1.0 (/Users/jordanknight/pi-hacking/fleet-173-prime-active/crates/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.13s
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 4.38s
+exit=0
+load_max=(38.90966796875, 36.32373046875, 41.88671875)
+
+## fix-clippy
+cargo clippy --locked -j 1 -p pij-core -p pij-daemon --all-targets -- -D warnings
+cwd=/Users/jordanknight/pi-hacking/fleet-173-prime-active
+command=['cargo', 'clippy', '--locked', '-j', '1', '-p', 'pij-core', '-p', 'pij-daemon', '--all-targets', '--', '-D', 'warnings']
+C12 PAUSE: load=(40.57275390625, 36.75830078125, 41.9755859375)
+C12 RESUME: load=(38.70166015625, 39.86962890625, 42.4296875)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 45s
+exit=0
+load_max=(53.63037109375, 41.6748046875, 43.24755859375)
+
+## fix-workspace: cargo test --locked -j 1 --workspace --no-fail-fast at 67b29a3
+C12 PAUSE: load=(40.8388671875, 38.859375, 41.46337890625)
+C12 RESUME: load=(39.08984375, 38.529296875, 41.33154296875)
+C12 PAUSE: load=(41.14111328125, 38.701171875, 41.22412109375)
+C12 RESUME: load=(39.80224609375, 38.6533203125, 41.12158203125)
+C12 PAUSE: load=(40.05810546875, 38.72509765625, 41.13232421875)
+C12 RESUME: load=(39.66162109375, 38.7177734375, 41.08837890625)
+C12 PAUSE: load=(40.3291015625, 38.87158203125, 41.12841796875)
+C12 RESUME: load=(38.62109375, 38.54150390625, 40.99853515625)
+C12 PAUSE: load=(40.05712890625, 38.78759765625, 40.9951171875)
+C12 RESUME: load=(39.6416015625, 38.78955078125, 40.958984375)
+C12 PAUSE: load=(40.470703125, 38.9755859375, 41.01171875)
+C12 RESUME: load=(39.89453125, 38.95166015625, 40.96875)
+test staged_submit_excludes_human_input_mid_body_and_before_enter ... FAILED
+test result: FAILED. 28 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.10s
+exit=101
+load_max=(41.9541015625, 39.3076171875, 41.86328125)
+thread 'staged_submit_excludes_human_input_mid_body_and_before_enter' (778209336) panicked at crates/tmux/tests/adapter.rs:314:12:
+stage body: Adapter { adapter: "tmux", message: "staging for pane \"%0\" exceeded 1s; body was not submitted" }
+summed: passed 1526 failed 1
+
+## fix-tmux-rerun: cargo test --locked -j 1 -p pij-tmux --test adapter (load max 20.7 1-min, no pause)
+test stale_watchdog_cannot_release_a_later_adapter_transaction ... FAILED
+test result: FAILED. 28 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.14s
+exit=101
+crates/tmux is untouched vs origin/main. The failing test differs on every local run: stale_watchdog_cannot_release_a_later_adapter_transaction, post_enter_cleanup_failure_remains_success_and_submits_once, staged_submit_excludes_human_input_mid_body_and_before_enter. These are real-tmux timing tests. GitHub CI rust-test (nextest) passed them at a6b2d12 and 6e99ede.

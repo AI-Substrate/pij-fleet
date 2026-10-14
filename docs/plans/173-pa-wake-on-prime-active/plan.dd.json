@@ -11,7 +11,9 @@
         "ordinal": 173,
         "status": "ready",
         "summary": "Wake the PA once when the prime resumes after a worker-idle episode.",
-        "backpressure": "assets/backpressure.dd.json#rows"
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "mode": "Simple",
+        "log": "assets/execution-log.dd.json#entries"
       }
     },
     {
@@ -43,28 +45,28 @@
           "claim": "Overnight resume: the workers work then go idle (the PA gets #52's idle nudge), the PA and the prime are then both observed idle, then the prime moves idle→working with no pij delivery to it since arming. Result: each PA in scope receives exactly one prime-active wake that carries the fleet digest and a resume-your-plan line.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "ac-0002",
           "claim": "Arming: the trigger is armed only at a tick, after the idle edge, where the PA and the prime are both observed idle. A prime turn observed before arming sends nothing. 'The prime' is the current designated prime, else the prime-role seat in scope; with neither, nothing is sent and the audit names why.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "ac-0003",
           "claim": "Causality brake: if any pij delivery to the prime is recorded on the spine after the arming tick, a following prime idle→working sends nothing and DISARMS the trigger without consuming the cap. It re-arms at the next tick where the PA and the prime are both idle. So the PA's own night report can't use up the morning wake. The PR states that this is a BRAKE (removing it only sends more).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "ac-0004",
           "claim": "Cap: at most one prime-active wake per PA per worker-idle episode. A second prime turn in the same episode sends nothing. A new worker working→idle episode (#52's re-arm) resets the cap.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "ac-0005",
@@ -92,11 +94,11 @@
           "claim": "Docs: docs/how/pa-watchdog.md describes the whole PA watchdog as shipped: the idle-edge nudge, the supervisor exclusion (F1), the limit-reset wake with timezone handling, this prime-active wake, its brake and cap, the audit kinds, and the cold-wake interaction. The pij skill's PA references point to it.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "ac-0009",
-          "claim": "Proof: tests that run red on main 19953b2 and green on the branch, using a fake clock and registry, cover the cases in AC1-AC7, including a PA report that falls between ticks. Deleting the brake turns the delivery-brake test red, and deleting the cap turns the second-turn test red (mutation receipts in the PR). The existing two-PA test is updated to expect one prime-active wake per PA per episode. harness checks and GitHub CI are green.",
+          "claim": "Proof: tests that run red on main 19953b2 and green on the branch, using a fake clock and registry, cover the cases in AC1-AC7, including a PA report that falls between ticks. Deleting the brake turns the delivery-brake test red, and deleting the cap turns the second-turn test red (mutation receipts in the PR). The existing two-PA test is updated to expect one prime-active wake per PA per episode. Every harness checks stage passes except smoke, which is NOT RUN under the named exception (the diff has no TS or extension code; smoke drives the OMP extension and would open a pane on the live tmux server, which is Forbidden), so this is no full-gate pass. GitHub CI is green.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003",
           "proven_by": "assets/execution-log.dd.json#entries/lg-0006"

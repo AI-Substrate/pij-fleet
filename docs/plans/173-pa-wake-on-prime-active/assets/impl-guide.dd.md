@@ -92,10 +92,10 @@
 
 | id | description | command | args | cwd | timeout_ms |
 | --- | --- | --- | --- | --- | --- |
-| vd-0001 | Core tracker unit tests | cargo | test, -j, 4, -p, pij-core, watchdog | . | 900000 |
+| vd-0001 | Prime-active tracker behaviour: PrimeActive and scope_prime are exercised through the composed daemon round tests (crates/daemon/src/pa_watchdog_tests.rs). No separate pij-core unit tests exist for them. | cargo | test, -j, 1, -p, pij-daemon, --lib, pa_watchdog | . | 900000 |
 | vd-0002 | Daemon round tests (fake clock/registry/spine), the composed behaviour | cargo | test, -j, 4, -p, pij-daemon, pa_watchdog | . | 1200000 |
 | vd-0003 | Docs present and linked | test | -s, docs/how/pa-watchdog.md | . | 10000 |
-| vd-0004 | Full engineering gate | harness | checks | . | 3600000 |
+| vd-0004 | harness checks stages, run one by one under C12. Smoke is excluded under the named no-live-pane exception, so this is not a full-gate pass. | harness | checks | . | 3600000 |
 
 <a id="composition"></a>
 

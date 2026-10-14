@@ -201,15 +201,16 @@
       "value": [
         {
           "id": "vd-0001",
-          "description": "Core tracker unit tests",
+          "description": "Prime-active tracker behaviour: PrimeActive and scope_prime are exercised through the composed daemon round tests (crates/daemon/src/pa_watchdog_tests.rs). No separate pij-core unit tests exist for them.",
           "command": "cargo",
           "args": [
             "test",
             "-j",
-            "4",
+            "1",
             "-p",
-            "pij-core",
-            "watchdog"
+            "pij-daemon",
+            "--lib",
+            "pa_watchdog"
           ],
           "cwd": ".",
           "timeout_ms": 900000
@@ -242,7 +243,7 @@
         },
         {
           "id": "vd-0004",
-          "description": "Full engineering gate",
+          "description": "harness checks stages, run one by one under C12. Smoke is excluded under the named no-live-pane exception, so this is not a full-gate pass.",
           "command": "harness",
           "args": [
             "checks"
@@ -298,6 +299,5 @@
         }
       ]
     }
-  ],
-  "references": []
+  ]
 }

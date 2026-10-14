@@ -76,6 +76,42 @@
             "../plan.dd.json#acceptance_criteria/ac-0009",
             "backpressure.dd.json#rows/bp-0003"
           ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-14T10:50:54+10:00",
+          "text": "REVIEW of PR #53 at 6e99ede by pij-excellent-marmoset (OMP github-copilot/gpt-6-astra): REQUEST_CHANGES, F001 HIGH (arming not bound to the prime's identity), F002 HIGH (unknown counted as idle), F003 MEDIUM (docs over-claimed), F004 MEDIUM (proof claims overstated the full gate and the core tests). It includes an independent guide/decomposition review. The prime (pij-far-jackal) accepted all four. Record: reviews/pr53-pij-excellent-marmoset.md, fix tasks reviews/pr53-pij-excellent-marmoset-fix-tasks.md, dispositions reviews/pr53-dispositions.md (all four fixed in 67b29a3 plus the plan records).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "../plan.dd.json#acceptance_criteria/ac-0009"
+          ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-10-14T10:50:54+10:00",
+          "text": "FIX ROUND under C12 (-j 1, warm target), command cargo test --locked -j 1 -p pij-daemon --lib pa_watchdog. RED on reviewed head 6e99ede plus the new tests: exit 101; exactly the 3 reviewer regressions FAILED (replacement prime, unknown PA, unknown prime); 21 passed. On 67b29a3 with the brake deleted: exit 101, 2 brake tests FAILED. With the cap deleted: exit 101, 3 FAILED (second-turn cap, two-PA, replacement keeps spent cap). Restored: exit 0, 24 passed. cargo fmt --check ok; clippy -j 1 -p pij-core -p pij-daemon --all-targets -D warnings exit 0. Docs (F003) corrected in docs/how/pa-watchdog.md, docs/how/pij-rs-api.md and skills/pij/references/prime/pa.md. Evidence: evidence/review-fix.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0001",
+            "backpressure.dd.json#rows/bp-0002",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-14T10:59:13+10:00",
+          "text": "Workspace Rust under C12 (-j 1) at 67b29a3: cargo test --locked -j 1 --workspace --no-fail-fast exit 101, 1526 passed, 1 failed. The failure was pij-tmux adapter staged_submit_excludes_human_input_mid_body_and_before_enter ('staging exceeded 1s'). A rerun of the pij-tmux adapter suite failed a different test (stale_watchdog_cannot_release_a_later_adapter_transaction). crates/tmux is untouched vs origin/main, and these real-tmux timing tests fail differently on every local run. Recorded as a local flake in an untouched crate, NOT as a pass. All other suites passed, including pij-daemon (the 24 pa_watchdog tests). Evidence: evidence/review-fix.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
         }
       ]
     }

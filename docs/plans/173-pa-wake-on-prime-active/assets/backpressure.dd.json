@@ -21,10 +21,10 @@
           "phase": "ph-a578",
           "mode": "EXTEND",
           "tier": "computational",
-          "proof": "EXTEND→RUN: add prime-active cases to crates/daemon/src/pa_watchdog_tests.rs and crates/core/src/watchdog.rs tests; then nice -n 19 cargo test -j 4 -p pij-core watchdog && cargo test -j 4 -p pij-daemon pa_watchdog",
+          "proof": "EXTEND→RUN: add prime-active cases to crates/daemon/src/pa_watchdog_tests.rs (the tracker in crates/core/src/watchdog.rs is exercised through them; no core unit tests); then nice -n 19 cargo test -j 1 -p pij-daemon --lib pa_watchdog",
           "state": "checked",
           "probe": "the #52 fakes (fake clock, registry, delivery) in pa_watchdog_tests.rs",
-          "receipt": "execution-log.dd.json#entries/lg-0005"
+          "receipt": "execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "bp-0002",
@@ -35,7 +35,7 @@
           "proof": "BUILD→RUN: write the doc; then test -s docs/how/pa-watchdog.md plus review judgement of its content",
           "state": "checked",
           "probe": "docs/how has no watchdog doc on 19953b2",
-          "receipt": "execution-log.dd.json#entries/lg-0003"
+          "receipt": "execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "bp-0003",
@@ -43,7 +43,7 @@
           "phase": "ph-a578",
           "mode": "EXISTS",
           "tier": "computational",
-          "proof": "RUN: harness checks; gh pr checks",
+          "proof": "RUN: harness checks stage by stage, except smoke (NOT RUN: named no-live-pane exception, Forbidden); gh pr checks",
           "state": "checked",
           "probe": ".harness/extensions/checks, GitHub Actions on pij-fleet",
           "receipt": "execution-log.dd.json#entries/lg-0006"
