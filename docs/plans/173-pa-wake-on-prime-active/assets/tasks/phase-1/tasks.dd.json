@@ -86,7 +86,7 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
           "done": "tasks.dd.json#done_when/tk-0005",
-          "receipt": "../../execution-log.dd.json#entries/lg-0006",
+          "receipt": "../../execution-log.dd.json#entries/lg-0010",
           "note": "PR #53 review F004: claims scoped; smoke NOT RUN under the named no-live-pane exception, so no full-gate pass is claimed"
         }
       ]
@@ -150,7 +150,7 @@
             "assertion": "Each harness checks stage passes, run stage by stage under C12, except smoke, which is NOT RUN under the named no-live-pane exception (no full-gate pass is claimed); a PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green; git ls-remote origin 'refs/notes/*' is empty",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003",
-            "proven_by": "../../execution-log.dd.json#entries/lg-0006"
+            "proven_by": "../../execution-log.dd.json#entries/lg-0010"
           }
         ]
       }

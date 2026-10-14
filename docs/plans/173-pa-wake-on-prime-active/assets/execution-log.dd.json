@@ -112,6 +112,15 @@
             "../plan.dd.json#acceptance_criteria/ac-0009",
             "backpressure.dd.json#rows/bp-0003"
           ]
+        },
+        {
+          "id": "lg-000a",
+          "at": "2026-10-14T11:02:34+10:00",
+          "text": "CI after the review fix: gh pr checks 53 at 5ef20f8 (run 38493238798): check (22), check (24), rust-lint and rust-test all success; check-runs API confirms head_sha 5ef20f8. git ls-remote origin 'refs/notes/*' after push: empty. Local gate scope is in lg-0004, lg-0005, lg-0008 and lg-0009: smoke NOT RUN under the named no-live-pane exception, so no full harness checks pass is claimed.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
         }
       ]
     }
