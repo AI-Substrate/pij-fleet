@@ -1127,6 +1127,29 @@ async fn a_replacement_prime_must_be_observed_idle_before_it_wakes_the_pa() {
     assert_eq!(fleet.verdicts().await, ["sent"]);
 }
 
+/// Re-review of #53 R1: a replacement prime first observed idle with the PA
+/// arms on that very tick, so its next self-start wakes the PA. Dropping
+/// the old prime's arming must not discard the new prime's idle evidence.
+#[tokio::test]
+async fn a_replacement_prime_seen_idle_arms_on_that_tick() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    fleet.overnight(&watchdog, 1).await;
+    fleet.round(&watchdog, 2).await; // armed for pij-prime
+    let replacement = fleet.replace_prime("pij-prime-b", 2).await;
+    fleet.set(&replacement, SystemState::Idle).await;
+    fleet.round(&watchdog, 3).await; // the replacement and the PA are idle
+    fleet.set(&replacement, SystemState::Working).await;
+    fleet.round(&watchdog, 4).await; // the replacement starts its own turn
+    let wakes = fleet.to_pa().await;
+    assert_eq!(
+        wakes.len(),
+        1,
+        "the replacement's first observed idle tick arms it; its own turn wakes the PA"
+    );
+    assert_eq!(fleet.verdicts().await, ["sent"]);
+}
+
 /// Review of #53 F001: a new prime never re-opens a spent episode.
 #[tokio::test]
 async fn a_replacement_prime_keeps_the_spent_cap() {

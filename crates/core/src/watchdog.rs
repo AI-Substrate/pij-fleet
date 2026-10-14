@@ -164,8 +164,9 @@ enum Episode {
 ///
 /// The trigger arms at the first tick after the [`IdleEdge`] where the PA and
 /// the prime are both observed [`SystemState::Idle`], and fires on that same
-/// prime's next working tick. Any other observation of the armed prime, or a
-/// different prime, drops the arming: only one prime's own idle→working
+/// prime's next working tick. Any other observation of the armed prime drops
+/// the arming. A different prime drops it too, then arms afresh on that same
+/// tick if it and the PA are observed idle: only one prime's own idle→working
 /// fires it. A delivery to the prime since arming is a BRAKE: removing it
 /// only sends more. A pij message, the PA's own report included, then caused
 /// the turn, so it disarms without spending the cap. At most one wake per
@@ -201,6 +202,11 @@ impl PrimeActive {
             self.episode = Episode::Open;
             return PrimeVerdict::Waiting;
         }
+        if !same && matches!(self.episode, Episode::Armed(_)) {
+            // The arming belonged to another prime: drop it and judge this
+            // tick afresh, so a new prime seen idle with the PA arms on it.
+            self.episode = Episode::Open;
+        }
         match (self.episode, seen.prime.map(|(_, state)| state)) {
             (Episode::None, _) => PrimeVerdict::Waiting,
             // A new prime keeps the cap: it never re-opens an episode.
@@ -211,7 +217,7 @@ impl PrimeActive {
                 PrimeVerdict::Waiting
             }
             (Episode::Open, _) => PrimeVerdict::Waiting,
-            (Episode::Armed(_), Some(SystemState::Idle)) if same => PrimeVerdict::Waiting,
+            (Episode::Armed(_), Some(SystemState::Idle)) => PrimeVerdict::Waiting,
             (Episode::Armed(_), _) if started => {
                 let verdict = if seen.on_limit {
                     PrimeVerdict::OnLimit
@@ -227,8 +233,8 @@ impl PrimeActive {
                 };
                 verdict
             }
-            // Another prime, no prime, or no idle/working evidence: the
-            // arming no longer stands.
+            // No prime, or no idle/working evidence: the arming no longer
+            // stands.
             (Episode::Armed(_), _) => {
                 self.episode = Episode::Open;
                 PrimeVerdict::Waiting
