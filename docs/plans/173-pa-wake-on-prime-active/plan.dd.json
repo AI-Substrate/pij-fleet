@@ -112,7 +112,7 @@
           "id": "ph-a578",
           "title": "PA wakes once on prime activity after a worker-idle episode",
           "brief": "One phase: a pure prime-active tracker in core/watchdog.rs beside IdleEdge, wired into PaWatchdog::round with the delivery brake from the spine, the audits, tests, and docs/how/pa-watchdog.md. CS 3.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

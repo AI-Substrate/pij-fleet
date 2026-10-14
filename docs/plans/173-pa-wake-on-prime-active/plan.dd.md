@@ -68,4 +68,4 @@ When the worker fleet goes idle overnight, the PA is nudged once and then sleeps
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-a578 | PA wakes once on prime activity after a worker-idle episode | One phase: a pure prime-active tracker in core/watchdog.rs beside IdleEdge, wired into PaWatchdog::round with the delivery brake from the spine, the audits, tests, and docs/how/pa-watchdog.md. CS 3. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-a578 | PA wakes once on prime activity after a worker-idle episode | One phase: a pure prime-active tracker in core/watchdog.rs beside IdleEdge, wired into PaWatchdog::round with the delivery brake from the spine, the audits, tests, and docs/how/pa-watchdog.md. CS 3. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
