@@ -1,0 +1,303 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "PA prime-active wake: pure tracker, watchdog wiring, docs",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Decision logic is pure and clock-free in pij-core, next to IdleEdge: a per-PA PrimeActive tracker consumes one observation per round (worker idle-edge fired, PA idle, prime idle, prime working, any delivery to the prime since arming) and returns a verdict. It owns no I/O. The daemon's PaWatchdog::round is the only composition root: it reads the registry/roles, finds the prime (current designation, else the prime-role seat in scope), reads delivery receipts for the prime from the spine since the arming tick, consults the tracker, and sends through the existing delivery + audit_cold_wake path. Delivery is the brake input, read from the authority (spine), never inferred from the prime's state.",
+        "composition_root": "crates/daemon/src/pa_watchdog.rs (PaWatchdog::round)",
+        "contracts": [
+          "crates/core/src/watchdog.rs: PrimeActive tracker, observe(PrimeObservation) -> PrimeVerdict {Wake, Braked, Capped, Waiting}; episode reset tied to IdleEdge's working->idle edge",
+          "pij_core reason constant PRIME_ACTIVE_REASON = \"prime-active\" beside IDLE_WAKE_REASON"
+        ]
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One tightly coupled change: the tracker's states and the round's wiring share one episode lifecycle with #52's IdleEdge, in two files plus tests. Splitting it would create a frozen interface for a single consumer. One coder implements, and a cross-model reviewer reviews the whole change."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "round -> PrimeActive.observe -> Wake -> delivery.accept(PA) + audit",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "round arms only on a tick where PA+prime are both idle after the edge; prime lookup designation->prime role",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "spine delivery receipts to the prime since arming -> Braked (disarm, cap kept)",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "one Wake per episode; IdleEdge working->idle resets",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0005",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0005",
+          "owner": "tk-0001",
+          "path": "audit_cold_wake(reason prime-active) + watchdog.round outcome per verdict",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0006",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0006",
+          "owner": "tk-0001",
+          "path": "stops(scope) present -> no wake, idle-on-limit audit",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0007",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0007",
+          "owner": "tk-0001",
+          "path": "first observation arms only",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0008",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0008",
+          "owner": "tk-0001",
+          "path": "docs/how/pa-watchdog.md + skill PA references",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0003"
+          ]
+        },
+        {
+          "id": "cp-0009",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0009",
+          "owner": "tk-0001",
+          "path": "red on 19953b2, green on branch, mutation receipts, harness checks + CI",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Prime-active wake",
+          "role": "pm",
+          "responsibility": "Pure PrimeActive tracker in core, wiring in PaWatchdog::round with the spine delivery brake and audits, tests (red first), mutation receipts, docs/how/pa-watchdog.md and skill pointers.",
+          "paths": [
+            "crates/core/src/watchdog.rs",
+            "crates/daemon/src/pa_watchdog.rs",
+            "crates/daemon/src/pa_watchdog_tests.rs",
+            "docs/how/pa-watchdog.md",
+            "skills/pij/references/prime/pa.md"
+          ],
+          "reads": [],
+          "interface": "PrimeActive::observe(PrimeObservation) -> PrimeVerdict; PRIME_ACTIVE_REASON",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "../plan.dd.json#acceptance_criteria/ac-0009"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/core/src/watchdog.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-173-prime-active on feat/pa-wake-on-prime-active, created by the prime. OMP can't use it as cwd (#42): edit by absolute path."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "omp",
+          "model": "github-copilot/claude-opus-5.5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "omp",
+          "model": "github-copilot/gpt-6-astra"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Prime-active tracker behaviour: PrimeActive and scope_prime are exercised through the composed daemon round tests (crates/daemon/src/pa_watchdog_tests.rs). No separate pij-core unit tests exist for them.",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "1",
+            "-p",
+            "pij-daemon",
+            "--lib",
+            "pa_watchdog"
+          ],
+          "cwd": ".",
+          "timeout_ms": 900000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon round tests (fake clock/registry/spine), the composed behaviour",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "4",
+            "-p",
+            "pij-daemon",
+            "pa_watchdog"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Docs present and linked",
+          "command": "test",
+          "args": [
+            "-s",
+            "docs/how/pa-watchdog.md"
+          ],
+          "cwd": ".",
+          "timeout_ms": 10000
+        },
+        {
+          "id": "vd-0004",
+          "description": "harness checks stages, run one by one under C12. Smoke is excluded under the named no-live-pane exception, so this is not a full-gate pass.",
+          "command": "harness",
+          "args": [
+            "checks"
+          ],
+          "cwd": ".",
+          "timeout_ms": 3600000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Implement the tracker and its red-first unit tests.",
+          "Wire it into PaWatchdog::round with the spine brake and audits; run the daemon round tests.",
+          "Run the mutation receipts (delete the brake, delete the cap), write the docs, run harness checks, push, open the PR."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0002",
+          "impl-guide.dd.json#checks/vd-0004"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After the PR is open: an independent cross-model review of the exact head SHA. The prime merges.",
+        "inputs": [
+          "plan.dd.json",
+          "impl-guide.dd.json",
+          "PR head SHA",
+          "check receipts and mutation receipts"
+        ],
+        "proof": [
+          "Reviewer seat id, model, subject SHA, findings with dispositions in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "The prime's own report or a peer message makes the prime look like it woke by itself, which wastes the PA's one wake.",
+          "check": "cargo test -p pij-daemon pa_watchdog (between-ticks report + delivery test)"
+        },
+        {
+          "id": "rk-0002",
+          "text": "The designated-prime change breaks #52's two-PA test semantics.",
+          "check": "cargo test -p pij-daemon two_pas_in_one_scope"
+        }
+      ]
+    }
+  ]
+}

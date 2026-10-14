@@ -1,0 +1,21 @@
+Rust gate (just rust-check), C12: CARGO_BUILD_JOBS=4 nice -n 19 timeout -k 30, cwd worktree root, subject 7d09f63, observed 2026-10-14 by pij-evident-dog.
+
+## Run 1: just rust-check -> exit 101
+cargo metadata --locked, cargo fmt --all --check and cargo clippy --locked --workspace --all-targets -D warnings passed (the recipe reached cargo test).
+test stale_watchdog_cannot_release_a_later_adapter_transaction ... FAILED
+failures:
+thread 'stale_watchdog_cannot_release_a_later_adapter_transaction' (773409417) panicked at crates/tmux/tests/adapter.rs:768:52:
+failures:
+test result: FAILED. 28 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.36s
+crates/tmux is untouched vs origin/main (git diff --quiet origin/main -- crates/tmux).
+
+## Run 2: cargo test --locked -p pij-tmux --test adapter -> exit 101, a DIFFERENT tmux timing test failed (post_enter_cleanup_failure_remains_success_and_submits_once). Host load 30-80 from other sessions.
+
+## Run 3: cargo test --locked --workspace --no-fail-fast -> exit 0
+summed: passed 1520 failed 0
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-581e0e6625b7ede5)
+test result: ok. 603 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 48.78s
+--
+     Running tests/adapter.rs (target/debug/deps/adapter-76c911d493b63d82)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.62s
+Run 3 pij-tmux adapter binary: both earlier failures ok, 'test result: ok. 29 passed; 0 failed'.

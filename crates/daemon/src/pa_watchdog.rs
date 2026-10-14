@@ -20,14 +20,27 @@
 //! like a forced `pij send` (`send.cold-wake-forced`, reason
 //! [`IDLE_WAKE_REASON`]).
 //!
+//! **When the prime starts again on its own, the PA is woken once more**
+//! (plan 173, Jordan 2026-10-14: the PA resumes when the prime does). The
+//! prime is a supervisor, so its turn never re-arms the idle edge; instead a
+//! per-PA [`PrimeActive`] tracker arms at the first tick after the edge where
+//! the PA and the prime ([`scope_prime`]) are both observed `idle` (unknown
+//! never arms), and wakes the PA on that same prime's next working tick, at
+//! most once per worker-idle episode whoever the prime becomes. A pij
+//! message delivered to the prime since arming is a BRAKE (removing it only
+//! sends more): the turn was that message's, so nothing is sent and the
+//! trigger re-arms. The wake carries the fleet digest and goes like the idle
+//! nudge, cold or not (reason [`PRIME_ACTIVE_REASON`]).
+//!
 //! **A fleet idle on a usage limit is not nudged at the edge**: nothing can run.
-//! Claude Code seats stopped by a structured quota rejection
-//! ([`pij_core::usage_limit`]) instead get ONE wake per `(scope, resetsAt)`,
-//! at `resetsAt` plus [`LIMIT_WAKE_MARGIN_SECS`], to the PA in scope or, with
-//! no PA, to the prime ([`WakeTarget`]). It is claimed in the store before it
-//! is sent, so seats sharing a limit, overlapping rounds and restarts never
-//! wake twice; a reset already past when first seen wakes at once. The woken
-//! seat decides which workers to restart; the watchdog wakes no worker.
+//! Nor is it woken when the prime starts. Claude Code seats stopped by a
+//! structured quota rejection ([`pij_core::usage_limit`]) instead get ONE wake
+//! per `(scope, resetsAt)`, at `resetsAt` plus [`LIMIT_WAKE_MARGIN_SECS`], to
+//! the PA in scope or, with no PA, to the prime ([`WakeTarget`]). It is claimed
+//! in the store before it is sent, so seats sharing a limit, overlapping rounds
+//! and restarts never wake twice; a reset already past when first seen wakes at
+//! once. The woken seat decides which workers to restart; the watchdog wakes
+//! no worker.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -42,7 +55,9 @@ use pij_core::anomalies::{
 use pij_core::cold_wake::{COLD_WAKE_FORCED_KIND, ColdCheck, seat_size};
 use pij_core::error::{PijError, Result};
 use pij_core::model::Card;
-use pij_core::model::{DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq};
+use pij_core::model::{
+    DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
+};
 use pij_core::orchestration::PrimeState;
 use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
 use pij_core::ports::SeatFilter;
@@ -54,7 +69,8 @@ use pij_core::usage_limit::{
     wake_due_ms,
 };
 use pij_core::watchdog::{
-    IdleEdge, PRIME_ROLE, fleet_working, is_watched_pa, optin_due, optin_nudge,
+    IdleEdge, PRIME_ACTIVE_REASON, PRIME_ROLE, PrimeActive, PrimeObservation, PrimeVerdict,
+    fleet_working, is_watched_pa, optin_due, optin_nudge, prime_active_body, scope_prime,
 };
 use serde_json::json;
 use tokio::sync::Mutex;
@@ -76,6 +92,11 @@ const GIT_WAIT: Duration = Duration::from_secs(2);
 
 /// How long one transcript's quota read may take before it counts as none.
 const LIMIT_READ_WAIT: Duration = Duration::from_secs(2);
+
+/// Pages the prime-active brake may read before it counts as delivered.
+const BRAKE_PAGES: usize = 4;
+/// Rows per brake page.
+const BRAKE_PAGE: usize = 256;
 
 fn error(message: impl Into<String>) -> PijError {
     PijError::Adapter {
@@ -132,6 +153,15 @@ pub enum RoundOutcome {
         /// Delivery's receipt outcome, or the error that stopped it.
         delivery: String,
     },
+    /// The prime started working after the PA's fleet went idle (plan 173).
+    PrimeActive {
+        /// The PA.
+        pa: SeatId,
+        /// What the tracker decided; only [`PrimeVerdict::Wake`] sends.
+        verdict: PrimeVerdict,
+        /// Delivery's receipt outcome or error, for a wake only.
+        delivery: Option<String>,
+    },
 }
 
 /// Claude seats stopped on one limit in one scope.
@@ -151,12 +181,20 @@ struct Scope<'a> {
     members: Vec<SeatDescriptor>,
 }
 
-/// Per-PA idle-edge trackers, the reset schedule, and a folder → repository
-/// cache. In memory only: a restart re-arms every tracker (no nudge for a fleet
-/// already idle), and the store's `limit_wakes` claim keeps reset wakes single.
+/// One PA's trackers: #52's idle edge and plan 173's prime-active wake.
+#[derive(Default)]
+struct PaTrackers {
+    edge: IdleEdge,
+    prime: PrimeActive,
+}
+
+/// Per-PA trackers, the reset schedule, and a folder → repository cache. In
+/// memory only: a restart re-arms every tracker (no nudge for a fleet already
+/// idle, no prime-active wake before a new episode), and the store's
+/// `limit_wakes` claim keeps reset wakes single.
 #[derive(Default)]
 pub struct PaWatchdog {
-    edges: Mutex<HashMap<SeatId, IdleEdge>>,
+    trackers: Mutex<HashMap<SeatId, PaTrackers>>,
     /// When each `(scope, resetsAt)` was first seen, epoch ms.
     limits_seen: Mutex<HashMap<(String, u64), u64>>,
     repos: Mutex<HashMap<String, String>>,
@@ -268,9 +306,69 @@ fn bg_msg(to: &SeatId, body: String, msg_id: String) -> Msg {
     }
 }
 
+/// Wake a PA through the ordinary delivery path, not held when it is cold:
+/// waking it is the point. A cold wake is audited first, with `reason`.
+/// Returns the delivery outcome word (or error) and the `cold_check` label.
+async fn wake_pa(
+    services: &Services,
+    pa: &SeatDescriptor,
+    body: String,
+    msg_id: String,
+    reason: &str,
+    now_ms: u64,
+) -> (String, String) {
+    match audit_cold_wake(services, pa, &msg_id, reason, now_ms).await {
+        Ok(cold_check) => match services.delivery.accept(bg_msg(&pa.id, body, msg_id)).await {
+            Ok(receipt) => (outcome_word(&receipt.outcome).to_string(), cold_check),
+            Err(cause) => (format!("error: {cause}"), cold_check),
+        },
+        Err(cause) => (format!("error: {cause}"), "unknown".to_string()),
+    }
+}
+
+/// Was a pij message delivered to `prime` at or after `since_at`? The
+/// prime-active brake's input, read from the prime's `delivery.outcome`
+/// receipts on the spine. A read that fails, or that runs out of pages, counts
+/// as delivered: the brake can only ever spare a wake.
+async fn delivered_since(services: &Services, prime: &SeatId, since_at: u64) -> bool {
+    let mut window = match SpineWindow::new(
+        crate::delivery::OUTCOME_EVENT_KIND,
+        since_at,
+        Seq(0),
+        BRAKE_PAGE,
+    ) {
+        Ok(window) => window,
+        Err(cause) => {
+            eprintln!("pa watchdog: brake window for {prime}: {cause}");
+            return true;
+        }
+    };
+    for _ in 0..BRAKE_PAGES {
+        let page = match services.spine.matching_since(prime, &window).await {
+            Ok(page) => page,
+            Err(cause) => {
+                eprintln!("pa watchdog: brake read for {prime}: {cause}");
+                return true;
+            }
+        };
+        if page.iter().any(|event| {
+            serde_json::from_str::<serde_json::Value>(&event.payload)
+                .is_ok_and(|payload| payload["outcome"]["outcome"] == "delivered")
+        }) {
+            return true;
+        }
+        match window.next(&page) {
+            Some(next) => window = next,
+            None => return false,
+        }
+    }
+    true
+}
+
 impl PaWatchdog {
     /// One pass: nudge opted-in seats that went quiet, fire due limit-reset
-    /// wakes, then nudge each PA whose fleet just went idle.
+    /// wakes, nudge each PA whose fleet just went idle, and wake each PA whose
+    /// prime just started on its own after that.
     ///
     /// # Errors
     /// Registry or role-store failures. Per-seat delivery failures are
@@ -300,24 +398,55 @@ impl PaWatchdog {
                 .filter(|designation| designation.state == PrimeState::Current)
                 .map(|designation| designation.seat)
         };
-        self.edges
+        self.trackers
             .lock()
             .await
             .retain(|id, _| pas.iter().any(|pa| &pa.id == id));
         for pa in pas {
             let scope = self.scope_of(pa, &seats).await;
             let working = fleet_working(&scope.members, designated.as_ref());
-            let edge = self
-                .edges
+            let on_limit = stops.keys().any(|(stopped, _)| stopped == &scope.key);
+            let prime = scope_prime(&scope.members, designated.as_ref()).cloned();
+            let (edge, armed_at) = {
+                let mut trackers = self.trackers.lock().await;
+                let tracker = trackers.entry(pa.id.clone()).or_default();
+                (
+                    tracker.edge.observe(working),
+                    prime
+                        .as_ref()
+                        .and_then(|prime| tracker.prime.armed_at_ms(&prime.id)),
+                )
+            };
+            // The brake reads the spine only on a would-be wake.
+            let delivered_since_arming = match (armed_at, &prime) {
+                (Some(since), Some(prime))
+                    if !edge && !on_limit && prime.state == SystemState::Working =>
+                {
+                    delivered_since(services, &prime.id, since).await
+                }
+                _ => false,
+            };
+            let verdict = self
+                .trackers
                 .lock()
                 .await
                 .entry(pa.id.clone())
                 .or_default()
-                .observe(working);
-            if !edge {
-                continue;
-            }
-            if stops.keys().any(|(stopped, _)| stopped == &scope.key) {
+                .prime
+                .observe(PrimeObservation {
+                    edge,
+                    pa: pa.state,
+                    prime: prime.as_ref().map(|prime| (&prime.id, prime.state)),
+                    on_limit,
+                    delivered_since_arming,
+                    now_ms,
+                });
+            let prime_active = if prime.is_some() {
+                "watching"
+            } else {
+                "no-prime"
+            };
+            if edge && on_limit {
                 audit(
                     services,
                     "watchdog.round",
@@ -327,44 +456,74 @@ impl PaWatchdog {
                         "outcome": "idle-on-limit",
                         "prime": scope.prime.map(|prime| &prime.id),
                         "scope": scope.key,
+                        "prime_active": prime_active,
                     }),
                 )
                 .await;
                 outcomes.push(RoundOutcome::IdleOnLimit(pa.id.clone()));
                 continue;
             }
-            let view = self.fleet(services, pa, scope, interval_secs, now_ms).await;
-            let msg_id = format!("pa-watchdog:{}:{now_ms}", pa.id);
-            let delivery =
-                match audit_cold_wake(services, pa, &msg_id, IDLE_WAKE_REASON, now_ms).await {
-                    Ok(cold_check) => match services
-                        .delivery
-                        .accept(bg_msg(&pa.id, view.digest(), msg_id))
-                        .await
-                    {
-                        Ok(receipt) => (outcome_word(&receipt.outcome).to_string(), cold_check),
-                        Err(cause) => (format!("error: {cause}"), cold_check),
-                    },
-                    Err(cause) => (format!("error: {cause}"), "unknown".to_string()),
-                };
-            audit(
-                services,
-                "watchdog.round",
-                &pa.id,
-                now_ms,
-                json!({
-                    "outcome": "nudged",
-                    "prime": view.prime,
-                    "scope": view.scope,
-                    "seats": view.rows.len(),
-                    "delivery": delivery.0,
-                    "cold_check": delivery.1,
-                }),
-            )
-            .await;
-            outcomes.push(RoundOutcome::Nudged {
+            if edge {
+                let view = self.fleet(services, pa, scope, interval_secs, now_ms).await;
+                let msg_id = format!("pa-watchdog:{}:{now_ms}", pa.id);
+                let (delivery, cold_check) = wake_pa(
+                    services,
+                    pa,
+                    view.digest(),
+                    msg_id,
+                    IDLE_WAKE_REASON,
+                    now_ms,
+                )
+                .await;
+                audit(
+                    services,
+                    "watchdog.round",
+                    &pa.id,
+                    now_ms,
+                    json!({
+                        "outcome": "nudged",
+                        "prime": view.prime,
+                        "scope": view.scope,
+                        "seats": view.rows.len(),
+                        "delivery": delivery,
+                        "cold_check": cold_check,
+                        "prime_active": prime_active,
+                    }),
+                )
+                .await;
+                outcomes.push(RoundOutcome::Nudged {
+                    pa: pa.id.clone(),
+                    delivery,
+                });
+                continue;
+            }
+            let Some(prime) = prime.filter(|_| verdict != PrimeVerdict::Waiting) else {
+                continue;
+            };
+            let mut payload = json!({
+                "outcome": "prime-active",
+                "verdict": verdict.as_str(),
+                "reason": PRIME_ACTIVE_REASON,
+                "prime": prime.id,
+                "scope": scope.key,
+            });
+            let mut delivery = None;
+            if verdict == PrimeVerdict::Wake {
+                let view = self.fleet(services, pa, scope, interval_secs, now_ms).await;
+                let msg_id = format!("prime-active:{}:{now_ms}", pa.id);
+                let body = prime_active_body(&prime.id, &view.digest());
+                let (sent, cold_check) =
+                    wake_pa(services, pa, body, msg_id, PRIME_ACTIVE_REASON, now_ms).await;
+                payload["seats"] = json!(view.rows.len());
+                payload["delivery"] = json!(sent);
+                payload["cold_check"] = json!(cold_check);
+                delivery = Some(sent);
+            }
+            audit(services, "watchdog.round", &pa.id, now_ms, payload).await;
+            outcomes.push(RoundOutcome::PrimeActive {
                 pa: pa.id.clone(),
-                delivery: delivery.0,
+                verdict,
+                delivery,
             });
         }
         Ok(outcomes)

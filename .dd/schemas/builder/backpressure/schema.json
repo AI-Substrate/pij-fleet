@@ -1,0 +1,133 @@
+{
+  "dd_schema": 1,
+  "description": "A backpressure coverage survey: what each criterion's proof is, how strong it is, and which sensor runs it.",
+  "enums": {
+    "coverage_mode": {
+      "values": [
+        "EXISTS",
+        "EXTEND",
+        "BUILD",
+        "ABSENT"
+      ]
+    },
+    "proof_tier": {
+      "values": [
+        "computational",
+        "human-judgement"
+      ]
+    },
+    "certainty": {
+      "values": [
+        "Partial",
+        "Confident",
+        "Proven"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "link",
+            "target": "builder/plan/section/meta",
+            "rel": "ref"
+          },
+          "basis_sha": {
+            "type": "string"
+          },
+          "certainty": {
+            "type": "enum",
+            "enum": "certainty"
+          }
+        }
+      }
+    },
+    "rows": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "criterion",
+            "mode",
+            "tier"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "criterion": {
+              "type": "text"
+            },
+            "phase": {
+              "type": "string"
+            },
+            "mode": {
+              "type": "enum",
+              "enum": "coverage_mode"
+            },
+            "tier": {
+              "type": "enum",
+              "enum": "proof_tier"
+            },
+            "proof": {
+              "type": "text"
+            },
+            "state": {
+              "type": "state"
+            },
+            "note": {
+              "type": "string"
+            },
+            "receipt": {
+              "type": "string"
+            },
+            "probe": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "sensors": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "command"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            },
+            "dimension": {
+              "type": "string"
+            },
+            "found_in": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+harness checks, stage by stage under C12 (nice -n 19, timeout -k), cwd worktree root, observed 2026-10-14 by pij-evident-dog.
+Subject: ec47208 + biome.json '!.dd' (committed 7d09f63).
+
+## just local-path-check
+node_modules/.bin/tsx harness/scripts/local-path-check.ts
+local-path-check: no user-specific absolute home paths in operational files.
+
+## just typecheck
+npm run typecheck
+
+> pij@0.1.0 typecheck
+> tsc --noEmit
+
+
+## just lockfile-allowlist
+node_modules/.bin/tsx harness/scripts/lockfile-allowlist.ts
+lockfile-allowlist: ok — 223 resolved source(s), all allowlisted.
+
+## just lint
+  
+  i Run the command biome migrate to migrate the configuration file.
+  
+
+Checked 211 files in 135ms. No fixes applied.
+Found 1 info.
+
+## just test
+
+ Test Files  92 passed | 2 skipped (94)
+      Tests  2158 passed | 22 skipped (2180)
+   Start at  09:40:15
+   Duration  35.20s (transform 4.13s, setup 0ms, import 8.27s, tests 185.28s, environment 4ms)
+
+
+## just copilot-native-test
+ℹ pass 318
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 3
+ℹ todo 0
+ℹ duration_ms 9527.490166

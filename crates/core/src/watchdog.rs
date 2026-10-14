@@ -8,8 +8,10 @@
 //! **PAs** (Jordan, 2026-10-09) are not scheduled here. A PA is the fleet's
 //! watchdog, and it is nudged when its fleet goes idle (plan 172, 2026-10-13:
 //! "an idle fleet means nobody doing anything"), never on a fixed cadence:
-//! see [`fleet_working`] and [`IdleEdge`]. A fleet that went idle on a usage
-//! limit is woken at the reset instead ([`crate::usage_limit`]).
+//! see [`fleet_working`] and [`IdleEdge`]. When the prime starts again on its
+//! own after that, the PA is woken once more ([`PrimeActive`], plan 173). A
+//! fleet that went idle on a usage limit is woken at the reset instead
+//! ([`crate::usage_limit`]).
 
 use crate::config::Config;
 use crate::model::{SeatDescriptor, SeatId, SystemState};
@@ -63,6 +65,181 @@ impl IdleEdge {
         let edge = self.working == Some(true) && !working;
         self.working = Some(working);
         edge
+    }
+}
+
+/// The prime a PA's prime-active wake watches (plan 173 R1): the designated
+/// prime when it is live in `scope`, else the lowest-id `prime`-role seat in
+/// `scope`. `None` when there is neither. Roles must already be joined.
+pub fn scope_prime<'a>(
+    scope: &'a [SeatDescriptor],
+    designated_prime: Option<&SeatId>,
+) -> Option<&'a SeatDescriptor> {
+    let live = || scope.iter().filter(|seat| seat.tombstoned_at.is_none());
+    live()
+        .find(|seat| designated_prime == Some(&seat.id))
+        .or_else(|| {
+            live()
+                .filter(|seat| seat.role.as_deref() == Some(PRIME_ROLE))
+                .min_by(|a, b| a.id.cmp(&b.id))
+        })
+}
+
+/// The reason recorded when a prime-active wake wakes a cold PA.
+pub const PRIME_ACTIVE_REASON: &str = "prime-active";
+
+/// The prime-active wake's text: why the PA is woken, then the fleet digest.
+pub fn prime_active_body(prime: &SeatId, digest: &str) -> String {
+    format!(
+        "[pij watchdog] {prime} is active again after the fleet went idle: resume your plan.\n\n{digest}"
+    )
+}
+
+/// One round's facts for a PA's [`PrimeActive`] tracker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrimeObservation<'a> {
+    /// This round's [`IdleEdge`] fired: a new worker-idle episode opens.
+    pub edge: bool,
+    /// The PA's observed state. Only [`SystemState::Idle`] is idle; unknown
+    /// and every other state is no evidence of idle.
+    pub pa: SystemState,
+    /// The watched prime ([`scope_prime`]) and its observed state, `None`
+    /// with no prime in scope.
+    pub prime: Option<(&'a SeatId, SystemState)>,
+    /// The scope is stopped on a usage limit.
+    pub on_limit: bool,
+    /// A pij message was delivered to the prime at or after
+    /// [`PrimeActive::armed_at_ms`]. Read only when that is `Some` for this
+    /// prime and the prime is working; `false` otherwise.
+    pub delivered_since_arming: bool,
+    /// This round's clock, epoch ms: the arming time when it arms.
+    pub now_ms: u64,
+}
+
+/// What a [`PrimeActive`] observation decided.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrimeVerdict {
+    /// Nothing to do this round.
+    Waiting,
+    /// The prime started on its own: wake the PA. The episode's cap is spent.
+    Wake,
+    /// The prime's turn followed a delivery to it. No wake; disarmed, the cap
+    /// kept, re-armed at the next tick where the PA and the prime are idle.
+    Braked,
+    /// The prime started again after this episode's wake. No wake.
+    Capped,
+    /// The prime started while the scope is stopped on a usage limit: the
+    /// limit-reset wake owns that. No wake; disarmed, the cap kept.
+    OnLimit,
+}
+
+impl PrimeVerdict {
+    /// The verdict as audited on `watchdog.round`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Waiting => "waiting",
+            Self::Wake => "sent",
+            Self::Braked => "braked",
+            Self::Capped => "capped",
+            Self::OnLimit => "idle-on-limit",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Episode {
+    /// No worker-idle episode since the tracker began: a restart never wakes.
+    #[default]
+    None,
+    /// An episode is open; waiting for a tick where PA and prime are idle.
+    Open,
+    /// Armed at this time, epoch ms, for the prime last observed.
+    Armed(u64),
+    /// This episode's one wake went.
+    Spent,
+}
+
+/// One PA's prime-active wake (plan 173): once per worker-idle episode, when
+/// the prime moves from idle to working on its own, the PA is woken too.
+///
+/// The trigger arms at the first tick after the [`IdleEdge`] where the PA and
+/// the prime are both observed [`SystemState::Idle`], and fires on that same
+/// prime's next working tick. Any other observation of the armed prime drops
+/// the arming. A different prime drops it too, then arms afresh on that same
+/// tick if it and the PA are observed idle: only one prime's own idle→working
+/// fires it. A delivery to the prime since arming is a BRAKE: removing it
+/// only sends more. A pij message, the PA's own report included, then caused
+/// the turn, so it disarms without spending the cap. At most one wake per
+/// episode, whoever the prime becomes; a new episode opens only on the next
+/// worker idle edge.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PrimeActive {
+    episode: Episode,
+    /// The prime and its state as last observed.
+    prime: Option<(SeatId, SystemState)>,
+}
+
+impl PrimeActive {
+    /// When the trigger armed for `prime`, epoch ms, while it is armed for
+    /// that prime.
+    pub fn armed_at_ms(&self, prime: &SeatId) -> Option<u64> {
+        match (self.episode, &self.prime) {
+            (Episode::Armed(at), Some((armed, _))) if armed == prime => Some(at),
+            _ => None,
+        }
+    }
+
+    /// Record this round's observation and decide.
+    pub fn observe(&mut self, seen: PrimeObservation<'_>) -> PrimeVerdict {
+        let last = self.prime.take();
+        let same = last.as_ref().map(|(id, _)| id) == seen.prime.map(|(id, _)| id);
+        let started = same
+            && last.as_ref().map(|(_, state)| *state) == Some(SystemState::Idle)
+            && seen.prime.map(|(_, state)| state) == Some(SystemState::Working);
+        self.prime = seen.prime.map(|(id, state)| (id.clone(), state));
+        if seen.edge {
+            // Arming waits for a tick AFTER the edge.
+            self.episode = Episode::Open;
+            return PrimeVerdict::Waiting;
+        }
+        if !same && matches!(self.episode, Episode::Armed(_)) {
+            // The arming belonged to another prime: drop it and judge this
+            // tick afresh, so a new prime seen idle with the PA arms on it.
+            self.episode = Episode::Open;
+        }
+        match (self.episode, seen.prime.map(|(_, state)| state)) {
+            (Episode::None, _) => PrimeVerdict::Waiting,
+            // A new prime keeps the cap: it never re-opens an episode.
+            (Episode::Spent, _) if started => PrimeVerdict::Capped,
+            (Episode::Spent, _) => PrimeVerdict::Waiting,
+            (Episode::Open, Some(SystemState::Idle)) if seen.pa == SystemState::Idle => {
+                self.episode = Episode::Armed(seen.now_ms);
+                PrimeVerdict::Waiting
+            }
+            (Episode::Open, _) => PrimeVerdict::Waiting,
+            (Episode::Armed(_), Some(SystemState::Idle)) => PrimeVerdict::Waiting,
+            (Episode::Armed(_), _) if started => {
+                let verdict = if seen.on_limit {
+                    PrimeVerdict::OnLimit
+                } else if seen.delivered_since_arming {
+                    PrimeVerdict::Braked
+                } else {
+                    PrimeVerdict::Wake
+                };
+                self.episode = if verdict == PrimeVerdict::Wake {
+                    Episode::Spent
+                } else {
+                    Episode::Open
+                };
+                verdict
+            }
+            // No prime, or no idle/working evidence: the arming no longer
+            // stands.
+            (Episode::Armed(_), _) => {
+                self.episode = Episode::Open;
+                PrimeVerdict::Waiting
+            }
+        }
     }
 }
 

@@ -1,0 +1,58 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 173 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident",
+        "basis_sha": "50b032cb9441370cf85f6da33063bf6a8e051b849e47b71ed329c4f1f8b019a6"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC7: tracker and round behaviour (wake, arm, brake, cap, audit, limit, restart)",
+          "phase": "ph-a578",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND→RUN: add prime-active cases to crates/daemon/src/pa_watchdog_tests.rs (the tracker in crates/core/src/watchdog.rs is exercised through them; no core unit tests); then nice -n 19 cargo test -j 1 -p pij-daemon --lib pa_watchdog",
+          "state": "checked",
+          "probe": "the #52 fakes (fake clock, registry, delivery) in pa_watchdog_tests.rs",
+          "receipt": "execution-log.dd.json#entries/lg-000b"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC8: docs/how/pa-watchdog.md exists and covers the watchdog as shipped",
+          "phase": "ph-a578",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: write the doc; then test -s docs/how/pa-watchdog.md plus review judgement of its content",
+          "state": "checked",
+          "probe": "docs/how has no watchdog doc on 19953b2",
+          "receipt": "execution-log.dd.json#entries/lg-0008"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC9: red-first, mutation receipts, full gate, CI",
+          "phase": "ph-a578",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: harness checks stage by stage, except smoke (NOT RUN: named no-live-pane exception, Forbidden); gh pr checks",
+          "state": "checked",
+          "probe": ".harness/extensions/checks, GitHub Actions on pij-fleet",
+          "receipt": "execution-log.dd.json#entries/lg-000a"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
