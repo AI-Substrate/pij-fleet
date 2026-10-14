@@ -12,7 +12,7 @@
         "status": "ready",
         "summary": "Wake the PA once when the prime resumes after a worker-idle episode.",
         "backpressure": "assets/backpressure.dd.json#rows",
-        "mode": "Simple",
+        "mode": "Full",
         "log": "assets/execution-log.dd.json#entries"
       }
     },
@@ -45,14 +45,14 @@
           "claim": "Overnight resume: the workers work then go idle (the PA gets #52's idle nudge), the PA and the prime are then both observed idle, then the prime moves idle→working with no pij delivery to it since arming. Result: each PA in scope receives exactly one prime-active wake that carries the fleet digest and a resume-your-plan line.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-000b"
         },
         {
           "id": "ac-0002",
           "claim": "Arming: the trigger is armed only at a tick, after the idle edge, where the PA and the prime are both observed idle. A prime turn observed before arming sends nothing. 'The prime' is the current designated prime, else the prime-role seat in scope; with neither, nothing is sent and the audit names why.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-000b"
         },
         {
           "id": "ac-0003",
@@ -98,7 +98,7 @@
         },
         {
           "id": "ac-0009",
-          "claim": "Proof: tests that run red on main 19953b2 and green on the branch, using a fake clock and registry, cover the cases in AC1-AC7, including a PA report that falls between ticks. Deleting the brake turns the delivery-brake test red, and deleting the cap turns the second-turn test red (mutation receipts in the PR). The existing two-PA test is updated to expect one prime-active wake per PA per episode. Every harness checks stage passes except smoke, which is NOT RUN under the named exception (the diff has no TS or extension code; smoke drives the OMP extension and would open a pane on the live tmux server, which is Forbidden), so this is no full-gate pass. GitHub CI is green.",
+          "claim": "Proof: tests that run red on main 19953b2 and green on the branch, using a fake clock and registry, cover the cases in AC1-AC7, including a PA report that falls between ticks. Deleting the brake turns the delivery-brake test red, and deleting the cap turns the second-turn test red (mutation receipts in the PR). The existing two-PA test is updated to expect one prime-active wake per PA per episode. The local gate is scoped, and is no full harness checks pass: smoke is NOT RUN under the named exception (the diff has no TS or extension code; smoke drives the OMP extension and would open a pane on the live tmux server, which is Forbidden). The local Rust workspace run at 67b29a3 had 1 pij-tmux adapter failure, a recorded local flake in the untouched crates/tmux, kept as a failure and not counted as a pass (lg-0009). The remaining local stages pass as recorded in lg-0004, lg-0005 and lg-0008. GitHub CI is green on the exact head.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003",
           "proven_by": "assets/execution-log.dd.json#entries/lg-000a"

@@ -121,6 +121,17 @@
             "../plan.dd.json#acceptance_criteria/ac-0009",
             "backpressure.dd.json#rows/bp-0003"
           ]
+        },
+        {
+          "id": "lg-000b",
+          "at": "2026-10-14T14:09:57+10:00",
+          "text": "RE-REVIEW of PR #53 at bd06e49 by pij-excellent-marmoset: REQUEST_CHANGES with R1 HIGH (a replacement prime seen idle lost its arming tick), R2 MEDIUM (AC9/dw-0007 wording said more than lg-0009 showed), R3 MEDIUM (meta.mode Simple resolved a missing plan#tasks, E458). R1 under C12 (-j 1, 1-minute load gate): cargo test --locked -j 1 -p pij-daemon --lib pa_watchdog. RED on the bd06e49 code plus the adopted probe: exit 101, 24 passed, 1 failed (a_replacement_prime_seen_idle_arms_on_that_tick, left 0 right 1); pauses happened only during the build. GREEN with the fix (5fa9081): exit 0, 25 passed. clippy -j 1 -p pij-core -p pij-daemon --all-targets -D warnings: exit 0; fmt --check: ok. R2: AC9 and dw-0007 reworded. R3: meta.mode Full; harness plan validate ok, 0 errors. Evidence: evidence/rereview-r1.txt; reviews/pr53-rereview-pij-excellent-marmoset.md; reviews/pr53-dispositions.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0001"
+          ]
         }
       ]
     }

@@ -52,7 +52,7 @@
           ],
           "done": "tasks.dd.json#done_when/tk-0002",
           "receipt": "../../execution-log.dd.json#entries/lg-0005",
-          "note": "PR #53 review F001/F002 fixed in 67b29a3 (identity-bound, positive-idle arming); see lg-0007, lg-0008"
+          "note": "PR #53 review F001/F002 fixed in 67b29a3; re-review R1 (a replacement prime seen idle arms on that tick) fixed in 5fa9081; see lg-0007, lg-0008, lg-000b"
         },
         {
           "id": "tk-0003",
@@ -116,7 +116,7 @@
             "assertion": "All task-1 tests are green; #52's two-PA test is updated to expect one prime-active wake per PA per episode, and every other #52 test is unchanged and green",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001",
-            "proven_by": "../../execution-log.dd.json#entries/lg-0008"
+            "proven_by": "../../execution-log.dd.json#entries/lg-000b"
           },
           {
             "id": "dw-0004",
@@ -147,7 +147,7 @@
         "tk-0005": [
           {
             "id": "dw-0007",
-            "assertion": "Each harness checks stage passes, run stage by stage under C12, except smoke, which is NOT RUN under the named no-live-pane exception (no full-gate pass is claimed); a PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green; git ls-remote origin 'refs/notes/*' is empty",
+            "assertion": "Scoped local gate, run stage by stage under C12; no full harness checks pass is claimed. Smoke is NOT RUN under the named no-live-pane exception. The local Rust workspace run at 67b29a3 had 1 pij-tmux adapter failure (a recorded local flake, crates/tmux untouched, not counted as a pass; lg-0009). A PR opens on pij-fleet with the plan's AC evidence (harness plan pr-body); GitHub CI is green on the exact head; git ls-remote origin 'refs/notes/*' is empty.",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003",
             "proven_by": "../../execution-log.dd.json#entries/lg-000a"

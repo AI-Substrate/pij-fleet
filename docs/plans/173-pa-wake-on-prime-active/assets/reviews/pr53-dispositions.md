@@ -10,3 +10,13 @@ Review: [pr53-pij-excellent-marmoset.md](pr53-pij-excellent-marmoset.md) (REQUES
 | F004 | MEDIUM | Fixed | AC9 and dw-0007 now say smoke is NOT RUN under the named no-live-pane exception, and claim no full-gate pass. Guide `vd-0001` maps to the daemon tests that actually exercise the tracker (there are no core unit tests). `vd-0004` and `bp-0003` carry the same exception, and `bp-0001` names the real sensor. Plan `meta.mode` is `Simple`, and `meta.log` is declared on the plan and the task dossier. |
 
 The reviewer's three fail-safe probes are also kept as permanent tests. They pin the brake's fail-safe boundaries: a window that can't be built, a spine read that fails, and running out of pages at 1024 rows.
+
+## Re-review at bd06e49 (last round, verified by the prime)
+
+Re-review: [pr53-rereview-pij-excellent-marmoset.md](pr53-rereview-pij-excellent-marmoset.md). F002 and F003 were cleared. F001 was fixed but its correction introduced R1; F004 was partially fixed, leaving R2 and R3.
+
+| ID | Severity | Disposition | Change |
+|---|---|---|---|
+| R1 | HIGH | Fixed in 5fa9081 | On an identity change, `PrimeActive::observe` drops the old prime's arming and judges the tick afresh. A new prime observed `Idle` with an `Idle` PA arms on that same tick, and `Spent` still survives. The probe was adopted as `a_replacement_prime_seen_idle_arms_on_that_tick`. It was red on the bd06e49 code (24 passed, 1 failed: 0 wakes, expected 1) and is green after the fix (25/25). Evidence: `evidence/rereview-r1.txt`. |
+| R2 | MEDIUM | Fixed | AC9 and dw-0007 now say the local gate is scoped. Smoke was NOT RUN, and the local workspace run at 67b29a3 had 1 pij-tmux failure (lg-0009). That failure is kept as a failure; it is not called a pass. |
+| R3 | MEDIUM | Fixed | Plan `meta.mode` is `Full`, matching the phase/task-dossier layout. `harness plan validate` returns ok with 0 errors. |

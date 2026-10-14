@@ -1,0 +1,41 @@
+PR #53 re-review R1 (pij-evident-dog), observed 2026-10-14. C12 wrapper: nice -n 19, timeout -k, CARGO_BUILD_JOBS=1 (-j 1), launch gated on the 1-minute load <= 40, process group paused above 40. Warm target.
+
+## RED: tree = bd06e49 + the adopted probe a_replacement_prime_seen_idle_arms_on_that_tick (no code change). Pauses fell only in the build, before 'Running'.
+cwd=/Users/jordanknight/pi-hacking/fleet-173-prime-active
+command=['cargo', 'test', '--locked', '-j', '1', '-p', 'pij-daemon', '--lib', 'pa_watchdog']
+load_start=(39.06103515625, 66.84423828125, 83.26513671875)
+C12 PAUSE: load=(41.18115234375, 66.3740234375, 82.9052734375)
+C12 RESUME: load=(39.2373046875, 65.14013671875, 82.27490234375)
+C12 PAUSE: load=(40.03955078125, 63.58984375, 81.31689453125)
+C12 RESUME: load=(38.95849609375, 58.96826171875, 75.908203125)
+C12 PAUSE: load=(41.89501953125, 58.92333984375, 75.693359375)
+C12 RESUME: load=(38.19580078125, 56.54931640625, 74.259765625)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5m 54s
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-435c7c5d79f69e8d)
+test pa_watchdog::tests::a_replacement_prime_seen_idle_arms_on_that_tick ... FAILED
+thread 'pa_watchdog::tests::a_replacement_prime_seen_idle_arms_on_that_tick' (787171077) panicked at crates/daemon/src/pa_watchdog_tests.rs:1145:5:
+  left: 0
+ right: 1
+test result: FAILED. 24 passed; 1 failed; 0 ignored; 0 measured; 586 filtered out; finished in 13.29s
+exit=101
+load_max=(106.576171875, 77.19873046875, 85.6474609375)
+
+## GREEN: tree = bd06e49 + probe + the R1 fix in crates/core/src/watchdog.rs (PrimeActive::observe rebinds on identity change and arms the new prime on the same tick if it and the PA are Idle)
+cwd=/Users/jordanknight/pi-hacking/fleet-173-prime-active
+command=['cargo', 'test', '--locked', '-j', '1', '-p', 'pij-daemon', '--lib', 'pa_watchdog']
+load_start=(31.2724609375, 50.80419921875, 70.69873046875)
+C12 PAUSE: load=(40.0361328125, 51.0078125, 70.07958984375)
+C12 RESUME: load=(39.552734375, 50.72509765625, 69.8681640625)
+C12 PAUSE: load=(48.09912109375, 50.39404296875, 68.498046875)
+C12 RESUME: load=(39.4345703125, 47.33837890625, 64.24365234375)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 19s
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-435c7c5d79f69e8d)
+C12 PAUSE: load=(42.08447265625, 47.35205078125, 63.8505859375)
+C12 RESUME: load=(39.75537109375, 46.78173828125, 63.55224609375)
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 586 filtered out; finished in 14.94s
+exit=0
+load_max=(52.8720703125, 51.2724609375, 70.69873046875)
+
+## CLIPPY: cargo clippy --locked -j 1 -p pij-core -p pij-daemon --all-targets -- -D warnings (same tree as GREEN); cargo fmt --all --check: ok
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 37.11s
+exit=0
