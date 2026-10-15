@@ -1,0 +1,321 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Double-seat warning: one code, stray-pane refusals, hooks, notice",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Reuse, don't re-derive. The session-record witness already exists twice: revive's conversation_live_elsewhere (crates/daemon/src/http/revive.rs ~147) and pij_harnesses::proc::claude_session_records with process_start_matches_utc_record. Extract one shared daemon helper (e.g. conversation_live_as_seat(state, harness, session) -> Option<LiveCopy{seat, pane, pid, proc_start}>) and make revive, adopt and the stray-pane path all call it, so the three cannot drift. The code string E-RS-CONVERSATION-LIVE is defined once in Rust; the shell scripts match it as a literal, and a test pins that the literal the scripts grep equals the Rust constant (cross-runtime literal seam). The notice goes through the ordinary delivery path and is deduped by a spine event read; the read is bounded to the seat and the event kind. Scripts stay POSIX sh, exit 0, bounded, and print hook JSON only on the coded refusal.",
+        "composition_root": "crates/daemon/src/http/identity.rs (adopt and pane resolution) with the shared live-copy helper; harness/scripts/*.sh for the human-facing surfaces",
+        "contracts": [
+          "E-RS-CONVERSATION-LIVE: one Rust constant; leads the refusal text; --json details {code, seat, pane, harness_session, pid}",
+          "spine kind seat.double-detected {seat, stray_pane, stray_pid, proc_start, harness_session}: audit and dedupe record for the notice",
+          "shared helper conversation_live_as_seat(state, harness, session) -> Option<LiveCopy>, used by revive, adopt and the stray-pane path"
+        ],
+        "seams": [
+          "crates/daemon/src/http/identity.rs: adopt refusal (~818) and pane resolution's not-registered refusal (~1264)",
+          "crates/daemon/src/http/revive.rs: conversation_live_elsewhere becomes a caller of the shared helper",
+          "harness/scripts/claude-session-start-pij.sh, claude-user-prompt-submit-pij.sh, claude-statusline-pij.sh (embedded via include_str! in crates/harnesses/src/claude_settings.rs; the daemon installs them)"
+        ]
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One detection surfaced at four points that share one helper and one code string; splitting would freeze an interface for a single consumer. One coder implements; a cross-model reviewer reviews; the prime verifies."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "adopt -> shared helper -> refused(E-RS-CONVERSATION-LIVE, details)",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "pane resolution miss -> caller session record -> shared helper -> refused(E-RS-CONVERSATION-LIVE)",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "SessionStart hook -> adopt refusal code -> systemMessage + additionalContext",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "UserPromptSubmit hook -> activity/fyi-claim refusal code -> systemMessage + additionalContext",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0005",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0005",
+          "owner": "tk-0001",
+          "path": "status line -> whoami/adopt refusal code -> red double segment",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0006",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0006",
+          "owner": "tk-0001",
+          "path": "coded refusal -> spine seat.double-detected read/write -> one delivery to the live seat",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0007",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0007",
+          "owner": "tk-0001",
+          "path": "docs/how/pij-rs-api.md + docs/how/double-seat.md",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0008",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0008",
+          "owner": "tk-0001",
+          "path": "red/green + mutation receipts + CI",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Double-seat warning",
+          "role": "pm",
+          "responsibility": "Shared live-copy helper, coded refusals (adopt and stray-pane), once-per-pair notice with spine audit, hook and status-line warnings, tests red first, mutation receipts, docs, PR.",
+          "paths": [
+            "crates/daemon/src/http/identity.rs",
+            "crates/daemon/src/http/revive.rs",
+            "crates/daemon/src/",
+            "harness/scripts/claude-session-start-pij.sh",
+            "harness/scripts/claude-user-prompt-submit-pij.sh",
+            "harness/scripts/claude-statusline-pij.sh",
+            "crates/harnesses/tests/claude_heal_scripts.rs",
+            "docs/how/pij-rs-api.md",
+            "docs/how/double-seat.md"
+          ],
+          "reads": [],
+          "notes": "Read first: crates/harnesses/src/proc.rs (claude_session_records, process_start_matches_utc_record), crates/daemon/src/claude_bind.rs, crates/harnesses/src/claude_settings.rs (include_str! of the scripts).",
+          "interface": "E-RS-CONVERSATION-LIVE refusal (text prefix + details {code, seat, pane, harness_session, pid}); spine kind seat.double-detected",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/daemon/src/http/identity.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-174-double-seat on feat/double-seat-warning, created by the prime. The coder runs with that worktree as its cwd."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "copilot",
+          "model": "hydrafusion-max"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "omp",
+          "model": "discovered at spawn (a different family from the coder)"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Daemon double-seat behaviour (AC1, AC2, AC6, AC8d)",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "1",
+            "-p",
+            "pij-daemon",
+            "double_seat"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Hook and status-line scripts (AC3-AC5)",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "1",
+            "-p",
+            "pij-harnesses",
+            "--test",
+            "claude_heal_scripts"
+          ],
+          "cwd": ".",
+          "timeout_ms": 900000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy, warnings denied",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "-j",
+            "1",
+            "-p",
+            "pij-daemon",
+            "-p",
+            "pij-harnesses",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Formatting",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 120000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Write the red tests on main bb9f0b1 and record the red receipts.",
+          "Extract the shared helper; add the coded adopt refusal and the stray-pane check; add the notice and its spine dedupe; run vd-0001.",
+          "Update the three scripts; run vd-0002.",
+          "Mutation receipts, docs, clippy and fmt, push, open the PR, wait for green CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001",
+          "impl-guide.dd.json#checks/vd-0002"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After the PR is open and CI is green: an independent cross-model review of the exact head SHA, including its own mutation of at least one guard. The prime then verifies the red/green and mutation receipts itself and merges.",
+        "inputs": [
+          "plan.dd.json",
+          "impl-guide.dd.json",
+          "PR head SHA",
+          "red/green and mutation receipts"
+        ],
+        "proof": [
+          "Reviewer seat id, model, subject SHA, findings with dispositions in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "The stray-pane check adds a filesystem scan to every unresolved pane lookup and slows refusals.",
+          "check": "The scan runs only on the refusal path (pane unowned), never on a resolved pane; a test pins that a resolved pane does not read the sessions dir."
+        },
+        {
+          "id": "rk-0002",
+          "text": "A recycled pid's stale session record raises a false double.",
+          "check": "Same pid+proc_start match as revive; a test with a mismatched start expects today's not-registered text."
+        },
+        {
+          "id": "rk-0003",
+          "text": "The notice loops or repeats across restarts.",
+          "check": "Spine-event dedupe test across a simulated restart; mutation receipt deleting the dedupe."
+        },
+        {
+          "id": "rk-0004",
+          "text": "The hooks print malformed JSON and break the human's prompt.",
+          "check": "Script tests parse the hook output with jq/serde and assert exit 0 on every path."
+        }
+      ]
+    }
+  ]
+}

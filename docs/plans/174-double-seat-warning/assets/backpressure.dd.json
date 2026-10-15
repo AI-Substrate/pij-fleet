@@ -1,0 +1,64 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 174 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1, AC2, AC6, AC8(d): daemon refusals, stray-pane check, notice and dedupe",
+          "phase": "ph-61af",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND→RUN: add double_seat tests beside the adopt/identity tests in crates/daemon (fixture claude home with sessions/<pid>.json, fake liveness, fake registry/spine as the existing adopt and revive tests use); then nice -n 19 cargo test -j 1 -p pij-daemon double_seat",
+          "state": "unchecked",
+          "probe": "the existing revive conversation_live_elsewhere and adopt tests' fixtures"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3, AC4, AC5: hook and status-line scripts",
+          "phase": "ph-61af",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND→RUN: add cases to crates/harnesses/tests/claude_heal_scripts.rs (fake pij-rs on PATH answers adopt/activity/whoami with the E-RS-CONVERSATION-LIVE refusal); then nice -n 19 cargo test -j 1 -p pij-harnesses --test claude_heal_scripts",
+          "state": "unchecked",
+          "probe": "claude_heal_scripts.rs fake pij-rs pattern"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC7: docs",
+          "phase": "ph-61af",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "RUN: just lint (Biome on docs where configured) plus a prime read of docs/how/double-seat.md and the pij-rs-api.md entry against the code",
+          "state": "unchecked",
+          "probe": "prime review"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC8: red/green, mutation receipts, gates, CI",
+          "phase": "ph-61af",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: tests red on bb9f0b1 and green on the branch; mutation receipts; nice -n 19 cargo clippy -j 1 -p pij-daemon -p pij-harnesses --all-targets -- -D warnings; cargo fmt --all --check; GitHub CI green on the exact head",
+          "state": "unchecked",
+          "probe": "execution log receipts"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
