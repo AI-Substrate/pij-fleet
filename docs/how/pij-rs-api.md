@@ -133,13 +133,13 @@ That refusal carries the typed discriminator `details:{code:"E-RS-SEAT-RETIRED",
 `/v1/adopt <pane> --harness <h>` picks the seat in this order:
 
 1. **Operator reclaim** (`--reclaim <seat>`, below), when it is supplied.
-2. **The conversation's seat.** A seat follows its conversation, live or tombstoned, if it has the same harness. A tombstone lifts with one `seat.resumed`, and the pane's previous registration for this same process is superseded. For **Claude** the daemon derives the session on every adopt from the pane process's own `<claude home>/sessions/<pid>.json`, across every Claude home including `~/.claude-alt`. The record counts only when its `pid` is the process tmux reports and its `procStart` matches that process's observed start, so named resumes resolve too. `--harness-session <id>` is only a cross-check: a mismatch, or a flag with no corroborating record, refuses and writes nothing. For other harnesses the flag is believed only when the process owning this connection, observed with `lsof` and a `ps` parent chain, descends from the pane's harness process. If the conversation is live in another process, adopt refuses and names that pane.
+2. **The conversation's seat.** A seat follows its conversation, live or tombstoned, if it has the same harness. A tombstone lifts with one `seat.resumed`, and the pane's previous registration for this same process is superseded. For **Claude** the daemon derives the session on every adopt from the pane process's own `<claude home>/sessions/<pid>.json`, across every Claude home including `~/.claude-alt`. The record counts only when its `pid` is the process tmux reports and its `procStart` matches that process's observed start, so named resumes resolve too. `--harness-session <id>` is only a cross-check: a mismatch, or a flag with no corroborating record, refuses and writes nothing. For other harnesses the flag is believed only when the process owning this connection, observed with `lsof` and a `ps` parent chain, descends from the pane's harness process. If the conversation is live as a seat in another process, adopt refuses with `E-RS-CONVERSATION-LIVE` ([double seat](#double-seat-e-rs-conversation-live-plan-174)).
 3. **The pane's incumbent**, but only while its recorded `(pid, proc_start)` is alive. A pane id alone is neither identity nor liveness: pane ids and pids both reset at boot. `whoami --pane` applies the same rule, and its refusal names the dead seat.
 4. Otherwise a freshly minted name.
 
 `--reclaim <seat>` is an operator override for continuity that cannot heal by itself. It is allowed only when the caller, resolved from its own pane or id, is the target's recorded parent or holds the `prime` role, the harness matches, and the target's process no longer runs. It refuses by name otherwise, before any write. The target keeps its parent and drops its recorded conversation, because that is exactly the evidence that went stale. The status-line heal then records the true one. It emits `seat.reclaimed` with `caller`, old/new proc and pane, `old_harness_session`, `prior_reason` and the evidence.
 
-Claude heals itself. On every render the managed status line checks `whoami --pane`. On a miss (that legacy does not own) or a seat recording a different `session_id`, it fires one detached adopt per pane per 15 s and shows `⛓ registering…` until it lands. This adds about 1–2 ms to a healthy render. The SessionStart hook retries in the background for about 30 s when the daemon is not up yet. Both write RFC 3339-stamped lines to `~/.pij-rs/hook.log`. The daemon also installs a pij-managed Copilot status line (`~/.pij-rs/copilot-statusline-pij.sh`, wired through `~/.copilot/settings.json`, with the prior script backed up). It is display-only and shows a dead or missing seat as such.
+Claude heals itself. On every render the managed status line checks `whoami --pane`. On a miss (that legacy does not own) or a seat recording a different `session_id`, it fires one detached adopt per pane per 15 s and shows `⛓ registering…` until it lands. When `whoami` is refused with `E-RS-CONVERSATION-LIVE` it shows a red `⚠ double: <seat> in %N` instead and fires no adopt. This adds about 1–2 ms to a healthy render. The SessionStart hook retries in the background for about 30 s when the daemon is not up yet. Both write RFC 3339-stamped lines to `~/.pij-rs/hook.log`. The daemon also installs a pij-managed Copilot status line (`~/.pij-rs/copilot-statusline-pij.sh`, wired through `~/.copilot/settings.json`, with the prior script backed up). It is display-only and shows a dead or missing seat as such.
 
 ## Native Copilot registration
 
@@ -909,6 +909,27 @@ pij-rs revive <seat> --fresh --json   # explicit blank relaunch
 ```
 
 Without an eligible override, `E-RS-REVIVE-LIVE` names the observation and exact override command; its remediation does not grant authorization. Shim `pij revive` still refuses `E-RS-UNPORTED`, and native `--print`/`--attach` remain unsupported.
+
+## Double seat: `E-RS-CONVERSATION-LIVE` (plan 174)
+
+One conversation cannot be two seats. When a live seat holds a conversation and another process runs the same conversation (a hand `claude --resume` of a revived seat, for example), the daemon refuses with `E-RS-CONVERSATION-LIVE`:
+
+- **`adopt`** of that conversation from any other process. Claude derives the conversation from the pane process's own session record; other harnesses from a verified `--harness-session`.
+- **Every verb resolved by pane** from a pane no live seat owns, when that pane is running a second copy: `whoami --pane`, `send`, `spawn`, `bg`, `report`, `phonehome` and every other verb that resolves its caller through the identity ladder, plus the Claude hook verbs `activity` and `fyi-claim`. The evidence is a Claude record `<claude home>/sessions/<pid>.json` whose `tmux` ends in that pane and whose `procStart` matches the pid's observed start, naming a conversation that is live as a seat in another pane.
+
+The refusal is HTTP 409, `error: "refused"`, and the code leads the text:
+
+```text
+E-RS-CONVERSATION-LIVE conversation `<id>` is live as seat `<seat>` in another process (pane %5); close one copy, then run `pij-rs adopt %7 --harness claude` from the copy you keep — one conversation cannot be two seats
+```
+
+`details` is `{code, seat, pane, harness_session, pid, stray_pane, stray_pid}`: the live seat, its pane and pid, the conversation, and the second copy's pane and pid. A pane with no such record, a record whose start does not match (a recycled pid), or a conversation no other live seat holds keeps the plain not-registered text. The record scan runs only on that refusal path; a pane a live seat owns never reads the records.
+
+**The live seat is told once.** The first refusal for a pair (live seat, stray pid plus its start) writes a spine `seat.double-detected` event `{msg_id, seat, pane, pid, stray_pane, stray_pid, proc_start, harness_session}`, then sends the seat one `pij-bg` message through the park notice's send-or-hold path, so the cold-wake guard applies (held as an FYI where a send would be refused). The event is the dedupe record, read by seat, kind and `msg_id`, so repeats and daemon restarts send nothing more. The dedupe is a brake: removing it only sends more. An unreadable spine counts as already sent, and a failed audit write sends nothing.
+
+pij never closes or adopts either copy: the human decides which one stays, closes the other, then adopts from the one kept. The Claude SessionStart and UserPromptSubmit hooks show the refusal to the human and the model, and the status line shows it in red (see [double-seat.md](double-seat.md)).
+
+Revive's `E-RS-REVIVE-CONVERSATION-LIVE` is the pre-launch twin and asks the same helper: a live (not tombstoned) seat on the conversation whose process is not observed gone, then the Claude record witness. Since plan 174 a failed liveness probe counts as running there too (refuse rather than fork), and a tombstoned row no longer counts by itself; its process, if Claude, is still found by its record.
 
 ## Event stream and cursors
 
