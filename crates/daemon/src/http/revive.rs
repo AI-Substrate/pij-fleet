@@ -163,12 +163,11 @@ async fn conversation_live_elsewhere(
     if prior.harness != pij_core::model::Harness::Claude {
         return None;
     }
-    let (record, _) = double_seat::live_claude_records(state, |record| {
-        record.session_id == session
-    })
-    .await
-    .into_iter()
-    .next()?;
+    let (record, _) =
+        double_seat::live_claude_records(state, |record| record.session_id == session)
+            .await
+            .into_iter()
+            .next()?;
     Some(record.pane().map_or_else(
         || format!("(pid {}, no tmux pane)", record.pid),
         str::to_string,

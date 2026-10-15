@@ -197,10 +197,7 @@ pub(crate) async fn send_or_hold(
         // A refusal (e.g. the recipient's own receiver lease lapsed) is final
         // for the wake, never for the notice: hold it for the recipient's next
         // turn under the same id (background B9/B10).
-        return Ok((
-            "fyi-after-refusal",
-            services.delivery.hold_fyi(msg).await?,
-        ));
+        return Ok(("fyi-after-refusal", services.delivery.hold_fyi(msg).await?));
     }
     Ok(("send", receipt))
 }

@@ -274,8 +274,16 @@ fn assert_double_warning(event: &str, stdout: &str) {
         .unwrap_or_default();
     assert_eq!(answer["hookSpecificOutput"]["hookEventName"], event);
     for (who, text) in [("systemMessage", human), ("additionalContext", model)] {
-        for needle in ["pij-different-smelt", "%5", "close one copy", "pij-rs adopt %9"] {
-            assert!(text.contains(needle), "{event} {who} names `{needle}`: {stdout}");
+        for needle in [
+            "pij-different-smelt",
+            "%5",
+            "close one copy",
+            "pij-rs adopt %9",
+        ] {
+            assert!(
+                text.contains(needle),
+                "{event} {who} names `{needle}`: {stdout}"
+            );
         }
     }
 }
@@ -306,11 +314,16 @@ fn session_start_hook_warns_human_and_model_about_a_double_seat() {
     .unwrap();
     let (stdout, code, _) = hook(&root, "claude-session-start-pij.sh", payload);
     assert_eq!(code, 0);
-    assert_eq!(stdout, "", "any other refusal keeps today's log-only behaviour");
+    assert_eq!(
+        stdout, "",
+        "any other refusal keeps today's log-only behaviour"
+    );
 
     let log = std::fs::read_to_string(root.join("state/hook.log")).unwrap();
     assert_eq!(
-        log.lines().filter(|line| line.contains("refused:adopt")).count(),
+        log.lines()
+            .filter(|line| line.contains("refused:adopt"))
+            .count(),
         2,
         "both refusals still logged: {log}"
     );

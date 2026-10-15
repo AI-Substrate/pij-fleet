@@ -258,7 +258,10 @@ fn assert_double_refusal(verb: &str, body: &Value) {
     assert_eq!(body["details"]["code"], CODE, "{verb}: {body}");
     assert_eq!(body["details"]["seat"], SEAT, "{verb}: {body}");
     assert_eq!(body["details"]["pane"], LIVE_PANE, "{verb}: {body}");
-    assert_eq!(body["details"]["harness_session"], SESSION, "{verb}: {body}");
+    assert_eq!(
+        body["details"]["harness_session"], SESSION,
+        "{verb}: {body}"
+    );
     assert_eq!(body["details"]["pid"], LIVE_PID, "{verb}: {body}");
 }
 
@@ -302,7 +305,11 @@ async fn double_seat_adopt_refusal_carries_the_code_details_and_fix() {
         .filter(|seat| seat.tombstoned_at.is_none())
         .collect();
     assert_eq!(live.len(), 1, "the refusal wrote no seat: {live:?}");
-    assert_eq!(live[0].proc, Some(live_proc()), "the live seat is untouched");
+    assert_eq!(
+        live[0].proc,
+        Some(live_proc()),
+        "the live seat is untouched"
+    );
 }
 
 /// AC2 — every verb resolved by pane, from the pane no live seat owns, gives
@@ -405,7 +412,10 @@ async fn double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart()
     assert_eq!(event["stray_pid"], STRAY_PID, "{event}");
     assert_eq!(event["proc_start"], stray_proc().proc_start, "{event}");
     assert_eq!(event["harness_session"], SESSION, "{event}");
-    let msg_id = event["msg_id"].as_str().expect("the notice's id").to_string();
+    let msg_id = event["msg_id"]
+        .as_str()
+        .expect("the notice's id")
+        .to_string();
     let delivered: Vec<_> = world
         .spine
         .tail(Some(&SeatId::from(SEAT)), Seq(0))

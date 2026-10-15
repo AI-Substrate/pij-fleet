@@ -28,7 +28,9 @@ use axum::response::Response;
 use pij_core::BG_ACTOR;
 use pij_core::double_seat::{CONVERSATION_LIVE_CODE, DETECTED_KIND};
 use pij_core::error::Result;
-use pij_core::model::{Envelope, ErrorKind, Event, Harness, Msg, ProcIdentity, SeatDescriptor, SeatId};
+use pij_core::model::{
+    Envelope, ErrorKind, Event, Harness, Msg, ProcIdentity, SeatDescriptor, SeatId,
+};
 use pij_core::ports::SeatFilter;
 use pij_harnesses::proc::{
     ClaudeSessionRecord, claude_session_records, local_utc_offset_minutes,
@@ -97,7 +99,12 @@ pub(crate) async fn conversation_live_as_seat(
                 && !skip(seat)
         })
         .collect();
-    holders.sort_by_key(|seat| (Reverse(seat.proc.map(|proc| proc.proc_start)), seat.id.clone()));
+    holders.sort_by_key(|seat| {
+        (
+            Reverse(seat.proc.map(|proc| proc.proc_start)),
+            seat.id.clone(),
+        )
+    });
     for seat in holders {
         if !process_gone(state, &seat).await {
             return Ok(Some(LiveCopy {
@@ -131,8 +138,7 @@ pub(crate) async fn live_claude_records(
         let Ok(Some(observed)) = state.services.liveness.proc_start(record.pid).await else {
             continue;
         };
-        if process_start_matches_utc_record(&record.proc_start, observed, offset).unwrap_or(false)
-        {
+        if process_start_matches_utc_record(&record.proc_start, observed, offset).unwrap_or(false) {
             let proc = ProcIdentity {
                 pid: record.pid,
                 proc_start: observed,
@@ -150,8 +156,7 @@ pub(crate) async fn live_claude_records(
 /// pane never reads the session records. Any lookup failure answers `None`, so
 /// the caller keeps today's not-registered text.
 pub(crate) async fn stray_pane(state: &AppState, pane: &str) -> Option<Double> {
-    for (record, stray) in live_claude_records(state, |record| record.pane() == Some(pane)).await
-    {
+    for (record, stray) in live_claude_records(state, |record| record.pane() == Some(pane)).await {
         let live = conversation_live_as_seat(state, Harness::Claude, &record.session_id, |seat| {
             seat.proc == Some(stray) || seat.pane.as_deref() == Some(pane)
         })
@@ -242,7 +247,9 @@ async fn notify_once(state: &AppState, double: &Double) {
         Ok(None) => {}
         Ok(Some(_)) => return,
         Err(error) => {
-            eprintln!("pij-rs double-seat notice for {seat}: dedupe read failed, not sending: {error}");
+            eprintln!(
+                "pij-rs double-seat notice for {seat}: dedupe read failed, not sending: {error}"
+            );
             return;
         }
     }
