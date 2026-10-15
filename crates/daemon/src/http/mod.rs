@@ -3678,6 +3678,8 @@ pub(crate) fn envelope<T: serde::Serialize>(status: StatusCode, body: &Envelope<
 }
 
 #[cfg(test)]
+mod double_seat_tests;
+#[cfg(test)]
 mod identity_tests;
 #[cfg(test)]
 mod native_tests;
