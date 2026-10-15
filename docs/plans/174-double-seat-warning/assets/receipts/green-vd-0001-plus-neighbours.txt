@@ -1,0 +1,316 @@
+load { 24.05 37.64 42.03 }
+   Compiling pij-harnesses v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/harnesses)
+   Compiling pij-daemon v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.49s
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-435c7c5d79f69e8d)
+
+running 94 tests
+test delivery::tests::a_failing_carrier_never_loses_its_fyis ... ok
+test delivery::tests::a_pane_bound_send_carrying_fyis_is_queued_as_their_carrier ... ok
+test http::identity::tests::adopt_registration_retryable_error_preserves_conflict_discriminator ... ok
+test delivery::tests::a_failing_fyi_claim_never_fails_the_send ... ok
+test background::tests::a_refused_hand_off_interrupted_after_its_fyi_is_not_re_sent_to_a_live_receiver ... ok
+test background::tests::fyi_sources_hold_batches_without_waking_even_a_busy_owner ... ok
+test background::tests::failpoint_cold_fyi_before_escalation_escalates_once_and_holds_once ... ok
+test background::tests::the_final_turn_of_an_fyi_source_is_held_not_woken ... ok
+test background::tests::failpoint_final_before_admission_keeps_the_final_batch_identity ... ok
+test events::governance_http_tests::two_hello_confirmed_http_subscribers_see_adopt_and_report_before_message_control ... ok
+test http::identity_tests::a_paneless_claim_refuses_an_uncorroborated_process_identity ... ok
+test http::identity_tests::a_paneless_claim_refuses_a_pid_with_no_start_stamp ... ok
+test http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them ... ok
+test http::identity_tests::a_report_against_a_tombstoned_seat_persists_no_card ... ok
+test http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent ... ok
+test http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details ... ok
+test http::identity_tests::argv::parses_the_paneless_ready_form ... ok
+test http::identity_tests::argv::parses_the_ready_gestures_own_command_line ... ok
+test http::identity_tests::argv::refuses_a_flag_it_cannot_honour_and_names_it ... ok
+test http::identity_tests::argv::refuses_an_inbox_verb_it_does_not_serve ... ok
+test http::identity_tests::caller_context_accepts_all_three_wire_spellings ... ok
+test http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat ... ok
+test http::double_seat_tests::double_seat_incident_end_to_end ... ok
+test http::identity_tests::adopt_refuses_a_caller_supplied_id_and_mints_nothing_for_it ... ok
+test http::identity_tests::adopt_binds_the_pane_process_and_ignores_a_claimed_pid ... ok
+test http::identity_tests::adopt_persists_a_row_that_whoami_then_names ... ok
+test http::identity_tests::adopt_refuses_a_flag_it_cannot_honour_by_name ... ok
+test http::identity_tests::adopt_records_harness_child_not_pane_shell ... ok
+test http::identity_tests::adopt_refuses_a_paneless_claim_even_when_the_process_corroborates ... ok
+test http::identity_tests::adopting_a_dissolved_pane_refuses_and_persists_nothing ... ok
+test http::identity_tests::adopt_upgrades_unknown_claude_consent_but_preserves_explicit_refusal ... ok
+test http::identity_tests::adopt_reports_pane_source_when_harness_child_has_died ... ok
+test http::identity_tests::phonehome_confirms_the_binding_rs_already_made ... ok
+test http::identity_tests::phonehome_refuses_a_tombstoned_seat_rather_than_confirming_a_corpse ... ok
+test http::identity_tests::phonehome_says_it_did_not_bind_by_the_harness_session_id ... ok
+test http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart ... ok
+test http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text ... ok
+test http::identity_tests::phonehome_without_caller_context_refuses_decodably_and_never_guesses ... ok
+test http::identity_tests::recycled_pane_with_dead_recorded_process_is_neither_whoami_answer_nor_adopt_incumbent ... ok
+test http::identity_tests::re_adopting_the_same_pane_keeps_live_state ... ok
+test http::identity_tests::the_paneless_form_is_refused_by_name_when_nothing_can_bind_it ... ok
+test http::identity_tests::reclaim_is_guarded_by_caller_harness_and_death_then_audited ... ok
+test http::native_tests::native_receiver_heartbeat_http_is_identity_bound_and_independent_of_hold ... ok
+test http::native_tests::native_sqlite_http_missing_registration_is_retryable_but_noncopilot_identity_is_refused ... ok
+test http::native_tests::native_typing_http_rejects_missing_mismatched_and_noncurrent_identity_without_mutation ... ok
+test http::identity_tests::whoami_refuses_a_tombstoned_asserted_id ... ok
+test http::identity_tests::whoami_refuses_an_asserted_seat_that_contradicts_the_derived_pane ... ok
+test http::identity_tests::whoami_refuses_an_unknown_asserted_seat_and_mints_nothing ... ok
+test http::identity_tests::phonehome_reports_a_recycled_pid_as_unbound ... ok
+test http::identity_tests::pane_fallback_preserves_claim_and_rebounds_for_new_unrecognized_process ... ok
+test http::native_tests::native_lease_expiry_http_manual_pull_preserves_identity ... ok
+test http::tests::a_forwarded_fyi_is_held_by_the_receiver ... ok
+test http::tests::a_shim_fyi_to_a_cold_seat_is_held_not_refused ... ok
+test http::tests::a_forwarded_fyi_keeps_its_machine_and_never_collides_with_a_local_one ... ok
+test http::identity_tests::register_walk_and_sqlite_roundtrip_preserve_identical_process_start ... ok
+test http::native_tests::retired_or_prebind_copilot_cannot_be_relabelled_to_bypass_native_inbox ... ok
+test http::tests::paneless_registration_returns_the_identity_export_it_requires ... ok
+test http::tests::fyis_and_controls_are_never_refused ... ok
+test http::tests::registration_cannot_adopt_a_spawn_match_from_another_pane ... ok
+test http::tests::registration_cannot_adopt_a_spawn_match_that_is_already_bound ... ok
+test http::tests::registration_refuses_uncorroborated_or_half_process_identity ... ok
+test http::identity_tests::adopt_persists_generic_and_native_harness_session_aliases ... ok
+test registration::tests::paneless_observed_session_argv_must_match_including_claude_fork_identity ... ok
+test http::tests::extension_identity_survives_sqlite_registration_readbacks_and_legacy_refresh_clears_it ... ok
+test http::tests::retired_harness_override_cannot_launch_without_its_spine_event ... ok
+test http::tests::retired_harness_spawn_refuses_before_pane_or_descriptor_mutation ... ok
+test http::tests::retired_harness_override_launches_and_records_policy_exception ... ok
+test http::tests::retired_registration_refuses_claude_spawn_continuity_on_omp_row ... ok
+test http::tests::retired_registration_refuses_foreign_session_without_writing ... ok
+test reaper::tests::reap_concurrent_revive_between_observation_and_commit_is_preserved ... ok
+test park_notice::tests::a_cold_sender_gets_the_notice_once_as_an_fyi_never_a_wake ... ok
+test http::tests::spawned_registration_adopts_prebind_row_and_preserves_port ... ok
+test http::tests::retired_registration_refuses_pi_process_continuity_on_omp_row ... ok
+test registration::tests::retired_claude_session_resumes_with_bindings ... ok
+test registration::tests::retired_codex_session_resumes_with_bindings ... ok
+test park_notice::tests::a_peer_fyi_with_the_notice_id_never_suppresses_the_real_notice ... ok
+test http::tests::the_shim_fyi_path_warns_and_flushes ... ok
+test registration::tests::retired_native_foreign_session_refusal_names_tombstone_even_with_same_process ... ok
+test registration::tests::retired_omp_session_resumes_with_bindings ... ok
+test registration::tests::retired_paneless_claude_reuses_dead_host_address ... ok
+test registration::tests::ordinary_registration_refuses_changed_native_owner_after_readoption ... ok
+test registration::tests::retired_paneless_claude_reuses_same_host_address ... ok
+test registration::tests::retired_paneless_codex_reuses_same_host_address ... ok
+test registration::tests::retired_paneless_codex_reuses_dead_host_address ... ok
+test registration::tests::retired_paneless_copilot_reuses_dead_host_address ... ok
+test registration::tests::retired_paneless_copilot_reuses_same_host_address ... ok
+test registration::tests::retired_pi_session_resumes_with_bindings ... ok
+test registration::tests::retired_session_resume_does_not_replace_recorded_role ... ok
+test registration::tests::retired_registration_accepts_spawn_or_observed_process_continuity ... ok
+test http::identity_tests::adopt_tells_pane_bound_harnesses_that_the_pane_resolves_identity ... ok
+test registration::tests::retired_paneless_foreign_session_names_tombstone_without_writes ... ok
+test http::tests::five_fyis_flush_only_on_a_last_call_inside_the_cache_lifetime ... ok
+test registration::tests::retired_registration_does_not_treat_absence_or_foreign_harness_as_continuity ... ok
+test registration::tests::retired_paneless_selection_prefers_live_then_newest_then_id ... ok
+
+test result: ok. 94 passed; 0 failed; 0 ignored; 0 measured; 524 filtered out; finished in 8.46s
+
+     Running tests/admission_agreement.rs (target/debug/deps/admission_agreement-1c6460683a590641)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/background_http.rs (target/debug/deps/background_http-a362205705a711f9)
+
+running 1 test
+test bg_runner_uses_owner_folder_private_log_and_daemon_identity_env ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.22s
+
+     Running tests/caller_context_wire.rs (target/debug/deps/caller_context_wire-7d2cecb7644cca33)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/control_commands.rs (target/debug/deps/control_commands-cc6e6851980a4c2c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/events_bus.rs (target/debug/deps/events_bus-c6cd726efb0ed84e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/first_light.rs (target/debug/deps/first_light-8e4729ea9f7c237d)
+
+running 1 test
+test boot_publishes_complete_runtime_identity_as_restart_safe_residue ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.09s
+
+     Running tests/first_light_wave1.rs (target/debug/deps/first_light_wave1-a612b585abc7bb86)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/first_light_wave2.rs (target/debug/deps/first_light_wave2-682345a7d55cae9e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/fyi_http.rs (target/debug/deps/fyi_http-b28d575393be0c2c)
+
+running 11 tests
+test whoami_carries_the_pending_count_for_the_status_lines ... ok
+test fyi_refuses_controls_and_remote_seats ... ok
+test a_held_fyi_survives_a_daemon_restart ... ok
+test a_tombstone_drops_pending_fyis_and_records_how_many ... ok
+test fyis_to_a_seat_not_known_to_be_warm_are_never_flushed ... ok
+test a_question_held_as_an_fyi_warns_but_is_still_held ... ok
+test a_retried_carrier_still_queued_does_not_swallow_a_newer_fyi ... ok
+test a_hook_claim_racing_a_ride_along_delivers_each_fyi_once ... ok
+test a_duplicate_of_a_delivered_carrier_leaves_the_fyi_pending ... ok
+test an_fyi_is_held_then_rides_along_appended_to_the_next_message_once ... ok
+test racing_hook_claims_deliver_each_fyi_exactly_once ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.62s
+
+     Running tests/governance_canary.rs (target/debug/deps/governance_canary-3ad36418df1029f1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/governance_composition.rs (target/debug/deps/governance_composition-d2b8358dd13abbc4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/governance_notices.rs (target/debug/deps/governance_notices-7f1e16e586c08f58)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/governance_u3.rs (target/debug/deps/governance_u3-8faf94268088c71e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/governance_u3_baseline.rs (target/debug/deps/governance_u3_baseline-41ec778cfb274111)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/governance_u4_baseline.rs (target/debug/deps/governance_u4_baseline-6616c229dcae25e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/lifecycle_http.rs (target/debug/deps/lifecycle_http-4a4ab7534a23e12c)
+
+running 1 test
+test reap_missing_process_identity_is_unverifiable_in_dry_run_and_run ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.06s
+
+     Running tests/native_runtime_cold_resume.rs (target/debug/deps/native_runtime_cold_resume-620fa57bea00eed1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/orchestration_repo.rs (target/debug/deps/orchestration_repo-48554bb1eb4e1ca9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/pairing_boot.rs (target/debug/deps/pairing_boot-efd0d881cc622c65)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/peer_proxy.rs (target/debug/deps/peer_proxy-ee3692d40c83eb53)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/report_http.rs (target/debug/deps/report_http-0a2e2f8a95848440)
+
+running 1 test
+test a_pane_only_caller_is_named_by_report_exactly_as_it_is_by_whoami ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.06s
+
+     Running tests/retired_identity_http.rs (target/debug/deps/retired_identity_http-c79fe6deaa5c8a47)
+
+running 5 tests
+test retired_lookup_selects_latest_tombstone_not_a_later_unrelated_event ... ok
+test retired_rows_without_historical_tombstone_events_do_not_invent_sequences ... ok
+test ambiguous_retired_pane_history_refuses_without_guessing_a_tombstone ... ok
+test contradicted_retired_pane_claim_refuses_without_attributing_its_history ... ok
+test retired_asserted_and_pane_callers_receive_the_original_tombstone_sequence_without_authority ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.29s
+
+     Running tests/review_regressions.rs (target/debug/deps/review_regressions-2965cb75207839e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+     Running tests/revive_http.rs (target/debug/deps/revive_http-e6d87cd94c29ee60)
+
+running 13 tests
+test revive_observed_dead_tombstones_before_relaunch_and_cites_seq ... ok
+test revive_legacy_audit_failure_does_not_relaunch ... ok
+test revive_retired_harness_succeeds_and_audits_override ... ok
+test revive_recycled_process_is_never_signaled ... ok
+test revive_assumption_requires_parent_or_authoritative_prime_for_parentless ... ok
+test concurrent_observed_dead_revives_launch_exactly_one_incarnation ... ok
+test revive_assumption_refuses_missing_evidence_self_and_forged_parent ... ok
+test revive_assumption_publication_failure_cannot_retire_or_launch ... ok
+test revive_resumes_the_recorded_conversation_unless_it_is_live_elsewhere ... ok
+test revive_assumed_dead_records_parent_evidence_and_actual_observation ... ok
+test revive_legacy_tombstone_records_audit_before_relaunch ... ok
+test revive_recycled_and_unknown_refuse_with_exact_override_guidance ... ok
+test revive_assumption_never_overrides_active_process_or_present_pane ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
+
+     Running tests/role_http.rs (target/debug/deps/role_http-9678694d53f2bc52)
+
+running 5 tests
+test register_and_adopt_refuse_roles_outside_the_closed_vocabulary_before_admission ... ok
+test role_projection_store_failure_refuses_every_identity_surface_without_stale_fallback ... ok
+test all_identity_projections_agree_across_role_assert_update_and_unset_with_stale_descriptor ... ok
+test typed_adopt_role_rejects_null_and_duplicate_assertions_without_publication ... ok
+test adopt_role_assertion_survives_omitted_readoption_and_refused_admission ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.45s
+
+     Running tests/shim_http.rs (target/debug/deps/shim_http-d619c4ee9a908552)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+
+     Running tests/status_http.rs (target/debug/deps/status_http-27d67f428267ac6b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/store_wedge.rs (target/debug/deps/store_wedge-0017790f782869ef)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+   Doc-tests pij_daemon
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

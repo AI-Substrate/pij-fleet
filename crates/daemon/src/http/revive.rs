@@ -8,6 +8,7 @@ use pij_core::wire;
 use serde::Serialize;
 use serde_json::{Value, json};
 
+use super::double_seat::{active_seat_holding, verified_claude_record};
 use super::identity::{Resolved, resolve_seat};
 use super::lifecycle::{runtime_failure, tombstone_receipt};
 use super::{
@@ -149,51 +150,21 @@ async fn conversation_live_elsewhere(
     prior: &SeatDescriptor,
     session: &str,
 ) -> Option<String> {
-    let seats = state
-        .services
-        .registry
-        .list(pij_core::ports::SeatFilter::default())
-        .await
-        .ok()?;
-    for seat in seats.iter().filter(|seat| {
-        seat.id != prior.id
-            && seat.harness == prior.harness
-            && seat.harness_session.as_deref() == Some(session)
-    }) {
-        if let Some(proc) = seat.proc
-            && matches!(
-                pij_core::liveness::alive(proc, state.services.liveness.as_ref()).await,
-                Ok(Liveness::Active)
-            )
-        {
-            return Some(seat.pane.clone().unwrap_or_else(|| "none".to_string()));
-        }
+    if let Some(seat) =
+        active_seat_holding(state, prior.harness, session, |seat| seat.id != prior.id)
+            .await
+            .ok()?
+    {
+        return Some(seat.pane.unwrap_or_else(|| "none".to_string()));
     }
     if prior.harness != pij_core::model::Harness::Claude {
         return None;
     }
-    let offset = pij_harnesses::proc::local_utc_offset_minutes().ok()?;
-    for record in pij_harnesses::proc::claude_session_records(&state.services.claude_homes)
-        .into_iter()
-        .filter(|record| record.session_id == session)
-    {
-        let Ok(Some(observed)) = state.services.liveness.proc_start(record.pid).await else {
-            continue;
-        };
-        if pij_harnesses::proc::process_start_matches_utc_record(
-            &record.proc_start,
-            observed,
-            offset,
-        )
-        .unwrap_or(false)
-        {
-            return Some(record.pane().map_or_else(
-                || format!("(pid {}, no tmux pane)", record.pid),
-                str::to_string,
-            ));
-        }
-    }
-    None
+    let (record, _) = verified_claude_record(state, |record| record.session_id == session).await?;
+    Some(record.pane().map_or_else(
+        || format!("(pid {}, no tmux pane)", record.pid),
+        str::to_string,
+    ))
 }
 
 pub(super) async fn revive_seat(

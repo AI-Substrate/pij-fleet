@@ -9,6 +9,7 @@ mod background;
 mod client;
 pub(crate) mod cold_wake;
 pub mod decisions;
+mod double_seat;
 mod exposure;
 mod fyi;
 pub mod governance;
@@ -3677,6 +3678,8 @@ pub(crate) fn envelope<T: serde::Serialize>(status: StatusCode, body: &Envelope<
     }
 }
 
+#[cfg(test)]
+mod double_seat_tests;
 #[cfg(test)]
 mod identity_tests;
 #[cfg(test)]

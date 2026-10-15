@@ -35,12 +35,12 @@ One coder implements pij-fleet#55 as written in impl-guide.dd.json tk-0001: red 
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Red tests on main bb9f0b1 for AC1-AC6 and AC8(d) | — | ph-61af | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Daemon: shared live-copy helper, coded adopt refusal, stray-pane check, once-per-pair notice with spine audit | — | ph-61af | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Scripts: SessionStart hook, UserPromptSubmit hook, status line | — | ph-61af | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | Mutation receipts | — | ph-61af | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | Docs: pij-rs-api.md entry and docs/how/double-seat.md | — | ph-61af | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | Gates and PR | — | ph-61af | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Red tests on main bb9f0b1 for AC1-AC6 and AC8(d) | — | ph-61af | [x] checked | 5 daemon behaviour tests and all 4 added script tests red on base (lg-0001). The 2 daemon regression pins are 'pin, green on base' per parent ruling 0078, each proven able to fail by M5a/M5b/M6. | ../../execution-log.dd.json#entries/lg-0007 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Daemon: shared live-copy helper, coded adopt refusal, stray-pane check, once-per-pair notice with spine audit | — | ph-61af | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Scripts: SessionStart hook, UserPromptSubmit hook, status line | — | ph-61af | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Mutation receipts | — | ph-61af | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Docs: pij-rs-api.md entry and docs/how/double-seat.md | — | ph-61af | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Gates and PR | — | ph-61af | [ ] unchecked | vd-0003, vd-0004 and the Rust workspace gate passed (lg-0008). PR and exact-head CI pending. Local TS gates NOT RUN per parent msg 0072; live-tmux smoke NOT RUN. | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -48,33 +48,33 @@ One coder implements pij-fleet#55 as written in impl-guide.dd.json tk-0001: red 
 
 ### tk-0001
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0001 | Each new test fails on bb9f0b1 for the right reason (quoted in the receipt), and none touches the live tmux server, the production daemon or the real ~/.claude | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0001 | Each new test fails on bb9f0b1 for the right reason (quoted in the receipt), and none touches the live tmux server, the production daemon or the real ~/.claude | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0007](../../execution-log.dd.md#entries) |
 
 ### tk-0002
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0002 | vd-0001 is green: coded adopt refusal with details, stray-pane refusal text, unchanged not-registered text for a pane with no record or a mismatched process start, one notice per pair across a simulated restart, and revive's existing tests still green through the shared helper | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0002 | vd-0001 is green: coded adopt refusal with details, stray-pane refusal text, unchanged not-registered text for a pane with no record or a mismatched process start, one notice per pair across a simulated restart, and revive's existing tests still green through the shared helper | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0002](../../execution-log.dd.md#entries) |
 
 ### tk-0003
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0003 | vd-0002 is green: each hook prints valid hook JSON with systemMessage and additionalContext only on the coded refusal, exits 0 on every path, and the registered-pane FYI claim output is unchanged; the status line shows the red double segment; a test pins the scripts' literal to the Rust constant | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0003 | vd-0002 is green: each hook prints valid hook JSON with systemMessage and additionalContext only on the coded refusal, exits 0 on every path, and the registered-pane FYI claim output is unchanged; the status line shows the red double segment; a test pins the scripts' literal to the Rust constant | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | [lg-0003](../../execution-log.dd.md#entries) |
 
 ### tk-0004
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0004 | Each AC8(b) mutation turns its named test red, is restored, and the receipts are recorded in the execution log and the PR | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0004 | Each AC8(b) mutation turns its named test red, is restored, and the receipts are recorded in the execution log and the PR | [x] checked | [bp-0004](../../backpressure.dd.md#rows) | [lg-0004](../../execution-log.dd.md#entries) |
 
 ### tk-0005
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0005 | docs/how/double-seat.md and the pij-rs-api.md entry exist and match the code | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0005 | docs/how/double-seat.md and the pij-rs-api.md entry exist and match the code | [x] checked | [bp-0003](../../backpressure.dd.md#rows) | [lg-0005](../../execution-log.dd.md#entries) |
 
 ### tk-0006
 

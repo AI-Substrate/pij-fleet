@@ -1,0 +1,55 @@
+# mutation m6-resolved-pane-reads-records: crates/daemon/src/http/identity.rs
+# -         if seat.id.0 == pij_core::BG_ACTOR {
+# +         let _ = super::double_seat::verified_claude_record(state, |_| true).await;
+        if seat.id.0 == pij_core::BG_ACTOR {
+#                  {
+#                      return Resolved::Refusal(refusal);
+#                  }
+# +                // Plan 174: the pane's own process may be a second copy of a
+# +                // live seat's conversation. Say so, rather than "not registered".
+# +                if let Some(refusal) = super::double_seat::stray_refusal(state, command, pane).await
+# +                {
+# +                    return Resolved::Refusal(refusal);
+# +                }
+#                  return Resolved::Refusal(refused(
+#                      command,
+#                      format!(
+# @@ -1267,6 +1269,7 @@ pub(crate) async fn resolve_seat(
+#                  ));
+#              }
+#          };
+# +        let _ = super::double_seat::verified_claude_record(state, |_| true).await;
+#          if seat.id.0 == pij_core::BG_ACTOR {
+#              return Resolved::Refusal(refused(
+#                  command,
+load { 29.57 26.82 29.74 }
+   Compiling pij-daemon v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.72s
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-435c7c5d79f69e8d)
+
+running 7 tests
+test http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat ... ok
+test http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent ... ok
+test http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them ... FAILED
+test http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details ... ok
+test http::double_seat_tests::double_seat_incident_end_to_end ... ok
+test http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart ... ok
+
+failures:
+
+---- http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them stdout ----
+
+thread 'http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them' (4317783) panicked at crates/daemon/src/http/double_seat_tests.rs:419:5:
+a resolved pane probed a record's pid: [3999951, 3999971]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 611 filtered out; finished in 1.13s
+
+error: test failed, to rerun pass `-p pij-daemon --lib`
+# cargo exit: 101
+restored crates/daemon/src/http/identity.rs

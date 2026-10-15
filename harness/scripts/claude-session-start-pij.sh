@@ -27,12 +27,24 @@ adopt() {
         pij-rs adopt "$TMUX_PANE" --harness claude 2>&1
     fi
 }
+# Plan 174: this pane is a second copy of a conversation that is live as
+# another seat. Warn the human (systemMessage) and the model (additionalContext)
+# with the daemon's own line, which names the live seat, its pane and the fix.
+# Any other refusal is only logged.
+warn_double() {
+    case $1 in *E-RS-CONVERSATION-LIVE*) ;; *) return 0 ;; esac
+    line=$(printf '%s\n' "E-RS-CONVERSATION-LIVE${1#*E-RS-CONVERSATION-LIVE}" | head -n 1)
+    jq -cn --arg line "⚠ pij: this pane is a second copy of a live seat. $line" \
+        '{systemMessage:$line,hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$line}}' \
+        2>/dev/null || :
+}
 
 if pij-rs ping >/dev/null 2>&1; then
     if adopt_output=$(adopt); then
         printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"pij automatically adopted this Claude session."}}'
     else
         log_line "refused:adopt pane=$TMUX_PANE reason=$(printf '%s' "$adopt_output" | tr '\n' ' ')"
+        warn_double "$adopt_output"
     fi
     exit 0
 fi

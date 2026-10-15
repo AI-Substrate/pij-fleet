@@ -1,0 +1,46 @@
+load { 30.14 35.44 40.42 }
+   Compiling pij-harnesses v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/harnesses)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.18s
+     Running tests/claude_heal_scripts.rs (target/debug/deps/claude_heal_scripts-7bd6c3c00543c1be)
+
+running 6 tests
+test session_start_hook_warns_human_and_model_when_adopt_finds_a_double ... FAILED
+test status_line_shows_the_double_from_whoami_and_fires_no_adopt ... FAILED
+test user_prompt_hook_warns_on_every_prompt_while_the_double_persists ... FAILED
+test status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt ... FAILED
+test copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats ... ok
+test status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daemon ... ok
+
+failures:
+
+---- session_start_hook_warns_human_and_model_when_adopt_finds_a_double stdout ----
+
+thread 'session_start_hook_warns_human_and_model_when_adopt_finds_a_double' (3511230) panicked at crates/harnesses/tests/claude_heal_scripts.rs:322:33:
+hook output must be JSON (EOF while parsing a value at line 1 column 0): ""
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- status_line_shows_the_double_from_whoami_and_fires_no_adopt stdout ----
+
+thread 'status_line_shows_the_double_from_whoami_and_fires_no_adopt' (3511233) panicked at crates/harnesses/tests/claude_heal_scripts.rs:420:5:
+"\u{1b}[2m0%\u{1b}[0m \u{1b}[36mpij-double-whoami-765-1792032378443095000-3\u{1b}[0m \u{1b}[33m⛓ registering…\u{1b}[0m • Opus • \u{1b}[35mauto\u{1b}[0m • \u{1b}[2m0/200k\u{1b}[0m"
+
+---- user_prompt_hook_warns_on_every_prompt_while_the_double_persists stdout ----
+
+thread 'user_prompt_hook_warns_on_every_prompt_while_the_double_persists' (3511234) panicked at crates/harnesses/tests/claude_heal_scripts.rs:322:33:
+hook output must be JSON (EOF while parsing a value at line 1 column 0): ""
+
+---- status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt stdout ----
+
+thread 'status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt' (3511232) panicked at crates/harnesses/tests/claude_heal_scripts.rs:461:5:
+the refusal is remembered
+
+
+failures:
+    session_start_hook_warns_human_and_model_when_adopt_finds_a_double
+    status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt
+    status_line_shows_the_double_from_whoami_and_fires_no_adopt
+    user_prompt_hook_warns_on_every_prompt_while_the_double_persists
+
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.89s
+
+error: test failed, to rerun pass `-p pij-harnesses --test claude_heal_scripts`

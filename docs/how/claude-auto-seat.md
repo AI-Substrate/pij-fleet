@@ -12,7 +12,11 @@ same `pij-rs` transport, then emits only valid SessionStart JSON context so Clau
 refreshes its initial UI after the seat exists; Claude does not show successful
 hook stdout in the transcript. Outside tmux, with no daemon, or on an adopt
 refusal, it exits zero with empty stdout and appends one diagnostic line to
-`$PIJ_RS_STATE_DIR/hook.log` (default `~/.pij-rs/hook.log`). Existing Claude hooks
+`$PIJ_RS_STATE_DIR/hook.log` (default `~/.pij-rs/hook.log`). The one exception is
+an `E-RS-CONVERSATION-LIVE` refusal, meaning this pane is a second copy of a
+conversation that is live as another seat. Then it also prints SessionStart JSON
+whose `systemMessage` and `additionalContext` name that seat, its pane and the
+fix ([double-seat.md](double-seat.md)). Existing Claude hooks
 retain their original order. Changed settings are backed up as
 `settings.json.bak-<millis>`.
 

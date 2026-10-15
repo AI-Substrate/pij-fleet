@@ -1,0 +1,15 @@
+load { 28.96 39.45 42.76 }
+   Compiling pij-harnesses v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/harnesses)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.51s
+     Running tests/claude_heal_scripts.rs (target/debug/deps/claude_heal_scripts-7bd6c3c00543c1be)
+
+running 6 tests
+test status_line_shows_the_double_from_whoami_and_fires_no_adopt ... ok
+test session_start_hook_warns_human_and_model_when_adopt_finds_a_double ... ok
+test status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt ... ok
+test copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats ... ok
+test user_prompt_hook_warns_on_every_prompt_while_the_double_persists ... ok
+test status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daemon ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.76s
+

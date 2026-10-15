@@ -1,0 +1,233 @@
+load 40.12 >= 36; waiting
+load 37.97 >= 36; waiting
+load 38.22 >= 36; waiting
+load 38.17 >= 36; waiting
+load { 34.61 40.22 45.41 }
+    Blocking waiting for file lock on package cache
+   Compiling syn v3.0.4
+   Compiling libc v0.2.189
+   Compiling syn v2.0.119
+   Compiling memchr v2.8.3
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-core v0.3.34
+   Compiling synstructure v0.13.2
+   Compiling serde v1.0.229
+   Compiling serde_derive v1.0.229
+   Compiling bytes v1.12.1
+   Compiling serde_core v1.0.229
+   Compiling zerofrom-derive v0.1.7
+   Compiling zerofrom v0.1.8
+   Compiling yoke-derive v0.8.2
+   Compiling stable_deref_trait v1.2.1
+   Compiling yoke v0.8.3
+   Compiling zerovec-derive v0.11.6
+   Compiling zerovec v0.11.8
+   Compiling displaydoc v0.2.7
+   Compiling find-msvc-tools v0.1.11
+   Compiling shlex v2.0.1
+   Compiling cc v1.4.4
+   Compiling once_cell v1.21.4
+   Compiling tinystr v0.8.4
+   Compiling litemap v0.8.3
+   Compiling log v0.4.34
+   Compiling writeable v0.6.4
+   Compiling icu_locale_core v2.3.0
+   Compiling zerotrie v0.2.5
+   Compiling potential_utf v0.1.6
+   Compiling errno v0.3.14
+   Compiling icu_normalizer_data v2.3.0
+   Compiling utf8_iter v1.0.4
+   Compiling icu_collections v2.3.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling icu_provider v2.3.1
+   Compiling ring v0.17.14
+   Compiling mio v1.2.2
+   Compiling socket2 v0.6.5
+   Compiling tokio-macros v2.7.2
+   Compiling icu_properties_data v2.3.0
+   Compiling tokio v1.53.1
+   Compiling tracing-core v0.1.36
+   Compiling tracing-attributes v0.1.31
+   Compiling serde_json v1.0.151
+   Compiling futures-sink v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling zeroize v1.9.0
+   Compiling futures-task v0.3.34
+   Compiling percent-encoding v2.3.2
+   Compiling rustls-pki-types v1.15.1
+   Compiling tracing v0.1.44
+   Compiling smallvec v1.15.2
+   Compiling equivalent v1.0.2
+   Compiling untrusted v0.9.0
+   Compiling icu_properties v2.3.0
+   Compiling form_urlencoded v1.2.2
+   Compiling thiserror-impl v2.0.20
+   Compiling scopeguard v1.2.0
+   Compiling hashbrown v0.17.1
+   Compiling indexmap v2.14.1
+   Compiling lock_api v0.4.14
+   Compiling thiserror v2.0.20
+   Compiling slab v0.4.12
+   Compiling rustls v0.23.43
+   Compiling parking_lot_core v0.9.12
+   Compiling cpufeatures v0.2.17
+   Compiling subtle v2.6.1
+   Compiling sha2 v0.10.9
+   Compiling futures-util v0.3.34
+   Compiling webpki-roots v1.0.9
+   Compiling tokio-util v0.7.19
+   Compiling http v1.5.0
+   Compiling getrandom v0.2.17
+   Compiling ryu v1.0.23
+   Compiling crossbeam-utils v0.8.22
+   Compiling icu_normalizer v2.3.0
+   Compiling allocator-api2 v0.2.21
+   Compiling autocfg v1.5.1
+   Compiling foldhash v0.1.5
+   Compiling hashbrown v0.15.5
+   Compiling num-traits v0.2.19
+   Compiling idna_adapter v1.2.2
+   Compiling rustls-webpki v0.103.15
+   Compiling http-body v1.1.0
+   Compiling futures-channel v0.3.34
+   Compiling pkg-config v0.3.34
+   Compiling powerfmt v0.2.0
+   Compiling deranged v0.5.8
+   Compiling vcpkg v0.2.15
+   Compiling base64 v0.22.1
+   Compiling time-core v0.1.9
+   Compiling crc-catalog v2.5.0
+   Compiling parking v2.2.1
+   Compiling num-conv v0.2.2
+   Compiling time v0.3.55
+   Compiling event-listener v5.4.2
+   Compiling crc v3.4.0
+   Compiling libsqlite3-sys v0.30.1
+   Compiling crossbeam-queue v0.3.13
+   Compiling idna v1.1.0
+   Compiling hashlink v0.10.0
+   Compiling webpki-roots v0.26.11
+   Compiling spin v0.9.9
+   Compiling async-trait v0.1.92
+   Compiling tower-service v0.3.3
+   Compiling httparse v1.10.1
+   Compiling pij-core v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/core)
+   Compiling parking_lot v0.12.5
+   Compiling url v2.5.8
+   Compiling unisphere-core v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+   Compiling atomic-waker v1.1.2
+   Compiling try-lock v0.2.5
+   Compiling fnv v1.0.7
+   Compiling h2 v0.4.19
+   Compiling want v0.3.1
+   Compiling atoi v2.0.0
+   Compiling futures-intrusive v0.5.0
+   Compiling tokio-stream v0.1.19
+   Compiling either v1.18.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling sync_wrapper v1.0.2
+   Compiling httpdate v1.0.3
+   Compiling tower-layer v0.3.3
+   Compiling hyper v1.11.1
+   Compiling sqlx-core v0.8.6
+   Compiling futures-executor v0.3.34
+   Compiling flume v0.11.1
+   Compiling aho-corasick v1.1.5
+   Compiling regex-syntax v0.8.11
+   Compiling ipnet v2.12.1
+   Compiling hyper-util v0.1.20
+   Compiling regex-automata v0.4.18
+   Compiling sqlx-sqlite v0.8.6
+   Compiling tower v0.5.3
+   Compiling http-body-util v0.1.5
+   Compiling heck v0.5.0
+   Compiling bitflags v2.13.1
+   Compiling hex v0.4.3
+   Compiling dotenvy v0.15.7
+   Compiling cfg_aliases v0.2.2
+   Compiling nix v0.30.1
+   Compiling sqlx-macros-core v0.8.6
+   Compiling tokio-rustls v0.26.4
+   Compiling bstr v1.13.1
+   Compiling getrandom v0.3.4
+   Compiling globset v0.4.20
+   Compiling hyper-rustls v0.27.9
+   Compiling sqlx-macros v0.8.6
+   Compiling tower-http v0.6.11
+   Compiling regex v1.13.1
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling serde_spanned v1.1.1
+   Compiling mime v0.3.17
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling axum-core v0.5.6
+   Compiling unisphere-sdk v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+   Compiling reqwest v0.12.28
+   Compiling sqlx v0.8.6
+   Compiling unisphere-adapter-omp v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+   Compiling unisphere-loader-jsonl v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+   Compiling unisphere-adapter-claude v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+   Compiling unisphere-adapter-codex v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+   Compiling unisphere-adapter-copilot-cli v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+   Compiling serde_path_to_error v0.1.20
+   Compiling matchit v0.8.4
+   Compiling axum v0.8.9
+   Compiling pij-unisphere v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/unisphere)
+   Compiling pij-tmux v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/tmux)
+   Compiling pij-store v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/store)
+   Compiling pij-sidecars v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/sidecars)
+   Compiling pij-testkit v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/testkit)
+   Compiling pij-transport v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/transport)
+   Compiling pij-harnesses v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/harnesses)
+   Compiling hostname v0.4.2
+   Compiling pij-daemon v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 26s
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-435c7c5d79f69e8d)
+
+running 7 tests
+test http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat ... FAILED
+test http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them ... ok
+test http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent ... FAILED
+test http::double_seat_tests::double_seat_incident_end_to_end ... FAILED
+test http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart ... FAILED
+test http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details ... FAILED
+test http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text ... ok
+
+failures:
+
+---- http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat stdout ----
+
+thread 'http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat' (3121804) panicked at crates/daemon/src/http/double_seat_tests.rs:231:5:
+/v1/whoami must lead with E-RS-CONVERSATION-LIVE, got 400: {"command":"pij whoami","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent stdout ----
+
+thread 'http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent' (3121803) panicked at crates/daemon/src/http/double_seat_tests.rs:231:5:
+adopt must lead with E-RS-CONVERSATION-LIVE, got 400: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-1740-4000-8000-000000000174` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+
+---- http::double_seat_tests::double_seat_incident_end_to_end stdout ----
+
+thread 'http::double_seat_tests::double_seat_incident_end_to_end' (3121805) panicked at crates/daemon/src/http/double_seat_tests.rs:231:5:
+adopt from %7 must lead with E-RS-CONVERSATION-LIVE, got 400: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-1740-4000-8000-000000000174` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+
+---- http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart stdout ----
+
+thread 'http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart' (3121806) panicked at crates/daemon/src/http/double_seat_tests.rs:231:5:
+adopt must lead with E-RS-CONVERSATION-LIVE, got 400: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-1740-4000-8000-000000000174` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+
+---- http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details stdout ----
+
+thread 'http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details' (3121802) panicked at crates/daemon/src/http/double_seat_tests.rs:231:5:
+adopt must lead with E-RS-CONVERSATION-LIVE, got 400: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-1740-4000-8000-000000000174` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+
+
+failures:
+    http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details
+    http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent
+    http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat
+    http::double_seat_tests::double_seat_incident_end_to_end
+    http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart
+
+test result: FAILED. 2 passed; 5 failed; 0 ignored; 0 measured; 611 filtered out; finished in 0.98s
+
+error: test failed, to rerun pass `-p pij-daemon --lib`

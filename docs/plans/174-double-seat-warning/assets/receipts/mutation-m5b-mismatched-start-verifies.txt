@@ -1,0 +1,36 @@
+# mutation m5b-mismatched-start-verifies: crates/daemon/src/http/double_seat.rs
+# - .unwrap_or(false)
+# + .unwrap_or(false) || true
+load { 27.31 26.14 29.67 }
+   Compiling pij-daemon v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 34.09s
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-435c7c5d79f69e8d)
+
+running 7 tests
+test http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them ... ok
+test http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent ... ok
+test http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details ... ok
+test http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat ... ok
+test http::double_seat_tests::double_seat_incident_end_to_end ... ok
+test http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text ... FAILED
+test http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart ... ok
+
+failures:
+
+---- http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text stdout ----
+
+thread 'http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text' (4289852) panicked at crates/daemon/src/http/double_seat_tests.rs:384:17:
+assertion `left == right` failed: mismatched start /v1/whoami: {"command":"pij whoami","details":{"code":"E-RS-CONVERSATION-LIVE","harness_session":"cc2d2e8f-1740-4000-8000-000000000174","pane":"%5","pid":3999951,"seat":"pij-different-smelt"},"error":"refused","meta":"E-RS-CONVERSATION-LIVE conversation `cc2d2e8f-1740-4000-8000-000000000174` is live as seat `pij-different-smelt` in pane %5; close one copy, then run `pij-rs adopt %7 --harness claude` from the copy you keep (one conversation cannot be two seats)","ok":false,"v":2}
+  left: 409
+ right: 400
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 611 filtered out; finished in 1.10s
+
+error: test failed, to rerun pass `-p pij-daemon --lib`
+# cargo exit: 101
+restored crates/daemon/src/http/double_seat.rs
