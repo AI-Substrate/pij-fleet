@@ -44,44 +44,51 @@
         {
           "id": "ac-0001",
           "claim": "Stable code on adopt. The adopt refusal \"conversation X is live as seat Y in another process (pane %N)\" (crates/daemon/src/http/identity.rs ~818) carries code E-RS-CONVERSATION-LIVE: the code leads the refusal text, and the --json envelope's details hold code, seat, pane, harness_session and the live pid. The text names the fix: close one copy, then run `pij-rs adopt <pane> --harness claude` from the copy you keep.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0002",
           "claim": "Stray-pane verbs. Every verb resolved by pane (send, spawn, bg, activity, fyi-claim, report, whoami --pane) from a pane that no live seat owns checks the caller's Claude session record (<claude home>/sessions/<pid>.json whose tmux field ends in that pane; counted only when the pid's observed start matches the recorded start, exactly as revive's conversation_live_elsewhere does). If that record names a conversation that is live as seat Y in another pane %N, the verb refuses with E-RS-CONVERSATION-LIVE: \"conversation X is live as seat Y in pane %N; close one copy, then pij-rs adopt <this pane> --harness claude\". A pane with no such record, or whose conversation is not live elsewhere, keeps today's 'not registered' text unchanged (crates/daemon/src/http/identity.rs ~1264).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0003",
           "claim": "SessionStart hook (harness/scripts/claude-session-start-pij.sh). When adopt is refused with E-RS-CONVERSATION-LIVE, the hook prints hook JSON with a systemMessage shown to the human AND additionalContext for the model, both naming the live seat, its pane and the fix, and it still writes the hook.log line. Any other refusal keeps today's behaviour (log only). The hook never blocks Claude's start: it always exits 0, and every daemon call stays bounded as today.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0004",
           "claim": "UserPromptSubmit hook (harness/scripts/claude-user-prompt-submit-pij.sh). While the double persists, every prompt in the stray pane gets the same warning (systemMessage plus additionalContext), taken from the E-RS-CONVERSATION-LIVE refusal its activity or fyi-claim call already receives. Once the double clears it adds nothing. The FYI claim for registered panes is unchanged byte for byte.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0005",
           "claim": "Status line (harness/scripts/claude-statusline-pij.sh). When its whoami or heal-adopt is refused with E-RS-CONVERSATION-LIVE, it shows a red \"⚠ double: <seat> in %N\" segment in place of the seat tag or \"⛓ registering…\". It stays within today's time budget and never fires a second adopt for that refusal.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0006",
           "claim": "Notice to the live seat. On the first E-RS-CONVERSATION-LIVE refusal for a given pair (live seat, stray pid plus its process start), the daemon writes a spine event `seat.double-detected` (seat, stray pane, stray pid, proc_start, harness_session) and delivers ONE message to the live seat through the ordinary delivery path (cold-wake rules apply), naming the stray pane and pid and the fix. A repeat refusal for the same pair sends nothing; the spine event is the dedupe record, so a daemon restart does not resend. The dedupe is a BRAKE: removing it only sends more. A failed or unknown spine read counts as already sent (fail-safe).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0007",
           "claim": "Docs. docs/how/pij-rs-api.md documents E-RS-CONVERSATION-LIVE (which verbs raise it, its details, the fix) next to E-RS-REVIVE-CONVERSATION-LIVE. A new docs/how/double-seat.md explains double-seat detection end to end: the session-record witness, the revive guard, the adopt refusal, the stray-pane verbs, the two hooks, the status line and the notice, with the 2026-10-15 incident as the worked example.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0008",
