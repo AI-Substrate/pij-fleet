@@ -8,6 +8,7 @@ use pij_core::wire;
 use serde::Serialize;
 use serde_json::{Value, json};
 
+use super::double_seat;
 use super::identity::{Resolved, resolve_seat};
 use super::lifecycle::{runtime_failure, tombstone_receipt};
 use super::{
@@ -140,60 +141,38 @@ async fn resume_decision(
 /// The pane where `session` is already running in some other process, if any.
 ///
 /// Two observations, either sufficient: another seat holding the conversation
-/// whose process is alive, or (Claude) a live process's own session record
+/// whose process is running, or (Claude) a live process's own session record
 /// under `<claude home>/sessions/<pid>.json`, the hand-resumed-but-unregistered
 /// case the 2026-09-27 reboot produced. The record counts only when its pid's
-/// observed start matches the start it recorded.
+/// observed start matches the start it recorded. Both are the shared double-seat
+/// helpers (plan 174), which adopt and pane resolution ask too.
 async fn conversation_live_elsewhere(
     state: &AppState,
     prior: &SeatDescriptor,
     session: &str,
 ) -> Option<String> {
-    let seats = state
-        .services
-        .registry
-        .list(pij_core::ports::SeatFilter::default())
+    if let Some(live) =
+        double_seat::conversation_live_as_seat(state, prior.harness, session, |seat| {
+            seat.id == prior.id
+        })
         .await
-        .ok()?;
-    for seat in seats.iter().filter(|seat| {
-        seat.id != prior.id
-            && seat.harness == prior.harness
-            && seat.harness_session.as_deref() == Some(session)
-    }) {
-        if let Some(proc) = seat.proc
-            && matches!(
-                pij_core::liveness::alive(proc, state.services.liveness.as_ref()).await,
-                Ok(Liveness::Active)
-            )
-        {
-            return Some(seat.pane.clone().unwrap_or_else(|| "none".to_string()));
-        }
+        .ok()?
+    {
+        return Some(live.pane.unwrap_or_else(|| "none".to_string()));
     }
     if prior.harness != pij_core::model::Harness::Claude {
         return None;
     }
-    let offset = pij_harnesses::proc::local_utc_offset_minutes().ok()?;
-    for record in pij_harnesses::proc::claude_session_records(&state.services.claude_homes)
-        .into_iter()
-        .filter(|record| record.session_id == session)
-    {
-        let Ok(Some(observed)) = state.services.liveness.proc_start(record.pid).await else {
-            continue;
-        };
-        if pij_harnesses::proc::process_start_matches_utc_record(
-            &record.proc_start,
-            observed,
-            offset,
-        )
-        .unwrap_or(false)
-        {
-            return Some(record.pane().map_or_else(
-                || format!("(pid {}, no tmux pane)", record.pid),
-                str::to_string,
-            ));
-        }
-    }
-    None
+    let (record, _) = double_seat::live_claude_records(state, |record| {
+        record.session_id == session
+    })
+    .await
+    .into_iter()
+    .next()?;
+    Some(record.pane().map_or_else(
+        || format!("(pid {}, no tmux pane)", record.pid),
+        str::to_string,
+    ))
 }
 
 pub(super) async fn revive_seat(

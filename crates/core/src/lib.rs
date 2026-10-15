@@ -19,6 +19,7 @@ pub mod config;
 pub mod control;
 pub mod decisions;
 pub mod delivery;
+pub mod double_seat;
 pub mod error;
 pub mod events;
 pub mod fleet;

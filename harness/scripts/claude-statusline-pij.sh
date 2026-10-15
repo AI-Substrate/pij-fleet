@@ -94,8 +94,22 @@ if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ]; then
       ;;
   esac
 fi
+# Plan 174: rs refuses this pane because it runs a second copy of a live
+# seat's conversation. Say so in red instead of the seat tag or "registering",
+# and never heal it: the adopt would be refused the same way. The code is
+# pinned to the Rust constant by the script tests.
+DOUBLE_FMT=""
+case "$RS_OUTPUT" in
+  *'"code":"E-RS-CONVERSATION-LIVE"'*)
+    DOUBLE_AT=$(printf '%s' "$RS_OUTPUT" |
+      jq -r '"\(.details.seat // "?") in \(.details.pane // "no pane")"' 2>/dev/null)
+    DOUBLE_FMT=" \033[31m⚠ double: ${DOUBLE_AT:-seat}\033[0m"
+    ;;
+esac
 PIJ_FMT=""
-if [ -n "$PIJID" ]; then
+if [ -n "$DOUBLE_FMT" ]; then
+  PIJ_FMT=$DOUBLE_FMT
+elif [ -n "$PIJID" ]; then
   PIJ_FMT=" \033[33mrs\033[0m \033[34m⛓ $PIJID\033[0m"
   # Held FYIs (plan 158): whoami carries the count; show it only while N > 0.
   case "$RS_OUTPUT" in
@@ -115,7 +129,7 @@ fi
 # or an rs seat recording a different conversation, fires ONE detached adopt per
 # pane per 15 s. The daemon derives the conversation itself; the payload's
 # session_id only cross-checks it. Rendering never waits on the adopt.
-if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] \
+if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] && [ -z "$DOUBLE_FMT" ] \
   && { [ -n "$PIJID" ] || [ -z "${LEGACYID:-}" ]; }; then
   case "$RS_OUTPUT" in
     *"\"session\":\"$SESSION_ID\""*) ;;

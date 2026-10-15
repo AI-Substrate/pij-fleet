@@ -1377,6 +1377,7 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
         machine_alias: "local".to_string(),
         spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_lock: Arc::new(tokio::sync::Mutex::new(())),
+        double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
         typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
         federation: None,
     };
@@ -1995,6 +1996,7 @@ async fn typing_hold_projections_follow_terminal_outcomes_and_sequence() {
             machine_alias: "local".to_string(),
             spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
             typing_lock: Arc::new(tokio::sync::Mutex::new(())),
+            double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
             typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
             federation: None,
         };

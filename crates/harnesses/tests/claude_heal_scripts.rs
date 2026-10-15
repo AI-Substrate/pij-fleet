@@ -397,3 +397,21 @@ fn status_line_shows_a_red_double_segment_and_never_heals_it() {
     assert!(adopts(&root).is_empty());
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Cross-runtime literal seam: the scripts match the code as a literal, so the
+/// literal they carry must be the one Rust raises (and the one these tests use).
+#[test]
+fn scripts_spell_the_conversation_live_code_as_rust_defines_it() {
+    assert_eq!(CODE, pij_core::double_seat::CONVERSATION_LIVE_CODE);
+    for name in [
+        "claude-session-start-pij.sh",
+        "claude-user-prompt-submit-pij.sh",
+        "claude-statusline-pij.sh",
+    ] {
+        let text = std::fs::read_to_string(script(name)).unwrap();
+        assert!(
+            text.contains(pij_core::double_seat::CONVERSATION_LIVE_CODE),
+            "{name} does not carry the code Rust raises"
+        );
+    }
+}
