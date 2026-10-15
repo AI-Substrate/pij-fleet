@@ -55,8 +55,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "RUN: tests red on bb9f0b1 and green on the branch; mutation receipts; nice -n 19 cargo clippy -j 1 -p pij-daemon -p pij-harnesses --all-targets -- -D warnings; cargo fmt --all --check; GitHub CI green on the exact head",
-          "state": "unchecked",
-          "probe": "execution log receipts"
+          "state": "checked",
+          "probe": "execution log receipts",
+          "receipt": "execution-log.dd.json#entries/lg-0009"
         }
       ]
     },

@@ -40,7 +40,7 @@ One coder implements pij-fleet#55 as written in impl-guide.dd.json tk-0001: red 
 | tk-0003 | Scripts: SessionStart hook, UserPromptSubmit hook, status line | — | ph-61af | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | Mutation receipts | — | ph-61af | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Docs: pij-rs-api.md entry and docs/how/double-seat.md | — | ph-61af | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | Gates and PR | — | ph-61af | [ ] unchecked | vd-0003, vd-0004 and the Rust workspace gate passed (lg-0008). PR and exact-head CI pending. Local TS gates NOT RUN per parent msg 0072; live-tmux smoke NOT RUN. | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Gates and PR | — | ph-61af | [x] checked | vd-0003, vd-0004 and the Rust workspace gate passed (lg-0008); PR #56 open; exact-head CI green on 80b8aba (lg-0009). Local TS gates NOT RUN per parent msg 0072, covered by CI check (22)/(24); live-tmux smoke NOT RUN. | ../../execution-log.dd.json#entries/lg-0009 | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -78,6 +78,6 @@ One coder implements pij-fleet#55 as written in impl-guide.dd.json tk-0001: red 
 
 ### tk-0006
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0006 | vd-0003 and vd-0004 pass; the PR is open on pij-fleet with the plan's AC evidence; GitHub CI is green on the exact head; git ls-remote origin 'refs/notes/*' is empty; any stage not run is named NOT RUN with its reason | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0006 | vd-0003 and vd-0004 pass; the PR is open on pij-fleet with the plan's AC evidence; GitHub CI is green on the exact head; git ls-remote origin 'refs/notes/*' is empty; any stage not run is named NOT RUN with its reason | [x] checked | [bp-0004](../../backpressure.dd.md#rows) | [lg-0009](../../execution-log.dd.md#entries) |

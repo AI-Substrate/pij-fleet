@@ -1,0 +1,12 @@
+# gh run view 38675004257 (PR #56, pull_request)
+{"conclusion":"success","event":"pull_request","headSha":"80b8aba886ca75541fc9ac9d36c21a1eee81829f","jobs":[{"completedAt":"2026-10-15T03:13:55Z","conclusion":"success","name":"rust-test","startedAt":"2026-10-15T03:12:02Z"},{"completedAt":"2026-10-15T03:13:37Z","conclusion":"success","name":"check (22)","startedAt":"2026-10-15T03:12:02Z"},{"completedAt":"2026-10-15T03:12:50Z","conclusion":"success","name":"rust-lint","startedAt":"2026-10-15T03:12:02Z"},{"completedAt":"2026-10-15T03:14:15Z","conclusion":"success","name":"check (24)","startedAt":"2026-10-15T03:12:02Z"}],"status":"completed","url":"https://github.com/AI-Substrate/pij-fleet/actions/runs/38675004257"}
+# gh pr view 56 headRefOid
+80b8aba886ca75541fc9ac9d36c21a1eee81829f
+# gh pr checks 56 --watch (final)
+check (22)	pass	1m35s	https://github.com/AI-Substrate/pij-fleet/actions/runs/38675004257/job/116226493414	
+check (24)	pass	2m13s	https://github.com/AI-Substrate/pij-fleet/actions/runs/38675004257/job/116226493448	
+rust-lint	pass	48s	https://github.com/AI-Substrate/pij-fleet/actions/runs/38675004257/job/116226493430	
+rust-test	pass	1m53s	https://github.com/AI-Substrate/pij-fleet/actions/runs/38675004257/job/116226493260	
+exit 0
+# git ls-remote origin 'refs/notes/*' (empty below)
+# end

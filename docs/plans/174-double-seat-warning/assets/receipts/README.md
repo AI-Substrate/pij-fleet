@@ -62,6 +62,9 @@ warnings denied, exit 0. `gate-rust.txt` records `just rust-check` (workspace
 exit 0: 1539 passed, 0 failed, 8 ignored. The TS stages (typecheck, vitest,
 biome) are **NOT RUN** locally: this diff has no TS or JS, and the worktree has
 no `node_modules` by rule. GitHub CI check (22)/(24) on the exact head is the
-proof for those stages. The live-tmux smoke is **NOT RUN** (packet restriction). `resume-boot.txt` records a **not-ready** dependency
+proof for those stages. The live-tmux smoke is **NOT RUN** (packet restriction).
+`ci-pr56-80b8aba.txt` records GitHub Actions run 38675004257 on PR #56 at head
+`80b8aba`: rust-test, rust-lint, check (22) and check (24) all succeeded, and
+`git ls-remote origin 'refs/notes/*'` was empty. `resume-boot.txt` records a **not-ready** dependency
 probe, not a green gate. Full gate, plan validation and CI evidence are recorded
 separately in the execution log when observed.

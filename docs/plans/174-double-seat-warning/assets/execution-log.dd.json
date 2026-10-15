@@ -80,6 +80,14 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0008"
           ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-15T03:15:04.304Z",
+          "text": "EXACT-HEAD CI: PR #56 (https://github.com/AI-Substrate/pij-fleet/pull/56), head 80b8aba886ca75541fc9ac9d36c21a1eee81829f, Actions run 38675004257 (pull_request), conclusion success on that headSha: rust-test, rust-lint, check (22) and check (24) all success. check (22)/(24) run npm ci, typecheck, lint, npm test and copilot-native, the TS stages accepted in lieu of local runs by parent msg 0072. git push used the explicit refspec feat/double-seat-warning; git ls-remote origin 'refs/notes/*' is empty. Raw receipts/ci-pr56-80b8aba.txt. AC8 (a)-(e) are met: red/green with pins recorded as pin, green on base and mutation-proven (lg-0001, lg-0002, lg-0003, lg-0007); mutation receipts M1-M4 (lg-0004); fixture-only tests; the incident test end to end; CI green on the exact code head. NOT RUN: local TS stages (parent 0072) and live-tmux smoke (packet). This evidence entry lands in a docs-only follow-up commit whose own CI is watched separately. Prime read of the docs (bp-0003) and the phase close remain with the prime.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
         }
       ]
     }
