@@ -313,12 +313,11 @@ async fn double_seat_adopt_refusal_carries_the_code_details_and_fix() {
 }
 
 /// AC2 — every verb resolved by pane, from the pane no live seat owns, gives
-/// the same coded refusal; panes without a proven second copy keep today's
-/// text byte for byte (rk-0002), and a resolved pane never scans the Claude
-/// session records at all (rk-0001).
+/// the same coded refusal. The unchanged-text and no-scan pins are their own
+/// tests below.
 #[tokio::test]
 async fn double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text() {
-    let (world, home) = incident().await;
+    let (world, _home) = incident().await;
     let addr = world.addr;
 
     let whoami = post(addr, "/v1/whoami", json!({"pane": STRAY_PANE})).await;
@@ -344,10 +343,17 @@ async fn double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text()
     )
     .await;
     assert_double_refusal("fyi-claim", &claim);
+}
 
-    // Guards (rk-0002): no record for the pane; a record whose pid was
-    // recycled (its observed start disagrees); a record whose conversation no
-    // live seat holds. Each keeps today's not-registered text unchanged.
+/// PIN (green on base by design; plan 174 says this must stay UNCHANGED): a
+/// pane no live seat owns, without a PROVEN second copy, keeps today's
+/// not-registered text byte for byte. Three unproven cases: no record for the
+/// pane; a record whose pid was recycled (its observed start disagrees,
+/// rk-0002); a record whose conversation no live seat holds.
+#[tokio::test]
+async fn double_seat_pin_unproven_stray_keeps_the_not_registered_text() {
+    let home = Home::new();
+    home.record(LIVE_PID, SESSION, "Thu Oct 15 00:57:34 2026", LIVE_PANE);
     const RECYCLED_PID: u32 = 917_409;
     const OTHER_PID: u32 = 917_410;
     home.record(RECYCLED_PID, SESSION, "Thu Oct 15 00:59:00 2026", "%9");
@@ -357,7 +363,6 @@ async fn double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text()
         "Thu Oct 15 01:00:00 2026",
         "%10",
     );
-    drop(world);
     let world = world_on(
         seeded_registry().await,
         Arc::new(FakeSpine::new()),
@@ -380,9 +385,14 @@ async fn double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text()
         assert_eq!(body["ok"], false, "{pane}: {body}");
         assert_eq!(meta(&body), not_registered(pane), "{pane}: {body}");
     }
+}
 
-    // rk-0001: a pane a live seat owns resolves without the record scan. The
-    // decoy record names that pane; probing its pid would be the scan.
+/// PIN (green on base by design, rk-0001): a pane a live seat owns resolves
+/// without reading the Claude session records. The decoy record names that
+/// pane; probing its pid would be the scan.
+#[tokio::test]
+async fn double_seat_pin_resolved_pane_never_reads_session_records() {
+    let (world, home) = incident().await;
     const DECOY_PID: u32 = 917_411;
     home.record(DECOY_PID, SESSION, "Thu Oct 15 01:01:00 2026", LIVE_PANE);
     world.liveness.forget();

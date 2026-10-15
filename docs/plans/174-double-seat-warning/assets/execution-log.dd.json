@@ -80,6 +80,35 @@
             "../plan.dd.json#acceptance_criteria/ac-0008",
             "backpressure.dd.json#rows/bp-0004"
           ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-15T04:09:00Z",
+          "text": "PINS per the prime's AC8(a) ruling: the unchanged-text and no-scan arms were split out of the AC2 test into double_seat_pin_unproven_stray_keeps_the_not_registered_text and double_seat_pin_resolved_pane_never_reads_session_records. Pins on base (f67c724 sources + split tests): both ok, 4 behaviour tests FAILED as before (exit 101). Branch: all 7 double_seat tests ok (exit 0). Pin mutations, each restored: not-registered text altered -> unproven-stray pin FAILED at %8; recorded start ignored -> unproven-stray pin FAILED at %9 (false E-RS-CONVERSATION-LIVE); resolved path reads records -> no-scan pin FAILED (decoy pid 917411 probed). Clippy -p pij-daemon -p pij-harnesses --all-targets -D warnings exit 0; fmt --check exit 0. Evidence: evidence/pins.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "backpressure.dd.json#rows/bp-0001",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-10-15T03:34:44Z",
+          "text": "WORKSPACE GATE once at d648507 (C12: nice, timeout, -j 1, load under 36 at start): cargo metadata --locked ok; cargo clippy -j 1 --locked --workspace --all-targets -D warnings exit 0; cargo test -j 1 --locked --workspace --no-fail-fast exit 101 with 1536 passed, 1 FAILED, 8 ignored. The failure is outside this change: pij-sidecars direct_child_failure_survives_a_lingering_grandchild (Running != Failed after a fixed 1 s wait for a `sleep 1` grandchild under load ~30). Re-run alone: ok. Reported as a load-sensitive flake, not modified. TS typecheck/vitest/biome, just smoke and the single harness checks invocation NOT RUN locally: no TS changed, node_modules forbidden in this worktree, smoke needs the live tmux server. Evidence: evidence/gate-rust.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-15T04:00:00Z",
+          "text": "CI: GitHub Actions run 38676555820 on PR #57 head 0299784 (pull_request): conclusion success, jobs check (22), check (24), rust-lint, rust-test all success. The later head carrying this record is docs/tests-split only; its own CI run is reported to the prime with the head SHA. git ls-remote origin 'refs/notes/*' empty after every push.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
         }
       ]
     }

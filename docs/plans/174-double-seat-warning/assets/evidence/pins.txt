@@ -1,0 +1,109 @@
+# Plan 174 regression PINS (prime ruling on AC8(a), 2026-10-15)
+
+Two behaviours the plan says must stay UNCHANGED are pinned by their own tests, named for what they pin:
+- double_seat_pin_unproven_stray_keeps_the_not_registered_text: no record, recycled start (rk-0002), unheld conversation -> today's exact text
+- double_seat_pin_resolved_pane_never_reads_session_records (rk-0001)
+
+They are GREEN ON BASE BY DESIGN, never claimed red. A pin that never failed proves nothing, so each has a mutation receipt on the branch that breaks exactly the guarded behaviour, shown failing for that reason, then restored (git status clean but for the test split itself). cwd <worktree>. Command: nice -n 19 timeout -k 10 1500 cargo test -j 1 -p pij-daemon --lib --no-fail-fast double_seat[_pin].
+
+## Pins green on base
+Tree: f67c724 sources (= bb9f0b1 code) with the split test file; the four behaviour tests fail there for the known reasons.
+```text
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... FAILED
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... FAILED
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... FAILED
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... FAILED
+thread 'http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text' (5454303) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    whoami --pane: the code leads the text: {"command":"pij whoami","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+thread 'http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix' (5454298) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    adopt: the code leads the text: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+thread 'http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart' (5454300) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    adopt: the code leads the text: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+thread 'http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails' (5454299) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    adopt: the code leads the text: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 611 filtered out; finished in 0.79s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+```
+
+## Pins green on the branch (all 7 double_seat tests)
+```text
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... ok
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 611 filtered out; finished in 1.10s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+test double_seat_incident_end_to_end_on_the_real_store ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+```
+
+## Mutation pin-text: the not-registered text altered in identity.rs
+```text
+load { 32.47 27.47 30.98 }
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... FAILED
+thread 'http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text' (5484273) panicked at crates/daemon/src/http/double_seat_tests.rs:386:9:
+    assertion `left == right` failed: %8: {"command":"pij whoami","error":"refused","meta":"no live seat in the rs store owns pane `%8` — this seat is unregistered here.  /* MUTATION pin-text */ Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 615 filtered out; finished in 0.17s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+exit 101
+```
+
+## Mutation pin-recycled: the recorded start ignored in live_claude_records (the branch that chooses the text for a recycled pid)
+```text
+load { 32.46 28.05 31.05 }
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... FAILED
+thread 'http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text' (5490799) panicked at crates/daemon/src/http/double_seat_tests.rs:386:9:
+    assertion `left == right` failed: %9: {"command":"pij whoami","details":{"code":"E-RS-CONVERSATION-LIVE","harness_session":"cc2d2e8f-0174-4000-8000-00000000d0b1","pane":"%5","pid":917405,"seat":"pij-different-smelt","stray_pane":"%9","stray_pid":917409},"error":"refused","meta":"E-RS-CONVERSATION-LIVE conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5); close one copy, then run `pij-rs adopt %9 --harness claude` from the copy you keep — one conversation cannot be two seats","ok":false,"v":2}
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 615 filtered out; finished in 0.20s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+exit 101
+```
+
+## Mutation pin-scan: the resolved path reads the session records
+```text
+load { 35.29 28.80 31.29 }
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... FAILED
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+thread 'http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records' (5497761) panicked at crates/daemon/src/http/double_seat_tests.rs:401:5:
+    a resolved pane read the Claude session records: [917405, 917411, 917405]
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 615 filtered out; finished in 0.19s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+exit 101
+```

@@ -89,11 +89,12 @@
           "id": "tk-0006",
           "title": "Gates and PR",
           "phase": "ph-61af",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0008"
           ],
-          "done": "tasks.dd.json#done_when/tk-0006"
+          "done": "tasks.dd.json#done_when/tk-0006",
+          "receipt": "../../execution-log.dd.json#entries/lg-0009"
         }
       ]
     },
@@ -149,8 +150,9 @@
           {
             "id": "dw-0006",
             "assertion": "vd-0003 and vd-0004 pass; the PR is open on pij-fleet with the plan's AC evidence; GitHub CI is green on the exact head; git ls-remote origin 'refs/notes/*' is empty; any stage not run is named NOT RUN with its reason",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0009"
           }
         ]
       }

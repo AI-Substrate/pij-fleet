@@ -100,3 +100,5 @@ test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 611 filtered out
 error: test failed, to rerun pass `-p pij-daemon --lib`
 ```
 
+
+NOTE: the rk-0001 and rk-0002 receipts above predate the pin split (prime ruling, 2026-10-15). Those arms now live in their own pin tests; see pins.txt for their mutation receipts under the new names.

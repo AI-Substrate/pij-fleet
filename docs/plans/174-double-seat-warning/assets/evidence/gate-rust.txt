@@ -1,0 +1,130 @@
+# Plan 174 workspace Rust gate (run once, C12 limits)
+
+cwd <worktree>, tree d648507 (Rust sources identical to the final head; later commits touch only tests' pin split, docs and plan records, each re-run scoped).
+Commands (each under nice -n 19 timeout, -j 1, load < 36 at start):
+- cargo metadata --locked --format-version 1: ok
+- cargo clippy -j 1 --locked --workspace --all-targets -- -D warnings: exit 0
+- cargo test -j 1 --locked --workspace --no-fail-fast: exit 101, 102 test binaries, 1 failure, 8 ignored.
+
+The one failure is NOT in this change: crates/sidecars/tests/sidecars.rs direct_child_failure_survives_a_lingering_grandchild (assertion left: Running, right: Failed at line 1152). The test runs `sleep 1 &`, sleeps exactly 1 s, then expects a terminal status; at load ~27-35 the grandchild had not exited. Re-run alone (load 20.6): ok, exit 0. Reported as a load-sensitive flake, not modified. GitHub CI rust-test passed on 0299784 with the same Rust sources.
+
+```text
+start 2026-10-15T03:27:58Z load { 34.09 38.34 37.02 }
+metadata --locked ok
+clippy-workspace exit 0
+test start load { 26.68 35.84 36.18 }
+     Running unittests src/lib.rs (target/debug/deps/pij_cli-5b62626d71a436fe)
+     Running unittests src/main.rs (target/debug/deps/pij_rs-90be13e77847aec5)
+     Running tests/background.rs (target/debug/deps/background-18ff38b30269d50b)
+     Running tests/claude_inbound.rs (target/debug/deps/claude_inbound-8391ea3d3e01961a)
+     Running tests/commit_trailers.rs (target/debug/deps/commit_trailers-6f00cead18db055d)
+     Running tests/control_commands.rs (target/debug/deps/control_commands-e18c866478dece44)
+     Running tests/daemon_log.rs (target/debug/deps/daemon_log-09930c32398f32b4)
+     Running tests/governance_boot.rs (target/debug/deps/governance_boot-824cde706cc2b2ab)
+     Running tests/lifecycle.rs (target/debug/deps/lifecycle-290bc150ed239c65)
+     Running tests/list_here.rs (target/debug/deps/list_here-efc9bbda04d29ab5)
+     Running tests/render_golden.rs (target/debug/deps/render_golden-fecfc95e23737269)
+     Running tests/revive.rs (target/debug/deps/revive-9ace58b5ff105d40)
+     Running tests/seat_roles.rs (target/debug/deps/seat_roles-39a6e9b48ad7a0c6)
+     Running tests/shipped_daemon_config.rs (target/debug/deps/shipped_daemon_config-0bd3c0025435450e)
+     Running tests/sidecar_producer.rs (target/debug/deps/sidecar_producer-ebb5cceb65978651)
+     Running tests/spawn.rs (target/debug/deps/spawn-a24adbdbe3e449d4)
+     Running unittests src/lib.rs (target/debug/deps/pij_core-ee92be9851235554)
+     Running tests/core_unit_exemplar.rs (target/debug/deps/core_unit_exemplar-509aaab5742d91e8)
+     Running tests/envelope_wire.rs (target/debug/deps/envelope_wire-625810104f00fd80)
+     Running tests/liveness_table.rs (target/debug/deps/liveness_table-ebcf266ba55141c0)
+     Running tests/memorable_ids.rs (target/debug/deps/memorable_ids-6057afa5aa26ac4f)
+     Running tests/orchestration.rs (target/debug/deps/orchestration-6956e04eca193017)
+     Running tests/pa_digest.rs (target/debug/deps/pa_digest-c39c2e3b0ad5c095)
+     Running tests/report.rs (target/debug/deps/report-066d13cb79e7d13a)
+test assignment_state_round_trips_and_clear_drops_its_metadata ... ok
+     Running tests/status.rs (target/debug/deps/status-f28a036346952e54)
+test legacy_state_words_still_decode_without_new_metadata ... ok
+test peer_status_metadata_decodes_but_raw_descriptors_never_emit_it ... ok
+     Running tests/watchdog.rs (target/debug/deps/watchdog-ec5108326b43c358)
+     Running tests/wire_over_corpus.rs (target/debug/deps/wire_over_corpus-7c671951bcd14ab1)
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-581e0e6625b7ede5)
+test http::governance::tests::fences_match_owned_patterns_not_shared_metadata_and_refuse_unsupported_globs ... ok
+     Running tests/admission_agreement.rs (target/debug/deps/admission_agreement-638524d13dabf381)
+     Running tests/background_http.rs (target/debug/deps/background_http-2cc8fd7f11e7263e)
+     Running tests/caller_context_wire.rs (target/debug/deps/caller_context_wire-08d447b3a62b950c)
+     Running tests/control_commands.rs (target/debug/deps/control_commands-3d157e1ebcb5e853)
+     Running tests/double_seat_http.rs (target/debug/deps/double_seat_http-01f1a1655d43d3af)
+     Running tests/events_bus.rs (target/debug/deps/events_bus-73b47fdc434ad239)
+     Running tests/first_light.rs (target/debug/deps/first_light-ba1d56884ac087ba)
+     Running tests/first_light_wave1.rs (target/debug/deps/first_light_wave1-6938187faaf37939)
+     Running tests/first_light_wave2.rs (target/debug/deps/first_light_wave2-08cb0dca691b06bb)
+     Running tests/fyi_http.rs (target/debug/deps/fyi_http-6855d5919af36285)
+     Running tests/governance_canary.rs (target/debug/deps/governance_canary-61d8312cfb0c244c)
+     Running tests/governance_composition.rs (target/debug/deps/governance_composition-b3f505409235abe8)
+     Running tests/governance_notices.rs (target/debug/deps/governance_notices-c9d2ae1635a926b9)
+     Running tests/governance_u3.rs (target/debug/deps/governance_u3-ce31332eb826e3e6)
+test u3_metadata_mutations_do_not_invent_a_parent_permission_policy ... ok
+     Running tests/governance_u3_baseline.rs (target/debug/deps/governance_u3_baseline-a6b51aa37261120a)
+test u3_baseline_project_create_is_readable_without_invented_metadata ... ok
+     Running tests/governance_u4_baseline.rs (target/debug/deps/governance_u4_baseline-03f3caf850742549)
+     Running tests/lifecycle_http.rs (target/debug/deps/lifecycle_http-ffb078ba244bdf44)
+     Running tests/native_runtime_cold_resume.rs (target/debug/deps/native_runtime_cold_resume-919cf7cdc1d96dde)
+     Running tests/orchestration_repo.rs (target/debug/deps/orchestration_repo-9cafc3914e6adfb3)
+     Running tests/pairing_boot.rs (target/debug/deps/pairing_boot-30d2a4c31d90aa13)
+     Running tests/peer_proxy.rs (target/debug/deps/peer_proxy-22cffec1a6d294cf)
+     Running tests/report_http.rs (target/debug/deps/report_http-e950f24352fc91bf)
+     Running tests/retired_identity_http.rs (target/debug/deps/retired_identity_http-b2bc60a8155e1056)
+     Running tests/review_regressions.rs (target/debug/deps/review_regressions-1381fd7344cbc652)
+     Running tests/revive_http.rs (target/debug/deps/revive_http-9137eba290ff03da)
+     Running tests/role_http.rs (target/debug/deps/role_http-0aa93244f8bbeedc)
+     Running tests/shim_http.rs (target/debug/deps/shim_http-e7cd0fec44d53167)
+     Running tests/status_http.rs (target/debug/deps/status_http-6afb8f25a7bfbb87)
+     Running tests/store_wedge.rs (target/debug/deps/store_wedge-31903cb43799631b)
+     Running unittests src/lib.rs (target/debug/deps/pij_harnesses-2b94d25d00030e78)
+     Running tests/claude_heal_scripts.rs (target/debug/deps/claude_heal_scripts-8dc210845bd0f2e0)
+     Running tests/fyi_status_lines.rs (target/debug/deps/fyi_status_lines-b5940e0455bcacce)
+     Running tests/incident155.rs (target/debug/deps/incident155-4b177d799ecbe42c)
+     Running tests/proc_integration.rs (target/debug/deps/proc_integration-511f5958668f0826)
+     Running unittests src/lib.rs (target/debug/deps/pij_sidecars-298ea0cf3aee8d6c)
+     Running tests/sidecars.rs (target/debug/deps/sidecars-d1fede2edcfc2dbc)
+test direct_child_failure_survives_a_lingering_grandchild ... FAILED
+thread 'direct_child_failure_survives_a_lingering_grandchild' (5282471) panicked at crates/sidecars/tests/sidecars.rs:1152:5:
+  left: Running
+ right: Failed
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.18s
+     Running unittests src/lib.rs (target/debug/deps/pij_store-7881524116b4d104)
+     Running tests/anomaly_dispositions.rs (target/debug/deps/anomaly_dispositions-eabc431267c3de8e)
+     Running tests/background.rs (target/debug/deps/background-dde08ec11c5e042c)
+     Running tests/cancellation.rs (target/debug/deps/cancellation-5b29f3e3cf95a045)
+     Running tests/governance.rs (target/debug/deps/governance-4c5c06262727dc0b)
+test prime_compare_preserves_first_designation_and_retirement_metadata ... ok
+test project_metadata_updates_preserve_unsaid_fields_and_first_writer ... ok
+test governance_migration_preserves_legacy_dispatches_without_inventing_metadata ... ok
+     Running tests/orchestration.rs (target/debug/deps/orchestration-74a42544dea1ece0)
+     Running tests/queue.rs (target/debug/deps/queue-d9613b23b5b09fcc)
+     Running tests/status.rs (target/debug/deps/status-b38b70b862e4bf01)
+     Running tests/store_integration.rs (target/debug/deps/store_integration-7b88bcb456ab804d)
+     Running tests/store_registry.rs (target/debug/deps/store_registry-6abf3b69c9cb3a8c)
+     Running unittests src/lib.rs (target/debug/deps/pij_testkit-d568176b07fd941b)
+     Running unittests src/bin/arch_check.rs (target/debug/deps/pij_arch_check-711f77211aa5e9d3)
+     Running unittests src/bin/gate.rs (target/debug/deps/pij_gate-6685951c91e2e9fb)
+     Running tests/arch_drift.rs (target/debug/deps/arch_drift-f42f3fe571599034)
+test drifted_metadata_is_refused_with_the_reason_named ... ok
+test clean_metadata_passes ... ok
+     Running tests/contract_over_fakes.rs (target/debug/deps/contract_over_fakes-7351c311b6095456)
+     Running tests/corpus.rs (target/debug/deps/corpus-f4f032d1f1e81cee)
+     Running tests/lockfile_check.rs (target/debug/deps/lockfile_check-ef354d9961526723)
+     Running tests/message_framing.rs (target/debug/deps/message_framing-bcf07ea1db796d51)
+     Running tests/models_golden.rs (target/debug/deps/models_golden-4d34c4c138d6e3ab)
+     Running unittests src/lib.rs (target/debug/deps/pij_tmux-e5a911b9a1052d82)
+     Running tests/adapter.rs (target/debug/deps/adapter-76c911d493b63d82)
+     Running unittests src/lib.rs (target/debug/deps/pij_transport-3ca1fc66559dc9ba)
+     Running tests/live_held_observation.rs (target/debug/deps/live_held_observation-7cd2a9d47ef3fa2c)
+     Running unittests src/lib.rs (target/debug/deps/pij_unisphere-3d5198be73207bb3)
+test-workspace exit 101
+end 2026-10-15T03:34:44Z
+```
+
+Re-run of the failing test alone:
+```text
+load { 20.63 28.48 32.51 }
+test direct_child_failure_survives_a_lingering_grandchild ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 1.34s
+exit 0
+```
