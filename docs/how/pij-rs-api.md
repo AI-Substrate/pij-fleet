@@ -555,7 +555,7 @@ Sources: [`types.rs::FederatedRoster / UnavailablePeer`](../../crates/daemon/src
 
 ## FYI held delivery (plan 158)
 
-An FYI is a message the recipient's next action doesn't depend on ([the FYI rule](../../skills/pij/references/routes/peer.md#converse)). It never opens a turn: the daemon holds it until the recipient's next real turn, and it arrives with that turn. The only definition of the appended block is the golden fixture [`fyi/block.txt`](../../crates/testkit/fixtures/golden/fyi/block.txt); clients pass `block` through byte-for-byte and never re-render it.
+An FYI is a message the recipient's next action doesn't depend on ([the FYI rule](../../skills/pij/references/00-routing.md#c10--wire-discipline-a2a-messages), rule 3). It never opens a turn: the daemon holds it until the recipient's next real turn, and it arrives with that turn. The only definition of the appended block is the golden fixture [`fyi/block.txt`](../../crates/testkit/fixtures/golden/fyi/block.txt); clients pass `block` through byte-for-byte and never re-render it.
 
 ```bash
 pij send <seat> --fyi 'text'           # prints: pij send: held (fyi) — <msg_id>

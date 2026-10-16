@@ -21,4 +21,4 @@
 **Write the record at pass time.** The canary itself passed; the first cold audit
 still failed because the nonce existed only in transcript. The record above was
 written retroactively. Current operation reverses that order: file first, claim
-second. Source: vendored war story 1.
+second.

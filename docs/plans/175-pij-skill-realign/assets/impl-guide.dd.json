@@ -1,0 +1,344 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "pij skill realignment: findings ledger, rulings, two-sided verb gate",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "The code and --help are the authority; docs/how is second; the skill is the thing being corrected. Work file by file with the survey row open, re-verify each finding before acting (the survey can be wrong: REJECTED is a valid disposition with proof), and record the disposition in assets/findings.md as you go. Cite, don't restate: where docs/how or a convention (C1-C12) already holds the rule, link it. A finding that exposes a code bug becomes a pij-fleet issue, not a code change. The two gates read the authorities directly (RS_ROUTE_TABLE; the built pij-rs --help) and never copy a verb list (consume the producer, not a duplicate).",
+        "composition_root": "skills/pij/SKILL.md (registry, verb coverage, invariants) with references/00-routing.md conventions; the route and prime files cite them",
+        "contracts": [
+          "assets/findings.md: one row per survey row: report, line, verdict, disposition (FIXED|RULED|REJECTED|DEFERRED), evidence",
+          "SKILL.md coverage: shim verbs in the existing table (parsed by the TS test); native-only pij-rs subcommands in a separate table the TS forward check does not parse",
+          "crates/cli/tests/skill_verb_coverage.rs: parse `pij-rs --help` subcommands, assert each appears in SKILL.md"
+        ],
+        "seams": [
+          ".omp/extensions/pij/core/generation-skill-coverage.test.ts (skillVerbs parser stops at the next '## ' heading)",
+          ".omp/extensions/pij/core/generation-routing.ts RS_ROUTE_TABLE",
+          "crates/cli/src/main.rs clap subcommands (binary pij-rs)"
+        ]
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One coherent text with cross-file consistency ACs (AC7); splitting by file would recreate the contradictions this plan removes. One coder implements; a cross-family reviewer re-surveys; the prime verifies and merges."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "survey rows -> assets/findings.md dispositions",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "link mentions -> pij link --help",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "ops/peer/ready revive text -> revive.rs",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "role examples -> closed role set",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0005",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0005",
+          "owner": "tk-0001",
+          "path": "pair.md -> builder + peer route",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0006",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0006",
+          "owner": "tk-0001",
+          "path": "TS-era text -> rs behaviour",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0007",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0007",
+          "owner": "tk-0001",
+          "path": "cross-file rules -> one rule each",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0008",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0008",
+          "owner": "tk-0001",
+          "path": "governance pointers -> resolvable or honest",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0009",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0009",
+          "owner": "tk-0001",
+          "path": "MISSING rows -> owning file",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0010",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0010",
+          "owner": "tk-0001",
+          "path": "SKILL.md tables <-> RS_ROUTE_TABLE and pij-rs --help",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0011",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0011",
+          "owner": "tk-0001",
+          "path": "bloat, size, links",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0012",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0012",
+          "owner": "tk-0001",
+          "path": "re-survey + validate + CI",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Skill realignment",
+          "role": "pm",
+          "responsibility": "Reverse coverage tests red-first, every survey disposition, the edits, bloat trim, link check, gates, PR.",
+          "paths": [
+            "skills/pij/",
+            ".omp/extensions/pij/core/generation-skill-coverage.test.ts",
+            "crates/cli/tests/skill_verb_coverage.rs",
+            "docs/how/",
+            "docs/plans/175-pij-skill-realign"
+          ],
+          "reads": [],
+          "notes": "Read first: assets/survey/*.md, assets/rulings.md, docs/how/pij-rs-api.md (Unsupported status), crates/daemon/src/http/revive.rs, crates/daemon/src/pa_watchdog.rs.",
+          "interface": "assets/findings.md; SKILL.md coverage tables",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "../plan.dd.json#acceptance_criteria/ac-0010",
+            "../plan.dd.json#acceptance_criteria/ac-0011",
+            "../plan.dd.json#acceptance_criteria/ac-0012"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "skills/pij/SKILL.md"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-175-skill-realign on docs/pij-skill-realign, created by the prime, node_modules linked by the prime (just worktree-deps). The coder runs with that worktree as its cwd."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "omp",
+          "model": "github-copilot/claude-opus-5.5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "omp",
+          "model": "a different family from the coder, discovered at spawn"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "TypeScript skill coverage test, both directions (AC10a)",
+          "command": "npx",
+          "args": [
+            "vitest",
+            "run",
+            ".omp/extensions/pij/core/generation-skill-coverage.test.ts"
+          ],
+          "cwd": ".",
+          "timeout_ms": 300000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Rust native-verb coverage test (AC10b)",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "1",
+            "-p",
+            "pij-cli",
+            "--test",
+            "skill_verb_coverage"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Lint (Biome)",
+          "command": "just",
+          "args": [
+            "lint"
+          ],
+          "cwd": ".",
+          "timeout_ms": 300000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Plan validates",
+          "command": "harness",
+          "args": [
+            "plan",
+            "validate",
+            "docs/plans/175-pij-skill-realign"
+          ],
+          "cwd": ".",
+          "timeout_ms": 120000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Write the two reverse coverage checks on bb9f0b1 and record the red receipts.",
+          "Work the survey file by file (SKILL.md and 00-routing first, since the others cite them), recording dispositions in assets/findings.md.",
+          "Update the coverage tables until vd-0001 and vd-0002 are green; mutation receipts.",
+          "Trim bloat; link check and line count; just lint; plan validate; push; PR; green CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001",
+          "impl-guide.dd.json#checks/vd-0002"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After the PR is open and CI is green: a fresh cross-family reviewer seat re-runs assets/survey/brief.md over the patched skill at the exact head SHA and spot-checks findings.md. The prime then verifies and merges.",
+        "inputs": [
+          "plan.dd.json",
+          "assets/survey/brief.md",
+          "assets/findings.md",
+          "PR head SHA"
+        ],
+        "proof": [
+          "Reviewer seat id, model, subject SHA, findings with dispositions in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "The coder trusts the survey and 'fixes' a claim that was right.",
+          "check": "Each FIXED row cites the --help or code it was checked against; REJECTED is allowed; the reviewer re-checks a sample."
+        },
+        {
+          "id": "rk-0002",
+          "text": "The fix grows the skill (missing features added verbatim).",
+          "check": "AC11 line ceiling; cite docs/how instead of restating."
+        },
+        {
+          "id": "rk-0003",
+          "text": "The Rust test builds the binary under load.",
+          "check": "C12: nice -n 19, -j 1, timeout -k, load gate."
+        },
+        {
+          "id": "rk-0004",
+          "text": "The coverage tests become a second verb list.",
+          "check": "They read RS_ROUTE_TABLE and the built binary's --help; no hard-coded list (a reviewer grep)."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "dd": {
+    "schema": "builder/execution-log"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Observed implementation evidence",
+        "plan": "../plan.dd.json#meta"
+      }
+    },
+    {
+      "name": "entries",
+      "value": [
+        {
+          "id": "lg-0001",
+          "at": "2026-10-16T03:21:50Z",
+          "text": "tk-0001 RED on the bb9f0b1 skill (skills/ identical to bb9f0b1). TS: npx vitest run .omp/extensions/pij/core/generation-skill-coverage.test.ts, cwd worktree, exit 1: 'RS_ROUTE_TABLE routes missing from SKILL.md CLI-verb coverage: inbox check, inbox register, bg emit'. Rust: nice -n 19 timeout -k 10 5400 cargo test --locked -j 1 -p pij-cli --test skill_verb_coverage, exit 101: 'pij-rs subcommands missing from skills/pij/SKILL.md verb tables: activity, doctor, fyi-claim, fyi-read, peers, ping, register, sidecar'. A top-level-only reverse check is green on bb9f0b1, so the TS reverse check also enforces RS_ROUTE_TABLE leaves. Evidence: assets/receipts/tk-0001-ts-red.txt, assets/receipts/tk-0001-rust-red.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0010",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0002",
+          "at": "2026-10-16T03:21:50Z",
+          "text": "tk-0002/tk-0005 GREEN + mutations. TS 7/7 pass; Rust 4/4 pass. Mutation 1: delete SKILL.md bg row -> TS reverse test red ('missing ...: bg') -> restored (sha256 prefix 536da8fe81057874 both sides) -> 7/7. Mutation 2: delete Native-only ping row -> Rust red ('missing ...: ping') -> restored -> 4/4. Evidence: assets/receipts/tk-0005-mutation-ts.txt, assets/receipts/tk-0005-mutation-rust.txt, assets/receipts/tk-0006-gates.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0010",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0003",
+          "at": "2026-10-16T03:21:50Z",
+          "text": "tk-0002..tk-0004 survey closed: assets/findings.md has 140 rows (27 WRONG, 41 STALE, 50 MISSING, 7 BLOAT, 15 UNVERIFIABLE), each re-verified; after fix round 1: FIXED 115, RULED 22, REJECTED 0, DEFERRED 0, UNVERIFIABLE kept 3 with attribution; 0 WRONG deferred. Code defect filed: AI-Substrate/pij-fleet#58. AC2-AC9 phrase greps: assets/receipts/ac2-ac9-greps.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0001",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0004",
+          "at": "2026-10-16T03:21:50Z",
+          "text": "tk-0005 size and links: find skills/pij -name '*.md' | xargs wc -l -> 2491 total (ceiling 2800; 2656 on bb9f0b1). python3 assets/scripts/linkcheck.py skills/pij -> links checked 121, broken 0, exit 0; control mutation (bad anchor + bad path) -> broken 2, exit 1, restored. SKILL.md References lists C1-C12. Evidence: assets/receipts/tk-0005-size-links.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0011",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        },
+        {
+          "id": "lg-0005",
+          "at": "2026-10-16T03:21:50Z",
+          "text": "tk-0006 local gates: just lint exit 0 (after biome format of the TS test); just typecheck exit 0; cargo fmt -p pij-cli --check clean; nice -n 19 cargo clippy --locked -j 1 -p pij-cli --test skill_verb_coverage -- -D warnings exit 0; nice -n 19 cargo test --locked -j 1 -p pij-cli exit 0 (all targets ok, skill_verb_coverage 4/4). Independent re-survey (AC12a) and GitHub CI (AC12c) pending after the PR; prime arranges the cross-family reviewer. Evidence: assets/receipts/tk-0006-gates.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0012",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-16T03:37:00Z",
+          "text": "Fix round 1 for the cross-family re-survey (assets/reviews/re-survey-gpt-6-sol.md, REQUEST CHANGES at 617fc02): all 13 rows dispositioned in assets/reviews/re-survey-dispositions.md. 7 WRONG fixed (OMP/Pi linked-worktree spawn refusal at crates/cli/src/main.rs:2650 stated once in the peer route and cited; gate-before-approval ordering; R8 record fallbacks), 3 MISSING fixed, 3 UNVERIFIABLE kept and attributed (co-38 relabelled from REJECTED). Gates: TS 7/7, Rust 4/4, link check 124 links/0 broken, 2503 lines, just lint exit 0. Evidence: assets/receipts/fix1-gates.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0012",
+            "backpressure.dd.json#rows/bp-0001"
+          ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-16T03:40:43Z",
+          "text": "ac-0012 closed. (a) cross-family re-survey: assets/reviews/re-survey-gpt-6-sol.md (Copilot gpt-6-sol at 617fc02, REQUEST CHANGES; 13 rows dispositioned in assets/reviews/re-survey-dispositions.md) and the prime's verification of fix round 1: assets/reviews/prime-verification.md (pij-far-jackal, subject 884386500f0339aa04757564994ad9d9adfa436d, all rows resolved). (b) harness plan validate 0 errors. (c) just lint, the TS coverage test and cargo test -p pij-cli pass locally (lg-0005, lg-0006); GitHub CI run 38846430769 green on 8843865. (d) scope verified by the prime (git diff --name-only bb9f0b1 884386).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0012",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
+        }
+      ]
+    }
+  ]
+}

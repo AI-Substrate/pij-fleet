@@ -9,7 +9,7 @@
 Bearer authentication proves machine access, not seat identity. The daemon resolves caller evidence before mutation. `--actor`, when accepted, must equal that caller; it cannot override attribution. Never copy another seat's `PIJ_SESSION_ID` to gain authority.
 
 ```bash
-pij role <seat> reviewer --json
+pij role <seat> worker --json        # prime|pm|worker|pa only
 pij role <seat> --unset --json
 pij orchestration role set <seat> pm --json
 pij orchestration role unset <seat> --json
@@ -52,9 +52,9 @@ The daemon reads/hashes packet bytes relative to caller cwd and persists the dis
 ```bash
 pij task set <seat> '<task>' [--project <slug>]
 pij task close <assignment-id> --reason done|cancelled|failed|superseded
-pij report now '<did>' '<next>' [--state <word>] [--note '<text>']
-pij report question "<what I need from you>" [--assignment <id>]
-pij report blocked "<what I am waiting on>" [--assignment <id>]
+pij report now '<did>' '<next>' [--state <word>] [--note '<text>']   # --note only with --state question|blocked
+pij report question "<what I need from you>" [--assignment <id>] [--refs a,b]
+pij report blocked "<what I am waiting on>" [--assignment <id>] [--refs a,b]
 pij report state <state> [--assignment <id>] [--refs a,b]
 pij report clear
 pij report verify <seat> [--assignment <id>]
@@ -62,7 +62,7 @@ pij report verify <seat> [--assignment <id>]
 
 Everything under `report` is a first-person claim about yourself. `report verify <seat>` is the supervisory exception and requires the target's **current recorded parent**, never self or an unrelated seat. With `--assignment`, verification binds the latest done naming that assignment; unscoped verification binds the latest done overall. A newer done for the same assignment reopens its unverified-done anomaly. Closing a task does not substitute for verification.
 
-States: `blocked|question|hold|waiting|ready|failed|cancelled|done`. Mechanical liveness/activity is derived, not a writable semantic state; do not invent `working`. Existing now/state outputs and events stay unchanged. Use `--note` with question/blocked; report clear removes a state, not a durable decision. Record now/next at both edges of work (invariant 12), at the seat's own altitude. Query anomalies unscoped when supervising status cards: project/here filters may hide node-keyed stale status.
+States: `blocked|question|hold|waiting|ready|failed|cancelled|done`. Mechanical liveness/activity is derived, not a writable semantic state; do not invent `working`. Existing now/state outputs and events stay unchanged. `--note` exists only on `report now`, and only together with `--state question` or `--state blocked` (otherwise refused, `http/report.rs:224`); `report question`/`blocked` take their text as the note. Report clear removes a state, not a durable decision. Record now/next at both edges of work (invariant 12), at the seat's own altitude. Query anomalies unscoped when supervising status cards: project/here filters may hide node-keyed stale status. `status-stale` fires for any unparked seat whose card is over 30 min old (idle, ready and done seats included) and never for a seat that has filed no card.
 
 Self-reported status never gates delivery or inbox claims: `hold` means the seat
 is reporting a pause, not closing the inbox needed for the awaited ruling.
@@ -95,10 +95,10 @@ pij node show <seat> --json
 pij spine events [--peer <seat>] [--project <slug>] [--since N] --json
 pij spine append --kind <kind> [--refs <a,b>] [--project <slug>] --json
 pij spine render [--peer <seat>] [--project <slug>] [--since N] --json
-pij anomalies [--here] [--project <slug>] --json
+pij anomalies [--here] [--project <slug>] [--seat <seat>] --json
 ```
 
-Shim `pij list` supports exact `--harness <h>`, `--folder <path>`, `--parent <seat>` and `--scope local`, forwarded to `/v1/seats` without losing values. Both shim and native `pij-rs list --here` select the caller's canonical cwd; `--here` is boolean, not a path argument. `pij sessions` accepts bare or `--json` only. No `--prime`, `--role`, `--archived` or cross-generation union. `node show` joins rs subtree/governance records; unknown nodes refuse. `link`/`tree` are unported: inspect recorded `parent`, never rewrite it through legacy or infer it from spawnedBy. Existing-seat reparenting/root placement is a named gap, not a role mutation.
+Shim `pij list` supports exact `--harness <h>`, `--folder <path>`, `--parent <seat>` and `--scope local`, forwarded to `/v1/seats` without losing values. Both shim and native `pij-rs list --here` select the caller's canonical cwd; `--here` is boolean, not a path argument. `pij sessions` accepts bare or `--json` only. No `--prime`, `--role`, `--archived` or cross-generation union. `node show` joins rs subtree/governance records; unknown nodes refuse. `tree` is unported (read `node show`). `pij link <seat> --role <r>` takes a seat with no live parent or re-roles your own child (peer route); nothing reparents a seat whose parent is live. Inspect recorded `parent`; never rewrite it through legacy or infer it from spawnedBy.
 
 Spine kinds are literal/open strings. Append attribution is daemon-resolved and irreversible; correct mistakes with a referenced event. `--peer` is a read filter, not append impersonation. Render returns `{text,cursor}` without writing a legacy spine file. Local `--since N` is exclusive; live `/v1/events` instead uses machine cursor maps. That stream begins with Hello (`hello:true`, not `type=hello`), then Event frames with JSON-**string** payloads; see the API before decoding them.
 

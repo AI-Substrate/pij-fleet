@@ -1,0 +1,35 @@
+# skills/ tree identical to bb9f0b1
+$ nice -n 19 timeout -k 10 5400 cargo test --locked -j 1 -p pij-cli --test skill_verb_coverage  # exit 101
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 34s
+     Running tests/skill_verb_coverage.rs (target/debug/deps/skill_verb_coverage-9cb8fe9ef4352a7b)
+
+running 4 tests
+test parser_strips_leaf_annotations_and_stops_at_next_heading ... ok
+test native_only_rows_name_real_subcommands ... ok
+test every_native_subcommand_has_a_skill_row ... FAILED
+test removing_any_row_verb_is_detected ... FAILED
+
+failures:
+
+---- every_native_subcommand_has_a_skill_row stdout ----
+
+thread 'every_native_subcommand_has_a_skill_row' (56368888) panicked at crates/cli/tests/skill_verb_coverage.rs:96:5:
+pij-rs subcommands missing from skills/pij/SKILL.md verb tables: activity, doctor, fyi-claim, fyi-read, peers, ping, register, sidecar
+
+---- removing_any_row_verb_is_detected stdout ----
+
+thread 'removing_any_row_verb_is_detected' (56368891) panicked at crates/cli/tests/skill_verb_coverage.rs:123:9:
+assertion `left == right` failed: deleting `ack` must be the only gap
+  left: ["ack", "activity", "doctor", "fyi-claim", "fyi-read", "peers", "ping", "register", "sidecar"]
+ right: ["ack"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    every_native_subcommand_has_a_skill_row
+    removing_any_row_verb_is_detected
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.42s
+
+error: test failed, to rerun pass `-p pij-cli --test skill_verb_coverage`
+exit=101

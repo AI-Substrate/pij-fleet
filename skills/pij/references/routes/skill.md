@@ -10,7 +10,7 @@
 ## Native peer and packet
 
 ```bash
-pij-rs spawn --harness <h> --model <exact-model> --cwd <absolute-repo> --parent <your-seat> --json
+pij-rs spawn --harness <h> --model <exact-model> --cwd <absolute-repo> --role worker --json   # OMP/Pi: not in a linked worktree (peer route)
 pij canary <peer> --expect-model <exact-model> --json
 pij dispatch <peer> --packet <absolute-packet-path> --wait --json
 ```

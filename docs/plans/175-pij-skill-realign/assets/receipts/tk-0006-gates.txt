@@ -1,0 +1,56 @@
+$ just lint
+
+Checked 211 files in 109ms. No fixes applied.
+Found 1 info.
+exit=0
+$ just typecheck → tsc --noEmit exit 0
+$ cargo fmt -p pij-cli -- --check → clean
+$ nice -n 19 timeout -k 10 3600 cargo clippy --locked -j 1 -p pij-cli --test skill_verb_coverage -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 11s
+exit=0
+
+# green gates on the branch skill
+ ✓ .omp/extensions/pij/core/generation-skill-coverage.test.ts (7 tests) 8ms
+      Tests  7 passed (7)
+test parser_strips_leaf_annotations_and_stops_at_next_heading ... ok
+test native_only_rows_name_real_subcommands ... ok
+test every_native_subcommand_has_a_skill_row ... ok
+test removing_any_row_verb_is_detected ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s
+$ nice -n 19 timeout -k 10 3000 cargo test --locked -j 1 -p pij-cli -- --test-threads 4
+     Running unittests src/lib.rs (target/debug/deps/pij_cli-5b62626d71a436fe)
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+     Running unittests src/main.rs (target/debug/deps/pij_rs-90be13e77847aec5)
+test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+     Running tests/background.rs (target/debug/deps/background-18ff38b30269d50b)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+     Running tests/claude_inbound.rs (target/debug/deps/claude_inbound-8391ea3d3e01961a)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+     Running tests/commit_trailers.rs (target/debug/deps/commit_trailers-6f00cead18db055d)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+     Running tests/control_commands.rs (target/debug/deps/control_commands-e18c866478dece44)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/daemon_log.rs (target/debug/deps/daemon_log-09930c32398f32b4)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+     Running tests/governance_boot.rs (target/debug/deps/governance_boot-824cde706cc2b2ab)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.21s
+     Running tests/lifecycle.rs (target/debug/deps/lifecycle-290bc150ed239c65)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+     Running tests/list_here.rs (target/debug/deps/list_here-efc9bbda04d29ab5)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+     Running tests/render_golden.rs (target/debug/deps/render_golden-fecfc95e23737269)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running tests/revive.rs (target/debug/deps/revive-9ace58b5ff105d40)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+     Running tests/seat_roles.rs (target/debug/deps/seat_roles-39a6e9b48ad7a0c6)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+     Running tests/shipped_daemon_config.rs (target/debug/deps/shipped_daemon_config-0bd3c0025435450e)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+     Running tests/sidecar_producer.rs (target/debug/deps/sidecar_producer-ebb5cceb65978651)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+     Running tests/skill_verb_coverage.rs (target/debug/deps/skill_verb_coverage-9cb8fe9ef4352a7b)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/spawn.rs (target/debug/deps/spawn-a24adbdbe3e449d4)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+exit=0
