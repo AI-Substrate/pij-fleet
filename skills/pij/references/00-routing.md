@@ -33,7 +33,7 @@ For the remaining modes, detect once per run: callable in-process `pij_spawn` �
 | Intent | OMP push | Pi push | tmux control-plane push | external pull |
 |---|---|---|---|---|
 | prereq | **OMP extension owns registration: no adopt/inbox register.** | **Pi extension owns registration: no adopt/inbox register.** | running rs daemon + exact-pane adoption: `pij adopt "$TMUX_PANE" --harness <h> ${PIJ_PARENT_ID:+--parent "$PIJ_PARENT_ID"}` | `pij inbox register --json` from a verified Claude/Copilot/Codex tool shell; accepted id is `data.id` |
-| spawn | `pij_spawn({harness:"omp", …})` for an OMP child; another child needs its own explicit harness | `pij_spawn({harness:"pi", …})` for a Pi child, subject to daemon retirement policy | `pij-rs spawn --harness <h> --cwd <absolute-path> --parent <id> [--role <pm\|worker\|pa>] [--name <window>] …` | no tmux launch without an available tmux context |
+| spawn | `pij_spawn({harness:"omp", …})` for an OMP child; another child needs its own explicit harness | `pij_spawn({harness:"pi", …})` for a Pi child, subject to daemon retirement policy | `pij-rs spawn --harness <h> --cwd <absolute-path> --parent <id> [--role <pm\|worker\|pa>] [--name <window>] …` (OMP/Pi refuse a linked-worktree `--cwd`: [peer route](./routes/peer.md#spawn-and-revive-native-grammar-not-shim-fallback)) | no tmux launch without an available tmux context |
 | message | `pij_send({to, message})` | `pij_send({to, message})` | `pij send <id> '<text>'` (native `pij-rs send --to <id> --body '<text>'`; another machine: `--to <id>@<machine>`, [federation](../../../docs/how/pij-federation.md)) | `pij send <id> '<text>' --json` from the same native host/session |
 | FYI (next action doesn't depend on it; held, opens no turn) | `pij_send({to, message, fyi:true})` | `pij_send({to, message, fyi:true})` | `pij send <id> --fyi '<text>'` | `pij send <id> --fyi '<text>' --json` |
 | wake a cold seat (`E-RS-COLD-WAKE` refused it; worth the price) | `pij_send({to, message, force:true, reason})` | `pij_send({to, message, force:true, reason})` | `pij send <id> --force --reason '<why>' '<text>'` | same flags; audited as `send.cold-wake-forced` |
@@ -213,7 +213,7 @@ Pane or pid absence alone is not a crash, and unknown evidence is not death. The
 
 ### C10 — Wire discipline (A2A messages)
 
-**Canonical copy — cite "C10" from other modules; never restate these rules.** Governs every message from one agent to another (`pij send`, inbox replies, pushed reports). Human-facing prose is out of scope. The recipient is a machine — write for a machine reader. Evidence: plan 083, pre-OSS history (fleet measured ~2.9M tokens of A2A bodies; the waste is acks, restatement, and praise — not long analysis).
+**Canonical copy — cite "C10" from other modules; never restate these rules.** Governs every message from one agent to another (`pij send`, inbox replies, pushed reports). Human-facing prose is out of scope. The recipient is a machine — write for a machine reader. Evidence: pre-OSS plan 083, not in this checkout (operator-reported: fleet measured ~2.9M tokens of A2A bodies; the waste is acks, restatement, and praise — not long analysis).
 
 1. **Line 1 is the recipient's next ACTION or DECISION — or `NO ACTION`.** The reader may stop there; everything below line 1 is optional context.
 2. **Delta only, with the discriminating value.** State what changed + the one count/SHA/path that could have been wrong. Cite rulings and prior messages by id — never restate them, never restate the recipient's own words back to them, never itemize unchanged state (one denominator line max).
@@ -245,4 +245,4 @@ The fleet shares Jordan's working laptop. Builds, test loops, stress and flake r
 - a wall-clock bound (`timeout 600`);
 - stop when the load average passes 40.
 
-A packet asking for repeated or "under load" runs states these caps. An uncapped `-P 48` flake reproduction once took the machine to load ~230 and had to be killed (2026-09-29). Reproduce a timing flake by reasoning about what decides the race, or with a deterministic hook, before brute force.
+A packet asking for repeated or "under load" runs states these caps. By operator report, an uncapped `-P 48` flake reproduction once took the machine to load ~230 and had to be killed (2026-09-29). Reproduce a timing flake by reasoning about what decides the race, or with a deterministic hook, before brute force.

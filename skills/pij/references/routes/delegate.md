@@ -34,6 +34,7 @@ Persist the packet (e.g. under a `scratch/` or task dir), then send the **path p
 ```bash
 # 1. acquire — provided-or-spawn ONE peer (§ C1 transport, § C5 placement)
 pij-rs spawn --harness <h> --model <m> --cwd <absolute-worktree> --role worker --json   # you become its parent
+#    OMP/Pi refuse a linked-worktree --cwd: use claude/copilot there (peer route § Spawn and revive)
 #    canary-verify the footer + no-400 before trusting it (§ C2) — provided peers too
 
 # 2. deliver — write the packet to disk, send the POINTER (never the body)

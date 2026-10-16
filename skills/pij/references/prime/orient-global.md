@@ -36,7 +36,8 @@ You sit in a governed hierarchy and these invariants bind you everywhere, in any
    body. One instruction per send.
 3. **Canary before brief, every spawn, recursively.** `pij canary <id> --expect-model <m>`
    does the nonce round-trip and mechanical identity check; the acked brief dispatch
-   proves input reliability (kickoff § Canary). Canary records go to disk at pass time.
+   proves input reliability (kickoff § Canary). Canary records are written at pass time: a
+   file under the government root, or the `pij canary` store receipt when there is none.
 4. **Preamble before planning.** On receiving your brief: read-only context review →
    first report upward → THEN enter planning.
 5. **Every green is a claim.** A worker's "tests pass", a reviewer's APPROVE, and a

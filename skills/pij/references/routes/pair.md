@@ -32,7 +32,7 @@ Everything under `report` is a first-person claim about yourself. These are rout
 
 ```bash
 pij report now 'Starting **<phase>**' 'Write the packet and dispatch the coder'      # before the first dispatch
-pij report now 'Approved **<phase>** after `harness checks`' 'Send the [report](<path>)'   # after the verdict, before the pointer
+pij report now 'Approved **<phase>** after `harness checks`' 'Send the [report](<path>)'   # only after the gates pass (Procedure 5), before the pointer
 ```
 
 Inline markdown works; newlines are refused. `pij report question "<need>"` for a human
@@ -58,7 +58,7 @@ recording approval.
 | `DELEGATE` | A tasked phase is ready | Write the coder packet → dispatch the pointer. **One whole phase per packet**, and say so |
 | `REVIEW` | Coder reports done | Compact the coder → acquire/canary the reviewer if not live → dispatch the review packet at the exact head SHA |
 | `FIX` | Verdict needs changes | Compact the reviewer → send the coder the review record's findings only |
-| `APPROVE` | Verdict approves | Compact the reviewer → sanity pass → record approval → merge or hand to the prime |
+| `APPROVE` | Verdict approves | Compact the reviewer → sanity pass → run the repo's gates → record approval and the stop report → merge or hand to the prime |
 
 ### Sanity pass — the last gate before APPROVE
 
@@ -76,13 +76,14 @@ If the verdict doesn't survive, you do **not** record APPROVE.
 ## The seats
 
 ```bash
-pij-rs spawn --harness <h> --model <exact-model> [--effort <level>] --cwd <worktree> --role worker --name '<plan>-coder' --json
+pij-rs spawn --harness <claude|copilot> --model <exact-model> [--effort <level>] --cwd <worktree> --role worker --name '<plan>-coder' --json
 pij canary <seat> --expect-model <exact-model> --json
 pij dispatch <seat> --packet <absolute-packet-path> --json
 ```
 
 - **Models**: no defaults. Discover ids per § C4; pass effort with `--effort`, never a model
-  suffix. Default harness for new peers is OMP unless the human says otherwise.
+  suffix. OMP and Pi refuse a linked-worktree `--cwd` (peer route § Spawn and revive): for worktree
+  work use `claude` or `copilot`, or spawn OMP/Pi from the main checkout and have it work by absolute path.
 - **Lazy reviewer** — spawn the reviewer at the first `REVIEW`, never with the coder: an idle
   live peer still costs cache writes.
 - **Canary before trust (§ C2)**, provided peers too. Place and name the panes (§ C5).
@@ -121,8 +122,8 @@ or message a seat that merely looks idle.
    dispatch.
 3. **On done**: compact the coder; check its receipts (commit SHA, gate output, AC
    `proven_by`); write the reviewer packet at that SHA; dispatch.
-4. **On the verdict**: compact the reviewer; sanity pass; `FIX` loops to step 3, `APPROVE`
-   records approval in the plan and goes on.
-5. **End-of-work gate** — before declaring the phase done, run the repo's own gates (in pij,
-   `harness checks`), all of them, not first-fail.
-6. **Commit boundary** — § C11 on any commit you make.
+4. **On the verdict**: compact the reviewer; sanity pass; `FIX` loops to step 3.
+5. **Gate before approval** — on an APPROVE, run the repo's own gates (in pij, `harness checks`),
+   all of them, not first-fail. A red gate is a `FIX`, not an approval.
+6. **Record approval** in the plan, then the stop report and the completion pointer.
+7. **Commit boundary** — § C11 on any commit you make.

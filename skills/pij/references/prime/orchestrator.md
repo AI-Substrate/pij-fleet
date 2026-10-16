@@ -14,8 +14,8 @@ Everything under `report` is a first-person claim about yourself.
    pij report now 'Starting **<plan>**' 'Run the next Builder or pair step'
    ```
 
-2. **Stop-of-work report** — after every phase gate/approval and at ship, before
-   sending the pointer report upward:
+2. **Stop-of-work report** — only after `harness checks` has passed and the phase is
+   approved (and at ship), before sending the pointer report upward:
 
    ```bash
    pij report now 'Completed **<phase>** after `harness checks`' 'Send the [phase report](<path>) and begin the next approved step'
@@ -53,14 +53,15 @@ stop and escalate one hop; do not improvise a replacement contract.
 ## Build configuration
 
 Record any named user choice exactly.
-- Default coder: a separate seat on the repo's default harness (pij: OMP) with
-  `github-copilot/gpt-5.6-sol`, `--effort xhigh`.
+- Default coder: a separate Copilot seat on `gpt-5.6-sol`, `--effort xhigh`. Streams live in
+  linked worktrees, where OMP and Pi refuse to spawn (peer route § Spawn and revive); Copilot
+  compaction is native-only, so its context is the seat's own to keep.
 - Default reviewer: a separate seat on a different model family, discovered at spawn (§ C4).
 Then read it back verbatim and confirm inline before fleet creation — never a
 modal question UI (global invariant 9); persist the pending choice and remain
 reachable.
 
-Native spawn opens each worker in its own window: move its pane into yours (§ C5), never the o-prime's window, and spawn with `--cwd` set to your verified worktree.
+Native spawn opens each worker in its own window: move its pane into yours (§ C5), never the o-prime's window, and spawn with `--cwd` set to your verified worktree (claude or copilot; OMP/Pi refuse a linked worktree).
 Canary model, effort, identity, cwd, branch, and placement before use.
 See the [pair route](../routes/pair.md) for lazy acquisition and fleet lifecycle. Spawn and canary the
 selected models, then persist the plan roster with their ids/models before dispatch; the plan roster is the

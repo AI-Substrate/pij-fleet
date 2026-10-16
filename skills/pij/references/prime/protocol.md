@@ -37,7 +37,7 @@ owner asks the human directly (§ Human rulings). A human may enter any pane.
 The o-prime alone writes documents under `<government-root>`; resolve it via
 [Governance branch — the rules](./rituals/bootstrap.md#governance-branch--the-rules).
 Briefs, canaries, local orient, rulings and encode candidates live there.
-If the resolver finds no governance worktree, there are no government documents: say so (bootstrap § Governance branch). For unmigrated prose governments, so do `spine.md` (thesis/roster/fences/watch/
+If the resolver finds no governance worktree, there are no government documents: say so, and use the record fallbacks in bootstrap § Governance branch (canary = store receipt, incidents in the plan, fences via `pij fence show`). For unmigrated prose governments, so do `spine.md` (thesis/roster/fences/watch/
 allocations/rulings), `baton-book.md` (leases/queue/grant log), and `prime-flow.json`.
 [Store-native](./rituals/store-native.md) governs migrated facts; never duplicate
 store authority in prose. Document location does not change who owns those facts.
@@ -60,7 +60,8 @@ close every plan against named PRD rows under the governance rules above.
 
 The worktree-primary construction path gives each stream one recorded branch and
 working tree based on an approved SHA. Create and verify it before spawn; run peer
-spawn from that cwd so descriptor and pane inherit it.
+spawn from that cwd so descriptor and pane inherit it (claude/copilot; OMP and Pi refuse a linked
+worktree, see the peer route).
 
 A fence is descriptive ownership plus expected merge-risk metadata — a sensor
 that informs, never a gate that blocks. Work confined to the verified

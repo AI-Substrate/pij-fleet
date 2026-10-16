@@ -28,7 +28,7 @@ human
 
 ## Descriptive fence
 
-Canonical prose fence: `<government-root>/spine.md#fences--stream-id`; migrated facts stay store-authoritative.
+Canonical fence: `pij fence show --stream <id>` (store); prose governments also keep `<government-root>/spine.md#fences--stream-id`. With no governance root, the store pointer is the only one.
 Resolve `<government-root>` via [Governance branch — the rules](../rituals/bootstrap.md#governance-branch--the-rules); instantiate absolute paths.
 
 - Expected touch set: <exact paths derived from planned actions>

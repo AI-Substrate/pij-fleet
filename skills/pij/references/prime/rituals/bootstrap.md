@@ -43,7 +43,9 @@ Inspect the repo; derive these answers, never copy a worked example:
 4. **Prose portfolio only**: `harness flow create prime-flow --slug <project>-portfolio --schema <skill-root>/references/prime/prime-flow.schema.json --path <government-root>/prime-flow.json --agent o-prime --bare`, run from inside the governance worktree (`--path` must be in-repo). Record existing workshops as inputs; add successors before predecessors. Node status is concurrent truth; `nav.now` is attention.
 5. **Main stub**: through the normal code-review path, keep `.harness/government/README.md` pointing at `prime-governance`, its standing-worktree resolver, and this rules block. Never copy live ledgers back; gate inputs stay on main.
 
-**pij, not a universal dependency**: pij's executable resolver is `harness/scripts/government-root.sh [REPO]` (REPO defaults to cwd). **pij-fleet has no `prime-governance` branch or worktree today**, so the resolver exits 1. A prime there governs store-native, records rulings in plan files, says government documents are absent rather than inventing a root, and does not create the branch without the human's go. Other repos use the generic resolver above or their own equivalent.
+**pij, not a universal dependency**: pij's executable resolver is `harness/scripts/government-root.sh [REPO]` (REPO defaults to cwd). **pij-fleet has no `prime-governance` branch or worktree today**, so the resolver exits 1. A prime there governs store-native, records rulings in plan files, says government documents are absent rather than inventing a root, and does not create the branch without the human's go.
+
+**Records with no governance root** (Jordan via prime, plan 175 R8): the canary record is the `pij canary` store receipt (no disk file); an incident record goes in the active plan's `assets/incidents/`, or, with no plan, becomes a pij-fleet issue with secrets and private details stripped; a stream brief's fence pointer is `pij fence show --stream <id>`. Other repos use the generic resolver above or their own equivalent.
 
 ## 4. Install the orient stack
 

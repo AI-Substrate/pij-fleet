@@ -2,7 +2,7 @@
 
 One row per survey row (`assets/survey/{core,routes,prime-core,prime-rituals}.md`; 140 rows: 27 WRONG, 41 STALE, 50 MISSING, 7 BLOAT, 15 UNVERIFIABLE). Ids are `<report>-<nn>` in report order. **Where** is the file:line after the change, under `skills/pij/`. Each row was re-checked against `pij`/`pij-rs --help` or the code before acting; the evidence column names what was checked.
 
-**Tally**: FIXED 115 · RULED 22 · REJECTED 1 · DEFERRED 0 · UNVERIFIABLE kept 2 (each says why). WRONG rows left DEFERRED: 0.
+**Tally**: FIXED 115 · RULED 22 · REJECTED 0 · DEFERRED 0 · UNVERIFIABLE kept 3 (each says why). WRONG rows left DEFERRED: 0.
 
 **Issues**: filed [pij-fleet#58](https://github.com/AI-Substrate/pij-fleet/issues/58) (status-stale flags idle/ready/done seats and says "has been working"). The skill side of pc-08, pc-22 and pc-41 is FIXED; the code side is that issue. The existing [#55](https://github.com/AI-Substrate/pij-fleet/issues/55) covers the revive double-seat gap (ro-18, R7).
 
@@ -52,14 +52,14 @@ One row per survey row (`assets/survey/{core,routes,prime-core,prime-rituals}.md
 | co-35 | core · references/00-routing.md :208 | STALE | "Each launch has a bounded expectation keyed by `spawnId` … descriptor with same key suppresses the no-show" | FIXED | references/00-routing.md:208 | crates/daemon/src/http/mod.rs:1477 "timed out after Ns waiting for registration" |
 | co-36 | core · references/00-routing.md :204-208 | MISSING | C8 (what C8 should say) | FIXED | references/00-routing.md:208 | death_sweep.rs:18 (5000 ms), body() obituary, withheld for dead parents |
 | co-37 | core · references/00-routing.md :212 | MISSING | C9: PA nudged at the fleet's idle edge and once at a usage-limit reset | FIXED | references/00-routing.md:212 | crates/core/src/watchdog.rs PrimeActive; docs/how/pa-watchdog.md § Prime-active wake |
-| co-38 | core · references/00-routing.md :216 | UNVERIFIABLE | C10: "Evidence: plan 083 (~2.9M tokens …)" | REJECTED | references/00-routing.md:216 | resolves in the pre-OSS repo: ~/pi-hacking/pij-legacy/docs/plans/083-a2a-wire-discipline exists; text now says so |
-| co-39 | core · references/00-routing.md :248 | UNVERIFIABLE | C12: the "2026-09-29" load ~230 incident | UNVERIFIABLE (kept) | references/00-routing.md:248 | operator anecdote with no repo artifact; it motivates the caps but no claim depends on it |
-| ro-01 | routes · peer.md :42-46 | MISSING | Revive grammar is `<seat> [--session] [--name]` plus `--assume-dead --evidence`; "--print/--attach unsuppor… | FIXED | references/routes/peer.md:54, references/routes/peer.md:42 | `pij-rs revive --help` `--fresh`; revive.rs:108-145 (E-RS-ARG, E-RS-REVIVE-CONVERSATION-LIVE) |
-| ro-02 | routes · peer.md :54 | MISSING | "An `Active` process or a present recorded pane still vetoes revival" | FIXED | references/routes/peer.md:56 | revive.rs:294 `pane_present != Some(false)`; :245 tombstoned path has no veto |
-| ro-03 | routes · peer.md :54/147 | MISSING | The reboot row says only "tombstone or Dead+pane absent" | FIXED | references/routes/peer.md:149 | points to the single reboot procedure |
-| ro-04 | routes · peer.md :77 | BLOAT | The FYI rule, word for word | FIXED | references/routes/peer.md:79 | rule restatement cut; C10 holds it; docs/how link retargeted to C10 |
-| ro-05 | routes · peer.md :77 | MISSING | The FYI mechanics | FIXED | references/routes/peer.md:79 | crates/core/src/fyi.rs:27 FLUSH_AT=5, DIGEST_ABOVE=5; `pij-rs fyi-read --help` |
-| ro-06 | routes · peer.md :92 | MISSING | "`pij bg create/list/tail/kill`" | FIXED | references/routes/peer.md:94 | `pij-rs bg --help` |
+| co-38 | core · references/00-routing.md :216 | UNVERIFIABLE | C10: "Evidence: plan 083 (~2.9M tokens …)" | UNVERIFIABLE (kept) | references/00-routing.md:216 | re-survey fix round 1: the evidence (~/pi-hacking/pij-legacy/docs/plans/083-a2a-wire-discipline) is outside this checkout, so it cannot be verified here; the figure is now attributed as operator-reported |
+| co-39 | core · references/00-routing.md :248 | UNVERIFIABLE | C12: the "2026-09-29" load ~230 incident | UNVERIFIABLE (kept) | references/00-routing.md:248 | operator anecdote with no repo artifact, now attributed ("By operator report"); it motivates the caps but no claim depends on it |
+| ro-01 | routes · peer.md :42-46 | MISSING | Revive grammar is `<seat> [--session] [--name]` plus `--assume-dead --evidence`; "--print/--attach unsuppor… | FIXED | references/routes/peer.md:56, references/routes/peer.md:42 | `pij-rs revive --help` `--fresh`; revive.rs:108-145 (E-RS-ARG, E-RS-REVIVE-CONVERSATION-LIVE) |
+| ro-02 | routes · peer.md :54 | MISSING | "An `Active` process or a present recorded pane still vetoes revival" | FIXED | references/routes/peer.md:58 | revive.rs:294 `pane_present != Some(false)`; :245 tombstoned path has no veto |
+| ro-03 | routes · peer.md :54/147 | MISSING | The reboot row says only "tombstone or Dead+pane absent" | FIXED | references/routes/peer.md:151 | points to the single reboot procedure |
+| ro-04 | routes · peer.md :77 | BLOAT | The FYI rule, word for word | FIXED | references/routes/peer.md:81 | rule restatement cut; C10 holds it; docs/how link retargeted to C10 |
+| ro-05 | routes · peer.md :77 | MISSING | The FYI mechanics | FIXED | references/routes/peer.md:81 | crates/core/src/fyi.rs:27 FLUSH_AT=5, DIGEST_ABOVE=5; `pij-rs fyi-read --help` |
+| ro-06 | routes · peer.md :92 | MISSING | "`pij bg create/list/tail/kill`" | FIXED | references/routes/peer.md:96 | `pij-rs bg --help` |
 | ro-07 | routes · pair.md :13 | WRONG | "Shim spawn/agent/tree/link/models are named refusals" | RULED R1 | references/routes/pair.md:1 | pair.md rewritten; no link claim remains |
 | ro-08 | routes · pair.md :154 | WRONG | "Existing-seat reparent/root placement (`link`) is unported" | RULED R1 | references/routes/pair.md:1 | same; link documented once in peer route |
 | ro-09 | routes · pair.md :6-11, 25-27 | STALE | Wraps `the-flow`; "`the-flow` guided mode is the sole writer of `.the-flow-state.json`, the-flow.json, the-… | RULED R1 | references/routes/pair.md:18 | the-flow wrapper removed; R6 file rule |
@@ -67,8 +67,8 @@ One row per survey row (`assets/survey/{core,routes,prime-core,prime-rituals}.md
 | ro-11 | routes · pair.md :132-134 | WRONG | The roster lives in the ledger `run.json` as `role → {pijId,paneId,model,spawnedByUs}`, persisted by P9 | RULED R1 | references/routes/pair.md:25 | run.json roster removed |
 | ro-12 | routes · pair.md :136, 203 | WRONG | `--coder-model` / `--reviewer-model` on `pair start "<request>"` | RULED R1 | references/routes/pair.md:76 | `pair start` flags removed |
 | ro-13 | routes · pair.md :141-142 | STALE | Default models `github-copilot/claude-sonnet-4.6:xhigh`, `github-copilot/gpt-5.5:xhigh` | FIXED | references/routes/pair.md:84 | `pij-rs spawn --help` `--effort`; no stale default models |
-| ro-14 | routes · pair.md :160 | UNVERIFIABLE | "`pij state` shows it stuck `pending`/`failed`" | FIXED | references/routes/pair.md:90 | StateCard `liveness` active/dead/recycled (`pij state --json`) |
-| ro-15 | routes · pair.md :182 | STALE | "on the colleague's done-report (or a `stalled`/`dead` push)" | FIXED | references/routes/pair.md:114 | grep `stalled` in crates/daemon: none; death_sweep.rs obituary |
+| ro-14 | routes · pair.md :160 | UNVERIFIABLE | "`pij state` shows it stuck `pending`/`failed`" | FIXED | references/routes/pair.md:91 | StateCard `liveness` active/dead/recycled (`pij state --json`) |
+| ro-15 | routes · pair.md :182 | STALE | "on the colleague's done-report (or a `stalled`/`dead` push)" | FIXED | references/routes/pair.md:115 | grep `stalled` in crates/daemon: none; death_sweep.rs obituary |
 | ro-16 | routes · ops.md :58 | WRONG | Revive "is **not** the former `--print`, `--attach` or `--assume-dead` workflow, and requires a known tombs… | FIXED | references/routes/ops.md:52 | revive.rs:207-219, 294-399; `pij-rs revive --help` |
 | ro-17 | routes · ops.md :50-58 | MISSING | The reboot procedure: re-observe, ping, then `pij-rs revive <tombstoned-seat>` | FIXED | references/routes/ops.md:56, references/routes/ops.md:58 | death_sweep.rs; reaper.rs:82 reincarnated; revive.rs:419 no_wait |
 | ro-18 | routes · ops.md :58 | MISSING | Double-seat risk (#55) | FIXED | references/routes/ops.md:57 | R7: manual check kept; #55 OPEN (gh issue view 55); revive.rs:147-197 |
@@ -91,16 +91,16 @@ One row per survey row (`assets/survey/{core,routes,prime-core,prime-rituals}.md
 | pc-02 | prime-core · orchestrator.md :33-36 | WRONG | Entry order: global → local orient → brief | FIXED | references/prime/orchestrator.md:33 | orient-global lifecycle: protocol → local orient → brief |
 | pc-03 | prime-core · orchestrator.md :42 | UNVERIFIABLE | Stop at `WAITING_FOR_BUILD_CONFIG` | FIXED | references/prime/orchestrator.md:43 | token exists nowhere in builder skill or harness CLI; replaced by plain rule |
 | pc-04 | prime-core · orchestrator.md :45 | UNVERIFIABLE | `/pij pair start … --coder-model --reviewer-model` | RULED R1 | references/prime/orchestrator.md:46 | pair start flags removed |
-| pc-05 | prime-core · orchestrator.md :61 | STALE | "Workers are default-stack splits in your window" | FIXED | references/prime/orchestrator.md:63 | tmux/src/lib.rs new-window; C5 |
-| pc-06 | prime-core · orchestrator.md :96 | STALE | wait for "completion, blocked, stalled, or dead push" | FIXED | references/prime/orchestrator.md:97 | death_sweep.rs; http/decisions.rs question() has no delivery |
-| pc-07 | prime-core · orchestrator.md :96-98 | WRONG | Idle without report → send a request once | RULED R4 | references/prime/orchestrator.md:99 | 'poke once' removed |
-| pc-08 | prime-core · orchestrator.md :104 | STALE | "Relay its literal remediation: `pij report now …`" | FIXED | references/prime/orchestrator.md:103 | remediation_line anomalies.rs:332; caveat + issue #58 |
-| pc-09 | prime-core · orchestrator.md :102-108 | BLOAT | Card-freshness paragraph | FIXED | references/prime/orchestrator.md:102 | paragraph replaced by citation |
-| pc-10 | prime-core · orchestrator.md :112-114 | STALE | `protocol.md` for "the ruled shared-tree fallback" | FIXED | references/prime/orchestrator.md:109 | anchor resolves (link check) |
+| pc-05 | prime-core · orchestrator.md :61 | STALE | "Workers are default-stack splits in your window" | FIXED | references/prime/orchestrator.md:64 | tmux/src/lib.rs new-window; C5 |
+| pc-06 | prime-core · orchestrator.md :96 | STALE | wait for "completion, blocked, stalled, or dead push" | FIXED | references/prime/orchestrator.md:98 | death_sweep.rs; http/decisions.rs question() has no delivery |
+| pc-07 | prime-core · orchestrator.md :96-98 | WRONG | Idle without report → send a request once | RULED R4 | references/prime/orchestrator.md:100 | 'poke once' removed |
+| pc-08 | prime-core · orchestrator.md :104 | STALE | "Relay its literal remediation: `pij report now …`" | FIXED | references/prime/orchestrator.md:104 | remediation_line anomalies.rs:332; caveat + issue #58 |
+| pc-09 | prime-core · orchestrator.md :102-108 | BLOAT | Card-freshness paragraph | FIXED | references/prime/orchestrator.md:103 | paragraph replaced by citation |
+| pc-10 | prime-core · orchestrator.md :112-114 | STALE | `protocol.md` for "the ruled shared-tree fallback" | FIXED | references/prime/orchestrator.md:110 | anchor resolves (link check) |
 | pc-11 | prime-core · orient-global.md :30-31 | STALE | "government files (spine, baton book) are the o-prime's" | FIXED | references/prime/orient-global.md:31 | store verbs per store-native.md |
 | pc-12 | prime-core · orient-global.md :37-39 | MISSING | Canary = nonce round-trip + registry row + pane probe + second send | FIXED | references/prime/orient-global.md:37 | governance.rs:1793 canary_command |
-| pc-13 | prime-core · orient-global.md :61 (rule 9) | WRONG | "Compact a worker before its next big packet" | RULED R5 | references/prime/orient-global.md:61 | parent's compaction is an allowed case |
-| pc-14 | prime-core · orient-global.md :102 | UNVERIFIABLE | "velocity curve (16h → 15m)" | FIXED | references/prime/orient-global.md:102 | uncheckable figure removed |
+| pc-13 | prime-core · orient-global.md :61 (rule 9) | WRONG | "Compact a worker before its next big packet" | RULED R5 | references/prime/orient-global.md:62 | parent's compaction is an allowed case |
+| pc-14 | prime-core · orient-global.md :102 | UNVERIFIABLE | "velocity curve (16h → 15m)" | FIXED | references/prime/orient-global.md:103 | uncheckable figure removed |
 | pc-15 | prime-core · orient-oprime.md :20-22 | STALE | "unmigrated prose owns spine, baton book and prime-flow" | FIXED | references/prime/orient-oprime.md:21 | store-native.md |
 | pc-16 | prime-core · orient-oprime.md :24-25 | MISSING | Portfolio states `proposed → deciding → … → dropped` | FIXED | references/prime/orient-oprime.md:26 | crates/core/src/orchestration/governance.rs Project struct |
 | pc-17 | prime-core · orient-oprime.md :28-30 | STALE | Allocate ordinal from "the spine's reservation ledger" | FIXED | references/prime/orient-oprime.md:30 | governance.rs:433 |
@@ -114,12 +114,12 @@ One row per survey row (`assets/survey/{core,routes,prime-core,prime-rituals}.md
 | pc-25 | prime-core · orient-oprime.md :158-161 | MISSING | Pending decision → "spine § Pending decisions" | FIXED | references/prime/orient-oprime.md:115 | http/decisions.rs |
 | pc-26 | prime-core · orient-oprime.md :6 (duty) | MISSING | Verify, then relay | FIXED | references/prime/orient-oprime.md:49 | decisions.rs:298-331; anomalies unverified-done |
 | pc-27 | prime-core · protocol.md :37-43 | UNVERIFIABLE | Government files / `<government-root>` | RULED R2 | references/prime/protocol.md:40 | absent case documented |
-| pc-28 | prime-core · protocol.md :115 | UNVERIFIABLE | RCA figures (38.6 h, 84%, 64%…) | UNVERIFIABLE (kept) | references/prime/protocol.md:115 | source workspace is outside the repo (~/games/unasphere/scratch/usage-blowout/); figures are attributed, not recomputed; no rule depends on the exact numbers |
-| pc-29 | prime-core · protocol.md :122 | WRONG | "never message an idle seat to check on it" | RULED R4 | references/prime/protocol.md:122 | protocol wins; orchestrator and pa aligned |
-| pc-30 | prime-core · protocol.md :123 | WRONG | "Compaction is always the seat's own choice. Nobody forces it on another seat" | RULED R5 | references/prime/protocol.md:123 | control.rs:77 lets any actor compact: stated as mechanism vs rule |
+| pc-28 | prime-core · protocol.md :115 | UNVERIFIABLE | RCA figures (38.6 h, 84%, 64%…) | UNVERIFIABLE (kept) | references/prime/protocol.md:116 | source workspace is outside the repo (~/games/unasphere/scratch/usage-blowout/); figures are attributed, not recomputed; no rule depends on the exact numbers |
+| pc-29 | prime-core · protocol.md :122 | WRONG | "never message an idle seat to check on it" | RULED R4 | references/prime/protocol.md:123 | protocol wins; orchestrator and pa aligned |
+| pc-30 | prime-core · protocol.md :123 | WRONG | "Compaction is always the seat's own choice. Nobody forces it on another seat" | RULED R5 | references/prime/protocol.md:124 | control.rs:77 lets any actor compact: stated as mechanism vs rule |
 | pc-31 | prime-core · protocol.md :123 | WRONG | Prime compacts itself at a >400k boundary | FIXED | references/prime/pa.md:77 | pa.md now cites protocol rule 7 |
-| pc-32 | prime-core · protocol.md :125 | STALE | "Platform guards … tracked in issue #446" | FIXED | references/prime/protocol.md:125 | #446 does not resolve on pij-fleet; guard shipped |
-| pc-33 | prime-core · protocol.md :151 | MISSING | Pending decision → "spine § Pending decisions" | FIXED | references/prime/protocol.md:151 | http/decisions.rs |
+| pc-32 | prime-core · protocol.md :125 | STALE | "Platform guards … tracked in issue #446" | FIXED | references/prime/protocol.md:126 | #446 does not resolve on pij-fleet; guard shipped |
+| pc-33 | prime-core · protocol.md :151 | MISSING | Pending decision → "spine § Pending decisions" | FIXED | references/prime/protocol.md:152 | http/decisions.rs |
 | pc-34 | prime-core · pa.md :29-30 | WRONG | Digest carries "context, idle time, cache warmth, ❄ price, turn and declared state" | FIXED | references/prime/pa.md:32 | crates/core/src/pa_digest.rs:154-187 columns |
 | pc-35 | prime-core · pa.md :29-30 | MISSING | Needs a look list | FIXED | references/prime/pa.md:33 | pa_digest.rs:137 "anomalies here are stale cards only" |
 | pc-36 | prime-core · pa.md :24-25 | MISSING | Usage-limit stop → no idle nudge, one `usage limit lifted` wake | FIXED | references/prime/pa.md:27 | usage_limit.rs quotaLimits; one wake per (scope, resetsAt) |
@@ -133,14 +133,14 @@ One row per survey row (`assets/survey/{core,routes,prime-core,prime-rituals}.md
 | pr-02 | prime-rituals · rituals/bootstrap.md :36 | STALE | `docs/plans/<ord>-<slug>/` stays on main "(code PR + the-flow archival)" | FIXED | references/prime/rituals/bootstrap.md:36 | builder SKILL.md registry 7b |
 | pr-03 | prime-rituals · rituals/bootstrap.md :43 | UNVERIFIABLE | `harness flow create prime-flow … --path <government-root>/prime-flow.json` | FIXED | references/prime/rituals/bootstrap.md:43 | `harness flow create --help`: `--path` "must be in-repo"; not run (mutates) |
 | pr-04 | prime-rituals · rituals/bootstrap.md :46 | STALE | "`AI-Substrate/pij` uses `$HOME/pi-hacking/pij-worktrees/pij-governance`; resolver `harness/scripts/governm… | RULED R2 | references/prime/rituals/bootstrap.md:46 | government-root.sh exit 1; dead example removed |
-| pr-05 | prime-rituals · rituals/bootstrap.md :61 | STALE | PA clock = one idle-edge nudge plus one usage-limit reset wake | FIXED | references/prime/rituals/bootstrap.md:61 | pa-watchdog.md § Prime-active wake |
-| pr-06 | prime-rituals · rituals/bootstrap.md :78 | MISSING | "Stream dies → explicit native revive/spawn" | FIXED | references/prime/rituals/bootstrap.md:78 | `pij --help` revive refuses; api § Revive |
+| pr-05 | prime-rituals · rituals/bootstrap.md :61 | STALE | PA clock = one idle-edge nudge plus one usage-limit reset wake | FIXED | references/prime/rituals/bootstrap.md:63 | pa-watchdog.md § Prime-active wake |
+| pr-06 | prime-rituals · rituals/bootstrap.md :78 | MISSING | "Stream dies → explicit native revive/spawn" | FIXED | references/prime/rituals/bootstrap.md:80 | `pij --help` revive refuses; api § Revive |
 | pr-07 | prime-rituals · rituals/kickoff.md :10-11 | MISSING | "Derive descriptive fences from actions" (no verb) | FIXED | references/prime/rituals/kickoff.md:10 | governance.rs:436-437 |
 | pr-08 | prime-rituals · rituals/kickoff.md :18 | MISSING | spawn line has `--parent` but no role | FIXED | references/prime/rituals/kickoff.md:18 | `pij-rs spawn --help` |
 | pr-09 | prime-rituals · rituals/kickoff.md :22 | WRONG | "tree/link remain unported" | FIXED | references/prime/rituals/kickoff.md:22 | `pij --help` |
 | pr-10 | prime-rituals · rituals/kickoff.md :26 | STALE | "existing-seat reparenting is a named gap, not a role side effect" | FIXED | references/prime/rituals/kickoff.md:25 | role.rs link: parent absent/not live only |
 | pr-11 | prime-rituals · rituals/kickoff.md :23-25 | STALE | `pij canary <id> --expect-model <m>`, then "complete leg (a) round-trip and leg (b) identity proof" by hand | FIXED | references/prime/rituals/kickoff.md:23 | governance.rs:1793-1955 |
-| pr-12 | prime-rituals · rituals/kickoff.md :51-55 | STALE | Canary table: (a) "send a nonce challenge; ack arrives as injected turn"; (b) "capture pane footer as fallb… | FIXED | references/prime/rituals/kickoff.md:55 | E-RS-CANARY-PENDING / E-RS-CANARY; default wait 5000, max 300000 (governance.rs:503-508) |
+| pr-12 | prime-rituals · rituals/kickoff.md :51-55 | STALE | Canary table: (a) "send a nonce challenge; ack arrives as injected turn"; (b) "capture pane footer as fallb… | FIXED | references/prime/rituals/kickoff.md:56 | E-RS-CANARY-PENDING / E-RS-CANARY; default wait 5000, max 300000 (governance.rs:503-508) |
 | pr-13 | prime-rituals · rituals/kickoff.md :27-29 | MISSING | `pij dispatch <id> --packet <brief> --wait` | FIXED | references/prime/rituals/kickoff.md:30 | governance.rs:1678 wait_dispatch(…, false) |
 | pr-14 | prime-rituals · rituals/kickoff.md :35 | MISSING | Retirement: "retire allocation/history without erasure" | FIXED | references/prime/rituals/kickoff.md:37 | governance.rs:435, 443 |
 | pr-15 | prime-rituals · rituals/kickoff.md :8 | MISSING | `pij stream create --project <p> --slug <s> [--base <ref>] [--ordinal N]` | FIXED | references/prime/rituals/kickoff.md:8 | governance.rs:433 |
@@ -148,7 +148,7 @@ One row per survey row (`assets/survey/{core,routes,prime-core,prime-rituals}.md
 | pr-17 | prime-rituals · rituals/batons.md :33, 41 | MISSING | Keeper grants; reclaim is explicit | FIXED | references/prime/rituals/batons.md:36 | governance.rs:1212 only return is holder-gated |
 | pr-18 | prime-rituals · rituals/batons.md :75-89 | BLOAT | "Cause and expiry" section (koala, araminta, pij#72, stale badges, PA exemptions) | FIXED | references/prime/rituals/batons.md:76 | 15-line section cut to 3; dead pij#72 ref dropped |
 | pr-19 | prime-rituals · rituals/reports.md :1-20 | MISSING | Reports are evidence files plus a pointer send | FIXED | references/prime/rituals/reports.md:27, references/prime/rituals/reports.md:4 | decisions.rs:298-331 |
-| pr-20 | prime-rituals · rituals/incidents.md :38 | STALE | broadcast "(tree-push channel)" | FIXED | references/prime/rituals/incidents.md:38 | `pij --help` |
+| pr-20 | prime-rituals · rituals/incidents.md :38 | STALE | broadcast "(tree-push channel)" | FIXED | references/prime/rituals/incidents.md:40 | `pij --help` |
 | pr-21 | prime-rituals · rituals/store-native.md :16-20 | WRONG | `--project` on `task set` → "every later state-set/state-verified event inherits it", else orphaned from th… | FIXED | references/prime/rituals/store-native.md:21 | governance.rs:1492-1504 project filter; report.rs payloads |
 | pr-22 | prime-rituals · rituals/store-native.md :16-20 | WRONG | Paragraph placed between table rows | FIXED | references/prime/rituals/store-native.md:16 | paragraph moved out of the table; rows render |
 | pr-23 | prime-rituals · rituals/store-native.md :22 | WRONG | "tree/link are unported" | FIXED | references/prime/rituals/store-native.md:18 | `pij --help` |

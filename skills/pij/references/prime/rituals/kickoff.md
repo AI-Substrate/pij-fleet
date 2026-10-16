@@ -15,7 +15,7 @@ Run steps in order. Artifacts make the process reconstructable; conversation doe
 6. **Construct before spawn.** Read `pij stream create` evidence/allocation journal;
    it owns worktree creation/resume and branch/base verification, replacing `git worktree add -b`.
    Shared-tree construction requires an explicit fallback ruling.
-7. **Spawn into the worktree.** `pij-rs spawn --harness <h> --model <m> --effort <e> --cwd <absolute-worktree> --role pm --name <stream-window> --json` (you become its parent; the role is stamped in the spawn). Native spawn has no legacy `--layout`/`--task`; use owned tmux placement after it reports the pane. Shim spawn refuses rather than falling back.
+7. **Spawn into the worktree.** `pij-rs spawn --harness <claude|copilot> --model <m> --effort <e> --cwd <absolute-worktree> --role pm --name <stream-window> --json` (you become its parent; the role is stamped in the spawn). Native spawn has no legacy `--layout`/`--task`; use owned tmux placement after it reports the pane. Shim spawn refuses rather than falling back. OMP/Pi refuse a linked-worktree `--cwd` ([peer route](../../routes/peer.md#spawn-and-revive-native-grammar-not-shim-fallback)): spawn them from the main checkout and give the worktree path in the brief.
    Check the peer's actual `process.cwd()` and native tool root against the chosen worktree; a cwd flag or spawn receipt is not that observation.
 8. **Observe the actual native binding result / pushed turn.** Native spawn waits by default; `--no-wait` is explicit admission, not readiness. Never poll a booting peer as a substitute for delivery.
 9. **Verify placement.**
@@ -48,7 +48,8 @@ Run steps in order. Artifacts make the process reconstructable; conversation doe
 Canonical rs request/response and event examples live at `crates/testkit/fixtures/golden/api/governance-routes.json` and `governance-events.json`; [stable API](../../../../../docs/how/pij-rs-api.md) owns current grammar and named gaps. These are fixture examples, not new live captures or production/chainglass acceptance.
 
 Write `<government-root>/canaries/s<ord>.md` while evidence is fresh; resolve the root via
-[Governance branch — the rules](./bootstrap.md#governance-branch--the-rules):
+[Governance branch — the rules](./bootstrap.md#governance-branch--the-rules). With no governance root, the
+`pij canary` store receipt is the record ([bootstrap](./bootstrap.md#governance-branch--the-rules), records with no governance root):
 
 | Leg | Mechanical proof |
 |---|---|

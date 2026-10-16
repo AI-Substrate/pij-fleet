@@ -34,7 +34,7 @@
         {
           "id": "lg-0003",
           "at": "2026-10-16T03:21:50Z",
-          "text": "tk-0002..tk-0004 survey closed: assets/findings.md has 140 rows (27 WRONG, 41 STALE, 50 MISSING, 7 BLOAT, 15 UNVERIFIABLE), each re-verified; FIXED 115, RULED 22, REJECTED 1, DEFERRED 0, UNVERIFIABLE kept 2 with reasons; 0 WRONG deferred. Code defect filed: AI-Substrate/pij-fleet#58. AC2-AC9 phrase greps: assets/receipts/ac2-ac9-greps.txt (all must-be-absent patterns 0 except two adjudicated by-design hits).",
+          "text": "tk-0002..tk-0004 survey closed: assets/findings.md has 140 rows (27 WRONG, 41 STALE, 50 MISSING, 7 BLOAT, 15 UNVERIFIABLE), each re-verified; after fix round 1: FIXED 115, RULED 22, REJECTED 0, DEFERRED 0, UNVERIFIABLE kept 3 with attribution; 0 WRONG deferred. Code defect filed: AI-Substrate/pij-fleet#58. AC2-AC9 phrase greps: assets/receipts/ac2-ac9-greps.txt.",
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0001",
             "../plan.dd.json#acceptance_criteria/ac-0002",
@@ -65,6 +65,16 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0012",
             "backpressure.dd.json#rows/bp-0004"
+          ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-16T03:37:00Z",
+          "text": "Fix round 1 for the cross-family re-survey (assets/reviews/re-survey-gpt-6-sol.md, REQUEST CHANGES at 617fc02): all 13 rows dispositioned in assets/reviews/re-survey-dispositions.md. 7 WRONG fixed (OMP/Pi linked-worktree spawn refusal at crates/cli/src/main.rs:2650 stated once in the peer route and cited; gate-before-approval ordering; R8 record fallbacks), 3 MISSING fixed, 3 UNVERIFIABLE kept and attributed (co-38 relabelled from REJECTED). Gates: TS 7/7, Rust 4/4, link check 124 links/0 broken, 2503 lines, just lint exit 0. Evidence: assets/receipts/fix1-gates.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0012",
+            "backpressure.dd.json#rows/bp-0001"
           ]
         }
       ]
