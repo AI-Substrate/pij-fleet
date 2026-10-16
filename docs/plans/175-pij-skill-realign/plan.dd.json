@@ -121,8 +121,10 @@
         {
           "id": "ac-0012",
           "claim": "Validated independently. (a) A fresh reviewer seat of a different model family re-runs assets/survey/brief.md over the patched skill and finds zero WRONG; its report lands in assets/reviews/. (b) `harness plan validate` reports 0 errors. (c) `just lint`, the TypeScript coverage test and `cargo test -p pij-cli` pass locally; GitHub CI is green on the exact head. (d) No file outside skills/pij, the two test files, docs/how (only where a skill claim exposes a docs/how error) and this plan folder changes. Any stage not run is named NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0007",
+          "note": "re-survey assets/reviews/re-survey-gpt-6-sol.md + prime verification assets/reviews/prime-verification.md"
         }
       ]
     },
@@ -133,8 +135,9 @@
           "id": "ph-ccf7",
           "title": "Realign the skill",
           "brief": "One phase: work the survey file by file, record each disposition in assets/findings.md, add the reverse coverage checks red-first, trim bloat, gates, PR, independent re-survey. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0007"
         }
       ]
     }

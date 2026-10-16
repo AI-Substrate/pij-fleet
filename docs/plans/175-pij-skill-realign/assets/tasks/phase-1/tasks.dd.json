@@ -95,12 +95,13 @@
           "id": "tk-0006",
           "title": "Gates and PR",
           "phase": "ph-ccf7",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0012"
           ],
           "done": "tasks.dd.json#done_when/tk-0006",
-          "note": "local gates lg-0005; PR + CI + independent re-survey pending (prime-owned review)"
+          "note": "local gates lg-0005; PR + CI + independent re-survey pending (prime-owned review)",
+          "receipt": "../../execution-log.dd.json#entries/lg-0007"
         }
       ]
     },
@@ -151,7 +152,7 @@
           {
             "id": "dw-0006",
             "assertion": "vd-0003 and vd-0004 pass; PR open on pij-fleet with the plan's AC evidence; GitHub CI green on the exact head; git ls-remote origin 'refs/notes/*' is empty; any stage not run is named NOT RUN",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0004"
           }
         ]

@@ -40,7 +40,7 @@ One coder implements impl-guide.dd.json tk-0001: reverse coverage checks red fir
 | tk-0003 | routes/*.md: findings, R1, R3, R7 | — | ph-ccf7 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | prime/*.md: findings, R2, R4, R5 | — | ph-ccf7 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Bloat, line ceiling, link check, mutation receipts | — | ph-ccf7 | [x] checked | mutation receipts: ../../execution-log.dd.json#entries/lg-0002 | ../../execution-log.dd.json#entries/lg-0004 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0010](../../../plan.dd.md#acceptance-criteria), [ac-0011](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | Gates and PR | — | ph-ccf7 | [ ] unchecked | local gates lg-0005; PR + CI + independent re-survey pending (prime-owned review) | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0012](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Gates and PR | — | ph-ccf7 | [x] checked | local gates lg-0005; PR + CI + independent re-survey pending (prime-owned review) | ../../execution-log.dd.json#entries/lg-0007 | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0012](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -80,4 +80,4 @@ One coder implements impl-guide.dd.json tk-0001: reverse coverage checks red fir
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0006 | vd-0003 and vd-0004 pass; PR open on pij-fleet with the plan's AC evidence; GitHub CI green on the exact head; git ls-remote origin 'refs/notes/*' is empty; any stage not run is named NOT RUN | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| dw-0006 | vd-0003 and vd-0004 pass; PR open on pij-fleet with the plan's AC evidence; GitHub CI green on the exact head; git ls-remote origin 'refs/notes/*' is empty; any stage not run is named NOT RUN | [x] checked | [bp-0004](../../backpressure.dd.md#rows) |

@@ -76,6 +76,15 @@
             "../plan.dd.json#acceptance_criteria/ac-0012",
             "backpressure.dd.json#rows/bp-0001"
           ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-16T03:40:43Z",
+          "text": "ac-0012 closed. (a) cross-family re-survey: assets/reviews/re-survey-gpt-6-sol.md (Copilot gpt-6-sol at 617fc02, REQUEST CHANGES; 13 rows dispositioned in assets/reviews/re-survey-dispositions.md) and the prime's verification of fix round 1: assets/reviews/prime-verification.md (pij-far-jackal, subject 884386500f0339aa04757564994ad9d9adfa436d, all rows resolved). (b) harness plan validate 0 errors. (c) just lint, the TS coverage test and cargo test -p pij-cli pass locally (lg-0005, lg-0006); GitHub CI run 38846430769 green on 8843865. (d) scope verified by the prime (git diff --name-only bb9f0b1 884386).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0012",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
         }
       ]
     }

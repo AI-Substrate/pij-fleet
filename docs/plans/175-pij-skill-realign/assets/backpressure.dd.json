@@ -54,8 +54,9 @@
           "mode": "EXISTS",
           "tier": "human-judgement",
           "proof": "RUN: fresh cross-family reviewer re-runs assets/survey/brief.md (0 WRONG); harness plan validate; just lint; GitHub CI green on the exact head",
-          "state": "unchecked",
-          "probe": "assets/reviews/"
+          "state": "checked",
+          "probe": "assets/reviews/",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
         }
       ]
     },
