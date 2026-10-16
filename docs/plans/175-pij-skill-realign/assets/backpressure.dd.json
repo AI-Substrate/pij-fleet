@@ -1,0 +1,64 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 175 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC9: each skill claim matches --help or the code",
+          "phase": "ph-ccf7",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "RUN: assets/findings.md disposition per survey row with file:line; reviewer spot-checks the FIXED rows against `pij <verb> --help` and the cited code",
+          "state": "unchecked",
+          "probe": "assets/survey/*.md"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC10: two-sided verb coverage",
+          "phase": "ph-ccf7",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND→RUN: reverse check in .omp/extensions/pij/core/generation-skill-coverage.test.ts (npx vitest run that file); new crates/cli/tests/skill_verb_coverage.rs (nice -n 19 cargo test -j 1 -p pij-cli --test skill_verb_coverage); red on bb9f0b1, green on branch, one mutation each",
+          "state": "unchecked",
+          "probe": "the existing forward test"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC11: size, links, conventions",
+          "phase": "ph-ccf7",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD→RUN: a throwaway link/anchor checker over skills/pij (receipt output in the execution log; not committed unless tiny), plus `find skills/pij -name '*.md' | xargs wc -l`",
+          "state": "unchecked",
+          "probe": "none today"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC12: independent re-survey, validate, gates, CI",
+          "phase": "ph-ccf7",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "RUN: fresh cross-family reviewer re-runs assets/survey/brief.md (0 WRONG); harness plan validate; just lint; GitHub CI green on the exact head",
+          "state": "unchecked",
+          "probe": "assets/reviews/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Realign the skill",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": "",
+        "log": "../../execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "One coder implements impl-guide.dd.json tk-0001: reverse coverage checks red first, then the survey worked file by file with every disposition in assets/findings.md, bloat trim, link check, gates and the PR. assets/rulings.md (R1-R7) settle the judgement calls; anything else ambiguous goes to the prime."
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Reverse coverage checks, red on main bb9f0b1",
+          "phase": "ph-ccf7",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0010"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "SKILL.md and 00-routing.md: findings, rulings R5/R6, coverage tables",
+          "phase": "ph-ccf7",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007",
+            "../../../plan.dd.json#acceptance_criteria/ac-0010"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "routes/*.md: findings, R1, R3, R7",
+          "phase": "ph-ccf7",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005",
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "prime/*.md: findings, R2, R4, R5",
+          "phase": "ph-ccf7",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007",
+            "../../../plan.dd.json#acceptance_criteria/ac-0008",
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Bloat, line ceiling, link check, mutation receipts",
+          "phase": "ph-ccf7",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0010",
+            "../../../plan.dd.json#acceptance_criteria/ac-0011"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Gates and PR",
+          "phase": "ph-ccf7",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0012"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "The TS reverse check and the Rust native check each fail on bb9f0b1 for the right reason (missing verbs named, quoted in the receipt)",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "Every core.md survey row has a disposition in assets/findings.md; vd-0001 and vd-0002 are green",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "Every routes.md survey row has a disposition in assets/findings.md",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "Every prime-core.md and prime-rituals.md survey row has a disposition in assets/findings.md",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0005",
+            "assertion": "skills/pij markdown total <= 2,800 lines; link/anchor checker reports 0 broken; one mutation receipt per coverage test, restored",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "vd-0003 and vd-0004 pass; PR open on pij-fleet with the plan's AC evidence; GitHub CI green on the exact head; git ls-remote origin 'refs/notes/*' is empty; any stage not run is named NOT RUN",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ]
+      }
+    }
+  ]
+}
