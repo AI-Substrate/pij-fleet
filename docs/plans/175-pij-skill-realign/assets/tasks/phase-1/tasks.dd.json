@@ -24,17 +24,18 @@
           "id": "tk-0001",
           "title": "Reverse coverage checks, red on main bb9f0b1",
           "phase": "ph-ccf7",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0010"
           ],
-          "done": "tasks.dd.json#done_when/tk-0001"
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../execution-log.dd.json#entries/lg-0001"
         },
         {
           "id": "tk-0002",
           "title": "SKILL.md and 00-routing.md: findings, rulings R5/R6, coverage tables",
           "phase": "ph-ccf7",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
@@ -42,13 +43,14 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0007",
             "../../../plan.dd.json#acceptance_criteria/ac-0010"
           ],
-          "done": "tasks.dd.json#done_when/tk-0002"
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "tk-0003",
           "title": "routes/*.md: findings, R1, R3, R7",
           "phase": "ph-ccf7",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
@@ -57,13 +59,14 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0005",
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
-          "done": "tasks.dd.json#done_when/tk-0003"
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "receipt": "../../execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "tk-0004",
           "title": "prime/*.md: findings, R2, R4, R5",
           "phase": "ph-ccf7",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0004",
@@ -72,18 +75,21 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0008",
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
-          "done": "tasks.dd.json#done_when/tk-0004"
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "receipt": "../../execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "tk-0005",
           "title": "Bloat, line ceiling, link check, mutation receipts",
           "phase": "ph-ccf7",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0010",
             "../../../plan.dd.json#acceptance_criteria/ac-0011"
           ],
-          "done": "tasks.dd.json#done_when/tk-0005"
+          "done": "tasks.dd.json#done_when/tk-0005",
+          "note": "mutation receipts: ../../execution-log.dd.json#entries/lg-0002",
+          "receipt": "../../execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "tk-0006",
@@ -93,7 +99,8 @@
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0012"
           ],
-          "done": "tasks.dd.json#done_when/tk-0006"
+          "done": "tasks.dd.json#done_when/tk-0006",
+          "note": "local gates lg-0005; PR + CI + independent re-survey pending (prime-owned review)"
         }
       ]
     },
@@ -104,7 +111,7 @@
           {
             "id": "dw-0001",
             "assertion": "The TS reverse check and the Rust native check each fail on bb9f0b1 for the right reason (missing verbs named, quoted in the receipt)",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -112,7 +119,7 @@
           {
             "id": "dw-0002",
             "assertion": "Every core.md survey row has a disposition in assets/findings.md; vd-0001 and vd-0002 are green",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -120,7 +127,7 @@
           {
             "id": "dw-0003",
             "assertion": "Every routes.md survey row has a disposition in assets/findings.md",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -128,7 +135,7 @@
           {
             "id": "dw-0004",
             "assertion": "Every prime-core.md and prime-rituals.md survey row has a disposition in assets/findings.md",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -136,7 +143,7 @@
           {
             "id": "dw-0005",
             "assertion": "skills/pij markdown total <= 2,800 lines; link/anchor checker reports 0 broken; one mutation receipt per coverage test, restored",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],

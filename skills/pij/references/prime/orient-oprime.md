@@ -18,23 +18,25 @@ outlives you — you are its current, replaceable operator.
 
 1. **Own the government**: single-writer documents live at `<government-root>`;
    resolve it via [Governance branch — the rules](./rituals/bootstrap.md#governance-branch--the-rules).
-   Store-native facts remain authoritative in the platform; unmigrated prose owns
-   spine, baton book and prime-flow. Sync authoritative rows at EVERY event before
+   Store records are authoritative (`pij spine`, `pij orchestration baton`, `pij project`/`pij stream`);
+   prose spine, baton book and prime-flow own those facts only in an unmigrated government. Sync authoritative rows at EVERY event before
    prose; a stale roster misleads every reader. Name the PRD reconciliation owner.
 2. **Run intake through the authoritative portfolio** (prime-flow for prose):
    items become streams (proposed → deciding → preparing → in_flight → done | folded | dropped).
+   These states live in prime-flow or your notes: the store's project record has no status field.
    Node status is the source of concurrent truth; `nav.now` is only your attention
    pointer. You NEVER invent work items — humans name features.
 3. **Allocate at brief time, never improvise**: ordinal + folder + window +
-   worktree and branch + approved base/SHA from the spine's reservation ledger
-   (dissolved ordinals are tombstoned, not recycled); descriptive fences come from
+   worktree and branch + approved base/SHA from `pij stream create --project <p> --slug <s>
+   [--base] [--ordinal] [--root]` (prose: the spine's reservation ledger; dissolved ordinals are
+   tombstoned, not recycled); record fences with `pij fence set`; descriptive fences come from
    verified planned actions. Separate-branch overlap is recorded merge-risk, not a
    pre-spawn permission gate; record how convergence will be reconciled.
 4. **Spawn or adopt orchestrators** per the kickoff runbook: canary (3 legs,
    recorded at pass time) → brief by pointer (orient stack + item brief + structure
    tree) → roster. Lifecycle is first-class: adopt → orient → preamble → work; every
-   assignment is provisional until its human preamble. Push tree-updates to all live
-   streams on every roster change.
+   assignment is provisional until its human preamble. Send a roster change only to the
+   streams whose work it changes (protocol rule 2; `pij tree` is unported).
 5. **Serialize only real convergence or shared mutable resources** through the
    baton book; ordinary worktree-confined work is notify-only (trigger matrix:
    `rituals/batons.md`). For actual batons: one holder, pushed grants, explicit
@@ -43,80 +45,35 @@ outlives you — you are its current, replaceable operator.
 6. **Verify, then relay** (trust-but-verify, one level up): every stream report gets
    your own cheap look — read one load-bearing artifact, re-run one cheap gate,
    reproduce one claim — BEFORE you relay it upward or act on it. A claim without
-   its artifact re-opens the report. Your relays carry your verification note.
+   its artifact re-opens the report. Your relays carry your verification note; as a seat's
+   parent, bind it with `pij report verify <seat> [--assignment <id>]` (an unverified done
+   shows as an `unverified-done` anomaly).
    **Live-resource exception**: a probe against a live/external baton-held
    resource IS use of that resource — route it THROUGH the holder (it re-runs
    its sensor while you watch the artifact), never side-band; on rate-limited
    externals a second independent prober subtracts confidence (it can poison
    the resource and forge the very fault you're checking).
 
-   > **⚠️ AND NOTHING ABOVE VERIFIES YOU. This duty is defined as a VERTICAL act —
-   > "one level up" — and a prime's "up" is the human.** Grep this skill for
-   > prime-to-prime, peer-prime, or one prime verifying another and you get **zero
-   > hits**; the only two occurrences of lateral traffic are *prohibitions*
-   > (`"streams never talk sideways"`, `"streams never negotiate sideways"`), both
-   > scoped to streams. Primes are not forbidden to talk laterally — **they are not
-   > addressed at all.** The model is a set of isolated roots, and the seat with the
-   > widest scope has the least supervision.
-   >
-   > **What was demonstrated, 2026-08-05 — stated at the weight it actually
-   > carries.** **FOUR** instances where a wrong thing was caught by a seat with
-   > **no authority over the seat that produced it**: a merged capture floor that
-   > was blind on most panes; a fleet chore whose polarity alarmed on the harmless
-   > condition; a `73%` corrected back to a measured `61%`; a corpus of `27` that
-   > was `25`.
-   >
-   > **That is a demonstration that the axis CAN carry weight. It is not evidence
-   > about how often it does.**
-   >
-   > **Three limitations, none of which the four instances survive being counted
-   > without:**
-   >
-   > 1. **A larger set of catches does NOT support this.** Several were
-   >    *self*-caught in a peer's presence — an origin hypothesis abandoned after
-   >    the peer described the same near-miss, a recipe hypothesis checked before
-   >    sending. The prompt was lateral; the catch was not. Those are equally
-   >    consistent with *"both seats were primed to check because checking was the
-   >    topic."* Do not count them.
-   > 2. **The axis also produced a shared error.** Three seats independently
-   >    derived the same one-line fix, and the agreement **raised** confidence
-   >    rather than prompting a test. It was wrong, and it was caught **alone**, by
-   >    opening a real capture file. *Agreement among readers of the same source is
-   >    not corroboration — it is a shared blind spot, and it feels exactly like
-   >    corroboration.* **Lateral contact manufactures this failure as well as
-   >    catching it.**
-   > 3. **There is no denominator.** Every instance above is a catch; not one is a
-   >    miss — and there cannot be, because the wrong things that got through are
-   >    by definition the ones nobody checked. **A numerator is not a rate.**
-   >
-   > Sample: one evening, two seats, both primes, both working the same subject
-   > matter, both unusually motivated because checking *was* the topic. **As
-   > self-selecting as a sample gets.** None of this shows isolated roots is wrong.
-   >
-   > **The mechanism, and it is not discipline**: the interval between forming an
-   > explanation and asserting it is held open **by the other seat**, not by
-   > resolve. Neither prime could identify a moment of choosing to be careful —
-   > the other one was simply there. *A seat working alone has no such interval,
-   > and nothing here supplies one.*
-   >
-   > **A PA cannot be that interval.** It can relay but not contradict, and it is
-   > refused the verbs that would let it record a dissent independently
-   > (`spine-append`; see `pij#102`). Supervision downward is not verification of
-   > you.
-   >
-   > **Practice, pending a human ruling on whether it becomes an expectation**:
-   > when you are about to assert something consequential that nothing above you
-   > will check, send it to a prime in another government first — and say what
-   > would refute it. Cite `pij#89`, `#96`, `#103` for what this caught.
+   > **Nothing above verifies you.** This duty is vertical, and a prime's "up" is the
+   > human; the skill never addresses prime-to-prime checks. Lateral contact has caught
+   > real errors (2026-08-05: four catches by seats with no authority over the producer),
+   > but that is a demonstration, not a rate: there is no count of misses, and three seats
+   > reading one source also *agreed on a wrong fix*. Agreement among readers of the same
+   > source is a shared blind spot, not corroboration. A PA relays; it does not verify you.
+   > **Practice, pending a human ruling**: before asserting something consequential that
+   > nothing above you will check, send it to a prime in another government and say what
+   > would refute it.
 7. **Keep your seats' cards honest — their staleness is YOUR duty**: subordinates
-   forget to report; you are accountable that they do. `pij anomalies` is the sensor,
+   forget to report; you are accountable that they do. `pij anomalies` is the sensor
+   (it never flags a seat that has filed no card, so check new seats filed one),
    and every `status-stale` row is an open item on YOUR list, not theirs — the row
    already carries the literal remediation line to relay. Run it **unscoped**:
    `status-stale` is node-keyed with no assignment or allocation ref, so `--project`
    drops it outright and `--here` drops it for every stream living in a worktree
-   (i.e. your default topology, duty 10). Chase the row, do not merely note it: send
-   the seat its `pij report now "<did>" "<next>"` (or a parked state:
-   `waiting|hold|blocked|question`) and confirm the card actually moved. A relayed
+   (i.e. your default topology, duty 10). Chase the row for a seat that is working or
+   owes a card (a stale card on an idle or done seat is not a nudge trigger, protocol
+   rule 6): relay its remediation line (`pij report now "<did>" "<next>"`, or a parked
+   state `waiting|hold|blocked|question`) and confirm the card actually moved. A relayed
    instruction is not a fixed card. A stale card is worse than no card — every
    consumer, you included, renders it as CURRENT, so a PM that shipped an hour ago
    still reads as waiting. This is duty 1 one layer down: same hazard ("a stale
@@ -129,17 +86,14 @@ outlives you — you are its current, replaceable operator.
    It must still be at YOUR ALTITUDE — your governance work, never a restatement of
    what a stream already reported, which double-renders the same fact in the rail.
    (The altitude rule SURVIVED the reversal; only the optionality changed.)
-   A `status-stale` row against you is still largely **self-service** — but if you have
-   a PA, chasing your card is explicitly its chore, and it is the only seat positioned
-   to do it, since a prime has no parent for the anomaly to be delivered to.
+   A `status-stale` row against you is still largely **self-service**; if you have a PA,
+   chasing your card is explicitly its chore.
    **And you are expected to HAVE one** (Jordan, 2026-08-01) — standing up a cheap PA is
    a bootstrap deliverable, not optional context: `rituals/bootstrap.md` § 5. The
    conditional phrasing above is what let a fresh prime seat itself with no PA and no
-   indication it had missed a step. **Your own row is the case that proves it**: a
-   prime's `status-stale` is DROPPED by the anomaly sweep, not delivered — `target ===
-   null`, logged as *"no effective parent, no project prime"* — so nothing chases it and
-   nothing tells you nothing did. The PA is the only thing that closes that hole, and it
-   closes it by POLLING `pij anomalies` unscoped, never by a watcher subscription.
+   indication it had missed a step. Anomalies are never pushed to anyone: they are
+   read on request, and the PA sees stale cards (yours included) in the digest of each
+   idle-edge nudge (§ C9), without polling. Without a PA, nothing reads your row but you.
 8. **Route cross-stream traffic**: streams never talk sideways. When one asks about
    another, answer with on-disk pointers + what you know that isn't on disk yet +
    the portfolio-level synthesis only your seat can see. Record the exchange.
@@ -152,12 +106,13 @@ outlives you — you are its current, replaceable operator.
    set; streams tell you additions and continue — never turn that notice into a
    grant ritual. Batons begin only where isolation ends: convergence, shared
    mutable resources, or ruled shared-tree fallback.
-11. **Record every human ruling the moment it lands** — in the spine's rulings log,
+11. **Record every human ruling the moment it lands** — `pij spine append --kind ruling
+    --refs path:<file>` (prose: the spine's rulings log),
     and confirm any stream that heard one recorded it in its plan artifacts. Layers
     coordinate from disk, not from conversations others never saw.
 12. **Ask without blocking the government**: never any modal question UI. Ask
     inline through the active delivery channel, persist the pending decision
-    (spine § Pending decisions), block only its dependent item, keep governing
+    (`pij report question` → `pij decisions` / `pij answer`; prose: spine § Pending decisions), block only its dependent item, keep governing
     every independent stream.
 13. **Keep questions with the seat that owns the context**: streams and
     specialists ask their own work-local questions directly; you receive the

@@ -51,8 +51,8 @@ Resolve `<government-root>` via [Governance branch — the rules](../rituals/boo
 ## Assignment and reporting
 
 - Assignment stays provisional until the human preamble and first report.
-- A validated plan stops at `WAITING_FOR_BUILD_CONFIG`; no implementation begins
-  until the human confirms the recorded coder/reviewer profile.
+- A validated plan waits for the human to confirm the recorded coder/reviewer
+  profile; no implementation begins before that.
 - Report at preamble, every phase checkpoint, and ship using
   `claim · artifacts[] · shas[] · gates[] · observations[] · open[]`.
 - Close-out: <named PRD requirement rows advanced + receipt per row + named reconciliation owner>; report to the prime, never edit its register.
@@ -62,5 +62,5 @@ Resolve `<government-root>` via [Governance branch — the rules](../rituals/boo
   grant is required only at convergence or shared mutable resources.
 - Fleet packets inherit this fence and name a narrower task allowlist (task
   scope, not cross-worktree synchronization).
-- Window/identity: `s<ORD>-<SLUG>` / `<pij id>` / role `stream-s<ORD>`; worker
-  panes split inside this window and inherit the worktree cwd.
+- Window/identity: `s<ORD>-<SLUG>` / `<pij id>` / role `pm` (stamped at spawn); worker
+  panes are moved into this window (§ C5) and inherit the worktree cwd.

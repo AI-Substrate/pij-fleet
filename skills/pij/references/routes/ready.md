@@ -19,9 +19,9 @@ prime or operator will push the next turn.
    use the verified external pull path below. Otherwise, detect the delivery owner:
    - With an exact non-empty `$TMUX_PANE`, resolve `<h>` from the current host
      (`claude` or `codex` — NEVER `omp` or `pi`: each runtime's extension
-     owns its boot registration; `pij adopt` rejects `--harness pi` by design) and run exactly
+     owns its boot registration, and a hand adopt would compete with it) and run exactly
      `pij adopt "$TMUX_PANE" --harness <h> ${PIJ_PARENT_ID:+--parent "$PIJ_PARENT_ID"}`.
-     Carry the parent whenever the env has one — it is a self-declaration of who
+     A Claude seat's managed status line also self-adopts and follows its conversation (`⛓ registering…` until it lands; [adopt order](../../../../docs/how/pij-rs-api.md#adopt-continuity-order-plan-156)); the explicit adopt is still correct. Carry the parent whenever the env has one — it is a self-declaration of who
      governs you, validated and persisted, and it is the ONLY moment it can be
      recorded without someone later remembering. Never discover or guess another pane.
    - With no `$TMUX_PANE`, run `pij inbox register --json` from the current
@@ -31,7 +31,7 @@ prime or operator will push the next turn.
      and stores its `(pid, proc_start)`, never the short-lived CLI's process.
      Missing, conflicting or unverified evidence refuses: do not invent a pane,
      process tuple, seat id or legacy fallback. See § C1 for exact prerequisites.
-2. **Verify the write, never the print.** Read `pij whoami --json` and `pij phonehome --json`: the complete v2 data must name this seat and corroborate its binding. A tombstoned identity refuses even if an old pid is live. No `revive --attach` repair is ported; native revive requires an explicit tombstoned seat and relaunches it. After reboot/long gaps, every old pane/pid conclusion is stale.
+2. **Verify the write, never the print.** Read `pij whoami --json` and `pij phonehome --json`: the complete v2 data must name this seat and corroborate its binding. A tombstoned identity refuses even if an old pid is live. No `revive --attach` repair is ported; revive is the parent's or operator's job (peer route § Spawn and revive; ops § Recover after a reboot), never this route's. After reboot/long gaps, every old pane/pid conclusion is stale.
 3. Once verified, reply with exactly:
 
 ```text

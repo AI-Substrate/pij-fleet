@@ -35,7 +35,7 @@ every one shipped a standing rule the same hour.
    baton" names a gap; "the coder committed carelessly" names a person and
    teaches nothing.
 6. **Ship a standing rule SAME-HOUR and broadcast it** to every live stream
-   (tree-push channel). A rule that waits for the retro protects nobody's
+   whose work it changes (ordinary sends; `pij tree` is unported). A rule that waits for the retro protects nobody's
    afternoon.
 7. **Encode with provenance**: the incident becomes an encode-candidate row
    (lesson → proposed encoding → INC-NNN receipt) riding the normal

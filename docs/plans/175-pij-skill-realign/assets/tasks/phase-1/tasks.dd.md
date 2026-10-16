@@ -35,12 +35,12 @@ One coder implements impl-guide.dd.json tk-0001: reverse coverage checks red fir
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Reverse coverage checks, red on main bb9f0b1 | — | ph-ccf7 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | SKILL.md and 00-routing.md: findings, rulings R5/R6, coverage tables | — | ph-ccf7 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria), [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | routes/*.md: findings, R1, R3, R7 | — | ph-ccf7 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | prime/*.md: findings, R2, R4, R5 | — | ph-ccf7 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | Bloat, line ceiling, link check, mutation receipts | — | ph-ccf7 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0010](../../../plan.dd.md#acceptance-criteria), [ac-0011](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | Gates and PR | — | ph-ccf7 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0012](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Reverse coverage checks, red on main bb9f0b1 | — | ph-ccf7 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0001 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | SKILL.md and 00-routing.md: findings, rulings R5/R6, coverage tables | — | ph-ccf7 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria), [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | routes/*.md: findings, R1, R3, R7 | — | ph-ccf7 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | prime/*.md: findings, R2, R4, R5 | — | ph-ccf7 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Bloat, line ceiling, link check, mutation receipts | — | ph-ccf7 | [x] checked | mutation receipts: ../../execution-log.dd.json#entries/lg-0002 | ../../execution-log.dd.json#entries/lg-0004 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0010](../../../plan.dd.md#acceptance-criteria), [ac-0011](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Gates and PR | — | ph-ccf7 | [ ] unchecked | local gates lg-0005; PR + CI + independent re-survey pending (prime-owned review) | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0012](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -50,31 +50,31 @@ One coder implements impl-guide.dd.json tk-0001: reverse coverage checks red fir
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | The TS reverse check and the Rust native check each fail on bb9f0b1 for the right reason (missing verbs named, quoted in the receipt) | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0001 | The TS reverse check and the Rust native check each fail on bb9f0b1 for the right reason (missing verbs named, quoted in the receipt) | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | Every core.md survey row has a disposition in assets/findings.md; vd-0001 and vd-0002 are green | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0002 | Every core.md survey row has a disposition in assets/findings.md; vd-0001 and vd-0002 are green | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | Every routes.md survey row has a disposition in assets/findings.md | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | Every routes.md survey row has a disposition in assets/findings.md | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0004 | Every prime-core.md and prime-rituals.md survey row has a disposition in assets/findings.md | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0004 | Every prime-core.md and prime-rituals.md survey row has a disposition in assets/findings.md | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0005
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0005 | skills/pij markdown total &lt;= 2,800 lines; link/anchor checker reports 0 broken; one mutation receipt per coverage test, restored | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0005 | skills/pij markdown total &lt;= 2,800 lines; link/anchor checker reports 0 broken; one mutation receipt per coverage test, restored | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0006
 

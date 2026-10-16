@@ -1,0 +1,42 @@
+# AC2-AC8 absence/consistency greps over skills/pij (grep -rn, hidden-safe). Expect 0 for every 'must be absent' pattern.
+[AC2-link-unported] /link[^a-z]*(is|are|remain)[^.]*unported|`link`[^.]*unported|link/tree|tree/link/ → 0 hits
+[AC2-reparent-impossible] /reparenting[^.]*(named gap|is a named)/ → 0 hits
+[AC3-old-revive-workflow] /not\*\* the former|requires a known tombstoned id|requires an explicit tombstoned/ → 0 hits
+[AC4-bad-roles] /pij role <seat> reviewer|stream-s<ORD>`|--role (reviewer|coder|stream)/ → 0 hits
+[AC5-flow-pair-machinery] /run\.json|\.the-flow-state|--coder-model|--reviewer-model|`stalled`|:xhigh|flow-pair skill root|\.flow-pair// → 1 hits
+    skills/pij/references/routes/pair.md:10:`.flow-pair/` ledger are retired.
+[AC6-ts-era] /E-SELF|unrequested|no-show is|--layout (window|stack)|default-stack|target === null|blocked, stalled/ → 1 hits
+    skills/pij/references/prime/exemplars/canary-record.md:17:**Context**: spawn `pij spawn --harness claude --layout window` → pane %903, window renamed `s017-conf
+[AC7-watchdog-pa-only] /serves PAs only|PAs only/ → 0 hits
+[AC7-nobody-forces] /Nobody forces/ → 0 hits
+[AC7-poke] /request `COMPLETE`|poke once|recovery poke/ → 0 hits
+[AC7-tree-push] /tree-update|tree-push|to all (live )?streams/ → 0 hits
+[AC8-dead-governance] /pij-worktrees|pij-governance/ → 0 hits
+[AC8-dead-issues] /#(72|89|96|102|103|446)/ → 0 hits
+[AC8-pa-spine-refusal] /spine-append/ → 0 hits
+[AC8-waiting-token] /WAITING_FOR_BUILD_CONFIG/ → 0 hits
+
+# Present-by-design checks
+[AC3-revive-semantics] /E-RS-REVIVE-CONVERSATION-LIVE|--fresh|--assume-dead/ → 5 hits
+    skills/pij/references/routes/ops.md:58:3. `pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] --json` resumes the recorded conversation (ref
+    skills/pij/references/routes/peer.md:42:pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] [--fresh] --json
+    skills/pij/references/routes/peer.md:43:pij-rs revive <seat> --assume-dead --evidence 'Describe why the recorded process binding is stale' --json
+    skills/pij/references/routes/peer.md:54:**Revive** ([contract](../../../../docs/how/pij-rs-api.md#revive)) relaunches a tombstoned seat, or an untombstoned seat
+    skills/pij/references/routes/peer.md:56:Vetoes apply only to an untombstoned seat: an `Active` process or a present or unverifiable recorded pane refuses `E-RS-
+[AC3-manual-check] /Check nothing already runs the session/ → 1 hits
+    skills/pij/references/routes/ops.md:57:2. **Check nothing already runs the session before reviving.** Take `data.session` from `pij state <seat> --json`, then `
+[AC5-builder-verbs] //builder 6 implement|/builder 7 review/ → 6 hits
+    skills/pij/SKILL.md:24:| `pair` | run a phase with a coder seat (`/builder 6 implement`) + a cross-model reviewer seat (`/builder 7 review`) | `references/route
+    skills/pij/references/routes/pair.md:7:`/builder 6 implement` and a separate **cross-model reviewer** that runs `/builder 7 review`.
+    skills/pij/references/routes/pair.md:102:`/builder 6 implement --plan "<plan.dd.json>"` (or follow the builder skill's
+    skills/pij/references/routes/pair.md:107:**Reviewer packet**: the plan path, the exact head SHA, `/builder 7 review --plan "<path>"`,
+    skills/pij/references/prime/orchestrator.md:46:12. Run each whole phase through `/pij pair`: a coder seat on `/builder 6 implement`, a cross-model
+    skills/pij/references/prime/orchestrator.md:47:    reviewer seat on `/builder 7 review`, with the confirmed models.
+[AC9-prime-active] /prime-active|starts working again|start working again/ → 3 hits
+    skills/pij/references/00-routing.md:212:**PAs are always watched** (Jordan, 2026-10-09). The daemon nudges every seat with role `pa` with a fleet digest once ea
+    skills/pij/references/prime/pa.md:19:- After that, when the prime starts working again on its own (e.g. Jordan is back in the morning), you get
+    skills/pij/references/prime/rituals/bootstrap.md:61:4. Don't give it timers. The watchdog is its only clock: one nudge each time the fleet goes idle, one wake w
+
+# Adjudication of the two non-zero "absent" hits
+- pair.md:10 states that the flow-pair CLI and `.flow-pair/` ledger are RETIRED (the R1 retirement notice, not a live instruction).
+- exemplars/canary-record.md:17 is a labelled historical record; its own disclaimer says native spawn has no `--layout` (survey prime-rituals: "disclaimers are accurate").

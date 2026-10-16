@@ -37,7 +37,7 @@ owner asks the human directly (§ Human rulings). A human may enter any pane.
 The o-prime alone writes documents under `<government-root>`; resolve it via
 [Governance branch — the rules](./rituals/bootstrap.md#governance-branch--the-rules).
 Briefs, canaries, local orient, rulings and encode candidates live there.
-For unmigrated prose governments, so do `spine.md` (thesis/roster/fences/watch/
+If the resolver finds no governance worktree, there are no government documents: say so (bootstrap § Governance branch). For unmigrated prose governments, so do `spine.md` (thesis/roster/fences/watch/
 allocations/rulings), `baton-book.md` (leases/queue/grant log), and `prime-flow.json`.
 [Store-native](./rituals/store-native.md) governs migrated facts; never duplicate
 store authority in prose. Document location does not change who owns those facts.
@@ -52,8 +52,8 @@ Portfolio items move `proposed → deciding → preparing → in_flight → done
 dropped`, plus `blocked`; node status is concurrent truth, `nav.now` attention.
 Orchestrators move `adopt → orient → preamble → work`: prove channel, enter via
 `/pij prime`, load orient stack + `/thesis`, persist the human preamble report
-before work. Validated plans stop at `WAITING_FOR_BUILD_CONFIG` until the human
-confirms the fleet. [Kickoff](./rituals/kickoff.md) owns construction/teardown;
+before work. A validated plan waits for the human to confirm
+its fleet (harness, models, coders) before implementation starts. [Kickoff](./rituals/kickoff.md) owns construction/teardown;
 close every plan against named PRD rows under the governance rules above.
 
 ## Construction, fences, batons, and landing
@@ -116,13 +116,13 @@ Measured (RCA by pij-continued-bolvar, 2026-09-28, workspace `~/games/unasphere/
 
 1. **Price a send at the recipient's context, not the message.** A turn costs the recipient's whole context: warm, about 1×; cold, about 40×. Waking a large seat (over 400k) that has been idle for more than an hour needs a reason you would defend to Jordan. The daemon enforces this: such a send is refused `E-RS-COLD-WAKE` with its price until you hold it with `--fyi` or pass `--force --reason '<why>'`, which is audited (see the peer route).
 2. **Broadcast only to seats it changes.** A multi-seat send goes only to seats whose next work it materially changes, and that are either working now or warm (last call under an hour ago, so no cache re-read). Leave out a recently idle seat that won't resume work, and any large cold seat. Name the recipients explicitly, filtered from `pij list --json` and `pij state`. A freeze ("hold commits") goes to the active committers only.
-3. **No acks, no turn-opening FYIs, no-reply by default.** Use `--fyi` (`pij send <seat> --fyi '…'`, held until the seat's next turn) only when the recipient's next action doesn't depend on it; questions, blockers, hand-offs, verdicts and work done are normal sends, and what they'd be fine never reading is not sent at all ([the FYI rule](../routes/peer.md#converse)). Batch what one seat needs into one message rather than several. Silence after a clean verify is the all-clear (C10).
+3. **No acks, no turn-opening FYIs, no-reply by default.** Use `--fyi` (`pij send <seat> --fyi '…'`, held until the seat's next turn) only when the recipient's next action doesn't depend on it; questions, blockers, hand-offs, verdicts and work done are normal sends, and what they'd be fine never reading is not sent at all (§ C10 rule 3). Batch what one seat needs into one message rather than several. Silence after a clean verify is the all-clear (C10).
 4. **Standing rules and status live in files.** Put rules in government files (the governance README, AGENTS.md), and read status from report files and `pij state` rather than asking for push reports.
 5. **A dormant seat is consulted, never informed.** Wake one or two only for their knowledge (the original owner, a reviewer).
-6. **Supervise by observation.** Read tmux captures and `pij list`; never message an idle seat to check on it. Stop after two quiet rounds.
-7. **Compact before going cold, but only if you'll be needed again.** When a prime ends a unit of work above 400k and expects more work (an open stream, a pending ruling, a coming phase), it compacts itself at that boundary while its cache is still warm. A seat that is finished for good is not compacted: a compaction nobody reads is pure spend. A compaction more than an hour after the seat's last call re-reads the whole history uncached, at full cost. A cold seat compacts only when it can justify that cost. Compaction is always the seat's own choice. Nobody forces it on another seat, and no guard triggers it.
+6. **Supervise by observation.** Read tmux captures and `pij list`; never message an idle seat to check on it. Stop after two quiet rounds. A stale card on an idle or done seat is not a nudge trigger: nudge only seats that are working or owe a card.
+7. **Compact before going cold, but only if you'll be needed again.** When a prime ends a unit of work above 400k and expects more work (an open stream, a pending ruling, a coming phase), it compacts itself at that boundary while its cache is still warm. A seat that is finished for good is not compacted: a compaction nobody reads is pure spend. A compaction more than an hour after the seat's last call re-reads the whole history uncached, at full cost. A cold seat compacts only when it can justify that cost. No seat compacts a seat it does not govern: the only cases are the recorded parent's completion compaction (§ C3) and the PA's handshake in [`pa.md`](./pa.md). The daemon lets any seat send `compact` and skips the cold-wake guard for controls, so this rule is the only brake; no guard triggers compaction.
 
-Platform guards that will enforce this are tracked in issue #446.
+The cold-wake guard (`crates/core/src/cold_wake.rs`, plan 157) enforces rule 1; the other rules are protocol.
 
 ## Seat identity
 
@@ -148,7 +148,7 @@ Human attention is the scarcest shared resource in the system; the prime is
 its scheduler, and orchestration must remain live while the human is absent or
 remote. No seat or peer ever uses `ask_user_question` or any modal question UI
 — a modal wait serializes the human: an outage. Ask inline, persist a pending
-decision (spine § Pending decisions), block only dependent work, batch related
+decision (`pij report question` → `pij decisions` / `pij answer`, node route), block only dependent work, batch related
 questions, digest at the human's cadence, continue the rest.
 
 Question ownership follows working context: the agent that will use the

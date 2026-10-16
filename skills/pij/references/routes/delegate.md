@@ -20,8 +20,8 @@ inline body. Every packet states, at minimum:
 1. **Mission** — the one task, in a sentence or two.
 2. **Repo root** — the absolute path the peer works in.
 3. **Allowed paths** — the *only* files/dirs the peer may create or modify.
-4. **Forbidden paths** — enumerate at least `.the-flow-state.json`, `the-flow.json`,
-   `the-flow.md`, and any ledger dir; the peer must never read or write them.
+4. **Forbidden paths** — enumerate at least `the-flow.json`, `the-flow.md` (the `harness flow`
+   CLI is their only writer) and any ledger dir; the peer must never write them.
 5. **Done-report shape** — what to send back (summary + files changed + gate results) and
    the id to send it to (you). Both the packet pointer message and the done-report follow
    § C10 (wire discipline): first line = outcome/next action; delta + ids, no restatement.
@@ -33,7 +33,7 @@ Persist the packet (e.g. under a `scratch/` or task dir), then send the **path p
 
 ```bash
 # 1. acquire — provided-or-spawn ONE peer (§ C1 transport, § C5 placement)
-pij-rs spawn --harness <h> --model <m> --cwd <absolute-worktree> --parent <your-seat> --json
+pij-rs spawn --harness <h> --model <m> --cwd <absolute-worktree> --role worker --json   # you become its parent
 #    canary-verify the footer + no-400 before trusting it (§ C2) — provided peers too
 
 # 2. deliver — write the packet to disk, send the POINTER (never the body)

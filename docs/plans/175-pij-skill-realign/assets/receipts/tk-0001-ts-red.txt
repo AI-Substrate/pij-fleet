@@ -1,0 +1,27 @@
+# skills/ tree identical to bb9f0b1 (git diff --quiet bb9f0b1 -- skills/ → 0)
+$ npx vitest run .omp/extensions/pij/core/generation-skill-coverage.test.ts  # exit 1
+
+ RUN  v4.1.11 /Users/jordanknight/pi-hacking/fleet-175-skill-realign
+
+ ❯ .omp/extensions/pij/core/generation-skill-coverage.test.ts (7 tests | 1 failed) 11ms
+     ✓ covers every documented top-level verb using RS_ROUTE_TABLE, not a duplicate verb list 1ms
+     ✓ rejects a synthetic verb added to the actual skill table 1ms
+     ✓ strips parenthetical leaf annotations without losing following top-level verbs 0ms
+     ✓ rejects removal of any real skill verb from the explicit inventory 2ms
+     × covers every RS_ROUTE_TABLE verb and leaf in the skill table (reverse direction) 3ms
+     ✓ rejects deleting any shim verb from the actual skill table 3ms
+     ✓ rejects a shim leaf missing from its verb's annotation 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  .omp/extensions/pij/core/generation-skill-coverage.test.ts > actual skill CLI table has explicit rs serve-or-refuse coverage > covers every RS_ROUTE_TABLE verb and leaf in the skill table (reverse direction)
+AssertionError: expected [Function] to not throw an error but 'Error: RS_ROUTE_TABLE routes missing …' was thrown
+
+- Expected:
+undefined
+
++ Received:
+"Error: RS_ROUTE_TABLE routes missing from SKILL.md CLI-verb coverage: inbox check, inbox register, bg emit"
+
+ ❯ .omp/extensions/pij/core/generation-skill-coverage.test.ts:114:67
+    112|

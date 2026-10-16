@@ -7,7 +7,7 @@ Preconditions: git repo, tmux, `pij`, ambient `harness`, one o-prime session, an
 ## 1. Seat and prove the o-prime
 
 1. Load [`../orient-oprime.md`](../orient-oprime.md); if governed from above, run [`kickoff.md#canary`](./kickoff.md#canary)'s three-leg canary.
-2. Run the orient's boot audit: channel, dead descriptors, inherited government, human status channel. OMP and Pi each register through their runtime extension at boot; external seats adopt as the orient directs.
+2. Run the orient's boot audit: channel, dead descriptors, inherited government, human status channel. OMP, Pi and native Copilot each register through their runtime extension at boot; external seats adopt as the orient directs.
 3. **Refuse to seat over a living prime**: inspect unfiltered rs roster, current designation receipts/events, project records and authoritative government. If absence cannot be established, ask the owning prime/human rather than bootstrap by inference. An asserted `role: prime` is not designation authority.
 4. Resolve your exact id with `pij whoami --json`, then persist `pij orchestration prime set <resolved-seat-id> --json`. Check the returned designation and seq, plus `pij spine events --peer <resolved-seat-id> --json`; do not invent `prime:true`/`oldPrime` list fields. Ambiguous self is failure, never permission to target `operator`.
 
@@ -33,17 +33,17 @@ Inspect the repo; derive these answers, never copy a worked example:
 
 | Moves to `prime-governance` | Stays on main |
 |---|---|
-| `.harness/government/**`; retros (including `.harness/records/retro/**`); `docs/plans/prd/**`; prime dossiers | `docs/plans/<ord>-<slug>/` (code PR + the-flow archival); anything CI/gates read; product code and docs |
+| `.harness/government/**`; retros (including `.harness/records/retro/**`); `docs/plans/prd/**`; prime dossiers | `docs/plans/<ord>-<slug>/` (code PR; `/builder 7b post-flight` archives it to `docs/plans/archive/`); anything CI/gates read; product code and docs |
 
 **Resolver**: in `git -C "<repo>" worktree list --porcelain`, find the record with `branch refs/heads/prime-governance`; `<government-root>` is its absolute `worktree` path + `/.harness/government`. Refuse absent/unavailable worktrees and follow this bootstrap; NEVER fall back to main or a stale local tree.
 
 1. **Discover before creating**: reuse the registered standing worktree. If the branch exists but no worktree is registered, restore with `git -C "<repo>" worktree add "<standing-worktree>" prime-governance`. An unavailable registered worktree needs explicit repair/restoration, not a second tree. A non-orphan existing branch needs a prime-owned, history-preserving re-root; never silently rewrite it.
 2. **Fresh branch only**: choose an unused permanent path outside product/stream worktrees, then `git -C "<repo>" worktree add --orphan -b prime-governance "<standing-worktree>"`. Seed the document tree below; commit named paths there with attribution and push `prime-governance` to the approved remote. The first commit establishes the branch ref.
 3. **Seed or move documents** using the table; preserve existing content/history before removing any source. Store-native primes create briefs/canaries/local orient and PRD/dossiers as needed, not duplicate portfolio facts. Prose-governed primes instantiate [`spine`](../templates/spine.md) and [`baton-book`](../templates/baton-book.md), plus `briefs/` and `canaries/`; `reports/` only for a real layer above. Every document path is relative to `<government-root>`.
-4. **Prose portfolio only**: `harness flow create prime-flow --slug <project>-portfolio --schema <skill-root>/references/prime/prime-flow.schema.json --path <government-root>/prime-flow.json --agent o-prime --bare`. Record existing workshops as inputs; add successors before predecessors. Node status is concurrent truth; `nav.now` is attention.
+4. **Prose portfolio only**: `harness flow create prime-flow --slug <project>-portfolio --schema <skill-root>/references/prime/prime-flow.schema.json --path <government-root>/prime-flow.json --agent o-prime --bare`, run from inside the governance worktree (`--path` must be in-repo). Record existing workshops as inputs; add successors before predecessors. Node status is concurrent truth; `nav.now` is attention.
 5. **Main stub**: through the normal code-review path, keep `.harness/government/README.md` pointing at `prime-governance`, its standing-worktree resolver, and this rules block. Never copy live ledgers back; gate inputs stay on main.
 
-**pij worked example, not a universal dependency**: `AI-Substrate/pij` uses `$HOME/pi-hacking/pij-worktrees/pij-governance`; its executable resolver is `harness/scripts/government-root.sh [REPO]` (REPO defaults to cwd). Other repos use the generic resolver above or their own equivalent.
+**pij, not a universal dependency**: pij's executable resolver is `harness/scripts/government-root.sh [REPO]` (REPO defaults to cwd). **pij-fleet has no `prime-governance` branch or worktree today**, so the resolver exits 1. A prime there governs store-native, records rulings in plan files, says government documents are absent rather than inventing a root, and does not create the branch without the human's go. Other repos use the generic resolver above or their own equivalent.
 
 ## 4. Install the orient stack
 
@@ -58,7 +58,7 @@ Inspect the repo; derive these answers, never copy a worked example:
 1. Spawn it with you as parent and the role on the placement call: `pij-rs spawn … --role pa`. For a hand-started seat, run `pij link <pa-id> --role pa`. The role is what arms the daemon's watchdog; nothing else does.
 2. Brief it with [`../pa.md`](../pa.md), filling its slots: your id, exempt seats, and the handover folder. Put repo specifics in the slots; never fork the brief.
 3. Its fleet is every seat in your repository, all worktrees included; the PA sees seats by repository, not by parentage.
-4. Don't give it timers. The watchdog nudge is its only clock: one nudge each time the fleet goes idle, and one wake when a usage limit that stopped the fleet resets.
+4. Don't give it timers. The watchdog is its only clock: one nudge each time the fleet goes idle, one wake when you start working again after that edge, and one wake when a usage limit that stopped the fleet resets ([PA watchdog](../../../../../docs/how/pa-watchdog.md)).
 5. **Prove delivery at the receiving end**: its first nudge arrives the first time the fleet's workers go from someone working to nobody working after the daemon first sees it (PAs and primes never count), and a `watchdog.round` event records each nudge.
 
 ## 6. Open intake and govern
@@ -75,5 +75,5 @@ Inspect the repo; derive these answers, never copy a worked example:
 | Seat death/restart | Fresh seat loads lever 0 + government; audit dead holders, stale roster, orphan descriptors; record new identity |
 | Ruled rotation | Outgoing writes [`../templates/seat-handover.md`](../templates/seat-handover.md) BEFORE contact; incoming transfers writers/reconciliation owner, checks spine Seq, retires outgoing after final send |
 | Queued sends never deliver | Inspect actual rs receipt/outcome and daemon health; do not sweep legacy descriptors or withdraw in-transit answers |
-| Stream dies / is retired | Use current rs binding/tombstone evidence and explicit native revive/spawn; kickoff owns record retirement and separately authorized preservation/teardown |
+| Stream dies / is retired | Use current rs binding/tombstone evidence and native `pij-rs revive` (resumes its conversation; ops § Recover after a reboot) or spawn; kickoff owns record retirement and separately authorized preservation/teardown |
 | Fence gap in verified worktree | Stream persists and notifies; o-prime records overlap; continue unless hard ownership or convergence boundary |

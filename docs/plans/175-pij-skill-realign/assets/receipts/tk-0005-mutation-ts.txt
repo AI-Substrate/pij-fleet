@@ -1,0 +1,17 @@
+# Mutation 1 (TS gate): delete the `bg` row from SKILL.md CLI-verb coverage
+49:| `bg` (`create/list/tail/kill/emit`) | § Shared conventions C7 — shipped rs detached jobs and event sources; result injected from `pij-bg` |
+$ npx vitest run .omp/extensions/pij/core/generation-skill-coverage.test.ts
+     ✓ covers every documented top-level verb using RS_ROUTE_TABLE, not a duplicate verb list 1ms
+     ✓ rejects a synthetic verb added to the actual skill table 1ms
+     ✓ strips parenthetical leaf annotations without losing following top-level verbs 0ms
+     ✓ rejects removal of any real skill verb from the explicit inventory 3ms
+     × covers every RS_ROUTE_TABLE verb and leaf in the skill table (reverse direction) 3ms
+     ✓ rejects deleting any shim verb from the actual skill table 3ms
+     ✓ rejects a shim leaf missing from its verb's annotation 0ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected [Function] to not throw an error but 'Error: RS_ROUTE_TABLE routes missing …' was thrown
+"Error: RS_ROUTE_TABLE routes missing from SKILL.md CLI-verb coverage: bg"
+      Tests  1 failed | 6 passed (7)
+exit=
+restored sha256 prefix: 536da8fe81057874 (before: 536da8fe81057874)
+      Tests  7 passed (7)

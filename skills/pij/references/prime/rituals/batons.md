@@ -31,8 +31,9 @@ quota is shared; merging to a shared target is always serialized.
    Later reader acknowledgement needs no second notice; self-send retains the existing refusal path.
 3. **Verify free** using the resource probe and holder liveness; after restart, never trust tables alone.
 4. **Grant**: `pij orchestration baton grant <name> --to <request-id> --json`; preserve its lease id.
-   Grant checks pin against current HEAD: stale/unverifiable requires explicit `--repin` after inspecting
-   real evidence. Keeper annotates the book and communicates the receipt; acceptance is not recipient receipt.
+   Grant checks pin against current HEAD: stale/unverifiable refuses `E-RS-PIN` until an explicit `--repin`
+   after inspecting real evidence. The daemon lets any resolved seat grant or reclaim (only return is
+   holder-only), so keeper-only grants are protocol, not a guard. Keeper annotates the book and communicates the receipt; acceptance is not recipient receipt.
 5. **Use** only for the recorded purpose. Negotiated sibling windows must be recorded in the book;
    the primitive has no sub-leases.
 6. **Return**: `pij orchestration baton return <name> --lease-id <observed-lease-id> --evidence <text>`.
@@ -74,16 +75,6 @@ Restore legibility: “tell me what you're touching and I'll record merge risk.�
 
 ### Cause and expiry — controls, not memory
 
-A stand-off can be justified initially by real competing writers yet rot after the other seat closes.
-The defect is that nothing expires the constraint when its cause dies, not necessarily its initial issue.
-**Every durable constraint must state its cause and expiry condition together.** Example: “stood off X
-BECAUSE araminta holds FU-4; EXPIRES when araminta releases it or is closed.” Closing becomes a visible trigger.
-The same accountability gap affected stale badges, unread companion baselines (companions cannot see ack),
-fences after seat closure and PA exemptions after their reason passed. Split write/clear operations are
-its mechanism; stateless companions remove one class, not otherwise-valid state whose justification died.
-**Positive control**: interim guidance named holding defect `pij#72` because the debt-not-practice rule
-required expiry. It held because a rule required it, not because its author remembered to be careful.
-**Negative control**: koala already had a personal stale-badge correction note from a previous failure,
-yet produced 300 minutes of contradictory state. Knowing the rule was not a control, even after prior harm.
-Rule-enforced expiry held; remembered expiry failed in the same fleet on the same day. The badge must
-expire itself or be cleared by the operation resolving its cause: fix the write path, not anyone's memory.
+**Every durable constraint states its cause and expiry together**: "stood off X BECAUSE <seat> holds
+<baton>; EXPIRES when it returns or that seat closes". Remembered expiry fails even after prior harm;
+the constraint must expire itself or be cleared by the operation that resolves its cause.

@@ -1,0 +1,14 @@
+$ find skills/pij -name '*.md' | xargs wc -l | tail -1   # ceiling 2800; bb9f0b1 = 2656
+    2491 total
+
+$ python3 docs/plans/175-pij-skill-realign/assets/scripts/linkcheck.py skills/pij
+links checked: 121; broken: 0
+exit=0
+
+# Control (run before this receipt, restored with cp from backup): mutating 00-routing #death-sweep → #death-sweeep and orchestrator kickoff.md → kickof.md made the checker report:
+ANCHOR skills/pij/references/00-routing.md: ../../../docs/how/pij-rs-api.md#death-sweeep
+MISSING skills/pij/references/prime/orchestrator.md: ./rituals/kickof.md#shared-tree-fallback-yield-rule
+links checked: 120; broken: 2 / exit=1
+
+$ grep -c 'C1.*C12\|C12 niced' skills/pij/SKILL.md
+103:- [`references/00-routing.md`](./references/00-routing.md) — detection signa

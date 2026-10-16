@@ -25,9 +25,8 @@
 resurrected by queued events; another seat spent hours receiving orchestrator
 messages inside a stood-down research persona. A descriptor must distinguish
 dissolved from crashed, and sends name a role when a seat can host more than one
-persona. Sources: vendored war stories 3 and 8.
+persona.
 
 **Compile at every yield.** Fences did not save siblings when one stream left an
 orphan test and another yielded a compile error. Work stays in scratch until it
-builds; the non-owner stops and routes an urgent owner-fix. Source: vendored war
-story 9.
+builds; the non-owner stops and routes an urgent owner-fix.

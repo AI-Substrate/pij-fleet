@@ -14,13 +14,11 @@ Documents still follow [Governance branch — the rules](./bootstrap.md#governan
 | spine.md Event paragraph | `pij spine append --kind <kind> [--project <slug>] [--refs <seq,seq>]`; optional `--actor` must match the daemon-resolved caller |
 | prime-flow.json portfolio node | `pij project create "<description>"` then `pij project set <slug> [--plan <path>] [--prime <id>]` |
 | roster / assignment rows | `pij task set <id> "<task>" --project <slug>` · the assigned seat runs `pij report state <state>` |
-
-**Always pass `--project` on `task set`**: the assignment carries the slug and
-every later state-set/state-verified event inherits it — omit it and the
-claim/verify lifecycle is silently orphaned from the project's filtered spine.
 | verification of done | the current recorded parent runs `pij report verify <id>`; receipt binds the latest done sequence, never self-verification |
-| seat/liveness truth | `pij list --json` · `pij node show <id> --json` · `pij anomalies --json` (rs only; list supports boolean `--here` and exact harness/folder/parent/scope=local forwarding, not legacy role/prime/archive filters; tree/link are unported) |
+| seat/liveness truth | `pij list --json` · `pij node show <id> --json` · `pij anomalies --json` (rs only; list supports boolean `--here` and exact harness/folder/parent/scope=local forwarding, not legacy role/prime/archive filters; `tree` is unported; `pij link` takes a parentless seat) |
 | human-readable spine | `pij spine render` returns `{text,cursor}`; it never writes a legacy spine file |
+
+**Pass `--project` on `task set`**: only the `task-set` event carries it. Later `report.state` and `state-verified` events carry the `assignment_id`, not the project, so `spine events --project` does not show them unless the report passes `--refs project:<slug>`; otherwise follow the assignment id.
 
 Read-back: `pij spine events [--since <seq>] [--project <slug>] [--peer <id>]`,
 `pij project list|show <slug>`.
