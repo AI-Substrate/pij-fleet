@@ -12,7 +12,7 @@
 //   sexual, pregnant, intimate, naked, attractive, desirable, drunk, filthy, dirty, dead, grieving, condemned, crazy, disturbed, sick, creepy, scary, cruel, vicious, violent, toxic, bloody, embarrassed, embarrassing, colonial, booby, wet
 // Removed for the same reason from NAME_NOUNS: beaver (slang).
 // Plan 176 swept every word against "stay well clear of anything that might be
-// subjectively examined", plus pij state, role and alarm words: 454 adjectives,
+// subjectively examined", plus pij state, role, alarm and outcome words: 458 adjectives,
 // 87 animals, every franchise/character noun and every ship name went (docs/plans/176-seat-name-sweep/assets/audit.md).
 // Re-adding any of these will fail the corpus-hygiene test on purpose.
 
@@ -1038,6 +1038,11 @@ export const EXCLUDED_NAME_WORDS: ReadonlySet<string> = new Set([
 	"bug",
 	"python",
 	"mastodon",
+	// Plan 176 close-out: task outcome words
+	"complete",
+	"final",
+	"ok",
+	"okay",
 ]);
 
 export const NAME_ADJECTIVES: string[] = [
@@ -1140,7 +1145,6 @@ export const NAME_ADJECTIVES: string[] = [
 	"compatible",
 	"competent",
 	"competitive",
-	"complete",
 	"complex",
 	"complicated",
 	"comprehensive",
@@ -1271,7 +1275,6 @@ export const NAME_ADJECTIVES: string[] = [
 	"federal",
 	"fellow",
 	"few",
-	"final",
 	"financial",
 	"fine",
 	"firm",
@@ -1473,8 +1476,6 @@ export const NAME_ADJECTIVES: string[] = [
 	"occasional",
 	"occupational",
 	"official",
-	"ok",
-	"okay",
 	"only",
 	"operational",
 	"opposite",

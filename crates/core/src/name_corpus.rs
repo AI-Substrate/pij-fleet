@@ -1025,6 +1025,11 @@ pub const EXCLUDED_NAME_WORDS: &[&str] = &[
     "bug",
     "python",
     "mastodon",
+    // Plan 176 close-out: task outcome words
+    "complete",
+    "final",
+    "ok",
+    "okay",
 ];
 
 /// The adjective slot in `pij-<adjective>-<noun>` identifiers.
@@ -1128,7 +1133,6 @@ pub const NAME_ADJECTIVES: &[&str] = &[
     "compatible",
     "competent",
     "competitive",
-    "complete",
     "complex",
     "complicated",
     "comprehensive",
@@ -1259,7 +1263,6 @@ pub const NAME_ADJECTIVES: &[&str] = &[
     "federal",
     "fellow",
     "few",
-    "final",
     "financial",
     "fine",
     "firm",
@@ -1461,8 +1464,6 @@ pub const NAME_ADJECTIVES: &[&str] = &[
     "occasional",
     "occupational",
     "official",
-    "ok",
-    "okay",
     "only",
     "operational",
     "opposite",

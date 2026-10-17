@@ -62,4 +62,4 @@ On 2026-10-17 pij allocated the seat id pij-gay-thorn. Jordan: "we need to stay 
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0ce9 | Sweep the name corpus | One phase: conservative audit of every word, removal plus exclusion in both runtimes, strengthened test red first, oracle regenerated, live-seat list, gates, PR. CS 2. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0ce9 | Sweep the name corpus | One phase: conservative audit of every word, removal plus exclusion in both runtimes, strengthened test red first, oracle regenerated, live-seat list, gates, PR. CS 2. | [x] checked | Prime review: assets/reviews/prime-review.md (approve, at 733f0c7). | assets/execution-log.dd.json#entries/lg-0009 | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |

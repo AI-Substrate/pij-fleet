@@ -92,6 +92,17 @@
             "backpressure.dd.json#rows/bp-0001",
             "backpressure.dd.json#rows/bp-0002"
           ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-17T01:00:16Z",
+          "text": "Close-out (prime ruling): removed the task-outcome adjectives complete, final, ok, okay from both runtimes and added them to EXCLUDED_NAME_WORDS (1022 total), category pij state/role/alarm word. Counts: adjectives 1176 reviewed, 458 removed, 718 kept; nouns 738 / 472 / 266; ships 0; space 718 x 266 = 190,988. Oracle regenerated with bun --eval (attempts 190948 and 190987). Gates, cwd worktree: nice -n 19 timeout -k 10 1500 cargo test -j 1 -p pij-core exit 0 (147 passed); cargo clippy -j 1 -p pij-core --all-targets -- -D warnings exit 0; cargo fmt --all -- --check exit 0; npx vitest run .omp/extensions/pij/core/memorable-id.test.ts exit 0 (10 passed); just lint, just typecheck, just test exit 0 (2175 passed). live-seats.md re-read read-only (41 of 53). Prime review assets/reviews/prime-review.md (pij-far-jackal read audit.md at 733f0c7, verdict approve) closes phase ph-0ce9. CI on the pushed head is reported to the prime, not committed.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#phases/ph-0ce9",
+            "backpressure.dd.json#rows/bp-0001"
+          ]
         }
       ]
     }

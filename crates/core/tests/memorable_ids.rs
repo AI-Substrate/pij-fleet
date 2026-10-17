@@ -14,10 +14,10 @@ fn candidate(seed: &str, attempt: usize) -> SeatId {
 #[test]
 fn curated_corpus_is_pinned_and_clean() {
     // Plan 176 swept the corpus; every ship name went, so the space is the grid.
-    assert_eq!(NAME_ADJECTIVES.len(), 722);
+    assert_eq!(NAME_ADJECTIVES.len(), 718);
     assert_eq!(NAME_NOUNS.len(), 266);
     assert!(SHIP_NAMES.is_empty());
-    assert_eq!(MEMORABLE_PIJ_ID_SPACE, 192_052);
+    assert_eq!(MEMORABLE_PIJ_ID_SPACE, 190_988);
     assert_eq!(
         MEMORABLE_PIJ_ID_SPACE,
         NAME_ADJECTIVES.len() * NAME_NOUNS.len() + SHIP_NAMES.len()
@@ -105,8 +105,8 @@ fn rust_matches_the_typescript_oracle() {
     // ["s1754000000000-9000",1],["s1754000000000-9000",17],
     // ["adopt\x00claude\x00%100\x0020000",0],["adopt\x00claude\x00%100\x0020000",1],
     // ["adopt\x00claude\x00%100\x0020000",17],["full-space-seed",0],
-    // ["full-space-seed",1],["full-space-seed",192012],["full-space-seed",192051],
-    // ["stable-seed",192051],["café-🐙",0],["café-🐙",1]];
+    // ["full-space-seed",1],["full-space-seed",190948],["full-space-seed",190987],
+    // ["stable-seed",190987],["café-🐙",0],["café-🐙",1]];
     // console.log(JSON.stringify({space:MEMORABLE_PIJ_ID_SPACE,vectors:cases.map(([seed,
     // attempt])=>({seed,attempt,result:memorablePijIdCandidate(seed,attempt)}))},null,2));'
     // bun --eval "$ORACLE_SCRIPT"
@@ -114,28 +114,28 @@ fn rust_matches_the_typescript_oracle() {
         (
             "4dffbee3-5d42-4b02-a739-74be162940bc",
             0,
-            "pij-preferred-caribou",
+            "pij-leading-caribou",
         ),
-        ("copilot-session-alpha", 0, "pij-formal-boar"),
-        ("claude-session-beta", 0, "pij-extensive-capybara"),
-        ("pi-session-gamma", 0, "pij-exact-armadillo"),
-        ("s1754000000000-9000", 0, "pij-symbolic-aphid"),
-        ("s1754000000000-9000", 1, "pij-living-mole"),
-        ("s1754000000000-9000", 17, "pij-planned-badger"),
-        ("adopt\x00claude\x00%100\x0020000", 0, "pij-casual-earwig"),
-        ("adopt\x00claude\x00%100\x0020000", 1, "pij-relaxed-shark"),
+        ("copilot-session-alpha", 0, "pij-zesty-boar"),
+        ("claude-session-beta", 0, "pij-professional-capybara"),
+        ("pi-session-gamma", 0, "pij-crowded-armadillo"),
+        ("s1754000000000-9000", 0, "pij-external-aphid"),
+        ("s1754000000000-9000", 1, "pij-gradual-mole"),
+        ("s1754000000000-9000", 17, "pij-reasonable-badger"),
+        ("adopt\x00claude\x00%100\x0020000", 0, "pij-abstract-earwig"),
+        ("adopt\x00claude\x00%100\x0020000", 1, "pij-causal-shark"),
         (
             "adopt\x00claude\x00%100\x0020000",
             17,
-            "pij-surprised-egret",
+            "pij-impressive-egret",
         ),
-        ("full-space-seed", 0, "pij-rapid-moose"),
-        ("full-space-seed", 1, "pij-formal-buzzard"),
-        ("full-space-seed", 192_012, "pij-funny-hare"),
-        ("full-space-seed", 192_051, "pij-blank-badger"),
-        ("stable-seed", 192_051, "pij-intelligent-earthworm"),
-        ("café-🐙", 0, "pij-complicated-walrus"),
-        ("café-🐙", 1, "pij-significant-lark"),
+        ("full-space-seed", 0, "pij-zeroth-moose"),
+        ("full-space-seed", 1, "pij-breakable-buzzard"),
+        ("full-space-seed", 190_948, "pij-prominent-hare"),
+        ("full-space-seed", 190_987, "pij-united-badger"),
+        ("stable-seed", 190_987, "pij-generous-earthworm"),
+        ("café-🐙", 0, "pij-academic-walrus"),
+        ("café-🐙", 1, "pij-certain-lark"),
     ];
 
     for &(seed, attempt, expected) in GOLDENS {
@@ -162,7 +162,10 @@ fn candidate_sequence_is_complete_without_repeats() {
         assert!(ship_ids.is_subset(&ids), "seed={seed}");
     }
 
-    assert_eq!(candidate("stable-seed", 0).as_str(), "pij-calm-seahorse");
+    assert_eq!(
+        candidate("stable-seed", 0).as_str(),
+        "pij-innovative-seahorse"
+    );
     assert!(!ship_ids.contains(&candidate("full-space-seed", 0)));
     assert_eq!(
         memorable_pij_id_candidate("seed", MEMORABLE_PIJ_ID_SPACE),

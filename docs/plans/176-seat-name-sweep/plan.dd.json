@@ -87,8 +87,10 @@
           "id": "ph-0ce9",
           "title": "Sweep the name corpus",
           "brief": "One phase: conservative audit of every word, removal plus exclusion in both runtimes, strengthened test red first, oracle regenerated, live-seat list, gates, PR. CS 2.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0009",
+          "note": "Prime review: assets/reviews/prime-review.md (approve, at 733f0c7)."
         }
       ]
     }
