@@ -1,0 +1,272 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Seat-name sweep: conservative removal in both runtimes",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "The corpus is data vendored twice; change both in one commit and let the existing oracle test prove they agree. Removal is the only operation: no additions, no reordering beyond deleting entries, no algorithm change. The judgement is deliberately conservative: a word that a reasonable reader could take as sensitive, judgemental or someone else's IP goes, even if its main sense is innocent. Existing ids are stored, not recomputed (verify; stop if not).",
+        "composition_root": "crates/core/src/name_corpus.rs and .omp/extensions/pij/core/name-corpus.ts",
+        "contracts": [
+          "EXCLUDED_NAME_WORDS (both runtimes): every removed word, and the test that no list (including each ship-name word) contains one",
+          "assets/audit.md: removed word, list, category; reviewed counts per list"
+        ],
+        "seams": [
+          "crates/core/src/name_corpus.rs",
+          ".omp/extensions/pij/core/name-corpus.ts",
+          "crates/core/tests/memorable_ids.rs",
+          ".omp/extensions/pij/core/memorable-id.test.ts"
+        ]
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One data change mirrored in two files; splitting would risk the runtimes diverging."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "corpus -> audit.md",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "both corpora -> exclusion + parity tests",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "allocation stores ids",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "pij list -> live-seats.md",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        },
+        {
+          "id": "cp-0005",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0005",
+          "owner": "tk-0001",
+          "path": "tests, gates, CI",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Seat-name sweep",
+          "role": "pm",
+          "responsibility": "Audit, removal in both runtimes, strengthened test red first, oracle regeneration, live-seat list, gates, PR.",
+          "paths": [
+            "crates/core/src/name_corpus.rs",
+            ".omp/extensions/pij/core/name-corpus.ts",
+            "crates/core/tests/memorable_ids.rs",
+            ".omp/extensions/pij/core/memorable-id.test.ts",
+            "docs/plans/176-seat-name-sweep"
+          ],
+          "reads": [],
+          "notes": "Read first: crates/core/src/names.rs, .omp/extensions/pij/core/memorable-id.ts, the oracle test's regeneration comment.",
+          "interface": "EXCLUDED_NAME_WORDS",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/core/src/name_corpus.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-176-name-sweep on fix/seat-name-sweep, node_modules linked by the prime."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "prime",
+          "model": "the prime reads the audit"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Rust corpus tests (exclusion, parity oracle)",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "1",
+            "-p",
+            "pij-core",
+            "--test",
+            "memorable_ids"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0002",
+          "description": "TS memorable-id test",
+          "command": "npx",
+          "args": [
+            "vitest",
+            "run",
+            ".omp/extensions/pij/core/memorable-id.test.ts"
+          ],
+          "cwd": ".",
+          "timeout_ms": 300000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "-j",
+            "1",
+            "-p",
+            "pij-core",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format and lint",
+          "command": "just",
+          "args": [
+            "lint"
+          ],
+          "cwd": ".",
+          "timeout_ms": 300000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Strengthen the exclusion test and add the reported word; record red on d48cde2.",
+          "Audit every word; remove from both corpora; extend both exclusion lists; regenerate the oracle.",
+          "Verify stored ids; write live-seats.md; gates; push; PR; green CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001",
+          "impl-guide.dd.json#checks/vd-0002"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: the prime reads assets/audit.md and samples the kept words, then merges.",
+        "inputs": [
+          "assets/audit.md",
+          "PR head SHA"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "Removing words changes which id a seed maps to, and a stored id is recomputed somewhere.",
+          "check": "AC3: verify storage; stop and ask if any path recomputes."
+        },
+        {
+          "id": "rk-0002",
+          "text": "The corpus becomes too small and collisions rise.",
+          "check": "Report remaining adjective × noun count; flag if under 100,000 pairs."
+        },
+        {
+          "id": "rk-0003",
+          "text": "The runtimes diverge.",
+          "check": "Oracle parity test; one mutation receipt."
+        }
+      ]
+    }
+  ]
+}
