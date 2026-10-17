@@ -1,0 +1,104 @@
+# Plan 174 mutation receipts (AC8b and the two risk guards)
+
+Each mutation was applied to the ab8f97e tree, the named tests run, then the file restored from a byte copy (git status clean after each). Command for daemon mutations: nice -n 19 timeout -k 10 1500 cargo test -j 1 -p pij-daemon --no-fail-fast double_seat (rk-* used --lib). Script mutations: nice -n 19 timeout -k 10 900 cargo test -j 1 -p pij-harnesses --test claude_heal_scripts. cwd <worktree>.
+
+## M1: delete the session-record lookup in the stray-pane path
+double_seat.rs stray_pane iterates an empty Vec instead of live_claude_records(..). Expected red: the AC2 test. Also red: the restart test and the e2e incident test (both drive the stray pane).
+```text
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... FAILED
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... FAILED
+thread 'http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text' (4611934) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    whoami --pane: the code leads the text: {"command":"pij whoami","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+thread 'http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart' (4611933) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    /v1/whoami: the code leads the text: {"command":"pij whoami","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 611 filtered out; finished in 0.49s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+test double_seat_incident_end_to_end_on_the_real_store ... FAILED
+thread 'double_seat_incident_end_to_end_on_the_real_store' (4615072) panicked at crates/daemon/tests/double_seat_http.rs:165:5:
+    send: {"command":"pij send","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+error: test failed, to rerun pass `-p pij-daemon --test double_seat_http`
+error: 2 targets failed:
+```
+
+## M2: delete the notice dedupe
+notify_once: `Ok(Some(_)) => return` became `Ok(Some(_)) => {}`. Expected red: the repeat-notice test ("no repeat notice"). Also red: the e2e incident test's repeat check.
+```text
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... FAILED
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... ok
+thread 'http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart' (4690475) panicked at crates/daemon/src/http/double_seat_tests.rs:430:5:
+    assertion `left == right` failed: no repeat notice
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 611 filtered out; finished in 5.66s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+test double_seat_incident_end_to_end_on_the_real_store ... FAILED
+thread 'double_seat_incident_end_to_end_on_the_real_store' (4696901) panicked at crates/daemon/tests/double_seat_http.rs:235:5:
+    assertion `left == right` failed
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+error: test failed, to rerun pass `-p pij-daemon --test double_seat_http`
+error: 2 targets failed:
+```
+
+## M3: SessionStart hook ignores the code
+claude-session-start-pij.sh: the `warn_double_seat "$adopt_output"` call replaced by `:`. Expected red: the AC3 script test.
+```text
+test scripts_spell_the_conversation_live_code_as_rust_defines_it ... ok
+test status_line_shows_a_red_double_segment_and_never_heals_it ... ok
+test session_start_hook_warns_human_and_model_about_a_double_seat ... FAILED
+test copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats ... ok
+test user_prompt_hook_warns_every_prompt_while_the_double_persists ... ok
+test status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daemon ... ok
+thread 'session_start_hook_warns_human_and_model_about_a_double_seat' (4722530) panicked at crates/harnesses/tests/claude_heal_scripts.rs:270:33:
+    SessionStart: hook output is not JSON (EOF while parsing a value at line 1 column 0): ""
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s
+error: test failed, to rerun pass `-p pij-harnesses --test claude_heal_scripts`
+```
+
+## M4: status line ignores the code
+claude-statusline-pij.sh: the case pattern `*'"code":"E-RS-CONVERSATION-LIVE"'*` replaced by a pattern that never matches. Expected red: the AC5 script test (it shows `registering`); the literal pin also goes red because the literal is gone.
+```text
+test scripts_spell_the_conversation_live_code_as_rust_defines_it ... FAILED
+test status_line_shows_a_red_double_segment_and_never_heals_it ... FAILED
+test session_start_hook_warns_human_and_model_about_a_double_seat ... ok
+test copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats ... ok
+test user_prompt_hook_warns_every_prompt_while_the_double_persists ... ok
+test status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daemon ... ok
+thread 'scripts_spell_the_conversation_live_code_as_rust_defines_it' (4726177) panicked at crates/harnesses/tests/claude_heal_scripts.rs:412:9:
+    claude-statusline-pij.sh does not carry the code Rust raises
+thread 'status_line_shows_a_red_double_segment_and_never_heals_it' (4726180) panicked at crates/harnesses/tests/claude_heal_scripts.rs:385:5:
+    red double segment: "\u{1b}[2m0%\u{1b}[0m \u{1b}[36mpij-double-seat-statusline-26936-1792034334682837000-3\u{1b}[0m \u{1b}[33m⛓ registering…\u{1b}[0m • Opus • \u{1b}[35mauto\u{1b}[0m • \u{1b}[2m0/200k\u{1b}[0m"
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.32s
+error: test failed, to rerun pass `-p pij-harnesses --test claude_heal_scripts`
+```
+
+## rk-0002 guard: ignore the recorded start (recycled pid)
+live_claude_records accepts any parseable start. Expected red: the AC2 test's %9 arm (a recycled pid's record now raises a false double).
+```text
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... FAILED
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+thread 'http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text' (4754304) panicked at crates/daemon/src/http/double_seat_tests.rs:374:9:
+    assertion `left == right` failed: %9: {"command":"pij whoami","details":{"code":"E-RS-CONVERSATION-LIVE","harness_session":"cc2d2e8f-0174-4000-8000-00000000d0b1","pane":"%5","pid":917405,"seat":"pij-different-smelt","stray_pane":"%9","stray_pid":917409},"error":"refused","meta":"E-RS-CONVERSATION-LIVE conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5); close one copy, then run `pij-rs adopt %9 --harness claude` from the copy you keep — one conversation cannot be two seats","ok":false,"v":2}
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 611 filtered out; finished in 0.86s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+```
+
+## rk-0001 guard: scan the records on every pane
+resolve_seat calls stray_pane before checking whether a live seat owns the pane. Expected red: the AC2 test's resolved-pane arm (the decoy pid is probed).
+```text
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... FAILED
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+thread 'http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text' (4759244) panicked at crates/daemon/src/http/double_seat_tests.rs:384:5:
+    a resolved pane read the Claude session records: [917405, 917411, 917405]
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 611 filtered out; finished in 1.26s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+```
+
+
+NOTE: the rk-0001 and rk-0002 receipts above predate the pin split (prime ruling, 2026-10-15). Those arms now live in their own pin tests; see pins.txt for their mutation receipts under the new names.

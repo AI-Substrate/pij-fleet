@@ -308,6 +308,16 @@ async fn bound_seat(
         }
     };
     let Some(descriptor) = descriptor else {
+        // Plan 174: the Claude hooks know only the pane, so a second copy of a
+        // live seat's conversation must be named here too, not "not bound".
+        if seat.is_none()
+            && let Some(pane) = pane.as_deref()
+            && let Some(double) = super::double_seat::stray_pane(state, pane).await
+        {
+            return Err(Box::new(
+                super::double_seat::refused(state, command, &double).await,
+            ));
+        }
         return Err(Box::new(envelope(
             StatusCode::NOT_FOUND,
             &Envelope::<()>::refused(

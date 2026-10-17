@@ -51,8 +51,28 @@ if [ -n "$session" ]; then
 else
     bounded "${PIJ_RS_ACTIVITY_TIMEOUT:-3}" env -u PIJ_SESSION_ID "$pij_rs" activity --pane "$TMUX_PANE" --state working
 fi
-[ "$status" -eq 0 ] ||
+# Plan 174: while this pane runs a second copy of a live seat's conversation,
+# every prompt warns the human and the model. The daemon's refusal (from the
+# code on, on stdout) names the live seat, its pane and the fix. The code is
+# pinned to the Rust constant by the script tests.
+double_seat_code=E-RS-CONVERSATION-LIVE
+double_seat=""
+double_seat_from() {
+    [ -n "$double_seat" ] && return 0
+    double_seat=$(tr '\n' ' ' <"$out" | sed -n "s/.*\($double_seat_code.*\)/\1/p")
+    double_seat=${double_seat% }
+}
+warn_double_seat() {
+    printf '%s' "$double_seat" |
+        jq -cRs '{systemMessage: ("⚠ pij double seat: " + .),
+                  hookSpecificOutput: {hookEventName: "UserPromptSubmit",
+                    additionalContext: ("pij: this window is a second copy of a conversation that is live as another pij seat, so pij verbs here are refused. Tell the human: " + .)}}' 2>/dev/null || :
+}
+
+if [ "$status" -ne 0 ]; then
     log_line "refused:activity pane=$TMUX_PANE state=working status=$status reason=$(tr '\n' ' ' <"$err")"
+    double_seat_from
+fi
 
 if [ -n "$session" ]; then
     bounded "${PIJ_RS_FYI_CLAIM_TIMEOUT:-3}" env -u PIJ_SESSION_ID "$pij_rs" fyi-claim --pane "$TMUX_PANE" --native-session "$session" --via hook:claude
@@ -62,6 +82,8 @@ fi
 
 if [ "$status" -ne 0 ]; then
     log_line "refused:fyi-claim pane=$TMUX_PANE status=$status reason=$(tr '\n' ' ' <"$err")"
+    double_seat_from
+    [ -z "$double_seat" ] || warn_double_seat
     exit 0
 fi
 [ -s "$out" ] || exit 0
