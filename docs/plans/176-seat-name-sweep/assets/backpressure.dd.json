@@ -1,0 +1,68 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 176 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1: audit completeness and conservatism",
+          "phase": "ph-0ce9",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "RUN: assets/audit.md with per-list reviewed counts; prime reads the removals and samples the kept words",
+          "state": "checked",
+          "probe": "assets/audit.md",
+          "receipt": "execution-log.dd.json#entries/lg-0002"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2, AC5: exclusion and parity tests",
+          "phase": "ph-0ce9",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND→RUN: strengthen crates/core/tests/memorable_ids.rs exclusion test (ship words); nice -n 19 cargo test -j 1 -p pij-core --test memorable_ids; npx vitest run .omp/extensions/pij/core/memorable-id.test.ts",
+          "state": "checked",
+          "probe": "memorable_ids.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0002"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3: stored ids unaffected",
+          "phase": "ph-0ce9",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: cite the allocation/storage code and an existing or new test that an allocated id is never recomputed",
+          "state": "checked",
+          "probe": "crates/core/src/names.rs callers",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4, AC5: live list, gates, CI",
+          "phase": "ph-0ce9",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: pij list --json (read-only); clippy; fmt; just lint; GitHub CI green on the exact head",
+          "state": "checked",
+          "probe": "execution log",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
