@@ -24,34 +24,37 @@
           "id": "tk-0001",
           "title": "Strengthened exclusion test, red on d48cde2",
           "phase": "ph-0ce9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
           ],
-          "done": "tasks.dd.json#done_when/tk-0001"
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../execution-log.dd.json#entries/lg-0001"
         },
         {
           "id": "tk-0002",
           "title": "Audit and removal in both runtimes; oracle",
           "phase": "ph-0ce9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
-          "done": "tasks.dd.json#done_when/tk-0002"
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "tk-0003",
           "title": "Stored ids verified; live-seat list",
           "phase": "ph-0ce9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003",
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
           ],
-          "done": "tasks.dd.json#done_when/tk-0003"
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "receipt": "../../execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "tk-0004",
@@ -72,7 +75,7 @@
           {
             "id": "dw-0001",
             "assertion": "The strengthened test fails on d48cde2 naming gay and ship words (quoted)",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -80,7 +83,7 @@
           {
             "id": "dw-0002",
             "assertion": "audit.md complete with per-list counts equal to the d48cde2 lengths; vd-0001 and vd-0002 green",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -88,7 +91,7 @@
           {
             "id": "dw-0003",
             "assertion": "Storage citation recorded; assets/live-seats.md written from a read-only pij list",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],

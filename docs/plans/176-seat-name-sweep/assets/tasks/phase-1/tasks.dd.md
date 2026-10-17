@@ -35,9 +35,9 @@ One coder implements impl-guide tk-0001: red test first, conservative audit, rem
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Strengthened exclusion test, red on d48cde2 | — | ph-0ce9 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Audit and removal in both runtimes; oracle | — | ph-0ce9 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Stored ids verified; live-seat list | — | ph-0ce9 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Strengthened exclusion test, red on d48cde2 | — | ph-0ce9 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0001 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Audit and removal in both runtimes; oracle | — | ph-0ce9 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Stored ids verified; live-seat list | — | ph-0ce9 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | Gates and PR | — | ph-0ce9 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -48,19 +48,19 @@ One coder implements impl-guide tk-0001: red test first, conservative audit, rem
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | The strengthened test fails on d48cde2 naming gay and ship words (quoted) | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0001 | The strengthened test fails on d48cde2 naming gay and ship words (quoted) | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | audit.md complete with per-list counts equal to the d48cde2 lengths; vd-0001 and vd-0002 green | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0002 | audit.md complete with per-list counts equal to the d48cde2 lengths; vd-0001 and vd-0002 green | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | Storage citation recorded; assets/live-seats.md written from a read-only pij list | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0003 | Storage citation recorded; assets/live-seats.md written from a read-only pij list | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 

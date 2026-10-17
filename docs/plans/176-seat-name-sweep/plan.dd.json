@@ -41,26 +41,34 @@
         {
           "id": "ac-0001",
           "claim": "Every word reviewed. assets/audit.md lists every entry of NAME_ADJECTIVES, NAME_NOUNS and SHIP_NAMES (crates/core/src/name_corpus.rs) that is removed, with its category, and states the total reviewed per list (it must equal the list length on main d48cde2). The bar is Jordan's: stay well clear of anything that might be subjectively examined. When in doubt, remove. Categories at minimum: sexuality, gender, race, ethnicity, nationality, religion, politics, body parts and bodily functions, health, disability and mental state, age, appearance, weight; violence, weapons, killing, death, crime, punishment; drugs, alcohol, gambling; insults and character judgements (e.g. crooked, controversial, stupid); fear, disgust, shame; slang double meanings (including bird and animal names with a slang sense, e.g. tit, booby, cock, ass, beaver); trademarks, franchise or game names, and real or fictional people (e.g. thunderbluff, leeroy, the Culture-novel ship names); and any word that reads badly beside a common word of the other slot.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0002",
           "claim": "Removed in both runtimes, identically. Each removed word leaves crates/core/src/name_corpus.rs and .omp/extensions/pij/core/name-corpus.ts and is added to EXCLUDED_NAME_WORDS in both. The existing exclusion test also checks every hyphen-separated word of each ship name, not just the whole ship name, and every word from 'gay' (the reported case) and the audit appears in the exclusion list. The Rust↔TypeScript oracle test (crates/core/tests/memorable_ids.rs rust_matches_the_typescript_oracle) is regenerated as its comment says and passes.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Existing seats are unaffected. The coder shows (code citation plus a test or existing test) that a seat's id is stored at allocation and never recomputed from the corpus, so adopt, revive, send and close of an already-allocated id (including one whose words are now excluded) still work. If that is NOT true, stop and ask the prime before changing anything.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0004",
           "claim": "Live-fleet list for Jordan, read-only. assets/live-seats.md lists every seat currently known to the production daemon (`pij list --json`, read-only) whose id contains a now-excluded word. Nothing is renamed or closed; Jordan decides.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "ac-0005",
