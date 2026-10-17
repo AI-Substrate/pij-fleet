@@ -822,16 +822,12 @@ pub(crate) async fn adopt(
         && seat.proc != proc
         && !process_gone(&state, seat).await
     {
-        return refused(
-            ADOPT,
-            format!(
-                "conversation `{}` is live as seat `{}` in another process (pane {}) — adopt \
-                 there instead; one conversation cannot be two seats",
-                derived_session.as_deref().unwrap_or_default(),
-                seat.id,
-                seat.pane.as_deref().unwrap_or("none"),
-            ),
-        );
+        let stray = super::double_seat::Stray {
+            pane: pane.as_deref(),
+            proc,
+            session: derived_session.as_deref().unwrap_or_default(),
+        };
+        return super::double_seat::refusal(&state, ADOPT, seat, &stray).await;
     }
     // Adopt INTO the seat that already owns this pane rather than minting a
     // second id for it. The TS route grew this the hard way (its plan-071 defect
@@ -1255,6 +1251,12 @@ pub(crate) async fn resolve_seat(
                 };
                 if let Some(retired) = retired
                     && let Some(refusal) = refuse_tombstoned(state, command, retired).await
+                {
+                    return Resolved::Refusal(refusal);
+                }
+                // Plan 174: the pane's own process may be a second copy of a
+                // live seat's conversation. Say so, rather than "not registered".
+                if let Some(refusal) = super::double_seat::stray_refusal(state, command, pane).await
                 {
                     return Resolved::Refusal(refusal);
                 }

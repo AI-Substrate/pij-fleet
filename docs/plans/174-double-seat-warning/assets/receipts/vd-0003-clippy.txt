@@ -1,0 +1,169 @@
+load { 30.75 34.53 39.40 }
+    Checking libc v0.2.189
+    Checking memchr v2.8.3
+    Checking itoa v1.0.18
+    Checking cfg-if v1.0.4
+    Checking serde_core v1.0.229
+    Checking serde v1.0.229
+    Checking pin-project-lite v0.2.17
+    Checking bytes v1.12.1
+    Checking zmij v1.0.23
+    Checking typenum v1.20.1
+    Checking futures-core v0.3.34
+    Checking generic-array v0.14.7
+    Checking serde_json v1.0.151
+    Checking errno v0.3.14
+    Checking signal-hook-registry v1.4.8
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking zerofrom v0.1.8
+    Checking socket2 v0.6.5
+    Checking mio v1.2.2
+    Checking stable_deref_trait v1.2.1
+    Checking yoke v0.8.3
+    Checking tokio v1.53.1
+    Checking digest v0.10.7
+    Checking cpufeatures v0.2.17
+    Checking futures-sink v0.3.34
+    Checking sha2 v0.10.9
+    Checking once_cell v1.21.4
+    Checking log v0.4.34
+    Checking smallvec v1.15.2
+    Checking zerovec v0.11.8
+    Checking thiserror v2.0.20
+    Checking tracing-core v0.1.36
+    Checking slab v0.4.12
+    Checking tracing v0.1.44
+    Checking tinystr v0.8.4
+    Checking equivalent v1.0.2
+    Checking writeable v0.6.4
+    Checking litemap v0.8.3
+    Checking icu_locale_core v2.3.0
+    Checking potential_utf v0.1.6
+    Checking zerotrie v0.2.5
+    Checking utf8_iter v1.0.4
+    Checking percent-encoding v2.3.2
+    Checking futures-io v0.3.34
+    Checking futures-task v0.3.34
+    Checking zeroize v1.9.0
+    Checking rustls-pki-types v1.15.1
+    Checking futures-util v0.3.34
+    Checking icu_collections v2.3.0
+    Checking pij-core v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/core)
+    Checking icu_provider v2.3.1
+    Checking tokio-util v0.7.19
+    Checking hashbrown v0.17.1
+    Checking indexmap v2.14.1
+    Checking icu_properties_data v2.3.0
+    Checking icu_normalizer_data v2.3.0
+    Checking http v1.5.0
+    Checking getrandom v0.2.17
+    Checking untrusted v0.9.0
+   Compiling scopeguard v1.2.0
+   Compiling lock_api v0.4.14
+    Checking ring v0.17.14
+    Checking icu_normalizer v2.3.0
+    Checking icu_properties v2.3.0
+    Checking form_urlencoded v1.2.2
+    Checking idna_adapter v1.2.2
+    Checking rustls-webpki v0.103.15
+    Checking http-body v1.1.0
+    Checking futures-channel v0.3.34
+    Checking deranged v0.5.8
+    Checking base64 v0.22.1
+    Checking powerfmt v0.2.0
+    Checking num-conv v0.2.2
+    Checking time-core v0.1.9
+    Checking subtle v2.6.1
+    Checking rustls v0.23.43
+    Checking time v0.3.55
+    Checking idna v1.1.0
+    Checking webpki-roots v1.0.9
+   Compiling parking_lot_core v0.9.12
+    Checking winnow v1.0.4
+   Compiling allocator-api2 v0.2.21
+    Checking tower-service v0.3.3
+   Compiling foldhash v0.1.5
+   Compiling hashbrown v0.15.5
+    Checking toml_parser v1.1.3+spec-1.1.0
+   Compiling parking_lot v0.12.5
+    Checking url v2.5.8
+    Checking unisphere-core v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+   Compiling crossbeam-utils v0.8.22
+    Checking toml_datetime v0.7.5+spec-1.1.0
+    Checking serde_spanned v1.1.1
+   Compiling parking v2.2.1
+    Checking toml_writer v1.1.2+spec-1.1.0
+    Checking fnv v1.0.7
+   Compiling crc-catalog v2.5.0
+    Checking winnow v0.7.15
+    Checking atomic-waker v1.1.2
+    Checking try-lock v0.2.5
+    Checking ryu v1.0.23
+    Checking serde_urlencoded v0.7.1
+    Checking want v0.3.1
+    Checking h2 v0.4.19
+    Checking toml v0.9.12+spec-1.1.0
+   Compiling crc v3.4.0
+   Compiling event-listener v5.4.2
+   Compiling crossbeam-queue v0.3.13
+   Compiling webpki-roots v0.26.11
+   Compiling futures-intrusive v0.5.0
+   Compiling tokio-stream v0.1.19
+    Checking httparse v1.10.1
+   Compiling hashlink v0.10.0
+   Compiling either v1.18.0
+   Compiling num-traits v0.2.19
+   Compiling spin v0.9.9
+    Checking sync_wrapper v1.0.2
+    Checking httpdate v1.0.3
+    Checking tower-layer v0.3.3
+    Checking hyper v1.11.1
+   Compiling sqlx-core v0.8.6
+   Compiling flume v0.11.1
+   Compiling atoi v2.0.0
+    Checking pij-testkit v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/testkit)
+   Compiling futures-executor v0.3.34
+   Compiling libsqlite3-sys v0.30.1
+    Checking aho-corasick v1.1.5
+    Checking ipnet v2.12.1
+    Checking regex-syntax v0.8.11
+    Checking regex-automata v0.4.18
+    Checking hyper-util v0.1.20
+   Compiling sqlx-sqlite v0.8.6
+    Checking tower v0.5.3
+    Checking http-body-util v0.1.5
+    Checking pij-harnesses v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/harnesses)
+    Checking bitflags v2.13.1
+   Compiling sqlx-macros-core v0.8.6
+    Checking tokio-rustls v0.26.4
+    Checking bstr v1.13.1
+    Checking globset v0.4.20
+    Checking hyper-rustls v0.27.9
+   Compiling sqlx-macros v0.8.6
+    Checking tower-http v0.6.11
+    Checking regex v1.13.1
+    Checking mime v0.3.17
+    Checking axum-core v0.5.6
+    Checking unisphere-sdk v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+    Checking reqwest v0.12.28
+    Checking sqlx v0.8.6
+    Checking nix v0.30.1
+    Checking getrandom v0.3.4
+    Checking unisphere-adapter-claude v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+    Checking unisphere-loader-jsonl v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+    Checking unisphere-adapter-codex v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+    Checking unisphere-adapter-omp v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+    Checking unisphere-adapter-copilot-cli v0.1.0 (https://github.com/AI-Substrate/Unisphere.git?rev=0370cabbe4d9bcbb5b7bf6b0e13a490f0f4d0d59#0370cabb)
+    Checking serde_path_to_error v0.1.20
+    Checking matchit v0.8.4
+    Checking axum v0.8.9
+    Checking pij-unisphere v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/unisphere)
+    Checking pij-tmux v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/tmux)
+    Checking pij-sidecars v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/sidecars)
+    Checking pij-store v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/store)
+    Checking pij-transport v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/transport)
+    Checking hostname v0.4.2
+    Checking pij-daemon v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 37s
+clippy exit 0

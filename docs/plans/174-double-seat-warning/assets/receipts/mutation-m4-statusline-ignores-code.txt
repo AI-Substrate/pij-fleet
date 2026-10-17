@@ -1,0 +1,59 @@
+# mutation m4-statusline-ignores-code: harness/scripts/claude-statusline-pij.sh
+# - if [ -n "$DOUBLE" ]; then
+# + DOUBLE=""; if [ -n "$DOUBLE" ]; then
+#      *)
+# -      HEAL_DIR=${PIJ_RS_STATE_DIR:-${HOME:-/tmp}/.pij-rs}/heal
+# -      HEAL_KEY=$HEAL_DIR/pane-${TMUX_PANE#%}
+#        mkdir -p "$HEAL_DIR" 2>/dev/null
+#        if mkdir "$HEAL_KEY.lock" 2>/dev/null; then
+#          NOW=$(date +%s)
+# @@ -135,6 +172,13 @@ if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] \
+#                RESULT="healed"
+#              else
+#                RESULT="refused reason=$(printf '%s' "$OUT" | tr '\n' ' ')"
+# +              case "$OUT" in
+# +                *E-RS-CONVERSATION-LIVE*)
+# +                  LINE=$(printf '%s\n' "E-RS-CONVERSATION-LIVE${OUT#*E-RS-CONVERSATION-LIVE}" | head -n 1)
+# +                  printf '%s\n%s\n' "$SESSION_ID" "$LINE" >"$HEAL_KEY.double.$$" \
+# +                    && mv -f "$HEAL_KEY.double.$$" "$HEAL_KEY.double"
+# +                  ;;
+# +              esac
+#              fi
+#              printf '%s statusline:%s pane=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RESULT" "$TMUX_PANE" \
+#                >>"${HEAL_DIR%/heal}/hook.log" 2>/dev/null
+load { 31.37 35.96 40.69 }
+   Compiling pij-harnesses v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/harnesses)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.81s
+     Running tests/claude_heal_scripts.rs (target/debug/deps/claude_heal_scripts-7bd6c3c00543c1be)
+
+running 6 tests
+test status_line_shows_the_double_from_whoami_and_fires_no_adopt ... FAILED
+test session_start_hook_warns_human_and_model_when_adopt_finds_a_double ... ok
+test status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt ... FAILED
+test copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats ... ok
+test user_prompt_hook_warns_on_every_prompt_while_the_double_persists ... ok
+test status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daemon ... ok
+
+failures:
+
+---- status_line_shows_the_double_from_whoami_and_fires_no_adopt stdout ----
+
+thread 'status_line_shows_the_double_from_whoami_and_fires_no_adopt' (3496386) panicked at crates/harnesses/tests/claude_heal_scripts.rs:420:5:
+"\u{1b}[2m0%\u{1b}[0m \u{1b}[36mpij-double-whoami-92529-1792032360449731000-5\u{1b}[0m \u{1b}[33m⛓ registering…\u{1b}[0m • Opus • \u{1b}[35mauto\u{1b}[0m • \u{1b}[2m0/200k\u{1b}[0m"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt stdout ----
+
+thread 'status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt' (3496385) panicked at crates/harnesses/tests/claude_heal_scripts.rs:466:5:
+"\u{1b}[2m0%\u{1b}[0m \u{1b}[36mpij-double-heal-92529-1792032360449723000-2\u{1b}[0m \u{1b}[33m⛓ registering…\u{1b}[0m • Opus • \u{1b}[35mauto\u{1b}[0m • \u{1b}[2m0/200k\u{1b}[0m"
+
+
+failures:
+    status_line_remembers_a_coded_heal_refusal_and_never_fires_a_second_adopt
+    status_line_shows_the_double_from_whoami_and_fires_no_adopt
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.86s
+
+error: test failed, to rerun pass `-p pij-harnesses --test claude_heal_scripts`
+# cargo exit: 101
+restored harness/scripts/claude-statusline-pij.sh

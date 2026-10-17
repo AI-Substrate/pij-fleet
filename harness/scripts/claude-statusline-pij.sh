@@ -83,6 +83,7 @@ BRANCH_FMT=""
 
 # Resolve the pane against rs first. Only an rs miss may start the slower legacy CLI.
 PIJID=""
+RS_OUTPUT=""
 PIJ_RS_BIN=$(command -v pij-rs 2>/dev/null || :)
 [ -z "$PIJ_RS_BIN" ] && [ -x "${HOME:-}/.npm-global/bin/pij-rs" ] && PIJ_RS_BIN=${HOME:-}/.npm-global/bin/pij-rs
 if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ]; then
@@ -94,8 +95,46 @@ if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ]; then
       ;;
   esac
 fi
+HEAL_DIR=${PIJ_RS_STATE_DIR:-${HOME:-/tmp}/.pij-rs}/heal
+HEAL_KEY=$HEAL_DIR/pane-${TMUX_PANE#%}
+
+# Plan 174: this pane is a second copy of a conversation that is live as another
+# seat. whoami's coded refusal names the seat; so does the heal adopt's, which
+# the heal remembers in $HEAL_KEY.double (line 1: this conversation, line 2: the
+# daemon's line) so that no render re-fires the adopt for it.
+DOUBLE=""
+if [ -n "${TMUX_PANE:-}" ]; then
+  case "$RS_OUTPUT" in
+    *E-RS-CONVERSATION-LIVE*)
+      DOUBLE=$(printf '%s' "$RS_OUTPUT" | jq -r '.details | select(.seat) | "\(.seat) in \(.pane // "none")"' 2>/dev/null)
+      ;;
+  esac
+  if [ -n "$PIJID" ]; then
+    rm -f "$HEAL_KEY.double"
+  elif [ -z "$DOUBLE" ] && [ -f "$HEAL_KEY.double" ]; then
+    MARK_SESSION=""
+    MARK_LINE=""
+    { IFS= read -r MARK_SESSION; IFS= read -r MARK_LINE; } <"$HEAL_KEY.double"
+    BT='`'
+    case "$MARK_LINE" in
+      *" as seat $BT"*" in pane "*)
+        if [ -n "$SESSION_ID" ] && [ "$MARK_SESSION" = "$SESSION_ID" ]; then
+          MARK_SEAT=${MARK_LINE#*" as seat $BT"}
+          MARK_PANE=${MARK_LINE#*" in pane "}
+          DOUBLE="${MARK_SEAT%%"$BT"*} in ${MARK_PANE%%;*}"
+        else
+          rm -f "$HEAL_KEY.double"
+        fi
+        ;;
+      *) rm -f "$HEAL_KEY.double" ;;
+    esac
+  fi
+fi
+
 PIJ_FMT=""
-if [ -n "$PIJID" ]; then
+if [ -n "$DOUBLE" ]; then
+  PIJ_FMT=" \033[31m⚠ double: $DOUBLE\033[0m"
+elif [ -n "$PIJID" ]; then
   PIJ_FMT=" \033[33mrs\033[0m \033[34m⛓ $PIJID\033[0m"
   # Held FYIs (plan 158): whoami carries the count; show it only while N > 0.
   case "$RS_OUTPUT" in
@@ -115,13 +154,11 @@ fi
 # or an rs seat recording a different conversation, fires ONE detached adopt per
 # pane per 15 s. The daemon derives the conversation itself; the payload's
 # session_id only cross-checks it. Rendering never waits on the adopt.
-if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] \
+if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] && [ -z "$DOUBLE" ] \
   && { [ -n "$PIJID" ] || [ -z "${LEGACYID:-}" ]; }; then
   case "$RS_OUTPUT" in
     *"\"session\":\"$SESSION_ID\""*) ;;
     *)
-      HEAL_DIR=${PIJ_RS_STATE_DIR:-${HOME:-/tmp}/.pij-rs}/heal
-      HEAL_KEY=$HEAL_DIR/pane-${TMUX_PANE#%}
       mkdir -p "$HEAL_DIR" 2>/dev/null
       if mkdir "$HEAL_KEY.lock" 2>/dev/null; then
         NOW=$(date +%s)
@@ -135,6 +172,13 @@ if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] \
               RESULT="healed"
             else
               RESULT="refused reason=$(printf '%s' "$OUT" | tr '\n' ' ')"
+              case "$OUT" in
+                *E-RS-CONVERSATION-LIVE*)
+                  LINE=$(printf '%s\n' "E-RS-CONVERSATION-LIVE${OUT#*E-RS-CONVERSATION-LIVE}" | head -n 1)
+                  printf '%s\n%s\n' "$SESSION_ID" "$LINE" >"$HEAL_KEY.double.$$" \
+                    && mv -f "$HEAL_KEY.double.$$" "$HEAL_KEY.double"
+                  ;;
+              esac
             fi
             printf '%s statusline:%s pane=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RESULT" "$TMUX_PANE" \
               >>"${HEAL_DIR%/heal}/hook.log" 2>/dev/null

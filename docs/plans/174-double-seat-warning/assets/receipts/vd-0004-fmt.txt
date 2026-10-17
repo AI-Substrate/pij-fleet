@@ -1,0 +1,2 @@
+load { 31.74 27.65 33.43 }
+cargo fmt --all --check: exit 0

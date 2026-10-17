@@ -308,6 +308,14 @@ async fn bound_seat(
         }
     };
     let Some(descriptor) = descriptor else {
+        // Plan 174: a pane no seat owns may be a second copy of a live seat's
+        // conversation; that refusal names the seat and the fix.
+        if seat.is_none()
+            && let Some(pane) = pane.as_deref()
+            && let Some(refusal) = super::double_seat::stray_refusal(state, command, pane).await
+        {
+            return Err(Box::new(refusal));
+        }
         return Err(Box::new(envelope(
             StatusCode::NOT_FOUND,
             &Envelope::<()>::refused(

@@ -1,0 +1,48 @@
+# mutation m1-no-stray-record-lookup: crates/daemon/src/http/double_seat.rs
+# -     let (record, proc) = verified_claude_record(state, |record| record.pane() == Some(pane)).await?;
+# +     let _ = pane;
+    let (record, proc) = None::<(ClaudeSessionRecord, ProcIdentity)>?;
+load { 35.31 36.25 40.54 }
+   Compiling pij-harnesses v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/harnesses)
+   Compiling pij-daemon v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.33s
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-435c7c5d79f69e8d)
+
+running 7 tests
+test http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat ... FAILED
+test http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them ... ok
+test http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent ... ok
+test http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart ... FAILED
+test http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details ... ok
+test http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_incident_end_to_end ... FAILED
+
+failures:
+
+---- http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat stdout ----
+
+thread 'http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat' (3564970) panicked at crates/daemon/src/http/double_seat_tests.rs:231:5:
+/v1/whoami must lead with E-RS-CONVERSATION-LIVE, got 400: {"command":"pij whoami","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart stdout ----
+
+thread 'http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart' (3564972) panicked at crates/daemon/src/http/double_seat_tests.rs:231:5:
+/v1/whoami must lead with E-RS-CONVERSATION-LIVE, got 400: {"command":"pij whoami","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+
+---- http::double_seat_tests::double_seat_incident_end_to_end stdout ----
+
+thread 'http::double_seat_tests::double_seat_incident_end_to_end' (3564971) panicked at crates/daemon/src/http/double_seat_tests.rs:231:5:
+send from %7 must lead with E-RS-CONVERSATION-LIVE, got 400: {"command":"pij send","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+
+
+failures:
+    http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat
+    http::double_seat_tests::double_seat_incident_end_to_end
+    http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart
+
+test result: FAILED. 4 passed; 3 failed; 0 ignored; 0 measured; 611 filtered out; finished in 0.91s
+
+error: test failed, to rerun pass `-p pij-daemon --lib`
+# cargo exit: 101
+restored crates/daemon/src/http/double_seat.rs

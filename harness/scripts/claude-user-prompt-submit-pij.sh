@@ -28,6 +28,7 @@ session=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null) || se
 out=$(mktemp "${TMPDIR:-/tmp}/pij-fyi-claim.XXXXXX" 2>/dev/null) || exit 0
 err=$(mktemp "${TMPDIR:-/tmp}/pij-fyi-claim.XXXXXX" 2>/dev/null) || { rm -f "$out"; exit 0; }
 trap 'rm -f "$out" "$err"' EXIT
+activity_said=""
 
 # Run "$@" with stdout to $out and stderr to $err, bounded by $1 seconds: the
 # daemon answers in milliseconds, so a stall means it is wedged, and the prompt
@@ -51,8 +52,10 @@ if [ -n "$session" ]; then
 else
     bounded "${PIJ_RS_ACTIVITY_TIMEOUT:-3}" env -u PIJ_SESSION_ID "$pij_rs" activity --pane "$TMUX_PANE" --state working
 fi
-[ "$status" -eq 0 ] ||
+[ "$status" -eq 0 ] || {
+    activity_said=$(cat "$out" "$err")
     log_line "refused:activity pane=$TMUX_PANE state=working status=$status reason=$(tr '\n' ' ' <"$err")"
+}
 
 if [ -n "$session" ]; then
     bounded "${PIJ_RS_FYI_CLAIM_TIMEOUT:-3}" env -u PIJ_SESSION_ID "$pij_rs" fyi-claim --pane "$TMUX_PANE" --native-session "$session" --via hook:claude
@@ -62,6 +65,16 @@ fi
 
 if [ "$status" -ne 0 ]; then
     log_line "refused:fyi-claim pane=$TMUX_PANE status=$status reason=$(tr '\n' ' ' <"$err")"
+    # Plan 174: on every prompt while this pane is a second copy of a live
+    # seat's conversation, warn the human and the model with the daemon's own
+    # line (the live seat, its pane, the fix). Other refusals stay silent.
+    for said in "$(cat "$out" "$err")" "$activity_said"; do
+        case $said in *E-RS-CONVERSATION-LIVE*) ;; *) continue ;; esac
+        line=$(printf '%s\n' "E-RS-CONVERSATION-LIVE${said#*E-RS-CONVERSATION-LIVE}" | head -n 1)
+        jq -cn --arg line "⚠ pij: this pane is a second copy of a live seat. $line" \
+            '{systemMessage:$line,hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$line}}' || :
+        break
+    done
     exit 0
 fi
 [ -s "$out" ] || exit 0

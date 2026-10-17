@@ -1,0 +1,95 @@
+{
+  "dd": {
+    "schema": "builder/execution-log"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Observed implementation evidence",
+        "plan": "../plan.dd.json#meta"
+      }
+    },
+    {
+      "name": "entries",
+      "value": [
+        {
+          "id": "lg-0001",
+          "at": "2026-10-15T03:01:01.217Z",
+          "text": "RED receipts retained from the original implementation phase, cwd worktree root, base implementation bb9f0b1 plus new tests. cargo test -j 1 -p pij-daemon double_seat: exit 101, 5 failed and 2 new unchanged-behavior regression pins passed. Failures quote 'adopt must lead with E-RS-CONVERSATION-LIVE, got 400' or '/v1/whoami must lead with E-RS-CONVERSATION-LIVE, got 400'. cargo test -j 1 -p pij-harnesses --test claude_heal_scripts against base scripts: exit 101, all 4 new tests failed, 2 pre-existing tests passed; failures include empty hook JSON, missing red double segment and 'the refusal is remembered'. Raw evidence receipts/red-vd-0001.txt and receipts/red-vd-0002-final-tests-on-base-scripts.txt; exact distinctions and quotes in receipts/README.md. The two daemon regression pins are NOT claimed as red; parent disposition requested. Builds niced, bounded and -j 1; the final script red run was load-gated. The first script red launch exceeded the packet ceiling and is recorded in the retro.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0002",
+          "at": "2026-10-15T03:01:01.302Z",
+          "text": "GREEN: cargo test -j 1 -p pij-daemon double_seat, cwd worktree root, exit 0: 7 passed (private HTTP ports, fixture Claude homes, fake tmux/liveness/spine). Re-run after every mutation was restored; subject is HEAD 01c68a9 plus the implementation recorded in receipts/source-sha256.txt. Evidence receipts/green-vd-0001-final.txt. Earlier neighboring filters double_seat/revive/identity/fyi/adopt/whoami/retired passed 132 tests including 14 revive cases, receipts/green-vd-0001-plus-neighbours.txt. No live Claude UI or production-daemon proof is claimed. Adopt keeps its existing conservative identity selection; revive and stray resolution share the live-seat/process-record helpers and adopt shares the coded refusal/notice emitter.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0003",
+          "at": "2026-10-15T03:01:02.411Z",
+          "text": "GREEN: cargo test -j 1 -p pij-harnesses --test claude_heal_scripts, cwd worktree root, exit 0: 6 passed including all 4 added tests. Subject HEAD 01c68a9 plus receipts/source-sha256.txt. Evidence receipts/green-vd-0002-final.txt. Both hooks emit valid human/model warning JSON only for the coded refusal and exit 0, existing FYI bytes are pinned, whoami refuses without scheduling adopt, and a FIFO confirms the detached heal records its coded refusal before the next render. Fixtures shadow both pij-rs and pij, use private HOME/state and never contact the production daemon or live tmux.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
+        },
+        {
+          "id": "lg-0004",
+          "at": "2026-10-15T03:01:03.564Z",
+          "text": "MUTATIONS on this implementation, cwd worktree root, all exit 101 and restored: remove stray-record lookup -> 3 daemon failures (old not-registered text); remove dedupe -> 3 daemon failures (repeat count 9 instead of 1; unreadable-spine brake); ignore SessionStart code -> 1 script failure (empty JSON); ignore status-line code -> 2 script failures (registering instead of red double). Commands are cargo test -j 1 -p pij-daemon double_seat for M1/M2 and cargo test -j 1 -p pij-harnesses --test claude_heal_scripts for M3/M4, all under C12. Raw receipts/mutation-m1-no-stray-record-lookup.txt, mutation-m2-no-dedupe.txt, mutation-m3-sessionstart-ignores-code.txt and mutation-m4-statusline-ignores-code.txt include mutations and restoration. Final greens in the preceding entries followed all restorations.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0005",
+          "at": "2026-10-15T03:01:04.006Z",
+          "text": "DOCS authored/read against source: docs/how/double-seat.md covers the 2026-10-15 incident, verified process-record witness, unchanged revive guard, coded adopt and stray-pane refusals, hooks, status line, manual recovery, cold-wake-aware notice and its one-directional dedupe brake. docs/how/pij-rs-api.md documents HTTP 409/details/verbs next to E-RS-REVIVE-CONVERSATION-LIVE; claude-auto-seat.md and claude-statusline.md describe visible warnings. Coder read is human-judgement-tier evidence, not independent prime review (still pending). git diff --check passed. Subject source manifest receipts/source-sha256.txt; documentation is included in the ensuing commit.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-15T03:01:04.604Z",
+          "text": "LOCAL GATE SCOPE: scoped clippy -j 1 -p pij-daemon -p pij-harnesses --all-targets -- -D warnings exit 0 (receipts/vd-0003-clippy.txt); cargo fmt --all --check exit 0 (receipts/vd-0004-fmt.txt). Resumed harness boot reports ready:false due to absent worktree node_modules. harness checks --quick was attempted before parent disposition and FAILED 5 stages (missing dependencies/ambient tool versions), with copilot-native passing; receipts/gate-quick-before-deps.txt. Parent pij-far-jackal msg c08e5737f7951d3e-0000000000000072 forbids worktree-deps and accepts exact-head CI check (22)/(24) in lieu of local TS gates because the diff changes no TS/JS. Proper local typecheck, vitest and biome-on-TS are therefore NOT RUN with project dependencies, not passed; no dependency writes occurred. Full live-tmux smoke is NOT RUN under the packet's no-live-pane rule, and no full harness checks pass is claimed. The installed ddocs 0.1.0 is used with vendored schemas because local node_modules/.bin/ddocs is absent; no package fetch or link was created. Rust workspace gate and exact-head CI are pending.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-15T03:09:44.832Z",
+          "text": "AC8(a) PIN RULING AND PIN MUTATIONS: parent pij-far-jackal msg c08e5737f7951d3e-0000000000000078 accepted regression pins for behaviour the plan keeps unchanged, recorded as 'pin, green on base' and never as red, on condition that each pin has a mutation receipt. Pins: double_seat_without_a_matching_record_keeps_the_not_registered_text (rk-0002) and double_seat_a_resolved_pane_never_reads_records_or_probes_them (rk-0001); both names and doc comments describe what they pin. Mutations, cwd worktree root, cargo test -j 1 -p pij-daemon double_seat under C12, each exit 101 with exactly that pin failing and then restored: M5a alters the not-registered text in identity.rs resolve_seat ('owns pane' -> 'holds pane'), witness left/right text diff; M5b makes the choosing branch accept a stale record (double_seat.rs start check '.unwrap_or(false) || true'), witness 'mismatched start /v1/whoami' returns the coded 409 against expected 400; M6 makes resolve_seat's resolved path call verified_claude_record(state, |_| true), witness 'a resolved pane probed a record's pid: [3999951, 3999971]' (3999971 is the stray record's pid). After restoration receipts/source-sha256.txt verified every source file and the daemon tests reran 7 passed, exit 0. Raw receipts/mutation-m5a-not-registered-text.txt, mutation-m5b-mismatched-start-verifies.txt, mutation-m6-resolved-pane-reads-records.txt, green-vd-0001-after-pin-mutations.txt; index receipts/README.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-10-15T03:09:44.929Z",
+          "text": "RUST WORKSPACE GATE: just rust-check, cwd worktree root, cargo on PATH via a load-gated -j 1 shim (C12), exit 0: cargo metadata --locked, cargo fmt --all --check, cargo clippy --locked --workspace --all-targets -- -D warnings and the workspace cargo test, 1539 passed, 0 failed, 8 ignored. Subject HEAD 01c68a9 plus the implementation in receipts/source-sha256.txt. Raw receipts/gate-rust.txt. Local TS stages remain NOT RUN per parent msg 0072; live-tmux smoke NOT RUN; exact-head GitHub CI pending.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-15T03:15:04.304Z",
+          "text": "EXACT-HEAD CI: PR #56 (https://github.com/AI-Substrate/pij-fleet/pull/56), head 80b8aba886ca75541fc9ac9d36c21a1eee81829f, Actions run 38675004257 (pull_request), conclusion success on that headSha: rust-test, rust-lint, check (22) and check (24) all success. check (22)/(24) run npm ci, typecheck, lint, npm test and copilot-native, the TS stages accepted in lieu of local runs by parent msg 0072. git push used the explicit refspec feat/double-seat-warning; git ls-remote origin 'refs/notes/*' is empty. Raw receipts/ci-pr56-80b8aba.txt. AC8 (a)-(e) are met: red/green with pins recorded as pin, green on base and mutation-proven (lg-0001, lg-0002, lg-0003, lg-0007); mutation receipts M1-M4 (lg-0004); fixture-only tests; the incident test end to end; CI green on the exact code head. NOT RUN: local TS stages (parent 0072) and live-tmux smoke (packet). This evidence entry lands in a docs-only follow-up commit whose own CI is watched separately. Prime read of the docs (bp-0003) and the phase close remain with the prime.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+# mutation m2-no-dedupe: crates/daemon/src/http/double_seat.rs
+# -     match services
+        .event_bus
+        .latest_matching_message(&live.id, DOUBLE_DETECTED_KIND, &id)
+        .await
+    {
+        Ok(None) => {}
+        Ok(Some(_)) => return,
+        Err(error) => {
+            eprintln!("pij-rs double-seat notice {id}: dedupe read failed, not sending: {error}");
+            return;
+        }
+    }
+# +     let _ = DOUBLE_DETECTED_KIND;
+load { 32.90 35.40 40.01 }
+   Compiling pij-daemon v0.1.0 (/Users/jordanknight/pi-hacking/fleet-174-double-seat/crates/daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.21s
+     Running unittests src/lib.rs (target/debug/deps/pij_daemon-435c7c5d79f69e8d)
+
+running 7 tests
+test http::double_seat_tests::double_seat_a_resolved_pane_never_reads_records_or_probes_them ... ok
+test http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent ... FAILED
+test http::double_seat_tests::double_seat_adopt_from_the_stray_pane_is_refused_with_the_code_and_details ... ok
+test http::double_seat_tests::double_seat_every_pane_resolved_verb_from_the_stray_pane_names_the_live_seat ... ok
+test http::double_seat_tests::double_seat_incident_end_to_end ... FAILED
+test http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart ... FAILED
+test http::double_seat_tests::double_seat_without_a_matching_record_keeps_the_not_registered_text ... ok
+
+failures:
+
+---- http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent stdout ----
+
+thread 'http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent' (3595071) panicked at crates/daemon/src/http/double_seat_tests.rs:482:5:
+an unknown dedupe answer sends nothing
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- http::double_seat_tests::double_seat_incident_end_to_end stdout ----
+
+thread 'http::double_seat_tests::double_seat_incident_end_to_end' (3595073) panicked at crates/daemon/src/http/double_seat_tests.rs:527:5:
+assertion `left == right` failed
+  left: 3
+ right: 1
+
+---- http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart stdout ----
+
+thread 'http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart' (3595074) panicked at crates/daemon/src/http/double_seat_tests.rs:452:5:
+assertion `left == right` failed: a repeat sends nothing
+  left: 9
+ right: 1
+
+
+failures:
+    http::double_seat_tests::double_seat_an_unreadable_spine_counts_as_already_sent
+    http::double_seat_tests::double_seat_incident_end_to_end
+    http::double_seat_tests::double_seat_notice_goes_to_the_live_seat_once_per_pair_even_across_a_restart
+
+test result: FAILED. 4 passed; 3 failed; 0 ignored; 0 measured; 611 filtered out; finished in 1.01s
+
+error: test failed, to rerun pass `-p pij-daemon --lib`
+# cargo exit: 101
+restored crates/daemon/src/http/double_seat.rs
