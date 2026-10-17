@@ -31,3 +31,9 @@ in rows of 20 works, but the worst cases only show up as pairs.
   in two files would have risked the runtimes diverging. `stretch:` keep the
   corpus in one data file that both runtimes generate from, so it cannot be
   vendored twice.
+- Fix round 1: I read the bar as "offensive or sensitive to a person" and missed
+  the in-product sense. A seat id sits next to seat states and roles in every
+  status table, so `pij-ready-moose`, `pij-prime-bat` and `pij-critical-bug`
+  mislead operators. Lesson: also review a corpus against the vocabulary of the
+  tables it appears in. `stretch:` derive that exclusion from pij's own state,
+  role and alarm enums, so a new state word can never become a name.
