@@ -13,13 +13,11 @@ fn candidate(seed: &str, attempt: usize) -> SeatId {
 
 #[test]
 fn curated_corpus_is_pinned_and_clean() {
-    // The generator's old measurement comment says 1,177 adjectives. The current
-    // production corpus and its TS pinning test contain 1,176; pin data, not the
-    // stale historical denominator.
-    assert_eq!(NAME_ADJECTIVES.len(), 1_176);
-    assert_eq!(NAME_NOUNS.len(), 738);
-    assert_eq!(SHIP_NAMES.len(), 40);
-    assert_eq!(MEMORABLE_PIJ_ID_SPACE, 867_928);
+    // Plan 176 swept the corpus; every ship name went, so the space is the grid.
+    assert_eq!(NAME_ADJECTIVES.len(), 754);
+    assert_eq!(NAME_NOUNS.len(), 269);
+    assert!(SHIP_NAMES.is_empty());
+    assert_eq!(MEMORABLE_PIJ_ID_SPACE, 202_826);
     assert_eq!(
         MEMORABLE_PIJ_ID_SPACE,
         NAME_ADJECTIVES.len() * NAME_NOUNS.len() + SHIP_NAMES.len()
@@ -58,20 +56,40 @@ fn curated_corpus_is_pinned_and_clean() {
             "invalid ship name: {ship}"
         );
     }
-    for excluded in EXCLUDED_NAME_WORDS {
+}
+
+#[test]
+fn excluded_words_never_reach_a_seat_id() {
+    // The reported case (plan 176: a seat named pij-gay-thorn) stays pinned.
+    for reported in ["gay", "thorn"] {
         assert!(
-            !NAME_ADJECTIVES.contains(excluded),
-            "excluded adjective returned: {excluded}"
-        );
-        assert!(
-            !NAME_NOUNS.contains(excluded),
-            "excluded noun returned: {excluded}"
-        );
-        assert!(
-            !SHIP_NAMES.contains(excluded),
-            "excluded ship returned: {excluded}"
+            EXCLUDED_NAME_WORDS.contains(&reported),
+            "{reported} left the exclusion list"
         );
     }
+
+    // A ship name is emitted whole, so each of its words is checked too.
+    let ship_words = SHIP_NAMES
+        .iter()
+        .flat_map(|ship| ship.split('-').map(move |word| (*ship, word)));
+    let mut returned = Vec::new();
+    for excluded in EXCLUDED_NAME_WORDS {
+        if NAME_ADJECTIVES.contains(excluded) {
+            returned.push(format!("adjective {excluded}"));
+        }
+        if NAME_NOUNS.contains(excluded) {
+            returned.push(format!("noun {excluded}"));
+        }
+        if SHIP_NAMES.contains(excluded) {
+            returned.push(format!("ship {excluded}"));
+        }
+    }
+    for (ship, word) in ship_words {
+        if EXCLUDED_NAME_WORDS.contains(&word) {
+            returned.push(format!("ship {ship} (word {word})"));
+        }
+    }
+    assert!(returned.is_empty(), "excluded words returned: {returned:?}");
 }
 
 #[test]
@@ -81,14 +99,14 @@ fn rust_matches_the_typescript_oracle() {
     // The shell variable preserves NUL escapes until Bun parses the literals:
     //
     // ORACLE_SCRIPT='import { memorablePijIdCandidate, MEMORABLE_PIJ_ID_SPACE } from
-    // "./.pi/extensions/pij/core/memorable-id.ts"; const cases =
+    // "./.omp/extensions/pij/core/memorable-id.ts"; const cases =
     // [["4dffbee3-5d42-4b02-a739-74be162940bc",0],["copilot-session-alpha",0],
     // ["claude-session-beta",0],["pi-session-gamma",0],["s1754000000000-9000",0],
     // ["s1754000000000-9000",1],["s1754000000000-9000",17],
     // ["adopt\x00claude\x00%100\x0020000",0],["adopt\x00claude\x00%100\x0020000",1],
     // ["adopt\x00claude\x00%100\x0020000",17],["full-space-seed",0],
-    // ["full-space-seed",1],["full-space-seed",867888],["full-space-seed",867927],
-    // ["stable-seed",867927],["café-🐙",0],["café-🐙",1]];
+    // ["full-space-seed",1],["full-space-seed",202786],["full-space-seed",202825],
+    // ["stable-seed",202825],["café-🐙",0],["café-🐙",1]];
     // console.log(JSON.stringify({space:MEMORABLE_PIJ_ID_SPACE,vectors:cases.map(([seed,
     // attempt])=>({seed,attempt,result:memorablePijIdCandidate(seed,attempt)}))},null,2));'
     // bun --eval "$ORACLE_SCRIPT"
@@ -96,28 +114,36 @@ fn rust_matches_the_typescript_oracle() {
         (
             "4dffbee3-5d42-4b02-a739-74be162940bc",
             0,
-            "pij-efficient-zev",
+            "pij-varied-mongoose",
         ),
-        ("copilot-session-alpha", 0, "pij-inland-walrus"),
-        ("claude-session-beta", 0, "pij-graceful-fowl"),
-        ("pi-session-gamma", 0, "pij-leading-seluvis"),
-        ("s1754000000000-9000", 0, "pij-disappointed-donkey"),
-        ("s1754000000000-9000", 1, "pij-available-yarpen"),
-        ("s1754000000000-9000", 17, "pij-muddy-flute"),
+        ("copilot-session-alpha", 0, "pij-clever-jellyfish"),
+        ("claude-session-beta", 0, "pij-equivalent-halibut"),
+        ("pi-session-gamma", 0, "pij-immediate-aardwolf"),
+        ("s1754000000000-9000", 0, "pij-melodic-takin"),
+        ("s1754000000000-9000", 1, "pij-traditional-cat"),
+        ("s1754000000000-9000", 17, "pij-live-gull"),
         (
             "adopt\x00claude\x00%100\x0020000",
             0,
-            "pij-vicarious-magpie",
+            "pij-lengthy-chickadee",
         ),
-        ("adopt\x00claude\x00%100\x0020000", 1, "pij-silky-silithus"),
-        ("adopt\x00claude\x00%100\x0020000", 17, "pij-entire-eskel"),
-        ("full-space-seed", 0, "pij-no-more-mr-nice-guy"),
-        ("full-space-seed", 1, "pij-central-everlook"),
-        ("full-space-seed", 867_888, "pij-empirical-muskox"),
-        ("full-space-seed", 867_927, "pij-vulture"),
-        ("stable-seed", 867_927, "pij-vulture"),
-        ("café-🐙", 0, "pij-personal-anduin"),
-        ("café-🐙", 1, "pij-late-ox"),
+        (
+            "adopt\x00claude\x00%100\x0020000",
+            1,
+            "pij-strategic-jackal",
+        ),
+        (
+            "adopt\x00claude\x00%100\x0020000",
+            17,
+            "pij-innovative-parrot",
+        ),
+        ("full-space-seed", 0, "pij-professional-salamander"),
+        ("full-space-seed", 1, "pij-advanced-antelope"),
+        ("full-space-seed", 202_786, "pij-precise-cricket"),
+        ("full-space-seed", 202_825, "pij-financial-locust"),
+        ("stable-seed", 202_825, "pij-unchanged-wildfowl"),
+        ("café-🐙", 0, "pij-comprehensive-firefly"),
+        ("café-🐙", 1, "pij-living-mockingbird"),
     ];
 
     for &(seed, attempt, expected) in GOLDENS {
@@ -144,8 +170,8 @@ fn candidate_sequence_is_complete_without_repeats() {
         assert!(ship_ids.is_subset(&ids), "seed={seed}");
     }
 
-    assert_eq!(candidate("stable-seed", 0).as_str(), "pij-lovely-azuregos");
-    assert!(ship_ids.contains(&candidate("full-space-seed", 0)));
+    assert_eq!(candidate("stable-seed", 0).as_str(), "pij-elated-dolphin");
+    assert!(!ship_ids.contains(&candidate("full-space-seed", 0)));
     assert_eq!(
         memorable_pij_id_candidate("seed", MEMORABLE_PIJ_ID_SPACE),
         Err(MemorableIdError::Exhausted {
@@ -157,7 +183,7 @@ fn candidate_sequence_is_complete_without_repeats() {
 #[test]
 fn collision_probes_leave_the_starting_adjective_row() {
     // Treat the first 80 candidates as 79 occupied slots. A stride of one can
-    // cross at most one 738-noun row boundary; the selected coprime stride must
+    // cross at most one 269-noun row boundary; the selected coprime stride must
     // spread the collision sequence across the grid instead.
     let adjectives = memorable_pij_id_candidates("stable-seed")
         .take(80)
@@ -240,16 +266,19 @@ fn realistic_collision_allocation_does_not_funnel_into_adjectives() {
 }
 
 #[test]
-fn realistic_spawn_seeds_hit_the_designed_ship_share() {
-    let ship_ids = SHIP_NAMES
-        .iter()
-        .map(|ship| format!("pij-{ship}"))
-        .collect::<HashSet<_>>();
-    let ships = (0..3_000)
-        .filter(|&index| ship_ids.contains(candidate(&spawn_seed(index), 0).as_str()))
-        .count();
-    let share = ships as f64 / 3_000.0;
-
-    assert!(share > 0.12, "ship share {share} is below design range");
-    assert!(share < 0.22, "ship share {share} is above design range");
+fn no_seed_opens_on_a_ship_name() {
+    // Plan 176 emptied SHIP_NAMES, so every candidate is pij-<adjective>-<noun>.
+    assert!(SHIP_NAMES.is_empty());
+    for index in 0..3_000 {
+        let id = candidate(&spawn_seed(index), 0);
+        let words = id
+            .as_str()
+            .strip_prefix("pij-")
+            .and_then(|rest| rest.split_once('-'))
+            .expect("pair candidate shape");
+        assert!(
+            NAME_ADJECTIVES.contains(&words.0) && NAME_NOUNS.contains(&words.1),
+            "not a corpus pair: {id}"
+        );
+    }
 }
