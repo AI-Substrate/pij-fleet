@@ -60,11 +60,12 @@
           "id": "tk-0004",
           "title": "Gates and PR",
           "phase": "ph-0ce9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
           ],
-          "done": "tasks.dd.json#done_when/tk-0004"
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "receipt": "../../execution-log.dd.json#entries/lg-0007"
         }
       ]
     },
@@ -99,7 +100,7 @@
           {
             "id": "dw-0004",
             "assertion": "vd-0003, vd-0004 pass; PR open; CI green on the exact head; refs/notes empty; mutation receipt recorded",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0004"
           }
         ]

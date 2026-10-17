@@ -73,8 +73,10 @@
         {
           "id": "ac-0005",
           "claim": "Proof. The strengthened exclusion test is shown RED on d48cde2 (quote: it names 'gay' and ship words) and green on the branch; one mutation receipt (re-add one excluded word to one runtime's list → the parity or exclusion test goes red → restore). cargo test -p pij-core, the TS memorable-id test, clippy, fmt and just lint pass; GitHub CI is green on the exact head; anything not run is NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0007",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0007"
         }
       ]
     },

@@ -69,6 +69,16 @@
             "../plan.dd.json#acceptance_criteria/ac-0005",
             "backpressure.dd.json#rows/bp-0004"
           ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-17T00:42:06Z",
+          "text": "tk-0004 GitHub CI: run 38987272299 (workflow ci) on head 7c761ff66b1571f310db638f8d38988e225257dd, PR AI-Substrate/pij-fleet#60, conclusion success; jobs rust-test, rust-lint (fmt, clippy, lockfile), check (22), check (24) all success. git ls-remote origin 'refs/notes/*' empty after push. With lg-0001 (red), lg-0002 (green), lg-0005 (mutation) and lg-0006 (local gates) this closes AC5. A later docs-only head re-runs the same workflow.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "backpressure.dd.json#rows/bp-0002",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
         }
       ]
     }
