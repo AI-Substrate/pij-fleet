@@ -97,6 +97,7 @@ Inside an agent, prefer the skill: `/pij ready`, `/pij peer`, `/pij delegate`,
 | Coder + reviewer loops | [`docs/how/flow-pair.md`](docs/how/flow-pair.md) |
 | Telegram bridge | [`docs/how/pij-telegram.md`](docs/how/pij-telegram.md) |
 | Building and the npm supply-chain policy | [`docs/how/build.md`](docs/how/build.md) |
+| macOS with Microsoft Defender (scan load, exclusions) | [`docs/how/macos-defender.md`](docs/how/macos-defender.md) |
 | Rules for humans and agents working on pij | [`AGENTS.md`](AGENTS.md) |
 
 ## Development
