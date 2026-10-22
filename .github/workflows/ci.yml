@@ -40,7 +40,7 @@ jobs:
       # `just` is required by tests that exercise the repo's own recipes
       # (e.g. the pij-bin-shape check). CI runs npm scripts directly, so install
       # just explicitly rather than assume it on the runner.
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - run: npm ci --min-release-age=null
       # Lockfile source-host allowlist: every `resolved` URL must be an allowed
       # registry host — a tampered lockfile fails LOUD, here, before anything is
