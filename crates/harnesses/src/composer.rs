@@ -194,21 +194,44 @@ fn is_copilot_footer(line: &str) -> bool {
         || lower.contains("context")
 }
 
-/// Codex renders `<model> <effort> · <cwd>` under its prompt. ONE definition for
-/// readiness, model/cwd extraction and composer recognition: two copies once
-/// disagreed (the composer copy required `~/`, so a seat with a cwd outside
-/// `$HOME` was held `unrecognized` forever — 2026-09-08, pane %4409).
+/// The parts of a Codex footer line.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct CodexFooter<'a> {
+    pub(crate) model: &'a str,
+    pub(crate) cwd: Option<&'a str>,
+}
+
+/// Codex renders `<model> <effort> · <cwd>` under its prompt, and since 0.164
+/// `<model> <effort> · <cwd> · <session title>`. ONE definition for readiness,
+/// model/cwd extraction and composer recognition: two copies once disagreed
+/// (the composer copy required `~/`, so a seat with a cwd outside `$HOME` was
+/// held `unrecognized` forever — 2026-09-08, pane %4409), and reading only the
+/// text after the LAST `·` took the title for the cwd (2026-10-24, pane %100).
+///
+/// The model is the first segment's first word; the cwd is the first later
+/// segment that is a path, so a title after it — even one containing `·` or
+/// shaped like a path — is never read as data. A usage segment
+/// (`85% context left`) also marks a footer, without a cwd.
+pub(crate) fn parse_codex_footer(line: &str) -> Option<CodexFooter<'_>> {
+    let mut segments = line.split('·').map(str::trim);
+    let mut head = segments.next()?.split_whitespace();
+    let model = head.next()?;
+    head.next()?;
+    let mut usage = false;
+    for segment in segments {
+        if segment.starts_with('/') || segment.starts_with("~/") {
+            return Some(CodexFooter {
+                model,
+                cwd: Some(segment),
+            });
+        }
+        usage |= segment.contains(" context") || segment.contains(" tokens");
+    }
+    usage.then_some(CodexFooter { model, cwd: None })
+}
+
 pub(crate) fn is_codex_footer(line: &str) -> bool {
-    let Some((left, right)) = line.rsplit_once('·') else {
-        return false;
-    };
-    let path = right.trim();
-    let words = left.split_whitespace().count();
-    words >= 2
-        && (path.starts_with('/')
-            || path.starts_with("~/")
-            || path.contains(" context")
-            || path.contains(" tokens"))
+    parse_codex_footer(line).is_some()
 }
 
 #[cfg(test)]
@@ -507,6 +530,65 @@ mod codex_0_153_4 {
         assert_eq!(
             composer_region(&draft, 13, 50),
             ComposerRegion::Recognized("human draft".to_string())
+        );
+    }
+}
+
+#[cfg(test)]
+mod codex_0_164 {
+    use super::{ComposerRegion, composer_region, is_codex_footer};
+
+    /// Recorded 2026-10-24 from pane %100, Codex CLI 0.164, bottom lines only,
+    /// cursor (2, 3). The footer gained a trailing session title
+    /// (`<model> <effort> · <cwd> · <title>`); reading only the text after the
+    /// LAST `·` saw the title, not the cwd, so every delivery to the seat was
+    /// held `unrecognized`.
+    const CAPTURE: &str = include_str!("../tests/fixtures/2026-10-24-codex-v0.164-pane-100.txt");
+
+    #[test]
+    fn codex_0_164_titled_footer_is_recognized() {
+        assert_eq!(
+            composer_region(CAPTURE, 2, 3),
+            ComposerRegion::Recognized(String::new()),
+            "idle empty composer"
+        );
+        let draft = CAPTURE.replace("› Ask Codex to do anything", "› human draft");
+        assert_eq!(
+            composer_region(&draft, 13, 3),
+            ComposerRegion::Recognized("human draft".to_string()),
+            "a draft is recognized, so it is held composer-busy, not unrecognized"
+        );
+    }
+
+    #[test]
+    fn titled_footer_variants_are_footers() {
+        for footer in [
+            "  GPT-6.1-Sol high · ~/github/novels · Adopt seat and wait",
+            "  gpt-6-astra high · /private/tmp/scratch · Adopt seat and wait",
+            "  gpt-6-astra high · ~/github/novels · Title · with a dot",
+            "  gpt-6-astra high · ~/github/novels · /review the diff",
+        ] {
+            assert!(is_codex_footer(footer), "{footer:?}");
+        }
+    }
+
+    #[test]
+    fn codex_hint_line_is_not_a_footer() {
+        let hint = CAPTURE
+            .lines()
+            .last()
+            .expect("fixture ends with the hint line");
+        assert!(!is_codex_footer(hint), "{hint:?}");
+    }
+
+    /// rk-0001: a transcript line shaped like a footer above the prompt does not
+    /// make the composer recognisable; only a footer after the prompt does.
+    #[test]
+    fn transcript_line_above_the_prompt_is_not_the_footer() {
+        let capture = "ran it high · ~/github/novels · done\n\n› human draft\n";
+        assert_eq!(
+            composer_region(capture, 13, 2),
+            ComposerRegion::Unrecognized
         );
     }
 }

@@ -25,6 +25,23 @@ releases. A busy pane with an empty composer receives messages immediately.
 The daemon does not use `capture-pane`, process CPU, or a keylogger for these
 signals. Existing `capture-pane` readiness and heartbeat behaviour is separate.
 
+## Composer recognition (capture-pane)
+
+Typed delivery first finds the composer in a pane capture
+(`crates/harnesses/src/composer.rs`). An empty composer submits; a draft holds
+as composer-busy; a layout it cannot find defers as `unrecognized` and retries.
+
+Codex is recognised by the footer under its `›` prompt:
+`<model> <effort> · <cwd>`, and since Codex 0.164
+`<model> <effort> · <cwd> · <session title>` (live:
+`GPT-6.1-Sol high · ~/github/novels · Adopt seat and wait`). A usage segment
+(`85% context left`) also marks a footer. One parser, `parse_codex_footer`,
+serves composer recognition, readiness and the observed model and cwd: the
+model is the first word, the cwd is the first segment after it that is a path,
+and the title is ignored, even when it contains `·` or looks like a path.
+Reading only the text after the last `·` took the title for the cwd, so Codex
+0.164 seats stayed `unrecognized` until plan 177.
+
 ## Proof
 
 The signals are implemented in the daemon's pane observer
