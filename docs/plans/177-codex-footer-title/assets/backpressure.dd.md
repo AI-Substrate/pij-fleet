@@ -21,7 +21,7 @@
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | bp-0001 | AC1-AC3: recognition, parser, fixture | ph-b643 | EXTEND | computational | EXTEND→RUN: add a codex_0_164 fixture module beside codex_0_153_4 in composer.rs tests, plus adapter tests; nice -n 19 cargo test -j 1 -p pij-harnesses | [x] checked | — | execution-log.dd.json#entries/lg-0002 | composer.rs codex_0_153_4 module |
-| bp-0002 | AC3: gates and CI | ph-b643 | EXISTS | computational | RUN: clippy -D warnings, fmt --check, GitHub CI green on the exact head | [ ] unchecked | — | — | execution log |
+| bp-0002 | AC3: gates and CI | ph-b643 | EXISTS | computational | RUN: clippy -D warnings, fmt --check, GitHub CI green on the exact head | [x] checked | — | execution-log.dd.json#entries/lg-0005 | execution log |
 | bp-0003 | AC4: docs and delivery note | ph-b643 | EXISTS | human-judgement | RUN: prime reads the docs change and the PR note against worker.rs | [ ] unchecked | — | — | prime review |
 
 <a id="sensors"></a>

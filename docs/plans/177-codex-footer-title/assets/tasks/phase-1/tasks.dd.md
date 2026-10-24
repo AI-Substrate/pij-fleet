@@ -37,7 +37,7 @@ One coder implements impl-guide tk-0001: fixture, red tests, one segment parser 
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | tk-0001 | Fixture and red tests | — | ph-b643 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0001 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0002 | Segment parser and call sites | — | ph-b643 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Mutation, docs, gates, PR | — | ph-b643 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Mutation, docs, gates, PR | — | ph-b643 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -59,4 +59,4 @@ One coder implements impl-guide tk-0001: fixture, red tests, one segment parser 
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | Mutation receipt; docs updated; vd-0002 and vd-0003 pass; PR open; CI green on the exact head; refs/notes empty | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0003 | Mutation receipt; docs updated; vd-0002 and vd-0003 pass; PR open; CI green on the exact head; refs/notes empty | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |

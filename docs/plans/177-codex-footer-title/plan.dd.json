@@ -58,8 +58,10 @@
         {
           "id": "ac-0003",
           "claim": "Proof. A fixture recorded from a Codex 0.164 pane (bottom lines only: prompt, footer, hint line; no transcript content) is added under crates/harnesses/tests/fixtures/. New tests are RED on main 7babd01 (quoted) and green on the branch; one mutation receipt (revert to rsplit_once → a named test red → restore). cargo test -p pij-harnesses, clippy -D warnings and fmt pass; GitHub CI green on the exact head; anything not run is NOT RUN.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0004",

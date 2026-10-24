@@ -51,6 +51,15 @@
             "../plan.dd.json#acceptance_criteria/ac-0004",
             "backpressure.dd.json#rows/bp-0003"
           ]
+        },
+        {
+          "id": "lg-0005",
+          "at": "2026-10-24T00:34:50Z",
+          "text": "AC3 CI. First run 40044700835 on d548f3d: rust-test and rust-lint success; check (24) failed at harness/scripts/audit-gate.mjs on two new high advisories unrelated to this diff (GHSA-xjj6-f33q-929c undici 8.10.2, GHSA-587h-7wmj-h5pm vite 8.3.1, both dev-only transitive), check (22) cancelled. The prime fixed them separately in PR #67 (main ec29486). origin/main was merged into the branch (no rebase), giving head 859733a. Run 40045428049 on 859733af1f6b5a43b0ee6edd3908953ec324eeec: rust-test, rust-lint, check (22), check (24) all success. git ls-remote origin 'refs/notes/*' was empty after every push. NOT RUN: live delivery to a Codex 0.164 pane (packet forbids pane %100); just smoke and harness checks (outside the packet's cargo scope; CI is the gate).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
         }
       ]
     }
