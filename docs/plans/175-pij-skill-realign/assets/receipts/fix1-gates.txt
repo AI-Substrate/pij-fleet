@@ -1,0 +1,14 @@
+# fix round 1 gates
+$ npx vitest run .omp/extensions/pij/core/generation-skill-coverage.test.ts
+      Tests  7 passed (7)
+$ nice -n 19 timeout -k 10 1800 cargo test --locked -j 1 -p pij-cli --test skill_verb_coverage   (load { 24.22 16.59 14.12 })
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
+$ python3 docs/plans/175-pij-skill-realign/assets/scripts/linkcheck.py skills/pij
+links checked: 124; broken: 0
+exit=0
+$ find skills/pij -name '*.md' | xargs wc -l | tail -1
+    2503 total
+$ just lint
+Checked 211 files in 122ms. No fixes applied.
+Found 1 info.
+exit=0

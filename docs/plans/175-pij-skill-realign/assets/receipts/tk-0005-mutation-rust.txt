@@ -1,0 +1,14 @@
+# Mutation 2 (Rust gate): delete the `ping` row from SKILL.md Native-only verbs
+66:| `ping` | daemon health (`pij-rs ping --json`; ops route) |
+$ nice -n 19 timeout -k 10 1200 cargo test --locked -j 1 -p pij-cli --test skill_verb_coverage
+test parser_strips_leaf_annotations_and_stops_at_next_heading ... ok
+test native_only_rows_name_real_subcommands ... ok
+test every_native_subcommand_has_a_skill_row ... FAILED
+test removing_any_row_verb_is_detected ... FAILED
+thread 'every_native_subcommand_has_a_skill_row' (56806438) panicked at crates/cli/tests/skill_verb_coverage.rs:96:5:
+pij-rs subcommands missing from skills/pij/SKILL.md verb tables: ping
+thread 'removing_any_row_verb_is_detected' (56806441) panicked at crates/cli/tests/skill_verb_coverage.rs:123:9:
+  left: ["ack", "ping"]
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.13s
+restored sha256 prefix: 536da8fe81057874 (before: 536da8fe81057874)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s

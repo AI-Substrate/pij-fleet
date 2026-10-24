@@ -28,15 +28,16 @@ You sit in a governed hierarchy and these invariants bind you everywhere, in any
 ## The iron rules
 
 1. **Deterministic state lives on disk, single-writer.** Your plan folder is yours;
-   the government files (spine, baton book) are the o-prime's. Your fence is a
+   government records (store spine events, batons; prose spine/baton book where unmigrated) are the o-prime's. Your fence is a
    descriptive touch set, not a grant: persist and tell the o-prime about a newly
    needed local path, then continue. Notification never permits writing government,
    CLI-only flow state, another stream's worktree, or any hard ownership boundary.
 2. **Pointer communication.** Write the file, send the path. Never inline a packet
    body. One instruction per send.
-3. **Canary before brief, every spawn, recursively.** Round-trip nonce → mechanical
-   identity check (registry row + pane probe, never a bare self-assertion) → a second
-   send to prove input reliability. Canary records go to disk at pass time.
+3. **Canary before brief, every spawn, recursively.** `pij canary <id> --expect-model <m>`
+   does the nonce round-trip and mechanical identity check; the acked brief dispatch
+   proves input reliability (kickoff § Canary). Canary records are written at pass time: a
+   file under the government root, or the `pij canary` store receipt when there is none.
 4. **Preamble before planning.** On receiving your brief: read-only context review →
    first report upward → THEN enter planning.
 5. **Every green is a claim.** A worker's "tests pass", a reviewer's APPROVE, and a
@@ -58,7 +59,7 @@ You sit in a governed hierarchy and these invariants bind you everywhere, in any
 8. **Ledger as you go.** Capture friction/wins/collisions/directions the moment they
    bite; entries ride your observations[] upward. The test: the next run benefits
    without reading your transcript.
-9. **Own your spawns.** Compact a worker before its next big packet; spawn reviewers
+9. **Own your spawns.** As its parent, compact a worker before its next big packet; spawn reviewers
    cold at first review; tear down what you spawned and verify the registry is clean.
 10. **Report outcomes faithfully.** Failures and skips are stated plainly; a claim
     without its artifact is the failure mode this whole system exists to kill.
@@ -99,7 +100,7 @@ deterministic layer (its engineering harness) is the first-class home for that:
 Mechanics: ledger frictions/wins/magic-wands the moment they bite (this repo's
 capture command is in the local orient); drain them at phase ends; your
 observations[] carry them up the chain, where the o-prime aggregates them into
-encodings. The velocity curve (16h → 15m) lives entirely in what gets encoded.
+encodings. Velocity lives entirely in what gets encoded.
 
 ## Lifecycle: adopt → orient → preamble → work
 

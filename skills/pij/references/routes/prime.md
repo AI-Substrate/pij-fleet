@@ -56,7 +56,7 @@ If sources conflict, stop designation and reconcile the rs receipt/event, curren
 - Human rulings land in durable government or plan files immediately; questions
   never block (modal UIs forbidden; the context owner asks); see
   [`../prime/protocol.md#human-rulings-and-non-blocking-questions`](../prime/protocol.md#human-rulings-and-non-blocking-questions).
-- Every send costs the recipient's whole context: broadcast only to working or warm seats it changes; no acks or FYIs;
+- Every send costs the recipient's whole context: broadcast only to working or warm seats it changes; no acks; `--fyi` for what their next action doesn't depend on;
   status and rules live in files; see [`../prime/protocol.md#fleet-messaging-every-send-costs-the-recipients-context`](../prime/protocol.md#fleet-messaging-every-send-costs-the-recipients-context).
 
 ## Preconditions

@@ -14,8 +14,8 @@ Everything under `report` is a first-person claim about yourself.
    pij report now 'Starting **<plan>**' 'Run the next Builder or pair step'
    ```
 
-2. **Stop-of-work report** — after every phase gate/approval and at ship, before
-   sending the pointer report upward:
+2. **Stop-of-work report** — only after `harness checks` has passed and the phase is
+   approved (and at ship), before sending the pointer report upward:
 
    ```bash
    pij report now 'Completed **<phase>** after `harness checks`' 'Send the [phase report](<path>) and begin the next approved step'
@@ -30,21 +30,22 @@ Completion is `pij report state done`, never a watchdog self-pause.
 
 Run these steps in order. A later step never retroactively satisfies an earlier one.
 
-1. Read portable [`orient-global.md`](./orient-global.md).
+1. Read portable [`orient-global.md`](./orient-global.md), then [`protocol.md`](./protocol.md).
 2. Read `<government-root>/orient-local.md`; resolve the consuming repo's root via
-   [Governance branch — the rules](./rituals/bootstrap.md#governance-branch--the-rules).
+   [Governance branch — the rules](./rituals/bootstrap.md#governance-branch--the-rules). No governance worktree
+   (pij-fleet today) means no local orient: say so and continue from the brief.
 3. Read the assigned item brief and verify its role, fences, and structure tree.
 4. Invoke `/thesis` against the ask and nearest authoritative artifacts.
 5. Use the host skill mechanism. A plausible thesis written from memory does not satisfy this step.
 6. Enter the human preamble with the thesis, current position, next move, and open decisions; persist its checkpoint before mutation.
 7. Use guided `/builder` for research, workshops/POCs, and the unified plan.
 8. Freeze the plan and run cold `/validate-v2`; route findings back through Builder until the recorded verdict matches that SHA.
-9. Stop at `WAITING_FOR_BUILD_CONFIG`: validation does not authorize implementation.
+9. Stop after validation: it does not authorize implementation.
 10. Verify the stream worktree, branch, approved base, parent SHA, and descriptor cwd.
 11. After the human confirms the fleet, persist the selected profile in the plan roster.
-12. Start `/pij pair start "<request>" --coder-model <confirmed> --reviewer-model <confirmed>`.
-13. Delegate each whole phase through that started pair run.
-14. After approved phases and full gates, run `/builder 8 ship` for confirm-gated push, PR, watched CI, and optional confirmed merge.
+12. Run each whole phase through `/pij pair`: a coder seat on `/builder 6 implement`, a cross-model
+    reviewer seat on `/builder 7 review`, with the confirmed models.
+13. After approved phases and full gates, run `/builder 8 ship` for confirm-gated push, PR, watched CI, and optional confirmed merge.
 
 If `/thesis`, role evidence, a required seam, or the granted fleet is unavailable,
 stop and escalate one hop; do not improvise a replacement contract.
@@ -52,18 +53,19 @@ stop and escalate one hop; do not improvise a replacement contract.
 ## Build configuration
 
 Record any named user choice exactly.
-- Default coder: separate Copilot gpt-5.6-sol @ xhigh coder.
-- Default reviewer: separate Copilot gpt-5.6-sol @ xhigh reviewer.
+- Default coder: a separate Copilot seat on `gpt-5.6-sol`, `--effort xhigh`. Streams live in
+  linked worktrees, where OMP and Pi refuse to spawn (peer route § Spawn and revive); Copilot
+  compaction is native-only, so its context is the seat's own to keep.
+- Default reviewer: a separate seat on a different model family, discovered at spawn (§ C4).
 Then read it back verbatim and confirm inline before fleet creation — never a
 modal question UI (global invariant 9); persist the pending choice and remain
 reachable.
 
-Workers are default-stack splits in your window, never the o-prime's window; peer spawn inherits your verified worktree cwd.
+Native spawn opens each worker in its own window: move its pane into yours (§ C5), never the o-prime's window, and spawn with `--cwd` set to your verified worktree (claude or copilot; OMP/Pi refuse a linked worktree).
 Canary model, effort, identity, cwd, branch, and placement before use.
-See the [pair route](../routes/pair.md) for lazy acquisition and fleet lifecycle; never silently use its built-in defaults.
-In the current provided-peer path, explicitly spawn and canary the selected models,
-then persist the plan roster with their ids/models before dispatch. The current flow-pair engine does not persist
-override flags; the plan roster remains durable configuration truth.
+See the [pair route](../routes/pair.md) for lazy acquisition and fleet lifecycle. Spawn and canary the
+selected models, then persist the plan roster with their ids/models before dispatch; the plan roster is the
+durable configuration truth.
 
 ## Packaging and review law
 
@@ -93,25 +95,19 @@ Synchronize only at convergence or shared mutable resources (global invariant 11
 Isolated branches touching one path create reconciliation risk, not an edit-time lock.
 
 Push-not-poll is normal; treat unexplained worker silence outage-first, never misconduct-first.
-After a 15-minute cadence without a completion, blocked, stalled, or dead push, perform one liveness check.
-If idle without a report, request `COMPLETE`, `CONTINUING`, or `BLOCKED` once; any new message is a recovery poke, so poke before redispatch.
-Redispatch only after liveness and recovery pokes fail; repeated short-interval polling stays forbidden.
-A continuing report names current work, files, gates, remaining work,
-and its next reporting point.
+Only done-reports, verdicts and death obituaries (§ C8) are pushed to you; a worker's `report blocked`/`question`
+is read with `pij decisions` and `pij state`. After a long silence, observe (`pij state <id> --json`, a tmux
+capture); never message an idle seat to check on it (protocol rule 6). Redispatch only when observation shows
+the work is lost. A continuing report names current work, files, gates, remaining work and its next reporting point.
 
-Talking does not prove a fresh card: a busy worker may answer every poke while `pij report` still names completed work.
-Fleet card freshness is YOUR accountability. Run `pij anomalies` **unscoped** and close every fleet `status-stale` row.
-Relay its literal remediation: `pij report now "<did>" "<next>"`, or parked state `waiting|hold|blocked|question`.
-Do not narrow with `--here` or `--project`: `status-stale` is node-keyed, without assignment/allocation refs,
-so `--project` filters it out and `--here` hides workers in other worktree folders.
-Confirm the card actually moved; relaying an instruction does not fix it.
-Until it moves, you, o-prime, and the human all see stale now/next as CURRENT.
+Fleet card freshness is YOUR accountability, for seats that are working or owe a card: run orient-oprime duty 7
+against your fleet (unscoped `pij anomalies`, relay the row's remediation line, confirm the card moved).
 
 Any path outside a packet allowlist triggers immediate stop and classification before review.
 
 Worktrees isolate trees and indexes, not false claims or runtime interference.
 Use [`rituals/batons.md`](./rituals/batons.md) for timing/external resources and
-[`protocol.md`](./protocol.md) for the ruled shared-tree fallback.
+[kickoff § Shared-tree fallback yield rule](./rituals/kickoff.md#shared-tree-fallback-yield-rule) for the ruled shared-tree fallback.
 
 After compaction, resume, or seat replacement, invoke `/pij prime` again; re-derive identity, government,
 Builder state, git state, and peer claims from substrate. Memory is never position truth.

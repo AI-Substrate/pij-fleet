@@ -39,9 +39,11 @@ Verified external/paneless seats use `pij inbox register --json`, then `pij inbo
 pij-rs spawn --harness <omp|pi|claude|copilot|codex> --model <exact-model> [--effort <level>] [--cwd <absolute-path>] [--parent <seat>] [--role <pm|worker|pa>] [--session <tmux-session>] [--name <window-name>] [--allow-retired] --json
 pij attest <new-seat> --plan-id <plan-id> --json
 pij dispatch <new-seat> --packet <path> --wait --json
-pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] --json
+pij-rs revive <seat> [--session <tmux-session>] [--name <window-name>] [--fresh] --json
 pij-rs revive <seat> --assume-dead --evidence 'Describe why the recorded process binding is stale' --json
 ```
+
+**OMP and Pi cannot start in a linked git worktree.** `pij-rs spawn` refuses `--harness omp|pi` when `--cwd` (or the caller's directory) is a linked worktree, before any daemon call (`crates/cli/src/main.rs:2650`): their global and project extension links collide and the peer dies before registering. Don't route around it with `pij_spawn`; the cause is the runtime. For worktree work, spawn `claude` or `copilot` with `--cwd <worktree>`, or spawn the OMP/Pi seat from the main checkout and have it work in the worktree by absolute path.
 
 The shim's `spawn`/`revive` are named refusals because their grammar differs. Native spawn also supports `--id`, `--bin <executable-path>`, `--no-wait`, `--wait-seconds` and Claude inbound-consent flags; it has no legacy `--layout`, `--task`, `--branch` or `--plan-id`. Use its reported pane/window for explicit, owner-controlled tmux placement (§ C5); do not claim a legacy side-stack default. Send a packet after real binding; attest separately. Native revive requires an explicit id; `--print` and `--attach` remain unsupported.
 
@@ -51,7 +53,9 @@ The in-process `pij_spawn` tool reads the daemon's `GET /health` `data.retired_h
 
 `pij_spawn` waits, bounded, for a seat this launch created. A result reading `spawned, NOT registered (boot-failed|no-registration)` means the pane exists with no seat and cannot receive messages. The tool never relays pane text. For `boot-failed`, the child's own `pij boot failed (spawn …, pane …)` message carries the reason. Otherwise inspect the pane locally with the printed `tmux capture-pane` command. Fix the cause or close the pane. Do not treat it as a working peer, and do not respawn blindly on top of it.
 
-Revive accepts a tombstone **or** `Dead` process observation with the recorded pane absent, without a preliminary close. It records `revive-observed-dead` retirement before relaunch under one spawn lock and cites the tombstone in `details.seq`. `Recycled`/`Unknown` observations require `--assume-dead` plus nonempty `--evidence`: only the recorded parent may override, or a caller with authoritative role `prime` **when the target is parentless**. An unrelated prime has no override on a parented seat. The `revive.assumed-dead` event retains evidence and observation (`details.assumed_dead_seq`); no replacement pid is signalled. `E-RS-REVIVE-LIVE` names the observation and exact override command. An `Active` process or a present recorded pane still vetoes revival, even with the override.
+**Revive** ([contract](../../../../docs/how/pij-rs-api.md#revive)) relaunches a tombstoned seat, or an untombstoned seat observed `Dead` with its recorded pane absent (it records a `revive-observed-dead` tombstone first; no preliminary close). The death sweep (§ C8) usually tombstones such seats first, treating a reincarnated pane (same id, later process) as absent. It **resumes the recorded conversation** (`claude --resume`, `omp --resume=`, …); `--fresh` is the only blank launch, and a seat with no recorded conversation refuses `E-RS-ARG`. A conversation already live in another seat (or, for Claude, a live session record) refuses `E-RS-REVIVE-CONVERSATION-LIVE` naming the pane: adopt that pane, don't relaunch.
+
+Vetoes apply only to an untombstoned seat: an `Active` process or a present or unverifiable recorded pane refuses `E-RS-REVIVE-LIVE`. `Recycled`/`Unknown` process evidence needs `--assume-dead --evidence '<why>'`, from the recorded parent, or a caller with role `prime` when the target is parentless (audited as `revive.assumed-dead`; no replacement pid is signalled). A **tombstoned seat's own process and pane are never checked**, and a non-Claude copy is seen only if registered, so after a reboot or a hand-resume check first that nothing already runs the session (ops § Recover after a reboot). Revive returns without waiting for registration; canary after (§ C2).
 
 A legacy tombstone row without a matching spine event also revives: `revive.legacy-tombstone` records its stored retirement before relaunch, cited by `details.legacy_tombstone_seq` instead of a fabricated `details.seq`.
 
@@ -74,7 +78,7 @@ pij inbox --json                             # manual claims; not a competing ex
 
 Double-quoted backticks/`$(...)` execute in the sending shell before pij runs. Use single quotes or a literal body file (`-` = stdin) for code/untrusted text. Pointer delivery: persist large content, then send its path. No attachment or broadcast/fan-out substitute is implied by the shim route; unsupported options refuse. Messages follow § C10; let pushed turns wake you rather than polling state.
 
-**FYI, held until the seat's next turn** ([contract](../../../../docs/how/pij-rs-api.md#fyi-held-delivery-plan-158)): `--fyi` (tool form `pij_send({to, message, fyi:true})`; native `pij-rs send --to <seat> --fyi`) stores the message and opens **no** turn: no tmux, UDS or extension push. The receipt says `held (fyi)`. Pending FYIs ride along, appended after the body of the seat's next real pij message or added to its next typed turn by the host hook, each exactly once; until then the seat shows `✉N`. Refused with `--command`, for a remote `seat@machine`, and for a tombstoned seat (a tombstone drops pending FYIs). A body with a `?` is still held, but the receipt warns that it looks like a question. **The FYI rule** (§ C10): Use `--fyi` only when the recipient's next action doesn't depend on it. If they'd be stuck, wrong or waiting without it, it's a normal send. If they'd be fine not reading it until their next turn, it's `--fyi`. If they'd be fine never reading it, don't send it. Always normal sends: work done or a phase complete, review verdicts, hand-offs, blockers, questions, decisions needed. FYI examples: "merged #452, nothing needed from you"; "heads-up: main moved, rebase when you next touch it"; progress notes nobody is waiting on.
+**FYI, held until the seat's next turn** ([contract](../../../../docs/how/pij-rs-api.md#fyi-held-delivery-plan-158)): `--fyi` (tool form `pij_send({to, message, fyi:true})`; native `pij-rs send --to <seat> --fyi`) opens **no** turn; the receipt says `held (fyi)`. Pending FYIs ride along with the seat's next real message or typed turn, each exactly once (`✉N` until then); five pending for a warm seat flush as one `pij-bg` message, and a pile of more than five arrives as a digest naming `pij-rs fyi-read --seat <s> --claimed-at <ms>`. Refused with `--command`, for a remote `seat@machine`, and for a tombstoned seat. A `?` in the body draws a warning. When to use it: § C10 rule 3 (the same rule is in `pij send --help`).
 
 **Cold-wake guard** ([contract](../../../../docs/how/pij-rs-api.md#cold-wake-guard-plan-157-phase-2)): the daemon refuses a waking send to a seat that is cold — context over 400k, last API call over an hour ago, not working — with `E-RS-COLD-WAKE` naming the price, and sends nothing. Hold it with `--fyi`, or add `--force --reason '<why>'` (tool form `force:true, reason`; native `pij-rs send --force --reason`) when the wake is worth it; every forced wake is audited as a `send.cold-wake-forced` spine event. FYIs, controls and busy seats are never guarded. Unknown facts allow the send with receipt `cold_check: unknown: <why>`.
 
@@ -83,13 +87,13 @@ commands carry no body; OMP and Pi each handle claims in-process and acknowledge
 `refused` + reason. Acceptance is NOT completion. Native extension delivery bypasses typing
 grace; Claude PTY keeps it (human drafts hold commands). Copilot refuses with
 `E-RS-CONTROL-UNSUPPORTED: use Copilot's native user controls`; paneless seats also refuse.
-Never replace refusal with literal `/compact` or send-keys. Any registered peer may compact,
-without arming. Destructive `new`/`reload` require self or target-recorded parent, resolved
+Never replace refusal with literal `/compact` or send-keys. Mechanically any registered peer may compact,
+without arming; who should is [protocol rule 7](../prime/protocol.md#fleet-messaging-every-send-costs-the-recipients-context). Destructive `new`/`reload` require self or target-recorded parent, resolved
 from daemon caller evidence — prime flags/roles confer no authority (no rs target-prime relation).
 In either OMP or Pi, the target's human must run `/pij` to arm `new`/`reload`; unarmed requests refuse, never defer: arm and resend. Pi reload needs re-arming; installed OMP reload reopens the native session, NOT extension/skill resources.
 Expired claims terminate with unknown-outcome/missing-ack, never replay; refused ids stay refused. Intentional retry after arming requires a new message id.
 
-`compact-self` takes no legacy instruction/pane override; it remains a shipped structured daemon operation. `pij bg create/list/tail/kill` remains shipped unchanged in semantics (§ C7): detached runner, completion injected from `pij-bg`, bounded output and owner/recorded-parent recovery. Neither introduces answer queue withdrawal.
+`compact-self` takes no legacy instruction/pane override; it remains a shipped structured daemon operation. `pij bg` (§ C7: `create/list/tail/kill`, and `create --events` sources that fire `emit`) is a detached runner whose completion is injected from `pij-bg`, with bounded output and owner/recorded-parent recovery. Neither introduces answer queue withdrawal.
 
 **Body recovery in OMP and in Pi** ([wire contract](../../../../docs/how/pij-rs-api.md#extension-inbox-recovery)):
 unconsumed delivery idle for `PIJ_REDELIVER_IDLE_MS` (default 10s) resends through
@@ -144,7 +148,7 @@ A tombstoned parent or one observed-dead in the same sweep receives no notice; t
 | Self cannot resolve | Respect extension ownership; non-extension tmux seats may adopt only their exact current pane |
 | Tombstoned self still has a live pid | Identity must refuse; inspect tombstone evidence, not a legacy descriptor |
 | Unsupported flag/leaf or legacy force | Read the stable refusal ledger; no hidden fallback |
-| Reboot / stale pane or pid | Re-observe; native revive accepts a tombstone or `Dead` + pane absent; `Recycled`/`Unknown` needs the authorized evidence-bearing override |
+| Reboot / stale pane or pid | Follow ops § Recover after a reboot: re-observe, check nothing already runs the session, then revive (resumes the conversation) |
 | A new peer is ready but its first inference fails | Inspect actual model/footer/runtime; canary before dispatch |
 | Send acceptance without execution | Inspect the actual receipt/control outcome; acceptance is not completion |
 

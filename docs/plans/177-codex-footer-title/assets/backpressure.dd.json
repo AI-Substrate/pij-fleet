@@ -1,0 +1,55 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 177 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: recognition, parser, fixture",
+          "phase": "ph-b643",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND→RUN: add a codex_0_164 fixture module beside codex_0_153_4 in composer.rs tests, plus adapter tests; nice -n 19 cargo test -j 1 -p pij-harnesses",
+          "state": "checked",
+          "probe": "composer.rs codex_0_153_4 module",
+          "receipt": "execution-log.dd.json#entries/lg-0002"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3: gates and CI",
+          "phase": "ph-b643",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: clippy -D warnings, fmt --check, GitHub CI green on the exact head",
+          "state": "unchecked",
+          "probe": "execution log"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4: docs and delivery note",
+          "phase": "ph-b643",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "RUN: prime reads the docs change and the PR note against worker.rs",
+          "state": "unchecked",
+          "probe": "prime review"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

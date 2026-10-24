@@ -2,7 +2,7 @@
 
 Loaded by the dispatch (`../SKILL.md`) in **guided mode**, together with the chosen route module only. Direct jumps don't load this up front — a route module may cite a `§ Shared conventions` block below and pull it lazily; that is still progressive disclosure.
 
-**rs serve-or-refuse is the machine contract.** Read [Unsupported status](../../../docs/how/pij-rs-api.md#unsupported-status) for named shim/native gaps. Explicit `PIJ_DAEMON_GENERATION=legacy`, missing credentials and daemon absence never enable fallback. Raw `--json` preserves the complete original v2 envelope. Shim list forwards exact `--harness`, `--folder`, `--parent`, `--scope local` query values; shim and native `pij-rs list --here` scope to caller cwd. Sessions has no filters or legacy union. Canonical fixtures live in `crates/testkit/fixtures/golden/api/`, not new live captures or production acceptance.
+**rs serve-or-refuse is the machine contract** — `../SKILL.md` § Serve or refuse owns it; [Unsupported status](../../../docs/how/pij-rs-api.md#unsupported-status) names every gap.
 
 ## Detection signals (guided `/pij`, re-derived every call — survives /compact)
 
@@ -10,16 +10,15 @@ All probes are deterministic files/commands; remember nothing between calls.
 
 | # | Signal | Exact probe | Route offered |
 |---|--------|-------------|---------------|
-| A | Open delegation run | newest `.flow-pair/runs/*/run.json` has `"status": "open"` (schema enum is `open\|closed` — `skills/flow-pair/schemas/run.schema.json`; missing file/status = no signal) | **offer** resume `pair` — never auto-resume; stale-open runs are common |
-| B | Live fleet roster | newest run roster ids, corroborated through `pij state <id> --json`; legacy descriptor files are not rs liveness evidence | `pair` reattach or `ops` inspect owned retirement |
-| C | Active the-flow mid-build | newest `docs/plans/*/the-flow.json` → `harness flow nav show --path <it>`; `data.nav.now`/`next` on a phase/review node | offer `pair` dispatch for that phase |
-| D | Daemon alive | `pij-rs ping --json` | unavailable + spawn intent → operator-owned `ops` readiness; no automatic legacy daemon start |
-| E | Delivery owner | Copilot's native `pij_send` callable → native Copilot; else in-process `pij_spawn` callable → extension push (distinct OMP and Pi modes in C1); else exact non-empty `$TMUX_PANE` → tmux push; otherwise external pull where supported | detect before self-registration advice; native Copilot never falls back to CLI pull or sendkeys |
-| F | Self registration | after E: extensions own registration; non-extension tmux peers may probe `pij whoami`; paneless claims require verified native admission | verify native evidence before external inbox registration; never re-adopt an extension-owned seat |
+| A | Live pair seats | `pij list --parent <my-id> --json` has live children, corroborated through `pij state <id> --json` | **offer** resume `pair` or `ops` inspect owned retirement — never auto-resume |
+| B | Builder plan mid-build | newest `docs/plans/<ord>-<slug>/plan.dd.json` has an unchecked phase whose tasks exist (`assets/tasks/phase-N/tasks.dd.json`) | offer `pair` for that phase |
+| C | Daemon alive | `pij-rs ping --json` | unavailable + spawn intent → operator-owned `ops` readiness; no automatic legacy daemon start |
+| D | Delivery owner | Copilot's native `pij_send` callable → native Copilot; else in-process `pij_spawn` callable → extension push (distinct OMP and Pi modes in C1); else exact non-empty `$TMUX_PANE` → tmux push; otherwise external pull where supported | detect before self-registration advice; native Copilot never falls back to CLI pull or sendkeys |
+| E | Self registration | after D: extensions own registration; non-extension tmux peers may probe `pij whoami`; paneless claims require verified native admission | verify native evidence before external inbox registration; never re-adopt an extension-owned seat |
 
-**Precedence**: A > B > C > D/F (D/F are preconditions folded into whichever route wins, not destinations). Nothing matches → ask the job in one line, listing the registry.
+**Precedence**: A > B > C/E (C/E are preconditions folded into whichever route wins, not destinations). Nothing matches → ask the job in one line, listing the registry.
 
-**A hint is never a command**: `/pij pair` with no daemon → boot first; `/pij pair` with no open run and no active flow → confirm intent to start fresh. Validate the precondition, redirect with one line of why.
+**A hint is never a command**: `/pij pair` with no daemon → boot first; `/pij pair` with no live pair seats and no plan mid-build → confirm intent to start fresh. Validate the precondition, redirect with one line of why.
 
 ## Shared conventions
 
@@ -34,15 +33,16 @@ For the remaining modes, detect once per run: callable in-process `pij_spawn` �
 | Intent | OMP push | Pi push | tmux control-plane push | external pull |
 |---|---|---|---|---|
 | prereq | **OMP extension owns registration: no adopt/inbox register.** | **Pi extension owns registration: no adopt/inbox register.** | running rs daemon + exact-pane adoption: `pij adopt "$TMUX_PANE" --harness <h> ${PIJ_PARENT_ID:+--parent "$PIJ_PARENT_ID"}` | `pij inbox register --json` from a verified Claude/Copilot/Codex tool shell; accepted id is `data.id` |
-| spawn | `pij_spawn({harness:"omp", …})` for an OMP child; another child needs its own explicit harness | `pij_spawn({harness:"pi", …})` for a Pi child, subject to daemon retirement policy | `pij-rs spawn --harness <h> --cwd <absolute-path> --parent <id> …` | no tmux launch without an available tmux context |
-| message | `pij_send({to, message})` | `pij_send({to, message})` | `pij send <id> '<text>'` | `pij send <id> '<text>' --json` from the same native host/session |
+| spawn | `pij_spawn({harness:"omp", …})` for an OMP child; another child needs its own explicit harness | `pij_spawn({harness:"pi", …})` for a Pi child, subject to daemon retirement policy | `pij-rs spawn --harness <h> --cwd <absolute-path> --parent <id> [--role <pm\|worker\|pa>] [--name <window>] …` (OMP/Pi refuse a linked-worktree `--cwd`: [peer route](./routes/peer.md#spawn-and-revive-native-grammar-not-shim-fallback)) | no tmux launch without an available tmux context |
+| message | `pij_send({to, message})` | `pij_send({to, message})` | `pij send <id> '<text>'` (native `pij-rs send --to <id> --body '<text>'`; another machine: `--to <id>@<machine>`, [federation](../../../docs/how/pij-federation.md)) | `pij send <id> '<text>' --json` from the same native host/session |
 | FYI (next action doesn't depend on it; held, opens no turn) | `pij_send({to, message, fyi:true})` | `pij_send({to, message, fyi:true})` | `pij send <id> --fyi '<text>'` | `pij send <id> --fyi '<text>' --json` |
+| wake a cold seat (`E-RS-COLD-WAKE` refused it; worth the price) | `pij_send({to, message, force:true, reason})` | `pij_send({to, message, force:true, reason})` | `pij send <id> --force --reason '<why>' '<text>'` | same flags; audited as `send.cold-wake-forced` |
 | receive | automatic OMP in-process injected turn | automatic Pi in-process injected turn | automatic daemon-injected turn | `pij inbox --wait [ms] [--json]`; never a competing extension receiver |
 | compact peer | `pij_send({to, command:"compact"})` | `pij_send({to, command:"compact"})` | `pij send <id> --command compact` | same structured command, subject to target support |
 | peek | OMP transcript or owner-scoped tmux capture | Pi transcript or owner-scoped tmux capture | host transcript or owner-scoped tmux capture | supported host transcript only; shim tail refuses |
 | retire | owner-authorized OMP teardown is distinct from rs tombstone | owner-authorized Pi teardown is distinct from rs tombstone | `pij close <id>` tombstones only, self/current-parent | same rs ownership, no force bypass |
 
-Tmux self-adopt uses only the exact nonempty `$TMUX_PANE` of the current process. Carry the supported `--parent` claim when the environment names the true governor; omitted parent is unsaid and preserves an existing value. Existing-seat structural repair through `link` is unported, so never omit parent assuming that command can fix it later. Native extensions retain ownership of their own registration.
+Tmux self-adopt uses only the exact nonempty `$TMUX_PANE` of the current process. Carry the supported `--parent` claim when the environment names the true governor; omitted parent is unsaid and preserves an existing value. `pij link <seat> --role <r>` can later take a seat with no live parent, but nothing reparents a seat whose parent is live, so record the true parent now. Native extensions retain ownership of their own registration.
 
 Empty or absent `TMUX_PANE` is not permission to discover or guess another pane.
 Paneless adopt still refuses; **`pij inbox register --json` is the supported
@@ -68,6 +68,8 @@ not an unwrapped `messages` object. The CLI prints before acknowledging; claim
 acceptance is not model completion. Native-extension-owned OMP, Pi and Copilot seats
 keep their automatic receiver and must not start this pull consumer.
 
+The cold-wake guard ([contract](../../../docs/how/pij-rs-api.md#cold-wake-guard-plan-157-phase-2)) refuses a waking send to a cold seat and sends nothing; it never guards FYIs or controls (`command`), so a compact to a cold seat is not refused.
+
 Model names and permission/launch behavior belong to the selected native harness and installed rs source, not legacy spawn defaults.
 
 ### C2 — Canary-verify (a ready-ping is NOT proof)
@@ -90,24 +92,24 @@ Between phases: compact, keep, reuse — never close-and-respawn a healthy peer.
 
 ### C5 — Placement & split-cap
 
-Native `pij-rs spawn` accepts `--session`, `--name`, `--cwd` and `--parent`, not the legacy `--layout stack|right|below|window` flags. Use explicitly supported host spawn tools where available, or place the native reported pane using owner-controlled tmux operations. A tool's side-stack/layout support is not a claim about native CLI grammar. Keep new peers visible and grouped by stream; no invented split-cap or headless contract.
+Native `pij-rs spawn` always opens its own window (named by `--name`, default the seat id) and accepts `--session`, `--cwd` and `--parent`; it has no `--layout` flag. Use explicitly supported host spawn tools where available, or place the native reported pane using owner-controlled tmux operations. A tool's side-stack/layout support is not a claim about native CLI grammar. Keep new peers visible and grouped by stream; no invented split-cap or headless contract.
 
 **MANDATE — name every pane and window you create.** A tmux surface is a *human*
 interface: the operator scans it to see what the fleet is doing, and a wall of
 identical `pi-peer` windows is unreadable — they cannot tell which seat to look at,
-interrupt, or reap. Spawning is not finished until the seat is labelled. Immediately
-after any spawn:
+interrupt, or reap. Spawning is not finished until the seat is labelled. Pass
+`--name "<stream>-<job>"` at spawn, then title the pane:
 
 ```
-tmux rename-window -t <window> "<stream>-<job>"          # e.g. s066-revive
 tmux select-pane   -t <pane>   -T "<stream> <job> · <peer> · <model>"
+tmux rename-window -t <window> "<stream>-<job>"          # only if --name was not given
 ```
 
 Rules: name by **what the seat is doing**, not what it is — `s066-revive`, not
 `pi-peer`/`worker-3`. Include the stream/plan id when there is one, so a window maps
 to a branch and a brief. Keep it short enough to read in a status bar. Re-label if the
-seat's job changes. This applies to every layout (`window` names the window; `stack`/
-`right`/`below` name the pane title) and to peers you adopt as well as ones you spawn.
+seat's job changes. This applies to the window and to every pane title, and to peers
+you adopt as well as ones you spawn.
 The operator should never have to ask "what is that pane?" — if they do, the mandate
 was skipped.
 
@@ -142,7 +144,7 @@ Build it in this order — PM first, because it anchors the layout:
 # 1. PM takes the window; split off the right half
 tmux split-window -h -t <pm-pane> -p 50
 
-# 2. coder joins the right half, reviewer stacks BELOW it (spawn with --layout window, then move)
+# 2. coder joins the right half, reviewer stacks BELOW it (native spawn opens its own window; move the pane)
 tmux join-pane -v -s <coder-pane>    -t <right-pane>
 tmux join-pane -v -s <reviewer-pane> -t <coder-pane>
 
@@ -150,7 +152,7 @@ tmux join-pane -v -s <reviewer-pane> -t <coder-pane>
 tmux select-layout -t <coder-pane> even-vertical
 ```
 
-When native spawn creates a window, move its reported pane into the intended owned team window and title it. Spawning is not finished until placement and identity are verified; do not pass an unported layout flag to the shim.
+Spawning is not finished until the reported pane is moved into the team window, titled, and its identity verified.
 
 **When the PM is a central orchestrator** driving several streams at once, it cannot sit in
 every team window. Then the left half holds that stream's operator view — a shell in the
@@ -160,7 +162,7 @@ Split a team across windows only when panes get too small to read — and say so
 
 ### C6 — Daemon restart rule
 
-The rs daemon executes a built Rust binary, not tsx source. Changes need the appropriate rebuild and an operator-authorized native lifecycle action; never bounce production as an incidental edit step. `pij daemon` is a named shim refusal. Check the installed `pij-rs daemon --help`; PM/prime own composed validation and production restart. Peer extension/skill reload is a separate host capability, not daemon restart or the remote OMP reload control.
+The rs daemon executes a built Rust binary, not tsx source. Changes need the appropriate rebuild and an operator-authorized native lifecycle action; never bounce production as an incidental edit step. `pij daemon` is a named shim refusal. The native lifecycle is `pij-rs daemon` (run) and `pij-rs daemon bounce` (rebuild, drain, restart, verify health); this machine's `just bounce-rs` recipe also sets `PIJ_RETIRED_HARNESSES=pi` and the Telegram env. PM/prime own composed validation and production restart. Peer extension/skill reload is a separate host capability, not daemon restart or the remote OMP reload control.
 
 ### C7 — Push when owned; block on inbox when pull-owned
 
@@ -199,25 +201,23 @@ pij bg create --events --title db-watch --command '
   done'
 ```
 
-Two things it is NOT: not a way to message yourself (`pij send <self>` is still E-SELF — bg delivers as the `pij-bg` actor because the result genuinely comes from the runner), and not a substitute for peer delegation. One command whose output you want → `pij bg`. A unit of work needing judgement → a peer.
+Two things it is NOT: not a way to message yourself (`pij send <self>` is refused: "a seat cannot send to itself — use `pij compact-self`" — bg delivers as the `pij-bg` actor because the result genuinely comes from the runner), and not a substitute for peer delegation. One command whose output you want → `pij bg`. A unit of work needing judgement → a peer.
 
-### C8 — Terminal and no-show interpretation
+### C8 — Death, no-show and revive interpretation
 
-Do not call an absent peer a crash from pane/PID absence alone. A persisted pij-owned close is **requested**; an observed absence without that intent is **unrequested-by-pij**; a failed probe is **unavailable**. Daemon reports label its initial boot reconciliation **historical** and later evidence **live**.
-
-Each launch has a bounded expectation keyed by `spawnId`; expiry means only that that expected registration did not appear. If a descriptor with the same key is present, it suppresses the no-show. Never substitute a guessed harness, cause, or owner for either observation.
+Pane or pid absence alone is not a crash, and unknown evidence is not death. The daemon's **death sweep** (every 5s) tombstones each seat with a dead or recycled process **and** an absent or reincarnated pane (`reason: "observed-dead"`) and pushes an obituary from `pij-bg` to the recorded parent; parents never poll, and a dead parent gets none ([Death sweep](../../../docs/how/pij-rs-api.md#death-sweep)). A spawn that does not register within `--wait-seconds` (30) reports only that registration did not appear. Never substitute a guessed harness, cause or owner for an observation. Revive resumes the recorded conversation; see the peer route and [Revive](../../../docs/how/pij-rs-api.md#revive).
 
 ### C9 — Watchdog etiquette (you may be watched; some peers must never be)
 
-**PAs are always watched** (Jordan, 2026-10-09). The daemon nudges every seat with role `pa` with a fleet digest once each time its fleet goes idle (no worker in its repository working, PAs and primes never counting; plan 172), and wakes it once when a usage limit that stopped its fleet resets; no fixed cadence, and no other role gets one by default, primes included ([API](../../../docs/how/pij-rs-api.md#pa-watchdog)). The PA is the fleet's watchdog: it reads the digest's **Needs a look** list and decides who needs a word. Any other seat is watched only when opted in: `pij watchdog on [<seat>] [--every 30m]`, `off [<seat>]`, `status`. Any seat may switch any seat, and the subject gets a held FYI naming who did it ([API](../../../docs/how/pij-rs-api.md#opt-in-watchdog)). Every opt-in nudge ends with how to stop it: when no more work is coming, run `pij watchdog off`. The old TS leaves (pause/exempt/disable-all) refuse; don't touch legacy sidecars. If a PA messages you about a stall, report actual now/next or the truthful question/blocked state and continue independent work. If done, run `pij report state done`. Reporting at both work edges remains the primary cadence; a PA's nudge is only a backstop. Use shipped `pij bg` (C7) for slow commands rather than keeping a coordinating seat blocked.
+**PAs are always watched** (Jordan, 2026-10-09). The daemon nudges every seat with role `pa` with a fleet digest once each time its fleet goes idle (no worker in its repository working, PAs and primes never counting; plan 172), wakes it once when its prime starts working again after that idle edge ([prime-active wake](../../../docs/how/pa-watchdog.md#prime-active-wake-the-pa-resumes-when-the-prime-does)), and wakes it once when a usage limit that stopped its fleet resets; no fixed cadence, and no other role gets one by default, primes included ([API](../../../docs/how/pij-rs-api.md#pa-watchdog)). The PA is the fleet's watchdog: it reads the digest's **Needs a look** list and decides who needs a word. Any other seat is watched only when opted in: `pij watchdog on [<seat>] [--every 30m]`, `off [<seat>]`, `status`. Any seat may switch any seat, and the subject gets a held FYI naming who did it ([API](../../../docs/how/pij-rs-api.md#opt-in-watchdog)). Every opt-in nudge ends with how to stop it: when no more work is coming, run `pij watchdog off`. The old TS leaves (pause/exempt/disable-all) refuse; don't touch legacy sidecars. If a PA messages you about a stall, report actual now/next or the truthful question/blocked state and continue independent work. If done, run `pij report state done`. Reporting at both work edges remains the primary cadence; a PA's nudge is only a backstop. Use shipped `pij bg` (C7) for slow commands rather than keeping a coordinating seat blocked.
 
 ### C10 — Wire discipline (A2A messages)
 
-**Canonical copy — cite "C10" from other modules; never restate these rules.** Governs every message from one agent to another (`pij send`, inbox replies, pushed reports). Human-facing prose is out of scope. The recipient is a machine — write for a machine reader. Evidence: plan 083 (fleet measured ~2.9M tokens of A2A bodies; the waste is acks, restatement, and praise — not long analysis).
+**Canonical copy — cite "C10" from other modules; never restate these rules.** Governs every message from one agent to another (`pij send`, inbox replies, pushed reports). Human-facing prose is out of scope. The recipient is a machine — write for a machine reader. Evidence: pre-OSS plan 083, not in this checkout (operator-reported: fleet measured ~2.9M tokens of A2A bodies; the waste is acks, restatement, and praise — not long analysis).
 
 1. **Line 1 is the recipient's next ACTION or DECISION — or `NO ACTION`.** The reader may stop there; everything below line 1 is optional context.
 2. **Delta only, with the discriminating value.** State what changed + the one count/SHA/path that could have been wrong. Cite rulings and prior messages by id — never restate them, never restate the recipient's own words back to them, never itemize unchanged state (one denominator line max).
-3. **Don't send:** unsolicited confirmations — silence after a clean verify **is** the all-clear; a *requested* check returns one line (`checked X, clear`). Praise never travels as its own message — attach it to an instruction or drop it. Use `--fyi` only when the recipient's next action doesn't depend on it; questions, blockers, hand-offs, verdicts and work done are normal sends, and what they'd be fine never reading isn't sent ([the FYI rule](routes/peer.md#converse)).
+3. **Don't send:** unsolicited confirmations — silence after a clean verify **is** the all-clear; a *requested* check returns one line (`checked X, clear`). Praise never travels as its own message — attach it to an instruction or drop it. Use `--fyi` only when the recipient's next action doesn't depend on it; questions, blockers, hand-offs, verdicts and work done are normal sends, and what they'd be fine never reading isn't sent ([FYI mechanics](routes/peer.md#converse)).
 4. **Acks are one line** and never restate the instruction.
 5. **Exception — reasoning IS the payload** when correcting a false belief, disagreeing, or acting on low confidence with high impact: send the full why and flag the trigger (`correction:` / `dissent:` / `confidence: low`) so the receiver knows to read past line 1. Rare; never use it as cover.
 6. **Telegraphic is fine; ambiguous is not.** Keep every identifier, number, path, and scope marker intact. Terse *common* words beat invented shorthand — tokenizers punish rare strings, and private codes fail silently across models. Do not mirror a verbose peer's style.
@@ -245,4 +245,4 @@ The fleet shares Jordan's working laptop. Builds, test loops, stress and flake r
 - a wall-clock bound (`timeout 600`);
 - stop when the load average passes 40.
 
-A packet asking for repeated or "under load" runs states these caps. An uncapped `-P 48` flake reproduction once took the machine to load ~230 and had to be killed (2026-09-29). Reproduce a timing flake by reasoning about what decides the race, or with a deterministic hook, before brute force.
+A packet asking for repeated or "under load" runs states these caps. By operator report, an uncapped `-P 48` flake reproduction once took the machine to load ~230 and had to be killed (2026-09-29). Reproduce a timing flake by reasoning about what decides the race, or with a deterministic hook, before brute force.

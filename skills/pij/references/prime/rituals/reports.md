@@ -1,7 +1,7 @@
 # Reports — evidence one hop up
 
 Every report is a file inside the sender's fence, persisted before its pointer is
-sent. File at preamble, each phase checkpoint, and ship.
+sent. The sender's `pij report now|state` card (dispatch invariant 12) is separate and still owed. File at preamble, each phase checkpoint, and ship.
 
 ## Contract
 
@@ -23,7 +23,9 @@ At plan close-out, include the named PRD rows advanced and receipt per row for t
 
 1. Treat every green, completion message, and claimed verification as a claim.
 2. Read one load-bearing artifact or re-run one cheap gate from the report.
-3. Record the verification note before acting, granting a baton, or relaying.
+3. Record the verification note before acting, granting a baton, or relaying. As the seat's current
+   parent, bind a verified done with `pij report verify <seat> [--assignment <id>]` (node route); an
+   unverified done stays an `unverified-done` anomaly.
 4. If an artifact is missing or contradicts the claim, reopen the report.
 5. Transcribe observations into the receiver's own single-writer ledger.
 

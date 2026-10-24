@@ -1,4 +1,4 @@
-use crate::composer::is_codex_footer;
+use crate::composer::{is_codex_footer, parse_codex_footer};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -346,13 +346,11 @@ fn observed_model(kind: Harness, text: &str) -> Option<String> {
             let model = suffix.trim();
             (!model.is_empty()).then(|| model.to_string())
         }),
-        Harness::Codex => text.lines().rev().find_map(|line| {
-            is_codex_footer(line)
-                .then(|| line.rsplit_once('·').map(|(left, _)| left.trim()))
-                .flatten()
-                .and_then(|left| left.split_whitespace().next())
-                .map(str::to_string)
-        }),
+        Harness::Codex => text
+            .lines()
+            .rev()
+            .find_map(parse_codex_footer)
+            .map(|footer| footer.model.to_string()),
         Harness::Pi | Harness::Omp => {
             // The last model field is authoritative, including explicit absence.
             // Never fall back to a stale model quoted earlier in the pane.
@@ -366,14 +364,11 @@ fn observed_model(kind: Harness, text: &str) -> Option<String> {
 
 fn observed_cwd(kind: Harness, text: &str) -> Option<String> {
     match kind {
-        Harness::Codex => text.lines().rev().find_map(|line| {
-            is_codex_footer(line)
-                .then(|| {
-                    line.rsplit_once('·')
-                        .map(|(_, path)| expand_home(path.trim()))
-                })
-                .flatten()
-        }),
+        Harness::Codex => text
+            .lines()
+            .rev()
+            .find_map(parse_codex_footer)
+            .and_then(|footer| footer.cwd.map(expand_home)),
         _ => text.lines().find_map(|line| {
             line.split_whitespace()
                 .find(|word| word.starts_with('/') || word.starts_with("~/"))
@@ -1201,5 +1196,64 @@ mod codex_0_153_4_footer {
             observed_model(Harness::Codex, &home).as_deref(),
             Some("gpt-6-astra")
         );
+    }
+}
+
+#[cfg(test)]
+mod codex_0_164_footer {
+    use super::{
+        Harness, Readiness, classify_readiness, expand_home, observed_cwd, observed_model,
+    };
+
+    const CAPTURE: &str = include_str!("../tests/fixtures/2026-10-24-codex-v0.164-pane-100.txt");
+
+    #[test]
+    fn titled_footer_reads_ready_model_and_cwd() {
+        assert_eq!(
+            classify_readiness(Harness::Codex, CAPTURE),
+            Readiness::Ready
+        );
+        assert_eq!(
+            observed_model(Harness::Codex, CAPTURE).as_deref(),
+            Some("GPT-6.1-Sol")
+        );
+        assert_eq!(
+            observed_cwd(Harness::Codex, CAPTURE),
+            Some(expand_home("~/github/novels")),
+            "cwd is the path segment, never the session title"
+        );
+    }
+
+    /// A title that contains `·` or looks like a path is never the cwd.
+    #[test]
+    fn title_with_dot_or_path_shape_is_not_the_cwd() {
+        for title in ["Title · with a dot", "/review the diff", "~/elsewhere"] {
+            let capture = CAPTURE.replace("Adopt seat and wait", title);
+            assert_eq!(
+                observed_cwd(Harness::Codex, &capture),
+                Some(expand_home("~/github/novels")),
+                "{title:?}"
+            );
+            assert_eq!(
+                observed_model(Harness::Codex, &capture).as_deref(),
+                Some("GPT-6.1-Sol"),
+                "{title:?}"
+            );
+        }
+    }
+
+    /// A usage footer carries no path, so it names no cwd.
+    #[test]
+    fn usage_only_footer_is_ready_without_a_cwd() {
+        let capture = "› Ask Codex to do anything\n\n  gpt-5 high · 85% context left\n";
+        assert_eq!(
+            classify_readiness(Harness::Codex, capture),
+            Readiness::Ready
+        );
+        assert_eq!(
+            observed_model(Harness::Codex, capture).as_deref(),
+            Some("gpt-5")
+        );
+        assert_eq!(observed_cwd(Harness::Codex, capture), None);
     }
 }
