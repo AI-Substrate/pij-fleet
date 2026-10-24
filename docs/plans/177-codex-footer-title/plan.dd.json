@@ -42,14 +42,18 @@
         {
           "id": "ac-0001",
           "claim": "Codex 0.164 composer recognised. A pane whose footer is `<model> <effort> · <cwd> · <session title>` (live example, pane %100, 2026-10-24: `GPT-6.1-Sol high · ~/github/novels · Adopt seat and wait`) is recognised by crates/harnesses/src/composer.rs is_codex_footer and the composer finder, so an idle empty composer submits and a non-empty draft is held as composer-busy, not `unrecognized`. The older two-segment footers (fixture 2026-09-08-codex-v0.153.4-pane-4409.txt, absolute and ~/ paths, the context/tokens variants) stay recognised.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0002",
           "claim": "One parser, segment-based. is_codex_footer and the model and cwd extraction in crates/harnesses/src/adapter.rs (readiness ~278, observed_model ~350, observed_cwd ~370) share ONE segment parser: split on `·`, model+effort from the first segment, cwd from the segment that is a path, extra trailing segments ignored. observed_cwd returns the expanded `~/github/novels`, never the session title; observed_model returns the model. A session title that itself contains `·` or looks like a path is covered by a test and handled conservatively (no false cwd).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0003",
@@ -60,8 +64,10 @@
         {
           "id": "ac-0004",
           "claim": "Docs and delivery note. docs/how (wherever Codex readiness or composer recognition is documented; search first) names the session-title segment. The PR body says whether messages already queued as `unrecognized` to a Codex seat deliver on their own once the fixed daemon runs (cite the retry path in crates/daemon/src/pointer/worker.rs ~374), or says precisely why not.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0004"
         }
       ]
     },

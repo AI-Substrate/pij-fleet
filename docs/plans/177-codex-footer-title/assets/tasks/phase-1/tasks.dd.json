@@ -24,22 +24,24 @@
           "id": "tk-0001",
           "title": "Fixture and red tests",
           "phase": "ph-b643",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
-          "done": "tasks.dd.json#done_when/tk-0001"
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../execution-log.dd.json#entries/lg-0001"
         },
         {
           "id": "tk-0002",
           "title": "Segment parser and call sites",
           "phase": "ph-b643",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
-          "done": "tasks.dd.json#done_when/tk-0002"
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "tk-0003",
@@ -61,7 +63,7 @@
           {
             "id": "dw-0001",
             "assertion": "New tests fail on 7babd01 for the right reason (quoted)",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -69,7 +71,7 @@
           {
             "id": "dw-0002",
             "assertion": "vd-0001 green; the 0.153.4 and 0.164 fixtures both recognised; cwd and model correct on both",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],

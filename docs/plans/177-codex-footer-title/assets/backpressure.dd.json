@@ -21,8 +21,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND→RUN: add a codex_0_164 fixture module beside codex_0_153_4 in composer.rs tests, plus adapter tests; nice -n 19 cargo test -j 1 -p pij-harnesses",
-          "state": "unchecked",
-          "probe": "composer.rs codex_0_153_4 module"
+          "state": "checked",
+          "probe": "composer.rs codex_0_153_4 module",
+          "receipt": "execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "bp-0002",

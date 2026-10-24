@@ -35,8 +35,8 @@ One coder implements impl-guide tk-0001: fixture, red tests, one segment parser 
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Fixture and red tests | — | ph-b643 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Segment parser and call sites | — | ph-b643 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Fixture and red tests | — | ph-b643 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0001 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Segment parser and call sites | — | ph-b643 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0003 | Mutation, docs, gates, PR | — | ph-b643 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -47,13 +47,13 @@ One coder implements impl-guide tk-0001: fixture, red tests, one segment parser 
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | New tests fail on 7babd01 for the right reason (quoted) | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0001 | New tests fail on 7babd01 for the right reason (quoted) | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | vd-0001 green; the 0.153.4 and 0.164 fixtures both recognised; cwd and model correct on both | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0002 | vd-0001 green; the 0.153.4 and 0.164 fixtures both recognised; cwd and model correct on both | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
