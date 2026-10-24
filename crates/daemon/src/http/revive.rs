@@ -144,6 +144,12 @@ async fn resume_decision(
 /// under `<claude home>/sessions/<pid>.json`, the hand-resumed-but-unregistered
 /// case the 2026-09-27 reboot produced. The record counts only when its pid's
 /// observed start matches the start it recorded.
+///
+/// Revive's OWN rule, deliberately not the double-seat helper's (plan 174
+/// non-goal, review F001): any row, tombstoned included, whose process is
+/// observed `Active`. A tombstoned holder that still runs blocks a relaunch,
+/// and a failed probe does not. `revive_conversation_guard_keeps_its_original_rule`
+/// pins both.
 async fn conversation_live_elsewhere(
     state: &AppState,
     prior: &SeatDescriptor,

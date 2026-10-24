@@ -38,8 +38,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{
-    AppState, Registration, RegistrationResponse, allocate_memorable_id, envelope, internal,
-    pane_harness_identity, refused, retired_seat_refused,
+    AppState, Registration, RegistrationResponse, allocate_memorable_id, double_seat, envelope,
+    internal, pane_harness_identity, refused, retired_seat_refused,
 };
 use crate::registration::RegistrationError;
 
@@ -816,22 +816,28 @@ pub(crate) async fn adopt(
                 )
             })
     });
-    if let Some(seat) = conversation
-        && is_live(seat)
-        && seat.proc.is_some()
-        && seat.proc != proc
-        && !process_gone(&state, seat).await
-    {
-        return refused(
-            ADOPT,
-            format!(
-                "conversation `{}` is live as seat `{}` in another process (pane {}) — adopt \
-                 there instead; one conversation cannot be two seats",
-                derived_session.as_deref().unwrap_or_default(),
-                seat.id,
-                seat.pane.as_deref().unwrap_or("none"),
-            ),
-        );
+    // One conversation cannot be two seats (plan 174): refuse with the stable
+    // code, and tell the seat that holds it, through the shared helper revive
+    // and pane resolution also use.
+    if let (Some(session), Some(kind)) = (derived_session.as_deref(), kind) {
+        match double_seat::conversation_live_as_seat(&state, kind, session, |seat| {
+            seat.proc == proc
+        })
+        .await
+        {
+            Ok(Some(live)) => {
+                let double = double_seat::Double {
+                    live,
+                    harness: kind,
+                    session: session.to_string(),
+                    stray_pane: pane.clone().expect("a paned adopt has a pane"),
+                    stray: proc.expect("a paned adopt has a process identity"),
+                };
+                return double_seat::refused(&state, ADOPT, &double).await;
+            }
+            Ok(None) => {}
+            Err(error) => return internal(ADOPT, error),
+        }
     }
     // Adopt INTO the seat that already owns this pane rather than minting a
     // second id for it. The TS route grew this the hard way (its plan-071 defect
@@ -1220,6 +1226,14 @@ pub(crate) async fn resolve_seat(
                 found = Some(index);
                 break;
             }
+        }
+        // A pane no live seat owns may be running a second copy of a live
+        // seat's conversation (plan 174). Checked only here, on the refusal
+        // path: a resolved pane never reads the Claude session records.
+        if found.is_none()
+            && let Some(double) = double_seat::stray_pane(state, pane).await
+        {
+            return Resolved::Refusal(double_seat::refused(state, command, &double).await);
         }
         let seat = match found {
             Some(index) => seats.swap_remove(index),

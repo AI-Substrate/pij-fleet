@@ -1,0 +1,202 @@
+# Plan 174 fix round (review of cae54cd, findings from pij-far-jackal)
+
+Base for this round: cae54cd merged with origin/main dcfed3d (commit cc009e2, clean merge). Fix commit b5a11fb. cwd <worktree>. Every cargo command ran with nice -n 19, timeout, -j 1, CARGO_TARGET_DIR=<worktree>/target, and the 1-minute load under 36 at start.
+
+## RED on cae54cd sources (the reviewed head)
+fyi.rs, revive.rs, double_seat.rs and claude-statusline-pij.sh were set to their cae54cd versions, the new tests run, then the files restored.
+Commands: cargo test -j 1 -p pij-daemon --no-fail-fast -- double_seat revive_conversation_guard_keeps_its_original_rule; cargo test -j 1 -p pij-harnesses --test claude_heal_scripts.
+The expected reds: F002 (activity wrote "working" to the dead owner), F001 (revive launched despite a tombstoned holder whose process is Active), and the AC5 heal branch (no marker; it would re-adopt). The witnesses and the retired-history pin are green there by design: the guards already existed on cae54cd, so the mutation receipts below prove them.
+```text
+load { 10.18 9.68 9.79 }
+test http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs ... FAILED
+test http::double_seat_tests::double_seat_tombstoned_holder_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_holder_whose_process_is_gone_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_simultaneous_first_refusals_record_one_detection ... ok
+thread 'http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs' (812855660) panicked at crates/daemon/src/http/double_seat_tests.rs:258:5:
+    assertion `left == right` failed: activity: {"command":"pij activity","data":{"changed":true,"seat":"pij-dead-owner","state":"working"},"ok":true,"v":2}
+error: test failed, to rerun pass `-p pij-daemon --lib`
+test revive_conversation_guard_keeps_its_original_rule ... FAILED
+thread 'revive_conversation_guard_keeps_its_original_rule' (812883759) panicked at crates/daemon/tests/revive_http.rs:645:5:
+    assertion `left == right` failed: {"command":"pij revive","data":{"bound":false,"cross_session_inbound_accept":false,"dispatched":true,"extension_build":null,"extension_path":null,"folder":"/tmp","harness":"copilot","id":"pij-child","model":"provider/prior","native_extension_delivery":false,"pane":"%102","parent":"pij-parent","proc":null,"relay":false,"role":null,"semantic_state":null,"session":"plan174-revive-original-rule","spawn_id":"s-d8d032e60eb62938f6baadd03cde1b43","state":"idle"},"detail
+error: test failed, to rerun pass `-p pij-daemon --test revive_http`
+error: 2 targets failed:
+daemon exit 101
+test status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again ... FAILED
+thread 'status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again' (812902197) panicked at crates/harnesses/tests/claude_heal_scripts.rs:71:9:
+    timed out waiting for the refused heal's double marker
+error: test failed, to rerun pass `-p pij-harnesses --test claude_heal_scripts`
+scripts exit 101
+```
+
+## GREEN on b5a11fb's tree
+cargo test -j 1 -p pij-daemon --no-fail-fast -- double_seat revive identity fyi park_notice adopt whoami (exit 0), and cargo test -j 1 -p pij-harnesses --test claude_heal_scripts (exit 0).
+```text
+load { 10.83 10.62 10.19 }
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... ok
+test http::double_seat_tests::double_seat_holder_whose_process_is_gone_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_simultaneous_first_refusals_record_one_detection ... ok
+test http::double_seat_tests::double_seat_tombstoned_holder_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+test http::identity_tests::adopt_upgrades_unknown_claude_consent_but_preserves_explicit_refusal ... ok
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+test registration::tests::paneless_observed_session_argv_must_match_including_claude_fork_identity ... ok
+test reaper::tests::reap_concurrent_revive_between_observation_and_commit_is_preserved ... ok
+test double_seat_incident_end_to_end_on_the_real_store ... ok
+test revive_recycled_process_is_never_signaled ... ok
+test concurrent_observed_dead_revives_launch_exactly_one_incarnation ... ok
+test revive_assumption_refuses_missing_evidence_self_and_forged_parent ... ok
+test revive_retired_harness_succeeds_and_audits_override ... ok
+test revive_observed_dead_tombstones_before_relaunch_and_cites_seq ... ok
+test revive_assumption_publication_failure_cannot_retire_or_launch ... ok
+test revive_legacy_audit_failure_does_not_relaunch ... ok
+test revive_assumption_requires_parent_or_authoritative_prime_for_parentless ... ok
+test revive_resumes_the_recorded_conversation_unless_it_is_live_elsewhere ... ok
+test revive_recycled_and_unknown_refuse_with_exact_override_guidance ... ok
+test revive_legacy_tombstone_records_audit_before_relaunch ... ok
+test revive_assumed_dead_records_parent_evidence_and_actual_observation ... ok
+test revive_conversation_guard_keeps_its_original_rule ... ok
+test revive_assumption_never_overrides_active_process_or_present_pane ... ok
+daemon exit 0
+test scripts_spell_the_conversation_live_code_as_rust_defines_it ... ok
+test status_line_shows_a_red_double_segment_and_never_heals_it ... ok
+test session_start_hook_warns_human_and_model_about_a_double_seat ... ok
+test status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again ... ok
+test user_prompt_hook_warns_every_prompt_while_the_double_persists ... ok
+scripts exit 0
+```
+
+## Mutation receipts (each applied alone, the named test run, the file restored by byte copy and cmp-checked)
+### lock
+double_seat.rs notify_once: the `double_seat_lock` acquisition deleted -> double_seat_simultaneous_first_refusals_record_one_detection
+```text
+load { 13.10 12.34 10.96 } mutation lock: crates/daemon/src/http/double_seat.rs
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_tombstoned_holder_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_holder_whose_process_is_gone_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... ok
+test http::double_seat_tests::double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_simultaneous_first_refusals_record_one_detection ... FAILED
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+thread 'http::double_seat_tests::double_seat_simultaneous_first_refusals_record_one_detection' (813103431) panicked at crates/daemon/src/http/double_seat_tests.rs:702:5:
+    assertion `left == right` failed: two simultaneous first refusals sent two notices
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+exit 101
+```
+
+### is-live
+double_seat.rs conversation_live_as_seat: `is_live(seat) &&` deleted -> double_seat_tombstoned_holder_is_not_a_live_copy
+```text
+load { 12.90 12.32 10.98 } mutation is-live: crates/daemon/src/http/double_seat.rs
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_tombstoned_holder_is_not_a_live_copy ... FAILED
+test http::double_seat_tests::double_seat_holder_whose_process_is_gone_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... ok
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_simultaneous_first_refusals_record_one_detection ... ok
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+thread 'http::double_seat_tests::double_seat_tombstoned_holder_is_not_a_live_copy' (813117752) panicked at crates/daemon/src/http/double_seat_tests.rs:721:5:
+    assertion `left == right` failed: {"command":"pij whoami","details":{"code":"E-RS-CONVERSATION-LIVE","harness_session":"cc2d2e8f-0174-4000-8000-00000000d0b1","pane":"%5","pid":917405,"seat":"pij-different-smelt","stray_pane":"%7","stray_pid":917407},"error":"refused","meta":"E-RS-CONVERSATION-LIVE conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5); close one copy, then run `pij-rs adopt %7 --harness claude` from the copy you kee
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+exit 101
+```
+
+### gone
+double_seat.rs conversation_live_as_seat: the process-gone check bypassed -> double_seat_holder_whose_process_is_gone_is_not_a_live_copy
+```text
+load { 14.48 12.68 11.12 } mutation gone: crates/daemon/src/http/double_seat.rs
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_tombstoned_holder_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_holder_whose_process_is_gone_is_not_a_live_copy ... FAILED
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... ok
+test http::double_seat_tests::double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_simultaneous_first_refusals_record_one_detection ... ok
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+thread 'http::double_seat_tests::double_seat_holder_whose_process_is_gone_is_not_a_live_copy' (813129514) panicked at crates/daemon/src/http/double_seat_tests.rs:746:5:
+    assertion `left == right` failed: {"command":"pij whoami","details":{"code":"E-RS-CONVERSATION-LIVE","harness_session":"cc2d2e8f-0174-4000-8000-00000000d0b1","pane":"%5","pid":917405,"seat":"pij-different-smelt","stray_pane":"%7","stray_pid":917407},"error":"refused","meta":"E-RS-CONVERSATION-LIVE conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5); close one copy, then run `pij-rs adopt %7 --harness claude` from the copy you kee
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+exit 101
+```
+
+### retired
+identity.rs resolve_seat: the stray check skipped when the pane has retired history (comparison A's bug shape) -> double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs
+```text
+load { 13.65 12.55 11.10 } mutation retired: crates/daemon/src/http/identity.rs
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_holder_whose_process_is_gone_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs ... FAILED
+test http::double_seat_tests::double_seat_tombstoned_holder_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... ok
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_simultaneous_first_refusals_record_one_detection ... ok
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+thread 'http::double_seat_tests::double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs' (813144036) panicked at crates/daemon/src/http/double_seat_tests.rs:260:5:
+    whoami --pane: the code leads the text: {"command":"pij whoami","details":{"seat":"pij-retired-here"},"error":"refused","meta":"seat `pij-retired-here` is tombstoned and is not an identity: closed. A dead row can still name a live pid — supersession keeps the process identity — so confirming it would report a binding for a seat nothing can address. No historical tombstone event sequence is available.","ok":false,"v":2}
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+exit 101
+```
+
+### f002
+fyi.rs bound_seat: a store-live owner never counts as unowned -> double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs
+```text
+load { 12.46 12.34 11.04 } mutation f002: crates/daemon/src/http/fyi.rs
+test http::double_seat_tests::double_seat_pin_resolved_pane_never_reads_session_records ... ok
+test http::double_seat_tests::double_seat_holder_whose_process_is_gone_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_tombstoned_holder_is_not_a_live_copy ... ok
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... ok
+test http::double_seat_tests::double_seat_pin_unproven_stray_keeps_the_not_registered_text ... ok
+test http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs ... FAILED
+test http::double_seat_tests::double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs ... ok
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... ok
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... ok
+test http::double_seat_tests::double_seat_simultaneous_first_refusals_record_one_detection ... ok
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... ok
+thread 'http::double_seat_tests::double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs' (813158285) panicked at crates/daemon/src/http/double_seat_tests.rs:258:5:
+    assertion `left == right` failed: activity: {"command":"pij activity","data":{"changed":true,"seat":"pij-dead-owner","state":"working"},"ok":true,"v":2}
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+exit 101
+```
+
+### heal
+claude-statusline-pij.sh: the heal marker is never honoured -> status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again
+```text
+load { 11.35 12.09 10.97 } mutation heal: harness/scripts/claude-statusline-pij.sh
+test scripts_spell_the_conversation_live_code_as_rust_defines_it ... ok
+test status_line_shows_a_red_double_segment_and_never_heals_it ... ok
+test session_start_hook_warns_human_and_model_about_a_double_seat ... ok
+test status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again ... FAILED
+test user_prompt_hook_warns_every_prompt_while_the_double_persists ... ok
+test copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats ... ok
+test status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daemon ... ok
+thread 'status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again' (813164238) panicked at crates/harnesses/tests/claude_heal_scripts.rs:471:5:
+    red double segment from the heal refusal: "\u{1b}[2m0%\u{1b}[0m \u{1b}[36mpij-double-seat-heal-76514-1792803007846072000-1\u{1b}[0m \u{1b}[33mrs\u{1b}[0m \u{1b}[34m⛓ pij-other-seat\u{1b}[0m \u{1b}[33m⛓ registering…\u{1b}[0m • Opus • \u{1b}[35mauto\u{1b}[0m • \u{1b}[2m0/200k\u{1b}[0m"
+error: test failed, to rerun pass `-p pij-harnesses --test claude_heal_scripts`
+exit 101
+```
+
+F001's own receipt is the RED above: cae54cd's revive.rs IS the mutated rule (helper semantics), and revive_conversation_guard_keeps_its_original_rule fails against it.

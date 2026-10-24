@@ -42,7 +42,9 @@ use pij_core::BG_ACTOR;
 use pij_core::cold_wake::refusal;
 use pij_core::error::Result;
 use pij_core::events::EventFilter;
-use pij_core::model::{DeliveryFailure, DeliveryOutcome, Event, JobId, Msg, SeatId, Seq};
+use pij_core::model::{
+    DeliveryFailure, DeliveryOutcome, Event, JobId, Msg, Receipt, SeatDescriptor, SeatId, Seq,
+};
 use pij_core::ports::{Spine, SpineWindow};
 use serde::Deserialize;
 use serde_json::json;
@@ -142,25 +144,8 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
             in_reply_to: None,
             command: None,
         };
-        // The very decision `pij send` obeys, stale-working correction included.
-        let now = crate::http::system_time_ms()?;
-        let cold = crate::http::cold_wake::verdict(services, &seat, now).await?;
-        if refusal(sender, &cold).is_some() {
-            (Some("fyi"), Some(services.delivery.hold_fyi(msg).await?))
-        } else {
-            let receipt = services.delivery.accept(msg.clone()).await?;
-            if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
-                // A refusal (e.g. the sender's own receiver lease lapsed) is
-                // final for the wake, never for the notice: hold it for the
-                // sender's next turn under the same id (background B9/B10).
-                (
-                    Some("fyi-after-refusal"),
-                    Some(services.delivery.hold_fyi(msg).await?),
-                )
-            } else {
-                (Some("send"), Some(receipt))
-            }
-        }
+        let (channel, receipt) = send_or_hold(services, &seat, msg).await?;
+        (Some(channel), Some(receipt))
     };
     if audited {
         return Ok(());
@@ -185,6 +170,36 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
         })
         .await?;
     Ok(())
+}
+
+/// Deliver a daemon notice from `pij-bg` the way `pij send` would, or hold it
+/// as an FYI for the recipient's next turn where a send would be refused.
+///
+/// Shared by every daemon-originated notice (the park notice here, the
+/// double-seat notice of plan 174) so they obey one cold-wake decision. Returns
+/// the channel taken (`send`, `fyi` or `fyi-after-refusal`) with its receipt.
+///
+/// # Errors
+/// Cold-wake, delivery or FYI-hold failures.
+pub(crate) async fn send_or_hold(
+    services: &Services,
+    seat: &SeatDescriptor,
+    msg: Msg,
+) -> Result<(&'static str, Receipt)> {
+    // The very decision `pij send` obeys, stale-working correction included.
+    let now = crate::http::system_time_ms()?;
+    let cold = crate::http::cold_wake::verdict(services, seat, now).await?;
+    if refusal(&seat.id, &cold).is_some() {
+        return Ok(("fyi", services.delivery.hold_fyi(msg).await?));
+    }
+    let receipt = services.delivery.accept(msg.clone()).await?;
+    if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
+        // A refusal (e.g. the recipient's own receiver lease lapsed) is final
+        // for the wake, never for the notice: hold it for the recipient's next
+        // turn under the same id (background B9/B10).
+        return Ok(("fyi-after-refusal", services.delivery.hold_fyi(msg).await?));
+    }
+    Ok(("send", receipt))
 }
 
 /// Pages of one seat's `kind` facts committed at or after `since_at`.

@@ -1,0 +1,76 @@
+# Plan 174 RED receipts (tests written before the code)
+
+All new tests were run against the base code: main bb9f0b1 plus the plan's docs-only commit 01c68a9, with only the new test files added (committed as f67c724). Every failure below is the RIGHT reason: the code, the hook JSON or the red segment does not exist yet. Nothing touched the live tmux server, the production daemon or the real ~/.claude (fixture Claude homes under the temp dir, FakeTmux, FakeLiveness, private 127.0.0.1:0 ports, a fake pij-rs on PATH).
+
+## Daemon unit tests (AC1, AC2, AC6)
+cwd: <worktree>
+tree: 01c68a9 + f67c724 tests
+command: nice -n 19 timeout -k 10 1500 cargo test -j 1 -p pij-daemon double_seat (exit 101). This first run still carried an unused import in tests/double_seat_http.rs, removed before f67c724.
+
+```text
+warning: unused import: `Spine`
+warning: unused import: `Registry`
+warning: `pij-daemon` (test "double_seat_http") generated 2 warnings
+test http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text ... FAILED
+test http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails ... FAILED
+test http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix ... FAILED
+test http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart ... FAILED
+thread 'http::double_seat_tests::double_seat_stray_pane_verbs_refuse_with_one_code_and_actionable_text' (4314002) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    whoami --pane: the code leads the text: {"command":"pij whoami","error":"refused","meta":"no live seat in the rs store owns pane `%7` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","ok":false,"v":2}
+thread 'http::double_seat_tests::double_seat_notice_counts_as_sent_when_the_dedupe_read_fails' (4314000) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    adopt: the code leads the text: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+thread 'http::double_seat_tests::double_seat_adopt_refusal_carries_the_code_details_and_fix' (4313999) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    adopt: the code leads the text: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+thread 'http::double_seat_tests::double_seat_notice_reaches_the_live_seat_once_per_pair_across_restart' (4314001) panicked at crates/daemon/src/http/double_seat_tests.rs:246:5:
+    adopt: the code leads the text: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-0174-4000-8000-00000000d0b1` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 611 filtered out; finished in 0.49s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+```
+
+## Daemon incident end to end (AC8d)
+cwd: <worktree>
+tree: 01c68a9 + f67c724 tests
+command: nice -n 19 timeout -k 10 1500 cargo test -j 1 -p pij-daemon --test double_seat_http (exit 101)
+
+```text
+test double_seat_incident_end_to_end_on_the_real_store ... FAILED
+thread 'double_seat_incident_end_to_end_on_the_real_store' (4320780) panicked at crates/daemon/tests/double_seat_http.rs:165:5:
+    adopt: {"command":"pij adopt","error":"refused","meta":"conversation `cc2d2e8f-0174-4000-8000-0000000e2e01` is live as seat `pij-different-smelt` in another process (pane %5) — adopt there instead; one conversation cannot be two seats","ok":false,"v":2}
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+error: test failed, to rerun pass `-p pij-daemon --test double_seat_http`
+```
+
+## Hook and status-line scripts (AC3, AC4, AC5)
+cwd: <worktree>
+tree: 01c68a9 + f67c724 tests
+command: nice -n 19 timeout -k 10 900 cargo test -j 1 -p pij-harnesses --test claude_heal_scripts (exit 101)
+The two pre-existing tests stay green.
+```text
+test session_start_hook_warns_human_and_model_about_a_double_seat ... FAILED
+test status_line_shows_a_red_double_segment_and_never_heals_it ... FAILED
+test user_prompt_hook_warns_every_prompt_while_the_double_persists ... FAILED
+test copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats ... ok
+test status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daemon ... ok
+thread 'session_start_hook_warns_human_and_model_about_a_double_seat' (4356612) panicked at crates/harnesses/tests/claude_heal_scripts.rs:270:33:
+    SessionStart: hook output is not JSON (EOF while parsing a value at line 1 column 0): ""
+thread 'status_line_shows_a_red_double_segment_and_never_heals_it' (4356614) panicked at crates/harnesses/tests/claude_heal_scripts.rs:385:5:
+    red double segment: "\u{1b}[2m0%\u{1b}[0m \u{1b}[36mpij-double-seat-statusline-80926-1792033719597805000-4\u{1b}[0m \u{1b}[33m⛓ registering…\u{1b}[0m • Opus • \u{1b}[35mauto\u{1b}[0m • \u{1b}[2m0/200k\u{1b}[0m"
+thread 'user_prompt_hook_warns_every_prompt_while_the_double_persists' (4356615) panicked at crates/harnesses/tests/claude_heal_scripts.rs:270:33:
+    UserPromptSubmit: hook output is not JSON (EOF while parsing a value at line 1 column 0): ""
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.06s
+error: test failed, to rerun pass `-p pij-harnesses --test claude_heal_scripts`
+```
+
+## Literal pin (cross-runtime seam)
+cwd: <worktree>
+tree: ab8f97e tree with the three scripts replaced by their bb9f0b1 versions (then restored)
+command: nice -n 19 timeout -k 10 900 cargo test -j 1 -p pij-harnesses --test claude_heal_scripts scripts_spell (exit 101)
+On bb9f0b1 itself this test cannot compile (pij_core::double_seat does not exist there), so its red is shown with the constant present and the base scripts.
+```text
+test scripts_spell_the_conversation_live_code_as_rust_defines_it ... FAILED
+thread 'scripts_spell_the_conversation_live_code_as_rust_defines_it' (4563167) panicked at crates/harnesses/tests/claude_heal_scripts.rs:412:9:
+    claude-session-start-pij.sh does not carry the code Rust raises
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-harnesses --test claude_heal_scripts`
+```
+

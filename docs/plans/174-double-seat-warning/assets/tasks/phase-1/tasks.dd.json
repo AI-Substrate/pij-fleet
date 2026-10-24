@@ -1,0 +1,161 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Surface double-seat detection",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": "",
+        "log": "../../execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "One coder implements pij-fleet#55 as written in impl-guide.dd.json tk-0001: red tests first, then the shared helper and coded refusals, the notice, the scripts, mutation receipts, docs, gates and the PR. Context: adopt's refusal is crates/daemon/src/http/identity.rs ~818, the not-registered refusal ~1264, revive's guard crates/daemon/src/http/revive.rs ~147, script tests crates/harnesses/tests/claude_heal_scripts.rs."
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Red tests on main bb9f0b1 for AC1-AC6 and AC8(d)",
+          "phase": "ph-61af",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../execution-log.dd.json#entries/lg-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Daemon: shared live-copy helper, coded adopt refusal, stray-pane check, once-per-pair notice with spine audit",
+          "phase": "ph-61af",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../execution-log.dd.json#entries/lg-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Scripts: SessionStart hook, UserPromptSubmit hook, status line",
+          "phase": "ph-61af",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "receipt": "../../execution-log.dd.json#entries/lg-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Mutation receipts",
+          "phase": "ph-61af",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "receipt": "../../execution-log.dd.json#entries/lg-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Docs: pij-rs-api.md entry and docs/how/double-seat.md",
+          "phase": "ph-61af",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005",
+          "receipt": "../../execution-log.dd.json#entries/lg-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Gates and PR",
+          "phase": "ph-61af",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006",
+          "receipt": "../../execution-log.dd.json#entries/lg-0009"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "Each new test fails on bb9f0b1 for the right reason (quoted in the receipt), and none touches the live tmux server, the production daemon or the real ~/.claude",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "vd-0001 is green: coded adopt refusal with details, stray-pane refusal text, unchanged not-registered text for a pane with no record or a mismatched process start, one notice per pair across a simulated restart, and revive's existing tests still green through the shared helper",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0002"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "vd-0002 is green: each hook prints valid hook JSON with systemMessage and additionalContext only on the coded refusal, exits 0 on every path, and the registered-pane FYI claim output is unchanged; the status line shows the red double segment; a test pins the scripts' literal to the Rust constant",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0003"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "Each AC8(b) mutation turns its named test red, is restored, and the receipts are recorded in the execution log and the PR",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0004"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0005",
+            "assertion": "docs/how/double-seat.md and the pij-rs-api.md entry exist and match the code",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0005"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "vd-0003 and vd-0004 pass; the PR is open on pij-fleet with the plan's AC evidence; GitHub CI is green on the exact head; git ls-remote origin 'refs/notes/*' is empty; any stage not run is named NOT RUN with its reason",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0009"
+          }
+        ]
+      }
+    }
+  ]
+}

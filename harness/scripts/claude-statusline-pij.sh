@@ -94,8 +94,22 @@ if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ]; then
       ;;
   esac
 fi
+# Plan 174: rs refuses this pane because it runs a second copy of a live
+# seat's conversation. Say so in red instead of the seat tag or "registering",
+# and never heal it: the adopt would be refused the same way. The code is
+# pinned to the Rust constant by the script tests.
+DOUBLE_FMT=""
+case "$RS_OUTPUT" in
+  *'"code":"E-RS-CONVERSATION-LIVE"'*)
+    DOUBLE_AT=$(printf '%s' "$RS_OUTPUT" |
+      jq -r '"\(.details.seat // "?") in \(.details.pane // "no pane")"' 2>/dev/null)
+    DOUBLE_FMT=" \033[31m⚠ double: ${DOUBLE_AT:-seat}\033[0m"
+    ;;
+esac
 PIJ_FMT=""
-if [ -n "$PIJID" ]; then
+if [ -n "$DOUBLE_FMT" ]; then
+  PIJ_FMT=$DOUBLE_FMT
+elif [ -n "$PIJID" ]; then
   PIJ_FMT=" \033[33mrs\033[0m \033[34m⛓ $PIJID\033[0m"
   # Held FYIs (plan 158): whoami carries the count; show it only while N > 0.
   case "$RS_OUTPUT" in
@@ -115,34 +129,60 @@ fi
 # or an rs seat recording a different conversation, fires ONE detached adopt per
 # pane per 15 s. The daemon derives the conversation itself; the payload's
 # session_id only cross-checks it. Rendering never waits on the adopt.
-if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] \
+# Plan 174: a heal adopt refused with E-RS-CONVERSATION-LIVE leaves a marker
+# naming this conversation. While the payload still names that conversation,
+# the line shows the red double segment and fires no further adopt for it; the
+# marker goes once rs answers with this conversation (the human adopted after
+# closing a copy) or the conversation changes.
+if [ -n "${TMUX_PANE:-}" ] && [ -n "$PIJ_RS_BIN" ] && [ -n "$SESSION_ID" ] && [ -z "$DOUBLE_FMT" ] \
   && { [ -n "$PIJID" ] || [ -z "${LEGACYID:-}" ]; }; then
+  HEAL_DIR=${PIJ_RS_STATE_DIR:-${HOME:-/tmp}/.pij-rs}/heal
+  HEAL_KEY=$HEAL_DIR/pane-${TMUX_PANE#%}
+  DOUBLE_SID=""
+  if [ -f "$HEAL_KEY.double" ]; then
+    { IFS= read -r DOUBLE_SID; IFS= read -r DOUBLE_AT; } <"$HEAL_KEY.double"
+  fi
   case "$RS_OUTPUT" in
-    *"\"session\":\"$SESSION_ID\""*) ;;
+    *"\"session\":\"$SESSION_ID\""*)
+      [ -n "$DOUBLE_SID" ] && rm -f "$HEAL_KEY.double"
+      ;;
     *)
-      HEAL_DIR=${PIJ_RS_STATE_DIR:-${HOME:-/tmp}/.pij-rs}/heal
-      HEAL_KEY=$HEAL_DIR/pane-${TMUX_PANE#%}
-      mkdir -p "$HEAL_DIR" 2>/dev/null
-      if mkdir "$HEAL_KEY.lock" 2>/dev/null; then
-        NOW=$(date +%s)
-        LAST=0
-        [ -f "$HEAL_KEY.last" ] && IFS= read -r LAST <"$HEAL_KEY.last"
-        case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
-        if [ $((NOW - LAST)) -ge 15 ]; then
-          printf '%s\n' "$NOW" >"$HEAL_KEY.last"
-          (
-            if OUT=$("$PIJ_RS_BIN" adopt "$TMUX_PANE" --harness claude --harness-session "$SESSION_ID" 2>&1); then
-              RESULT="healed"
-            else
-              RESULT="refused reason=$(printf '%s' "$OUT" | tr '\n' ' ')"
-            fi
-            printf '%s statusline:%s pane=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RESULT" "$TMUX_PANE" \
-              >>"${HEAL_DIR%/heal}/hook.log" 2>/dev/null
-          ) </dev/null >/dev/null 2>&1 &
+      if [ -n "$DOUBLE_SID" ] && [ "$DOUBLE_SID" = "$SESSION_ID" ]; then
+        DOUBLE_FMT=" \033[31m⚠ double: ${DOUBLE_AT:-seat}\033[0m"
+        PIJ_FMT=$DOUBLE_FMT
+      else
+        [ -n "$DOUBLE_SID" ] && rm -f "$HEAL_KEY.double"
+        mkdir -p "$HEAL_DIR" 2>/dev/null
+        if mkdir "$HEAL_KEY.lock" 2>/dev/null; then
+          NOW=$(date +%s)
+          LAST=0
+          [ -f "$HEAL_KEY.last" ] && IFS= read -r LAST <"$HEAL_KEY.last"
+          case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
+          if [ $((NOW - LAST)) -ge 15 ]; then
+            printf '%s\n' "$NOW" >"$HEAL_KEY.last"
+            (
+              if OUT=$("$PIJ_RS_BIN" adopt "$TMUX_PANE" --harness claude --harness-session "$SESSION_ID" 2>&1); then
+                RESULT="healed"
+              else
+                RESULT="refused reason=$(printf '%s' "$OUT" | tr '\n' ' ')"
+                case "$OUT" in
+                  *E-RS-CONVERSATION-LIVE*)
+                    ONE=$(printf '%s' "$OUT" | tr '\n' ' ')
+                    D_SEAT=$(printf '%s' "$ONE" | sed -n 's/.*is live as seat `\([^`]*\)`.*/\1/p')
+                    D_PANE=$(printf '%s' "$ONE" | sed -n 's/.*(pane \([^)]*\)).*/\1/p')
+                    printf '%s\n%s in %s\n' "$SESSION_ID" "${D_SEAT:-?}" "${D_PANE:-no pane}" \
+                      >"$HEAL_KEY.double.tmp" && mv "$HEAL_KEY.double.tmp" "$HEAL_KEY.double"
+                    ;;
+                esac
+              fi
+              printf '%s statusline:%s pane=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RESULT" "$TMUX_PANE" \
+                >>"${HEAL_DIR%/heal}/hook.log" 2>/dev/null
+            ) </dev/null >/dev/null 2>&1 &
+          fi
+          rmdir "$HEAL_KEY.lock" 2>/dev/null
         fi
-        rmdir "$HEAL_KEY.lock" 2>/dev/null
+        PIJ_FMT="$PIJ_FMT \033[33m⛓ registering…\033[0m"
       fi
-      PIJ_FMT="$PIJ_FMT \033[33m⛓ registering…\033[0m"
       ;;
   esac
 fi
