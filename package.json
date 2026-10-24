@@ -43,7 +43,7 @@
 		"@earendil-works/pi-ai": "^0.87.1",
 		"@earendil-works/pi-coding-agent": "^0.87.1",
 		"@earendil-works/pi-tui": "^0.87.1",
-		"@types/node": "^22.0.0",
+		"@types/node": "^26.6.2",
 		"tsx": "^4.23.0",
 		"typescript": "^5.9.0",
 		"vitest": "^4.1.11"
