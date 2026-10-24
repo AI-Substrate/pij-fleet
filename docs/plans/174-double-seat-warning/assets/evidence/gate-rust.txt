@@ -128,3 +128,19 @@ test direct_child_failure_survives_a_lingering_grandchild ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 1.34s
 exit 0
 ```
+
+
+# Fix round: workspace gate after merging main dcfed3d (run once)
+
+Tree b5a11fb. Same C12 commands as above plus cargo fmt --all --check.
+Result: metadata --locked ok, fmt exit 0, clippy workspace exit 0, cargo test -j 1 --locked --workspace --no-fail-fast exit 0: 103 test binaries, 1558 passed, 0 failed, 8 ignored. The sidecars test that flaked under load in the first run passed here.
+```text
+start 2026-10-24T00:52:13Z load { 21.83 18.90 14.06 }
+b5a11fb107ead64814b9cc7141f68e9b43e7759c
+metadata --locked ok
+fmt exit 0
+clippy-workspace exit 0
+test start load { 16.81 17.96 13.91 }
+test-workspace exit 0
+end 2026-10-24T00:58:03Z
+```

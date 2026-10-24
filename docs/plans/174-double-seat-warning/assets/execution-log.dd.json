@@ -109,6 +109,37 @@
             "../plan.dd.json#acceptance_criteria/ac-0008",
             "backpressure.dd.json#rows/bp-0004"
           ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-24T00:39:17Z",
+          "text": "MERGE: origin/main dcfed3d merged into feat/double-seat-warning-claude as cc009e2 (no rebase, no force-push). Clean, no conflicts; the only overlap with this branch was one line of docs/how/pij-rs-api.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0011",
+          "at": "2026-10-24T00:50:10Z",
+          "text": "FIX ROUND (review of cae54cd) at b5a11fb. F001: revive's conversation guard restored verbatim to bb9f0b1 (only a doc comment added); revive_conversation_guard_keeps_its_original_rule RED on cae54cd sources (revive launched despite a tombstoned holder with an Active process), GREEN after. F002: bound_seat checks for a double when the store-live owner's process is gone; double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs RED on cae54cd (activity answered ok and wrote working to the dead seat), GREEN after. AC5 heal branch: a heal adopt refused with the code leaves heal/pane-N.double; status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again RED on cae54cd (no marker), GREEN after. Witnesses, green on cae54cd by design, each with a mutation receipt: lock deleted -> double_seat_simultaneous_first_refusals_record_one_detection FAILED; is_live deleted -> double_seat_tombstoned_holder_is_not_a_live_copy FAILED; process-gone bypassed -> double_seat_holder_whose_process_is_gone_is_not_a_live_copy FAILED; stray check skipped for retired history -> double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs FAILED; F002 check removed -> dead-owner test FAILED; heal marker ignored -> heal test FAILED. Each restored and cmp-checked. Evidence: evidence/fix-round.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "backpressure.dd.json#rows/bp-0001",
+            "backpressure.dd.json#rows/bp-0002",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
+        },
+        {
+          "id": "lg-0012",
+          "at": "2026-10-24T00:58:03Z",
+          "text": "WORKSPACE GATE after the merge, run once at b5a11fb: cargo metadata --locked ok; fmt --check exit 0; clippy -j 1 --locked --workspace --all-targets -D warnings exit 0; cargo test -j 1 --locked --workspace --no-fail-fast exit 0, 1558 passed, 0 failed, 8 ignored (103 binaries). TS typecheck/vitest/biome, just smoke and the single harness checks invocation remain NOT RUN locally (no TS changed; node_modules forbidden; smoke needs live tmux). Evidence: evidence/gate-rust.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
         }
       ]
     }

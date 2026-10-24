@@ -95,7 +95,7 @@
           "claim": "Proof, sized for an unproven coder model. (a) Every new Rust test and hook-script test is shown RED on main bb9f0b1 (for the right reason, quoted) and GREEN on the branch, with receipts. (b) Mutation receipts, each restored after: deleting the session-record lookup in the stray-pane path turns the ac-0002 test red; deleting the dedupe turns the repeat-notice test red; making the SessionStart hook ignore the code turns the ac-0003 script test red; making the status line ignore the code turns the ac-0005 script test red. (c) No test touches the live tmux server, the production daemon (127.0.0.1:7461) or the real ~/.claude: fixture claude homes, a fake pij-rs on PATH, private ports. (d) One daemon integration test runs the incident end to end on fixtures: seat live in pane A, a second live session record for the same conversation in pane B, adopt from B refused with the code, one notice to the seat, a send from B refused with the actionable text, a repeat adopt sends no second notice. (e) GitHub CI is green on the exact head. Claims are scoped: any stage not run is named NOT RUN with its reason.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0009"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0012"
         }
       ]
     },

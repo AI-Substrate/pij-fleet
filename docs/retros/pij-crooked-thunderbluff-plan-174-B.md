@@ -60,3 +60,33 @@ them. A recipe would have waited.
 **Encodable improvement:** the `cargo-c12` recipe above. Second choice: a
 `RegistrationService` that reads `Services.claude_homes`, so test hermeticity
 comes from the fixture rather than from each test's discipline.
+
+## Fix round (review of cae54cd, 2026-10-24)
+
+**magicWand (second):** each reviewer finding should arrive with a
+"red on the reviewed head" requirement already attached. That framing made this
+round mechanical. The reviewed head's own source acts as the mutation for every
+regression finding: swap the file, see the test fail for the reason the finding
+names, swap it back.
+
+**difficulties:**
+- **I unified two semantics the plan said to leave alone.** The guide asked for
+  "one helper, revive calls it". The non-goals said revive's guard must not
+  change. Those two conflict. I resolved it myself and documented the change,
+  when I should have asked the prime at the ack. The window for raising a
+  contract conflict is widest before anything is built. Revive is now restored
+  verbatim; only adopt and pane resolution share the helper.
+- **Store-live is not running (F002).** The identity ladder already skipped an
+  owner row whose process was gone. The hooks' `bound_seat` did not, so a dead
+  owner row silently swallowed `activity`, which wrote `working` to a corpse,
+  and `fyi-claim`. Two resolvers for one question drift. `stretch:` make
+  `bound_seat` call the ladder's pane step.
+- **A lock with no witness.** The notice lock was correct, but no test could
+  fail without it. On a current-thread runtime a race only shows up if the test
+  forces it to overlap. A gate spine that holds the first dedupe read until a
+  second reader arrives makes that deterministic.
+- **LOW findings not fixed.** One: the notice runs under one daemon-wide lock;
+  per-seat locking needs a keyed map. Two: older tests reach the real
+  `~/.claude` through `RegistrationService`. Pointing it at `Services.claude_homes`
+  changes what those tests observe about consent. Neither fix is trivial, so
+  both stay as stretch items.
