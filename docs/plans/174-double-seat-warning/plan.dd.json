@@ -106,8 +106,9 @@
           "id": "ph-61af",
           "title": "Surface double-seat detection",
           "brief": "One phase: a stable refusal code with details, the stray-pane check in pane resolution, a once-per-pair notice with a spine audit, warnings in the SessionStart and UserPromptSubmit hooks and the status line, docs. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0013"
         }
       ]
     }

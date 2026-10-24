@@ -140,6 +140,16 @@
             "../plan.dd.json#acceptance_criteria/ac-0008",
             "backpressure.dd.json#rows/bp-0004"
           ]
+        },
+        {
+          "id": "lg-0013",
+          "at": "2026-10-24T01:03:07Z",
+          "text": "PRIME VERIFICATION (pij-far-jackal), recorded verbatim in the file assets/reviews/prime-verification.md: fix round verified at 7848728 (revive's conversation_live_elsewhere identical to bb9f0b1's ignoring comments; CI run 40047643830 green; diff within plan scope). bp-0003 human-judgement docs read: docs/how/double-seat.md and the pij-rs-api.md E-RS-CONVERSATION-LIVE entry match the code. Verdict: approve. Closes bp-0003 and phase ph-61af.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "backpressure.dd.json#rows/bp-0003",
+            "../plan.dd.json#phases/ph-61af"
+          ]
         }
       ]
     }

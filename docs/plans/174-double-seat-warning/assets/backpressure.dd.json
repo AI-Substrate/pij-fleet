@@ -43,8 +43,9 @@
           "mode": "EXISTS",
           "tier": "human-judgement",
           "proof": "RUN: just lint (Biome on docs where configured) plus a prime read of docs/how/double-seat.md and the pij-rs-api.md entry against the code",
-          "state": "unchecked",
-          "probe": "prime review"
+          "state": "checked",
+          "probe": "prime review",
+          "receipt": "execution-log.dd.json#entries/lg-0013"
         },
         {
           "id": "bp-0004",

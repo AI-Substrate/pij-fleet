@@ -68,4 +68,4 @@ After the 2026-10-15 reboot, pij revived pij-different-smelt in pane %5 (00:57:3
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-61af | Surface double-seat detection | One phase: a stable refusal code with details, the stray-pane check in pane resolution, a once-per-pair notice with a spine audit, warnings in the SessionStart and UserPromptSubmit hooks and the status line, docs. CS 3. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-61af | Surface double-seat detection | One phase: a stable refusal code with details, the stray-pane check in pane resolution, a once-per-pair notice with a spine audit, warnings in the SessionStart and UserPromptSubmit hooks and the status line, docs. CS 3. | [x] checked | — | assets/execution-log.dd.json#entries/lg-0013 | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
