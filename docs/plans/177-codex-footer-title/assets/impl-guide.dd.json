@@ -1,0 +1,241 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Codex footer: one segment parser",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Replace every rsplit_once('·') reading of the Codex footer with one parser that returns the footer's parts (model, effort, cwd) or None. Recognition, readiness, model and cwd all consume it (one definition, as the existing doc comment demands). Extra segments after the cwd are ignored, never parsed as data. Tests use recorded fixtures, bottom lines only.",
+        "composition_root": "crates/harnesses/src/composer.rs",
+        "contracts": [
+          "codex footer parser: line -> Option<CodexFooter{model, effort, cwd}>; is_codex_footer = parser(line).is_some()"
+        ],
+        "seams": [
+          "crates/harnesses/src/composer.rs:75 and :201",
+          "crates/harnesses/src/adapter.rs:278, ~350, ~370",
+          "crates/daemon/src/pointer/worker.rs ~374 (unrecognized retry; read only)"
+        ]
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One parser with four call sites in one crate."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "footer -> composer recognised",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "one parser -> recognition/readiness/model/cwd",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "fixture + red/green + mutation",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "docs + PR delivery note",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Codex footer parser",
+          "role": "pm",
+          "responsibility": "Fixture, red tests, segment parser, call-site migration, mutation receipt, docs, PR.",
+          "paths": [
+            "crates/harnesses/src/composer.rs",
+            "crates/harnesses/src/adapter.rs",
+            "crates/harnesses/tests/fixtures/",
+            "docs/how/",
+            "docs/plans/177-codex-footer-title"
+          ],
+          "reads": [],
+          "notes": "Read first: composer.rs (the composer finder and the codex_0_153_4 tests), adapter.rs observed_model, observed_cwd and readiness.",
+          "interface": "CodexFooter parser",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/harnesses/src/composer.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-177-codex-footer on fix/codex-footer-title."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "prime",
+          "model": "prime verifies receipts"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Harness recognisers and adapters",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "1",
+            "-p",
+            "pij-harnesses"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "-j",
+            "1",
+            "-p",
+            "pij-harnesses",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 120000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Fixture and red tests on 7babd01.",
+          "Segment parser; migrate the four call sites; vd-0001.",
+          "Mutation receipt; docs; vd-0002, vd-0003; PR; green CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: the prime verifies the red/green and mutation receipts and merges.",
+        "inputs": [
+          "PR head SHA",
+          "receipts"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "A looser parser recognises a transcript line as a footer.",
+          "check": "A test where a transcript line containing `·` and a path is not treated as the footer unless it follows the prompt."
+        },
+        {
+          "id": "rk-0002",
+          "text": "The session title is taken as the cwd.",
+          "check": "observed_cwd test on the 0.164 fixture."
+        }
+      ]
+    }
+  ]
+}
