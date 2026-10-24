@@ -5,16 +5,16 @@
 //! daemon already KNEW: adopt from %7 was refused, naming %5. But that text
 //! reached only `hook.log`, every other verb from %7 said "not registered", and
 //! %5 was never told. This module is the one place that detection lives, so the
-//! three callers that need it cannot drift apart:
+//! callers that refuse with [`CONVERSATION_LIVE_CODE`] cannot drift apart:
 //!
-//! - **revive** asks whether a conversation is already running elsewhere before
-//!   it launches a copy (`E-RS-REVIVE-CONVERSATION-LIVE`, unchanged);
 //! - **adopt** refuses to make one conversation a second seat;
-//! - **pane resolution** explains a pane no live seat owns when that pane is
-//!   running a second copy of a live seat's conversation.
+//! - **pane resolution** (the identity ladder, and the Claude hooks' `bound_seat`)
+//!   explains a pane no running seat owns when that pane is running a second
+//!   copy of a live seat's conversation.
 //!
-//! The last two refuse with [`CONVERSATION_LIVE_CODE`], and the first such
-//! refusal for a (live seat, stray process) pair tells the live seat once.
+//! The first such refusal for a (live seat, stray process) pair tells the live
+//! seat once. Revive's pre-launch guard (`E-RS-REVIVE-CONVERSATION-LIVE`) keeps
+//! its own original rule (plan 174 non-goal); it does not call this module.
 //!
 //! Evidence is OBSERVED, never claimed: a Claude process's own record under
 //! `<claude home>/sessions/<pid>.json` counts only when the pid's observed start
@@ -70,8 +70,8 @@ pub(crate) struct Double {
 
 /// The live seat holding `session`, other than any seat `skip` names.
 ///
-/// THE shared helper (impl-guide contract): revive, adopt and the stray-pane
-/// path all ask this one question, so the rule cannot differ between them. A
+/// THE shared helper: adopt and the stray-pane path ask this one question, so
+/// the rule cannot differ between them (revive keeps its own, see above). A
 /// row counts when it is live (not tombstoned), records a process, and that
 /// process is not observed gone. An unknown liveness answer counts as running:
 /// every caller REFUSES on a hit, so the unknown case errs toward not forking a
@@ -120,7 +120,7 @@ pub(crate) async fn conversation_live_as_seat(
 /// Claude processes running now whose own record passes `keep`, each with the
 /// identity the daemon observed for it.
 ///
-/// The session-record witness, shared by revive and the stray-pane path. A
+/// The session-record witness the stray-pane path reads. A
 /// record counts only when its pid's observed start matches the recorded one.
 pub(crate) async fn live_claude_records(
     state: &AppState,

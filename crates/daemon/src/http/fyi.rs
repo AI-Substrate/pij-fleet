@@ -307,17 +307,25 @@ async fn bound_seat(
             )));
         }
     };
-    let Some(descriptor) = descriptor else {
-        // Plan 174: the Claude hooks know only the pane, so a second copy of a
-        // live seat's conversation must be named here too, not "not bound".
-        if seat.is_none()
-            && let Some(pane) = pane.as_deref()
-            && let Some(double) = super::double_seat::stray_pane(state, pane).await
-        {
+    // Plan 174: the Claude hooks know only the pane, so a second copy of a live
+    // seat's conversation must be named here too, exactly as the identity
+    // ladder names it: when no live seat owns the pane, or the store-live row
+    // that names it records a process that is gone (review F002). A pane whose
+    // owner is running never reads the session records.
+    if seat.is_none()
+        && let Some(pane) = pane.as_deref()
+    {
+        let unowned = match &descriptor {
+            None => true,
+            Some(row) => super::identity::process_gone(state, row).await,
+        };
+        if unowned && let Some(double) = super::double_seat::stray_pane(state, pane).await {
             return Err(Box::new(
                 super::double_seat::refused(state, command, &double).await,
             ));
         }
+    }
+    let Some(descriptor) = descriptor else {
         return Err(Box::new(envelope(
             StatusCode::NOT_FOUND,
             &Envelope::<()>::refused(

@@ -10,11 +10,12 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use pij_core::model::{Harness, Pane, PaneProcess, ProcIdentity, SeatDescriptor, SeatId, Seq};
-use pij_core::ports::{LivenessPort, Registry, Spine};
+use pij_core::ports::{LivenessPort, Registry, Spine, SpineWindow};
 use pij_testkit::fakes::{FakeLiveness, FakeQueue, FakeRegistry, FakeSpine, FakeTmux};
 use serde_json::{Value, json};
 
@@ -148,6 +149,18 @@ async fn world_on(
     stray: ProcIdentity,
     extra: &[ProcIdentity],
 ) -> World {
+    world_with(registry, spine, home, stray, extra, |_| {}).await
+}
+
+/// [`world_on`], with `tweak` applied to the services before the daemon boots.
+async fn world_with(
+    registry: Arc<FakeRegistry>,
+    spine: Arc<FakeSpine>,
+    home: &Home,
+    stray: ProcIdentity,
+    extra: &[ProcIdentity],
+    tweak: impl FnOnce(&mut crate::Services),
+) -> World {
     let mut services = test_services(
         registry.clone(),
         Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
@@ -176,6 +189,7 @@ async fn world_on(
     });
     services.liveness = liveness.clone();
     services.claude_homes = Arc::from([home.0.clone()]);
+    tweak(&mut services);
     let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
     World {
         addr,
@@ -491,4 +505,244 @@ async fn double_seat_notice_counts_as_sent_when_the_dedupe_read_fails() {
         detections(&world.spine).await.is_empty(),
         "fail-safe: no notice and no detection record on an unknown read"
     );
+}
+
+/// Every pane-resolved verb, called from `STRAY_PANE` over HTTP (AC2's list).
+async fn seven_verbs(addr: SocketAddr) -> Vec<(&'static str, Value)> {
+    let caller = json!({"tmuxPane": STRAY_PANE});
+    vec![
+        (
+            "whoami --pane",
+            post(addr, "/v1/whoami", json!({"pane": STRAY_PANE})).await,
+        ),
+        (
+            "send",
+            post(
+                addr,
+                "/v1/shim/send",
+                json!({"argv": ["send", SEAT, "hello"], "caller": caller}),
+            )
+            .await,
+        ),
+        (
+            "spawn",
+            post(
+                addr,
+                "/v1/spawn",
+                json!({"harness": "claude", "cwd": "/abs/tree", "role": "worker", "caller": caller}),
+            )
+            .await,
+        ),
+        (
+            "bg",
+            post(
+                addr,
+                "/v1/bg",
+                json!({"title": "t", "command": "true", "caller": caller}),
+            )
+            .await,
+        ),
+        (
+            "report",
+            post(
+                addr,
+                "/v1/report",
+                json!({"argv": ["report", "now", "did", "next"], "caller": caller}),
+            )
+            .await,
+        ),
+        (
+            "activity",
+            post(
+                addr,
+                "/v1/activity",
+                json!({"pane": STRAY_PANE, "state": "working"}),
+            )
+            .await,
+        ),
+        (
+            "fyi-claim",
+            post(
+                addr,
+                "/v1/fyi/claim",
+                json!({"pane": STRAY_PANE, "via": "hook:claude"}),
+            )
+            .await,
+        ),
+    ]
+}
+
+/// Review F002 — the stray pane's store-live owner row records a process that
+/// is gone (the pane id was reused by the second copy). All seven verbs name
+/// the double, the hooks' `activity` and `fyi-claim` included.
+#[tokio::test]
+async fn double_seat_dead_owner_pane_gets_the_code_on_all_seven_verbs() {
+    let (world, _home) = incident().await;
+    let mut dead = SeatDescriptor::new("pij-dead-owner", Harness::Claude, "/abs/tree");
+    dead.pane = Some(STRAY_PANE.to_string());
+    dead.proc = Some(ProcIdentity {
+        pid: 917_499,
+        proc_start: local_start(0, 10, 0),
+    });
+    dead.harness_session = Some("an-older-conversation".to_string());
+    world.registry.put(dead).await.unwrap();
+
+    for (verb, body) in seven_verbs(world.addr).await {
+        assert_double_refusal(verb, &body);
+    }
+}
+
+/// PIN (regression from comparison A's HIGH bug): the stray pane's history
+/// holds a retired (tombstoned) seat. All seven verbs still name the double,
+/// never the tombstone refusal.
+#[tokio::test]
+async fn double_seat_pin_retired_pane_history_gets_the_code_on_all_seven_verbs() {
+    let (world, _home) = incident().await;
+    let mut retired = SeatDescriptor::new("pij-retired-here", Harness::Claude, "/abs/tree");
+    retired.pane = Some(STRAY_PANE.to_string());
+    world.registry.put(retired).await.unwrap();
+    world
+        .registry
+        .tombstone(&SeatId::from("pij-retired-here"), "closed")
+        .await
+        .unwrap();
+
+    for (verb, body) in seven_verbs(world.addr).await {
+        assert_double_refusal(verb, &body);
+        assert!(
+            !meta(&body).contains("tombstoned"),
+            "{verb}: the double outranks the tombstone: {body}"
+        );
+    }
+}
+
+/// A spine whose dedupe read holds until a second reader arrives (or 300 ms
+/// pass), so two first refusals overlap there exactly when nothing serialises
+/// them. Everything else passes straight through to the shared fake.
+struct Gate {
+    inner: Arc<FakeSpine>,
+    readers: AtomicUsize,
+    arrived: tokio::sync::Notify,
+}
+
+#[async_trait]
+impl Spine for Gate {
+    async fn append(&self, event: pij_core::model::Event) -> pij_core::error::Result<Seq> {
+        self.inner.append(event).await
+    }
+    async fn tail(
+        &self,
+        seat: Option<&SeatId>,
+        since: Seq,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.tail(seat, since).await
+    }
+    async fn latest_matching(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        self.inner.latest_matching(seat, kinds).await
+    }
+    async fn latest_matching_message(
+        &self,
+        seat: &SeatId,
+        kind: &str,
+        msg_id: &str,
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        if kind == DETECTED {
+            if self.readers.fetch_add(1, Ordering::SeqCst) == 0 {
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(300),
+                    self.arrived.notified(),
+                )
+                .await;
+            } else {
+                self.arrived.notify_waiters();
+            }
+        }
+        self.inner.latest_matching_message(seat, kind, msg_id).await
+    }
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &SpineWindow,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.matching_since(seat, window).await
+    }
+}
+
+/// The audit race: two first refusals arriving together (a SessionStart adopt
+/// and a status-line whoami) record ONE detection and send one notice. The
+/// gate holds the first dedupe read open long enough for the second to reach
+/// it unless the double-seat lock serialises them.
+#[tokio::test]
+async fn double_seat_simultaneous_first_refusals_record_one_detection() {
+    let registry = seeded_registry().await;
+    let home = Home::new();
+    home.record(LIVE_PID, SESSION, "Thu Oct 15 00:57:34 2026", LIVE_PANE);
+    home.record(STRAY_PID, SESSION, "Thu Oct 15 00:58:23 2026", STRAY_PANE);
+    let spine = Arc::new(FakeSpine::new());
+    let gate = Arc::new(Gate {
+        inner: spine.clone(),
+        readers: AtomicUsize::new(0),
+        arrived: tokio::sync::Notify::new(),
+    });
+    let world = world_with(registry, spine, &home, stray_proc(), &[], |services| {
+        services.event_bus = Arc::new(crate::events::EventBus::new(gate, 16).expect("bus"));
+    })
+    .await;
+
+    let (first, second) = tokio::join!(
+        adopt_stray(world.addr),
+        post(world.addr, "/v1/whoami", json!({"pane": STRAY_PANE}))
+    );
+    assert_double_refusal("adopt", &first);
+    assert_double_refusal("whoami", &second);
+    assert_eq!(
+        detections(&world.spine).await.len(),
+        1,
+        "two simultaneous first refusals sent two notices"
+    );
+}
+
+/// The shared helper counts only a LIVE row: a tombstoned holder of the
+/// conversation is not a live copy, so the stray pane gets the plain text.
+#[tokio::test]
+async fn double_seat_tombstoned_holder_is_not_a_live_copy() {
+    let (world, _home) = incident().await;
+    world
+        .registry
+        .tombstone(&SeatId::from(SEAT), "closed")
+        .await
+        .unwrap();
+
+    let body = post(world.addr, "/v1/whoami", json!({"pane": STRAY_PANE})).await;
+    assert_eq!(meta(&body), not_registered(STRAY_PANE), "{body}");
+    assert!(detections(&world.spine).await.is_empty());
+}
+
+/// The shared helper counts only a holder whose process is not gone: a dead
+/// holder is not a live copy, so the stray pane gets the plain text.
+#[tokio::test]
+async fn double_seat_holder_whose_process_is_gone_is_not_a_live_copy() {
+    let registry = seeded_registry().await;
+    let home = Home::new();
+    home.record(STRAY_PID, SESSION, "Thu Oct 15 00:58:23 2026", STRAY_PANE);
+    let world = world_with(
+        registry,
+        Arc::new(FakeSpine::new()),
+        &home,
+        stray_proc(),
+        &[],
+        |services| {
+            // Only the stray process runs; the holder's recorded pid is gone.
+            services.liveness = Arc::new(FakeLiveness::new().with_proc(stray_proc()));
+        },
+    )
+    .await;
+
+    let body = post(world.addr, "/v1/whoami", json!({"pane": STRAY_PANE})).await;
+    assert_eq!(meta(&body), not_registered(STRAY_PANE), "{body}");
+    assert!(detections(&world.spine).await.is_empty());
 }

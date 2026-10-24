@@ -49,7 +49,7 @@ A record counts only when its pid's **observed** start (the liveness port)
 matches the start it recorded. Pids recycle at boot, so a stale file for a
 reused pid derives nothing.
 
-## One helper, three callers
+## One helper, two callers
 
 `crates/daemon/src/http/double_seat.rs` holds the detection once:
 
@@ -63,12 +63,14 @@ Its callers:
 
 | caller | asks | on a hit |
 | --- | --- | --- |
-| `revive` | is the recorded conversation live as another seat, or in any live Claude process? | `E-RS-REVIVE-CONVERSATION-LIVE`, before any launch |
 | `adopt` | is the derived conversation live as a seat in a process other than this pane's? | `E-RS-CONVERSATION-LIVE` |
-| pane resolution (`resolve_seat`, the hooks' `bound_seat`) | does this unowned pane's own record name a conversation live as a seat in another pane? | `E-RS-CONVERSATION-LIVE` |
+| pane resolution (`resolve_seat`, the hooks' `bound_seat`) | does this pane, which no running seat owns, have its own record naming a conversation live as a seat in another pane? | `E-RS-CONVERSATION-LIVE` |
 
-Pane resolution reads the records only after it found no live seat owning the
-pane, so a healthy verb never pays for the scan. A pane with no record, a
+"No running seat owns the pane" covers three shapes, all seven verbs alike:
+no live row names the pane; only retired (tombstoned) rows do, and the double
+outranks the tombstone refusal; or the store-live row that names it records a
+process that is gone. Pane resolution reads the records only then, so a verb
+from a pane whose seat is running never pays for the scan. A pane with no record, a
 mismatched start, or a conversation no other seat holds keeps the plain
 "not registered" text.
 
@@ -76,6 +78,12 @@ The code string is defined once, `pij_core::double_seat::CONVERSATION_LIVE_CODE`
 The shell scripts match it as a literal, and
 `scripts_spell_the_conversation_live_code_as_rust_defines_it` pins each script's
 literal to the constant.
+
+**Revive is not a caller.** Its pre-launch guard, `E-RS-REVIVE-CONVERSATION-LIVE`,
+keeps its own original rule (a plan 174 non-goal): any other row holding the
+conversation, tombstoned included, whose process is observed `Active`, then the
+same Claude record check. A failed probe does not refuse there.
+`revive_conversation_guard_keeps_its_original_rule` pins it.
 
 ## The refusal
 
@@ -93,7 +101,7 @@ stray_pid}`. The full contract is in
 | --- | --- | --- |
 | SessionStart | `claude-session-start-pij.sh` | hook JSON with `systemMessage` (human) and `additionalContext` (model); still logs to `hook.log` |
 | UserPromptSubmit | `claude-user-prompt-submit-pij.sh` | the same JSON on every prompt, from the refusal its `activity` or `fyi-claim` call already received; nothing once the double clears |
-| status line | `claude-statusline-pij.sh` | red `⚠ double: <seat> in %N` in place of the seat tag or `⛓ registering…`; no heal adopt |
+| status line | `claude-statusline-pij.sh` | red `⚠ double: <seat> in %N` in place of the seat tag or `⛓ registering…`; no heal adopt. Two sources: a coded `whoami` refusal, or a heal adopt refused with the code (the pane is another seat's, recording a different conversation). The refused heal leaves `heal/pane-<N>.double` naming this conversation; while the payload names it, the line stays red and no further adopt fires. It clears once `whoami` answers with this conversation, or the conversation changes |
 
 Any other refusal keeps its old behaviour (log only), every script exits 0, and
 every daemon call keeps its existing bound. A registered pane's FYI block is
@@ -124,8 +132,12 @@ the first process is gone.
 ## Proof
 
 `crates/daemon/src/http/double_seat_tests.rs` (adopt refusal, every stray-pane
-verb, unchanged text for unproven strays, no scan on a resolved pane, one notice
-per pair across a restart, fail-safe dedupe read),
+verb, all seven verbs for a dead store-live owner and for a pane with retired
+history, unchanged text for unproven strays, no scan on a resolved pane, a
+tombstoned or dead holder is not a live copy, one notice per pair across a
+restart, one detection for two simultaneous first refusals, fail-safe dedupe
+read), `revive_conversation_guard_keeps_its_original_rule` in
+`crates/daemon/tests/revive_http.rs`,
 `crates/daemon/tests/double_seat_http.rs` (the incident end to end on the real
 SQLite store, with a real restart) and `crates/harnesses/tests/claude_heal_scripts.rs`
 (the three scripts). Run them with:

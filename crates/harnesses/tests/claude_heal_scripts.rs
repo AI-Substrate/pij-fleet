@@ -428,3 +428,67 @@ fn scripts_spell_the_conversation_live_code_as_rust_defines_it() {
         );
     }
 }
+
+/// AC5, heal branch (review item 4): rs names this pane as another seat that
+/// records a different conversation, so the status line heals, and the heal
+/// adopt is refused with the code. That refusal turns the line red, and no
+/// further adopt fires for it, even once the 15 s window has passed.
+#[test]
+fn status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again() {
+    let root = pij_testkit::fresh_dir("pij-double-seat-heal");
+    install(
+        &root,
+        "pij-rs",
+        "#!/bin/sh\ndir=$(dirname \"$0\")\ncase \" $* \" in\n  *\" whoami \"*) printf '%s\\n' '{\"ok\":true,\"data\":{\"id\":\"pij-other-seat\",\"session\":\"S-older\"}}' ;;\n  *\" adopt \"*) printf '%s\\n' \"$*\" >>\"$dir/adopts\"; cat \"$dir/refusal\"; exit 1 ;;\nesac\n",
+    );
+    install(&root, "pij", "#!/bin/sh\nexit 1\n");
+    std::fs::write(
+        root.join("bin/refusal"),
+        format!("pij adopt: FAILED — {}\n", double_meta()),
+    )
+    .unwrap();
+    let payload = format!(
+        r#"{{"session_id":"S-174","workspace":{{"current_dir":"{}"}},"model":{{"display_name":"Opus"}}}}"#,
+        root.display()
+    );
+    let marker = root.join("state/heal/pane-9.double");
+
+    let (first, code, _) = hook(&root, "claude-statusline-pij.sh", &payload);
+    assert_eq!(code, 0);
+    assert!(
+        first.contains("registering"),
+        "the first render heals: {first:?}"
+    );
+    // The heal is detached by design; wait only for the fake's marker file.
+    eventually("the refused heal's double marker", || marker.exists());
+    assert_eq!(adopts(&root).len(), 1);
+
+    // Rewind the heal window: a plain refusal would adopt again now.
+    std::fs::write(root.join("state/heal/pane-9.last"), "0\n").unwrap();
+    let (second, code, took) = hook(&root, "claude-statusline-pij.sh", &payload);
+    assert_eq!(code, 0);
+    assert!(took < Duration::from_secs(2), "{took:?}");
+    assert!(
+        second.contains("\x1b[31m⚠ double: pij-different-smelt in %5"),
+        "red double segment from the heal refusal: {second:?}"
+    );
+    assert!(!second.contains("registering"), "{second:?}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("state/heal/pane-9.last")).unwrap(),
+        "0\n",
+        "no second heal adopt was fired"
+    );
+    assert_eq!(adopts(&root).len(), 1);
+
+    // rs answers with this conversation (the human adopted after closing a
+    // copy): the marker is cleared and the seat tag returns.
+    install(
+        &root,
+        "pij-rs",
+        "#!/bin/sh\ncase \" $* \" in\n  *\" whoami \"*) printf '%s\\n' '{\"ok\":true,\"data\":{\"id\":\"pij-different-smelt\",\"session\":\"S-174\"}}' ;;\nesac\n",
+    );
+    let (third, _, _) = hook(&root, "claude-statusline-pij.sh", &payload);
+    assert!(third.contains("⛓ pij-different-smelt"), "{third:?}");
+    assert!(!marker.exists(), "the double marker is cleared");
+    let _ = std::fs::remove_dir_all(root);
+}

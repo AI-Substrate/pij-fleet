@@ -604,3 +604,72 @@ async fn revive_resumes_the_recorded_conversation_unless_it_is_live_elsewhere() 
     assert_eq!(body["ok"], false, "{body}");
     assert!(body["meta"].as_str().unwrap().contains("--fresh"), "{body}");
 }
+
+/// Plan 174 review F001 — revive's conversation guard keeps its ORIGINAL rule:
+/// any other row holding the conversation, tombstoned included, blocks the
+/// relaunch when its process is observed `Active`; a failed liveness probe is
+/// not `Active`, so it never refuses with this guard. (The double-seat helper
+/// that adopt and pane resolution share has the opposite answers to both, and
+/// must not leak into revive: plan 174 lists revive's guard as a non-goal.)
+#[tokio::test]
+async fn revive_conversation_guard_keeps_its_original_rule() {
+    const SESSION: &str = "plan174-revive-original-rule";
+    let running = ProcIdentity {
+        pid: 43_822,
+        proc_start: 21,
+    };
+
+    // A tombstoned holder whose process still runs blocks the relaunch (a
+    // non-Claude conversation has no session-record witness to fall back on).
+    let f = fixture(Arc::new(FakeLiveness::new().with_proc(running))).await;
+    let mut prior = target();
+    prior.harness_session = Some(SESSION.to_string());
+    f.services.registry.put(prior.clone()).await.unwrap();
+    f.services
+        .registry
+        .tombstone(&prior.id, "closed")
+        .await
+        .unwrap();
+    let mut holder = SeatDescriptor::new("pij-holder", Harness::Copilot, "/tmp");
+    holder.pane = Some("%4".to_string());
+    holder.proc = Some(running);
+    holder.harness_session = Some(SESSION.to_string());
+    f.services.registry.put(holder.clone()).await.unwrap();
+    f.services
+        .registry
+        .tombstone(&holder.id, "closed")
+        .await
+        .unwrap();
+    let resume = json!({"id":"pij-child","session":"fleet"});
+    let body = post(&f, &resume).await;
+    assert_eq!(body["ok"], false, "{body}");
+    assert_eq!(
+        body["details"]["code"], "E-RS-REVIVE-CONVERSATION-LIVE",
+        "{body}"
+    );
+    assert_eq!(body["details"]["pane"], "%4", "{body}");
+
+    // A failed probe of a live holder is not `Active`: no conversation refusal.
+    let f = fixture(Arc::new(ProbeUnavailable)).await;
+    f.services.registry.put(prior.clone()).await.unwrap();
+    f.services
+        .registry
+        .tombstone(&prior.id, "closed")
+        .await
+        .unwrap();
+    let mut live = holder.clone();
+    live.id = "pij-live-holder".into();
+    f.services.registry.put(live).await.unwrap();
+    let body = post(&f, &resume).await;
+    assert_ne!(
+        body["details"]["code"], "E-RS-REVIVE-CONVERSATION-LIVE",
+        "a failed probe must not refuse with the conversation guard: {body}"
+    );
+    assert!(
+        !body["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("E-RS-REVIVE-CONVERSATION-LIVE"),
+        "{body}"
+    );
+}
