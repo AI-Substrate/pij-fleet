@@ -40,9 +40,11 @@
 //! in the store before it is sent, so seats sharing a limit, overlapping rounds
 //! and restarts never wake twice; a reset already past when first seen wakes at
 //! once. The woken seat decides which workers to restart; the watchdog wakes
-//! no worker.
+//! no worker. A rejection stops its scope only until that wake is due
+//! ([`limit_current`], #68): a seat nobody restarted after the reset is idle,
+//! not stopped.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -65,8 +67,8 @@ use pij_core::ports::SpineWindow;
 use pij_core::report::CardRecord;
 use pij_core::session_status::SessionStatusBlock;
 use pij_core::usage_limit::{
-    LIMIT_RESET_REASON, LIMIT_WAKE_MARGIN_SECS, LimitWake, QuotaRejection, WakeTarget, wake_body,
-    wake_due_ms,
+    LIMIT_RESET_REASON, LIMIT_WAKE_MARGIN_SECS, LimitWake, QuotaRejection, WakeTarget,
+    limit_current, wake_body, wake_due_ms,
 };
 use pij_core::watchdog::{
     IdleEdge, PRIME_ACTIVE_REASON, PRIME_ROLE, PrimeActive, PrimeObservation, PrimeVerdict,
@@ -153,6 +155,9 @@ pub enum RoundOutcome {
         /// Delivery's receipt outcome, or the error that stopped it.
         delivery: String,
     },
+    /// An opted-in seat was due a nudge but is cold: the send guard would
+    /// refuse it, so it was not sent (plan 178).
+    OptInColdSkipped(SeatId),
     /// The prime started working after the PA's fleet went idle (plan 173).
     PrimeActive {
         /// The PA.
@@ -200,6 +205,9 @@ pub struct PaWatchdog {
     repos: Mutex<HashMap<String, String>>,
     /// When each opted-in seat was last nudged, in seconds.
     optin_nudged: Mutex<HashMap<SeatId, u64>>,
+    /// Opted-in seats nudged (or skipped cold) since a round last saw them
+    /// working: a `ready` one among them has answered and stays quiet.
+    optin_unanswered_work: Mutex<HashSet<SeatId>>,
     /// Status reads that outlived their wait, at most one per seat.
     pending_reads: Mutex<HashMap<SeatId, tokio::task::JoinHandle<SessionStatusBlock>>>,
 }
@@ -405,7 +413,9 @@ impl PaWatchdog {
         for pa in pas {
             let scope = self.scope_of(pa, &seats).await;
             let working = fleet_working(&scope.members, designated.as_ref());
-            let on_limit = stops.keys().any(|(stopped, _)| stopped == &scope.key);
+            let on_limit = stops.keys().any(|(stopped, resets_at)| {
+                stopped == &scope.key && limit_current(*resets_at, now_ms)
+            });
             let prime = scope_prime(&scope.members, designated.as_ref()).cloned();
             let (edge, armed_at) = {
                 let mut trackers = self.trackers.lock().await;
@@ -529,8 +539,10 @@ impl PaWatchdog {
         Ok(outcomes)
     }
 
-    /// Every live Claude seat stopped on a usage limit, grouped by scope and
-    /// reset. A read that fails or outlives its wait counts as not stopped.
+    /// Every live Claude seat whose last record is a quota rejection, grouped
+    /// by scope and reset, lifted or not: the reset wake reads them all, the
+    /// pause only the current ones. A read that fails or outlives its wait
+    /// counts as not stopped.
     async fn stops(&self, services: &Services, seats: &[SeatDescriptor]) -> Stops {
         let mut stops = Stops::new();
         for seat in seats
@@ -753,6 +765,10 @@ impl PaWatchdog {
     ///
     /// Its clock starts at the latest of its last event, when the watchdog was
     /// turned on, and its last nudge, so turning it on never nudges at once.
+    /// A seat that answered with `ready` is left alone until it works
+    /// ([`optin_due`]). A cold seat is not nudged: the send guard's own
+    /// verdict would refuse the send, so the round audits the skip instead
+    /// (plan 178). Both are brakes: removing either only nudges more.
     async fn optin_round(
         &self,
         services: &Services,
@@ -769,6 +785,13 @@ impl PaWatchdog {
         };
         let mut nudged = self.optin_nudged.lock().await;
         nudged.retain(|seat, _| optins.iter().any(|optin| &optin.seat == seat));
+        let mut unanswered = self.optin_unanswered_work.lock().await;
+        unanswered.retain(|seat| {
+            optins.iter().any(|optin| &optin.seat == seat)
+                && !seats
+                    .iter()
+                    .any(|live| &live.id == seat && live.state == SystemState::Working)
+        });
         let mut outcomes = Vec::new();
         for optin in &optins {
             let Some(seat) = seats.iter().find(|seat| seat.id == optin.seat) else {
@@ -776,42 +799,50 @@ impl PaWatchdog {
             };
             let quiet_from = seat.last_event_at.unwrap_or(0).max(optin.set_at_ms) / 1_000;
             let anchor = quiet_from.max(nudged.get(&seat.id).copied().unwrap_or(0));
-            if !optin_due(seat, optin, anchor, now_secs) {
+            if !optin_due(seat, optin, anchor, unanswered.contains(&seat.id), now_secs) {
                 continue;
             }
-            nudged.insert(seat.id.clone(), now_secs);
-            let body = optin_nudge(&seat.id, now_secs.saturating_sub(quiet_from), optin);
-            let delivery = match services
-                .delivery
-                .send(BG_ACTOR.into(), seat.id.clone(), body)
-                .await
-            {
-                Ok(receipt) => outcome_word(&receipt.outcome).to_string(),
-                Err(cause) => format!("error: {cause}"),
+            let verdict = match crate::http::cold_wake::verdict(services, seat, now_ms).await {
+                Ok(verdict) => verdict,
+                Err(cause) => {
+                    eprintln!("watchdog: cold check for {} failed: {cause}", seat.id);
+                    continue;
+                }
             };
-            let audit = services
-                .event_bus
-                .publish(Event {
-                    seq: None,
-                    v: 1,
-                    at: now_ms,
-                    kind: "watchdog.nudge".into(),
-                    seat: Some(seat.id.clone()),
-                    payload: json!({
-                        "interval_secs": optin.interval_secs,
-                        "set_by": optin.set_by,
-                        "quiet_secs": now_secs.saturating_sub(quiet_from),
-                        "delivery": delivery,
-                    })
-                    .to_string(),
-                })
-                .await;
-            if let Err(cause) = audit {
-                eprintln!("watchdog: audit for {} failed: {cause}", seat.id);
+            nudged.insert(seat.id.clone(), now_secs);
+            unanswered.insert(seat.id.clone());
+            let cold = pij_core::cold_wake::refusal(&seat.id, &verdict).is_some();
+            let delivery = if cold {
+                "skipped: cold".to_string()
+            } else {
+                let body = optin_nudge(&seat.id, now_secs.saturating_sub(quiet_from), optin);
+                match services
+                    .delivery
+                    .send(BG_ACTOR.into(), seat.id.clone(), body)
+                    .await
+                {
+                    Ok(receipt) => outcome_word(&receipt.outcome).to_string(),
+                    Err(cause) => format!("error: {cause}"),
+                }
+            };
+            let mut payload = json!({
+                "interval_secs": optin.interval_secs,
+                "set_by": optin.set_by,
+                "quiet_secs": now_secs.saturating_sub(quiet_from),
+                "delivery": delivery,
+                "cold_check": verdict.receipt_label(false),
+            });
+            if cold {
+                payload["cold"] = json!(verdict);
             }
-            outcomes.push(RoundOutcome::OptInNudged {
-                seat: seat.id.clone(),
-                delivery,
+            audit(services, "watchdog.nudge", &seat.id, now_ms, payload).await;
+            outcomes.push(if cold {
+                RoundOutcome::OptInColdSkipped(seat.id.clone())
+            } else {
+                RoundOutcome::OptInNudged {
+                    seat: seat.id.clone(),
+                    delivery,
+                }
             });
         }
         outcomes

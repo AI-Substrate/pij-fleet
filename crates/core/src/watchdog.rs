@@ -14,7 +14,7 @@
 //! ([`crate::usage_limit`]).
 
 use crate::config::Config;
-use crate::model::{SeatDescriptor, SeatId, SystemState};
+use crate::model::{SeatDescriptor, SeatId, SemanticState, SystemState};
 
 /// The one role the PA watchdog serves.
 pub const PA_ROLE: &str = "pa";
@@ -407,15 +407,22 @@ pub struct WatchdogOptIn {
 /// `waiting`, `hold`, `blocked` or `question` is silent on purpose
 /// ([`SeatDescriptor::nudgeable`]). `last_activity_at_secs` is the later of
 /// the seat's last event and its last nudge.
+///
+/// A seat that is `ready` after a nudge since it last worked has answered it
+/// ([`optin_nudge`] tells an idle but available seat to say exactly that), so
+/// it is quiet until it works again (plan 178). This is a BRAKE: removing it
+/// only nudges more.
 pub fn optin_due(
     seat: &SeatDescriptor,
     optin: &WatchdogOptIn,
     last_activity_at_secs: u64,
+    nudged_since_work: bool,
     now_secs: u64,
 ) -> bool {
     seat.tombstoned_at.is_none()
         && seat.role.as_deref() != Some(PA_ROLE)
         && seat.nudgeable()
+        && !(nudged_since_work && seat.semantic_state == Some(SemanticState::Ready))
         && now_secs.saturating_sub(last_activity_at_secs) >= optin.interval_secs
 }
 
@@ -431,9 +438,32 @@ pub fn optin_nudge(seat: &SeatId, quiet_secs: u64, optin: &WatchdogOptIn) -> Str
         "[pij watchdog] {seat}: quiet {} (watchdog on every {}, set by {who}). \
          Keep going if working, and report with `pij report now \"<did>\" \"<next>\"`. \
          If this unit of work is finished, run `pij report state done`; \
-         if you are idle but available, run `pij report state ready`. \
+         if you are idle but available, run `pij report state ready`, \
+         and this watchdog stays quiet until you next work. \
          No more work coming? Stop this watchdog: `pij watchdog off`.",
         crate::cold_wake::human_duration(quiet_secs.saturating_mul(1_000)),
         crate::cold_wake::human_duration(optin.interval_secs.saturating_mul(1_000)),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Plan 178 AC6: the nudge and the PA brief name the same card command.
+    /// The brief is read, not restated, so either side drifting fails here.
+    #[test]
+    fn the_nudge_and_the_pa_brief_name_the_same_report_command() {
+        const CARD: &str = "pij report now \"<did>\" \"<next>\"";
+        let brief = include_str!("../../../skills/pij/references/prime/pa.md");
+        let optin = WatchdogOptIn {
+            seat: "pij-w".into(),
+            interval_secs: 60,
+            set_by: "pij-w".into(),
+            set_at_ms: 0,
+        };
+        let nudge = optin_nudge(&optin.seat, 60, &optin);
+        assert!(nudge.contains(CARD), "{nudge}");
+        assert!(brief.contains(CARD), "the PA brief names {CARD}");
+    }
 }

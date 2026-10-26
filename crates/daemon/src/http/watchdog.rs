@@ -11,6 +11,7 @@ use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use pij_core::model::{Envelope, ErrorKind, Event, Msg, SeatId};
+use pij_core::ports::SeatFilter;
 use pij_core::watchdog::{PA_ROLE, WatchdogOptIn};
 use serde_json::{Value, json};
 
@@ -186,6 +187,18 @@ pub(crate) async fn watchdog(
                 .collect(),
             Err(cause) => return store_failure(cause),
         };
+        // Only live seats are watched, so only they are listed (plan 178): a
+        // retired seat keeps its role and opt-in rows in the store.
+        let live: Vec<SeatId> = match services.registry.list(SeatFilter::default()).await {
+            Ok(seats) => seats
+                .into_iter()
+                .filter(|seat| seat.tombstoned_at.is_none())
+                .map(|seat| seat.id)
+                .collect(),
+            Err(cause) => return store_failure(cause),
+        };
+        optins.retain(|optin| live.contains(&optin.seat));
+        pas.retain(|pa| live.contains(pa));
         if let Some(seat) = &call.seat {
             optins.retain(|optin| &optin.seat == seat);
             pas.retain(|pa| pa == seat);

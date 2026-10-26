@@ -1,0 +1,22 @@
+Mutations on the implementation (pre-fmt, otherwise = f594d5b), each applied, run, then restored from a saved copy; cwd worktree root, 2026-10-26.
+M1: pa_watchdog.rs on_limit drops limit_current (any rejection stops). M2: pa_watchdog.rs 'let cold = false'. M3: core watchdog.rs optin_due drops the ready/nudged_since_work clause. M4 (witness for the brief pin): pa.md card command reworded.
+== M1 remove the reset comparison
+test pa_watchdog::tests::a_lifted_limit_no_longer_silences_the_pa ... FAILED
+thread 'pa_watchdog::tests::a_lifted_limit_no_longer_silences_the_pa' (566353) panicked at crates/daemon/src/pa_watchdog_tests.rs:1832:5:
+  left: [IdleOnLimit(SeatId("pij-pa"))]
+ right: [Nudged { pa: SeatId("pij-pa"), delivery: "queued" }]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 625 filtered out; finished in 0.57s
+== M2 remove the opt-in cold check
+test pa_watchdog::tests::a_cold_opted_in_seat_is_not_nudged_and_the_skip_is_audited ... FAILED
+thread 'pa_watchdog::tests::a_cold_opted_in_seat_is_not_nudged_and_the_skip_is_audited' (570331) panicked at crates/daemon/src/pa_watchdog_tests.rs:1874:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 625 filtered out; finished in 0.24s
+== M3 remove the quieting rule
+test pa_watchdog::tests::a_seat_that_reports_ready_is_not_nudged_again_until_it_works ... FAILED
+thread 'pa_watchdog::tests::a_seat_that_reports_ready_is_not_nudged_again_until_it_works' (578901) panicked at crates/daemon/src/pa_watchdog_tests.rs:1931:9:
+  left: 1
+ right: 0
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 625 filtered out; finished in 0.21s
+== M4 brief drifts
+test watchdog::tests::the_nudge_and_the_pa_brief_name_the_same_report_command ... FAILED
+thread 'watchdog::tests::the_nudge_and_the_pa_brief_name_the_same_report_command' (584160) panicked at crates/core/src/watchdog.rs:467:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 85 filtered out; finished in 0.00s

@@ -1,0 +1,57 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 178 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC4, AC7: watchdog behaviour",
+          "phase": "ph-d078",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND→RUN: tests beside crates/daemon/src/pa_watchdog_tests.rs, the core watchdog/usage_limit tests and the http watchdog tests; nice -n 19 cargo test -j 1 -p pij-core -p pij-daemon <filters>",
+          "state": "checked",
+          "probe": "pa_watchdog_tests.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0002"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC5, AC6: brief and docs",
+          "phase": "ph-d078",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "RUN: prime reads pa.md and pa-watchdog.md against the code; skill coverage tests (vitest generation-skill-coverage, cargo test -p pij-cli --test skill_verb_coverage) still green",
+          "state": "checked",
+          "probe": "prime review",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC7: gates and CI",
+          "phase": "ph-d078",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: clippy -D warnings, fmt --check, GitHub CI green on the exact head",
+          "state": "checked",
+          "probe": "execution log",
+          "receipt": "execution-log.dd.json#entries/lg-0006"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

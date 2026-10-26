@@ -1,0 +1,20 @@
+RED on main 9d9e893 code (worktree at ac95614 = 9d9e893 + plan docs; only pa_watchdog_tests.rs changed under crates/), cwd worktree root, 2026-10-26.
+$ cargo test -p pij-daemon --lib -- pa_watchdog::tests::a_lifted pa_watchdog::tests::a_cold_opted pa_watchdog::tests::a_seat_that_reports pa_watchdog::tests::status_lists
+test pa_watchdog::tests::a_cold_opted_in_seat_is_not_nudged_and_the_skip_is_audited ... FAILED
+test pa_watchdog::tests::status_lists_only_live_pas_and_opt_ins ... FAILED
+test pa_watchdog::tests::a_seat_that_reports_ready_is_not_nudged_again_until_it_works ... FAILED
+test pa_watchdog::tests::a_lifted_limit_no_longer_silences_the_pa ... FAILED
+thread 'pa_watchdog::tests::a_cold_opted_in_seat_is_not_nudged_and_the_skip_is_audited' (508313) panicked at crates/daemon/src/pa_watchdog_tests.rs:1874:9:
+thread 'pa_watchdog::tests::status_lists_only_live_pas_and_opt_ins' (508316) panicked at crates/daemon/src/pa_watchdog_tests.rs:2025:5:
+assertion `left == right` failed: {"command":"pij watchdog","data":{"optins":[{"interval_secs":1200,"seat":"pij-gone","set_at_ms":1,"set_by":"pij-prime"},{"interval_secs":1200,"seat":"pij-worker","set_at_ms":1,"set_by":"pij-prime"}],"pas":["pij-old-pa","pij-pa"]},"ok":true,"v":2}
+  left: Array [String("pij-old-pa"), String("pij-pa")]
+ right: Array [String("pij-pa")]
+thread 'pa_watchdog::tests::a_seat_that_reports_ready_is_not_nudged_again_until_it_works' (508315) panicked at crates/daemon/src/pa_watchdog_tests.rs:1931:9:
+assertion `left == right` failed: a seat that answered ready is quiet (interval 2)
+  left: 1
+ right: 0
+thread 'pa_watchdog::tests::a_lifted_limit_no_longer_silences_the_pa' (508314) panicked at crates/daemon/src/pa_watchdog_tests.rs:1832:5:
+assertion `left == right` failed: a lifted limit is not a stop: the idle edge nudges
+  left: [IdleOnLimit(SeatId("pij-pa"))]
+ right: [Nudged { pa: SeatId("pij-pa"), delivery: "queued" }]
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 622 filtered out; finished in 0.66s

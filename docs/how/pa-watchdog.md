@@ -53,7 +53,7 @@ Jordan's scenario (2026-10-14): overnight the workers go idle. The PA is nudged 
   - **This is a BRAKE, not a policy:** removing it only ever sends *more* wakes. It can never cause one.
   - A read that fails, or that runs out of pages, counts as delivered: it spares the wake.
 - **Cap:** at most one prime-active wake per PA per worker-idle episode. Later prime turns in the same episode are audited `capped` and send nothing. Only #52's worker re-arm (a new idle edge) opens a new episode.
-- **Usage limit:** while any Claude seat in scope is stopped on a quota rejection, the trigger sends nothing (`idle-on-limit`) and disarms, keeping the cap. The limit-reset wake owns that case.
+- **Usage limit:** while any Claude seat in scope is stopped on a quota rejection that has not lifted ([below](#limit-reset-wake)), the trigger sends nothing (`idle-on-limit`) and disarms, keeping the cap. The limit-reset wake owns that case.
 - **Restart:** the tracker starts with no episode. A restart never sends a prime-active wake until a new worker episode opens.
 - **Body:** `[pij watchdog] <prime> is active again after the fleet went idle: resume your plan.`, followed by the fleet digest.
 
@@ -65,6 +65,7 @@ Jordan's scenario (2026-10-14): overnight the workers go idle. The PA is nudged 
 
 A fleet that went idle on a usage limit gets no edge nudge, because nothing can run. The edge round records `idle-on-limit` instead. The source is each Claude seat's last assistant transcript entry with `error: "rate_limit"`, `apiErrorStatus: 429` and `quotaLimits.resetsAt`, read from its final 64 KiB. The display text is never parsed.
 
+- **A lifted limit is not a stop** (plan 178, #68). A rejection counts as a stop only until its wake is due, `resetsAt` + 120 s. A seat whose last record is still the rejection after that, because nobody restarted it, no longer pauses its scope. Until then, **one** stopped Claude seat pauses its whole scope's idle nudge and prime-active wake (ruling R1). There is no case of a missing `resetsAt`: a record without a numeric one is not read as a rejection at all.
 - **One wake per `(scope, resetsAt)`**, at `resetsAt` + 120 s (`LIMIT_WAKE_MARGIN_SECS`). It is claimed in the store (`limit_wakes`) before it is sent, so restarts and overlapping rounds never wake twice. A reset already past when first seen wakes at once, and says so.
 - **Target:** the lowest-id PA in scope. With no PA, the prime: the current designation if live in scope, else the lowest-id `prime`-role seat. This is the one fleet wake that can reach a prime.
 - **Time is epoch only.** `resetsAt` is stored and compared as UTC epoch seconds. The wake shows the reset in the daemon's local zone, rendered at that instant, so a reset across a daylight-saving change shows the zone in force then (e.g. `03:00 AEDT`). Timezones never move the schedule.
@@ -91,3 +92,14 @@ Between events, a round reads no spine history: one registry list, one role join
 ## Opt-in watchdog (not a PA)
 
 Any seat that is not a PA (a worker or a prime included) is watched only while it is opted in with `pij watchdog on`, and the nudge goes to that seat itself. It gets a stall nudge after a whole quiet interval (`PIJ_RS_WATCHDOG_SECS`, default 20 min), never while it is working or has declared a wait. See [pij-rs-api.md § Opt-in watchdog](pij-rs-api.md#opt-in-watchdog).
+
+Two brakes keep it from costing more than it saves (plan 178). Each can only ever spare a nudge:
+
+- **Cold seats are skipped.** Before a nudge the round asks the send guard for its verdict (`http::cold_wake::verdict`), as the PA wakes do. Unlike them, a cold opted-in seat is **not** woken: the round records `watchdog.nudge` with `delivery: "skipped: cold"`, `cold_check: "cold"` and the guard's facts under `cold`, and tries again an interval later. There is no override; a cold seat that must come back is its PA's or prime's call, through a forced `pij send`. A sent nudge records its `cold_check` too.
+- **`ready` answers it.** The nudge tells an idle but available seat to run `pij report state ready`. A seat that is `ready` and has been nudged since it last worked is not nudged again until the round sees it `working`. The round looks once a minute, so a turn shorter than that can be missed; the seat then stays quiet, the conservative side.
+
+Both nudges and the PA brief name the same card command, `pij report now "<did>" "<next>"`; a core test pins the brief to the nudge text.
+
+## `pij watchdog status`
+
+`{pas, optins}`: the live PAs (role `pa`, a registry row, not tombstoned) and the opt-ins of live seats. A retired seat keeps its role or opt-in row in the store, but it is not watched, so it is not listed.
