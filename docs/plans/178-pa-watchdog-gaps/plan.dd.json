@@ -97,8 +97,9 @@
           "id": "ph-d078",
           "title": "Fix the watchdog and the brief",
           "brief": "One phase: red tests, the reset comparison, the opt-in cold check and quieting rule, the status listing, brief and docs, mutations, PR. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0007"
         }
       ]
     }

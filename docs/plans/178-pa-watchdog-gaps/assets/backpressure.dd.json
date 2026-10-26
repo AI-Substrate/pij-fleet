@@ -32,8 +32,9 @@
           "mode": "EXISTS",
           "tier": "human-judgement",
           "proof": "RUN: prime reads pa.md and pa-watchdog.md against the code; skill coverage tests (vitest generation-skill-coverage, cargo test -p pij-cli --test skill_verb_coverage) still green",
-          "state": "unchecked",
-          "probe": "prime review"
+          "state": "checked",
+          "probe": "prime review",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
         },
         {
           "id": "bp-0003",

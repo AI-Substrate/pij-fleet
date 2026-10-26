@@ -65,4 +65,4 @@ A 2026-10-26 survey of the PAs and the watchdog found, among other things, that 
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-d078 | Fix the watchdog and the brief | One phase: red tests, the reset comparison, the opt-in cold check and quieting rule, the status listing, brief and docs, mutations, PR. CS 3. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-d078 | Fix the watchdog and the brief | One phase: red tests, the reset comparison, the opt-in cold check and quieting rule, the status listing, brief and docs, mutations, PR. CS 3. | [x] checked | — | assets/execution-log.dd.json#entries/lg-0007 | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
