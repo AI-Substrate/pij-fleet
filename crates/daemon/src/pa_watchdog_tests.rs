@@ -1805,3 +1805,244 @@ async fn clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card() {
         "clearing another anomaly must not resurrect the same cleared stale card: {second}"
     );
 }
+
+/// Plan 178 AC1 (#68): a rejection whose reset, plus the margin, has passed is
+/// not a stop. A worker that hit a limit and was never restarted (it had
+/// finished) no longer silences its PA for the whole repository: the reset
+/// wake still fires once, and then the idle edge and the prime-active wake
+/// work as usual.
+#[tokio::test]
+async fn a_lifted_limit_no_longer_silences_the_pa() {
+    let fleet = PrimeFleet::new(PrimeBy::Designation).await;
+    let watchdog = PaWatchdog::default();
+    let finished = seat("pij-finished", &fleet.worker.folder, Some("pij-prime"));
+    fleet.services.registry.put(finished).await.unwrap();
+    // Its wake was due a second before the first round; it never ran again,
+    // so its last assistant record is still the rejection.
+    let lifted = fleet.at(0) / 1_000 - LIMIT_WAKE_MARGIN_SECS - 1;
+    fleet.limits.stop("pij-finished", "five_hour", lifted);
+    let first = fleet.round(&watchdog, 0).await;
+    assert!(
+        matches!(first.as_slice(), [RoundOutcome::LimitWoke { .. }]),
+        "{first:?}"
+    );
+    assert_eq!(fleet.to_pa().await.len(), 1, "the reset wake fires, once");
+
+    fleet.set(&fleet.worker, SystemState::Idle).await;
+    assert_eq!(
+        fleet.round(&watchdog, 1).await,
+        vec![RoundOutcome::Nudged {
+            pa: fleet.pa.id.clone(),
+            delivery: "queued".into()
+        }],
+        "a lifted limit is not a stop: the idle edge nudges"
+    );
+    assert_eq!(fleet.to_pa().await.len(), 1);
+    fleet.round(&watchdog, 2).await;
+    fleet.set(&fleet.prime, SystemState::Working).await;
+    fleet.round(&watchdog, 3).await;
+    assert_eq!(fleet.to_pa().await.len(), 1, "the prime-active wake goes");
+    assert_eq!(fleet.verdicts().await, ["sent"]);
+}
+
+/// Plan 178 AC2: an opt-in nudge obeys the cold-wake guard like an ordinary
+/// send. A cold opted-in seat is not nudged; the skip is audited with the
+/// guard's facts, once per interval, and is not a forced wake.
+#[tokio::test]
+async fn a_cold_opted_in_seat_is_not_nudged_and_the_skip_is_audited() {
+    let (mut services, _store) = services().await;
+    let start = now_ms();
+    services.session_status = Arc::new(
+        FakeSessionStatus::new()
+            .with_reply("session-pij-worker", sized(500_000, start - 7_200_000)),
+    );
+    services
+        .registry
+        .put(seat("pij-worker", "/nowhere", None))
+        .await
+        .unwrap();
+    services
+        .watchdogs()
+        .set_watchdog(&optin("pij-worker", "pij-prime", start))
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let at = |secs: u64| start + secs * 1_000;
+
+    for secs in [INTERVAL, INTERVAL + 60] {
+        let outcomes = watchdog.round(&services, INTERVAL, at(secs)).await.unwrap();
+        assert!(
+            !outcomes
+                .iter()
+                .any(|outcome| matches!(outcome, RoundOutcome::OptInNudged { .. })),
+            "a cold seat is not nudged: {outcomes:?}"
+        );
+    }
+    assert!(drain(&services, "pij-worker").await.is_empty());
+    let all = events(&services).await;
+    let skips = audits(&all, "watchdog.nudge");
+    assert_eq!(skips.len(), 1, "one skip per quiet interval: {skips:?}");
+    assert_eq!(skips[0]["delivery"], "skipped: cold", "{}", skips[0]);
+    assert_eq!(skips[0]["cold_check"], "cold");
+    assert_eq!(skips[0]["cold"]["contextTokens"], 500_000);
+    assert!(
+        audits(&all, pij_core::cold_wake::COLD_WAKE_FORCED_KIND).is_empty(),
+        "a skip forces nothing"
+    );
+}
+
+/// Plan 178 AC3: the nudge tells an idle but available seat to run
+/// `pij report state ready`. A seat that does so has answered, so it is not
+/// nudged again until it next works; then the watchdog watches it again.
+#[tokio::test]
+async fn a_seat_that_reports_ready_is_not_nudged_again_until_it_works() {
+    let (services, _store) = services().await;
+    let start = now_ms();
+    let mut worker = seat("pij-worker", "/nowhere", None);
+    services.registry.put(worker.clone()).await.unwrap();
+    services
+        .watchdogs()
+        .set_watchdog(&optin("pij-worker", "pij-prime", start))
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let at = |secs: u64| start + secs * 1_000;
+    let nudged = |outcomes: Vec<RoundOutcome>| {
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, RoundOutcome::OptInNudged { .. }))
+            .count()
+    };
+
+    assert_eq!(
+        nudged(
+            watchdog
+                .round(&services, INTERVAL, at(INTERVAL))
+                .await
+                .unwrap()
+        ),
+        1
+    );
+    let body = drain(&services, "pij-worker").await.remove(0).body;
+    assert!(
+        body.contains("if you are idle but available, run `pij report state ready`"),
+        "{body}"
+    );
+
+    // The seat follows the instruction: what `pij report state ready` records.
+    worker.semantic_state = Some(SemanticState::Ready);
+    services.registry.put(worker.clone()).await.unwrap();
+    for interval in 2..6 {
+        assert_eq!(
+            nudged(
+                watchdog
+                    .round(&services, INTERVAL, at(interval * INTERVAL))
+                    .await
+                    .unwrap()
+            ),
+            0,
+            "a seat that answered ready is quiet (interval {interval})"
+        );
+    }
+    assert!(drain(&services, "pij-worker").await.is_empty());
+
+    // It works again, then goes quiet: the watchdog is back.
+    worker.state = SystemState::Working;
+    services.registry.put(worker.clone()).await.unwrap();
+    watchdog
+        .round(&services, INTERVAL, at(6 * INTERVAL))
+        .await
+        .unwrap();
+    worker.state = SystemState::Idle;
+    services.registry.put(worker).await.unwrap();
+    assert_eq!(
+        nudged(
+            watchdog
+                .round(&services, INTERVAL, at(8 * INTERVAL))
+                .await
+                .unwrap()
+        ),
+        1,
+        "working re-arms it"
+    );
+}
+
+/// Plan 178 AC4: `pij watchdog status` lists live seats only. A retired PA
+/// keeps its role row, and a retired seat keeps its opt-in row, but neither
+/// is watched, so neither is listed.
+#[tokio::test]
+async fn status_lists_only_live_pas_and_opt_ins() {
+    let (services, _store) = services().await;
+    for id in [
+        "pij-prime",
+        "pij-pa",
+        "pij-old-pa",
+        "pij-worker",
+        "pij-gone",
+    ] {
+        let parent = id.ends_with("pa").then_some("pij-prime");
+        services
+            .registry
+            .put(seat(id, "/nowhere", parent))
+            .await
+            .unwrap();
+    }
+    for pa in ["pij-pa", "pij-old-pa"] {
+        services
+            .roles
+            .assert_role(&"pij-prime".into(), &pa.into(), Some("pa".into()))
+            .await
+            .unwrap();
+    }
+    for watched in ["pij-worker", "pij-gone"] {
+        services
+            .watchdogs()
+            .set_watchdog(&optin(watched, "pij-prime", 1))
+            .await
+            .unwrap();
+    }
+    for retired in ["pij-old-pa", "pij-gone"] {
+        services
+            .registry
+            .tombstone(&retired.into(), "test")
+            .await
+            .unwrap();
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = crate::http::router_with_config(
+        services,
+        crate::http::HttpConfig {
+            auth: crate::http::AuthRing::new("key".to_string(), std::iter::empty())
+                .expect("local-only auth"),
+            machine_alias: "workstation".into(),
+        },
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let listing = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/watchdog"))
+        .bearer_auth("key")
+        .json(&serde_json::json!({
+            "argv": ["watchdog", "status"],
+            "caller": {"PIJ_SESSION_ID": "pij-prime"},
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    server.abort();
+    assert_eq!(
+        listing["data"]["pas"],
+        serde_json::json!(["pij-pa"]),
+        "{listing}"
+    );
+    let optins: Vec<&str> = listing["data"]["optins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|optin| optin["seat"].as_str().unwrap())
+        .collect();
+    assert_eq!(optins, ["pij-worker"], "{listing}");
+}

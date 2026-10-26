@@ -89,6 +89,14 @@ pub const fn wake_due_ms(resets_at_secs: u64) -> u64 {
         .saturating_mul(1_000)
 }
 
+/// Is a rejection still a stop at `now_ms`? Only until its wake is due
+/// ([`wake_due_ms`]). After that the provider has lifted the limit, and a
+/// seat whose last record is still the rejection is just a seat nobody
+/// restarted (#68): it must not keep its scope "on limit".
+pub const fn limit_current(resets_at_secs: u64, now_ms: u64) -> bool {
+    now_ms < wake_due_ms(resets_at_secs)
+}
+
 /// Reads a seat's current quota rejection from its harness transcript.
 ///
 /// Blocking file IO: the daemon calls it off the reactor. A harness without a
@@ -233,5 +241,17 @@ mod tests {
     #[test]
     fn the_wake_is_due_a_margin_after_the_reset() {
         assert_eq!(wake_due_ms(1_000), (1_000 + LIMIT_WAKE_MARGIN_SECS) * 1_000);
+    }
+
+    #[test]
+    fn a_limit_stops_until_its_wake_is_due_and_no_longer() {
+        let due = wake_due_ms(1_000);
+        assert!(limit_current(1_000, 0));
+        assert!(
+            limit_current(1_000, 1_000 * 1_000),
+            "the margin still stops"
+        );
+        assert!(limit_current(1_000, due - 1));
+        assert!(!limit_current(1_000, due), "lifted once the wake is due");
     }
 }
