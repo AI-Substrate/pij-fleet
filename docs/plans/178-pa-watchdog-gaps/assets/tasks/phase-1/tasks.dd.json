@@ -81,11 +81,12 @@
           "id": "tk-0006",
           "title": "Mutations, gates, PR",
           "phase": "ph-d078",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0007"
           ],
-          "done": "tasks.dd.json#done_when/tk-0006"
+          "done": "tasks.dd.json#done_when/tk-0006",
+          "receipt": "../../execution-log.dd.json#entries/lg-0006"
         }
       ]
     },
@@ -141,8 +142,9 @@
           {
             "id": "dw-0006",
             "assertion": "Three mutation receipts; clippy and fmt; PR open; CI green on the exact head; refs/notes empty",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0006"
           }
         ]
       }

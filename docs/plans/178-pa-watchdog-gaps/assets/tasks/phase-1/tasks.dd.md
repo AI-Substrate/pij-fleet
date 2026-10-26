@@ -40,7 +40,7 @@ One coder implements impl-guide tk-0001: red tests, the lifted-limit rule, the o
 | tk-0003 | Opt-in cold check and quieting | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | Status lists live PAs | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | PA brief and docs | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | Mutations, gates, PR | — | ph-d078 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Mutations, gates, PR | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0006 | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -78,6 +78,6 @@ One coder implements impl-guide tk-0001: red tests, the lifted-limit rule, the o
 
 ### tk-0006
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0006 | Three mutation receipts; clippy and fmt; PR open; CI green on the exact head; refs/notes empty | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0006 | Three mutation receipts; clippy and fmt; PR open; CI green on the exact head; refs/notes empty | [x] checked | [bp-0003](../../backpressure.dd.md#rows) | [lg-0006](../../execution-log.dd.md#entries) |

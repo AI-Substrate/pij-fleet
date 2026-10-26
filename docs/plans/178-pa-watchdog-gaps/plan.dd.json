@@ -84,8 +84,9 @@
         {
           "id": "ac-0007",
           "claim": "Proof. Every behaviour change has a test RED on main 9d9e893 (quoted) and green on the branch: a past-reset rejection does not suppress the nudge, and a current one does; a cold opt-in seat is not nudged and the skip is audited; a seat that follows the idle instruction is not re-nudged; status omits a tombstoned PA. Mutation receipts: remove the reset comparison, the opt-in cold check and the quieting rule, one at a time; each turns its test red, then is restored. cargo test -p pij-core -p pij-daemon (scoped), clippy -D warnings and fmt pass; GitHub CI green on the exact head; anything not run is NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0006"
         }
       ]
     },

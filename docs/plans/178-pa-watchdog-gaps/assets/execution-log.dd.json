@@ -72,6 +72,15 @@
             "../plan.dd.json#acceptance_criteria/ac-0006",
             "backpressure.dd.json#rows/bp-0002"
           ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-26T03:30:00Z",
+          "text": "CI: GitHub Actions run 40262519895 on PR #69 head fcc778cf13b8a72907761f237ef45b526b3c3216 concluded success (check (22), check (24), rust-lint, rust-test all success); gh run watch --exit-status exit 0. PR ready, not draft; git ls-remote origin refs/notes/* empty after push. The receipt commit that records this triggers a new run on its own head, reported to the prime, not recorded here.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
         }
       ]
     }
