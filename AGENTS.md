@@ -286,4 +286,7 @@ from your most honest user. Treat it that way.
 - Skipping any of P1–P10 in a new extension.
 - Replacing the toolchain (npm scripts → just/make/pnpm/etc.).
 - Publishing to npm.
-- Pushing to a public remote.
+- Pushing to a public remote. **Standing exception (Jordan, 2026-10-09):** pushing
+  feature branches and opening PRs on `AI-Substrate/pij-fleet` needs no per-case
+  approval ("yes no need to ask for things like that"). Merging to `main` stays with
+  the prime, after review and green CI. Never push `refs/notes/*` there.
