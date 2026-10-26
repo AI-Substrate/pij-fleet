@@ -1,0 +1,293 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "PA watchdog gaps",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Smallest change at each seam. The reset comparison lives where a rejection becomes a stop (core usage_limit or the daemon's stops), using the existing margin constant and an injected clock, never wall time in tests. The opt-in path reuses the PA path's cold-wake verdict and audit helper; no second guard. The quieting rule and the nudge text must name the same report command, and a test pins the text against the rule. The brief changes cite docs/how instead of restating them.",
+        "composition_root": "crates/daemon/src/pa_watchdog.rs",
+        "contracts": [
+          "stop = rejection whose resets_at + LIMIT_WAKE_MARGIN_SECS is in the future",
+          "watchdog status: {pas: live only, optins: live only, retired_pas?}"
+        ],
+        "seams": [
+          "crates/core/src/usage_limit.rs latest_active",
+          "crates/daemon/src/pa_watchdog.rs stops/on_limit ~385-575",
+          "crates/core/src/watchdog.rs opt-in nudge ~430",
+          "crates/daemon/src/http/watchdog.rs status ~181",
+          "skills/pij/references/prime/pa.md",
+          "docs/how/pa-watchdog.md"
+        ]
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "Four small fixes in the watchdog plus its brief; they share tests and docs."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "rejection + clock -> stop?",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "opt-in nudge -> cold verdict + audit",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "idle instruction -> no re-arm",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "status -> live PAs",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0005",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0005",
+          "owner": "tk-0001",
+          "path": "pa.md",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0006",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0006",
+          "owner": "tk-0001",
+          "path": "pa-watchdog.md",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0007",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0007",
+          "owner": "tk-0001",
+          "path": "tests + mutations + CI",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "PA watchdog gaps",
+          "role": "pm",
+          "responsibility": "Red tests, the four fixes, the brief and docs, mutation receipts, PR.",
+          "paths": [
+            "crates/core/src/",
+            "crates/daemon/src/",
+            "skills/pij/references/prime/pa.md",
+            "docs/how/pa-watchdog.md",
+            "docs/plans/178-pa-watchdog-gaps"
+          ],
+          "reads": [],
+          "notes": "Read first: docs/how/pa-watchdog.md, pa.md, pa_watchdog.rs, pa_watchdog_tests.rs, core watchdog.rs and usage_limit.rs, http/watchdog.rs, http/cold_wake.rs.",
+          "interface": "watchdog status JSON",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/daemon/src/pa_watchdog.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0002"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-178-pa-gaps on fix/pa-watchdog-gaps."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "prime",
+          "model": "prime verifies receipts and the brief"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Core watchdog and usage-limit tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "1",
+            "-p",
+            "pij-core"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon watchdog tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-j",
+            "1",
+            "-p",
+            "pij-daemon",
+            "watchdog"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "-j",
+            "1",
+            "-p",
+            "pij-core",
+            "-p",
+            "pij-daemon",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 120000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Red tests on 9d9e893.",
+          "The four fixes; vd-0001, vd-0002.",
+          "Brief and docs; mutations; vd-0003, vd-0004; PR; green CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0002"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: the prime verifies receipts, reads the brief and docs against the code, merges and bounces the daemon.",
+        "inputs": [
+          "PR head SHA",
+          "receipts"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "A clock skew or missing resets_at makes a current limit look lifted, so the PA nudges into a limit.",
+          "check": "Missing resets_at keeps today's behaviour (stopped); test it."
+        },
+        {
+          "id": "rk-0002",
+          "text": "The opt-in cold check silences a seat that wanted the nudge.",
+          "check": "Same verdict as the PA path, audited; the docs say how to force it if one exists."
+        }
+      ]
+    }
+  ]
+}
