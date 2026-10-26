@@ -42,44 +42,50 @@
         {
           "id": "ac-0001",
           "claim": "A lifted limit is not a stop (pij-fleet#68). A Claude seat whose latest assistant record is a quota rejection counts as stopped only until its resets_at plus the existing wake margin (crates/core/src/usage_limit.rs latest_active / LIMIT_WAKE_MARGIN_SECS; crates/daemon/src/pa_watchdog.rs stops and on_limit ~385-408). After that the seat no longer suppresses the PA's idle-edge or prime-active handling. While a limit is current, a stopped seat still suppresses its scope as today (ruling R1), and the limit-reset wake still fires once per (scope, resetsAt).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0002",
           "claim": "Opt-in nudges obey the cold-wake guard. The nudge to a `pij watchdog on` seat (crates/core/src/watchdog.rs ~430) goes through the same cold-wake verdict and audit the PA path uses (crates/daemon/src/http/cold_wake.rs verdict; pa_watchdog.rs audit_cold_wake). A cold seat over the guard is not nudged, and the skip is audited.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Opt-in nudges stop when the seat says it has nothing to do. A seat that follows the nudge's own instruction for 'idle but available' is not nudged again until it next works. Today the text says `pij report state ready`, and a ready seat keeps being nudged. Fix whichever side is wrong (the text or the re-arm rule), with a test of the exact instruction the text gives.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0004",
           "claim": "`pij watchdog status` lists only live PAs. Tombstoned PA role holders are not listed under `pas` (today 7 are listed and 3 are live). If keeping them is useful, they go in a separate `retired_pas` field. Opt-ins likewise.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0005",
           "claim": "The PA brief (skills/pij/references/prime/pa.md) matches the code and the skill: (a) line ~27 says nudges pause while any Claude seat in the repo is stopped on a limit that has not reset (R1); (b) the PA's own compaction size ('over the cap', ~78) is defined: over 600k unless the prime overrides it, at the end of a round (R2); (c) questions follow SKILL invariant 10 (R3); (d) 'never touch git' and the worktree-tidy chore agree (R4); (e) it says `--command compact` refuses for Copilot seats (E-RS-CONTROL-UNSUPPORTED) and paneless seats, so for those the PA reports the size to the prime (R5); (f) it notes that control commands skip the cold-wake guard, so its own ❄ rule is the brake.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0006",
           "claim": "Docs. docs/how/pa-watchdog.md describes the lifted-limit rule, the opt-in cold-wake check and quieting rule, and the status listing. The opt-in nudge text and the PA brief name the same report command.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0007",
           "claim": "Proof. Every behaviour change has a test RED on main 9d9e893 (quoted) and green on the branch: a past-reset rejection does not suppress the nudge, and a current one does; a cold opt-in seat is not nudged and the skip is audited; a seat that follows the idle instruction is not re-nudged; status omits a tombstoned PA. Mutation receipts: remove the reset comparison, the opt-in cold check and the quieting rule, one at a time; each turns its test red, then is restored. cargo test -p pij-core -p pij-daemon (scoped), clippy -D warnings and fmt pass; GitHub CI green on the exact head; anything not run is NOT RUN with its reason.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         }
       ]
     },

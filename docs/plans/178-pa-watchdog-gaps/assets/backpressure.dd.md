@@ -20,7 +20,7 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-AC4, AC7: watchdog behaviour | ph-d078 | EXTEND | computational | EXTEND→RUN: tests beside crates/daemon/src/pa_watchdog_tests.rs, the core watchdog/usage_limit tests and the http watchdog tests; nice -n 19 cargo test -j 1 -p pij-core -p pij-daemon &lt;filters&gt; | [ ] unchecked | — | — | pa_watchdog_tests.rs |
+| bp-0001 | AC1-AC4, AC7: watchdog behaviour | ph-d078 | EXTEND | computational | EXTEND→RUN: tests beside crates/daemon/src/pa_watchdog_tests.rs, the core watchdog/usage_limit tests and the http watchdog tests; nice -n 19 cargo test -j 1 -p pij-core -p pij-daemon &lt;filters&gt; | [x] checked | — | execution-log.dd.json#entries/lg-0002 | pa_watchdog_tests.rs |
 | bp-0002 | AC5, AC6: brief and docs | ph-d078 | EXISTS | human-judgement | RUN: prime reads pa.md and pa-watchdog.md against the code; skill coverage tests (vitest generation-skill-coverage, cargo test -p pij-cli --test skill_verb_coverage) still green | [ ] unchecked | — | — | prime review |
 | bp-0003 | AC7: gates and CI | ph-d078 | EXISTS | computational | RUN: clippy -D warnings, fmt --check, GitHub CI green on the exact head | [ ] unchecked | — | — | execution log |
 

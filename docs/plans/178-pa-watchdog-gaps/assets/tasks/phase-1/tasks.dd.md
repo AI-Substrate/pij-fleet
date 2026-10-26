@@ -35,11 +35,11 @@ One coder implements impl-guide tk-0001: red tests, the lifted-limit rule, the o
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Red tests on 9d9e893 | — | ph-d078 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Lifted-limit rule (#68) | — | ph-d078 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Opt-in cold check and quieting | — | ph-d078 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | Status lists live PAs | — | ph-d078 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | PA brief and docs | — | ph-d078 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Red tests on 9d9e893 | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0001 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Lifted-limit rule (#68) | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Opt-in cold check and quieting | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Status lists live PAs | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | PA brief and docs | — | ph-d078 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0006 | Mutations, gates, PR | — | ph-d078 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -48,33 +48,33 @@ One coder implements impl-guide tk-0001: red tests, the lifted-limit rule, the o
 
 ### tk-0001
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0001 | Each new test fails on 9d9e893 for the right reason (quoted) | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0001 | Each new test fails on 9d9e893 for the right reason (quoted) | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0001](../../execution-log.dd.md#entries) |
 
 ### tk-0002
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0002 | Past-reset rejection does not suppress; current one does; missing resets_at keeps today's behaviour | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0002 | Past-reset rejection does not suppress; current one does; missing resets_at keeps today's behaviour | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0002](../../execution-log.dd.md#entries) |
 
 ### tk-0003
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0003 | Cold opt-in seat not nudged and audited; a seat following the idle instruction is not re-nudged | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0003 | Cold opt-in seat not nudged and audited; a seat following the idle instruction is not re-nudged | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0002](../../execution-log.dd.md#entries) |
 
 ### tk-0004
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0004 | Status omits tombstoned PAs and opt-ins | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0004 | Status omits tombstoned PAs and opt-ins | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0002](../../execution-log.dd.md#entries) |
 
 ### tk-0005
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0005 | pa.md (a)-(f) and pa-watchdog.md updated; skill coverage tests green | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0005 | pa.md (a)-(f) and pa-watchdog.md updated; skill coverage tests green | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | [lg-0005](../../execution-log.dd.md#entries) |
 
 ### tk-0006
 

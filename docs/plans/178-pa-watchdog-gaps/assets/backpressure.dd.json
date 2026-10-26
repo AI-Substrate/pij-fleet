@@ -21,8 +21,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND→RUN: tests beside crates/daemon/src/pa_watchdog_tests.rs, the core watchdog/usage_limit tests and the http watchdog tests; nice -n 19 cargo test -j 1 -p pij-core -p pij-daemon <filters>",
-          "state": "unchecked",
-          "probe": "pa_watchdog_tests.rs"
+          "state": "checked",
+          "probe": "pa_watchdog_tests.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "bp-0002",
