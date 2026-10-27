@@ -81,6 +81,15 @@
             "../plan.dd.json#acceptance_criteria/ac-0008",
             "backpressure.dd.json#rows/bp-0005"
           ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-27T05:06:00Z",
+          "text": "harness checks at 99c5e88 (after npm ci in the worktree): local-paths, typecheck, lockfile, lint, copilot-native pass; pij-commit-trailers warn (advisory); test, rust, smoke FAIL, all outside this branch's diff and reproduced as pre-existing or load flakes (load1 20-68): vitest cli.inbox ancestry refusal inside a Copilot seat; smoke OMP first-run setup stall; pij-harnesses claude_settings hook tests (fail on clean origin/main 26fc3ba too; 162/162 serially on the branch); workspace --no-fail-fast remainder: pij-daemon --lib 626/626, pij-transport 26/26 serially, pij-tmux staging test passes alone on branch and main. NOT GREEN locally; CI on the exact head is the authoritative gate. Evidence: evidence/checks.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
         }
       ]
     }
