@@ -3,7 +3,7 @@
 **magicWand:** a "lost work" sensor. #49 was green in CI, live-canaried by
 deploying a detached commit, and then silently undone by the next bounce from
 main, because it was never merged. Nobody noticed for two weeks, and Vaughan's
-memory ("I thought it did") was the only trace. `just doctor` (or the bounce
+memory ("I thought it did") was the only trace. Filed as pij-fleet#72. `just doctor` (or the bounce
 itself) should warn when the running daemon was built from a commit that is
 not an ancestor of `origin/main`, and `harness checks` could list open PRs older
 than N days that were canaried. Either would have kept this from being lost.

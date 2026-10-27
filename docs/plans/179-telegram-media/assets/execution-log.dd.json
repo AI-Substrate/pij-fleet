@@ -99,6 +99,25 @@
             "../plan.dd.json#acceptance_criteria/ac-0009",
             "backpressure.dd.json#rows/bp-0004"
           ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-27T05:20:00Z",
+          "text": "Telegram message_id: outbound-media-delivered now records `telegram_message_id` (Bot API result.message_id) so the canary can cite real Telegram ids. RED first: a_photo_goes_with_send_photo... and a_400_on_a_photo_falls_back... asserted telegram_message_id = 1, failed 'left: Null right: 1'; green at 90668c0: cargo test -p pij-sidecars 46 + 8 passed, clippy -D warnings clean. GitHub CI run 40454709265 on headSha 90668c0: check (22), check (24), rust-lint, rust-test all success. Release build of 90668c0 (cargo build --release --locked -j 4 -p pij-cli, 16:20-16:22 local, load-checked, before the heavy-window baton ruling reached this seat): target/release/pij-rs sha256 d05776dfa0ae8c207d387543ecce906af9988c1b8875daf920b5a68f1a83007d.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-27T05:28:00Z",
+          "text": "PRIME RULING (pij-broad-rykard, 16:27): ac-0009 accepts GitHub CI as the gate (green on 48faab3 run 40453586930 and on 90668c0 run 40454709265), with evidence/checks.txt disclosing the local not-greens (vitest ancestry and smoke OMP setup inside a Copilot seat; rust load-flakes accepted on serial/alone passes). Magic wand filed as AI-Substrate/pij-fleet#72 and linked from #71. Rulings: assets/rulings.md R-ac9, R-wand, R-deploy.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
         }
       ]
     }

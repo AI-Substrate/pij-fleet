@@ -42,7 +42,7 @@ One coder (pij-prime): cherry-pick #49, red tests, method by type with fallback,
 | tk-0005 | Redaction proof | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0006 | Inbound media notice | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0007 | Docs and follow-up issue | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0006 | [tk-0007](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0008 | Mutants, gates, PR | — | ph-e833 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0008 | Mutants, gates, PR | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0010 | [tk-0008](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -92,6 +92,6 @@ One coder (pij-prime): cherry-pick #49, red tests, method by type with fallback,
 
 ### tk-0008
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0008 | Mutation receipts, harness checks, CI green, PR open referencing #49 | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0008 | Mutation receipts, harness checks, CI green, PR open referencing #49 | [x] checked | [bp-0004](../../backpressure.dd.md#rows) | [lg-0010](../../execution-log.dd.md#entries) |

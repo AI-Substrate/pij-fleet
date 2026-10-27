@@ -103,11 +103,12 @@
           "id": "tk-0008",
           "title": "Mutants, gates, PR",
           "phase": "ph-e833",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
-          "done": "tasks.dd.json#done_when/tk-0008"
+          "done": "tasks.dd.json#done_when/tk-0008",
+          "receipt": "../../execution-log.dd.json#entries/lg-0010"
         }
       ]
     },
@@ -181,8 +182,9 @@
           {
             "id": "dw-0008",
             "assertion": "Mutation receipts, harness checks, CI green, PR open referencing #49",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0010"
           }
         ]
       }

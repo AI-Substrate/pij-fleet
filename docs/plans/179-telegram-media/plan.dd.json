@@ -100,9 +100,10 @@
         {
           "id": "ac-0009",
           "claim": "Proof. Every new behaviour has a test shown RED on 7800d11 (the cherry-pick) and green on the branch. Mutation receipts, one at a time, each red then restored: the 50 MB check, the caption limit, the stage-all-before-queue rule, the 400 fallback, and the token redaction. cargo fmt, clippy -D warnings, the scoped cargo tests and `harness checks` pass (anything not run is NOT RUN with its reason); GitHub CI green on the exact head; the PR references #49 and #49 carries a comment asking to close it on merge. No deploy, relink, daemon restart, extension reload or live canary (that needs Vaughan's go).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004",
-          "note": "Open for the prime: CI green on 48faab3 (lg-0008), RED/GREEN and 9/9 mutants done (lg-0003..0005), PR references #49 and #49 is commented. Local `harness checks` is NOT green: test/rust/smoke fail outside this diff, shown pre-existing or load flakes (lg-0007); the vitest ancestry and smoke OMP-setup failures cannot pass inside a Copilot seat."
+          "note": "Prime ruling R-ac9: GitHub CI is the gate (green on 48faab3 and 90668c0); local `harness checks` not-greens disclosed in evidence/checks.txt.",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0010"
         }
       ]
     },

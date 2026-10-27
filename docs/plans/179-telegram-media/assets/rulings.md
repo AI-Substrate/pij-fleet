@@ -7,3 +7,6 @@
 | Q3 | inbound | (b) In this PR: no silent drop, a notice to the bound seat plus a telegram.inbound-media-unsupported event. (a) A follow-up issue for full inbound save-to-path, citing the old TS design (20 MB getFile, sanitised names, retention). |
 | — | deploy | Out of scope. A live canary only with Vaughan's go. |
 | — | PR body | The full test list, the mutants and the CI link. |
+| R-ac9 | ac-0009 gate (prime, 2026-10-27 16:27) | ACCEPT GitHub CI as the gate (rust-lint, check 22/24, rust-test green on 48faab3; later heads docs-only or green themselves), with evidence/checks.txt as the disclosure of the local not-greens. The rust load-flakes are accepted on the serial/alone passes. |
+| R-wand | magic wand | File it as a pij-fleet issue and link it from #71: filed as pij-fleet#72. |
+| R-deploy | deploy | Vaughan said GO (Telegram, 15:10) to the live canary and deploy. The prime calls the bounce; until merge the deploy stays on the branch build, as #49's did, recorded in the PR. |

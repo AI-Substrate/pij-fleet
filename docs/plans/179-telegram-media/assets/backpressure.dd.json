@@ -54,8 +54,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "RUN: cargo fmt --check, clippy -D warnings, harness checks, GitHub CI green on the exact head",
-          "state": "unchecked",
-          "probe": "execution log"
+          "state": "checked",
+          "probe": "execution log",
+          "receipt": "execution-log.dd.json#entries/lg-0010"
         },
         {
           "id": "bp-0005",
