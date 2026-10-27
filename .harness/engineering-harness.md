@@ -37,6 +37,8 @@ exists) + minih retros (`docs/retros/*.md`).
 - `just rust-check` — Cargo.lock current, fmt, clippy (`-D warnings`), workspace tests.
 - `just smoke` — tmux-driven end-to-end driver SDK scenarios.
 - `just self-check` — the composite merge gate over all of the above.
+- `crates/testkit/tests/spawn_sites.rs` (in `just rust-check`) — every daemon process launch records itself in the spawn counter; bare `ps`/`date` launches are refused (plan 180).
+- **Runtime cost (not a gate):** `pij-rs --json ping | jq .data.spawns` (daemon launches per call site) and `just spawn-rate` (machine-wide launches/s). Required before/after receipts for any change to a loop, poll, hook or launch (AGENTS.md § Resource cost).
 - **`harness checks`** — the runnable signal inventory: runs every sensor above
   as individual stages with a per-sensor verdict (runs ALL, not first-fail;
   `--quick` skips rust and smoke). The single "are we done?/ship" gate; add new sensors to
@@ -64,6 +66,7 @@ Nothing is woven into pij source — the-flow's `harness-seams` own the fire poi
 - Spawn/close (plan 017) end-to-end correctness relies on a tmux-gated smoke that
   skips when tmux is absent — no deterministic signal in non-tmux CI yet.
 - Third-party package vetting is report-and-continue (Plan 009) — not a hard gate.
+- Resource cost has no automated threshold gate: a change that raises launches/s or CPU passes every sensor. It relies on the plan's cost row and live before/after receipts (AGENTS.md § Resource cost). `spawn_sites.rs` only proves each launch is counted, not that the rate is acceptable.
 - minih agent-pack behaviour is eyeballed via retros, not asserted.
 
 ## Current maturity snapshot

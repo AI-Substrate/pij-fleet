@@ -92,6 +92,19 @@ Say which one it is **explicitly**, in those terms, when the change is
 destructive: a reviewer looking at a 205MB deletion will otherwise assume a
 retention rule governs it and go hunting for the policy.
 
+## Resource cost is a correctness property (pij-fleet#62, plan 180)
+
+For weeks the daemon launched **250–480 processes a second** (three tmux clients per pane every 600 ms, a `ps` per liveness check, a ~20-process status line, and bare-name launches that cost 18 kernel processes each on macOS). Defender's EDR inspects every launch and burned about two cores. Every test was green the whole time. **A green suite says nothing about cost**, so cost has to be checked on purpose.
+
+Any plan, PR or feature that adds or changes a **loop, poll, timer, hook, status line, sweep or process launch** must, before merge:
+
+1. **State its steady-state cost in the plan's backpressure**, as its own row: launches per second, poll interval, and how it scales with seats/panes (per tick × per seat is the shape that hurt us).
+2. **Measure it on the live fleet, before and after**, and keep the receipts: `pij-rs --json ping | jq .data.spawns` (two readings a known number of seconds apart; per call site) and `just spawn-rate --seconds 20` (whole machine). See [`docs/how/macos-defender.md`](docs/how/macos-defender.md) § Measure launches.
+3. **Launch nothing per tick per seat.** Prefer in-process work (read the file, call the syscall), the daemon's persistent tmux control client for tmux reads, or a cache with an explicit lifetime. Launch by **absolute path** (`/bin/ps`), never a bare name, in any repeated path.
+4. **Record every new daemon launch site** with the spawn counter; `crates/testkit/tests/spawn_sites.rs` fails if you don't.
+
+Reviewers check cost explicitly, the same as correctness: name the loop, its rate, and its per-seat scaling, or say there is none.
+
 ## Searching this repo (known trap — silent, and it reads as absence)
 
 **`rg` skips hidden paths by default, and the extension source lives under
