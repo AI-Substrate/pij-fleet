@@ -1,0 +1,140 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Diagnose and fix Codex bind and identity",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": "",
+        "log": "../../execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "One coder implements impl-guide tk-0001: live reproduction and diagnosis on main, red tests from the real captures, the demonstrated bind/identity/footer fixes, docs, mutation receipts, PR."
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Live reproduction and diagnosis on 26fc3ba",
+          "phase": "ph-e341",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Red tests from the captures",
+          "phase": "ph-e341",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Registration fix",
+          "phase": "ph-e341",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Identity fix",
+          "phase": "ph-e341",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Footer misread fix",
+          "phase": "ph-e341",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Docs, mutations, PR, CI",
+          "phase": "ph-e341",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "diagnosis.md names each root cause with the observation that proves it, or records non-reproduction",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "Each new test fails on 26fc3ba for the diagnosed reason (quoted)",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "Codex canary capture binds in test; trust-prompt case binds or names the prompt",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "Send from a Codex seat carries its own id; ambiguous identity refuses",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0005",
+            "assertion": "Warning lines are not footers; 0.164 fixtures pin model/cwd/readiness/composer",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "Docs updated; mutation receipts; clippy/fmt; CI green on the exact head",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ]
+      }
+    }
+  ]
+}

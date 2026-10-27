@@ -1,0 +1,251 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Codex bind and identity",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Diagnose, then fix the narrowest seam the diagnosis names. parse_codex_footer stays the ONE definition of a Codex footer (plan 177); tighten it there, never add a second parser. Seat identity for a send is derived from the sender's own evidence (process, pane, harness session), the same way the other harnesses derive it; if that evidence is missing, refuse with a named error. Tests are built from real recorded captures under crates/harnesses/tests/fixtures/ (dated, pane-numbered, transcript stripped). Do not touch crates/tmux or the capture path: PR #73 rewrites it."
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One defect family in the Codex adapter and the bind/identity path; diagnosis decides the fix, so it cannot be split up front."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "live spawn -> captured evidence -> named cause",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "codex pane + rollout -> bind or named error",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "codex send -> own seat id or refusal",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0002"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "warning lines -> not a footer",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Codex bind and identity",
+          "role": "pm",
+          "responsibility": "Live diagnosis, red tests from captures, the demonstrated fixes, docs, mutation receipts, PR.",
+          "paths": [
+            "crates/harnesses/src/",
+            "crates/harnesses/tests/fixtures/",
+            "crates/daemon/src/",
+            "crates/cli/src/",
+            "docs/how/",
+            "docs/plans/181-codex-bind-identity"
+          ],
+          "reads": [],
+          "notes": "Read first: plan 177 (docs/plans/177-codex-footer-title, commit ed29618), crates/harnesses/src/composer.rs parse_codex_footer, crates/harnesses/src/adapter.rs (observed_model/observed_cwd, BindObserver, Codex discovery), crates/daemon/src/registration.rs, crates/daemon/src/http/identity.rs, docs/how/pij-pane-signals.md, the osk report, and memory: Codex binds by rollout trailing UUID in a global date-nested dir, lazily written; readiness anchors on the composer footer.",
+          "interface": "spawn/bind result and send attribution",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/harnesses/src/composer.rs",
+          "crates/harnesses/src/adapter.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-181-codex-bind on fix/codex-bind-identity."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "prime",
+          "model": "prime verifies receipts, runs the live canary after merge"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Harness adapter and composer tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-harnesses"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon bind/identity tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-daemon"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 120000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Live repro + diagnosis on 26fc3ba.",
+          "Red tests from captures.",
+          "Fixes; vd-0001, vd-0002.",
+          "Docs; mutations; vd-0003, vd-0004; PR; green CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0002"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: the prime verifies receipts and the diagnosis, merges, bounces the daemon, and runs the live Codex canary.",
+        "inputs": [
+          "PR head SHA",
+          "receipts",
+          "diagnosis.md"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "A plausible-looking fix for an undemonstrated cause (the footer line is the obvious suspect and may be innocent).",
+          "check": "R2: each fix cites its reproduced cause; ac-0004 is a separate, independently true misparse."
+        },
+        {
+          "id": "rk-0002",
+          "text": "Canary seats leak (windows, registrations, Codex quota).",
+          "check": "R3: at most 6 canaries, each closed and its window killed; list them in diagnosis.md."
+        },
+        {
+          "id": "rk-0003",
+          "text": "Conflict with PR #73 in registration.rs/identity.rs.",
+          "check": "Smallest diff there; PR body names the overlap; whichever merges second rebases."
+        }
+      ]
+    }
+  ]
+}
