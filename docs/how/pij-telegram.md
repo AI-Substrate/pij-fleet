@@ -96,7 +96,8 @@ any other recipient still refuses it by name.
 
 ### Inbound media
 
-pij-rs does not save media that Vaughan sends yet (follow-up issue). It no
+pij-rs does not save media that Vaughan sends yet
+([pij-fleet#70](https://github.com/AI-Substrate/pij-fleet/issues/70)). It no
 longer drops it silently either. A photo, document, video, animation, audio,
 voice note, video note or sticker from an allowed user is delivered to the bound
 seat as a text turn:

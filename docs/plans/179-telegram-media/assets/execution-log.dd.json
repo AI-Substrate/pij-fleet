@@ -20,6 +20,67 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0001"
           ]
+        },
+        {
+          "id": "lg-0002",
+          "at": "2026-10-27T04:24:00Z",
+          "text": "BASELINE: #49's own tests on the new base (7800d11 + plan commit d543eef, no plan-179 Rust yet), cwd worktree root, -j 4: cargo test -p pij-sidecars --lib exit 0 (30 passed, incl. 14 telegram::document tests); -p pij-testkit --test arch_drift exit 0 (6 passed); -p pij-daemon --test shim_http exit 0 (21 passed); -p pij-cli --test sidecar_producer exit 0 (2 passed); -p pij-cli --bin pij-rs telegram exit 0 (2 passed). Evidence: evidence/baseline.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0003",
+          "at": "2026-10-27T04:33:00Z",
+          "text": "RED: plan-179 tests against stub behaviour equal to #49's (classify always sendDocument, one msg_id per file, caption on every file, no cleanup, no file-count check, body ignored, worker sendDocument-only, inbound unchanged, CLI --file still conflicts with --body). cargo test -p pij-sidecars --lib telegram exit 101: 27 passed, 15 FAILED for the right reason, e.g. the_method_is_chosen_by_extension_and_photo_size 'chart.png (1 bytes) left: Document right: Photo'; a_400_on_a_photo_falls_back... 'left: [\"sendDocument\"] right: [\"sendPhoto\", \"sendDocument\"]'; one_refused_file... 'copies staged before the refusal are removed left: 1 right: 0'; several_files... 'left: [\"doc-1\", \"doc-1\", ...] right: [\"doc-1#1\", ...]'; inbound_media_reaches_the_bound_seat... 'left: []'; unbound_inbound_media_is_refused_like_text 'left: 0 right: 5'. CLI clap test FAILED (ArgumentConflict --file/--body); CLI sidecar_producer FAILED ('the body is queued: {\"body_job_id\":null'). shim_http telegram tests stayed green (shim unchanged). The redaction test failed only because the stub never reached the 5xx path ('server-error: the failure path was exercised'); it is a guard, proven by mutant M7. Evidence: evidence/red.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0001",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0004",
+          "at": "2026-10-27T04:37:00Z",
+          "text": "GREEN at 8a03b15 (implementation commit), cwd worktree root, -j 4: cargo test -p pij-sidecars --lib telegram exit 0 (42 passed); -p pij-cli --bin pij-rs telegram exit 0 (2 passed); -p pij-cli --test sidecar_producer exit 0 (2 passed, against a booted daemon: body_job_id set, files doc-e2e#1/#2 queued after it, methods sendPhoto/sendDocument, a refused send left no staged copy); -p pij-daemon --test shim_http exit 0 (21 passed). cargo clippy --locked -p pij-sidecars -p pij-daemon -p pij-cli --all-targets -- -D warnings exit 0; cargo test -p pij-sidecars (all targets) exit 0 (46 + 8); cargo fmt --all --check exit 0. Evidence: evidence/green.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "backpressure.dd.json#rows/bp-0001",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0005",
+          "at": "2026-10-27T04:40:00Z",
+          "text": "MUTANTS at 8a03b15, each applied alone, scoped cargo test -p pij-sidecars --lib <test>, file restored byte-for-byte (git diff --quiet exit 0): M1 50 MB refusal removed (both layers) KILLED by missing_empty_directory_relative_and_oversized_files_refuse_at_enqueue; M1b limit constant raised KILLED by the_document_limit_is_telegrams_fifty_megabytes; M2 caption limit removed KILLED by oversized_caption_refuses_at_enqueue; M3 copies kept after a refusal KILLED by one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged; M4 file cap +1 KILLED by no_files_and_more_than_ten_refuse_before_staging; M5 photo size ignored KILLED by the_method_is_chosen_by_extension_and_photo_size; M6 400 fallback removed KILLED by both fallback tests; M7 raw reqwest error on the upload path KILLED by the_token_never_leaks_on_any_media_failure_path (the logged-error assertion); M8 inbound media dropped again KILLED by inbound_media_reaches_the_bound_seat_as_a_notice_with_an_event. 9/9. Evidence: evidence/mutation.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-27T04:43:00Z",
+          "text": "Follow-up filed: AI-Substrate/pij-fleet#70 'Telegram inbound media: save to a path for the seat (port the old TS design)', citing pij-poc e5dd811 media.ts/bridge.ts/index.ts: 20 MB getFile pre-check, safeMediaName, per-seat attachments dir, 200 MB retention oldest-first never the new file, notice format; plus open questions (download off the poll loop, tombstoned seats, failed staged copies). Docs updated: docs/how/pij-telegram.md (methods table, fallback, several files, body, staging, refusals, events, token, inbound notice), docs/how/pij-rs-api.md, skills/pij/references/routes/peer.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "backpressure.dd.json#rows/bp-0005"
+          ]
         }
       ]
     }
