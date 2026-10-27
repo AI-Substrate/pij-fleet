@@ -5,9 +5,10 @@
 //! proof: Defender's EDR pays per process launch (pij-fleet#62).
 
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -29,6 +30,55 @@ impl Server {
     /// An isolated server with one session of three panes. The first pane
     /// prints text with a tab and non-ASCII, so encoding differences show.
     fn start() -> Self {
+        let mut server = Self::unstarted();
+        server.run(&[
+            "-f",
+            "/dev/null",
+            "new-session",
+            "-d",
+            "-s",
+            "work",
+            "-x",
+            "120",
+            "-y",
+            "30",
+            "printf 'a\\tb ✓ %%end 1 2 3\\n'; exec sleep 600",
+        ]);
+        server.run(&["split-window", "-t", "work", "exec sleep 600"]);
+        server.run(&["split-window", "-t", "work", "exec sleep 600"]);
+        server.panes = server
+            .run(&["list-panes", "-t", "work", "-F", "#{pane_id}"])
+            .lines()
+            .map(str::to_string)
+            .collect();
+        // Let the first pane's printf land before anything captures it.
+        std::thread::sleep(Duration::from_millis(300));
+        server
+    }
+
+    /// An isolated server with plain sessions, created oldest first.
+    fn with_sessions(names: &[&str]) -> Self {
+        let server = Self::unstarted();
+        for (index, name) in names.iter().enumerate() {
+            if index > 0 {
+                // tmux orders sessions by activity time; keep it strict.
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            server.run(&[
+                "-f",
+                "/dev/null",
+                "new-session",
+                "-d",
+                "-s",
+                name,
+                "exec sleep 600",
+            ]);
+        }
+        server
+    }
+
+    /// The names and the wrapper, but no tmux server yet.
+    fn unstarted() -> Self {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -51,47 +101,35 @@ impl Server {
         )
         .expect("wrapper");
         fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).expect("chmod");
-        let tmux = |args: &[&str]| {
-            let output = Command::new("tmux")
-                .args(["-L", &name])
-                .args(args)
-                .output()
-                .expect("tmux");
-            assert!(
-                output.status.success(),
-                "tmux {args:?}: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            String::from_utf8(output.stdout).expect("utf8")
-        };
-        tmux(&[
-            "-f",
-            "/dev/null",
-            "new-session",
-            "-d",
-            "-s",
-            "work",
-            "-x",
-            "120",
-            "-y",
-            "30",
-            "printf 'a\\tb ✓ %%end 1 2 3\\n'; exec sleep 600",
-        ]);
-        tmux(&["split-window", "-t", "work", "exec sleep 600"]);
-        tmux(&["split-window", "-t", "work", "exec sleep 600"]);
-        let panes = tmux(&["list-panes", "-t", "work", "-F", "#{pane_id}"])
-            .lines()
-            .map(str::to_string)
-            .collect();
-        // Let the first pane's printf land before anything captures it.
-        std::thread::sleep(Duration::from_millis(300));
         Self {
             name,
             dir,
             wrapper,
             log,
-            panes,
+            panes: Vec::new(),
         }
+    }
+
+    /// Run a tmux command on this server from outside tmux, and require success.
+    fn run(&self, args: &[&str]) -> String {
+        let output = self.outside(args);
+        assert!(
+            output.status.success(),
+            "tmux {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).expect("utf8")
+    }
+
+    /// A tmux command as a script outside tmux sends it: no `TMUX` to inherit.
+    fn outside(&self, args: &[&str]) -> std::process::Output {
+        Command::new("tmux")
+            .args(["-L", &self.name])
+            .args(args)
+            .env_remove("TMUX")
+            .env_remove("TMUX_PANE")
+            .output()
+            .expect("tmux")
     }
 
     fn adapter(&self, control: bool) -> TmuxAdapter {
@@ -107,12 +145,59 @@ impl Server {
     }
 
     fn tmux(&self, args: &[&str]) -> String {
-        let output = Command::new("tmux")
-            .args(["-L", &self.name])
-            .args(args)
-            .output()
-            .expect("tmux");
-        String::from_utf8_lossy(&output.stdout).into_owned()
+        String::from_utf8_lossy(&self.outside(args).stdout).into_owned()
+    }
+
+    /// The session a human's `tmux attach` would land in, given `target`.
+    ///
+    /// A control client takes the same path through `attach-session` as a
+    /// terminal one (tmux's `cmd_find`, preferring an unattached session when
+    /// untargeted), and needs no pty. It detaches again before returning.
+    fn human_attach(&self, target: Option<&str>) -> String {
+        let mut args = vec!["-L", self.name.as_str(), "-C", "attach-session"];
+        if let Some(target) = target {
+            args.extend(["-t", target]);
+        }
+        let mut child = Command::new("tmux")
+            .args(&args)
+            .env_remove("TMUX")
+            .env_remove("TMUX_PANE")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("human client");
+        let mut stdin = child.stdin.take().expect("stdin");
+        writeln!(stdin, "display-message -p 'landed=#{{session_name}}'").expect("ask");
+        let landed = BufReader::new(child.stdout.take().expect("stdout"))
+            .lines()
+            .map_while(Result::ok)
+            .find_map(|line| line.strip_prefix("landed=").map(str::to_string))
+            .expect("the human client answered");
+        let _ = child.kill();
+        let _ = child.wait();
+        landed
+    }
+
+    /// `(pid, flags)` of every control-mode client attached to this server.
+    fn control_clients(&self) -> Vec<(u32, String)> {
+        self.tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_control_mode} #{client_pid} #{client_session} #{client_flags}",
+        ])
+        .lines()
+        .filter_map(|line| line.strip_prefix("1 "))
+        .map(|rest| {
+            let (pid, flags) = rest.split_once(' ').expect("pid then session");
+            (pid.parse().expect("pid"), flags.to_string())
+        })
+        .collect()
+    }
+
+    fn alive(&self) -> bool {
+        self.outside(&["has-session"]).status.success()
+            || self.outside(&["list-sessions"]).status.success()
     }
 }
 
@@ -144,8 +229,8 @@ fn reads_after_warm_up_launch_no_tmux_process() {
         read_everything(&adapter, &server.panes).await;
         let warm = server.launches();
         assert!(
-            warm.len() <= 2,
-            "warm-up may start the control client (list-sessions + attach), nothing more: {warm:#?}"
+            warm.len() <= 1,
+            "warm-up may start the control client (one attach), nothing more: {warm:#?}"
         );
         for _ in 0..25 {
             read_everything(&adapter, &server.panes).await;
@@ -308,4 +393,167 @@ fn a_dead_server_is_a_plain_error_not_a_hang() {
             started.elapsed()
         );
     });
+}
+
+/// The control client's own session (pij-fleet#73 review S1, R-PRIME-1).
+const CONTROL_SESSION: &str = "_pij";
+
+/// S1: the control client must not change where a human's bare `tmux attach`
+/// lands. Before R-PRIME-1 it attached to the first session, which made that
+/// session "attached", so a bare attach skipped it.
+#[test]
+fn a_bare_attach_lands_where_it_would_without_the_control_client() {
+    let landing = |control: bool| {
+        // `a` is the first session and the one the human used last.
+        let server = Server::with_sessions(&["a", "b"]);
+        assert_eq!(server.human_attach(Some("a")), "a");
+        let adapter = server.adapter(control);
+        block_on(adapter.list_panes()).expect("warm");
+        let attached = server.control_clients().len();
+        assert_eq!(attached, usize::from(control), "control clients attached");
+        server.human_attach(None)
+    };
+    assert_eq!(landing(false), "a", "baseline: bare attach returns to a");
+    assert_eq!(landing(true), "a", "the control client moved the human");
+}
+
+/// S1's documented residual, pinned so a change to it is a visible change.
+/// Attaching any client bumps its session's activity, and a command run from
+/// outside tmux with no `-t` resolves to the most recently active session. So
+/// right after the control client (re)attaches, such a command lands in `_pij`
+/// until the next keypress in another session. pij's own writes always target.
+#[test]
+fn an_untargeted_outside_command_resolves_to_pij_after_the_control_attach() {
+    let server = Server::with_sessions(&["a", "b"]);
+    let untargeted = || server.run(&["display-message", "-p", "#{session_name}"]);
+    assert_eq!(untargeted().trim(), "b", "baseline: the newest session");
+    let adapter = server.adapter(true);
+    block_on(adapter.list_panes()).expect("warm");
+    assert_eq!(untargeted().trim(), CONTROL_SESSION);
+}
+
+/// The control session's pane is never a pane pij lists, so no seat lookup,
+/// tap sweep, reap or caller-pane resolution can ever see it.
+#[test]
+fn the_control_session_is_attached_read_only_and_never_listed() {
+    let server = Server::start();
+    let adapter = server.adapter(true);
+    let listed = block_on(adapter.list_panes()).expect("list");
+    let clients = server.control_clients();
+    assert_eq!(clients.len(), 1, "{clients:?}");
+    let (_, flags) = &clients[0];
+    for flag in ["no-output", "ignore-size", "read-only"] {
+        assert!(flags.contains(flag), "{flag} missing: {flags}");
+    }
+    let sessions = server.tmux(&["list-sessions", "-F", "#{session_name}"]);
+    assert!(
+        sessions.lines().any(|name| name == CONTROL_SESSION),
+        "the control client has its own session: {sessions:?}"
+    );
+    let ids: Vec<&str> = listed.iter().map(|pane| pane.id.as_str()).collect();
+    assert_eq!(ids, server.panes, "only the operator's panes are listed");
+    assert!(listed.iter().all(|pane| pane.session != CONTROL_SESSION));
+}
+
+/// `_pij` must not keep a server alive that the operator has emptied: once it
+/// is the only session, the client leaves and `_pij` goes with it.
+#[test]
+fn the_server_still_exits_when_the_operator_closes_the_last_session() {
+    let server = Server::start();
+    let adapter = server.adapter(true);
+    block_on(adapter.list_panes()).expect("warm");
+    server.run(&["kill-session", "-t", "work"]);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while server.alive() {
+        assert!(
+            Instant::now() < deadline,
+            "the server outlived its last real session: {:?}",
+            server.tmux(&["list-sessions"])
+        );
+        // The daemon reads every 600 ms; each read retires a client that left.
+        let _ = block_on(adapter.list_panes());
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// No server running means none is started: `-N` on the control attach.
+#[test]
+fn reads_never_start_a_server() {
+    let server = Server::unstarted();
+    let adapter = server.adapter(true);
+    assert!(block_on(adapter.list_panes()).is_err());
+    assert!(!server.alive(), "a read started a tmux server");
+}
+
+/// Sends `SIGCONT` on drop, so a failed assertion never leaves a stopped server.
+struct Resume(u32);
+
+impl Drop for Resume {
+    fn drop(&mut self) {
+        let _ = Command::new("kill")
+            .args(["-CONT", &self.0.to_string()])
+            .status();
+    }
+}
+
+/// S4: a client that stops answering is replaced. The read that found it
+/// stalled forks after the timeout, and reads reconnect afterwards.
+///
+/// Stopping the `tmux -C` process itself stalls nothing: tmux hands the
+/// client's stdin and stdout to the server, which then reads and writes our
+/// pipes directly. So this stalls the (private) server for a few seconds.
+#[test]
+fn a_stalled_control_client_is_killed_and_replaced() {
+    let server = Server::start();
+    let adapter = server.adapter(true);
+    let expected = block_on(server.adapter(false).list_panes()).expect("forked truth");
+    block_on(adapter.list_panes()).expect("warm");
+    let clients = server.control_clients();
+    assert_eq!(clients.len(), 1, "{clients:?}");
+    let stalled = clients[0].0;
+    let pid: u32 = server
+        .run(&["display-message", "-p", "#{pid}"])
+        .trim()
+        .parse()
+        .expect("server pid");
+    let stop = Command::new("kill")
+        .args(["-STOP", &pid.to_string()])
+        .status()
+        .expect("kill");
+    assert!(stop.success());
+    let resume = Resume(pid);
+    let resumer = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(4));
+        drop(resume);
+    });
+    let started = Instant::now();
+    // Waits out the reply timeout, then forks; the fork answers once resumed.
+    assert_eq!(block_on(adapter.list_panes()).expect("list"), expected);
+    assert!(
+        started.elapsed() >= Duration::from_secs(3),
+        "answered while the server was stopped? {:?}",
+        started.elapsed()
+    );
+    resumer.join().expect("resumed");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        assert_eq!(block_on(adapter.list_panes()).expect("list"), expected);
+        let before = server.launches().len();
+        assert_eq!(block_on(adapter.list_panes()).expect("list"), expected);
+        if server.launches().len() == before {
+            break; // a control client answers without a launch
+        }
+        assert!(
+            Instant::now() < deadline,
+            "never reconnected: {:?}",
+            server.control_clients()
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let now = server.control_clients();
+    assert_eq!(now.len(), 1, "{now:?}");
+    assert_ne!(
+        now[0].0, stalled,
+        "the stalled client was kept, not replaced"
+    );
 }

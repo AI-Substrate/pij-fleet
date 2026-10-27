@@ -102,7 +102,6 @@ impl TmuxAdapter {
             control: Arc::new(control::ControlClient::new(
                 OsString::from("tmux"),
                 None,
-                None,
                 true,
             )),
         }
@@ -119,11 +118,10 @@ impl TmuxAdapter {
 
     /// Limit listings, new windows, and destructive guards to `session`.
     pub fn for_session(session: impl Into<String>, tap_root: impl Into<PathBuf>) -> Self {
-        let session = session.into();
         Self {
             binary: OsString::from("tmux"),
             server: None,
-            session: Some(session.clone()),
+            session: Some(session.into()),
             tap_root: tap_root.into(),
             legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
@@ -131,7 +129,6 @@ impl TmuxAdapter {
             control: Arc::new(control::ControlClient::new(
                 OsString::from("tmux"),
                 None,
-                Some(session),
                 true,
             )),
         }
@@ -141,12 +138,7 @@ impl TmuxAdapter {
     pub fn with_binary(binary: impl Into<OsString>, tap_root: impl Into<PathBuf>) -> Self {
         let binary = binary.into();
         Self {
-            control: Arc::new(control::ControlClient::new(
-                binary.clone(),
-                None,
-                None,
-                false,
-            )),
+            control: Arc::new(control::ControlClient::new(binary.clone(), None, false)),
             binary,
             server: None,
             session: None,
@@ -167,7 +159,6 @@ impl TmuxAdapter {
             control: Arc::new(control::ControlClient::new(
                 OsString::from("tmux"),
                 Some(server.clone()),
-                None,
                 true,
             )),
             binary: OsString::from("tmux"),
@@ -764,7 +755,12 @@ impl TmuxAdapter {
 impl TmuxPort for TmuxAdapter {
     async fn list_panes(&self) -> Result<Vec<Pane>> {
         let output = self.stdout("list-panes", &self.list_args())?;
-        parse_panes(&output)
+        // The control client's own session is pij's, never a seat's: no lookup,
+        // tap sweep, reap or caller-pane resolution should ever see its pane.
+        Ok(parse_panes(&output)?
+            .into_iter()
+            .filter(|pane| pane.session != control::CONTROL_SESSION)
+            .collect())
     }
 
     async fn pane_process(&self, pane: &str) -> Result<Option<PaneProcess>> {

@@ -10,6 +10,15 @@
 //! the same tmux command. Whenever it is off, starting, slow, lost or handed an
 //! argument it cannot quote, the caller forks exactly as before, so it can only
 //! ever remove launches, never change an answer.
+//!
+//! The write barrier is [`is_read`] plus [`command_line`]'s quoting, and nothing
+//! else. The `read-only` attach flag only refuses keyboard input from the
+//! client; commands sent over the pipe run with full rights (pij-fleet#73
+//! review S2). Widening `is_read` is a safety change.
+//!
+//! The client lives in its own session, [`CONTROL_SESSION`], never one of the
+//! operator's (R-PRIME-1): attached there, it made a bare `tmux attach` skip the
+//! session the human last used.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -25,8 +34,15 @@ const READY_SENTINEL: &str = "pij-control-ready";
 const REPLY_TIMEOUT: Duration = Duration::from_secs(3);
 /// After a failed start, fork for this long before trying again.
 const RESTART_BACKOFF: Duration = Duration::from_secs(5);
-/// Attach without resizing windows, without `%output` traffic, without input.
+/// Attach without resizing windows, without `%output` traffic, and without
+/// keyboard input. Not a write barrier: see the module doc.
 const ATTACH_FLAGS: &str = "no-output,ignore-size,read-only";
+/// The control client's own session, created on first attach (R-PRIME-1).
+pub(crate) const CONTROL_SESSION: &str = "_pij";
+/// What `_pij`'s one pane runs: an idle process, not a shell.
+const IDLE_COMMAND: &str = "exec sleep 2147483647";
+/// The subscription that reports the server's session count.
+const SESSIONS_SUBSCRIPTION: &str = "pij-sessions";
 
 /// One command's answer: its output lines, or tmux's error lines.
 pub(crate) type Reply = std::result::Result<Vec<Vec<u8>>, Vec<Vec<u8>>>;
@@ -38,6 +54,9 @@ pub(crate) enum Frame {
     Reply(Reply),
     /// The client is detached or the server is gone.
     Exit,
+    /// `_pij` is the only session left. The client leaves, so `_pij` (which is
+    /// `destroy-unattached`) cannot keep an emptied server alive.
+    Alone,
 }
 
 /// Incremental reader for tmux's control protocol. Pure, so framing is tested.
@@ -72,7 +91,15 @@ impl Framer {
             self.open = Some((key.to_vec(), Vec::new()));
             return None;
         }
-        (line == b"%exit" || line.starts_with(b"%exit ")).then_some(Frame::Exit)
+        if line == b"%exit" || line.starts_with(b"%exit ") {
+            return Some(Frame::Exit);
+        }
+        // `%subscription-changed pij-sessions $1 - - - : 1`
+        let alone = line
+            .strip_prefix(b"%subscription-changed ")
+            .and_then(|rest| rest.strip_prefix(SESSIONS_SUBSCRIPTION.as_bytes()))
+            .is_some_and(|rest| rest.starts_with(b" ") && rest.ends_with(b" : 1"));
+        alone.then_some(Frame::Alone)
     }
 }
 
@@ -106,6 +133,9 @@ pub(crate) fn command_line(args: &[OsString]) -> Option<String> {
 }
 
 /// Is this tmux argv a read that is safe to send over the control client?
+///
+/// The write barrier (with [`command_line`]): deny by default. Every command
+/// not named here forks, and `read_allowlist_is_exactly_four_reads` pins the set.
 pub(crate) fn is_read(args: &[OsString]) -> bool {
     match args.first().and_then(|arg| arg.to_str()) {
         Some("list-panes" | "capture-pane" | "show-options") => true,
@@ -118,6 +148,8 @@ pub(crate) fn is_read(args: &[OsString]) -> bool {
 struct Waiters {
     queue: VecDeque<SyncSender<Reply>>,
     dead: bool,
+    /// Died because `_pij` was the only session: wait before restarting.
+    alone: bool,
 }
 
 struct Live {
@@ -143,7 +175,6 @@ struct State {
 pub(crate) struct ControlClient {
     binary: OsString,
     server: Option<String>,
-    session: Option<String>,
     enabled: bool,
     state: Mutex<State>,
 }
@@ -157,16 +188,10 @@ impl std::fmt::Debug for ControlClient {
 }
 
 impl ControlClient {
-    pub(crate) fn new(
-        binary: OsString,
-        server: Option<String>,
-        session: Option<String>,
-        enabled: bool,
-    ) -> Self {
+    pub(crate) fn new(binary: OsString, server: Option<String>, enabled: bool) -> Self {
         Self {
             binary,
             server,
-            session,
             enabled,
             state: Mutex::new(State::default()),
         }
@@ -178,12 +203,7 @@ impl ControlClient {
     }
 
     pub(crate) fn with_enabled(&self, enabled: bool) -> Self {
-        Self::new(
-            self.binary.clone(),
-            self.server.clone(),
-            self.session.clone(),
-            enabled,
-        )
+        Self::new(self.binary.clone(), self.server.clone(), enabled)
     }
 
     /// Answer a read over the control client, or `None` to make the caller fork.
@@ -192,14 +212,18 @@ impl ControlClient {
             return None;
         }
         let line = command_line(args)?;
-        let receiver = {
+        let (receiver, waited_on) = {
             let mut state = self.state.lock().ok()?;
-            if state
-                .live
-                .as_ref()
-                .is_some_and(|live| live.waiters.lock().map_or(true, |w| w.dead))
-            {
+            let ended = state.live.as_ref().and_then(|live| {
+                live.waiters
+                    .lock()
+                    .map_or(Some(false), |w| w.dead.then_some(w.alone))
+            });
+            if let Some(alone) = ended {
                 state.live = None;
+                if alone {
+                    state.retry_after = Some(Instant::now() + RESTART_BACKOFF);
+                }
             }
             if state.live.is_none() {
                 if state.retry_after.is_some_and(|at| Instant::now() < at) {
@@ -218,7 +242,7 @@ impl ControlClient {
             }
             let live = state.live.as_mut()?;
             match send(live, &line) {
-                Some(receiver) => receiver,
+                Some(receiver) => (receiver, Arc::clone(&live.waiters)),
                 None => {
                     state.live = None;
                     return None;
@@ -228,9 +252,12 @@ impl ControlClient {
         match receiver.recv_timeout(REPLY_TIMEOUT) {
             Ok(reply) => Some(reply),
             Err(_) => {
-                // Slow or lost: replace the client; this read forks.
+                // Slow or lost: this read forks, and the client is replaced so
+                // later reads stop waiting on a hung one. (Replacing it is not
+                // what keeps a late reply from the next caller: this waiter's
+                // sender stays queued and absorbs it.)
                 if let Ok(mut state) = self.state.lock() {
-                    state.live = None;
+                    forget(&mut state, &waited_on);
                 }
                 None
             }
@@ -247,14 +274,13 @@ impl ControlClient {
     }
 
     fn start(&self) -> io::Result<Live> {
-        let target = match &self.session {
-            Some(session) => session.clone(),
-            None => self.first_session()?,
-        };
         pij_core::spawns::record("tmux.control-client");
+        // `-N`: no server means no client; never start one just to read it.
+        // `-A`: attach to `_pij`, creating it first if it is absent.
         let mut child = self
             .command()
-            .args(["-C", "attach-session", "-f", ATTACH_FLAGS, "-t", &target])
+            .args(["-N", "-C", "new-session", "-A", "-s", CONTROL_SESSION])
+            .args(["-f", ATTACH_FLAGS, IDLE_COMMAND])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -274,6 +300,20 @@ impl ControlClient {
             stdin,
             waiters,
         };
+        // Before the handshake, so no waiter is queued for these replies: the
+        // reader drops every block until the sentinel's. Untargeted, so each
+        // applies to this client and its session, `_pij`.
+        let subscription = format!("{SESSIONS_SUBSCRIPTION}::#{{server_sessions}}");
+        for setup in [
+            ["set-option", "destroy-unattached", "on"].as_slice(),
+            ["refresh-client", "-B", &subscription].as_slice(),
+        ] {
+            let line = command_line(&setup.iter().map(OsString::from).collect::<Vec<_>>())
+                .expect("setup quotes");
+            live.stdin
+                .write_all(format!("{line}\n").as_bytes())
+                .and_then(|()| live.stdin.flush())?;
+        }
         let sentinel = command_line(&[
             OsString::from("display-message"),
             OsString::from("-p"),
@@ -291,21 +331,18 @@ impl ControlClient {
             ))
         }
     }
+}
 
-    fn first_session(&self) -> io::Result<String> {
-        pij_core::spawns::record("tmux.list-sessions");
-        let output = self
-            .command()
-            .args(["list-sessions", "-F", "#{session_id}"])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()?;
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .next()
-            .filter(|_| output.status.success())
-            .map(str::to_string)
-            .ok_or_else(|| io::Error::other("no tmux session to attach a control client to"))
+/// Drop the live client, but only if it is still the one `waited_on` belongs
+/// to. Every waiter in flight wakes when a client dies; an unconditional clear
+/// would let each one kill the replacement another caller just started.
+fn forget(state: &mut State, waited_on: &Arc<Mutex<Waiters>>) {
+    if state
+        .live
+        .as_ref()
+        .is_some_and(|live| Arc::ptr_eq(&live.waiters, waited_on))
+    {
+        state.live = None;
     }
 }
 
@@ -339,6 +376,7 @@ fn send(live: &mut Live, line: &str) -> Option<mpsc::Receiver<Reply>> {
 fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
     let mut framer = Framer::default();
     let mut ready = false;
+    let mut alone = false;
     let mut line = Vec::new();
     loop {
         line.clear();
@@ -352,6 +390,10 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
         match framer.line(&line) {
             None => {}
             Some(Frame::Exit) => break,
+            Some(Frame::Alone) => {
+                alone = true;
+                break;
+            }
             Some(Frame::Reply(reply)) => {
                 if !ready {
                     if reply != Ok(vec![READY_SENTINEL.as_bytes().to_vec()]) {
@@ -368,14 +410,17 @@ fn read_replies(mut stdout: impl BufRead, waiters: &Mutex<Waiters>) {
     }
     if let Ok(mut waiters) = waiters.lock() {
         waiters.dead = true;
+        waiters.alone = alone;
         waiters.queue.clear();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Frame, Framer, command_line, is_read};
+    use super::{Frame, Framer, Live, State, Waiters, command_line, forget, is_read};
     use std::ffi::OsString;
+    use std::process::{Command, Stdio};
+    use std::sync::{Arc, Mutex};
 
     fn feed(framer: &mut Framer, text: &str) -> Vec<Frame> {
         text.lines()
@@ -497,5 +542,119 @@ mod tests {
         ] {
             assert!(!is_read(&args(&[write])), "{write} must fork");
         }
+    }
+
+    /// Every tmux 3.6 command name and alias (`tmux list-commands`).
+    const TMUX_COMMANDS: &str = "
+        attach-session attach bind-key bind break-pane breakp capture-pane capturep
+        choose-buffer choose-client choose-tree clear-history clearhist
+        clear-prompt-history clearphist clock-mode command-prompt confirm-before
+        confirm copy-mode customize-mode delete-buffer deleteb detach-client detach
+        display-menu menu display-message display display-popup popup display-panes
+        displayp find-window findw has-session has if-shell if join-pane joinp
+        kill-pane killp kill-server kill-session kill-window killw last-pane lastp
+        last-window last link-window linkw list-buffers lsb list-clients lsc
+        list-commands lscm list-keys lsk list-panes lsp list-sessions ls list-windows
+        lsw load-buffer loadb lock-client lockc lock-server lock lock-session locks
+        move-pane movep move-window movew new-session new new-window neww next-layout
+        nextl next-window next paste-buffer pasteb pipe-pane pipep previous-layout
+        prevl previous-window prev refresh-client refresh rename-session rename
+        rename-window renamew resize-pane resizep resize-window resizew respawn-pane
+        respawnp respawn-window respawnw rotate-window rotatew run-shell run
+        save-buffer saveb select-layout selectl select-pane selectp select-window
+        selectw send-keys send send-prefix server-access set-buffer setb
+        set-environment setenv set-hook set-option set set-window-option setw
+        show-buffer showb show-environment showenv show-hooks show-messages showmsgs
+        show-options show show-prompt-history showphist show-window-options showw
+        source-file source split-window splitw start-server start suspend-client
+        suspendc swap-pane swapp swap-window swapw switch-client switchc unbind-key
+        unbind unlink-window unlinkw wait-for wait
+    ";
+
+    /// S2: `is_read` is the write barrier, so its allow-list is pinned whole.
+    /// Adding a command here (say `run-shell` or `if-shell`) is a safety change
+    /// and must fail this test first.
+    #[test]
+    fn read_allowlist_is_exactly_four_reads() {
+        let allowed: Vec<&str> = TMUX_COMMANDS
+            .split_whitespace()
+            .filter(|name| is_read(&[OsString::from(*name), OsString::from("-p")]))
+            .collect();
+        assert_eq!(
+            allowed,
+            [
+                "capture-pane",
+                "display-message",
+                "list-panes",
+                "show-options"
+            ]
+        );
+        // Unknown first words fork too: deny by default.
+        assert!(!is_read(&[
+            OsString::from("frobnicate"),
+            OsString::from("-p")
+        ]));
+        assert!(!is_read(&[]));
+    }
+
+    #[test]
+    fn only_the_pij_sessions_subscription_at_one_means_alone() {
+        let mut framer = Framer::default();
+        assert_eq!(
+            feed(
+                &mut framer,
+                "%subscription-changed pij-sessions $1 - - - : 2\n\
+                 %subscription-changed pij-sessions-x $1 - - - : 1\n\
+                 %subscription-changed other $1 - - - : 1\n\
+                 %subscription-changed pij-sessions $1 - - - : 11\n\
+                 %begin 1 1 1\n\
+                 %subscription-changed pij-sessions $1 - - - : 1\n\
+                 %end 1 1 1\n\
+                 %subscription-changed pij-sessions $1 - - - : 1\n"
+            ),
+            vec![
+                Frame::Reply(Ok(lines(&[
+                    "%subscription-changed pij-sessions $1 - - - : 1"
+                ]))),
+                Frame::Alone,
+            ]
+        );
+    }
+
+    fn idle_client() -> Live {
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("cat");
+        let stdin = child.stdin.take().expect("stdin");
+        Live {
+            child,
+            stdin,
+            waiters: Arc::new(Mutex::new(Waiters::default())),
+        }
+    }
+
+    /// S4: when a client dies every waiter in flight wakes at once. A waiter
+    /// whose client was already replaced must leave the replacement alone,
+    /// or each wake kills the next client (review S4, the cascade).
+    #[test]
+    fn a_stale_waiter_never_clears_the_replacement_client() {
+        let old = idle_client();
+        let old_waiters = Arc::clone(&old.waiters);
+        drop(old);
+        let replacement = idle_client();
+        let current = Arc::clone(&replacement.waiters);
+        let mut state = State {
+            live: Some(replacement),
+            retry_after: None,
+        };
+        forget(&mut state, &old_waiters);
+        assert!(
+            state.live.is_some(),
+            "a stale waiter cleared the new client"
+        );
+        forget(&mut state, &current);
+        assert!(state.live.is_none(), "its own waiter clears it");
     }
 }
