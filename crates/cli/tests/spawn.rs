@@ -1185,3 +1185,46 @@ async fn shipped_cli_reads_one_seat_state_back_from_the_real_store() {
 
     server.abort();
 }
+
+/// Plan 181: the launch wrapper hands a Codex seat its own pane as a per-thread
+/// shell setting, read from the pane tmux started it in. Other harnesses get
+/// their argv untouched.
+#[test]
+fn spawn_child_appends_the_codex_pane_setting() {
+    let dir = fresh_dir("pij-spawn-child-pane");
+    let run = |harness: &str, pane: Option<&str>| {
+        let out = dir.join(format!("{harness}-{}.argv", pane.unwrap_or("none")));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pij-rs"));
+        command
+            .args([
+                "__spawn-child",
+                "--status-file",
+                dir.join("child.status").to_str().expect("UTF-8"),
+                "--log-file",
+                dir.join("child.log").to_str().expect("UTF-8"),
+                "--harness",
+                harness,
+                "--",
+                "sh",
+                "-c",
+                r#"out="$1"; shift; printf '%s\n' "$@" > "$out""#,
+                "sh",
+                out.to_str().expect("UTF-8"),
+                "--model",
+                "m",
+            ])
+            .env_remove("TMUX_PANE");
+        if let Some(pane) = pane {
+            command.env("TMUX_PANE", pane);
+        }
+        assert!(command.status().expect("spawn child").success());
+        std::fs::read_to_string(out).expect("argv written")
+    };
+    assert_eq!(
+        run("codex", Some("%122")),
+        "--model\nm\n-c\nshell_environment_policy.set.TMUX_PANE=\"%122\"\n"
+    );
+    assert_eq!(run("codex", None), "--model\nm\n");
+    assert_eq!(run("claude", Some("%122")), "--model\nm\n");
+    let _ = std::fs::remove_dir_all(dir);
+}

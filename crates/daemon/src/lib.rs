@@ -12,6 +12,7 @@ pub mod auth;
 pub mod background;
 pub mod bg_routing;
 mod claude_bind;
+pub mod codex_bind;
 pub mod death_sweep;
 pub mod delivery;
 pub mod events;
@@ -162,6 +163,9 @@ pub struct Services {
     pub claude_homes: Arc<[std::path::PathBuf]>,
     /// Where Telegram document sends are staged by content before queueing.
     pub telegram_attachments: PathBuf,
+    /// Which Codex thread each pane runs, read from the pane's own Codex
+    /// process (plan 181): the binder's evidence and a Codex caller's check.
+    pub codex_threads: Arc<dyn codex_bind::CodexThreads>,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -202,7 +206,7 @@ pub struct Daemon {
     /// see and nothing can stop.
     federation_worker: federation::FederationWorker,
     drain_loop: lifecycle::TickLoop,
-    claude_bind_loop: lifecycle::TickLoop,
+    bind_loop: lifecycle::TickLoop,
     background_loop: lifecycle::TickLoop,
     death_sweep_loop: lifecycle::TickLoop,
     pa_watchdog_loop: lifecycle::TickLoop,
@@ -269,7 +273,7 @@ impl Daemon {
                 })
             },
             self.drain_loop.shutdown(),
-            self.claude_bind_loop.shutdown(),
+            self.bind_loop.shutdown(),
             self.pane_observer.shutdown(),
             self.federation_worker.shutdown(),
             self.background_loop.shutdown(),
@@ -458,6 +462,13 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         AdapterChoice::Fake => Arc::new(FakeLiveness::new()),
         AdapterChoice::Real => Arc::new(ProcLiveness::new()),
     };
+    let codex_threads: Arc<dyn codex_bind::CodexThreads> = match config.adapters.harness {
+        AdapterChoice::Fake => Arc::new(codex_bind::NoCodexThreads),
+        AdapterChoice::Real => Arc::new(codex_bind::PaneCodexThreads::new(
+            Arc::clone(&tmux),
+            Arc::clone(&liveness),
+        )),
+    };
     // Stateful: the real source keeps one transcript read position per seat, so
     // it is composed once here and shared by every request.
     let session_status: Arc<dyn SessionStatusPort> = match config.adapters.session_status {
@@ -569,6 +580,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             .unwrap_or_else(|| Path::new("."))
             .join("sidecars")
             .join("telegram-attachments"),
+        codex_threads,
         offline: config.is_fully_offline(),
     })
 }
@@ -622,15 +634,20 @@ fn start_resilient_delivery_drain(
     )
 }
 
-fn start_resilient_claude_binder(
-    binder: Arc<claude_bind::ClaudeBinder>,
+fn start_resilient_binders(
+    claude: Arc<claude_bind::ClaudeBinder>,
+    codex: Arc<codex_bind::CodexBinder>,
     interval: lifecycle::TickInterval,
 ) -> lifecycle::TickLoop {
     lifecycle::TickLoop::start_validated(interval, move || {
-        let binder = Arc::clone(&binder);
+        let claude = Arc::clone(&claude);
+        let codex = Arc::clone(&codex);
         async move {
-            if let Err(error) = binder.bind_once().await {
+            if let Err(error) = claude.bind_once().await {
                 eprintln!("pij-rs claude binder: {error}");
+            }
+            if let Err(error) = codex.bind_once().await {
+                eprintln!("pij-rs codex binder: {error}");
             }
             Ok(())
         }
@@ -892,6 +909,13 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         Arc::clone(&services.event_bus),
         Arc::clone(&services.roles),
     ));
+    let codex_binder = Arc::new(codex_bind::CodexBinder::new(
+        Arc::clone(&services.registry),
+        Arc::clone(&services.liveness),
+        Arc::clone(&services.event_bus),
+        Arc::clone(&services.roles),
+        Arc::clone(&services.tmux),
+    ));
 
     let drain = Arc::new(
         pointer::DrainWorker::new(
@@ -1001,7 +1025,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
 
     let pane_observer = pane_observer.start();
     let federation_worker = Arc::clone(&federation).start();
-    let claude_bind_loop = start_resilient_claude_binder(claude_binder, delivery_interval);
+    let bind_loop = start_resilient_binders(claude_binder, codex_binder, delivery_interval);
     let drain_loop =
         start_resilient_delivery_drain(drain, Arc::clone(&services.delivery), delivery_interval);
     // Infallible by construction: every refusal happened in step 8b.
@@ -1076,7 +1100,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         joined,
         federation_worker,
         drain_loop,
-        claude_bind_loop,
+        bind_loop,
         background_loop,
         death_sweep_loop,
         pa_watchdog_loop,

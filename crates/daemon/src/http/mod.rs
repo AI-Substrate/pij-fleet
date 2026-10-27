@@ -7,6 +7,7 @@ pub mod anomalies;
 mod auth;
 mod background;
 mod client;
+mod codex_caller;
 pub(crate) mod cold_wake;
 pub mod decisions;
 mod double_seat;
@@ -1478,7 +1479,15 @@ async fn launch_seat_locked(
             };
         }
         if tokio::time::Instant::now() >= deadline {
-            let reason = format!("timed out after {wait_seconds}s waiting for registration");
+            let mut reason = format!("timed out after {wait_seconds}s waiting for registration");
+            // Plan 181: say what holds a Codex seat off its prompt.
+            if descriptor.harness == Harness::Codex {
+                let seen =
+                    pij_harnesses::codex::launch_blocker(&last_output).unwrap_or_else(|| {
+                        "Codex is at its prompt, but no registration arrived".to_string()
+                    });
+                reason = format!("{reason}: {seen}");
+            }
             return match spawn_failure(
                 state,
                 command_name,
@@ -1501,7 +1510,7 @@ async fn launch_seat_locked(
     }
 }
 
-fn spawn_evidence_paths(spawn_id: &str) -> (PathBuf, PathBuf) {
+pub(crate) fn spawn_evidence_paths(spawn_id: &str) -> (PathBuf, PathBuf) {
     let root = std::env::temp_dir().join("pij-rs-spawn");
     (
         root.join(format!("{spawn_id}.status")),
@@ -3681,6 +3690,8 @@ pub(crate) fn envelope<T: serde::Serialize>(status: StatusCode, body: &Envelope<
     }
 }
 
+#[cfg(test)]
+mod codex_caller_tests;
 #[cfg(test)]
 mod double_seat_tests;
 #[cfg(test)]

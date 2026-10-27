@@ -3,6 +3,7 @@
 
 mod adapter;
 mod claude_settings;
+pub mod codex;
 mod composer;
 mod interaction;
 mod models;
@@ -32,7 +33,7 @@ pub use composer::{ComposerRegion, composer_region};
 pub use interaction::{InjectionVerdict, InteractionGate, StagedSubmission};
 pub use models::ModelCatalog;
 pub use spawn::{
-    SpawnPlan, SpawnPlanInput, build_spawn_plan, observed_launch_command,
-    validate_executable_override,
+    SpawnPlan, SpawnPlanInput, SpawnedChild, build_spawn_plan, observed_launch_command,
+    pane_env_args, validate_executable_override,
 };
 pub use usage_limit::{ClaudeUsageLimits, TAIL_BYTES, local_clock_text};

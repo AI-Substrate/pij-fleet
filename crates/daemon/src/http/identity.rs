@@ -638,6 +638,16 @@ pub(crate) async fn adopt(
         );
     };
 
+    // Plan 181: a Codex shell can carry another session's TMUX_PANE, and
+    // adopting that pane once minted a parentless stranger for its process.
+    if harness == "codex"
+        && let Some(refusal) =
+            super::codex_caller::refusal_for(&state, ADOPT, Some(&caller), None, pane.as_deref())
+                .await
+    {
+        return refusal;
+    }
+
     // Derive folder and process identity. This is the whole difference between a
     // registration and an assertion.
     let (folder, proc, proc_source) = if let Some(pane) = pane.as_deref() {
@@ -1031,7 +1041,7 @@ pub(crate) async fn whoami_get(
     State(state): State<AppState>,
     Query(query): Query<IdentityQuery>,
 ) -> Response {
-    whoami_resolved(state, query.seat, query.pane).await
+    whoami_resolved(state, query.seat, query.pane, None).await
 }
 
 /// See [`whoami_get`]. The POST arm is the canonical one once the shim forwards
@@ -1043,8 +1053,9 @@ pub(crate) async fn whoami_post(
     let caller = request.caller.unwrap_or_default();
     whoami_resolved(
         state,
-        request.seat.or(caller.session_id),
-        request.pane.or(caller.pane),
+        request.seat.or_else(|| caller.session_id.clone()),
+        request.pane.or_else(|| caller.pane.clone()),
+        Some(&caller),
     )
     .await
 }
@@ -1053,8 +1064,20 @@ async fn whoami_resolved(
     state: AppState,
     asserted: Option<String>,
     pane: Option<String>,
+    caller: Option<&CallerContext>,
 ) -> Response {
-    match resolve_seat(&state, WHOAMI, asserted, pane).await {
+    let resolved = resolve_seat(&state, WHOAMI, asserted, pane).await;
+    let seat = match &resolved {
+        Resolved::Seat(descriptor, _) => Some(descriptor),
+        Resolved::Refusal(_) => None,
+    };
+    let claimed_pane = caller.and_then(|caller| caller.pane.as_deref());
+    if let Some(refusal) =
+        super::codex_caller::refusal_for(&state, WHOAMI, caller, seat, claimed_pane).await
+    {
+        return refusal;
+    }
+    match resolved {
         Resolved::Seat(descriptor, _) => {
             let descriptor = match state.services.roles.project_seat(descriptor).await {
                 Ok(descriptor) => descriptor,
