@@ -1,0 +1,8 @@
+test statusline::tests::a_seat_that_dies_shows_dead_on_the_very_next_render ... FAILED
+test statusline::tests::the_common_branch_case_launches_no_git ... ok
+test statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte has been running for over 60 seconds
+test statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte ... FAILED
+thread 'statusline::tests::a_seat_that_dies_shows_dead_on_the_very_next_render' (486485975) panicked at crates/cli/src/statusline_tests.rs:310:5:
+thread 'statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte' (486485976) panicked at crates/cli/src/statusline_tests.rs:288:5:
+216 of 216 renders differ:
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 33 filtered out; finished in 133.62s

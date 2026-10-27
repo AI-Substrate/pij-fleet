@@ -534,7 +534,8 @@ fn caller_descends_from(peer: SocketAddr, host: u32) -> bool {
     let Some(mut pid) = peer_pid(peer) else {
         return false;
     };
-    let Ok(output) = std::process::Command::new("ps")
+    pij_core::spawns::record("ps.identity-caller-ancestry");
+    let Ok(output) = std::process::Command::new("/bin/ps")
         .args(["-Ao", "pid=,ppid="])
         .env("LC_ALL", "C")
         .output()
@@ -564,6 +565,7 @@ fn caller_descends_from(peer: SocketAddr, host: u32) -> bool {
 /// Matching the direction rather than excluding the daemon's own pid keeps this
 /// correct when client and server share a process.
 fn peer_pid(peer: SocketAddr) -> Option<u32> {
+    pij_core::spawns::record("lsof.identity-peer-pid");
     let output = std::process::Command::new("lsof")
         .args(["-nP", &format!("-iTCP@{peer}"), "-Fpn"])
         .env("LC_ALL", "C")

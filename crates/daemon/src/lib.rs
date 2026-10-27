@@ -424,13 +424,16 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         .map(|home| home.join(".pij/pane-signals"));
     let tmux: Arc<dyn TmuxPort> = match config.adapters.tmux {
         AdapterChoice::Fake => Arc::new(FakeTmux::new()),
-        AdapterChoice::Real => match legacy_pane_signal_dir {
-            Some(legacy_root) => Arc::new(TmuxAdapter::with_legacy_tap_root(
-                pane_signal_dir,
-                legacy_root,
-            )),
-            None => Arc::new(TmuxAdapter::new(pane_signal_dir)),
-        },
+        AdapterChoice::Real => Arc::new(match (&config.tmux_server, legacy_pane_signal_dir) {
+            (Some(server), Some(legacy_root)) => {
+                TmuxAdapter::for_server_with_legacy_tap_root(server, pane_signal_dir, legacy_root)
+            }
+            (Some(server), None) => TmuxAdapter::for_server(server, pane_signal_dir),
+            (None, Some(legacy_root)) => {
+                TmuxAdapter::with_legacy_tap_root(pane_signal_dir, legacy_root)
+            }
+            (None, None) => TmuxAdapter::new(pane_signal_dir),
+        }),
     };
     // One politeness gate, shared by direct delivery, queued retries, and the
     // pane observer that supplies its composer evidence.

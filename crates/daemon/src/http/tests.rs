@@ -4227,6 +4227,84 @@ async fn registration_refuses_uncorroborated_or_half_process_identity() {
     server.abort();
 }
 
+/// Nit 3 of the #73 recheck: `_pij` belongs to the daemon's tmux control
+/// client. A seat spawned there would share a session pij creates and destroys
+/// for itself, so the spawn is refused by name, whether `_pij` was asked for or
+/// resolved from the caller's pane, before anything launches.
+#[tokio::test]
+async fn spawn_into_the_control_session_is_refused_by_name() {
+    let registry = Arc::new(FakeRegistry::new());
+    let tmux = Arc::new(FakeTmux::new().with_pane(Pane {
+        id: "%in-pij".to_string(),
+        session: "_pij".to_string(),
+        window: "someones-job".to_string(),
+        title: String::new(),
+        cursor_x: None,
+        cursor_y: None,
+    }));
+    let mut services = test_services(
+        registry.clone(),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    services.tmux = tmux.clone();
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let client = reqwest::Client::new();
+    for (session, pane) in [(Some("_pij"), None), (None, Some("%in-pij"))] {
+        let response = client
+            .post(format!("http://{addr}/v1/spawn"))
+            .bearer_auth("key")
+            .json(&SpawnRequest {
+                id: Some("pij-in-control".into()),
+                harness: Harness::Claude,
+                allow_retired: false,
+                executable: Some("/bin/claude".to_string()),
+                model: None,
+                effort: None,
+                cwd: "/abs/tree".to_string(),
+                session: session.map(str::to_string),
+                caller_pane: pane.map(str::to_string),
+                name: None,
+                parent: Some("pij-parent".into()),
+                accept_inbound: false,
+                wait_seconds: None,
+                no_wait: true,
+                resume: None,
+                role: None,
+                caller: None,
+            })
+            .send()
+            .await
+            .expect("spawn request");
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+        let body: serde_json::Value = response.json().await.expect("refusal envelope");
+        assert_eq!(body["details"]["code"], "E-RS-CONTROL-SESSION", "{body}");
+        assert_eq!(body["error"], "refused", "{body}");
+        assert_eq!(
+            body["meta"],
+            "`_pij` is the tmux session of pij's own control client, not a place for \
+             seats — pass --session <your tmux session>",
+            "{body}"
+        );
+    }
+    assert!(
+        tmux.calls()
+            .iter()
+            .all(|call| !call.starts_with("new_window")),
+        "refused before launch: {:?}",
+        tmux.calls()
+    );
+    assert!(
+        registry
+            .list(SeatFilter::default())
+            .await
+            .expect("roster")
+            .is_empty()
+    );
+    server.abort();
+}
+
 #[tokio::test]
 async fn spawn_stamps_only_the_argv_that_reached_the_observed_launch() {
     let registry = Arc::new(FakeRegistry::new());

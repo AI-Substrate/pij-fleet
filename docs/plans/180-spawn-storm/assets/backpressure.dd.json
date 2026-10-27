@@ -1,0 +1,77 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 180 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: control mode",
+          "phase": "ph-c7a4",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "crates/tmux/tests/control_mode.rs against an isolated tmux -L server via a launch-logging wrapper; control.rs framer unit tests; daemon pane_observer real-tmux tests",
+          "state": "checked",
+          "probe": "control_mode.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC1-AC3, AC7: mutants",
+          "phase": "ph-c7a4",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "one mutant at a time, scoped test, restored by saved bytes",
+          "state": "checked",
+          "probe": "evidence/mutation-phase1.txt",
+          "receipt": "execution-log.dd.json#entries/lg-0004"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4-AC5: status line",
+          "phase": "ph-89ef",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "golden corpus from the plan-156 script; byte comparison; dead-seat mutant",
+          "state": "checked",
+          "probe": "statusline goldens",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC6-AC7: measurement and gates",
+          "phase": "ph-89ef",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "spawn-rate.py + top before/after each deploy; fmt, clippy, scoped tests, CI on the exact head",
+          "state": "unchecked",
+          "probe": "evidence/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC8: deploy and docs",
+          "phase": "ph-89ef",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "prime calls each bounce and reads macos-defender.md",
+          "state": "unchecked",
+          "probe": "prime review"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

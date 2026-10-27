@@ -1,0 +1,74 @@
+# Plan 180 window 3 (follow-up C, the spawn counter): deploy record and step 4
+Deployed by the prime at 14:44Z: 42036 drain-exited in 57 s (close to the 60 s cap), link -> ~/.pij-rs/bin/pij-rs-893ae50
+(sha256 11464c74...), new daemon pid 85679, control client 85915 parented by it, Telegram connected, status-line script unchanged.
+First ping at ~+15 s (prime): total 576, ps.proc-liveness 426, ps.registration-native-process 103 (boot burst: registration + re-attach).
+
+## Step 4: two counter reads 60 s apart (pij-rs --json ping .data.spawns)
+14:46:18Z -> 14:47:18Z (60.01 s), load1 6.1 -> 5.45
+total 976 -> 1375 = 6.65/s
+  ps.proc-liveness                     6.53/s  (cumulative 1177)
+  git.pa-watchdog-common-dir           0.05/s  (cumulative 20)
+  ps.registration-native-process       0.05/s  (cumulative 124)
+  date.utc-offset                      0.02/s  (cumulative 7)
+  ps.sidecar-process-group             0.00/s  (cumulative 1)
+  tmux.control-client                  0.00/s  (cumulative 1)
+  tmux.list-sessions                   0.00/s  (cumulative 1)
+  tmux.pipe-pane attach                0.00/s  (cumulative 22)
+  tmux.set-options tap owner           0.00/s  (cumulative 22)
+
+## Reconcile: the counter vs kinfo_proc sampling over the same 60 s (evidence/scripts/reconcile.py, 14 kHz listallpids poll)
+{
+ "dt": 60.0,
+ "load1": [
+  8.73,
+  5.2
+ ],
+ "polls": 860420,
+ "poll_hz": 14338.5,
+ "counter_launches": 382,
+ "counter_by_op": {
+  "git.pa-watchdog-common-dir": 3,
+  "ps.proc-liveness": 379
+ },
+ "kinfo_unique_children_seen": 3834,
+ "kinfo_by_comm": {
+  "pij-rs-893ae50": 3452,
+  "ps": 379,
+  "git": 3
+ }
+}
+
+kinfo's ps (379) and git (3) match the counter EXACTLY, so every exec'd launch is recorded.
+The other 3452 children (57.5/s) keep the daemon's own name: this is the "39-79/s" from kinfo sampling earlier.
+
+## What those 3452 are: failed PATH-search attempts (evidence/scripts/follow.py, 15 s, 700 followed)
+First sight: SRUN, p_flag 0x2006 (P_WEXIT set: already exiting), argv unreadable; all 700 vanished without exec or zombie.
+Cause: ProcLiveness runs Command::new("ps") by bare name. Rust spawns it with posix_spawnp, and macOS libc's
+posix_spawnp calls posix_spawn once per PATH entry. In XNU each failed attempt creates a process before the image
+lookup fails, then tears it down. The daemon's PATH has 32 entries; misses before the hit:
+  ps 17 (/bin), date 17 (/bin), lsof 18 (/usr/sbin), git 12 (/opt/homebrew/bin), tmux 12 (/opt/homebrew/bin)
+Controlled experiment (evidence/scripts/spawnp_exp.py, the daemon's PATH, 100 spawns each, PIDs consumed from the pid counter):
+  posix_spawnp("ps")   -> 1811 PIDs = 18.11 per launch
+  posix_spawn("/bin/ps") -> 100 PIDs = 1.00 per launch
+So the daemon creates about 18 kernel processes per liveness check: ~6.5/s x 18 = ~118 process creations/s.
+(kinfo's 3452/379 = 9.1 per ps is a lower bound: the sampler misses the shortest-lived attempts.)
+
+## The hot ps caller
+ps.proc-liveness = 6.53/s of 6.65/s (98%).
+Death sweep: death_sweep::sweep (every 5 s, DEFAULT_DEATH_SWEEP_MS) -> reaper::reap_with_reason -> eligibility()
+-> pij_core::liveness::alive -> ProcLiveness::proc_start -> `ps -o lstart= -p PID`, once per live seat with a
+recorded process. 25 such seats (seats table: idle 23, working 2) / 5 s = 5.0/s, about 75%.
+The rest (~1.5-2.4/s) comes from request paths: whoami measured at 0.96 ps per call (20 calls, background
+subtracted); delivery, anomalies, double-seat and governance call alive() too and weren't measured separately.
+No status-line renders or other pij-rs CLI processes appeared in a 30 s window, so the status line isn't the driver.
+
+## The daemon's share of the machine (prime's reconcile ask), 14:57:22Z, load1 4.81 -> 4.91
+spawn-rate.py 30 s with counter reads around it:
+  machine new processes      140.5/s (PID counter)
+  daemon exec'd launches     6.48/s (counter; ps.proc-liveness 6.38/s)
+  daemon PATH-miss processes ~109.6/s estimated (ps x17, git x12, date x17), >=57.5/s observed by kinfo (lower bound)
+  daemon share of all new processes: 46% (kinfo lower bound) to 83% (controlled 18x ratio)
+proc_pidinfo (spawn-rate, measure-spawn) agrees with the counter because it cannot read the failed attempts (ESRCH);
+kinfo sees them because sysctl KERN_PROC_PID answers for a process that is being torn down.
+Both are right about different things: exec'd launches 6.5/s (the counter: no unrecorded exec'd sites, the guard has no hole);
+kernel process creations by the daemon ~64-116/s (kinfo plus the PATH-search multiplier).

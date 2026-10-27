@@ -1,0 +1,14 @@
+# Follow-up C mutants (each must turn a test red; source restored byte-identical after each)
+## MC1 the liveness probe stops recording (crates/harnesses/src/proc.rs)
+  --locked -j 4 -p pij-daemon --test first_light ping_counts: KILLED 
+  --locked -j 4 -p pij-testkit --test spawn_sites: KILLED crates/harnesses/src/proc.rs::run
+## MC2 ping leaves the counts out (crates/daemon/src/http/mod.rs)
+  --locked -j 4 -p pij-daemon --test first_light ping_counts: KILLED 
+## MC3 a repeat launch is not counted (crates/core/src/spawns.rs)
+  --locked -j 4 -p pij-core --lib spawns: KILLED 
+## MC4 total counts operations, not launches (crates/core/src/spawns.rs)
+  --locked -j 4 -p pij-core --lib spawns: KILLED 
+## MC5 tmux fork path stops recording (crates/tmux/src/lib.rs)
+  --locked -j 4 -p pij-testkit --test spawn_sites: KILLED crates/tmux/src/lib.rs::run
+## MC6 the scanner stops seeing builder calls (crates/testkit/tests/spawn_sites.rs)
+  --locked -j 4 -p pij-testkit --test spawn_sites: KILLED the scan no longer finds the launch in crates/tmux/src/lib.rs::run; fix the scanner

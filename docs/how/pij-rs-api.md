@@ -46,7 +46,10 @@ Sources: [`exit_code`](../../crates/cli/src/lib.rs), [shim refusal/output handli
 `GET /health` probes the shared status store's schema and acquires then rolls back
 a write transaction; a responsive HTTP listener alone is not healthy. HTTP 200
 has `ok:true`, `data.status:"healthy"` and
-`data.store:{status:"healthy",timeout_ms:2000}`. A failed or exhausted probe returns
+`data.store:{status:"healthy",timeout_ms:2000}`. `data.spawns:{total,by_op}` counts
+the processes this daemon has launched since it started, by `<program>.<site>`
+operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...); the
+`by_op` values sum to `total` (plan 180). A failed or exhausted probe returns
 HTTP 503, `ok:false`, `error:"adapter"`, a diagnostic `meta`,
 `data.status:"unhealthy"` and `data.store.status:"unavailable"`.
 Pool acquisition and SQLite write-lock waits each have a two-second bound;

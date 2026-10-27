@@ -1,0 +1,180 @@
+{
+  "dd": {
+    "schema": "builder/execution-log"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Observed implementation evidence",
+        "plan": "../plan.dd.json#meta"
+      }
+    },
+    {
+      "name": "entries",
+      "value": [
+        {
+          "id": "lg-0001",
+          "at": "2026-10-27T12:43:16Z",
+          "text": "BASELINE 23:43 local, daemon pid 5256 (d05776df), 20 s: harness/scripts/spawn-rate.py total 740.6 new processes/s; kinfo_proc ppid sampling: daemon children 250-480/s across runs, zombie classification ~89% tmux / ~9% ps / ~2% git; argv sampling: per-pane `tmux show-options`, `display-message -p #{pane_pipe}`, `capture-pane -p` at ~1.7 Hz each; status line >=40/s attributed (lower bound). top -l 2: epsext 82.7%, wdavdaemon_enterprise 47.3%, wdavdaemon 26.6%, log 10.4%. 23 tmux panes. Evidence: evidence/baseline.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0002",
+          "at": "2026-10-27T13:05:00Z",
+          "text": "RED (control_mode.rs before control.rs; with_control_mode a no-op): reads_after_warm_up_launch_no_tmux_process FAILED ('warm-up may start the control client ... nothing more'), a_lost_control_client_falls_back_then_reconnects FAILED (no control client attached). Mutant M1 (with_control_mode ignored) reproduces it on the final code. A third test, missing pane -> None, was MY wrong expectation: tmux 3.6 answers display-message -p -t %999 with exit 0 and no output, so the forked path already errors; the test now asserts parity. Evidence: evidence/mutation-phase1.txt (M1)",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0003",
+          "at": "2026-10-27T13:15:00Z",
+          "text": "GREEN: cargo test -p pij-tmux --test control_mode 5 passed (zero launches over 25 rounds after warm-up; byte parity with the forked client under env -i incl. tab, non-ASCII and a '%end 1 2 3' pane line, with the forked-side launch count proving the control answers came over control mode; same error text; reconnect after detach-client; dead server errors in <5 s); --lib control 5 passed (framer, quoting, read allowlist, production defaults); pij-daemon --lib pane_observer 11 passed, including the real-tmux observer tests now on control mode. cargo clippy -p pij-tmux -p pij-daemon --all-targets -D warnings clean; fmt clean.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003"
+          ]
+        },
+        {
+          "id": "lg-0004",
+          "at": "2026-10-27T13:20:00Z",
+          "text": "MUTANTS (pij-tmux): M1 control ignored KILLED, M2 production default off KILLED, M3 framer ignores the T N guard KILLED, M4 no handshake skip KILLED, M5 single quote unquoted KILLED, M6 set-option rides control KILLED, M7 lost client never replaced KILLED. M7a (dead-check alone removed) is an equivalent mutant: send() replaces the client one call later; recorded. Evidence: evidence/mutation-phase1.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0005",
+          "at": "2026-10-27T13:18:00Z",
+          "text": "PRE-EXISTING FLAKES, not this change: pij-tmux adapter submit tests time out under load (1 s staging / 2 s recovery deadlines). stale_watchdog_cannot_release_a_later_adapter_transaction failed 3/12 on the unchanged base 32cd364 (separate target dir) with the same 'no longer matches token' message (1/9 on the branch; that path uses with_binary, control off). post_enter_cleanup_failure... and staged_submit_excludes... failed at load ~72, passed 3/3 on the branch at ~25 and 2/2 on base. Full pij-tmux adapter at --test-threads=2: 27/29 with only those two. Lesson: never share CARGO_TARGET_DIR between worktrees of one workspace (path crates' artifacts collided and a base build stood in for the branch).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-27T13:40:00Z",
+          "text": "STATUS LINE RED: the golden corpus (src/statusline_tests.rs) against a stub renderer that returns nothing: 216 of 216 renders differ; a_seat_that_dies_shows_dead_on_the_very_next_render FAILED. The plan-156 script is preserved as crates/cli/tests/fixtures/copilot-statusline-plan156.sh, because the shipped script changes. Evidence: evidence/statusline-red.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-27T14:05:00Z",
+          "text": "STATUS LINE GREEN at 4b918d6: cargo test -p pij-cli --lib statusline: 3 passed. 52 golden renders of the real plan-156 script (bash, jq, awk, git; stub whoami text) equal the Rust renderer byte for byte: ok/fyis/dead/unregistered/daemon down/malformed, empty or absent TMUX_PANE, invalid JSON, jq type errors, %.1f ties (1.25M, 1.25k), %d truncation, printf %b with \\c, premium/AIU/duration, branch, linked worktree, detached HEAD, a tag sharing the branch name, no repo, missing dir, relative cwd, and 6 effort-file arrangements. --test statusline_e2e: the script (real `pij-rs --json whoami`) and `pij-rs statusline copilot` against a booted daemon, a dead address and a bad address are identical; an inherited PIJ_SESSION_ID never shows. Unit: statusline_identity drops the inherited session id. Live: in pane %56 against daemon 5256, md5 identical to the script. The managed script is `exec pij-rs statusline copilot` (sh; a hint when pij-rs is not on PATH); the daemon rewrites it at boot. clippy -D warnings and fmt clean; pij-cli verb gates green (statusline is hidden, like __spawn-child).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-10-27T14:12:00Z",
+          "text": "STATUS LINE MUTANTS: S1 inherited PIJ_SESSION_ID kept KILLED; S2 dead-seat branch gone KILLED; S3 %.1f half-away rounding KILLED; S4 awk %d rounds KILLED; S5 %b ignores \\c KILLED; S7 jq indexing a non-object is null KILLED. S6 (ambiguous branch not handed to git) first SURVIVED because the ambiguous case had silently not entered the corpus (my edit's anchors missed after rustfmt; the 'field never read' warning showed it). Re-added with asserted anchors, then KILLED, and the diff shows script `heads/dup` vs mutant `dup`. Evidence: evidence/mutation-phase2.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-27T14:20:00Z",
+          "text": "CI: run 40512305952 on f1d9b81 FAILED in rust-test on 1 of 1606 tests: control_answers_match_forked_answers_byte_for_byte's content check expected 'a\\tb ✓ %end 1 2 3', which ubuntu's tmux/locale renders differently. The control vs forked parity assertions in the same test passed. 9d304a2 (test-only) checks the frame-like '%end 1 2 3' alone. Release build of 4b918d6 (code == 9d304a2): sha256 a5cfe43cc6bc54ab4e40181f19adb5ac4e6e15a16d623f2cf408037b49af6d22.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-27T14:20:00Z",
+          "text": "CI run 40518423508 on 9d304a2 FAILED in rust-test on 2 pij-harnesses tests that ran the SHIPPED Copilot script with a stub pij-rs answering any argv with whoami JSON (claude_heal_scripts copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats; fyi_status_lines). They had failed locally too; I missed them by truncating the failure list to 20 lines. Realigned: the script layer now tests its contract (exec: same pid; argv `statusline copilot`; payload passed untouched; a hint without pij-rs). Mutants S8 (fork) and S9 (stdin dropped) caught. Plan 156 AC5 (Jordan's hand-written layout, byte for byte) and the plan 158 `✉N` contract moved to pij-cli beside the renderer: a_live_seat_keeps_the_hand_written_layout, held_fyis_show_only_while_some_are_pending. Local: claude_heal_scripts 7/7 and fyi 1/1 on the second run (the first run had 2 timing flakes in the untouched Claude-script tests, which pass on CI).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0011",
+          "at": "2026-10-27T14:19:21Z",
+          "text": "DEPLOYS by the prime (pij-broad-rykard), steps 0-3 as written; this seat was mid-turn and its window-open messages sat pending. Window 1: f1d9b81 (sha256 90444015...) staged at ~/.pij-rs/bin/pij-rs-f1d9b81; 5256 drained 44 s; new pid 57934 at 14:03:27Z, ping healthy, control client parented by the daemon, Telegram up. Window 2: 4b918d6 (sha256 a5cfe43c...) staged at ~/.pij-rs/bin/pij-rs-4b918d6; 57934 drained 48 s; new pid 42036 at 14:19:21Z, the exec status-line script installed by boot, a seat's status line renders. Rollback: d05776df. Evidence: evidence/deploy-and-measurements.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0012",
+          "at": "2026-10-27T14:24:00Z",
+          "text": "MEASUREMENTS. spawn-rate.py: total 740.6/s (12:43Z) -> 128.4/s after window 2 (-82.7%); status line ~40/s -> 0. The prime's measure-spawn: 794.7 -> 230.4 execs/s (-71%; its total includes Chrome, node and tomux). Defender total 216% -> 74.7%, wdavdaemon_enterprise 75.5% -> 10.0%. Daemon children by proc_pidinfo (lower bound) 68.5 -> 6.7/s; by kinfo_proc ppid sampling 250-480/s -> 39-79/s, 81/81 zombies ps, no tmux. So the tmux forks are gone; the residual is ps liveness/process probes. 'pij < 10/s' holds only by the lower-bound instrument. Follow-up needed (ps-free liveness, or a per-op spawn counter first). Evidence: evidence/deploy-and-measurements.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0013",
+          "at": "2026-10-27T14:31:00Z",
+          "text": "CI GREEN on d7966bd: run 40520176559 (rust-lint, check 22/24, rust-test). Every change since 4b918d6 is tests or docs, so the deployed a5cfe43c binary is this code.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0014",
+          "at": "2026-10-27T14:23:50Z",
+          "text": "PRIME RULING on the residual daemon ps load (job 4658): C GO tonight (ping spawn counter {total, by_op}, test-first; bounce in window 3 if green with CI by ~03:00 local). B2 (TTL cache on proc_start) REJECTED: a TTL that outlives a death changes delivery/whoami/reaper semantics. B1 (ps-free liveness via a new dependency) APPROVED IN PRINCIPLE as plan 181 after C, needing an ADR (libproc vs sysctl crate vs a vetted safe wrapper), the arch-allowlist row and Jordan's review. Daemon children by BOTH methods: kinfo_proc ppid sampling 250-480/s before -> 39-79/s after (AUTHORITATIVE: sees pre-exec forks and zombies); proc_pidinfo (spawn-rate.py) 68/s -> 8.7/s (lower bound: ESRCH for pre-exec forks and zombies).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0015",
+          "at": "2026-10-27T14:38:40Z",
+          "text": "FOLLOW-UP C built test-first. pij_core::spawns: record(op) at every daemon launch site (24 functions in 7 crates, ops named <program>.<site>), snapshot() in one lock so by_op sums to total; GET /health (pij-rs ping) gains data.spawns {total, by_op}. RED: 2 core tests, the guard (25 unrecorded sites) and the ping wiring test failed against a no-op stub (evidence/spawn-counter-red.txt). The guard's first run flagged http/lifecycle.rs::handle, a false positive (operation.command() returns a name): the scanner now treats a .name() call as a launch only when name is a -> Command builder in the same file. GREEN incl. clippy -D warnings on the 7 crates (evidence/spawn-counter-green.txt). Mutants MC1-MC6 all killed, including MC6 (the scanner stops seeing builder calls -> its own coverage check goes red) (evidence/mutation-spawn-counter.txt). Also, prime condition 2 receipt: the \\r injection mutant SURVIVED until a carriage-return assertion was added; now killed (evidence/mutation-phase1.txt).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0016",
+          "at": "2026-10-27T14:55:00Z",
+          "text": "WINDOW 3 (follow-up C) deployed by the prime at 14:44Z: 42036 drain-exited in 57 s (close to the 60 s cap), linked ~/.pij-rs/bin/pij-rs-893ae50 (sha256 11464c74), new pid 85679, control client 85915, Telegram connected, status-line script unchanged. STEP 4, counter reads 14:46:18Z->14:47:18Z (load1 6.1->5.45): daemon launches 6.65/s, ps.proc-liveness 6.53/s (98%). HOT CALLER: the death sweep (death_sweep::sweep every 5 s -> reaper::eligibility -> liveness::alive -> ProcLiveness `ps -o lstart= -p PID`), once per live seat with a process: 25 seats / 5 s = 5.0/s (~75%); the rest is request paths (whoami measured 0.96 ps per call). RECONCILED with kinfo over the same 60 s: kinfo's ps 379 and git 3 match the counter exactly; the other 3452 daemon children (57.5/s, the earlier '39-79/s') are FAILED PATH-SEARCH ATTEMPTS. Command::new(\"ps\") by bare name -> posix_spawnp tries each of the daemon's 32 PATH entries, and on macOS every miss creates and tears down a kernel process (P_WEXIT at first sight, never exec'd). Controlled experiment with the daemon's PATH: posix_spawnp(\"ps\") consumed 18.11 PIDs per launch, posix_spawn(\"/bin/ps\") 1.00. So the daemon creates ~18 processes per liveness check (~118/s), not 6.5/s. Misses before the hit: ps 17, date 17, lsof 18, git 12, tmux 12. Evidence: evidence/window3-counter.txt, evidence/scripts/.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0017",
+          "at": "2026-10-27T14:58:00Z",
+          "text": "RECONCILE (prime's ask, msg 01a17dd6): the counter (6.5/s) and proc_pidinfo (6.7-8.7/s) count exec'd launches; kinfo (>=57.5/s now, 39-79/s before) also counts failed posix_spawnp PATH-search attempts, which proc_pidinfo cannot read. Neither is a sampler artefact and the guard has no hole: kinfo's exec'd ps/git match the counter exactly (lg-0016). At 14:57:22Z: machine 140.5/s new processes; daemon exec'd 6.48/s plus ~109.6/s PATH misses (estimated from the 18.1 controlled ratio; >=57.5/s observed) = 46%-83% of all new processes on the machine. ac-0006 stays PARTIAL: 'pij <10/s' is met for exec'd launches but not for kernel process creations until the PATH search goes (proposal D). Evidence: evidence/window3-counter.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0018",
+          "at": "2026-10-27T15:06:00Z",
+          "text": "FOLLOW-UP D built test-first (prime GO 01:58 local, R9). The proof it rests on: with the daemon's own 32-entry PATH, posix_spawnp(\"ps\") consumed 18.11 PIDs per launch and posix_spawn(\"/bin/ps\") 1.00 (100 spawns each, evidence/window3-counter.txt, scripts/spawnp_exp.py). Change: the 8 daemon-crate launches of bare ps/date now name /bin/ps and /bin/date (ProcLiveness, the UTC offset, the usage-limit clock, identity caller ancestry, the UDS peer-start probe, three tmux process probes). RED: the guard listed all 8 sites; the decoy-on-PATH tests ran the decoy ps and date (evidence/path-search-red.txt). GREEN plus clippy -D warnings on the 7 crates (evidence/path-search-green.txt); one known pij-tmux deadline flake under load, 5/5 alone and 29/29 serial, test file untouched by D. Mutants MD1-MD6 all killed, incl. the guard's vacuity check and the decoy harness's own control (evidence/mutation-path-search.txt). git/tmux resolve-once deferred (R10).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0019",
+          "at": "2026-10-27T15:14:00Z",
+          "text": "WINDOW 4 (follow-up D) deployed by the prime: 85679 shut down 15:08:22Z, new pid 33659 listening 15:09:22Z on ~/.pij-rs/bin/pij-rs-0acbf95 (sha256 64ce53c0); CI green 15:07:47Z. ACCEPTANCE (R9), counter and kinfo over the same 60 s at +2 min (15:11:21-15:12:21Z, load1 5.5->4.85): kinfo daemon children 396 = 6.6/s (<10/s PASS; 63.9/s after window 3), counter 382 = 6.37/s (unchanged PASS), failed PATH attempts 3452 -> 14 (git, deferred). Machine 740.6 -> 16.5 new processes/s (-97.8%), status line 0/s; Defender epsext+enterprise+wdavdaemon 156.6% -> 8.6% (all four incl. unprivileged 17.8%). ac-0006 MET. Evidence: evidence/window4-acceptance.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        }
+      ]
+    }
+  ]
+}

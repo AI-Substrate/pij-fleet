@@ -196,6 +196,11 @@ _copilot-native-install-check:
         echo "Copilot CLI not installed; skipping optional native doctor."
     fi
 
+# Defender's EDR inspects every launch: compare before/after a change.
+# Process launches per second, machine-wide and pij's share (plan 180; macOS).
+spawn-rate *ARGS:
+    @python3 harness/scripts/spawn-rate.py {{ARGS}}
+
 # Reject user-specific absolute home paths in executable/configuration surfaces.
 local-path-check:
     node_modules/.bin/tsx harness/scripts/local-path-check.ts

@@ -136,33 +136,33 @@ fn status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daem
     let _ = std::fs::remove_dir_all(root);
 }
 
-/// Plan 156 AC5 — the pij-managed Copilot status line keeps Jordan's layout and
-/// is honest about a dead or missing seat.
+/// Plan 180: the pij-managed Copilot status line is `exec pij-rs statusline
+/// copilot`, so its layout, dead-seat and FYI behaviour are pij-rs's (golden
+/// tested in pij-cli against the plan-156 script and Jordan's hand-written one).
+/// Here: the script hands its argv and stdin to pij-rs, in its own process, and
+/// says so plainly when pij-rs is missing.
 #[test]
-fn copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats() {
+fn copilot_status_line_hands_the_payload_to_pij_rs_in_one_process() {
     let root = pij_testkit::fresh_dir("pij-copilot-statusline");
     std::fs::create_dir_all(root.join("bin")).unwrap();
-    let hit = r#"{"ok":true,"data":{"id":"pij-copilot-seat"}}"#;
-    let write = |name: &str, answer: &str| {
-        let fake = root.join("bin").join(name);
-        std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s\\n' '{answer}'\n")).unwrap();
-        let mut permissions = std::fs::metadata(&fake).unwrap().permissions();
-        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
-        std::fs::set_permissions(&fake, permissions).unwrap();
-    };
-    write("pij", hit);
-    let payload = format!(
-        r#"{{"workspace":{{"current_dir":"{}"}},"model":{{"display_name":"GPT-5.6"}},"context_window":{{"current_context_tokens":46133,"displayed_context_limit":400000}},"ai_used":{{"formatted":"1.2"}},"cost":{{"total_premium_requests":3,"total_duration_ms":3720000}}}}"#,
-        root.display()
-    );
-    let render = |script: &Path| {
-        let path = format!(
-            "{}:{}",
-            root.join("bin").display(),
-            std::env::var("PATH").unwrap()
-        );
-        let mut child = Command::new("bash")
-            .arg(script)
+    let record = root.join("record");
+    let fake = root.join("bin").join("pij-rs");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\nprintf '%s|%s|' \"$$\" \"$*\" > '{0}'\ncat >> '{0}'\nprintf RENDERED",
+            record.display()
+        ),
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&fake).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+    std::fs::set_permissions(&fake, permissions).unwrap();
+    let payload = r#"{"workspace":{"current_dir":"/tmp"},"model":{"display_name":"GPT-5.6"}}"#;
+    let installed = pij_harnesses::install_copilot_statusline_script(&root.join("state")).unwrap();
+    let render = |path: &str| {
+        let mut child = Command::new("sh")
+            .arg(&installed)
             .current_dir(&root)
             .env("PATH", path)
             .env("HOME", &root)
@@ -171,6 +171,7 @@ fn copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats() {
             .stdout(Stdio::piped())
             .spawn()
             .expect("render");
+        let pid = child.id();
         use std::io::Write as _;
         child
             .stdin
@@ -178,27 +179,23 @@ fn copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats() {
             .unwrap()
             .write_all(payload.as_bytes())
             .unwrap();
-        String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
+        let out = String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap();
+        (pid, out)
     };
-    let hand_written = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/copilot-statusline-context.sh.txt");
-    let installed = pij_harnesses::install_copilot_statusline_script(&root.join("state")).unwrap();
-
-    write("pij-rs", hit);
-    assert_eq!(render(&installed), render(&hand_written), "layout survives");
-    assert!(render(&installed).contains("⛓ pij-copilot-seat"));
-
-    write(
-        "pij-rs",
-        r#"{"ok":false,"error":"refused","meta":"seat `pij-copilot-seat` records pane `%21`, but its process (pid 1, start 2) is gone"}"#,
+    let (pid, out) = render(&format!(
+        "{}:{}",
+        root.join("bin").display(),
+        std::env::var("PATH").unwrap()
+    ));
+    assert_eq!(out, "RENDERED");
+    let recorded = std::fs::read_to_string(&record).unwrap();
+    assert_eq!(
+        recorded,
+        format!("{pid}|statusline copilot|{payload}"),
+        "exec (same pid, no fork), exact argv, the payload untouched"
     );
-    let dead = render(&installed);
-    assert!(dead.contains("⛓ pij-copilot-seat dead"), "{dead}");
-    write(
-        "pij-rs",
-        r#"{"ok":false,"error":"refused","meta":"no live seat"}"#,
-    );
-    assert!(render(&installed).contains("⛓ unregistered"));
+    let (_, missing) = render("/usr/bin:/bin");
+    assert!(missing.contains("pij-rs not on PATH"), "{missing}");
     let _ = std::fs::remove_dir_all(root);
 }
 

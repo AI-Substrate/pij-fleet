@@ -1,0 +1,32 @@
+{
+  "seconds": 20.0,
+  "daemon_pid": 5256,
+  "total_new_per_s": 740.6,
+  "polls": 316864,
+  "sampled_per_s": 725.9,
+  "attributed_per_s_lower_bound": {
+    "<gone before seen>": 602.6,
+    "pij-rs daemon": 54.1,
+    "pij status line": 39.6,
+    "other": 29.6
+  },
+  "daemon_children_per_s_lower_bound": {
+    "pij-rs": 53.8,
+    "tmux -u display-message": 0.2,
+    "pij-rs -u capture-pane": 0.0,
+    "pij-rs -u show-options": 0.0
+  },
+  "statusline_runs_seen_per_s": 39.5,
+  "top_commands_per_s_lower_bound": {
+    "pij-rs": 53.9,
+    "bash": 52.8,
+    "Google Chrome f": 7.3,
+    "node": 5.0,
+    "copilot": 2.0,
+    "chrome_crashpad": 1.2,
+    "slideforge": 0.6,
+    "tmux": 0.3,
+    "git-ai": 0.0,
+    "git": 0.0
+  }
+}

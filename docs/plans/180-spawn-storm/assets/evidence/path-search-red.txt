@@ -1,0 +1,25 @@
+# Follow-up D RED, 2026-10-27T14:59:41Z
+test every_daemon_launch_site_records_itself ... ok
+test no_daemon_launch_searches_path_for_ps_or_date ... FAILED
+these launches search PATH (one kernel process per PATH miss on macOS); use "/bin/ps" or "/bin/date":
+  crates/daemon/src/http/identity.rs:538: let Ok(output) = std::process::Command::new("ps")
+  crates/harnesses/src/proc.rs:94: let output = Command::new("ps")
+  crates/harnesses/src/proc.rs:152: let output = Command::new("date")
+  crates/harnesses/src/usage_limit.rs:149: let mut command = Command::new("date");
+  crates/tmux/src/lib.rs:476: let output = Command::new("ps")
+  crates/tmux/src/lib.rs:1280: let output = Command::new("ps")
+  crates/tmux/src/lib.rs:1292: let output = Command::new("ps")
+  crates/transport/src/uds.rs:201: let mut command = Command::new("ps");
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p pij-testkit --test spawn_sites`
+test utc_offset_runs_bin_date_never_a_date_found_on_path ... FAILED
+test liveness_runs_bin_ps_never_a_ps_found_on_path ... FAILED
+test the_decoys_do_run_when_named_by_bare_name ... ok
+thread 'utc_offset_runs_bin_date_never_a_date_found_on_path' (488631022) panicked at crates/harnesses/tests/path_search.rs:76:5:
+local_utc_offset_minutes searched PATH and ran a decoy: "/var/folders/1d/4jyz3y9929bg1fjdbtlxtpjc0000gn/T/pij-decoy-path-utc_offset_runs_bin_date_never_a_date_found_on_path-28485/date\n". Name the system binary by absolute path.
+thread 'liveness_runs_bin_ps_never_a_ps_found_on_path' (488631020) panicked at crates/harnesses/tests/path_search.rs:60:5:
+test liveness_runs_bin_ps_never_a_ps_found_on_path ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.70s
+thread 'liveness_runs_bin_ps_never_a_ps_found_on_path' (488631081) panicked at crates/harnesses/tests/path_search.rs:89:9:
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s
+error: test failed, to rerun pass `-p pij-harnesses --test path_search`

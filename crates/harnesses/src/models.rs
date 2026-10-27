@@ -321,6 +321,7 @@ fn run_omp_command() -> std::io::Result<CommandResult> {
     let stderr_path = base.with_extension("err");
     let stdout = fs::File::create(&stdout_path)?;
     let stderr = fs::File::create(&stderr_path)?;
+    pij_core::spawns::record("omp.models");
     let mut child = Command::new("omp")
         .args(["models", "--json", "--no-extensions"])
         .stdout(Stdio::from(stdout))

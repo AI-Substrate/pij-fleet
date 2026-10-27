@@ -21,7 +21,9 @@ async fn the_shipped_client_can_complete_one_sidecar_call() {
     let state_dir = std::env::temp_dir().join(format!("pij-rs-sidecar-{}", std::process::id()));
     std::fs::create_dir_all(&state_dir).expect("state dir");
     let store_path = state_dir.join("pij.sqlite");
-    let config = daemon_config("127.0.0.1:0", &store_path, false);
+    let tmux = pij_testkit::tmux::PrivateTmux::start();
+    let mut config = daemon_config("127.0.0.1:0", &store_path, false);
+    config.tmux_server = Some(tmux.name().to_string());
     let daemon = pij_daemon::boot(&config, state_dir.clone())
         .await
         .expect("boot");
@@ -57,7 +59,9 @@ async fn the_shipped_client_queues_a_staged_telegram_document() {
     let state_dir = std::env::temp_dir().join(format!("pij-rs-sidecar-doc-{}", std::process::id()));
     std::fs::create_dir_all(&state_dir).expect("state dir");
     let store_path = state_dir.join("pij.sqlite");
-    let config = daemon_config("127.0.0.1:0", &store_path, false);
+    let tmux = pij_testkit::tmux::PrivateTmux::start();
+    let mut config = daemon_config("127.0.0.1:0", &store_path, false);
+    config.tmux_server = Some(tmux.name().to_string());
     let daemon = pij_daemon::boot(&config, state_dir.clone())
         .await
         .expect("boot");

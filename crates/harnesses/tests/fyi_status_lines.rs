@@ -42,16 +42,12 @@ fn status_lines_show_held_fyis_only_while_some_are_pending() {
     let root = pij_testkit::fresh_dir("pij-fyi-status-lines");
     std::fs::create_dir_all(root.join("bin")).unwrap();
     let state = root.join("state");
-    for (shell, script) in [
-        (
-            "sh",
-            pij_harnesses::install_claude_statusline_script(&state).unwrap(),
-        ),
-        (
-            "bash",
-            pij_harnesses::install_copilot_statusline_script(&state).unwrap(),
-        ),
-    ] {
+    // The Copilot status line renders inside pij-rs since plan 180; its `✉N`
+    // contract is tested beside the renderer (pij-cli src/statusline_tests.rs).
+    for (shell, script) in [(
+        "sh",
+        pij_harnesses::install_claude_statusline_script(&state).unwrap(),
+    )] {
         let held = render(
             &root,
             shell,
