@@ -21,8 +21,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "crates/tmux/tests/control_mode.rs against an isolated tmux -L server via a launch-logging wrapper; control.rs framer unit tests; daemon pane_observer real-tmux tests",
-          "state": "unchecked",
-          "probe": "control_mode.rs"
+          "state": "checked",
+          "probe": "control_mode.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "one mutant at a time, scoped test, restored by saved bytes",
-          "state": "unchecked",
-          "probe": "evidence/mutation-phase1.txt"
+          "state": "checked",
+          "probe": "evidence/mutation-phase1.txt",
+          "receipt": "execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "bp-0003",
@@ -41,8 +43,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "golden corpus from the plan-156 script; byte comparison; dead-seat mutant",
-          "state": "unchecked",
-          "probe": "statusline goldens"
+          "state": "checked",
+          "probe": "statusline goldens",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
         },
         {
           "id": "bp-0004",

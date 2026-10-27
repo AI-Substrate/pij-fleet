@@ -66,3 +66,10 @@ an ambiguous name asks git
   script: \e[2m0%\e[0m \e[36mambiguous\e[0m \e[32m⎇ heads/dup\e[0m \e[34m⛓ pij-brave-otter\e[0m • Claude Opus 5.5 • \e[35mauto\e[0m • \e[2m0/200k\e[0m
   rust:   \e[2m0%\e[0m \e[36mambiguous\e[0m \e[32m⎇ dup\e[0m \e[34m⛓ pij-brave-otter\e[0m • Claude Opus 5.5 • \e[35mauto\e[0m • \e[2m0/200k\e[0m
 test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 33 filtered out; finished in 24.60s
+
+## S8 the managed script forks pij-rs instead of exec
+file harness/scripts/copilot-statusline-pij.sh; cargo test -p pij-harnesses --test claude_heal_scripts copilot_status_line
+verdict: KILLED (red): recorded pid 50400 != script pid 50399
+
+## S9 the managed script drops stdin (</dev/null)
+verdict: KILLED (red): recorded payload empty

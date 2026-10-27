@@ -42,32 +42,37 @@
         {
           "id": "ac-0001",
           "claim": "Daemon tmux reads launch no process. pij-tmux answers list-panes, capture-pane, display-message -p and show-options over ONE persistent `tmux -u -C attach-session -f no-output,ignore-size,read-only` client. After warm-up (list-sessions + attach), 25 rounds of every observer/status read on 3 panes launch zero tmux processes. Writes (set-option, pipe-pane, send-keys, paste/load-buffer, kill, new-window) still fork. An argument the client cannot single-quote forks.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0002",
           "claim": "Same answers. Control answers equal the forked client's byte for byte, under a no-LANG environment (the launchd case `-u` exists for), including tabs, non-ASCII and a pane line that looks like a control frame; errors carry the same text (`can't find pane: %999`); tmux 3.6's exit-0-empty display-message for a missing pane keeps today's behaviour (parity, not a fix).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0003",
           "claim": "Never worse than forking. Control mode only replaces a forked read with the same command. Off, starting, slow (3 s), lost (detached, %exit) or server gone: that call forks as today; a lost client is replaced (start backoff 5 s); a dead server is a plain error within 5 s, not a hang. The daemon composes control mode (`new`, `with_legacy_tap_root`); fake executables (`with_binary`) opt in.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0004",
           "claim": "Status line: one process per refresh. `pij-rs statusline copilot` replaces the plan-156 bash script's body (the managed script becomes `exec pij-rs statusline copilot`): whoami in-process over HTTP (no CLI process), branch from .git/HEAD (git only for a detached HEAD), effort read once, no jq/awk/cat/basename. Output bytes identical to the plan-156 script over a golden corpus (ok, dead, unregistered, daemon down, FYIs, effort files, branch, detached, no repo, AIU, premium, duration).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0007"
         },
         {
           "id": "ac-0005",
           "claim": "Honest by construction (plan 156 rule 5). The pane is asked, never an inherited PIJ_SESSION_ID. A dead seat shows dead on the next render: the staleness bound is one refresh, with no cache. Mutant: drop the per-render ask; the dead-seat golden goes red.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0007"
         },
         {
           "id": "ac-0006",

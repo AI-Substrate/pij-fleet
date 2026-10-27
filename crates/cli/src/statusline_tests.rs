@@ -688,3 +688,82 @@ fn the_common_branch_case_launches_no_git() {
         "an ambiguous name asks git"
     );
 }
+
+/// Plan 158: `✉N` beside the seat only while N > 0, read from the same whoami.
+#[test]
+fn held_fyis_show_only_while_some_are_pending() {
+    let render = |whoami: &str| {
+        render_copilot(
+            b"{}",
+            &Context {
+                pwd: std::env::temp_dir(),
+                home: None,
+                whoami: Whoami::Pane(whoami.to_string()),
+            },
+            &|_: &Path| None,
+        )
+    };
+    let held = render(r#"{"ok":true,"data":{"id":"pij-fyi-seat","pending_fyis":3}}"#);
+    assert!(
+        held.contains("⛓ pij-fyi-seat\u{1b}[0m \u{1b}[33m✉3"),
+        "{held}"
+    );
+    for quiet in [
+        r#"{"ok":true,"data":{"id":"pij-fyi-seat","pending_fyis":0}}"#,
+        r#"{"ok":true,"data":{"id":"pij-fyi-seat"}}"#,
+    ] {
+        let rendered = render(quiet);
+        assert!(rendered.contains("⛓ pij-fyi-seat"), "{rendered}");
+        assert!(!rendered.contains('✉'), "{rendered}");
+    }
+}
+
+/// Plan 156 AC5, moved here with the renderer: for a live seat the managed
+/// status line keeps Jordan's hand-written layout byte for byte.
+#[test]
+fn a_live_seat_keeps_the_hand_written_layout() {
+    if !(have("jq") && have("git")) {
+        eprintln!("SKIP: the hand-written script needs jq and git");
+        return;
+    }
+    let world = World::new();
+    let hand_written = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../harnesses/tests/fixtures/copilot-statusline-context.sh.txt"
+    );
+    let hit = r#"{"ok":true,"data":{"id":"pij-copilot-seat"}}"#;
+    let payload = format!(
+        r#"{{"workspace":{{"current_dir":"{}"}},"model":{{"display_name":"GPT-5.6"}},"context_window":{{"current_context_tokens":46133,"displayed_context_limit":400000}},"ai_used":{{"formatted":"1.2"}},"cost":{{"total_premium_requests":3,"total_duration_ms":3720000}}}}"#,
+        world.repo.display()
+    );
+    let _ = fs::remove_file(world.root.join("whoami.txt"));
+    world.write(&world.root.join("pij.txt"), hit);
+    let mut child = Command::new("/bin/bash")
+        .arg(hand_written)
+        .env_clear()
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                world.bin.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("HOME", &world.home)
+        .env("TMUX_PANE", "%21")
+        .current_dir(&world.pwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("bash");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(payload.as_bytes())
+        .expect("payload");
+    let expected = child.wait_with_output().expect("hand-written").stdout;
+    let actual = world.rust(&payload, Some("%21"), Some(hit), None);
+    assert_eq!(escape(actual.as_bytes()), escape(&expected));
+}

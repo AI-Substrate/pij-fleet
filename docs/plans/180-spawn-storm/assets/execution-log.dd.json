@@ -56,6 +56,51 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0007"
           ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-27T13:40:00Z",
+          "text": "STATUS LINE RED: the golden corpus (src/statusline_tests.rs) against a stub renderer that returns nothing: 216 of 216 renders differ; a_seat_that_dies_shows_dead_on_the_very_next_render FAILED. The plan-156 script is preserved as crates/cli/tests/fixtures/copilot-statusline-plan156.sh, because the shipped script changes. Evidence: evidence/statusline-red.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-27T14:05:00Z",
+          "text": "STATUS LINE GREEN at 4b918d6: cargo test -p pij-cli --lib statusline: 3 passed. 52 golden renders of the real plan-156 script (bash, jq, awk, git; stub whoami text) equal the Rust renderer byte for byte: ok/fyis/dead/unregistered/daemon down/malformed, empty or absent TMUX_PANE, invalid JSON, jq type errors, %.1f ties (1.25M, 1.25k), %d truncation, printf %b with \\c, premium/AIU/duration, branch, linked worktree, detached HEAD, a tag sharing the branch name, no repo, missing dir, relative cwd, and 6 effort-file arrangements. --test statusline_e2e: the script (real `pij-rs --json whoami`) and `pij-rs statusline copilot` against a booted daemon, a dead address and a bad address are identical; an inherited PIJ_SESSION_ID never shows. Unit: statusline_identity drops the inherited session id. Live: in pane %56 against daemon 5256, md5 identical to the script. The managed script is `exec pij-rs statusline copilot` (sh; a hint when pij-rs is not on PATH); the daemon rewrites it at boot. clippy -D warnings and fmt clean; pij-cli verb gates green (statusline is hidden, like __spawn-child).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-10-27T14:12:00Z",
+          "text": "STATUS LINE MUTANTS: S1 inherited PIJ_SESSION_ID kept KILLED; S2 dead-seat branch gone KILLED; S3 %.1f half-away rounding KILLED; S4 awk %d rounds KILLED; S5 %b ignores \\c KILLED; S7 jq indexing a non-object is null KILLED. S6 (ambiguous branch not handed to git) first SURVIVED because the ambiguous case had silently not entered the corpus (my edit's anchors missed after rustfmt; the 'field never read' warning showed it). Re-added with asserted anchors, then KILLED, and the diff shows script `heads/dup` vs mutant `dup`. Evidence: evidence/mutation-phase2.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-27T14:20:00Z",
+          "text": "CI: run 40512305952 on f1d9b81 FAILED in rust-test on 1 of 1606 tests: control_answers_match_forked_answers_byte_for_byte's content check expected 'a\\tb \u2713 %end 1 2 3', which ubuntu's tmux/locale renders differently. The control vs forked parity assertions in the same test passed. 9d304a2 (test-only) checks the frame-like '%end 1 2 3' alone. Release build of 4b918d6 (code == 9d304a2): sha256 a5cfe43cc6bc54ab4e40181f19adb5ac4e6e15a16d623f2cf408037b49af6d22.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-27T14:20:00Z",
+          "text": "CI run 40518423508 on 9d304a2 FAILED in rust-test on 2 pij-harnesses tests that ran the SHIPPED Copilot script with a stub pij-rs answering any argv with whoami JSON (claude_heal_scripts copilot_status_line_matches_the_hand_written_layout_and_names_dead_seats; fyi_status_lines). They had failed locally too; I missed them by truncating the failure list to 20 lines. Realigned: the script layer now tests its contract (exec: same pid; argv `statusline copilot`; payload passed untouched; a hint without pij-rs). Mutants S8 (fork) and S9 (stdin dropped) caught. Plan 156 AC5 (Jordan's hand-written layout, byte for byte) and the plan 158 `\u2709N` contract moved to pij-cli beside the renderer: a_live_seat_keeps_the_hand_written_layout, held_fyis_show_only_while_some_are_pending. Local: claude_heal_scripts 7/7 and fyi 1/1 on the second run (the first run had 2 timing flakes in the untouched Claude-script tests, which pass on CI).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
         }
       ]
     }
