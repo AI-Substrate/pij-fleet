@@ -385,6 +385,7 @@ impl BackgroundService {
             .insert_with_token(&job, token.as_deref().map(token_digest).as_deref())
             .await?;
         let stderr = log.try_clone().map_err(io_error)?;
+        pij_core::spawns::record("sh.background-job");
         let mut runner = Command::new("/bin/sh");
         runner
             .args(["-c", RUNNER])
@@ -612,6 +613,7 @@ impl BackgroundService {
         if self.liveness.proc_start(identity.pid).await? != Some(identity.proc_start) {
             return Ok(false);
         }
+        pij_core::spawns::record("kill.background-job");
         let signal = Command::new("/bin/kill")
             .args(["-TERM", "--", &format!("-{pgid}")])
             .stdin(Stdio::null())
@@ -1504,6 +1506,7 @@ fn read_tail(path: &Path, lines: usize) -> Result<Vec<String>> {
 }
 
 fn process_group(pid: u32) -> Result<Option<u32>> {
+    pij_core::spawns::record("ps.background-process-group");
     let output = Command::new("/bin/ps")
         .args(["-o", "pgid=", "-p", &pid.to_string()])
         .output()

@@ -228,6 +228,7 @@ impl TmuxAdapter {
     }
 
     fn run(&self, operation: &str, args: &[OsString]) -> Result<Output> {
+        pij_core::spawns::record(&format!("tmux.{operation}"));
         let output = self
             .command()
             .args(args)
@@ -237,6 +238,7 @@ impl TmuxAdapter {
     }
 
     fn run_with_stdin(&self, operation: &str, args: &[OsString], input: &[u8]) -> Result<Output> {
+        pij_core::spawns::record(&format!("tmux.{operation}"));
         let mut child = self
             .command()
             .args(args)
@@ -470,6 +472,7 @@ impl TmuxAdapter {
                 "legacy tap sink {sink:?} is not valid Unicode — refusing to replace pane {pane:?}"
             ))
         })?;
+        pij_core::spawns::record("ps.tmux-legacy-tap-writer");
         let output = Command::new("ps")
             .args(["-axo", "command="])
             .output()
@@ -1273,6 +1276,7 @@ pub fn harness_process(pane_pid: u32, harness: Harness) -> Option<ProcIdentity> 
 /// A missing/dead pane yields `None`; callers label a pane fallback explicitly.
 #[must_use]
 pub fn harness_process_tree(pane_pid: u32, harness: Harness) -> Option<HarnessProcess> {
+    pij_core::spawns::record("ps.tmux-harness-process-tree");
     let output = Command::new("ps")
         .args(["-Awwo", "pid=,ppid=,lstart=,command="])
         .env("LC_ALL", "C")
@@ -1284,6 +1288,7 @@ pub fn harness_process_tree(pane_pid: u32, harness: Harness) -> Option<HarnessPr
     let text = std::str::from_utf8(&output.stdout).ok()?;
     let processes: Vec<_> = text.lines().filter_map(process_row).collect();
     let selected = harness_process_from_snapshot(pane_pid, harness, &processes)?;
+    pij_core::spawns::record("ps.tmux-harness-process-tree");
     let output = Command::new("ps")
         .args(["-p", &selected.identity.pid.to_string(), "-o", "lstart="])
         .env("LC_ALL", "C")

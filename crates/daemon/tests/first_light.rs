@@ -62,6 +62,60 @@ async fn ping_round_trips_over_localhost_with_the_boot_key() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Plan 180 follow-up C: ping names the daemon's process launches by call site.
+#[tokio::test]
+async fn ping_counts_the_daemons_process_launches_by_operation() {
+    use pij_core::ports::LivenessPort;
+
+    let daemon = pij_daemon::boot(&config(), state_dir())
+        .await
+        .expect("boot");
+    let spawns = || async {
+        let body = reqwest::Client::new()
+            .get(format!("http://{}/health", daemon.addr))
+            .header(reqwest::header::AUTHORIZATION, daemon.key.header())
+            .send()
+            .await
+            .expect("request")
+            .text()
+            .await
+            .expect("body");
+        let envelope: pij_core::model::Envelope<serde_json::Value> =
+            wire::decode_envelope(&body).expect("a v1 envelope");
+        envelope.data.expect("ping data")["spawns"].clone()
+    };
+    let total = |spawns: &serde_json::Value| spawns["total"].as_u64().expect("spawns.total");
+    let liveness = |spawns: &serde_json::Value| {
+        spawns["by_op"]
+            .as_object()
+            .expect("spawns.by_op")
+            .get("ps.proc-liveness")
+            .map_or(0, |count| count.as_u64().expect("a count"))
+    };
+
+    let before = spawns().await;
+    // A real launch site: the shared liveness probe runs `ps` once per check.
+    pij_harnesses::proc::ProcLiveness::new()
+        .proc_start(std::process::id())
+        .await
+        .expect("ps answers for this process");
+    let after = spawns().await;
+
+    assert!(liveness(&after) > liveness(&before), "{before} -> {after}");
+    assert!(total(&after) > total(&before), "{before} -> {after}");
+    let by_op_sum: u64 = after["by_op"]
+        .as_object()
+        .expect("spawns.by_op")
+        .values()
+        .map(|count| count.as_u64().expect("a count"))
+        .sum();
+    assert_eq!(
+        by_op_sum,
+        total(&after),
+        "one snapshot: the operations sum to the total"
+    );
+}
+
 #[tokio::test]
 async fn the_key_is_0600_and_exists_before_the_socket_can_be_reached() {
     let dir = state_dir();

@@ -251,6 +251,7 @@ impl ControlClient {
             Some(session) => session.clone(),
             None => self.first_session()?,
         };
+        pij_core::spawns::record("tmux.control-client");
         let mut child = self
             .command()
             .args(["-C", "attach-session", "-f", ATTACH_FLAGS, "-t", &target])
@@ -292,6 +293,7 @@ impl ControlClient {
     }
 
     fn first_session(&self) -> io::Result<String> {
+        pij_core::spawns::record("tmux.list-sessions");
         let output = self
             .command()
             .args(["list-sessions", "-F", "#{session_id}"])

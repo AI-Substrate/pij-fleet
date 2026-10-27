@@ -40,6 +40,14 @@ top -l 2 -o cpu -n 12 -stats pid,command,cpu   # Defender: epsext, wdavdaemon_en
 
 `spawn-rate` counts every launch from the PID counter and attributes them by parent. Short-lived processes exit before a poll sees them, so the per-parent numbers are lower bounds. Compare before and after a change on the same fleet.
 
+To see which daemon code launches what, read the daemon's own counter:
+
+```sh
+pij-rs --json ping | jq '.data.spawns'   # {total, by_op: {"ps.proc-liveness": N, "tmux.send-keys": N, ...}}
+```
+
+The counts are exact and run since the daemon started, so take two readings a known number of seconds apart and divide the difference. Each operation is named `<program>.<site>`, so `ps.*` names which code runs `ps`. A test (`crates/testkit/tests/spawn_sites.rs`) fails when a daemon launch site doesn't record itself.
+
 ## What exclusions don't fix
 
 - **EDR monitoring:** the exclusions stop antivirus file scanning only. Defender's EDR component (`wdavdaemon_enterprise`) still observes every process launch, so the daemon's process launches still cost EDR CPU. Only the device's administrators can tune that.

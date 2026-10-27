@@ -1644,6 +1644,7 @@ fn read_native_process(pid: u32) -> std::result::Result<Option<NativeProcess>, R
     // Darwin truncates `comm` paths when followed by another output column.
     // Read the kernel accounting name instead: the supported host basenames
     // fit, and is_copilot_host still independently checks argv/entrypoint.
+    pij_core::spawns::record("ps.registration-native-process");
     let mut command = Command::new("/bin/ps");
     command
         .args([

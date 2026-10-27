@@ -712,6 +712,8 @@ struct Health<'a> {
     machine: String,
     retired_harnesses: &'a [Harness],
     store: StoreHealth,
+    /// The processes this daemon has launched, by call site (plan 180).
+    spawns: pij_core::spawns::SpawnCounts,
 }
 
 #[derive(serde::Serialize)]
@@ -733,6 +735,7 @@ async fn health(State(state): State<AppState>) -> Response {
             status: if healthy { "healthy" } else { "unavailable" },
             timeout_ms: pij_store::migrate::STORE_WAIT_TIMEOUT.as_millis() as u64,
         },
+        spawns: pij_core::spawns::snapshot(),
     };
     match checked {
         Ok(()) => envelope(StatusCode::OK, &Envelope::ok("pij ping", data)),
