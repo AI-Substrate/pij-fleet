@@ -102,6 +102,7 @@ pub fn process_files(pid: u32) -> ProcessFiles {
                 .collect(),
         };
     }
+    pij_core::spawns::record("lsof.codex-process-files");
     let Ok(output) = Command::new(LSOF)
         .args(["-n", "-P", "-p", &pid.to_string(), "-FRn"])
         .env("LC_ALL", "C")
