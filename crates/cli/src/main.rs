@@ -707,17 +707,27 @@ impl BgAction {
 
 #[derive(Clone, Debug, Subcommand)]
 enum SidecarAction {
-    /// Send one outbound Telegram message and bind this seat as the reply target.
+    /// Send text and/or files to the human on Telegram, and bind this seat as the reply target.
     Telegram {
         /// Assert the derived sending seat, which inbound replies route back to.
         #[arg(long)]
         from: Option<String>,
         /// Literal message body, including values beginning with `-`.
+        /// With `--file`, it is sent first, then the files.
         #[arg(long, allow_hyphen_values = true, conflicts_with = "body_file")]
         body: Option<String>,
         /// Read the literal body from a path, or from stdin with `-`.
         #[arg(long, conflicts_with = "body")]
         body_file: Option<String>,
+        /// Send this file (repeat for up to 10, sent in order; max 50 MB each):
+        /// jpg/jpeg/png/webp as a photo, mp4 as a video, gif as an animation,
+        /// anything else as a document. The daemon copies each file at enqueue,
+        /// so later edits cannot change what is sent.
+        #[arg(long = "file")]
+        file: Vec<PathBuf>,
+        /// Caption for the first `--file`; the sender tag is prefixed.
+        #[arg(long, allow_hyphen_values = true, requires = "file")]
+        caption: Option<String>,
         /// Correlation id. Omit to mint a UUIDv7.
         #[arg(long)]
         msg_id: Option<String>,
@@ -786,14 +796,29 @@ impl SidecarAction {
                 from,
                 body,
                 body_file,
+                file,
+                caption,
                 msg_id,
                 chat_id,
             } => {
-                let body = resolve_send_body(body, body_file)?;
+                let files = file
+                    .iter()
+                    .map(|path| resolve_attachment(path))
+                    .collect::<Result<Vec<_>, _>>()?;
+                // Text alone needs a body; with files the body is optional.
+                let body = if files.is_empty() || body.is_some() || body_file.is_some() {
+                    Some(resolve_send_body(body, body_file)?)
+                } else {
+                    None
+                };
                 let from =
                     resolve_command_seat(client, "pij sidecar telegram", from.as_deref()).await?;
                 let msg_id = msg_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
-                json!({"sidecar": "telegram", "request": {"from": from, "body": body, "msg_id": msg_id, "chat_id": chat_id}})
+                if files.is_empty() {
+                    json!({"sidecar": "telegram", "request": {"from": from, "body": body, "msg_id": msg_id, "chat_id": chat_id}})
+                } else {
+                    json!({"sidecar": "telegram_document", "request": {"from": from, "files": files, "caption": caption, "body": body, "msg_id": msg_id, "chat_id": chat_id}})
+                }
             }
             Self::BgStart {
                 id,
@@ -1995,6 +2020,15 @@ async fn resolve_command_seat(
         });
     }
     Ok(derived)
+}
+
+/// An absolute, existing path for `--file`; a missing file fails here, loudly,
+/// before anything reaches the daemon.
+fn resolve_attachment(path: &Path) -> Result<PathBuf, PijError> {
+    std::fs::canonicalize(path).map_err(|error| PijError::Adapter {
+        adapter: "pij sidecar telegram".to_string(),
+        message: format!("could not read --file `{}`: {error}", path.display()),
+    })
 }
 
 fn resolve_send_body(body: Option<String>, body_file: Option<String>) -> Result<String, PijError> {
@@ -3277,6 +3311,79 @@ mod tests {
             panic!("expected send");
         };
         assert_eq!(body_file.as_deref(), Some("-"));
+    }
+
+    #[test]
+    fn telegram_files_repeat_combine_with_a_body_and_caption_requires_a_file() {
+        let telegram = |argv: &[&str]| {
+            let cli = Cli::try_parse_from(argv).expect("parses");
+            let Command::Sidecar {
+                action:
+                    super::SidecarAction::Telegram {
+                        file,
+                        caption,
+                        body,
+                        body_file,
+                        ..
+                    },
+            } = cli.command
+            else {
+                panic!("expected sidecar telegram");
+            };
+            (file, caption, body, body_file)
+        };
+        let (file, caption, body, _) = telegram(&[
+            "pij-rs",
+            "sidecar",
+            "telegram",
+            "--file",
+            "a.png",
+            "--file",
+            "b.mp4",
+            "--body",
+            "look",
+            "--caption",
+            "-leading dash",
+        ]);
+        assert_eq!(
+            file,
+            vec![
+                std::path::PathBuf::from("a.png"),
+                std::path::PathBuf::from("b.mp4")
+            ],
+            "--file repeats, in order"
+        );
+        assert_eq!(body.as_deref(), Some("look"), "a body rides with files");
+        assert_eq!(caption.as_deref(), Some("-leading dash"));
+        let (file, _, _, body_file) = telegram(&[
+            "pij-rs",
+            "sidecar",
+            "telegram",
+            "--file",
+            "r.html",
+            "--body-file",
+            "-",
+        ]);
+        assert_eq!(file.len(), 1);
+        assert_eq!(body_file.as_deref(), Some("-"));
+
+        let error = Cli::try_parse_from(["pij-rs", "sidecar", "telegram", "--caption", "c"])
+            .err()
+            .expect("caption alone");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn a_missing_attachment_fails_before_the_daemon() {
+        let error = super::resolve_attachment(std::path::Path::new("/definitely/not/here.html"))
+            .expect_err("missing file");
+        assert!(
+            error.to_string().contains("could not read --file"),
+            "{error}"
+        );
     }
 
     #[test]

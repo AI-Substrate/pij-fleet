@@ -201,6 +201,10 @@
           "kind": null
         },
         {
+          "name": "sha2",
+          "kind": null
+        },
+        {
           "name": "tokio",
           "kind": null
         },

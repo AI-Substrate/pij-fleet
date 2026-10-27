@@ -1,0 +1,135 @@
+# RED: plan-179 tests against stub behaviour (= #49 behaviour) on top of 7800d11; uncommitted tree at d543eef
+2026-10-27T04:31:19Z
+
+test telegram::document::tests::boundary_never_occurs_in_any_part ... ok
+test telegram::document::tests::multipart_body_is_byte_exact ... ok
+test telegram::document::tests::caption_is_tagged_and_falls_back_to_the_bare_tag ... ok
+test telegram::document::tests::multipart_carries_binary_bytes_verbatim ... ok
+test telegram::document::tests::each_method_names_its_api_call_and_file_field ... ok
+test telegram::document::tests::no_files_and_more_than_ten_refuse_before_staging ... FAILED
+test telegram::document::tests::oversized_caption_refuses_at_enqueue ... ok
+test telegram::document::tests::missing_empty_directory_relative_and_oversized_files_refuse_at_enqueue ... ok
+test telegram::document::tests::a_body_is_queued_first_as_an_ordinary_text_send ... FAILED
+test telegram::document::tests::one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged ... FAILED
+test telegram::document::tests::the_document_limit_is_telegrams_fifty_megabytes ... ok
+test telegram::document::tests::the_method_is_chosen_by_extension_and_photo_size ... FAILED
+test telegram::document::tests::staging_records_the_method_on_the_job ... FAILED
+test telegram::document::tests::document_is_uploaded_with_send_document_and_binds_the_reply ... ok
+test telegram::document::tests::a_foreign_chat_is_refused_before_upload ... ok
+test telegram::outbound_tests::chunk_boundaries_prefer_newlines_and_numbering_accounts_for_digit_growth ... ok
+test telegram::document::tests::a_missing_staged_copy_fails_without_uploading ... ok
+test telegram::inbound_tests::inbound_media_reaches_the_bound_seat_as_a_notice_with_an_event ... FAILED
+test telegram::document::tests::a_tampered_staged_copy_fails_without_uploading ... ok
+test telegram::document::tests::a_photo_goes_with_send_photo_in_the_photo_field_and_records_delivery ... FAILED
+test telegram::document::tests::staging_copies_by_content_so_later_edits_cannot_change_the_send ... ok
+test telegram::document::tests::a_server_error_retries_then_succeeds ... ok
+test telegram::document::tests::a_400_on_a_photo_falls_back_to_send_document_in_the_same_attempt ... FAILED
+test telegram::document::tests::a_server_error_on_a_photo_retries_without_falling_back ... FAILED
+test telegram::document::tests::a_rejected_upload_fails_the_job_and_never_binds ... ok
+test telegram::document::tests::a_gif_refused_with_400_falls_back_once_and_a_second_400_fails_the_job ... FAILED
+test telegram::tests::transport_errors_never_carry_the_bot_token ... ok
+test telegram::outbound_tests::long_body_is_numbered_ordered_and_lossless_with_prefix_in_budget ... ok
+test telegram::outbound_tests::failed_later_part_stops_and_preserves_whole_job_retry ... ok
+test telegram::outbound_tests::ok_false_is_not_a_successful_send ... ok
+test telegram::inbound_tests::unbound_inbound_media_is_refused_like_text ... FAILED
+test telegram::outbound_tests::oversized_context_falls_back_to_the_tag ... ok
+test telegram::outbound_tests::transport_failure_records_each_attempt_without_leaking_the_token ... ok
+test telegram::outbound_tests::rejected_send_is_retried_with_decodable_spine_evidence ... ok
+test telegram::outbound_tests::tag_is_first_for_an_unknown_sender ... ok
+test telegram::tests::both_generation_lock_shapes_refuse_live_holders_and_corrupt_is_not_free ... ok
+test telegram::document::tests::a_gif_goes_as_an_animation_and_an_mp4_as_a_video ... FAILED
+test telegram::tests::rust_writer_is_legacy_parseable_and_parsed_dead_holder_is_reclaimed ... ok
+test telegram::document::tests::several_files_stage_in_order_with_their_own_msg_ids_and_the_caption_on_the_first ... FAILED
+test telegram::document::tests::the_body_and_then_each_file_arrive_in_order ... FAILED
+test telegram::document::tests::the_token_never_leaks_on_any_media_failure_path ... FAILED
+test telegram::outbound_tests::context_and_exact_leading_tags_are_normalized ... ok
+test result: FAILED. 27 passed; 15 failed; 0 ignored; 0 measured; 4 filtered out; finished in 1.06s
+EXIT sidecars: 101
+test tests::telegram_body_sources_are_mutually_exclusive ... ok
+test tests::telegram_files_repeat_combine_with_a_body_and_caption_requires_a_file ... FAILED
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 48 filtered out; finished in 0.00s
+EXIT cli unit: 101
+test the_shipped_client_queues_a_staged_telegram_document ... FAILED
+test the_shipped_client_can_complete_one_sidecar_call ... ok
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+EXIT cli producer: 101
+test telegram_attachment_misuse_refuses_by_name ... ok
+test a_telegram_attachment_is_staged_and_queued_from_the_shim ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.10s
+EXIT daemon shim: 0
+
+## Failure reasons
+---- telegram::document::tests::no_files_and_more_than_ten_refuse_before_staging stdout ----
+thread 'telegram::document::tests::no_files_and_more_than_ten_refuse_before_staging' (454635623) panicked at crates/sidecars/src/telegram_document_tests.rs:757:10:
+no files: StagedSend { body: None, files: [] }
+---- telegram::document::tests::a_body_is_queued_first_as_an_ordinary_text_send stdout ----
+thread 'telegram::document::tests::a_body_is_queued_first_as_an_ordinary_text_send' (454635606) panicked at crates/sidecars/src/telegram_document_tests.rs:719:28:
+a body job
+---- telegram::document::tests::one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged stdout ----
+thread 'telegram::document::tests::one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged' (454635624) panicked at crates/sidecars/src/telegram_document_tests.rs:748:5:
+assertion `left == right` failed: copies staged before the refusal are removed
+  left: 1
+ right: 0
+---- telegram::document::tests::the_method_is_chosen_by_extension_and_photo_size stdout ----
+thread 'telegram::document::tests::the_method_is_chosen_by_extension_and_photo_size' (454635671) panicked at crates/sidecars/src/telegram_document_tests.rs:610:9:
+assertion `left == right` failed: chart.png (1 bytes)
+  left: Document
+ right: Photo
+---- telegram::document::tests::staging_records_the_method_on_the_job stdout ----
+thread 'telegram::document::tests::staging_records_the_method_on_the_job' (454635654) panicked at crates/sidecars/src/telegram_document_tests.rs:651:5:
+assertion `left == right` failed
+  left: Document
+ right: Photo
+---- telegram::inbound_tests::inbound_media_reaches_the_bound_seat_as_a_notice_with_an_event stdout ----
+thread 'telegram::inbound_tests::inbound_media_reaches_the_bound_seat_as_a_notice_with_an_event' (454635736) panicked at crates/sidecars/src/telegram_inbound_tests.rs:152:5:
+assertion `left == right` failed: every allowed media message is delivered, none from a stranger
+  left: []
+ right: ["[telegram media not saved by pij-rs: photo, 1.2 MB] caption: look at this", "[telegram media not saved by pij-rs: document, 2.0 KB, report.pdf]", "[telegram media not saved by pij-rs: animation, 3.0 MB, loop.mp4] caption: loop", "[telegram media not saved by pij-rs: sticker]", "[telegram m
+---- telegram::document::tests::a_photo_goes_with_send_photo_in_the_photo_field_and_records_delivery stdout ----
+thread 'telegram::document::tests::a_photo_goes_with_send_photo_in_the_photo_field_and_records_delivery' (454635611) panicked at crates/sidecars/src/telegram_document_tests.rs:780:5:
+assertion `left == right` failed
+  left: ["sendDocument"]
+ right: ["sendPhoto"]
+---- telegram::document::tests::a_400_on_a_photo_falls_back_to_send_document_in_the_same_attempt stdout ----
+thread 'telegram::document::tests::a_400_on_a_photo_falls_back_to_send_document_in_the_same_attempt' (454635605) panicked at crates/sidecars/src/telegram_document_tests.rs:814:5:
+assertion `left == right` failed
+  left: ["sendDocument"]
+ right: ["sendPhoto", "sendDocument"]
+---- telegram::document::tests::a_server_error_on_a_photo_retries_without_falling_back stdout ----
+thread 'telegram::document::tests::a_server_error_on_a_photo_retries_without_falling_back' (454635613) panicked at crates/sidecars/src/telegram_document_tests.rs:874:32:
+5xx retries: Processed { count: 1 }
+---- telegram::document::tests::a_gif_refused_with_400_falls_back_once_and_a_second_400_fails_the_job stdout ----
+thread 'telegram::document::tests::a_gif_refused_with_400_falls_back_once_and_a_second_400_fails_the_job' (454635609) panicked at crates/sidecars/src/telegram_document_tests.rs:845:5:
+assertion `left == right` failed: one fallback, never a loop
+  left: ["sendDocument"]
+ right: ["sendAnimation", "sendDocument"]
+---- telegram::inbound_tests::unbound_inbound_media_is_refused_like_text stdout ----
+thread 'telegram::inbound_tests::unbound_inbound_media_is_refused_like_text' (454635759) panicked at crates/sidecars/src/telegram_inbound_tests.rs:191:5:
+assertion `left == right` failed: []
+  left: 0
+ right: 5
+---- telegram::document::tests::a_gif_goes_as_an_animation_and_an_mp4_as_a_video stdout ----
+thread 'telegram::document::tests::a_gif_goes_as_an_animation_and_an_mp4_as_a_video' (454635608) panicked at crates/sidecars/src/telegram_document_tests.rs:801:5:
+assertion `left == right` failed
+  left: ["sendDocument", "sendDocument"]
+ right: ["sendAnimation", "sendVideo"]
+---- telegram::document::tests::several_files_stage_in_order_with_their_own_msg_ids_and_the_caption_on_the_first stdout ----
+thread 'telegram::document::tests::several_files_stage_in_order_with_their_own_msg_ids_and_the_caption_on_the_first' (454635626) panicked at crates/sidecars/src/telegram_document_tests.rs:685:5:
+assertion `left == right` failed
+  left: ["doc-1", "doc-1", "doc-1", "doc-1"]
+ right: ["doc-1#1", "doc-1#2", "doc-1#3", "doc-1#4"]
+---- telegram::document::tests::the_body_and_then_each_file_arrive_in_order stdout ----
+thread 'telegram::document::tests::the_body_and_then_each_file_arrive_in_order' (454635656) panicked at crates/sidecars/src/telegram_document_tests.rs:905:5:
+assertion `left == right` failed
+  left: ["sendDocument"]
+ right: ["sendMessage", "sendPhoto", "sendDocument", "sendVideo"]
+---- telegram::document::tests::the_token_never_leaks_on_any_media_failure_path stdout ----
+thread 'telegram::document::tests::the_token_never_leaks_on_any_media_failure_path' (454635673) panicked at crates/sidecars/src/telegram_document_tests.rs:981:9:
+server-error: the failure path was exercised
+---- tests::telegram_files_repeat_combine_with_a_body_and_caption_requires_a_file stdout ----
+thread 'tests::telegram_files_repeat_combine_with_a_body_and_caption_requires_a_file' (454655154) panicked at crates/cli/src/main.rs:3317:49:
+---- the_shipped_client_queues_a_staged_telegram_document stdout ----
+thread 'the_shipped_client_queues_a_staged_telegram_document' (454660059) panicked at crates/cli/tests/sidecar_producer.rs:79:5:
+the body is queued: {"body_job_id":null,"files":[{"document":{"file_name":"chart.png","method":"sendDocument","sha256":"e90137d39de304eefbbe788bc535c7e82f27abbf8069505fbbd8a9dcdc4f2024","size":16,"source":"/var/folders/1d/4jyz3y9929bg1fjdbtlxtpjc0000gn/T/pij-rs-sidecar-doc-43180/chart.png","staged":
+
+clap: telegram_files_repeat... panicked 'parses: ErrorInner { kind: ArgumentConflict ... --file <FILE> / --body <BODY>' (stub keeps #49's body/file conflict)
