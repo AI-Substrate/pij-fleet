@@ -1,0 +1,179 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Daemon: tmux control mode, ps-free liveness, spawn sensor",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": "",
+        "log": "../../execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Baseline and attribution",
+          "phase": "ph-c7a4",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Control-mode reads with fork fallback",
+          "phase": "ph-c7a4",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Mutants and gates",
+          "phase": "ph-c7a4",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Deploy window 1 and measure; ps decision",
+          "phase": "ph-c7a4",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "Baseline and attribution",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "Control-mode reads with fork fallback",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "Mutants and gates",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "Deploy window 1 and measure; ps decision",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ]
+      }
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ],
+  "references": []
+}

@@ -1,5 +1,8 @@
 //! Real tmux adapter. Every Rust-workspace tmux syscall lives in this crate.
 
+mod control;
+
+pub use control::CONTROL_SESSION;
 mod parse;
 
 use std::collections::BTreeMap;
@@ -77,6 +80,8 @@ pub struct TmuxAdapter {
     legacy_tap_root: Option<PathBuf>,
     submit_lock: Arc<AsyncMutex<()>>,
     taps: Arc<Mutex<BTreeMap<String, TapState>>>,
+    /// Plan 180: reads ride one persistent control-mode client, not a process each.
+    control: Arc<control::ControlClient>,
 }
 
 #[derive(Debug)]
@@ -96,6 +101,11 @@ impl TmuxAdapter {
             legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
+            control: Arc::new(control::ControlClient::new(
+                OsString::from("tmux"),
+                None,
+                true,
+            )),
         }
     }
     /// Use `tmux` with an explicitly injected legacy-generation tap root.
@@ -118,13 +128,20 @@ impl TmuxAdapter {
             legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
+            control: Arc::new(control::ControlClient::new(
+                OsString::from("tmux"),
+                None,
+                true,
+            )),
         }
     }
 
     /// Inject the executable path while retaining the production argv contract.
     pub fn with_binary(binary: impl Into<OsString>, tap_root: impl Into<PathBuf>) -> Self {
+        let binary = binary.into();
         Self {
-            binary: binary.into(),
+            control: Arc::new(control::ControlClient::new(binary.clone(), None, false)),
+            binary,
             server: None,
             session: None,
             tap_root: tap_root.into(),
@@ -139,9 +156,15 @@ impl TmuxAdapter {
     /// Real integration fixtures use this instead of sharing a mutable global
     /// server with production daemons that legitimately attach pane pipes.
     pub fn for_server(server: impl Into<String>, tap_root: impl Into<PathBuf>) -> Self {
+        let server = server.into();
         Self {
+            control: Arc::new(control::ControlClient::new(
+                OsString::from("tmux"),
+                Some(server.clone()),
+                true,
+            )),
             binary: OsString::from("tmux"),
-            server: Some(server.into()),
+            server: Some(server),
             session: None,
             legacy_tap_root: None,
             tap_root: tap_root.into(),
@@ -161,6 +184,16 @@ impl TmuxAdapter {
         adapter
     }
 
+    /// Opt in or out of the persistent control-mode client for reads.
+    ///
+    /// On by default for the real constructors; off for [`Self::with_binary`],
+    /// whose fake executables record exact argv and need not speak `-C`.
+    #[must_use]
+    pub fn with_control_mode(mut self, enabled: bool) -> Self {
+        self.control = Arc::new(self.control.with_enabled(enabled));
+        self
+    }
+
     fn list_args(&self) -> Vec<OsString> {
         let mut args = vec![OsString::from("list-panes")];
         match &self.session {
@@ -171,6 +204,10 @@ impl TmuxAdapter {
             }
             None => args.push(OsString::from("-a")),
         }
+        // The control client's own pane is pij's, never a seat's: no lookup,
+        // tap sweep, reap or caller-pane resolution should ever see it.
+        args.push(OsString::from("-f"));
+        args.push(OsString::from(control::NOT_CONTROL_PANE));
         args.push(OsString::from("-F"));
         args.push(OsString::from(LIST_FORMAT));
         args
@@ -188,6 +225,7 @@ impl TmuxAdapter {
     }
 
     fn run(&self, operation: &str, args: &[OsString]) -> Result<Output> {
+        pij_core::spawns::record(&format!("tmux.{operation}"));
         let output = self
             .command()
             .args(args)
@@ -197,6 +235,7 @@ impl TmuxAdapter {
     }
 
     fn run_with_stdin(&self, operation: &str, args: &[OsString], input: &[u8]) -> Result<Output> {
+        pij_core::spawns::record(&format!("tmux.{operation}"));
         let mut child = self
             .command()
             .args(args)
@@ -299,12 +338,47 @@ impl TmuxAdapter {
     }
 
     fn stdout(&self, operation: &str, args: &[OsString]) -> Result<String> {
+        if let Some(reply) = self.control.query(args) {
+            return self.control_stdout(operation, reply);
+        }
         let output = self.run(operation, args)?;
         String::from_utf8(output.stdout).map_err(|error| {
             self.error(format!(
                 "{operation} returned non-UTF-8 output: {error} — set tmux output to UTF-8 and retry"
             ))
         })
+    }
+
+    /// The control client's answer, shaped exactly as the forked client's
+    /// stdout or `finish` error would have been.
+    fn control_stdout(&self, operation: &str, reply: control::Reply) -> Result<String> {
+        match reply {
+            Ok(lines) => {
+                let mut stdout = Vec::new();
+                for line in lines {
+                    stdout.extend_from_slice(&line);
+                    stdout.push(b'\n');
+                }
+                String::from_utf8(stdout).map_err(|error| {
+                    self.error(format!(
+                        "{operation} returned non-UTF-8 output: {error} — set tmux output to UTF-8 and retry"
+                    ))
+                })
+            }
+            Err(lines) => {
+                let stderr = String::from_utf8_lossy(&lines.join(&b'\n'))
+                    .trim()
+                    .to_string();
+                Err(self.error(format!(
+                    "{operation} failed (exit 1): {} — run `tmux list-panes -a` to verify the target",
+                    if stderr.is_empty() {
+                        "tmux returned no diagnostic"
+                    } else {
+                        &stderr
+                    }
+                )))
+            }
+        }
     }
 
     fn spawn_error(&self, operation: &str, error: io::Error) -> PijError {
@@ -395,7 +469,8 @@ impl TmuxAdapter {
                 "legacy tap sink {sink:?} is not valid Unicode — refusing to replace pane {pane:?}"
             ))
         })?;
-        let output = Command::new("ps")
+        pij_core::spawns::record("ps.tmux-legacy-tap-writer");
+        let output = Command::new("/bin/ps")
             .args(["-axo", "command="])
             .output()
             .map_err(|error| {
@@ -1198,7 +1273,8 @@ pub fn harness_process(pane_pid: u32, harness: Harness) -> Option<ProcIdentity> 
 /// A missing/dead pane yields `None`; callers label a pane fallback explicitly.
 #[must_use]
 pub fn harness_process_tree(pane_pid: u32, harness: Harness) -> Option<HarnessProcess> {
-    let output = Command::new("ps")
+    pij_core::spawns::record("ps.tmux-harness-process-tree");
+    let output = Command::new("/bin/ps")
         .args(["-Awwo", "pid=,ppid=,lstart=,command="])
         .env("LC_ALL", "C")
         .output()
@@ -1209,7 +1285,8 @@ pub fn harness_process_tree(pane_pid: u32, harness: Harness) -> Option<HarnessPr
     let text = std::str::from_utf8(&output.stdout).ok()?;
     let processes: Vec<_> = text.lines().filter_map(process_row).collect();
     let selected = harness_process_from_snapshot(pane_pid, harness, &processes)?;
-    let output = Command::new("ps")
+    pij_core::spawns::record("ps.tmux-harness-process-tree");
+    let output = Command::new("/bin/ps")
         .args(["-p", &selected.identity.pid.to_string(), "-o", "lstart="])
         .env("LC_ALL", "C")
         .output()
@@ -1318,6 +1395,43 @@ fn harness_command(command: &str, harness: Harness) -> bool {
         Harness::Omp => "/@oh-my-pi/pi-coding-agent/",
     };
     script.contains(package)
+}
+
+#[cfg(test)]
+mod control_defaults {
+    use super::TmuxAdapter;
+
+    /// The daemon composes `new` / `with_legacy_tap_root`: reads must ride the
+    /// control client there. Fake executables keep plain forks unless opted in.
+    #[test]
+    fn production_constructors_use_control_mode_and_fakes_opt_in() {
+        let tap = std::env::temp_dir();
+        assert!(TmuxAdapter::new(&tap).control.enabled());
+        assert!(
+            TmuxAdapter::with_legacy_tap_root(&tap, &tap)
+                .control
+                .enabled()
+        );
+        assert!(TmuxAdapter::for_session("s", &tap).control.enabled());
+        assert!(TmuxAdapter::for_server("srv", &tap).control.enabled());
+        assert!(
+            !TmuxAdapter::with_binary("fake-tmux", &tap)
+                .control
+                .enabled()
+        );
+        assert!(
+            TmuxAdapter::with_binary("fake-tmux", &tap)
+                .with_control_mode(true)
+                .control
+                .enabled()
+        );
+        assert!(
+            !TmuxAdapter::new(&tap)
+                .with_control_mode(false)
+                .control
+                .enabled()
+        );
+    }
 }
 
 #[cfg(test)]

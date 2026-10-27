@@ -23,7 +23,9 @@ async fn the_shipped_config_boots_real_adapters_and_leaves_a_store_on_disk() {
     let state_dir = std::env::temp_dir().join(format!("pij-rs-shipped-{}", std::process::id()));
     std::fs::create_dir_all(&state_dir).expect("state dir");
     let store_path = state_dir.join("pij.sqlite");
-    let config = daemon_config("127.0.0.1:0", &store_path, false);
+    let tmux = pij_testkit::tmux::PrivateTmux::start();
+    let mut config = daemon_config("127.0.0.1:0", &store_path, false);
+    config.tmux_server = Some(tmux.name().to_string());
 
     // EVERY port, named. `is_fully_offline()` is an aggregate and an aggregate
     // cannot defend a per-port choice: with six real adapters and one fake it is
@@ -81,6 +83,18 @@ async fn the_shipped_config_boots_real_adapters_and_leaves_a_store_on_disk() {
         "booting the shipped config must create the SQLite store — this is the \
          assertion that fails when the adapters silently revert to fakes"
     );
+
+    // Positive proof the real tmux adapter talks to the private server and so
+    // not to the operator's (review S3): its control client shows up there.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while tmux.control_clients() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the daemon never attached its control client to {}",
+            tmux.name()
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 
     daemon.shutdown().await.expect("shutdown");
     let _ = std::fs::remove_dir_all(&state_dir);

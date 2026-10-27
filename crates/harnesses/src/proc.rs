@@ -90,7 +90,8 @@ struct PsRunner;
 
 impl CommandRunner for PsRunner {
     fn run(&self, pid: u32) -> io::Result<CommandOutput> {
-        let output = Command::new("ps")
+        pij_core::spawns::record("ps.proc-liveness");
+        let output = Command::new("/bin/ps")
             .args(["-o", "lstart=PIJ_LSTART", "-p", &pid.to_string()])
             .env("LC_ALL", "C")
             .output()?;
@@ -147,7 +148,8 @@ fn classify(pid: u32, output: CommandOutput) -> Result<Option<u64>> {
 /// # Errors
 /// Returns an adapter error when `date +%z` fails or emits an invalid offset.
 pub fn local_utc_offset_minutes() -> Result<i32> {
-    let output = Command::new("date")
+    pij_core::spawns::record("date.utc-offset");
+    let output = Command::new("/bin/date")
         .arg("+%z")
         .env("LC_ALL", "C")
         .output()

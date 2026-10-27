@@ -1,0 +1,22 @@
+# Plan 180 baseline, 2026-10-27 23:43-23:58 local (Mac Studio, 23 tmux panes, ~25 Copilot sessions)
+# Live daemon: pid 5256, build d05776df (plan 179 / #71, 90668c0).
+
+## spawn-rate.py (20 s)
+total_new_per_s: 740.6          (PID-counter delta: a /usr/bin/true probe at each window edge)
+attributed lower bounds (libproc poll; most launches exit before the poll sees them):
+  pij-rs daemon children   54.1/s  (proc_pidinfo view)
+  pij status line          39.6/s
+  other                    29.6/s
+  <gone before seen>      602.6/s
+
+## who the unseen ones were (sysctl kinfo_proc, which also sees pre-exec forks)
+of the processes proc_pidinfo could not read: 415/s had ppid 5256 (the pij-rs daemon)
+daemon children over three samples: 429/s, 478/s, 250/s (sampler cost varies with load)
+zombie classification of daemon children (exit status 0): tmux 149, ps 15, git 3  -> ~89% tmux, ~9% ps, ~2% git
+post-exec argv samples (pane observer, every 600 ms per tracked pane):
+  tmux -u show-options -p -v -q -t %N @pij-tap-sink
+  tmux -u display-message -p -t %N #{pane_pipe}
+  tmux -u capture-pane -p -t %N
+
+## Defender, top -l 2 -o cpu (second sample)
+epsext 82.7%   wdavdaemon_enterprise 47.3%   wdavdaemon 26.6%   log 10.4%   (~1.67 cores)

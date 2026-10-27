@@ -1,0 +1,39 @@
+# Follow-up C RED, 2026-10-27T14:32:23Z
+test spawns::tests::every_launch_counts_once_in_the_total_and_under_its_operation ... FAILED
+test spawns::tests::the_operations_sum_to_the_total ... FAILED
+test spawns::tests::it_serialises_as_total_and_by_op ... ok
+thread 'spawns::tests::every_launch_counts_once_in_the_total_and_under_its_operation' (488246154) panicked at crates/core/src/spawns.rs:57:9:
+thread 'spawns::tests::the_operations_sum_to_the_total' (488246156) panicked at crates/core/src/spawns.rs:66:9:
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 86 filtered out; finished in 0.00s
+test every_daemon_launch_site_records_itself ... FAILED
+these functions launch a process without `pij_core::spawns::record("<program>.<site>")`, so `pij-rs ping` would under-count them:
+  crates/daemon/src/background.rs::create
+  crates/daemon/src/background.rs::send_term
+  crates/daemon/src/background.rs::process_group
+  crates/daemon/src/registration.rs::read_native_process
+  crates/daemon/src/pa_watchdog.rs::git_common_dir
+  crates/daemon/src/http/identity.rs::caller_descends_from
+  crates/daemon/src/http/identity.rs::peer_pid
+  crates/daemon/src/http/governance.rs::current_head
+  crates/daemon/src/http/lifecycle.rs::handle
+  crates/daemon/src/orchestration/repo.rs::git
+  crates/harnesses/src/proc.rs::run
+  crates/harnesses/src/proc.rs::local_utc_offset_minutes
+  crates/harnesses/src/models.rs::run_omp_command
+  crates/harnesses/src/usage_limit.rs::local_clock_text
+  crates/sidecars/src/background.rs::start_command
+  crates/sidecars/src/background.rs::process_group_of
+  crates/sidecars/src/background.rs::group_pids
+  crates/sidecars/src/chore.rs::run_probe
+  crates/tmux/src/control.rs::start
+  crates/tmux/src/control.rs::first_session
+  crates/tmux/src/lib.rs::run
+  crates/tmux/src/lib.rs::run_with_stdin
+  crates/tmux/src/lib.rs::has_live_legacy_tap_writer
+  crates/tmux/src/lib.rs::harness_process_tree
+  crates/transport/src/uds.rs::process_start
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+test ping_counts_the_daemons_process_launches_by_operation ... FAILED
+thread 'ping_counts_the_daemons_process_launches_by_operation' (488250976) panicked at crates/daemon/tests/first_light.rs:91:14:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.11s
+error: test failed, to rerun pass `-p pij-daemon --test first_light`

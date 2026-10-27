@@ -274,6 +274,7 @@ impl ChoreWorker {
 }
 
 fn run_probe(probe: &str) -> std::result::Result<String, String> {
+    pij_core::spawns::record("sh.chore-probe");
     let output = Command::new("/bin/sh")
         .args(["-c", probe])
         .output()

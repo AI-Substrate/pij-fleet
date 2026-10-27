@@ -1,0 +1,81 @@
+# Plan 180 phase 1 mutants (2026-10-28T00:19:47)
+# Each applied alone, scoped test run, file restored from saved bytes.
+
+## M1 control mode ignored: every read forks (today's behaviour; also the RED)
+file crates/tmux/src/lib.rs; cargo test -p pij-tmux --test control_mode
+verdict: KILLED (red)
+test reads_after_warm_up_launch_no_tmux_process ... FAILED
+test a_lost_control_client_falls_back_then_reconnects ... FAILED
+test control_answers_match_forked_answers_byte_for_byte ... FAILED
+thread 'reads_after_warm_up_launch_no_tmux_process' (485350440) panicked at crates/tmux/tests/control_mode.rs:146:9:
+thread 'a_lost_control_client_falls_back_then_reconnects' (485350437) panicked at crates/tmux/tests/control_mode.rs:271:32:
+thread 'control_answers_match_forked_answers_byte_for_byte' (485350439) panicked at crates/tmux/tests/control_mode.rs:201:9:
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.63s
+
+## M2 production default off (new() forks)
+file crates/tmux/src/lib.rs; cargo test -p pij-tmux --lib control_defaults
+verdict: KILLED (red)
+test control_defaults::production_constructors_use_control_mode_and_fakes_opt_in ... FAILED
+thread 'control_defaults::production_constructors_use_control_mode_and_fakes_opt_in' (485358855) panicked at crates/tmux/src/lib.rs:1407:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+
+## M3 framer closes on any %end (ignores the T N guard)
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --lib control::tests
+verdict: KILLED (red)
+test control::tests::blocks_close_only_on_their_own_guard_and_notifications_are_skipped ... FAILED
+thread 'control::tests::blocks_close_only_on_their_own_guard_and_notifications_are_skipped' (485362242) panicked at crates/tmux/src/control.rs:408:9:
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+## M4 no handshake skip: the attach block answers the first query
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --test control_mode
+verdict: KILLED (red)
+test reads_after_warm_up_launch_no_tmux_process ... FAILED
+test a_lost_control_client_falls_back_then_reconnects ... FAILED
+test control_answers_match_forked_answers_byte_for_byte ... FAILED
+thread 'reads_after_warm_up_launch_no_tmux_process' (485366744) panicked at crates/tmux/tests/control_mode.rs:146:9:
+thread 'a_lost_control_client_falls_back_then_reconnects' (485366741) panicked at crates/tmux/tests/control_mode.rs:271:32:
+thread 'control_answers_match_forked_answers_byte_for_byte' (485366743) panicked at crates/tmux/tests/control_mode.rs:201:9:
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.05s
+
+## M5 a single quote is sent unquoted (no fork fallback)
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --lib control::tests
+verdict: KILLED (red)
+test control::tests::only_quotable_reads_are_eligible ... FAILED
+thread 'control::tests::only_quotable_reads_are_eligible' (485380040) panicked at crates/tmux/src/control.rs:461:9:
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+## M6 writes ride the control client
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --lib control::tests
+verdict: KILLED (red)
+test control::tests::only_quotable_reads_are_eligible ... FAILED
+thread 'control::tests::only_quotable_reads_are_eligible' (485382144) panicked at crates/tmux/src/control.rs:489:13:
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+## M7a (equivalent mutant, recorded honestly): only the dead-check removed; send() still replaces the client one call later
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --test control_mode
+verdict: SURVIVED
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.11s
+
+restored byte-for-byte: control.rs untracked file compared by content; lib.rs restored (written from saved bytes)
+## M7 a lost client is never replaced (dead-check and send-failure replacement both removed)
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --test control_mode
+verdict: KILLED (red)
+test a_lost_control_client_falls_back_then_reconnects ... FAILED
+thread 'a_lost_control_client_falls_back_then_reconnects' (485416415) panicked at crates/tmux/tests/control_mode.rs:283:13:
+never reconnected: [
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.42s
+
+# Prime condition 2 (injection), 2026-10-28
+## M5n a newline is sent (no fork fallback): could smuggle a second command
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --lib control::tests
+verdict: KILLED (red)
+test control::tests::only_quotable_reads_are_eligible ... FAILED
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+## M5r a carriage return is sent (no fork fallback)
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --lib control::tests
+verdict: SURVIVED
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+## M5r rerun after adding a carriage-return assertion
+verdict: KILLED (red)

@@ -106,6 +106,7 @@ fn parse_ordinal(value: &str) -> Option<u32> {
 }
 
 fn git(repo_root: &Path, args: &[&str]) -> Result<String> {
+    pij_core::spawns::record("git.orchestration-repo");
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_root)

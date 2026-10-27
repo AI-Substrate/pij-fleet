@@ -1,0 +1,75 @@
+# Plan 180 phase 2 mutants (2026-10-28T00:56:35)
+# Each applied alone, scoped test run, file restored from saved bytes.
+
+## S1 inherited PIJ_SESSION_ID is kept (not dropped)
+file crates/cli/src/main.rs; cargo test -p pij-cli --bin pij-rs statusline
+verdict: KILLED (red)
+test tests::the_statusline_asks_the_pane_and_never_an_inherited_session_id ... FAILED
+thread 'tests::the_statusline_asks_the_pane_and_never_an_inherited_session_id' (487326290) panicked at crates/cli/src/main.rs:3441:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+
+## S2 the dead-seat branch is gone (seat text falls through)
+file crates/cli/src/statusline.rs; cargo test -p pij-cli --lib statusline
+verdict: KILLED (red)
+test statusline::tests::a_seat_that_dies_shows_dead_on_the_very_next_render ... FAILED
+test statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte ... FAILED
+thread 'statusline::tests::a_seat_that_dies_shows_dead_on_the_very_next_render' (487329542) panicked at crates/cli/src/statusline_tests.rs:642:5:
+thread 'statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte' (487329543) panicked at crates/cli/src/statusline_tests.rs:620:5:
+1 of 51 renders differ:
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 33 filtered out; finished in 29.68s
+
+## S3 %.1f rounds half away from zero (not C ties-to-even)
+file crates/cli/src/statusline.rs; cargo test -p pij-cli --lib statusline
+verdict: KILLED (red)
+test statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte ... FAILED
+thread 'statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte' (487352411) panicked at crates/cli/src/statusline_tests.rs:620:5:
+2 of 51 renders differ:
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 31.32s
+
+## S4 awk %d rounds instead of truncating
+file crates/cli/src/statusline.rs; cargo test -p pij-cli --lib statusline
+verdict: KILLED (red)
+test statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte ... FAILED
+thread 'statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte' (487374606) panicked at crates/cli/src/statusline_tests.rs:620:5:
+17 of 51 renders differ:
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 29.18s
+
+## S5 printf %b ignores \c
+file crates/cli/src/statusline.rs; cargo test -p pij-cli --lib statusline
+verdict: KILLED (red)
+test statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte ... FAILED
+thread 'statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte' (487396136) panicked at crates/cli/src/statusline_tests.rs:620:5:
+1 of 51 renders differ:
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 33.02s
+
+## S6 (first run: SURVIVED because the case had silently not been added to the corpus; see below) an ambiguous branch name is not handed to git
+file crates/cli/src/statusline.rs; cargo test -p pij-cli --lib statusline
+verdict: SURVIVED
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 33 filtered out; finished in 27.75s
+
+## S7 jq indexing a non-object is null, not an error
+file crates/cli/src/statusline.rs; cargo test -p pij-cli --lib statusline
+verdict: KILLED (red)
+test statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte ... FAILED
+thread 'statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte' (487441236) panicked at crates/cli/src/statusline_tests.rs:620:5:
+1 of 51 renders differ:
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 25.58s
+
+## S6 (rerun after the ambiguous case actually entered the corpus) an ambiguous branch name is not handed to git
+file crates/cli/src/statusline.rs; cargo test -p pij-cli --lib statusline
+verdict: KILLED (red)
+test statusline::tests::the_common_branch_case_launches_no_git ... FAILED
+test statusline::tests::every_golden_case_matches_the_plan_156_script_byte_for_byte ... FAILED
+an ambiguous name asks git
+1 of 52 renders differ:
+[no settings] branch name shared with a tag
+  script: \e[2m0%\e[0m \e[36mambiguous\e[0m \e[32m⎇ heads/dup\e[0m \e[34m⛓ pij-brave-otter\e[0m • Claude Opus 5.5 • \e[35mauto\e[0m • \e[2m0/200k\e[0m
+  rust:   \e[2m0%\e[0m \e[36mambiguous\e[0m \e[32m⎇ dup\e[0m \e[34m⛓ pij-brave-otter\e[0m • Claude Opus 5.5 • \e[35mauto\e[0m • \e[2m0/200k\e[0m
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 33 filtered out; finished in 24.60s
+
+## S8 the managed script forks pij-rs instead of exec
+file harness/scripts/copilot-statusline-pij.sh; cargo test -p pij-harnesses --test claude_heal_scripts copilot_status_line
+verdict: KILLED (red): recorded pid 50400 != script pid 50399
+
+## S9 the managed script drops stdin (</dev/null)
+verdict: KILLED (red): recorded payload empty

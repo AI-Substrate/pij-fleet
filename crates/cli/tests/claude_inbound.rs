@@ -157,6 +157,7 @@ fn boot_once(root: &std::path::Path, home: &std::path::Path, state_dir: &std::pa
     let listener = TcpListener::bind("127.0.0.1:0").expect("reserve local port");
     let bind = listener.local_addr().expect("local address").to_string();
     drop(listener);
+    let tmux = pij_testkit::tmux::PrivateTmux::start();
     let mut child = Command::new(env!("CARGO_BIN_EXE_pij-rs"))
         .args([
             "--state-dir",
@@ -167,6 +168,7 @@ fn boot_once(root: &std::path::Path, home: &std::path::Path, state_dir: &std::pa
         ])
         .env("CLAUDE_CONFIG_DIR", home)
         .env("HOME", root)
+        .env("PIJ_TMUX_SERVER", tmux.name())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

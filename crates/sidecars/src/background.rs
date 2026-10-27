@@ -220,6 +220,7 @@ impl BgWorker {
         let stderr = stdout
             .try_clone()
             .map_err(|error| io_error("clone output", &output_path, error))?;
+        pij_core::spawns::record("sh.sidecar-background");
         let mut command_process = Command::new("/bin/sh");
         command_process
             .args(["-c", &command])
@@ -465,6 +466,7 @@ impl BgWorker {
 }
 
 fn process_group_of(pid: u32) -> Result<u32> {
+    pij_core::spawns::record("ps.sidecar-process-group");
     let output = Command::new("/bin/ps")
         .args(["-o", "pgid=", "-p", &pid.to_string()])
         .output()
@@ -548,6 +550,7 @@ fn group_absent_fast(pgid: u32) -> Result<bool> {
 /// a survivor makes convergence impossible until reaping, despite no process
 /// remaining capable of work.
 pub fn group_pids(pgid: u32) -> Result<Vec<u32>> {
+    pij_core::spawns::record("ps.sidecar-group-pids");
     let output = Command::new("/bin/ps")
         .args(["-axo", "pid=,pgid=,state="])
         .output()
