@@ -118,6 +118,25 @@
             "../plan.dd.json#acceptance_criteria/ac-0009",
             "backpressure.dd.json#rows/bp-0004"
           ]
+        },
+        {
+          "id": "lg-0011",
+          "at": "2026-10-27T05:31:28Z",
+          "text": "DEPLOY on the prime's word ('BOUNCE NOW' / 'WINDOW OPEN, YOU BOUNCE'; Vaughan's go 15:10), symlink-only relink approved over #49's method. SIGINT to daemon pid 95194 at 16:30:27; gone at 16:31:28 (~61 s drain, no SIGKILL); /opt/homebrew/bin/pij-rs -> worktree target/release/pij-rs (sha256 d05776df..., 90668c0); tmux respawn-pane %2 with the pane's own command (PIJ_TELEGRAM_ENV kept). New pid 5256 healthy, Telegram lock held by 5256. Previous binary 759f7c12... (7babd01) untouched for rollback. Carries 27 undeployed main commits (#57, #66, #67, #69 + docs; no migrations), accepted by the prime. just doctor: omp-doctor fails on a pre-existing models.yml link (2026-09-16), unrelated. Until merge the daemon runs this branch build. Evidence: evidence/deploy-canary.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009"
+          ]
+        },
+        {
+          "id": "lg-0012",
+          "at": "2026-10-27T05:34:30Z",
+          "text": "LIVE CANARY to Vaughan, all delivered on attempt 0, in order: p179-canary-1-png job 4489 sendPhoto -> Telegram message 745; p179-canary-2-pptx job 4491 sendDocument -> 746; p179-canary-3-body: body job 4492 (text) then #1 job 4493 sendDocument notes.txt -> 748 and #2 job 4494 sendAnimation loop.gif -> 749 (acked 16:34:27/28/30). 0 delivery-failed events; sha256 prefixes match the sources; staged copies released; bindings to the sending seat. Chat id redacted. Evidence: evidence/deploy-canary.txt",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
         }
       ]
     }

@@ -1,0 +1,41 @@
+# Plan 179 deploy + live canary, 2026-10-27 (prime pij-broad-rykard called the bounce; Vaughan's go 15:10)
+# The Telegram chat id is redacted throughout: this repo is public.
+
+## Deploy (symlink-only relink, approved over #49's detach-the-checkout method)
+binary:   worktree target/release/pij-rs, built from 90668c0 (CI run 40454709265 green), sha256 d05776dfa0ae8c207d387543ecce906af9988c1b8875daf920b5a68f1a83007d
+previous: ~/GitHub/pij-fleet/target/release/pij-rs, 7babd01 (23 Oct), sha256 759f7c12095f57e31a4c8c37d23186d42facf1d8696332a3b0294259a7d45546 (untouched; rollback target)
+carried:  27 main commits merged after 7babd01 and never deployed (#57, #66, #67, #69 + docs). No store migrations. Accepted by the prime.
+16:30:20 preconditions: listener 95194; new sha matches; /opt/homebrew/bin/pij-rs -> pij-fleet target; pane %2 remain-on-exit on (pane-level, pre-set)
+16:30:27 kill -INT 95194 (the native bounce's drain signal)
+16:31:28 old daemon gone (~61 s drain; the native bounce's 15 s STOP_TIMEOUT would have refused). No SIGKILL.
+16:31:28 ln -sfn <worktree>/target/release/pij-rs /opt/homebrew/bin/pij-rs; tmux respawn-pane -t %2 (the pane's own command: PIJ_TELEGRAM_ENV=$HOME/.pij/telegram.env PIJ_RETIRED_HARNESSES=pi exec /opt/homebrew/bin/pij-rs daemon)
+verify:   new pid 5256 (ppid tmux), listener :7461 = 5256, `pij-rs ping` healthy, readlink -f sha d05776df..., pane %2 "listening on 127.0.0.1:7461", no "telegram sidecar not started",
+          ~/.pij/pij-telegram.lock pid 5256, `sidecar telegram --help` lists --file.
+          `just doctor`: pij bin, pij-rs bin (-> worktree build), skill OK; omp-doctor FAILS on a pre-existing link (~/.omp/agent/models.yml -> ~/GitHub/pij-runtime/.omp/models.yml since 2026-09-16), unrelated.
+then:     extensions_reload (this seat; the prime drove the rest of the fleet)
+
+## Canary (from seat pij-interesting-capybara; `pij-rs sidecar telegram --json --msg-id ...`)
+1 --file pij-rs-canary-photo.png --caption '...'
+2 --file pij-rs-canary-ship-it.pptx --caption '...'   (a copy of SlideForge plan-022 evidence deck 10-ship-it)
+3 --body '...' --file pij-rs-canary-notes.txt --file pij-rs-canary-loop.gif --caption '...'
+
+## jobs (sqlite3 -readonly ~/.pij-rs/pij.sqlite)
+id|kind|msg_id|state|attempt|outcome|enqueued|acked
+4489|sidecar:telegram:document|p179-canary-1-png|done|0||2026-10-27 16:33:38|2026-10-27 16:33:42
+4491|sidecar:telegram:document|p179-canary-2-pptx|done|0||2026-10-27 16:34:05|2026-10-27 16:34:08
+4492|sidecar:telegram:send|p179-canary-3-body|done|0||2026-10-27 16:34:26|2026-10-27 16:34:27
+4493|sidecar:telegram:document|p179-canary-3-body#1|done|0||2026-10-27 16:34:26|2026-10-27 16:34:28
+4494|sidecar:telegram:document|p179-canary-3-body#2|done|0||2026-10-27 16:34:26|2026-10-27 16:34:30
+
+## telegram.outbound-media-delivered (conversation column omitted)
+seq|msg_id|method|telegram_message_id|file|bytes|sha256_12
+56260|p179-canary-1-png|sendPhoto|745|pij-rs-canary-photo.png|45933|9a49030af5dc
+56273|p179-canary-2-pptx|sendDocument|746|pij-rs-canary-ship-it.pptx|302948|065a47359ef4
+56280|p179-canary-3-body#1|sendDocument|748|pij-rs-canary-notes.txt|202|f18c26574364
+56282|p179-canary-3-body#2|sendAnimation|749|pij-rs-canary-loop.gif|12884|46af465cd00f
+(the body text p179-canary-3-body is a sendMessage; text sends record no Telegram id; 747 by sequence, inferred)
+
+telegram.outbound-delivery-failed for p179-canary-%: 0
+sha256 prefixes match the source files (shasum -a 256).
+staged copies left in ~/.pij-rs/sidecars/telegram-attachments: 0 (dir mode drwx------)
+bindings: seq 56261, 56274, 56279, 56281, 56283 -> pij-interesting-capybara (the prime then takes the binding back with its own text send)
