@@ -149,6 +149,14 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0017",
+          "at": "2026-10-27T14:58:00Z",
+          "text": "RECONCILE (prime's ask, msg 01a17dd6): the counter (6.5/s) and proc_pidinfo (6.7-8.7/s) count exec'd launches; kinfo (>=57.5/s now, 39-79/s before) also counts failed posix_spawnp PATH-search attempts, which proc_pidinfo cannot read. Neither is a sampler artefact and the guard has no hole: kinfo's exec'd ps/git match the counter exactly (lg-0016). At 14:57:22Z: machine 140.5/s new processes; daemon exec'd 6.48/s plus ~109.6/s PATH misses (estimated from the 18.1 controlled ratio; >=57.5/s observed) = 46%-83% of all new processes on the machine. ac-0006 stays PARTIAL: 'pij <10/s' is met for exec'd launches but not for kernel process creations until the PATH search goes (proposal D). Evidence: evidence/window3-counter.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }

@@ -61,3 +61,14 @@ recorded process. 25 such seats (seats table: idle 23, working 2) / 5 s = 5.0/s,
 The rest (~1.5-2.4/s) comes from request paths: whoami measured at 0.96 ps per call (20 calls, background
 subtracted); delivery, anomalies, double-seat and governance call alive() too and weren't measured separately.
 No status-line renders or other pij-rs CLI processes appeared in a 30 s window, so the status line isn't the driver.
+
+## The daemon's share of the machine (prime's reconcile ask), 14:57:22Z, load1 4.81 -> 4.91
+spawn-rate.py 30 s with counter reads around it:
+  machine new processes      140.5/s (PID counter)
+  daemon exec'd launches     6.48/s (counter; ps.proc-liveness 6.38/s)
+  daemon PATH-miss processes ~109.6/s estimated (ps x17, git x12, date x17), >=57.5/s observed by kinfo (lower bound)
+  daemon share of all new processes: 46% (kinfo lower bound) to 83% (controlled 18x ratio)
+proc_pidinfo (spawn-rate, measure-spawn) agrees with the counter because it cannot read the failed attempts (ESRCH);
+kinfo sees them because sysctl KERN_PROC_PID answers for a process that is being torn down.
+Both are right about different things: exec'd launches 6.5/s (the counter: no unrecorded exec'd sites, the guard has no hole);
+kernel process creations by the daemon ~64-116/s (kinfo plus the PATH-search multiplier).
