@@ -24,6 +24,22 @@ mdatp exclusion list    # verify
 - **The binary path:** the process exclusion matches one binary path. `just rs-install` links `$(npm prefix -g)/bin/pij-rs` to `target/release/pij-rs` in the main checkout (`readlink -f "$(command -v pij-rs)"`). If your npm prefix or checkout moves, or the scan counts climb again, add the new path, including the resolved `target/release/pij-rs` path.
 - **The state directory:** the folder exclusion assumes the default `~/.pij-rs`. If you run the daemon with another `--state-dir`, exclude that directory instead.
 
+## What pij does about launches (plan 180)
+
+Exclusions don't stop Defender's EDR inspecting each process launch, so pij now launches far fewer:
+
+- **Daemon tmux reads.** The pane observer used to start three `tmux` clients per tracked pane every 600 ms. The daemon now keeps one tmux control-mode client (`tmux -C`, attached with `no-output,ignore-size,read-only`) and sends its reads (`list-panes`, `capture-pane`, `display-message -p`, `show-options`) over it. Writes still start a tmux client. If the control client is unavailable, slow or lost, the read starts a client as before and the control client is replaced, so answers never change. `tmux list-clients` shows the control client.
+- **The Copilot status line.** The managed `~/.pij-rs/copilot-statusline-pij.sh` used to start about 20 processes per refresh (jq, awk, git, a `pij-rs whoami` CLI). It now runs `exec pij-rs statusline copilot`, which is one process with the same output bytes. It asks the daemon for `whoami` on every render, so a seat that dies shows `dead` on the next refresh. It reads the git branch from `.git/HEAD` and runs `git` only for a detached HEAD or an ambiguous name.
+
+## Measure launches
+
+```sh
+just spawn-rate --seconds 20          # total new processes/s, and the pij daemon's share
+top -l 2 -o cpu -n 12 -stats pid,command,cpu   # Defender: epsext, wdavdaemon_enterprise, wdavdaemon
+```
+
+`spawn-rate` counts every launch from the PID counter and attributes them by parent. Short-lived processes exit before a poll sees them, so the per-parent numbers are lower bounds. Compare before and after a change on the same fleet.
+
 ## What exclusions don't fix
 
 - **EDR monitoring:** the exclusions stop antivirus file scanning only. Defender's EDR component (`wdavdaemon_enterprise`) still observes every process launch, so the daemon's process launches still cost EDR CPU. Only the device's administrators can tune that.

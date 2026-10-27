@@ -188,6 +188,17 @@ enum Command {
         #[arg(long)]
         reclaim: Option<String>,
     },
+    /// Render a harness status line from the payload on stdin (plan 180).
+    ///
+    /// `copilot`: the Copilot CLI status line, byte-identical to the plan-156
+    /// script it replaces, in one process instead of ~20. Hidden, like
+    /// `__spawn-child`: it is the managed script's plumbing, not an agent verb.
+    #[command(hide = true)]
+    Statusline {
+        /// Which status line to render.
+        #[arg(value_parser = ["copilot"])]
+        kind: String,
+    },
     /// Name the seat this caller is, from the store it registered into.
     Whoami {
         /// Asserted seat id. Defaults to `$PIJ_SESSION_ID`.
@@ -938,6 +949,9 @@ async fn run_with_runtime(cli: Cli) -> ExitCode {
 }
 
 async fn run(cli: Cli) -> ExitCode {
+    if let Command::Statusline { .. } = &cli.command {
+        return statusline_copilot(&cli).await;
+    }
     if let Command::SpawnChild {
         status_file,
         log_file,
@@ -1154,6 +1168,9 @@ async fn run(cli: Cli) -> ExitCode {
 
     match cli.command {
         Command::Daemon { .. } => unreachable!("daemon returned before client construction"),
+        Command::Statusline { .. } => {
+            unreachable!("statusline returned before client construction")
+        }
         Command::Doctor { .. } => unreachable!("doctor returned before client construction"),
         Command::Peers { .. } => unreachable!("peers returned before client construction"),
         Command::FleetReport { .. } => {
@@ -1962,6 +1979,107 @@ fn caller_claude_warning(harness: &str, config_dir: Option<OsString>) -> Option<
             home.display()
         )
     })
+}
+
+/// `pij-rs statusline copilot` (plan 180): what the plan-156 script printed,
+/// rendered in this one process. The script's own launches (jq, awk, git,
+/// basename, a `pij-rs whoami` CLI, subshells) were ~20 per refresh.
+async fn statusline_copilot(cli: &Cli) -> ExitCode {
+    let mut payload = Vec::new();
+    let _ = std::io::stdin().read_to_end(&mut payload);
+    let whoami = match std::env::var("TMUX_PANE")
+        .ok()
+        .filter(|pane| !pane.is_empty())
+    {
+        Some(pane) => pij_cli::statusline::Whoami::Pane(statusline_whoami_text(cli, &pane).await),
+        None => pij_cli::statusline::Whoami::Plain(statusline_plain_id(cli).await),
+    };
+    let context = pij_cli::statusline::Context {
+        pwd: shell_pwd(),
+        home: std::env::var_os("HOME").map(PathBuf::from),
+        whoami,
+    };
+    let line =
+        pij_cli::statusline::render_copilot(&payload, &context, &pij_cli::statusline::git_branch);
+    let mut stdout = std::io::stdout();
+    let _ = stdout.write_all(line.as_bytes());
+    let _ = stdout.flush();
+    ExitCode::SUCCESS
+}
+
+/// The daemon client `pij-rs whoami` would build, or the refusal text it
+/// would have printed with `--json` instead.
+fn statusline_client(cli: &Cli) -> Result<DaemonClient, String> {
+    let refusal = |error: PijError| render(&setup_refusal::<Value>("pij whoami", error), true);
+    let configuration = |message: String| PijError::Adapter {
+        adapter: "configuration".to_string(),
+        message,
+    };
+    let state_dir = resolve_state_dir(cli.state_dir.clone(), std::env::var_os("PIJ_RS_STATE_DIR"))
+        .map_err(|message| refusal(configuration(message)))?;
+    let addr = resolve_client_addr(cli.addr.as_deref(), std::env::var_os("PIJ_RS_ADDR"))
+        .map_err(|message| refusal(configuration(message)))?;
+    DaemonClient::new(&state_dir, &addr).map_err(refusal)
+}
+
+/// Exactly what `env -u PIJ_SESSION_ID pij-rs --json whoami --pane <pane>`
+/// printed: the pane is asked, never an inherited id (plan 156 rule 5).
+async fn statusline_whoami_text(cli: &Cli, pane: &str) -> String {
+    let client = match statusline_client(cli) {
+        Ok(client) => client,
+        Err(text) => return text,
+    };
+    let response = client
+        .whoami(&statusline_identity(pane, caller_context()))
+        .await;
+    response
+        .raw_json
+        .clone()
+        .unwrap_or_else(|| render(&response, true))
+}
+
+/// The pane is asked; an inherited `PIJ_SESSION_ID` is dropped (the script ran
+/// `env -u PIJ_SESSION_ID pij-rs --json whoami --pane "$TMUX_PANE"`).
+fn statusline_identity(pane: &str, mut caller: CallerContext) -> IdentityRequest {
+    caller.session_id = None;
+    IdentityRequest {
+        pane: Some(pane.to_string()),
+        caller: Some(caller),
+        ..IdentityRequest::default()
+    }
+}
+
+/// Outside tmux the script asked `pij whoami --json | jq -r '.data.id // .id // empty'`.
+async fn statusline_plain_id(cli: &Cli) -> Option<String> {
+    let client = statusline_client(cli).ok()?;
+    let response = client.whoami(&identity_request(None, None)).await;
+    let text = response
+        .raw_json
+        .clone()
+        .unwrap_or_else(|| render(&response, true));
+    let value: Value = serde_json::from_str(&text).ok()?;
+    value["data"]["id"]
+        .as_str()
+        .or_else(|| value["id"].as_str())
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+}
+
+/// bash's `$PWD`: the inherited value when it still names this directory.
+fn shell_pwd() -> PathBuf {
+    use std::os::unix::fs::MetadataExt;
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let inherited = std::env::var_os("PWD").map(PathBuf::from);
+    match (inherited, std::fs::metadata(".")) {
+        (Some(pwd), Ok(here))
+            if pwd.is_absolute()
+                && std::fs::metadata(&pwd)
+                    .is_ok_and(|there| there.dev() == here.dev() && there.ino() == here.ino()) =>
+        {
+            pwd
+        }
+        _ => cwd,
+    }
 }
 
 fn caller_context() -> CallerContext {
@@ -2921,6 +3039,7 @@ impl Command {
             Command::Sidecar { .. } => "pij sidecar",
             Command::Register { .. } => "pij register",
             Command::Adopt { .. } => "pij adopt",
+            Command::Statusline { .. } => "pij statusline",
             Command::Whoami { .. } => "pij whoami",
             Command::FyiClaim { .. } => "pij fyi-claim",
             Command::FyiRead { .. } => "pij fyi-read",
@@ -3311,6 +3430,22 @@ mod tests {
             panic!("expected send");
         };
         assert_eq!(body_file.as_deref(), Some("-"));
+    }
+
+    #[test]
+    fn the_statusline_asks_the_pane_and_never_an_inherited_session_id() {
+        let mut caller = super::caller_context();
+        caller.session_id = Some("pij-inherited".to_string());
+        caller.pane = Some("%9".to_string());
+        let request = super::statusline_identity("%9", caller);
+        assert_eq!(request.seat, None);
+        assert_eq!(request.pane.as_deref(), Some("%9"));
+        let caller = request.caller.expect("caller context");
+        assert_eq!(
+            caller.session_id, None,
+            "an inherited id must not be asserted"
+        );
+        assert_eq!(caller.pane.as_deref(), Some("%9"));
     }
 
     #[test]

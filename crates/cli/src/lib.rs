@@ -18,6 +18,7 @@ pub mod lifecycle;
 pub mod peers;
 pub mod role;
 pub mod roster;
+pub mod statusline;
 
 pub use client::{
     CallerContext, DaemonClient, FederatedRoster, IdentityRequest, Phonehome, Registration,
