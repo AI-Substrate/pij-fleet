@@ -1,0 +1,80 @@
+# Mutation receipts, plan 179, at 8a03b15 (2026-10-27T04:39:02.075355Z)
+# Each mutant applied alone, scoped test run, file restored byte-for-byte.
+
+## M1 50 MB refusal removed (both layers: metadata pre-check and copy-time check)
+file: crates/sidecars/src/telegram_document.rs
+test filter: missing_empty_directory_relative_and_oversized_files_refuse_at_enqueue
+verdict: KILLED (red)
+test telegram::document::tests::missing_empty_directory_relative_and_oversized_files_refuse_at_enqueue ... FAILED
+thread 'telegram::document::tests::missing_empty_directory_relative_and_oversized_files_refuse_at_enqueue' (455028929) panicked at crates/sidecars/src/telegram_document_tests.rs:214:10:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.01s
+
+## M1b 50 MB limit constant raised
+file: crates/sidecars/src/telegram_document.rs
+test filter: the_document_limit_is_telegrams_fifty_megabytes
+verdict: KILLED (red)
+test telegram::document::tests::the_document_limit_is_telegrams_fifty_megabytes ... FAILED
+thread 'telegram::document::tests::the_document_limit_is_telegrams_fifty_megabytes' (455031718) panicked at crates/sidecars/src/telegram_document_tests.rs:241:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.00s
+
+## M2 caption limit removed
+file: crates/sidecars/src/telegram_document.rs
+test filter: oversized_caption_refuses_at_enqueue
+verdict: KILLED (red)
+test telegram::document::tests::oversized_caption_refuses_at_enqueue ... FAILED
+thread 'telegram::document::tests::oversized_caption_refuses_at_enqueue' (455034777) panicked at crates/sidecars/src/telegram_document_tests.rs:234:10:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.01s
+
+## M3 stage-all-or-nothing: copies staged before a refusal are kept
+file: crates/sidecars/src/telegram_document.rs
+test filter: one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged
+verdict: KILLED (red)
+test telegram::document::tests::one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged ... FAILED
+thread 'telegram::document::tests::one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged' (455039717) panicked at crates/sidecars/src/telegram_document_tests.rs:772:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.02s
+
+## M4 file-count cap removed (11 files accepted)
+file: crates/sidecars/src/telegram_document.rs
+test filter: no_files_and_more_than_ten_refuse_before_staging
+verdict: KILLED (red)
+test telegram::document::tests::no_files_and_more_than_ten_refuse_before_staging ... FAILED
+thread 'telegram::document::tests::no_files_and_more_than_ten_refuse_before_staging' (455044535) panicked at crates/sidecars/src/telegram_document_tests.rs:790:74:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 1.84s
+
+## M5 photo size limit ignored (a >10 MB image goes as a photo)
+file: crates/sidecars/src/telegram_document.rs
+test filter: the_method_is_chosen_by_extension_and_photo_size
+verdict: KILLED (red)
+test telegram::document::tests::the_method_is_chosen_by_extension_and_photo_size ... FAILED
+thread 'telegram::document::tests::the_method_is_chosen_by_extension_and_photo_size' (455048801) panicked at crates/sidecars/src/telegram_document_tests.rs:614:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.00s
+
+## M6 400 fallback removed
+file: crates/sidecars/src/telegram.rs
+test filter: falls_back
+verdict: KILLED (red)
+test telegram::document::tests::caption_is_tagged_and_falls_back_to_the_bare_tag ... ok
+test telegram::outbound_tests::oversized_context_falls_back_to_the_tag ... ok
+test telegram::document::tests::a_400_on_a_photo_falls_back_to_send_document_in_the_same_attempt ... FAILED
+test telegram::document::tests::a_gif_refused_with_400_falls_back_once_and_a_second_400_fails_the_job ... FAILED
+thread 'telegram::document::tests::a_400_on_a_photo_falls_back_to_send_document_in_the_same_attempt' (455053250) panicked at crates/sidecars/src/telegram_document_tests.rs:852:5:
+thread 'telegram::document::tests::a_gif_refused_with_400_falls_back_once_and_a_second_400_fails_the_job' (455053251) panicked at crates/sidecars/src/telegram_document_tests.rs:889:5:
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.03s
+
+## M7 token redaction removed on the media upload path (raw reqwest error)
+file: crates/sidecars/src/telegram.rs
+test filter: the_token_never_leaks_on_any_media_failure_path
+verdict: KILLED (red)
+test telegram::document::tests::the_token_never_leaks_on_any_media_failure_path ... FAILED
+thread 'telegram::document::tests::the_token_never_leaks_on_any_media_failure_path' (455055828) panicked at crates/sidecars/src/telegram_document_tests.rs:1015:13:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.07s
+
+## M8 inbound media silently dropped again
+file: crates/sidecars/src/telegram.rs
+test filter: inbound_media_reaches_the_bound_seat_as_a_notice_with_an_event
+verdict: KILLED (red)
+test telegram::inbound_tests::inbound_media_reaches_the_bound_seat_as_a_notice_with_an_event ... FAILED
+thread 'telegram::inbound_tests::inbound_media_reaches_the_bound_seat_as_a_notice_with_an_event' (455060582) panicked at crates/sidecars/src/telegram_inbound_tests.rs:152:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.02s
+
+restored: git diff --quiet on both files -> exit 0

@@ -1,0 +1,20 @@
+# harness checks at 99c5e88 (CARGO_BUILD_JOBS=4, nice 19; machine load1 20-68 during the run)
+
+local-paths: pass (exit 0)
+typecheck: pass (exit 0)
+lockfile: pass (exit 0)
+lint: pass (exit 0)
+test: fail (exit 1)
+copilot-native: pass (exit 0)
+rust: fail (exit 101)
+smoke: fail (exit 1)
+pij-commit-trailers: warn (exit 0)
+
+## Failing stages, all outside this branch's diff (no TS, smoke, pij-harnesses, pij-tmux or pij-transport file changed: `git diff --stat origin/main...HEAD -- crates/tmux crates/transport crates/harnesses '*.ts'` is empty)
+
+- test (vitest): 1 failure, .omp/extensions/pij/cli.inbox.integration.test.ts > refuses ambient-only registration without a matching real host ancestor: got 'nearest external harness differs from the claim'. The refusal depends on the runner's process ancestry; this ran inside a Copilot CLI seat. Same failure #49 recorded on 2026-10-13.
+- smoke: watchdog/private-team/paneless scenarios passed, then waitIdle timed out after 30000 ms on an OMP first-run setup screen ('↑/↓ select · enter confirm · esc skip · ctrl+c exit setup'). Same stall #49 recorded.
+- rust (`cargo test --workspace`, stops at the first failing crate): pij-harnesses --lib claude_settings hook tests failed in parallel (5 on the branch). On clean origin/main 26fc3ba in a detached worktree, the same filter failed 3 (prompt_hook_still_claims_when_publishing_working_fails, stop_hook_publishes_idle_and_prints_nothing, prompt_hook_passes_the_claimed_block_through_byte_for_byte); a single one passes alone on main; on the branch `cargo test -p pij-harnesses --lib -- --test-threads=1` = 162 passed, 0 failed. Pre-existing, load/parallelism flake (#49 recorded the same six).
+- rust, the crates rust-check never reached (`cargo test --workspace --no-fail-fast --exclude pij-harnesses`, load1 ~45-68): pij-daemon --lib 3 failed (native_sqlite_http_fresh_session_retires_dead_pane_owner..., redelivery_split_authority_refuses_recovery..., native_transient_session_tombstoned...), pij-tmux --test adapter 5 staging-deadline failures, pij-transport --lib 1 uds failure. Serially: pij-daemon --lib 626 passed 0 failed; pij-transport --lib 26 passed; pij-tmux adapter 28/29 with staged_submit_excludes_human_input_mid_body_and_before_enter failing once, which then passed 2/2 alone on the branch and 2/2 alone on clean main. Everything else in the workspace passed. Load-induced timing flakes, none in code this branch touches.
+
+GitHub CI on the exact head is the authoritative gate (clean runner).

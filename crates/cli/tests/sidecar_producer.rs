@@ -49,3 +49,73 @@ async fn the_shipped_client_can_complete_one_sidecar_call() {
     daemon.shutdown().await.expect("shutdown");
     let _ = std::fs::remove_dir_all(&state_dir);
 }
+
+/// A document is staged under the daemon's OWN state dir (composition root),
+/// and a missing file is refused before any row exists.
+#[tokio::test]
+async fn the_shipped_client_queues_a_staged_telegram_document() {
+    let state_dir = std::env::temp_dir().join(format!("pij-rs-sidecar-doc-{}", std::process::id()));
+    std::fs::create_dir_all(&state_dir).expect("state dir");
+    let store_path = state_dir.join("pij.sqlite");
+    let config = daemon_config("127.0.0.1:0", &store_path, false);
+    let daemon = pij_daemon::boot(&config, state_dir.clone())
+        .await
+        .expect("boot");
+    let source = state_dir.join("canary.html");
+    std::fs::write(&source, b"<p>pij attachment canary</p>").expect("source");
+    let chart = state_dir.join("chart.png");
+    std::fs::write(&chart, b"not really a png").expect("chart");
+
+    let client = DaemonClient::new(&state_dir, &daemon.addr.to_string()).expect("client");
+    let reply = client
+        .sidecar(&serde_json::json!({
+            "sidecar": "telegram_document",
+            "request": {"from": "pij-test", "files": [chart, source], "caption": "pij attachment canary",
+                        "body": "two files", "msg_id": "doc-e2e"}
+        }))
+        .await;
+    assert!(reply.ok, "{reply:?}");
+    let data = reply.data.expect("queued files");
+    assert!(data["body_job_id"].is_u64(), "the body is queued: {data}");
+    let files = data["files"].as_array().expect("files");
+    assert_eq!(files.len(), 2, "{data}");
+    assert_eq!(files[0]["msg_id"], "doc-e2e#1");
+    assert_eq!(files[1]["msg_id"], "doc-e2e#2");
+    assert_eq!(files[0]["document"]["method"], "sendPhoto");
+    assert_eq!(files[1]["document"]["method"], "sendDocument");
+    assert!(
+        files[0]["job_id"].as_u64() > data["body_job_id"].as_u64()
+            && files[1]["job_id"].as_u64() > files[0]["job_id"].as_u64(),
+        "queued body first, then files in order: {data}"
+    );
+    let staged = std::path::PathBuf::from(files[1]["document"]["staged"].as_str().expect("staged"));
+    assert!(
+        staged.starts_with(state_dir.join("sidecars").join("telegram-attachments")),
+        "{}",
+        staged.display()
+    );
+    assert_eq!(
+        std::fs::read(&staged).expect("staged"),
+        b"<p>pij attachment canary</p>"
+    );
+
+    let missing = client
+        .sidecar(&serde_json::json!({
+            "sidecar": "telegram_document",
+            "request": {"from": "pij-test", "files": [chart, state_dir.join("absent.html")],
+                        "body": "never sent", "msg_id": "doc-missing"}
+        }))
+        .await;
+    assert!(!missing.ok, "a missing file must refuse: {missing:?}");
+    assert!(
+        format!("{missing:?}").contains("cannot be read"),
+        "{missing:?}"
+    );
+    let staged_now = std::fs::read_dir(state_dir.join("sidecars").join("telegram-attachments"))
+        .expect("staging dir")
+        .count();
+    assert_eq!(staged_now, 2, "the refused send left no staged copy behind");
+
+    daemon.shutdown().await.expect("shutdown");
+    let _ = std::fs::remove_dir_all(&state_dir);
+}

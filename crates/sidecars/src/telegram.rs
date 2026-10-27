@@ -10,16 +10,33 @@ use pij_core::error::{PijError, Result};
 use pij_core::model::{Event, Job, Outcome, SeatId};
 use pij_core::ports::{Queue, Registry, Spine};
 use serde::{Deserialize, Serialize};
+use sha2::Digest as _;
 
 use crate::common::{LoopHandle, Processed, enqueue_turn, now_ms, start_resilient_loop};
 
+#[path = "telegram_document.rs"]
+mod document;
+
+pub use document::{
+    CAPTION_LIMIT, DOCUMENT_LIMIT_BYTES, MAX_FILES, MediaMethod, PHOTO_LIMIT_BYTES, StagedDocument,
+    StagedSend, TelegramDocumentRequest, release_staged, stage_send,
+};
+
 /// Queue kind for outbound Telegram work.
 pub const TELEGRAM_SEND_KIND: &str = "sidecar:telegram:send";
+/// Queue kind for an outbound Telegram document.
+///
+/// Its own kind, not a field on [`TELEGRAM_SEND_KIND`]: a daemon that predates
+/// documents never claims it, so the row waits rather than being decoded as a
+/// text send with the attachment silently dropped.
+pub const TELEGRAM_DOCUMENT_KIND: &str = "sidecar:telegram:document";
 const WORKER_ID: &str = "sidecar-telegram";
 const BINDING_KIND: &str = "telegram.binding";
 const CURSOR_KIND: &str = "telegram.cursor";
 const DELIVERY_FAILED_KIND: &str = "telegram.inbound-delivery-failed";
 const OUTBOUND_FAILED_KIND: &str = "telegram.outbound-delivery-failed";
+const OUTBOUND_MEDIA_DELIVERED_KIND: &str = "telegram.outbound-media-delivered";
+const INBOUND_MEDIA_UNSUPPORTED_KIND: &str = "telegram.inbound-media-unsupported";
 const INBOUND_ENQUEUED_KIND: &str = "telegram.inbound-enqueued";
 const CURSOR_SEAT: &str = "pij-telegram-cursor";
 const REFUSAL_KIND: &str = "telegram.inbound-refused";
@@ -301,12 +318,23 @@ impl TelegramWorker {
         while count < limit {
             let Some((id, job)) = self
                 .queue
-                .claim(&[TELEGRAM_SEND_KIND.to_string()], WORKER_ID)
+                .claim(
+                    &[
+                        TELEGRAM_SEND_KIND.to_string(),
+                        TELEGRAM_DOCUMENT_KIND.to_string(),
+                    ],
+                    WORKER_ID,
+                )
                 .await?
             else {
                 break;
             };
-            match self.process_send(&job).await {
+            let outcome = if job.kind == TELEGRAM_DOCUMENT_KIND {
+                self.process_document(&job).await
+            } else {
+                self.process_send(&job).await
+            };
+            match outcome {
                 SendOutcome::Done => self.queue.ack(id, Outcome::Done).await?,
                 SendOutcome::Retry(error) => {
                     self.queue.retry(id, Duration::from_millis(100)).await?;
@@ -436,6 +464,265 @@ impl TelegramWorker {
                 });
             }
         }
+        self.bind_reply(&chat_id, request.from, request.msg_id)
+            .await
+    }
+
+    /// Upload one staged file with its method, then bind the reply target
+    /// exactly as a text send does.
+    ///
+    /// Failure classes: a staged copy that is missing or no longer hashes to
+    /// what was enqueued, a foreign chat, or a 4xx other than 429 is TERMINAL
+    /// (the job fails, never "sent"); transport errors, 429 and 5xx retry the
+    /// whole job. A 400 to `sendPhoto`, `sendVideo` or `sendAnimation` is not a
+    /// failure of the job: the same bytes go again, once, with `sendDocument`,
+    /// in the same attempt. Every refused or failed request is a durable spine
+    /// event.
+    async fn process_document(&self, job: &Job) -> SendOutcome {
+        let request: document::DocumentJob = match serde_json::from_str(&job.payload) {
+            Ok(request) => request,
+            Err(error) => {
+                return SendOutcome::Terminal(PijError::Adapter {
+                    adapter: "sidecars/telegram".to_string(),
+                    message: format!("job payload is not a Telegram document: {error}"),
+                });
+            }
+        };
+        let chat_id = request
+            .chat_id
+            .as_deref()
+            .unwrap_or(&self.config.chat_id)
+            .to_string();
+        let fail =
+            |method: MediaMethod, http_status: Option<u16>, terminal: bool, reason: String| {
+                serde_json::json!({
+                    "conversation": chat_id,
+                    "from": request.from,
+                    "msg_id": request.msg_id,
+                    "attempt": u64::from(job.attempt) + 1,
+                    "method": method.api_method(),
+                    "document": {
+                        "file_name": request.document.file_name,
+                        "size": request.document.size,
+                        "sha256": request.document.sha256,
+                    },
+                    "http_status": http_status,
+                    "terminal": terminal,
+                    "reason": reason,
+                })
+            };
+        let mut method = request.document.method;
+        if chat_id != self.config.chat_id {
+            let reason = format!(
+                "refusing Telegram egress to chat `{chat_id}`: configured operator chat is `{}`",
+                self.config.chat_id
+            );
+            return self
+                .document_failure(&chat_id, fail(method, None, true, reason))
+                .await;
+        }
+        let staged = &request.document.staged;
+        let bytes = match tokio::fs::read(staged).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let reason = format!("staged copy {} is unreadable: {error}", staged.display());
+                return self
+                    .document_failure(&chat_id, fail(method, None, true, reason))
+                    .await;
+            }
+        };
+        let sha256 = document::hex(&sha2::Sha256::digest(&bytes));
+        if bytes.len() as u64 != request.document.size || sha256 != request.document.sha256 {
+            let reason = format!(
+                "staged copy {} changed since enqueue (sha256 {sha256}, {} bytes; enqueued {}, {} bytes)",
+                staged.display(),
+                bytes.len(),
+                request.document.sha256,
+                request.document.size
+            );
+            return self
+                .document_failure(&chat_id, fail(method, None, true, reason))
+                .await;
+        }
+        let sender = match self.registry.get(&request.from).await {
+            Ok(sender) => sender,
+            Err(error) => return SendOutcome::Retry(error),
+        };
+        let context = sender
+            .as_ref()
+            .and_then(|seat| Path::new(&seat.folder).file_name())
+            .and_then(|name| name.to_str());
+        let caption = match document::prefixed_caption(&request.from, context, &request.caption) {
+            Ok(caption) => caption,
+            Err(error) => {
+                return self
+                    .document_failure(&chat_id, fail(method, None, true, error.to_string()))
+                    .await;
+            }
+        };
+        let boundary = document::boundary_for(&sha256, &[&bytes, caption.as_bytes()]);
+        let telegram_message_id = loop {
+            let (content_type, body) = document::media_multipart(
+                &boundary,
+                method.field(),
+                &chat_id,
+                &caption,
+                &request.document.file_name,
+                &bytes,
+            );
+            let url = format!(
+                "{}/bot{}/{}",
+                self.config.api_root,
+                self.config.token,
+                method.api_method()
+            );
+            let response = match self
+                .client
+                .post(&url)
+                .header(reqwest::header::CONTENT_TYPE, content_type)
+                .body(body)
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                Err(error) => {
+                    // The URL carries the token; http_error drops it.
+                    let reason = http_error(error).to_string();
+                    return self
+                        .document_failure(&chat_id, fail(method, None, false, reason))
+                        .await;
+                }
+            };
+            let status = response.status();
+            let reply: Option<ApiReply> = response.json().await.ok();
+            if status.is_success() && reply.as_ref().is_some_and(|reply| reply.ok) {
+                break reply
+                    .and_then(|reply| reply.result)
+                    .map(|message| message.message_id);
+            }
+            let description = reply
+                .and_then(|reply| reply.description)
+                .unwrap_or_else(|| "no description".to_string());
+            let reason = format!(
+                "{} returned HTTP {status}: {description}",
+                method.api_method()
+            );
+            if status.as_u16() == 400 && method != MediaMethod::Document {
+                // Telegram refused the media form (dimensions, encoding): the
+                // same bytes still reach the human, as a document.
+                let mut detail = fail(method, Some(400), false, reason);
+                detail["fallback"] = serde_json::json!(MediaMethod::Document.api_method());
+                self.record_document_failure(&chat_id, &mut detail).await;
+                method = MediaMethod::Document;
+                continue;
+            }
+            let retryable = status.is_server_error() || status.as_u16() == 429;
+            return self
+                .document_failure(
+                    &chat_id,
+                    fail(method, Some(status.as_u16()), !retryable, reason),
+                )
+                .await;
+        };
+        drop(bytes);
+        self.record_media_delivered(&chat_id, &request, method, telegram_message_id)
+            .await;
+        let outcome = self
+            .bind_reply(&chat_id, request.from.clone(), request.msg_id.clone())
+            .await;
+        if matches!(outcome, SendOutcome::Done)
+            && let Err(error) = tokio::fs::remove_file(staged).await
+        {
+            eprintln!(
+                "pij-rs telegram: sent {} but could not release staged copy {}: {error}",
+                request.msg_id,
+                staged.display()
+            );
+        }
+        outcome
+    }
+
+    /// Record one failed document attempt, then answer retry or terminal.
+    async fn document_failure(&self, chat_id: &str, mut detail: serde_json::Value) -> SendOutcome {
+        self.record_document_failure(chat_id, &mut detail).await;
+        let terminal = detail["terminal"].as_bool().unwrap_or(true);
+        let error = PijError::Adapter {
+            adapter: "sidecars/telegram".to_string(),
+            message: detail.to_string(),
+        };
+        if terminal {
+            SendOutcome::Terminal(error)
+        } else {
+            SendOutcome::Retry(error)
+        }
+    }
+
+    /// Append one refused or failed upload; a persistence failure is carried
+    /// in the detail rather than lost.
+    async fn record_document_failure(&self, chat_id: &str, detail: &mut serde_json::Value) {
+        let recorded = async {
+            self.spine
+                .append(Event {
+                    seq: None,
+                    v: 1,
+                    at: now_ms()?,
+                    kind: OUTBOUND_FAILED_KIND.to_string(),
+                    seat: Some(conversation_seat(chat_id)),
+                    payload: detail.to_string(),
+                })
+                .await
+        }
+        .await;
+        if let Err(error) = recorded {
+            detail["persistence_error"] = serde_json::json!(error.to_string());
+        }
+    }
+
+    /// Record which method delivered a file. Telegram has accepted it by now,
+    /// so a failure to record is logged, never a reason to resend.
+    async fn record_media_delivered(
+        &self,
+        chat_id: &str,
+        request: &document::DocumentJob,
+        method: MediaMethod,
+        telegram_message_id: Option<i64>,
+    ) {
+        let detail = serde_json::json!({
+            "conversation": chat_id,
+            "from": request.from,
+            "msg_id": request.msg_id,
+            "method": method.api_method(),
+            "telegram_message_id": telegram_message_id,
+            "document": {
+                "file_name": request.document.file_name,
+                "size": request.document.size,
+                "sha256": request.document.sha256,
+            },
+        });
+        let recorded = async {
+            self.spine
+                .append(Event {
+                    seq: None,
+                    v: 1,
+                    at: now_ms()?,
+                    kind: OUTBOUND_MEDIA_DELIVERED_KIND.to_string(),
+                    seat: Some(conversation_seat(chat_id)),
+                    payload: detail.to_string(),
+                })
+                .await
+        }
+        .await;
+        if let Err(error) = recorded {
+            eprintln!(
+                "pij-rs telegram: delivered {} by {} but could not record it: {error}",
+                request.msg_id,
+                method.api_method()
+            );
+        }
+    }
+
+    /// Persist the reply binding for one delivered outbound send.
+    async fn bind_reply(&self, chat_id: &str, target: SeatId, msg_id: String) -> SendOutcome {
         let binding = Event {
             seq: None,
             v: 1,
@@ -444,10 +731,10 @@ impl TelegramWorker {
                 Err(error) => return SendOutcome::Terminal(error),
             },
             kind: BINDING_KIND.to_string(),
-            seat: Some(conversation_seat(&chat_id)),
+            seat: Some(conversation_seat(chat_id)),
             payload: match serde_json::to_string(&Binding {
-                target: request.from,
-                outbound_msg_id: request.msg_id,
+                target,
+                outbound_msg_id: msg_id,
             }) {
                 Ok(payload) => payload,
                 Err(error) => return SendOutcome::Terminal(codec_error(error)),
@@ -458,7 +745,7 @@ impl TelegramWorker {
             Err(error) => SendOutcome::Terminal(PijError::Adapter {
                 adapter: "sidecars/telegram".to_string(),
                 message: format!(
-                    "sendMessage succeeded but binding persistence failed; refusing duplicate retry: {error}"
+                    "Telegram accepted the send but binding persistence failed; refusing duplicate retry: {error}"
                 ),
             }),
         }
@@ -518,8 +805,13 @@ impl TelegramWorker {
             return Ok(());
         }
         let chat = message.chat.id.to_string();
-        let Some(text) = message.text.as_ref() else {
-            return Ok(());
+        // pij-rs does not save inbound media yet; it must not drop it silently
+        // either. Media becomes a notice, delivered like text.
+        let media = message.text.is_none().then(|| message.media()).flatten();
+        let text = match (message.text.as_ref(), media) {
+            (Some(text), _) => text.clone(),
+            (None, Some((kind, file))) => media_notice(kind, file, message.caption.as_deref()),
+            (None, None) => return Ok(()),
         };
         let binding = self
             .spine
@@ -548,7 +840,7 @@ impl TelegramWorker {
                 v: 1,
                 at: now_ms()?,
                 kind: INBOUND_ENQUEUED_KIND.to_string(),
-                seat: Some(binding.target),
+                seat: Some(binding.target.clone()),
                 payload: serde_json::json!({
                     "update_id": update.update_id,
                     "conversation": chat,
@@ -558,6 +850,27 @@ impl TelegramWorker {
                 .to_string(),
             })
             .await?;
+        if let Some((kind, file)) = media {
+            self.spine
+                .append(Event {
+                    seq: None,
+                    v: 1,
+                    at: now_ms()?,
+                    kind: INBOUND_MEDIA_UNSUPPORTED_KIND.to_string(),
+                    seat: Some(binding.target),
+                    payload: serde_json::json!({
+                        "update_id": update.update_id,
+                        "conversation": chat,
+                        "msg_id": msg_id,
+                        "kind": kind,
+                        "size": file.and_then(|file| file.file_size),
+                        "file_name": file.and_then(|file| file.file_name.as_deref()),
+                        "mime_type": file.and_then(|file| file.mime_type.as_deref()),
+                    })
+                    .to_string(),
+                })
+                .await?;
+        }
         Ok(())
     }
 
@@ -704,6 +1017,21 @@ struct SendResponse {
 }
 
 #[derive(Deserialize)]
+struct ApiReply {
+    ok: bool,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    result: Option<ApiMessage>,
+}
+
+/// The part of a sent `Message` pij records: Telegram's own id for it.
+#[derive(Deserialize)]
+struct ApiMessage {
+    message_id: i64,
+}
+
+#[derive(Deserialize)]
 struct TelegramResponse<T> {
     ok: bool,
     result: T,
@@ -718,6 +1046,74 @@ struct TelegramMessage {
     from: TelegramUser,
     chat: TelegramChat,
     text: Option<String>,
+    caption: Option<String>,
+    photo: Option<Vec<TelegramFile>>,
+    animation: Option<TelegramFile>,
+    video: Option<TelegramFile>,
+    video_note: Option<TelegramFile>,
+    audio: Option<TelegramFile>,
+    voice: Option<TelegramFile>,
+    document: Option<TelegramFile>,
+    sticker: Option<TelegramFile>,
+}
+
+impl TelegramMessage {
+    /// The media this message carries, if any. `animation` is checked before
+    /// `document`: Telegram sends a GIF as both.
+    fn media(&self) -> Option<(&'static str, Option<&TelegramFile>)> {
+        if let Some(sizes) = &self.photo {
+            // Ascending by resolution: the last size is the full photo.
+            return Some(("photo", sizes.last()));
+        }
+        [
+            ("animation", &self.animation),
+            ("video", &self.video),
+            ("video_note", &self.video_note),
+            ("audio", &self.audio),
+            ("voice", &self.voice),
+            ("document", &self.document),
+            ("sticker", &self.sticker),
+        ]
+        .into_iter()
+        .find_map(|(kind, file)| file.as_ref().map(|file| (kind, Some(file))))
+    }
+}
+
+/// The facts pij-rs reports about an inbound file it does not save.
+#[derive(Deserialize)]
+struct TelegramFile {
+    file_size: Option<u64>,
+    file_name: Option<String>,
+    mime_type: Option<String>,
+}
+
+/// `[telegram media not saved by pij-rs: photo, 1.2 MB] caption: …`
+fn media_notice(kind: &str, file: Option<&TelegramFile>, caption: Option<&str>) -> String {
+    let mut facts = vec![kind.to_string()];
+    if let Some(size) = file.and_then(|file| file.file_size) {
+        facts.push(human_bytes(size));
+    }
+    if let Some(name) = file.and_then(|file| file.file_name.as_deref()) {
+        let name: String = name.chars().filter(|ch| !ch.is_control()).collect();
+        if !name.is_empty() {
+            facts.push(name);
+        }
+    }
+    let mut notice = format!("[telegram media not saved by pij-rs: {}]", facts.join(", "));
+    if let Some(caption) = caption.filter(|caption| !caption.trim().is_empty()) {
+        notice.push_str(" caption: ");
+        notice.push_str(caption);
+    }
+    notice
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    match bytes {
+        0..1024 => format!("{bytes} B"),
+        1024..1_048_576 => format!("{:.1} KB", bytes as f64 / KB),
+        _ => format!("{:.1} MB", bytes as f64 / (KB * KB)),
+    }
 }
 #[derive(Deserialize)]
 struct TelegramUser {
@@ -749,6 +1145,10 @@ fn codec_error(error: serde_json::Error) -> PijError {
 #[cfg(test)]
 #[path = "telegram_outbound_tests.rs"]
 mod outbound_tests;
+
+#[cfg(test)]
+#[path = "telegram_inbound_tests.rs"]
+mod inbound_tests;
 
 #[cfg(test)]
 mod tests {

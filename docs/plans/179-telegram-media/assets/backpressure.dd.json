@@ -1,0 +1,79 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 179 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC7: sidecar behaviour",
+          "phase": "ph-e833",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND->RUN: crates/sidecars/src/telegram_document_tests.rs (multipart field per method, classification, staging of several files, fake Bot API for fallback/order/redaction) and telegram inbound tests beside telegram_outbound_tests.rs; nice cargo test -p pij-sidecars",
+          "state": "checked",
+          "probe": "telegram_document_tests.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0004"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3-AC5: producers",
+          "phase": "ph-e833",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND->RUN: crates/cli/tests/sidecar_producer.rs against a booted daemon, crates/daemon/tests/shim_http.rs, clap tests in crates/cli/src/main.rs",
+          "state": "checked",
+          "probe": "sidecar_producer.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0004"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC9: mutants",
+          "phase": "ph-e833",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "RUN: one mutant at a time (50 MB check, caption limit, stage-all-before-queue, 400 fallback, redaction), each turns its test red, then restored; receipts in evidence/mutation.txt",
+          "state": "checked",
+          "probe": "evidence/mutation.txt",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC9: gates and CI",
+          "phase": "ph-e833",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: cargo fmt --check, clippy -D warnings, harness checks, GitHub CI green on the exact head",
+          "state": "checked",
+          "probe": "execution log",
+          "receipt": "execution-log.dd.json#entries/lg-0010"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC8: docs and follow-up issue",
+          "phase": "ph-e833",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "RUN: prime reads pij-telegram.md, pij-rs-api.md, peer.md against the code and the follow-up issue against the old TS media.ts",
+          "state": "checked",
+          "probe": "prime review",
+          "receipt": "execution-log.dd.json#entries/lg-0013"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

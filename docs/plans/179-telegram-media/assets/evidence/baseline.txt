@@ -1,0 +1,51 @@
+# Baseline: #49 (7800d11) on main 26fc3ba + plan commit d543eef, before any plan-179 Rust change
+
+d543eef
+2026-10-27T04:20:56Z
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 48.28s
+     Running unittests src/lib.rs (target/debug/deps/pij_sidecars-17945db9a662d928)
+
+running 30 tests
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+     Running unittests src/lib.rs (target/debug/deps/pij_testkit-d568176b07fd941b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/arch_drift.rs (target/debug/deps/arch_drift-f42f3fe571599034)
+
+running 6 tests
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+EXIT sidecars+arch: 0
+
+d543eef
+2026-10-27T04:22:12Z
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.92s
+     Running tests/shim_http.rs (target/debug/deps/shim_http-ccbea445c61b1761)
+
+running 21 tests
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.19s
+
+EXIT daemon shim_http: 0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.14s
+     Running tests/sidecar_producer.rs (target/debug/deps/sidecar_producer-f3bb4524f35cda5c)
+
+running 2 tests
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+EXIT cli sidecar_producer: 0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.97s
+     Running unittests src/main.rs (target/debug/deps/pij_rs-ae613c7a49e24b95)
+
+running 2 tests
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in 0.00s
+
+EXIT cli telegram unit: 0

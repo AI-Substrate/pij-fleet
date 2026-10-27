@@ -68,6 +68,8 @@ async fn daemon_with_seats(
         )
         .expect("shared SQL pull sender"),
     );
+    // Hermetic: the default derives from the pane-signal dir's parent (/tmp).
+    services.telegram_attachments = pij_testkit::fresh_dir("pij-shim-telegram-attachments");
     for seat in seats {
         services.registry.put(seat).await.expect("seed seat");
     }
@@ -413,7 +415,7 @@ async fn shapes_rs_cannot_serve_refuse_by_name() {
         ),
         (
             serde_json::json!(["send", RECIPIENT, "--file", "/tmp/x"]),
-            "attachment model",
+            "no attachment renderer",
         ),
         (
             serde_json::json!(["send", RECIPIENT, "text", "--wait"]),
@@ -1061,4 +1063,104 @@ async fn reply_option_validates_once_and_does_not_lex_literal_body() {
     assert_eq!(claims[0]["message"]["body"], body);
     assert_eq!(claims[0]["message"]["in_reply_to"], "original-id");
     server.abort();
+}
+
+/// `pij send pij-telegram --file` is SERVED: the file is staged by content and
+/// queued as a Telegram document job, and the receipt says queued, not sent.
+#[tokio::test]
+async fn a_telegram_attachment_is_staged_and_queued_from_the_shim() {
+    let (addr, server, _store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-attachment-source");
+    let source = dir.join("report.html");
+    std::fs::write(&source, b"<html>report</html>").expect("source");
+
+    // Relative to the caller's cwd, exactly as the old Node route accepted it.
+    let response = post(
+        addr,
+        "/v1/shim/send",
+        serde_json::json!({
+            "argv": ["send", "pij-telegram", "--file", "report.html", "--caption", "pij attachment canary"],
+            "caller": { "tmuxPane": PANE, "cwd": dir.display().to_string() },
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let payload: Envelope<serde_json::Value> = response.json().await.expect("envelope");
+    let data = payload.data.expect("receipt");
+    assert_eq!(data["outcome"]["outcome"], "queued", "{data}");
+    assert!(data["job_id"].is_u64(), "{data}");
+    assert_eq!(data["document"]["file_name"], "report.html");
+    assert_eq!(data["document"]["size"], 19);
+    let staged = std::path::PathBuf::from(data["document"]["staged"].as_str().expect("staged"));
+    std::fs::write(&source, b"edited after the send returned").expect("edit");
+    assert_eq!(
+        std::fs::read(&staged).expect("staged copy"),
+        b"<html>report</html>",
+        "the queued bytes are the bytes at send time"
+    );
+
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Each refusal names its reason, and none of them queues a row.
+#[tokio::test]
+async fn telegram_attachment_misuse_refuses_by_name() {
+    let (addr, server, _store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-attachment-refusals");
+    let present = dir.join("present.html");
+    std::fs::write(&present, b"x").expect("source");
+    let present = present.display().to_string();
+    let absent = dir.join("absent.html").display().to_string();
+
+    for (argv, caller, expect) in [
+        (
+            serde_json::json!(["send", "pij-telegram", "--file", absent]),
+            serde_json::json!({ "tmuxPane": PANE }),
+            "cannot be read",
+        ),
+        (
+            serde_json::json!(["send", "pij-telegram", "--file", "relative.html"]),
+            serde_json::json!({ "tmuxPane": PANE }),
+            "relative",
+        ),
+        (
+            serde_json::json!(["send", "pij-telegram", "--caption", "orphan"]),
+            serde_json::json!({ "tmuxPane": PANE }),
+            "nothing to caption",
+        ),
+        (
+            serde_json::json!(["send", "pij-telegram", "words", "--file", present]),
+            serde_json::json!({ "tmuxPane": PANE }),
+            "--caption",
+        ),
+        (
+            serde_json::json!(["send", "pij-telegram", "--fyi", "--file", present]),
+            serde_json::json!({ "tmuxPane": PANE }),
+            "steer seat wakes",
+        ),
+        (
+            serde_json::json!(["send", "pij-telegram@laptop", "--file", present]),
+            serde_json::json!({ "tmuxPane": PANE }),
+            "no attachment renderer",
+        ),
+    ] {
+        let response = post(
+            addr,
+            "/v1/shim/send",
+            serde_json::json!({ "argv": argv, "caller": caller }),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "{argv} must refuse"
+        );
+        let payload: Envelope<serde_json::Value> = response.json().await.expect("envelope");
+        let meta = payload.meta.unwrap_or_default();
+        assert!(meta.contains(expect), "{argv}: {meta}");
+    }
+
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
 }

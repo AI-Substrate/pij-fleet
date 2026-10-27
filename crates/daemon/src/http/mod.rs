@@ -3703,6 +3703,10 @@ mod tests;
 pub enum SidecarRequest {
     /// Outbound Telegram message; also binds the reply target for this seat.
     Telegram(pij_sidecars::telegram::TelegramSend),
+    /// Outbound Telegram document, staged by content before it is queued.
+    /// A daemon older than this variant refuses the tag rather than sending
+    /// the caption alone.
+    TelegramDocument(pij_sidecars::telegram::TelegramDocumentRequest),
     /// Background command start or cancel.
     Bg(pij_sidecars::background::BgRequest),
     /// Chore definition, run, or baseline acknowledgement.
@@ -3723,6 +3727,16 @@ async fn sidecar(
     );
     let job = match &request {
         SidecarRequest::Telegram(send) => pij_sidecars::telegram::send_job(send),
+        SidecarRequest::TelegramDocument(document) => {
+            return match enqueue_telegram_document(&state, document.clone()).await {
+                Ok(queued) => envelope(
+                    StatusCode::OK,
+                    &Envelope::ok("pij sidecar", serde_json::json!(queued)),
+                ),
+                Err(DocumentRefusal::Refused(error)) => refused("pij sidecar", error),
+                Err(DocumentRefusal::Internal(error)) => internal("pij sidecar", error),
+            };
+        }
         SidecarRequest::Bg(bg) => pij_sidecars::background::job(bg, &request_id),
         SidecarRequest::Chore(chore) => pij_sidecars::chore::job(chore, &request_id),
     };
@@ -3746,4 +3760,94 @@ async fn sidecar(
         ),
         Err(error) => internal("pij sidecar", error),
     }
+}
+
+/// One queued Telegram file: its job and exactly which bytes it will send.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct QueuedFile {
+    pub job_id: pij_core::model::JobId,
+    pub msg_id: String,
+    pub document: pij_sidecars::telegram::StagedDocument,
+}
+
+/// A queued Telegram file send: the body's job, if any, then one job per file.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct QueuedDocument {
+    pub serial_key: String,
+    pub msg_id: String,
+    pub body_job_id: Option<pij_core::model::JobId>,
+    pub files: Vec<QueuedFile>,
+}
+
+/// Why a document was not queued: the caller's mistake, or ours.
+pub(crate) enum DocumentRefusal {
+    Refused(PijError),
+    Internal(PijError),
+}
+
+/// Stage every file by content and queue the send; the one producer for both
+/// the `/v1/sidecar` route and `pij send pij-telegram --file`.
+///
+/// Every refusal (no files or too many; missing, empty, oversized; caption too
+/// long) is answered here, before a row exists, so a caller is never told
+/// "queued" for a file the worker could not send. The body is queued first and
+/// the files after it, in order, on the chat's serial key.
+pub(crate) async fn enqueue_telegram_document(
+    state: &AppState,
+    request: pij_sidecars::telegram::TelegramDocumentRequest,
+) -> std::result::Result<QueuedDocument, DocumentRefusal> {
+    let staging = state.services.telegram_attachments.clone();
+    let msg_id = request.msg_id.clone();
+    // Up to 10 x 50 MB of copy and hash: off the async runtime.
+    let staged =
+        tokio::task::spawn_blocking(move || pij_sidecars::telegram::stage_send(&request, &staging))
+            .await
+            .map_err(|error| {
+                DocumentRefusal::Internal(PijError::Adapter {
+                    adapter: "sidecars/telegram".to_string(),
+                    message: format!("document staging task failed: {error}"),
+                })
+            })?;
+    let staged = staged.map_err(DocumentRefusal::Refused)?;
+    let serial_key = staged
+        .files
+        .first()
+        .map(|(job, _)| job.serial_key.clone())
+        .unwrap_or_default();
+    let body_job_id = match staged.body {
+        Some(job) => match state.services.queue.enqueue(job).await {
+            Ok(job_id) => Some(job_id),
+            Err(error) => {
+                pij_sidecars::telegram::release_staged(staged.files.iter().map(|(_, doc)| doc));
+                return Err(DocumentRefusal::Internal(error));
+            }
+        },
+        None => None,
+    };
+    let mut files = Vec::with_capacity(staged.files.len());
+    let mut pending = staged.files.into_iter();
+    while let Some((job, document)) = pending.next() {
+        let file_msg_id = job.dedupe_key.clone();
+        match state.services.queue.enqueue(job).await {
+            Ok(job_id) => files.push(QueuedFile {
+                job_id,
+                msg_id: file_msg_id,
+                document,
+            }),
+            Err(error) => {
+                // Jobs already queued will still send; the rest never will.
+                let unqueued: Vec<_> = std::iter::once(document)
+                    .chain(pending.map(|(_, doc)| doc))
+                    .collect();
+                pij_sidecars::telegram::release_staged(&unqueued);
+                return Err(DocumentRefusal::Internal(error));
+            }
+        }
+    }
+    Ok(QueuedDocument {
+        serial_key,
+        msg_id,
+        body_job_id,
+        files,
+    })
 }
