@@ -9,7 +9,7 @@
         "title": "Telegram media: send files from pij-rs (photo, video, animation, document)",
         "slug": "telegram-media",
         "ordinal": 179,
-        "status": "ready",
+        "status": "in-progress",
         "summary": "Restore the never-merged PR #49 (Telegram documents from pij-rs) and extend it: method by file type with a sendDocument fallback, several files per send, a body with files, token redaction proof, and no more silent drop of inbound media.",
         "backpressure": "assets/backpressure.dd.json#rows",
         "mode": "Full",
@@ -44,56 +44,65 @@
         {
           "id": "ac-0001",
           "claim": "Restore #49. Commit ce2721d (pij-fleet#49, Vaughan Knight, 13 Oct) is cherry-picked onto main 26fc3ba with its authorship and trailers kept; the one textual conflict (docs/how/pij-rs-api.md) is resolved keeping main's watchdog line and #49's --file line; #49's own tests (sidecar telegram_document_tests, daemon shim_http, CLI sidecar_producer, arch_drift) pass on the new base.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0002",
           "claim": "Method by type. Staging classifies each file by its lower-cased extension and size, and the job records the method: jpg/jpeg/png/webp up to 10 MB -> sendPhoto (field `photo`); a larger image -> sendDocument; mp4 -> sendVideo (field `video`); gif -> sendAnimation (field `animation`, ruling Q2); anything else -> sendDocument. When sendPhoto, sendVideo or sendAnimation answers HTTP 400, the same attempt re-sends the same staged bytes with sendDocument; the 400 is recorded as telegram.outbound-delivery-failed carrying `method` and `fallback: sendDocument`. A delivered file appends telegram.outbound-media-delivered with the method used, file name, size and sha256.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "ac-0003",
           "claim": "Several files. `pij-rs sidecar telegram --file <p> [--file <p> ...]` accepts up to 10 files. The daemon stages every file before queueing any; if one is refused, nothing is queued and copies already staged are removed. Each file is its own job (per-file outcome in pij.sqlite; a retry never resends a delivered file), queued in argument order on the chat's serial key, so they arrive in order. With one file and no body the file keeps the request msg_id; otherwise file n uses `<msg_id>#<n>`. --caption goes on the first file; every file's caption carries the [sender] tag.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "ac-0004",
           "claim": "Body with files. --body or --body-file may be combined with --file. The body is queued first as an ordinary text send (same prefix, chunking and failure events as today), then the files. Without --file the text path is unchanged.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "ac-0005",
           "claim": "Refuse before sending. The CLI resolves each --file to an absolute path and fails on a missing one; the daemon re-checks and refuses, before anything is queued: a missing, unreadable, empty or non-regular file; a file over 50 MB (52,428,800 bytes); a caption over 1024 characters behind the sender tag; a relative path; more than 10 files. Job payloads record the source path, staged path, file name, size, sha256 and method, never the bytes.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0006",
           "claim": "Redaction. The bot token never appears in a job payload, a job's failure outcome, a spine event, or the error the worker logs, on any media path: transport failure, HTTP error status, ok=false, and the 400 fallback. The token is never on the CLI's argv (it lives only in the daemon's credential file). Proved with a sentinel token against a fake Bot API, plus a mutant that formats the raw reqwest error.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0007",
           "claim": "Inbound media is not dropped silently (ruling Q3b). Today handle_update ignores any message without text, caption included. An allowed user's photo, document, video, animation, audio, voice, video_note or sticker is now delivered to the bound seat as a text turn: `[telegram media not saved by pij-rs: <kind>, <size>, <file name>] caption: <caption>`, and appends telegram.inbound-media-unsupported (update_id, conversation, kind, size, file name, msg_id). With no binding it is refused exactly as text is. Text handling is unchanged.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0008",
           "claim": "Docs and follow-up. docs/how/pij-telegram.md documents methods, fallback, several files, body with files, limits, events and the inbound notice; docs/how/pij-rs-api.md and skills/pij/references/routes/peer.md match. A follow-up issue for inbound save-to-path cites the old TS design (pij-poc e5dd811 telegram/media.ts: 20 MB getFile pre-check, sanitised single-segment names, per-seat attachments dir, 200 MB retention, oldest first, never the new file).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0006"
         },
         {
           "id": "ac-0009",
           "claim": "Proof. Every new behaviour has a test shown RED on 7800d11 (the cherry-pick) and green on the branch. Mutation receipts, one at a time, each red then restored: the 50 MB check, the caption limit, the stage-all-before-queue rule, the 400 fallback, and the token redaction. cargo fmt, clippy -D warnings, the scoped cargo tests and `harness checks` pass (anything not run is NOT RUN with its reason); GitHub CI green on the exact head; the PR references #49 and #49 carries a comment asking to close it on merge. No deploy, relink, daemon restart, extension reload or live canary (that needs Vaughan's go).",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "note": "Open for the prime: CI green on 48faab3 (lg-0008), RED/GREEN and 9/9 mutants done (lg-0003..0005), PR references #49 and #49 is commented. Local `harness checks` is NOT green: test/rust/smoke fail outside this diff, shown pre-existing or load flakes (lg-0007); the vitest ancestry and smoke OMP-setup failures cannot pass inside a Copilot seat."
         }
       ]
     },

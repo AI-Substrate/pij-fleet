@@ -35,13 +35,13 @@ One coder (pij-prime): cherry-pick #49, red tests, method by type with fallback,
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Restore #49 on main | — | ph-e833 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | RED tests on 7800d11 | — | ph-e833 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Method by type and 400 fallback | — | ph-e833 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | Several files and a body | — | ph-e833 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | Redaction proof | — | ph-e833 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | Inbound media notice | — | ph-e833 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0007 | Docs and follow-up issue | — | ph-e833 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Restore #49 on main | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | RED tests on 7800d11 | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Method by type and 400 fallback | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Several files and a body | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Redaction proof | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Inbound media notice | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0007 | Docs and follow-up issue | — | ph-e833 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0006 | [tk-0007](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0008 | Mutants, gates, PR | — | ph-e833 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -50,45 +50,45 @@ One coder (pij-prime): cherry-pick #49, red tests, method by type with fallback,
 
 ### tk-0001
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0001 | #49's tests pass on the new base | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0001 | #49's tests pass on the new base | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | [lg-0002](../../execution-log.dd.md#entries) |
 
 ### tk-0002
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0002 | Each new test fails on 7800d11 for the right reason (quoted) | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0002 | Each new test fails on 7800d11 for the right reason (quoted) | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0003](../../execution-log.dd.md#entries) |
 
 ### tk-0003
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0003 | Classification, field names, fallback event and delivered event proven against a fake Bot API | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0003 | Classification, field names, fallback event and delivered event proven against a fake Bot API | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0004](../../execution-log.dd.md#entries) |
 
 ### tk-0004
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0004 | Order, msg ids, caption placement, atomic refusal and body-first proven | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0004 | Order, msg ids, caption placement, atomic refusal and body-first proven | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | [lg-0004](../../execution-log.dd.md#entries) |
 
 ### tk-0005
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0005 | Sentinel token absent from payloads, outcomes, events and errors on every media failure path | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0005 | Sentinel token absent from payloads, outcomes, events and errors on every media failure path | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0005](../../execution-log.dd.md#entries) |
 
 ### tk-0006
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0006 | Each media kind delivered as a notice with an event; unbound refused; text unchanged | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0006 | Each media kind delivered as a notice with an event; unbound refused; text unchanged | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | [lg-0004](../../execution-log.dd.md#entries) |
 
 ### tk-0007
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0007 | Docs match the code; issue filed citing the old TS design | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | proven_by |
+| --- | --- | --- | --- | --- |
+| dw-0007 | Docs match the code; issue filed citing the old TS design | [x] checked | [bp-0005](../../backpressure.dd.md#rows) | [lg-0006](../../execution-log.dd.md#entries) |
 
 ### tk-0008
 

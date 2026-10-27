@@ -90,6 +90,15 @@
             "../plan.dd.json#acceptance_criteria/ac-0009",
             "backpressure.dd.json#rows/bp-0004"
           ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-10-27T05:22:00Z",
+          "text": "PR AI-Substrate/pij-fleet#71 opened from the fork vaughanknight/pij-fleet (the account has read-only upstream; push to origin was refused 403; #49 was a fork PR too), base main, head pij-prime/telegram-media at 48faab3. #49 commented: superseded by #71, close on merge, its branch untouched. GitHub CI run 40453586930 on headSha 48faab3: rust-lint success, check (22) success, check (24) success, rust-test success (conclusion success). https://github.com/AI-Substrate/pij-fleet/actions/runs/40453586930",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0009",
+            "backpressure.dd.json#rows/bp-0004"
+          ]
         }
       ]
     }

@@ -24,73 +24,80 @@
           "id": "tk-0001",
           "title": "Restore #49 on main",
           "phase": "ph-e833",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
-          "done": "tasks.dd.json#done_when/tk-0001"
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "tk-0002",
           "title": "RED tests on 7800d11",
           "phase": "ph-e833",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
-          "done": "tasks.dd.json#done_when/tk-0002"
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "tk-0003",
           "title": "Method by type and 400 fallback",
           "phase": "ph-e833",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
-          "done": "tasks.dd.json#done_when/tk-0003"
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "receipt": "../../execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "tk-0004",
           "title": "Several files and a body",
           "phase": "ph-e833",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003",
             "../../../plan.dd.json#acceptance_criteria/ac-0004",
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
           ],
-          "done": "tasks.dd.json#done_when/tk-0004"
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "receipt": "../../execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "tk-0005",
           "title": "Redaction proof",
           "phase": "ph-e833",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0006"
           ],
-          "done": "tasks.dd.json#done_when/tk-0005"
+          "done": "tasks.dd.json#done_when/tk-0005",
+          "receipt": "../../execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "tk-0006",
           "title": "Inbound media notice",
           "phase": "ph-e833",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0007"
           ],
-          "done": "tasks.dd.json#done_when/tk-0006"
+          "done": "tasks.dd.json#done_when/tk-0006",
+          "receipt": "../../execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "tk-0007",
           "title": "Docs and follow-up issue",
           "phase": "ph-e833",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0008"
           ],
-          "done": "tasks.dd.json#done_when/tk-0007"
+          "done": "tasks.dd.json#done_when/tk-0007",
+          "receipt": "../../execution-log.dd.json#entries/lg-0006"
         },
         {
           "id": "tk-0008",
@@ -111,56 +118,63 @@
           {
             "id": "dw-0001",
             "assertion": "#49's tests pass on the new base",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0002"
           }
         ],
         "tk-0002": [
           {
             "id": "dw-0002",
             "assertion": "Each new test fails on 7800d11 for the right reason (quoted)",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0003"
           }
         ],
         "tk-0003": [
           {
             "id": "dw-0003",
             "assertion": "Classification, field names, fallback event and delivered event proven against a fake Bot API",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0004"
           }
         ],
         "tk-0004": [
           {
             "id": "dw-0004",
             "assertion": "Order, msg ids, caption placement, atomic refusal and body-first proven",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0004"
           }
         ],
         "tk-0005": [
           {
             "id": "dw-0005",
             "assertion": "Sentinel token absent from payloads, outcomes, events and errors on every media failure path",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0005"
           }
         ],
         "tk-0006": [
           {
             "id": "dw-0006",
             "assertion": "Each media kind delivered as a notice with an event; unbound refused; text unchanged",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0004"
           }
         ],
         "tk-0007": [
           {
             "id": "dw-0007",
             "assertion": "Docs match the code; issue filed citing the old TS design",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005",
+            "proven_by": "../../execution-log.dd.json#entries/lg-0006"
           }
         ],
         "tk-0008": [

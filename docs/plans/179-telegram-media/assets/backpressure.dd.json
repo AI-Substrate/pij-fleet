@@ -21,8 +21,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND->RUN: crates/sidecars/src/telegram_document_tests.rs (multipart field per method, classification, staging of several files, fake Bot API for fallback/order/redaction) and telegram inbound tests beside telegram_outbound_tests.rs; nice cargo test -p pij-sidecars",
-          "state": "unchecked",
-          "probe": "telegram_document_tests.rs"
+          "state": "checked",
+          "probe": "telegram_document_tests.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND->RUN: crates/cli/tests/sidecar_producer.rs against a booted daemon, crates/daemon/tests/shim_http.rs, clap tests in crates/cli/src/main.rs",
-          "state": "unchecked",
-          "probe": "sidecar_producer.rs"
+          "state": "checked",
+          "probe": "sidecar_producer.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "bp-0003",
@@ -41,8 +43,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "RUN: one mutant at a time (50 MB check, caption limit, stage-all-before-queue, 400 fallback, redaction), each turns its test red, then restored; receipts in evidence/mutation.txt",
-          "state": "unchecked",
-          "probe": "evidence/mutation.txt"
+          "state": "checked",
+          "probe": "evidence/mutation.txt",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "bp-0004",
