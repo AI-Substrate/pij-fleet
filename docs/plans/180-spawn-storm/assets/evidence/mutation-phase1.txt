@@ -64,3 +64,18 @@ test a_lost_control_client_falls_back_then_reconnects ... FAILED
 thread 'a_lost_control_client_falls_back_then_reconnects' (485416415) panicked at crates/tmux/tests/control_mode.rs:283:13:
 never reconnected: [
 test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.42s
+
+# Prime condition 2 (injection), 2026-10-28
+## M5n a newline is sent (no fork fallback): could smuggle a second command
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --lib control::tests
+verdict: KILLED (red)
+test control::tests::only_quotable_reads_are_eligible ... FAILED
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+## M5r a carriage return is sent (no fork fallback)
+file crates/tmux/src/control.rs; cargo test -p pij-tmux --lib control::tests
+verdict: SURVIVED
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+## M5r rerun after adding a carriage-return assertion
+verdict: KILLED (red)

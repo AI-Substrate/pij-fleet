@@ -459,7 +459,14 @@ mod tests {
             Some("'display-message' '-p' '-t' '%1' '#{pane_pid}\t#{pane_current_path}'")
         );
         assert_eq!(command_line(&args(&["show-options", "it's"])), None);
+        // A newline or carriage return would end the command line and smuggle in
+        // a second command (possibly a write): those calls fork instead.
         assert_eq!(command_line(&args(&["capture-pane", "a\nb"])), None);
+        assert_eq!(command_line(&args(&["capture-pane", "a\rb"])), None);
+        assert_eq!(
+            command_line(&args(&["display-message", "-p", "x\nkill-server"])),
+            None
+        );
         assert!(is_read(&args(&["list-panes", "-a"])));
         assert!(is_read(&args(&["capture-pane", "-p", "-t", "%1"])));
         assert!(is_read(&args(&[
