@@ -77,9 +77,9 @@
         {
           "id": "ac-0006",
           "claim": "Acceptance measured with harness/scripts/spawn-rate.py (total from PID-counter deltas; daemon children by ppid) and `top -l 2 -o cpu` for Defender, before and after each deploy, same fleet: total new processes drop >=80% from the 741/s baseline, and pij-rs plus the status line together stay under 10/s. The `ps` share of daemon launches (~9% at baseline) is re-measured after deploy 1; a ps-free liveness (needs a new safe sysctl dependency, since unsafe_code is forbidden) is a ruling if it is still needed.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004",
-          "note": "PARTIAL (lg-0012): total -82.7% by spawn-rate.py and -71% by measure-spawn; Defender 216% -> 75%; status line -> 0; daemon residual ps 39-79/s by kinfo sampling (6.7/s lower bound). Needs the prime's ruling and a follow-up."
+          "note": "MET after window 4 (lg-0019): machine total 740.6 -> 16.5 new processes/s (-97.8%); pij-rs 6.6/s by kinfo (counter 6.37/s) plus status line 0/s, under 10/s; Defender (epsext + enterprise + wdavdaemon) 156.6% -> 8.6%. Earlier PARTIAL (lg-0012) resolved by follow-ups C (counter) and D (absolute /bin/ps, /bin/date). A ps-free liveness (plan 181) is not needed for this criterion."
         },
         {
           "id": "ac-0007",

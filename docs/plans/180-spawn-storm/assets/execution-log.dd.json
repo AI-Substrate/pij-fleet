@@ -165,6 +165,14 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0019",
+          "at": "2026-10-27T15:14:00Z",
+          "text": "WINDOW 4 (follow-up D) deployed by the prime: 85679 shut down 15:08:22Z, new pid 33659 listening 15:09:22Z on ~/.pij-rs/bin/pij-rs-0acbf95 (sha256 64ce53c0); CI green 15:07:47Z. ACCEPTANCE (R9), counter and kinfo over the same 60 s at +2 min (15:11:21-15:12:21Z, load1 5.5->4.85): kinfo daemon children 396 = 6.6/s (<10/s PASS; 63.9/s after window 3), counter 382 = 6.37/s (unchanged PASS), failed PATH attempts 3452 -> 14 (git, deferred). Machine 740.6 -> 16.5 new processes/s (-97.8%), status line 0/s; Defender epsext+enterprise+wdavdaemon 156.6% -> 8.6% (all four incl. unprivileged 17.8%). ac-0006 MET. Evidence: evidence/window4-acceptance.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }

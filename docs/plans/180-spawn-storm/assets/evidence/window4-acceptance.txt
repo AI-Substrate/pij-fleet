@@ -1,0 +1,35 @@
+# Plan 180 window 4 (follow-up D: /bin/ps, /bin/date): deploy record and acceptance
+Deployed by the prime: 85679 (893ae50) shutting down at 15:08:22Z; new daemon pid 33659 listening at 15:09:22Z,
+link -> ~/.pij-rs/bin/pij-rs-0acbf95 (sha256 64ce53c01e7498bf...), control client 33760, ping healthy.
+CI on 0acbf95 green at 15:07:47Z (run 40527418869, all four jobs).
+
+## Acceptance (R9): the counter and kinfo over the same 60 s at +2 min (evidence/scripts/reconcile.py 33659 60)
+15:11:21Z -> 15:12:21Z, load1 5.5 -> 4.85, 14415.0 Hz listallpids poll
+{
+ "dt": 60.0,
+ "load1": [
+  5.5,
+  4.85
+ ],
+ "polls": 865024,
+ "poll_hz": 14415.0,
+ "counter_launches": 382,
+ "counter_by_op": {
+  "git.pa-watchdog-common-dir": 3,
+  "ps.proc-liveness": 379
+ },
+ "kinfo_unique_children_seen": 396,
+ "kinfo_by_comm": {
+  "ps": 379,
+  "pij-rs-0acbf95": 14,
+  "git": 3
+ }
+}
+kinfo daemon children: 396 / 60 s = 6.6/s  (< 10/s: PASS; window 3 by the same script: 3834 = 63.9/s)
+counter:               382 / 60 s = 6.37/s  (~6.5/s unchanged: PASS)
+failed PATH-search attempts (daemon-named children): 3452 -> 14; what's left is consistent with git's 12 misses x 3 git launches (deferred, R10).
+
+## Machine and Defender after window 4
+15:12:40Z spawn-rate.py 30 s: machine total 16.5 new processes/s (baseline 740.6/s: -97.8%; before D 140.5/s); status line 0.0/s; load1 3.75
+15:13:26Z top -l 3 -s 2: pij-rs 10.3%, wdavdaemon_unprivileged 9.2%, wdavdaemon_enterprise 3.6%, wdavdaemon 2.9%, epsext 2.1%; load1 3.76
+Defender like-for-like with the baseline (epsext + wdavdaemon_enterprise + wdavdaemon): 156.6% -> 8.6%; all four processes 17.8%.
