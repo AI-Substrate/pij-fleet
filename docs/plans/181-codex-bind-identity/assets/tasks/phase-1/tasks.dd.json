@@ -79,12 +79,13 @@
           "id": "tk-0006",
           "title": "Docs, mutations, PR, CI",
           "phase": "ph-e341",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0005",
             "../../../plan.dd.json#acceptance_criteria/ac-0006"
           ],
-          "done": "tasks.dd.json#done_when/tk-0006"
+          "done": "tasks.dd.json#done_when/tk-0006",
+          "receipt": "../../execution-log.dd.json#entries/lg-0010"
         },
         {
           "id": "tk-0007",
@@ -146,7 +147,7 @@
           {
             "id": "dw-0006",
             "assertion": "Docs updated; mutation receipts; clippy/fmt; CI green on the exact head",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],

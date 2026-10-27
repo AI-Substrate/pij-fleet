@@ -40,7 +40,7 @@ One coder implements impl-guide tk-0001: live reproduction and diagnosis on main
 | tk-0003 | Registration fix | — | ph-e341 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | Identity fix | — | ph-e341 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0006 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Footer misread fix | — | ph-e341 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0007 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | Docs, mutations, PR, CI | — | ph-e341 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Docs, mutations, PR, CI | — | ph-e341 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0010 | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0007 | Codex binder cost (R12) | — | ph-e341 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0009 | [tk-0007](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -81,7 +81,7 @@ One coder implements impl-guide tk-0001: live reproduction and diagnosis on main
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0006 | Docs updated; mutation receipts; clippy/fmt; CI green on the exact head | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0006 | Docs updated; mutation receipts; clippy/fmt; CI green on the exact head | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0007
 
