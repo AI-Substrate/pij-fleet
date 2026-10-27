@@ -197,6 +197,11 @@ _copilot-native-install-check:
     fi
 
 # Reject user-specific absolute home paths in executable/configuration surfaces.
+# Process launches per second, machine-wide and pij's share (plan 180; macOS).
+# Defender's EDR inspects every launch: compare before/after a change.
+spawn-rate *ARGS:
+    @python3 harness/scripts/spawn-rate.py {{ARGS}}
+
 local-path-check:
     node_modules/.bin/tsx harness/scripts/local-path-check.ts
 
