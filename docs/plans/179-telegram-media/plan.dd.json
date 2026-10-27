@@ -114,8 +114,9 @@
           "id": "ph-e833",
           "title": "Restore #49 and extend outbound media",
           "brief": "One phase: cherry-pick ce2721d, RED tests, method by type with fallback, several files and body, redaction proof, inbound notice, docs, follow-up issue, mutants, gates, PR. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0013"
         }
       ]
     }

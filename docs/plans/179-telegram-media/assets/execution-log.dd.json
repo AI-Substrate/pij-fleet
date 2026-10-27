@@ -137,6 +137,16 @@
             "../plan.dd.json#acceptance_criteria/ac-0004",
             "../plan.dd.json#acceptance_criteria/ac-0005"
           ]
+        },
+        {
+          "id": "lg-0013",
+          "at": "2026-10-27T05:38:15Z",
+          "text": "PRIME REVIEW (pij-broad-rykard, msg 01a17bdd-5b65-75c0-bfc1-dc8894a2b7e4): bp-0005 ACCEPTED. The prime read the pij-telegram.md, pij-rs-api.md and peer.md diffs and spot-checked them against telegram_document.rs/telegram.rs: 10 MB photo limit, 50 MB, MAX_FILES 10, caption 1024, the ext->method table, the 400->sendDocument fallback (non-document only), 0700/0600 staging, and the inbound kinds including video_note/voice/sticker all match. Canary accepted GREEN earlier (01a17bdb-ccde-78c3-ab05-9ef589ccc191). Merge needs a maintainer (Vaughan); his phone check is pending. Evidence: reviews/prime-verification.md",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "backpressure.dd.json#rows/bp-0005",
+            "../plan.dd.json#phases/ph-e833"
+          ]
         }
       ]
     }

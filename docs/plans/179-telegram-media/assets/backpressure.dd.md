@@ -24,7 +24,7 @@
 | bp-0002 | AC3-AC5: producers | ph-e833 | EXTEND | computational | EXTEND-&gt;RUN: crates/cli/tests/sidecar_producer.rs against a booted daemon, crates/daemon/tests/shim_http.rs, clap tests in crates/cli/src/main.rs | [x] checked | — | execution-log.dd.json#entries/lg-0004 | sidecar_producer.rs |
 | bp-0003 | AC9: mutants | ph-e833 | EXTEND | computational | RUN: one mutant at a time (50 MB check, caption limit, stage-all-before-queue, 400 fallback, redaction), each turns its test red, then restored; receipts in evidence/mutation.txt | [x] checked | — | execution-log.dd.json#entries/lg-0005 | evidence/mutation.txt |
 | bp-0004 | AC9: gates and CI | ph-e833 | EXISTS | computational | RUN: cargo fmt --check, clippy -D warnings, harness checks, GitHub CI green on the exact head | [x] checked | — | execution-log.dd.json#entries/lg-0010 | execution log |
-| bp-0005 | AC8: docs and follow-up issue | ph-e833 | EXISTS | human-judgement | RUN: prime reads pij-telegram.md, pij-rs-api.md, peer.md against the code and the follow-up issue against the old TS media.ts | [ ] unchecked | — | — | prime review |
+| bp-0005 | AC8: docs and follow-up issue | ph-e833 | EXISTS | human-judgement | RUN: prime reads pij-telegram.md, pij-rs-api.md, peer.md against the code and the follow-up issue against the old TS media.ts | [x] checked | — | execution-log.dd.json#entries/lg-0013 | prime review |
 
 <a id="sensors"></a>
 

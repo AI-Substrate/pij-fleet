@@ -65,8 +65,9 @@
           "mode": "EXISTS",
           "tier": "human-judgement",
           "proof": "RUN: prime reads pij-telegram.md, pij-rs-api.md, peer.md against the code and the follow-up issue against the old TS media.ts",
-          "state": "unchecked",
-          "probe": "prime review"
+          "state": "checked",
+          "probe": "prime review",
+          "receipt": "execution-log.dd.json#entries/lg-0013"
         }
       ]
     },

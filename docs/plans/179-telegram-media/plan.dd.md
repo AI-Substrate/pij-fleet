@@ -69,4 +69,4 @@ Vaughan, 27 Oct: pij-rs cannot send files to Telegram, which is 'stupid'; 'I tho
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-e833 | Restore #49 and extend outbound media | One phase: cherry-pick ce2721d, RED tests, method by type with fallback, several files and body, redaction proof, inbound notice, docs, follow-up issue, mutants, gates, PR. CS 3. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-e833 | Restore #49 and extend outbound media | One phase: cherry-pick ce2721d, RED tests, method by type with fallback, several files and body, redaction proof, inbound notice, docs, follow-up issue, mutants, gates, PR. CS 3. | [x] checked | — | assets/execution-log.dd.json#entries/lg-0013 | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
