@@ -102,7 +102,11 @@ async fn a_send_carrying_another_seats_identity_is_refused_by_name() {
     let registry = Arc::new(FakeRegistry::new());
     registry.put(codex_seat(BANDICOOT, SHARED)).await.unwrap();
     registry
-        .put(SeatDescriptor::new("pij-concrete-crane", Harness::Claude, "/abs/initial-build"))
+        .put(SeatDescriptor::new(
+            "pij-concrete-crane",
+            Harness::Claude,
+            "/abs/initial-build",
+        ))
         .await
         .unwrap();
     let (addr, server) = world(registry).await;

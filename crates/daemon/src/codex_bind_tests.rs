@@ -242,3 +242,38 @@ async fn a_bind_costs_three_launches() {
     binder.bind_once().await.unwrap();
     assert_eq!(facts.launches(), 3, "a bound row is no longer pending");
 }
+
+/// The daemon's bind loop runs the Codex binder: a pending row binds with no
+/// one calling `bind_once` by hand.
+#[tokio::test]
+async fn the_daemon_bind_loop_runs_the_codex_binder() {
+    let registry = Arc::new(FakeRegistry::new());
+    registry.put(pending()).await.unwrap();
+    let codex = Arc::new(binder(registry.clone(), Arc::new(Facts::canary())).await);
+    let bus = Arc::new(EventBus::new(Arc::new(FakeSpine::new()), 8).expect("event bus"));
+    let pool = pij_store::open("").await.expect("isolated role storage");
+    let roles = Arc::new(crate::http::role::RoleService::new(
+        registry.clone(),
+        pij_store::SqliteOrchestration::new(pool),
+        bus.clone(),
+    ));
+    // An empty roster holds no pending Claude row, so this reads no Claude home.
+    let claude = Arc::new(crate::claude_bind::ClaudeBinder::new(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeLiveness::new()),
+        bus,
+        roles,
+    ));
+    let interval =
+        crate::lifecycle::TickInterval::new(std::time::Duration::from_millis(10)).unwrap();
+    let ticking = crate::start_resilient_binders(claude, codex, interval);
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while row(&registry).await.proc.is_none() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the loop never bound the row"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    ticking.shutdown().await.unwrap();
+}
