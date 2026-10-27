@@ -473,7 +473,7 @@ impl TmuxAdapter {
             ))
         })?;
         pij_core::spawns::record("ps.tmux-legacy-tap-writer");
-        let output = Command::new("ps")
+        let output = Command::new("/bin/ps")
             .args(["-axo", "command="])
             .output()
             .map_err(|error| {
@@ -1277,7 +1277,7 @@ pub fn harness_process(pane_pid: u32, harness: Harness) -> Option<ProcIdentity> 
 #[must_use]
 pub fn harness_process_tree(pane_pid: u32, harness: Harness) -> Option<HarnessProcess> {
     pij_core::spawns::record("ps.tmux-harness-process-tree");
-    let output = Command::new("ps")
+    let output = Command::new("/bin/ps")
         .args(["-Awwo", "pid=,ppid=,lstart=,command="])
         .env("LC_ALL", "C")
         .output()
@@ -1289,7 +1289,7 @@ pub fn harness_process_tree(pane_pid: u32, harness: Harness) -> Option<HarnessPr
     let processes: Vec<_> = text.lines().filter_map(process_row).collect();
     let selected = harness_process_from_snapshot(pane_pid, harness, &processes)?;
     pij_core::spawns::record("ps.tmux-harness-process-tree");
-    let output = Command::new("ps")
+    let output = Command::new("/bin/ps")
         .args(["-p", &selected.identity.pid.to_string(), "-o", "lstart="])
         .env("LC_ALL", "C")
         .output()

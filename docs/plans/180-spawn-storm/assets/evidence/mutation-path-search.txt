@@ -1,0 +1,15 @@
+# Follow-up D mutants (each must turn a test red; source restored byte-identical after each)
+## MD1 liveness searches PATH for ps again (crates/harnesses/src/proc.rs)
+  -p pij-harnesses --test path_search: KILLED ['liveness_runs_bin_ps_never_a_ps_found_on_path', 'liveness_runs_bin_ps_never_a_ps_found_on_path']
+  -p pij-testkit --test spawn_sites no_daemon_launch_searches_path: KILLED ['no_daemon_launch_searches_path_for_ps_or_date']
+## MD2 the UTC offset searches PATH for date again (crates/harnesses/src/proc.rs)
+  -p pij-harnesses --test path_search: KILLED ['utc_offset_runs_bin_date_never_a_date_found_on_path']
+  -p pij-testkit --test spawn_sites no_daemon_launch_searches_path: KILLED ['no_daemon_launch_searches_path_for_ps_or_date']
+## MD3 the usage-limit clock searches PATH for date (crates/harnesses/src/usage_limit.rs)
+  -p pij-testkit --test spawn_sites no_daemon_launch_searches_path: KILLED ['no_daemon_launch_searches_path_for_ps_or_date']
+## MD4 the UDS peer-start probe searches PATH for ps (crates/transport/src/uds.rs)
+  -p pij-testkit --test spawn_sites no_daemon_launch_searches_path: KILLED ['no_daemon_launch_searches_path_for_ps_or_date']
+## MD5 the guard stops counting absolute launches (vacuity) (crates/testkit/tests/spawn_sites.rs)
+  -p pij-testkit --test spawn_sites no_daemon_launch_searches_path: KILLED ['no_daemon_launch_searches_path_for_ps_or_date']
+## MD6 the decoy child does not get the decoy PATH (harness control) (crates/harnesses/tests/path_search.rs)
+  -p pij-harnesses --test path_search: KILLED ['the_decoys_do_run_when_named_by_bare_name']

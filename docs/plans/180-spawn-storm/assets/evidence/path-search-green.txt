@@ -1,0 +1,24 @@
+# Follow-up D GREEN, 2026-10-27T15:02:06Z
+test no_daemon_launch_searches_path_for_ps_or_date ... ok
+test every_daemon_launch_site_records_itself ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+## touched crates
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test post_enter_cleanup_failure_remains_success_and_submits_once ... FAILED
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.84s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.92s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 2.93s
+test result: FAILED. 28 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.41s
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 4.32s
+## clippy -D warnings, 7 crates, all targets
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.02s
+## pij-tmux adapter post_enter_cleanup_failure_remains_success_and_submits_once
+FAILED once in the parallel run above (load1 ~5.8); then 5/5 alone and 29/29 with --test-threads=1.
+crates/tmux/tests/adapter.rs calls neither changed function (harness_process_tree, has_live_legacy_tap_writer):
+the known 1-2 s deadline flake under load, as in the submit tests on base.

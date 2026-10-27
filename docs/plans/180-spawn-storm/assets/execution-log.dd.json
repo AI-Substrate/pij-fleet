@@ -157,6 +157,14 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0018",
+          "at": "2026-10-27T15:06:00Z",
+          "text": "FOLLOW-UP D built test-first (prime GO 01:58 local, R9). The proof it rests on: with the daemon's own 32-entry PATH, posix_spawnp(\"ps\") consumed 18.11 PIDs per launch and posix_spawn(\"/bin/ps\") 1.00 (100 spawns each, evidence/window3-counter.txt, scripts/spawnp_exp.py). Change: the 8 daemon-crate launches of bare ps/date now name /bin/ps and /bin/date (ProcLiveness, the UTC offset, the usage-limit clock, identity caller ancestry, the UDS peer-start probe, three tmux process probes). RED: the guard listed all 8 sites; the decoy-on-PATH tests ran the decoy ps and date (evidence/path-search-red.txt). GREEN plus clippy -D warnings on the 7 crates (evidence/path-search-green.txt); one known pij-tmux deadline flake under load, 5/5 alone and 29/29 serial, test file untouched by D. Mutants MD1-MD6 all killed, incl. the guard's vacuity check and the decoy harness's own control (evidence/mutation-path-search.txt). git/tmux resolve-once deferred (R10).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }

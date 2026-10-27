@@ -198,7 +198,7 @@ impl UdsTransport {
 
 fn process_start(pid: u32, utc: bool) -> Option<u64> {
     pij_core::spawns::record("ps.uds-peer-start");
-    let mut command = Command::new("ps");
+    let mut command = Command::new("/bin/ps");
     command
         .args(["-p", &pid.to_string(), "-o", "lstart="])
         .env("LC_ALL", "C");

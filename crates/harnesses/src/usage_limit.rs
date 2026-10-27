@@ -146,7 +146,7 @@ pub fn local_clock_text(epoch_secs: u64, tz: Option<&str>) -> Option<String> {
         .into_iter()
         .find_map(|args| {
             pij_core::spawns::record("date.usage-limit-clock");
-            let mut command = Command::new("date");
+            let mut command = Command::new("/bin/date");
             command.args(args).arg(FORMAT).env("LC_ALL", "C");
             if let Some(tz) = tz {
                 command.env("TZ", tz);

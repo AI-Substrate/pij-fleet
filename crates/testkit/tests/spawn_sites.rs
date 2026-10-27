@@ -173,3 +173,43 @@ fn every_daemon_launch_site_records_itself() {
         unrecorded.join("\n  ")
     );
 }
+
+/// Plan 180, follow-up D: a bare `ps` or `date` makes macOS `posix_spawnp` try
+/// every PATH entry, and each miss is a kernel process (18 per launch with the
+/// daemon's PATH). The daemon names them by absolute path instead.
+#[test]
+fn no_daemon_launch_searches_path_for_ps_or_date() {
+    const BARE: [&str; 2] = ["Command::new(\"ps\")", "Command::new(\"date\")"];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().expect("the workspace root");
+    let mut files = Vec::new();
+    for krate in DAEMON_CRATES {
+        rust_files(&root.join("crates").join(krate).join("src"), &mut files);
+    }
+    let mut absolute = 0;
+    let mut bare = Vec::new();
+    for path in &files {
+        for (index, line) in production_lines(path).iter().enumerate() {
+            absolute += line.matches("Command::new(\"/bin/ps\")").count();
+            if BARE.iter().any(|pattern| line.contains(pattern)) {
+                bare.push(format!(
+                    "{}:{}: {}",
+                    path.strip_prefix(&root).unwrap().display(),
+                    index + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    // Guard against a vacuous pass: the absolute-path launches must be visible.
+    assert!(
+        absolute >= 4,
+        "found only {absolute} `/bin/ps` launches; fix the scanner"
+    );
+    assert!(
+        bare.is_empty(),
+        "these launches search PATH (one kernel process per PATH miss on macOS); use \
+         \"/bin/ps\" or \"/bin/date\":\n  {}",
+        bare.join("\n  ")
+    );
+}

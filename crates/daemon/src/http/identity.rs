@@ -535,7 +535,7 @@ fn caller_descends_from(peer: SocketAddr, host: u32) -> bool {
         return false;
     };
     pij_core::spawns::record("ps.identity-caller-ancestry");
-    let Ok(output) = std::process::Command::new("ps")
+    let Ok(output) = std::process::Command::new("/bin/ps")
         .args(["-Ao", "pid=,ppid="])
         .env("LC_ALL", "C")
         .output()
