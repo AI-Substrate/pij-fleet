@@ -82,6 +82,12 @@ impl std::fmt::Debug for PeerDefinition {
 pub struct Config {
     /// Which implementation each port gets.
     pub adapters: Adapters,
+    /// The `tmux -L` socket name the real tmux adapter talks to; `None` is the
+    /// user's default server. A test daemon names a private server it created,
+    /// so it never reads from or attaches a client to the operator's tmux
+    /// (pij-fleet#73 review S3). The daemon composition root reads
+    /// `PIJ_TMUX_SERVER`.
+    pub tmux_server: Option<String>,
     /// Harnesses refused for new spawns unless the caller explicitly allows them.
     /// Empty by default; the daemon composition root reads `PIJ_RETIRED_HARNESSES`.
     pub retired_harnesses: Vec<Harness>,
@@ -185,6 +191,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             adapters: Adapters::default(),
+            tmux_server: None,
             retired_harnesses: Vec::new(),
             bind_addr: "127.0.0.1:0".to_string(),
             store_path: String::new(),

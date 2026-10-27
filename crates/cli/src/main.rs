@@ -2362,6 +2362,10 @@ async fn run_daemon(
         .unwrap_or_default();
     let mut config = daemon_config(bind, &state_dir.join("pij.sqlite"), offline);
     config.retired_harnesses = retired_harnesses;
+    // A test's private server (review S3); unset is the operator's default one.
+    config.tmux_server = std::env::var("PIJ_TMUX_SERVER")
+        .ok()
+        .filter(|server| !server.is_empty());
     config.insecure_bind = insecure_bind;
     if let Some(pairing) = pairing {
         config.machine_alias = Some(pairing.machine);

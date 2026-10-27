@@ -84,9 +84,10 @@ async fn the_subcommand_matches_the_script_against_a_live_and_a_dead_daemon() {
     let root = std::env::temp_dir().join(format!("pij-rs-statusline-e2e-{}", std::process::id()));
     std::fs::create_dir_all(&root).expect("root");
     let store = root.join("pij.sqlite");
-    let daemon = pij_daemon::boot(&daemon_config("127.0.0.1:0", &store, false), root.clone())
-        .await
-        .expect("boot");
+    let tmux = pij_testkit::tmux::PrivateTmux::start();
+    let mut config = daemon_config("127.0.0.1:0", &store, false);
+    config.tmux_server = Some(tmux.name().to_string());
+    let daemon = pij_daemon::boot(&config, root.clone()).await.expect("boot");
     let addr = daemon.addr.to_string();
     let state = root.display().to_string();
 
