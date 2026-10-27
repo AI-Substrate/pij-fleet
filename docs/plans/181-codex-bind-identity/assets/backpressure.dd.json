@@ -31,7 +31,7 @@
           "mode": "EXISTS",
           "tier": "human-judgement",
           "proof": "Prime reads the docs against the code.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "docs/how/pij-pane-signals.md"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Mutation receipts; clippy; fmt; GitHub CI on the exact head; prime post-merge canary.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": ".github/workflows"
         },
         {

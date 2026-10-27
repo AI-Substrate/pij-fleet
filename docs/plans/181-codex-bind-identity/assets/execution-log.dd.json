@@ -84,6 +84,23 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0007"
           ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-27T22:40:00Z",
+          "text": "CI: run 40592322914 green on 51968c9 (first PR #81 head); after merging main d67edc0 (#73) and recording the binder lsof in the spawn counter, run 40594274912 green on the final head 1699bb6 (check (22), check (24), rust-lint, rust-test). just rust-check exit 0 on the merged tree (receipts/rust-check-d67edc0.txt). Merged as main 7487114; refs/notes/* on origin empty.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0011",
+          "at": "2026-10-28T00:00:00Z",
+          "text": "Prime post-merge verification (assets/reviews/prime-verification.md): deployed 7487114 (just bounce-rs); live canary pij-shiny-chameleon spawned bound:true with session 01a17f7a-2779-72a3-a100-450d65c82a10, no timeout; whoami named it; its pij send arrived from pij-shiny-chameleon; torn down owner-close. R12 after: lsof.codex-process-files stayed at 2 (the canary bind) and added 0 while idle; daemon 12.9/s vs the before 13.65/s (receipts/r12-before-d67edc0.txt). Verdict: ac-0006 met.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007"
+          ]
         }
       ]
     }
