@@ -1,11 +1,11 @@
-//! Telegram documents: staged by content at enqueue, uploaded with `sendDocument`.
+//! Telegram files: staged by content at enqueue, uploaded by type.
 //!
 //! The job never carries the caller's path as the thing to send. Enqueue copies
-//! the file into the sidecar's staging directory while hashing it, and the job
-//! records the staged copy plus its SHA-256 and size. The worker re-verifies
-//! both before uploading, so an edit to the source after `pij send` returns can
-//! not change what reaches Telegram, and a damaged staged copy fails the job
-//! rather than sending something else.
+//! each file into the sidecar's staging directory while hashing it, and the job
+//! records the staged copy plus its SHA-256, size and Bot API method. The worker
+//! re-verifies the bytes before uploading, so an edit to the source after
+//! `pij send` returns cannot change what reaches Telegram, and a damaged staged
+//! copy fails the job rather than sending something else.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -17,12 +17,71 @@ use pij_core::model::{Job, SeatId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::{TELEGRAM_DOCUMENT_KIND, strip_exact_prefix};
+use super::{TELEGRAM_DOCUMENT_KIND, TelegramSend, send_job, strip_exact_prefix};
 
-/// Telegram's ceiling for a bot uploading a document (Bot API `sendDocument`).
+/// Telegram's ceiling for a bot uploading a file (Bot API, every method).
 pub const DOCUMENT_LIMIT_BYTES: u64 = 50 * 1024 * 1024;
+/// Telegram's ceiling for `sendPhoto`; a larger image goes as a document.
+pub const PHOTO_LIMIT_BYTES: u64 = 10 * 1024 * 1024;
+/// The most files one send may carry.
+pub const MAX_FILES: usize = 10;
 /// Telegram's caption ceiling, in characters after entity parsing.
 pub const CAPTION_LIMIT: usize = 1024;
+
+/// The Bot API method a staged file is uploaded with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MediaMethod {
+    /// `sendPhoto`: jpg, jpeg, png or webp up to [`PHOTO_LIMIT_BYTES`].
+    #[serde(rename = "sendPhoto")]
+    Photo,
+    /// `sendVideo`: mp4.
+    #[serde(rename = "sendVideo")]
+    Video,
+    /// `sendAnimation`: gif.
+    #[serde(rename = "sendAnimation")]
+    Animation,
+    /// `sendDocument`: everything else, and the fallback for the others.
+    #[default]
+    #[serde(rename = "sendDocument")]
+    Document,
+}
+
+impl MediaMethod {
+    /// Choose the method from a file's name and size.
+    pub fn classify(file_name: &str, size: u64) -> Self {
+        // A leading-dot-only name (".png") has no extension.
+        let extension = match file_name.rfind('.') {
+            Some(dot) if dot > 0 => file_name[dot + 1..].to_ascii_lowercase(),
+            _ => String::new(),
+        };
+        match extension.as_str() {
+            "jpg" | "jpeg" | "png" | "webp" if size <= PHOTO_LIMIT_BYTES => Self::Photo,
+            "mp4" => Self::Video,
+            "gif" => Self::Animation,
+            _ => Self::Document,
+        }
+    }
+
+    /// The Bot API method name, as it appears in the URL.
+    pub fn api_method(self) -> &'static str {
+        match self {
+            Self::Photo => "sendPhoto",
+            Self::Video => "sendVideo",
+            Self::Animation => "sendAnimation",
+            Self::Document => "sendDocument",
+        }
+    }
+
+    /// The multipart field that carries the file for this method.
+    pub fn field(self) -> &'static str {
+        match self {
+            Self::Photo => "photo",
+            Self::Video => "video",
+            Self::Animation => "animation",
+            Self::Document => "document",
+        }
+    }
+}
 
 /// Durable request submitted by the CLI or the `pij send --file` shim route.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,11 +89,14 @@ pub const CAPTION_LIMIT: usize = 1024;
 pub struct TelegramDocumentRequest {
     /// Seat whose later reply binding this send establishes.
     pub from: SeatId,
-    /// Absolute path of the file to send; copied at enqueue.
-    pub path: PathBuf,
-    /// Optional caption; the sender tag is always prefixed.
+    /// Absolute paths of the files to send, in order; copied at enqueue.
+    pub files: Vec<PathBuf>,
+    /// Optional caption for the first file; the sender tag is always prefixed.
     #[serde(default)]
     pub caption: Option<String>,
+    /// Optional text, sent before the files as an ordinary text send.
+    #[serde(default)]
+    pub body: Option<String>,
     /// Stable request id.
     pub msg_id: String,
     /// Conversation override; absent uses the credential file's chat id.
@@ -42,7 +104,7 @@ pub struct TelegramDocumentRequest {
     pub chat_id: Option<String>,
 }
 
-/// The content-addressed copy a document job sends.
+/// The content-addressed copy a file job sends.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StagedDocument {
     /// The caller's path, for diagnostics only. Never read after enqueue.
@@ -55,6 +117,9 @@ pub struct StagedDocument {
     pub size: u64,
     /// Lowercase hex SHA-256 of the staged bytes.
     pub sha256: String,
+    /// The Bot API method the worker tries first.
+    #[serde(default)]
+    pub method: MediaMethod,
 }
 
 /// Queue payload for [`TELEGRAM_DOCUMENT_KIND`].
@@ -67,24 +132,101 @@ pub(super) struct DocumentJob {
     pub document: StagedDocument,
 }
 
-/// Validate, stage, and build the queue row for one document send.
+/// Everything one request queues, in order: the body (if any), then each file.
+#[derive(Debug)]
+pub struct StagedSend {
+    /// The text send for `body`, queued first.
+    pub body: Option<Job>,
+    /// One job per file, in argument order, with the copy it sends.
+    pub files: Vec<(Job, StagedDocument)>,
+}
+
+/// Validate and stage every file, and build the queue rows for one send.
 ///
-/// Every refusal happens here, before anything is queued: a missing, empty,
-/// non-regular, or oversized file, and a caption that cannot fit even behind
-/// the bare sender tag.
-pub fn stage_document(
-    request: &TelegramDocumentRequest,
-    staging_dir: &Path,
-) -> Result<(Job, StagedDocument)> {
+/// Every refusal happens here, before anything is queued: no files or too
+/// many; a missing, empty, non-regular or oversized file; a caption that
+/// cannot fit even behind the bare sender tag.
+pub fn stage_send(request: &TelegramDocumentRequest, staging_dir: &Path) -> Result<StagedSend> {
     stage_with_limit(request, staging_dir, DOCUMENT_LIMIT_BYTES)
+}
+
+/// Delete staged copies that will never be queued.
+pub fn release_staged<'a>(documents: impl IntoIterator<Item = &'a StagedDocument>) {
+    for document in documents {
+        let _ = fs::remove_file(&document.staged);
+    }
 }
 
 pub(super) fn stage_with_limit(
     request: &TelegramDocumentRequest,
     staging_dir: &Path,
     limit: u64,
+) -> Result<StagedSend> {
+    if request.files.is_empty() {
+        return Err(refusal(
+            "a Telegram file send needs at least one --file; text alone is a plain send"
+                .to_string(),
+        ));
+    }
+    if request.files.len() > MAX_FILES {
+        return Err(refusal(format!(
+            "{} files in one send; send at most {MAX_FILES}",
+            request.files.len()
+        )));
+    }
+    if request.msg_id.trim().is_empty() {
+        return Err(refusal("a Telegram file send needs a msg_id".to_string()));
+    }
+    let caption = request.caption.clone().unwrap_or_default();
+    // Context is unknown until send time, so prove the bare-tag fallback fits.
+    prefixed_caption(&request.from, None, &caption)?;
+    let body = request
+        .body
+        .as_ref()
+        .map(|body| {
+            send_job(&TelegramSend {
+                from: request.from.clone(),
+                body: body.clone(),
+                msg_id: request.msg_id.clone(),
+                chat_id: request.chat_id.clone(),
+            })
+        })
+        .transpose()?;
+    // A lone file keeps the request's id; otherwise each file is numbered, so
+    // every job has its own dedupe key and its own outcome.
+    let numbered = request.files.len() > 1 || body.is_some();
+    let mut files: Vec<(Job, StagedDocument)> = Vec::with_capacity(request.files.len());
+    for (index, source) in request.files.iter().enumerate() {
+        let msg_id = if numbered {
+            format!("{}#{}", request.msg_id, index + 1)
+        } else {
+            request.msg_id.clone()
+        };
+        let caption = if index == 0 {
+            caption.clone()
+        } else {
+            String::new()
+        };
+        match stage_one(request, source, &msg_id, caption, staging_dir, limit) {
+            Ok(staged) => files.push(staged),
+            Err(error) => {
+                // All or nothing: nothing is queued, so nothing stays staged.
+                release_staged(files.iter().map(|(_, document)| document));
+                return Err(error);
+            }
+        }
+    }
+    Ok(StagedSend { body, files })
+}
+
+fn stage_one(
+    request: &TelegramDocumentRequest,
+    source: &Path,
+    msg_id: &str,
+    caption: String,
+    staging_dir: &Path,
+    limit: u64,
 ) -> Result<(Job, StagedDocument)> {
-    let source = &request.path;
     if !source.is_absolute() {
         return Err(refusal(format!(
             "attachment path `{}` is relative; the daemon has no working directory of yours to \
@@ -92,12 +234,6 @@ pub(super) fn stage_with_limit(
             source.display()
         )));
     }
-    if request.msg_id.trim().is_empty() {
-        return Err(refusal("a Telegram document needs a msg_id".to_string()));
-    }
-    let caption = request.caption.clone().unwrap_or_default();
-    // Context is unknown until send time, so prove the bare-tag fallback fits.
-    prefixed_caption(&request.from, None, &caption)?;
     let metadata = fs::metadata(source).map_err(|error| {
         refusal(format!(
             "attachment `{}` cannot be read: {error}",
@@ -112,7 +248,7 @@ pub(super) fn stage_with_limit(
     }
     if metadata.len() == 0 {
         return Err(refusal(format!(
-            "attachment `{}` is empty; Telegram refuses empty documents",
+            "attachment `{}` is empty; Telegram refuses empty files",
             source.display()
         )));
     }
@@ -123,8 +259,11 @@ pub(super) fn stage_with_limit(
     fs::create_dir_all(staging_dir).map_err(|error| io_failure("create", staging_dir, &error))?;
     fs::set_permissions(staging_dir, fs::Permissions::from_mode(0o700))
         .map_err(|error| io_failure("restrict", staging_dir, &error))?;
+    let msg_key = hex(&Sha256::digest(msg_id))[..16].to_string();
+    // The msg key keeps two files of one request (same pid, same millisecond)
+    // from opening the same partial name.
     let partial = staging_dir.join(format!(
-        ".partial-{}-{}",
+        ".partial-{}-{}-{msg_key}",
         std::process::id(),
         crate::common::now_ms()?
     ));
@@ -136,26 +275,27 @@ pub(super) fn stage_with_limit(
             return Err(error);
         }
     };
-    let name = format!("{sha256}-{}", &hex(&Sha256::digest(&request.msg_id))[..16]);
-    let staged = staging_dir.join(name);
+    let staged = staging_dir.join(format!("{sha256}-{msg_key}"));
     if let Err(error) = fs::rename(&partial, &staged) {
         let _ = fs::remove_file(&partial);
         return Err(io_failure("publish", &staged, &error));
     }
+    let file_name = source
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "document".to_string());
     let document = StagedDocument {
-        source: source.clone(),
+        source: source.to_path_buf(),
         staged,
-        file_name: source
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "document".to_string()),
+        method: MediaMethod::classify(&file_name, size),
+        file_name,
         size,
         sha256,
     };
     let payload = DocumentJob {
         from: request.from.clone(),
-        msg_id: request.msg_id.clone(),
+        msg_id: msg_id.to_string(),
         chat_id: request.chat_id.clone(),
         caption,
         document: document.clone(),
@@ -171,7 +311,7 @@ pub(super) fn stage_with_limit(
                 "could not encode Telegram document request: {error}"
             ))
         })?,
-        dedupe_key: request.msg_id.clone(),
+        dedupe_key: msg_id.to_string(),
         dedupe_origin: None,
         attempt: 0,
     };
@@ -253,13 +393,15 @@ pub(super) fn prefixed_caption(
     )))
 }
 
-/// A `multipart/form-data` body for `sendDocument`, and its content type.
+/// A `multipart/form-data` body for one file upload, and its content type.
 ///
 /// Hand-built rather than through reqwest's `multipart` feature: the request is
 /// three fixed fields, and building the bytes as a pure function is what lets
-/// the wire shape be asserted byte for byte.
-pub(super) fn document_multipart(
+/// the wire shape be asserted byte for byte. `field` names the file part for
+/// the method (`photo`, `video`, `animation` or `document`).
+pub(super) fn media_multipart(
     boundary: &str,
+    field: &str,
     chat_id: &str,
     caption: &str,
     file_name: &str,
@@ -276,7 +418,7 @@ pub(super) fn document_multipart(
     }
     body.extend_from_slice(
         format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; \
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; \
              filename=\"{}\"\r\nContent-Type: application/octet-stream\r\n\r\n",
             escape_file_name(file_name)
         )

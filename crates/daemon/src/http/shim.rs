@@ -564,19 +564,31 @@ async fn send_attachment(
     let msg_id = state.services.delivery.next_message_id();
     let request = pij_sidecars::telegram::TelegramDocumentRequest {
         from,
-        path,
+        files: vec![path],
         caption: attachment.caption,
+        body: None,
         msg_id,
         chat_id: None,
     };
     match super::enqueue_telegram_document(state, request).await {
-        Ok(queued) => {
+        Ok(mut queued) => {
+            // One --file and no body: exactly one queued file.
+            let Some(file) = queued.files.pop() else {
+                return internal(
+                    SEND,
+                    pij_core::error::PijError::Adapter {
+                        adapter: "sidecars/telegram".to_string(),
+                        message: "a one-file send queued no file".to_string(),
+                    },
+                );
+            };
             let reason = format!(
-                "telegram document {} ({} bytes, sha256 {}) queued as sidecar job {}",
-                queued.document.file_name,
-                queued.document.size,
-                &queued.document.sha256[..12],
-                queued.job_id.0
+                "telegram {} {} ({} bytes, sha256 {}) queued as sidecar job {}",
+                file.document.method.api_method(),
+                file.document.file_name,
+                file.document.size,
+                &file.document.sha256[..12],
+                file.job_id.0
             );
             envelope(
                 axum::http::StatusCode::OK,
@@ -585,8 +597,8 @@ async fn send_attachment(
                     serde_json::json!({
                         "msg_id": queued.msg_id,
                         "outcome": {"outcome": "queued", "reason": reason},
-                        "job_id": queued.job_id,
-                        "document": queued.document,
+                        "job_id": file.job_id,
+                        "document": file.document,
                     }),
                 ),
             )

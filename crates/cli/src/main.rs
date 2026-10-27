@@ -707,22 +707,25 @@ impl BgAction {
 
 #[derive(Clone, Debug, Subcommand)]
 enum SidecarAction {
-    /// Send one outbound Telegram message and bind this seat as the reply target.
+    /// Send text and/or files to the human on Telegram, and bind this seat as the reply target.
     Telegram {
         /// Assert the derived sending seat, which inbound replies route back to.
         #[arg(long)]
         from: Option<String>,
         /// Literal message body, including values beginning with `-`.
-        #[arg(long, allow_hyphen_values = true, conflicts_with_all = ["body_file", "file"])]
+        /// With `--file`, it is sent first, then the files.
+        #[arg(long, allow_hyphen_values = true, conflicts_with = "body_file")]
         body: Option<String>,
         /// Read the literal body from a path, or from stdin with `-`.
-        #[arg(long, conflicts_with_all = ["body", "file"])]
+        #[arg(long, conflicts_with = "body")]
         body_file: Option<String>,
-        /// Send this file as a Telegram document (max 50 MB). The daemon copies
-        /// it at enqueue, so later edits cannot change what is sent.
-        #[arg(long)]
-        file: Option<PathBuf>,
-        /// Caption for `--file`; the sender tag is prefixed.
+        /// Send this file (repeat for up to 10, sent in order; max 50 MB each):
+        /// jpg/jpeg/png/webp as a photo, mp4 as a video, gif as an animation,
+        /// anything else as a document. The daemon copies each file at enqueue,
+        /// so later edits cannot change what is sent.
+        #[arg(long = "file")]
+        file: Vec<PathBuf>,
+        /// Caption for the first `--file`; the sender tag is prefixed.
         #[arg(long, allow_hyphen_values = true, requires = "file")]
         caption: Option<String>,
         /// Correlation id. Omit to mint a UUIDv7.
@@ -798,21 +801,23 @@ impl SidecarAction {
                 msg_id,
                 chat_id,
             } => {
-                let file = file.map(|path| resolve_attachment(&path)).transpose()?;
-                let body = match file {
-                    Some(_) => None,
-                    None => Some(resolve_send_body(body, body_file)?),
+                let files = file
+                    .iter()
+                    .map(|path| resolve_attachment(path))
+                    .collect::<Result<Vec<_>, _>>()?;
+                // Text alone needs a body; with files the body is optional.
+                let body = if files.is_empty() || body.is_some() || body_file.is_some() {
+                    Some(resolve_send_body(body, body_file)?)
+                } else {
+                    None
                 };
                 let from =
                     resolve_command_seat(client, "pij sidecar telegram", from.as_deref()).await?;
                 let msg_id = msg_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
-                match (file, body) {
-                    (Some(path), _) => {
-                        json!({"sidecar": "telegram_document", "request": {"from": from, "path": path, "caption": caption, "msg_id": msg_id, "chat_id": chat_id}})
-                    }
-                    (None, body) => {
-                        json!({"sidecar": "telegram", "request": {"from": from, "body": body, "msg_id": msg_id, "chat_id": chat_id}})
-                    }
+                if files.is_empty() {
+                    json!({"sidecar": "telegram", "request": {"from": from, "body": body, "msg_id": msg_id, "chat_id": chat_id}})
+                } else {
+                    json!({"sidecar": "telegram_document", "request": {"from": from, "files": files, "caption": caption, "body": body, "msg_id": msg_id, "chat_id": chat_id}})
                 }
             }
             Self::BgStart {
@@ -3309,24 +3314,59 @@ mod tests {
     }
 
     #[test]
-    fn telegram_file_excludes_bodies_and_caption_requires_a_file() {
-        for argv in [
-            &[
-                "pij-rs", "sidecar", "telegram", "--file", "r.html", "--body", "x",
-            ][..],
-            &[
-                "pij-rs",
-                "sidecar",
-                "telegram",
-                "--file",
-                "r.html",
-                "--body-file",
-                "-",
-            ][..],
-        ] {
-            let error = Cli::try_parse_from(argv).err().expect("must conflict");
-            assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
-        }
+    fn telegram_files_repeat_combine_with_a_body_and_caption_requires_a_file() {
+        let telegram = |argv: &[&str]| {
+            let cli = Cli::try_parse_from(argv).expect("parses");
+            let Command::Sidecar {
+                action:
+                    super::SidecarAction::Telegram {
+                        file,
+                        caption,
+                        body,
+                        body_file,
+                        ..
+                    },
+            } = cli.command
+            else {
+                panic!("expected sidecar telegram");
+            };
+            (file, caption, body, body_file)
+        };
+        let (file, caption, body, _) = telegram(&[
+            "pij-rs",
+            "sidecar",
+            "telegram",
+            "--file",
+            "a.png",
+            "--file",
+            "b.mp4",
+            "--body",
+            "look",
+            "--caption",
+            "-leading dash",
+        ]);
+        assert_eq!(
+            file,
+            vec![
+                std::path::PathBuf::from("a.png"),
+                std::path::PathBuf::from("b.mp4")
+            ],
+            "--file repeats, in order"
+        );
+        assert_eq!(body.as_deref(), Some("look"), "a body rides with files");
+        assert_eq!(caption.as_deref(), Some("-leading dash"));
+        let (file, _, _, body_file) = telegram(&[
+            "pij-rs",
+            "sidecar",
+            "telegram",
+            "--file",
+            "r.html",
+            "--body-file",
+            "-",
+        ]);
+        assert_eq!(file.len(), 1);
+        assert_eq!(body_file.as_deref(), Some("-"));
+
         let error = Cli::try_parse_from(["pij-rs", "sidecar", "telegram", "--caption", "c"])
             .err()
             .expect("caption alone");
@@ -3334,24 +3374,6 @@ mod tests {
             error.kind(),
             clap::error::ErrorKind::MissingRequiredArgument
         );
-        let cli = Cli::try_parse_from([
-            "pij-rs",
-            "sidecar",
-            "telegram",
-            "--file",
-            "r.html",
-            "--caption",
-            "-leading dash",
-        ])
-        .expect("file with caption");
-        let Command::Sidecar {
-            action: super::SidecarAction::Telegram { file, caption, .. },
-        } = cli.command
-        else {
-            panic!("expected sidecar telegram");
-        };
-        assert_eq!(file.as_deref(), Some(std::path::Path::new("r.html")));
-        assert_eq!(caption.as_deref(), Some("-leading dash"));
     }
 
     #[test]
