@@ -20,9 +20,10 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-AC4: diagnosis, bind, identity, footer | ph-e341 | EXTEND | computational | Live repro receipts in assets/evidence/; EXTEND→RUN: fixture tests beside crates/harnesses/src/composer.rs and adapter.rs tests, plus the bind/identity tests in crates/daemon; cargo test -p pij-harnesses -p pij-daemon &lt;filters&gt; | [ ] unchecked | — | — | crates/harnesses/tests/fixtures/ |
+| bp-0001 | AC1-AC4: diagnosis, bind, identity, footer | ph-e341 | EXTEND | computational | Live repro receipts in assets/evidence/; EXTEND→RUN: fixture tests beside crates/harnesses/src/composer.rs and adapter.rs tests, plus the bind/identity tests in crates/daemon; cargo test -p pij-harnesses -p pij-daemon &lt;filters&gt; | [x] checked | — | — | crates/harnesses/tests/fixtures/ |
 | bp-0002 | AC5: docs | ph-e341 | EXISTS | human-judgement | Prime reads the docs against the code. | [ ] unchecked | — | — | docs/how/pij-pane-signals.md |
 | bp-0003 | AC6: proof, CI and the live canary | ph-e341 | EXISTS | computational | Mutation receipts; clippy; fmt; GitHub CI on the exact head; prime post-merge canary. | [ ] unchecked | — | — | .github/workflows |
+| bp-0004 | AC7: Codex binder steady-state cost (R12) | ph-e341 | BUILD | computational | Launch-counting tests on an injected facts port in crates/daemon/src/codex_bind_tests.rs (zero launches per quiet tick; bounded per Codex thread start and per bind); live spawn-rate baseline before merge (assets/evidence/receipts/r12-spawn-rate-baseline.txt) and the same probe after the prime deploys. | [x] checked | — | — | crates/daemon/src/codex_bind_tests.rs |
 
 <a id="sensors"></a>
 

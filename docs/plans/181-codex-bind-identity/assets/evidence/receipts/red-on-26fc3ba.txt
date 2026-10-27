@@ -1,0 +1,49 @@
+## tree: 26fc3ba + plan-181 tests/fixtures only (git -C base26 status above)
+$ cargo test -p pij-harnesses -- codex_0_164_warning_lines codex_launch_pins_its_thread_and_identity
+adapter::codex_0_164_warning_lines::a_frame_showing_only_the_quota_warning_is_not_ready --- FAILED
+composer::codex_0_164_warning_lines::quota_warning_line_is_not_a_footer --- FAILED
+spawn::tests::codex_launch_pins_its_thread_and_identity --- FAILED
+thread 'adapter::codex_0_164_warning_lines::a_frame_showing_only_the_quota_warning_is_not_ready' (208437342) panicked at crates/harnesses/src/adapter.rs:1308:9:
+assertion failed: matches!(classify_readiness(Harness::Codex, warning_only), Readiness::NotYet
+thread 'composer::codex_0_164_warning_lines::quota_warning_line_is_not_a_footer' (208437346) panicked at crates/harnesses/src/composer.rs:618:9:
+"                                                                                                                      ⚠ 5h limit: 49% left · resets at 12:33 AM on 27 Oct · /status"
+thread 'spawn::tests::codex_launch_pins_its_thread_and_identity' (208437347) panicked at crates/harnesses/src/spawn.rs:589:13:
+features.daemon_auto_start=false missing from ["PIJ_SESSION_ID=pij-assigned", "PIJ_SPAWN_ID=spawn-assigned", "codex", "--dangerously-bypass-approvals-and-sandbox", "--model", "provider/model", "-c", "model_reasoning_effort=high"]
+test result: FAILED. 3 passed; 3 failed; 0 ignored; 0 measured; 162 filtered out; finished in 0.00s
+$ cargo test -p pij-daemon --lib -- codex_caller_tests codex_spawn_timeout_names_the_prompt_on_screen
+http::codex_caller_tests::a_seat_recording_another_thread_is_not_the_caller --- FAILED
+http::codex_caller_tests::a_send_carrying_another_seats_identity_is_refused_by_name --- FAILED
+http::codex_caller_tests::an_inherited_pane_is_never_advised_or_allowed_to_be_adopted --- FAILED
+http::tests::codex_spawn_timeout_names_the_prompt_on_screen --- FAILED
+thread 'http::codex_caller_tests::a_seat_recording_another_thread_is_not_the_caller' (208513779) panicked at crates/daemon/src/http/codex_caller_tests.rs:94:5:
+assertion `left == right` failed: {"command":"pij whoami","data":{"extension_build":null,"extension_path":null,"folder":"/abs/initial-build","harness":"codex","id":"pij-parallel-bandicoot","native_extension_delivery":false,"pane":"%45","parent":null,"pending_fyis":0,"proc":null,"relay":false,"role":null,"semantic_state":null,"session":"01a17825-e57c-7111-a7ff-a56b7dffe913","spawn_id":"s-pij-parallel-bandicoot","state":"idle"},"ok":true,"v":2}
+  left: Bool(true)
+ right: false
+thread 'http::codex_caller_tests::a_send_carrying_another_seats_identity_is_refused_by_name' (208513780) panicked at crates/daemon/src/http/codex_caller_tests.rs:111:5:
+assertion `left == right` failed
+  left: "pij-concrete-crane: no registry row in the daemon registry — the seat MAY never have registered, or this daemon may be reading a different store than the one you expect; adopt it (`pij adopt`) or spawn it again"
+ right: "E-RS-CODEX-IDENTITY: this Codex thread `01a17807-3be5-7520-a3ea-2efc9a6b99df` claims seat `pij-parallel-bandicoot`, but no Codex process in pane `%45` holds a thread pij can read. A shared Codex app-server gives every thread the environment of the session that started it, so PIJ_SESSION_ID and TMUX_PANE can name another seat. Refusing rather than acting as that seat; nothing was written."
+thread 'http::codex_caller_tests::an_inherited_pane_is_never_advised_or_allowed_to_be_adopted' (208513781) panicked at crates/daemon/src/http/codex_caller_tests.rs:132:5:
+assertion `left == right` failed
+  left: "no live seat in the rs store owns pane `%45` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first."
+ right: "E-RS-CODEX-IDENTITY: this Codex thread `01a17807-3be5-7520-a3ea-2efc9a6b99df` claims pane `%45`, but no Codex process in pane `%45` holds a thread pij can read. A shared Codex app-server gives every thread the environment of the session that started it, so PIJ_SESSION_ID and TMUX_PANE can name another seat. Refusing rather than acting as that seat; nothing was written."
+thread 'http::tests::codex_spawn_timeout_names_the_prompt_on_screen' (208513782) panicked at crates/daemon/src/http/tests.rs:8073:5:
+assertion `left == right` failed
+  left: String("timed out after 1s waiting for registration")
+ right: "timed out after 1s waiting for registration: Codex is showing its update prompt (`Update available · 0.164.0 → 0.165.0`)"
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 626 filtered out; finished in 1.78s
+$ cargo test -p pij-cli --test spawn spawn_child_appends_the_codex_pane_setting
+pij-rs spawn child: could not launch "--harness": No such file or directory (os error 2)
+spawn_child_appends_the_codex_pane_setting --- FAILED
+thread 'spawn_child_appends_the_codex_pane_setting' (208541164) panicked at crates/cli/tests/spawn.rs:1220:9:
+assertion failed: command.status().expect("spawn child").success()
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 4.86s
+error: test failed, to rerun pass `-p pij-cli --test spawn`
+
+## rerun after giving the send test its recipient seat (base accepts the send as pij-parallel-bandicoot):
+$ cargo test -p pij-daemon --lib -- codex_caller_tests::a_send
+http::codex_caller_tests::a_send_carrying_another_seats_identity_is_refused_by_name --- FAILED
+assertion `left == right` failed: {"command":"pij send","data":{"at":1793137966938,"cold_check":"unknown: no harness session bound","msg_id":"1bf9d2c41232af31-0000000000000000","outcome":{"next_retry_at":0,"outcome":"queued","reason":"pre-bind"}},"ok":true,"v":2}
+  left: Bool(true)
+ right: false
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 631 filtered out; finished in 0.07s

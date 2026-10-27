@@ -1,0 +1,19 @@
+== env
+CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS=1
+CODEX_CI=1
+CODEX_SESSION_ID=01a17f40-5ad4-7ff3-aa69-991589587076
+CODEX_THREAD_ID=01a17f40-5ad4-7ff3-aa69-991589587076
+CODEX_TOOL_CALL_ID=exec-bac66719-f9d3-439f-82ca-05152b139a81
+CODEX_VERSION=0.164.0
+PIJ_NPM_REGISTRY=https://packagefeedproxy.microsoft.io/npm/
+PIJ_SESSION_ID=pij-continued-marlin
+PIJ_SPAWN_ID=s-87b2599840e57f31783cbccf12f8430e
+TMUX=/private/tmp/tmux-501/default,62508,0
+TMUX_PANE=%122
+== ancestry
+81369  1567 Wed Oct 28 07:25:56 2026     /bin/sh /private/tmp/claude-501/-Users-jordanknight-pi-hacking-fleet-181-codex-bind/726e715b-0991-4322-ab03-b9dd3ab9972f/scratchpad/probe.sh E-fixed-argv nosen
+ 1567  1533 Wed Oct 28 07:24:44 2026     /Users/jordanknight/.codex/packages/standalone/releases/0.164.0-aarch64-apple-darwin/bin/codex -c features.daemon_auto_start=false -c check_for_update_on_start
+ 1533 62508 Wed Oct 28 07:24:44 2026     /Users/jordanknight/.npm-global/bin/pij-rs __spawn-child --status-file /var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-rs-spawn/s-87b2599840e57f31783cbccf
+62508     1 Mon Oct 26 12:32:56 2026     tmux new-session -A -s pij -c /Users/jordanknight/pi-hacking/pij
+== whoami
+{"ok":true,"command":"pij whoami","v":2,"data":{"id":"pij-continued-marlin","harness":"codex","session":null,"extension_build":null,"extension_path":null,"pane":"%122","proc":null,"folder":"/Users/jordanknight/pi-hacking/fleet-181-codex-bind","state":"idle","semantic_state":null,"role":"worker","parent":"pij-codex-bind","relay":false,"cross_session_inbound_accept":false,"native_extension_delivery":false,"spawn_id":"s-87b2599840e57f31783cbccf12f8430e","model":"gpt-6.1-sol","effort":"low","pending_fyis":0}}
