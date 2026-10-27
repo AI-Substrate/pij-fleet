@@ -3470,6 +3470,59 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
     server.abort();
 }
 
+/// Plan 181 ac-0002: a Codex spawn that times out says what is on its screen.
+/// The capture is the update prompt recorded from pane %114 on 2026-10-28.
+#[tokio::test]
+async fn codex_spawn_timeout_names_the_prompt_on_screen() {
+    let registry = Arc::new(FakeRegistry::new());
+    let tmux = Arc::new(FakeTmux::new().with_standing_capture(include_str!(
+        "../../../harnesses/tests/fixtures/2026-10-28-codex-v0.164-pane-114-update-prompt.txt"
+    )));
+    let mut services = test_services(
+        registry,
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    services.tmux = tmux;
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/spawn"))
+        .bearer_auth("key")
+        .json(&SpawnRequest {
+            id: Some("pij-compatible-emu".into()),
+            harness: Harness::Codex,
+            allow_retired: false,
+            executable: None,
+            model: Some("gpt-6.1-sol".to_string()),
+            effort: Some("low".to_string()),
+            cwd: "/abs/tree".to_string(),
+            session: Some("fleet".to_string()),
+            caller_pane: None,
+            name: None,
+            parent: None,
+            accept_inbound: false,
+            wait_seconds: Some(1),
+            no_wait: false,
+            resume: None,
+            role: None,
+            caller: None,
+        })
+        .send()
+        .await
+        .expect("spawn response");
+    assert_eq!(response.status(), reqwest::StatusCode::GATEWAY_TIMEOUT);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&response.text().await.expect("body")).expect("failure JSON");
+    assert_eq!(
+        parsed["details"]["reason"],
+        "timed out after 1s waiting for registration: Codex is showing its update prompt \
+         (`Update available · 0.164.0 → 0.165.0`)"
+    );
+    server.abort();
+}
+
 #[tokio::test]
 async fn spawn_wait_returns_bound_process_and_publishes_event() {
     let registry = Arc::new(FakeRegistry::new());

@@ -262,7 +262,7 @@ fn has_claude_composer(text: &str) -> bool {
     })
 }
 
-fn classify_readiness(kind: Harness, text: &str) -> Readiness {
+pub(crate) fn classify_readiness(kind: Harness, text: &str) -> Readiness {
     if is_busy(text) {
         return Readiness::Busy;
     }
@@ -1255,5 +1255,61 @@ mod codex_0_164_footer {
             Some("gpt-5")
         );
         assert_eq!(observed_cwd(Harness::Codex, capture), None);
+    }
+}
+
+#[cfg(test)]
+mod codex_0_164_warning_lines {
+    use super::{
+        Harness, Readiness, classify_readiness, expand_home, observed_cwd, observed_model,
+    };
+
+    /// Recorded 2026-10-26 from pane %53, daemon-hosted Codex 0.164, with the
+    /// quota warning above the prompt (plan 181).
+    const DAEMON_HOSTED: &str =
+        include_str!("../tests/fixtures/2026-10-26-codex-v0.164-pane-53.txt");
+    /// Recorded 2026-10-28 from pane %113, in-process Codex 0.164 with a title.
+    const TITLED: &str = include_str!("../tests/fixtures/2026-10-28-codex-v0.164-pane-113.txt");
+
+    #[test]
+    fn recorded_layouts_read_ready_model_and_cwd() {
+        for (capture, model, cwd) in [
+            (
+                DAEMON_HOSTED,
+                "GPT-6.1-Sol",
+                "~/osk/osk_central-worktrees/initial-build",
+            ),
+            (TITLED, "GPT-6.1-Sol", "~/pi-hacking/fleet-181-codex-bind"),
+        ] {
+            assert_eq!(
+                classify_readiness(Harness::Codex, capture),
+                Readiness::Ready
+            );
+            assert_eq!(
+                observed_model(Harness::Codex, capture).as_deref(),
+                Some(model)
+            );
+            assert_eq!(
+                observed_cwd(Harness::Codex, capture),
+                Some(expand_home(cwd))
+            );
+        }
+    }
+
+    /// The same recorded frame cut before the prompt rendered: only the quota
+    /// warning is on screen. It is not a footer, so the pane is not ready and
+    /// names neither model `⚠` nor cwd `/status`.
+    #[test]
+    fn a_frame_showing_only_the_quota_warning_is_not_ready() {
+        let warning_only = DAEMON_HOSTED
+            .lines()
+            .next()
+            .expect("fixture starts with the warning line");
+        assert!(matches!(
+            classify_readiness(Harness::Codex, warning_only),
+            Readiness::NotYet { .. }
+        ));
+        assert_eq!(observed_model(Harness::Codex, warning_only), None);
+        assert_eq!(observed_cwd(Harness::Codex, warning_only), None);
     }
 }

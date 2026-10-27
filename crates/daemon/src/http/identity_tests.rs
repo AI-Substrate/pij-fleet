@@ -98,6 +98,11 @@ async fn world_on(
     services.tmux = Arc::new(tmux);
     services.liveness = Arc::new(FakeLiveness::new().with_proc(proc));
     services.claude_homes = claude_homes.into();
+    // An in-process Codex TUI in this pane holds its own thread (plan 181).
+    services.codex_threads = Arc::new(crate::codex_bind::HeldThreads::of(&[(
+        PANE,
+        "codex-native",
+    )]));
     let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
     World {
         addr,

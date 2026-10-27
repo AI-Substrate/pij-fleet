@@ -98,6 +98,10 @@ enum Command {
         /// Durable stderr tail source for a failed launch.
         #[arg(long)]
         log_file: PathBuf,
+        /// Harness being launched, so its pane-dependent arguments can be
+        /// appended once tmux has named the pane.
+        #[arg(long, value_parser = parse_harness)]
+        harness: Option<Harness>,
         /// Exact executable and argv after `--`.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<OsString>,
@@ -955,10 +959,20 @@ async fn run(cli: Cli) -> ExitCode {
     if let Command::SpawnChild {
         status_file,
         log_file,
+        harness,
         command,
     } = &cli.command
     {
-        return run_spawn_child(status_file, log_file, command);
+        let mut command = command.clone();
+        if let Some(harness) = harness {
+            let pane = std::env::var("TMUX_PANE").ok();
+            command.extend(
+                pij_harnesses::pane_env_args(*harness, pane.as_deref())
+                    .into_iter()
+                    .map(OsString::from),
+            );
+        }
+        return run_spawn_child(status_file, log_file, &command);
     }
     if let Command::Send {
         command: Some(command),
@@ -2891,6 +2905,17 @@ fn run_spawn_child(status_file: &Path, log_file: &Path, command: &[OsString]) ->
             return ExitCode::from(127);
         }
     };
+    // Plan 181: the Codex binder's lead to this pane's harness process.
+    let record = pij_harnesses::SpawnedChild {
+        wrapper_pid: std::process::id(),
+        child_pid: child.id(),
+    };
+    if let Err(error) = std::fs::write(
+        pij_harnesses::SpawnedChild::path(status_file),
+        record.render(),
+    ) {
+        eprintln!("pij-rs spawn child: could not record the child pid: {error}");
+    }
     let stderr = child.stderr.take().expect("piped child stderr");
     let log_file = log_file.to_path_buf();
     let copier = std::thread::spawn(move || {

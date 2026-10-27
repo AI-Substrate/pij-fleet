@@ -212,11 +212,20 @@ pub(crate) struct CodexFooter<'a> {
 /// segment that is a path, so a title after it — even one containing `·` or
 /// shaped like a path — is never read as data. A usage segment
 /// (`85% context left`) also marks a footer, without a cwd.
+///
+/// The first segment is exactly `<model> <effort>`: Codex's quota warning
+/// `⚠ 5h limit: 49% left · resets at 12:33 AM on 27 Oct · /status` has the
+/// rest of a footer's shape and was read as model `⚠`, cwd `/status`
+/// (2026-10-26, pane %53). Every recorded footer has a two-word head, so a
+/// longer one reads unrecognized rather than misread.
 pub(crate) fn parse_codex_footer(line: &str) -> Option<CodexFooter<'_>> {
     let mut segments = line.split('·').map(str::trim);
     let mut head = segments.next()?.split_whitespace();
     let model = head.next()?;
     head.next()?;
+    if head.next().is_some() {
+        return None;
+    }
     let mut usage = false;
     for segment in segments {
         if segment.starts_with('/') || segment.starts_with("~/") {
@@ -589,6 +598,55 @@ mod codex_0_164 {
         assert_eq!(
             composer_region(capture, 13, 2),
             ComposerRegion::Unrecognized
+        );
+    }
+}
+
+#[cfg(test)]
+mod codex_0_164_warning_lines {
+    use super::{ComposerRegion, composer_region, is_codex_footer};
+
+    /// Recorded 2026-10-26 from pane %53 (a daemon-hosted Codex 0.164 seat),
+    /// bottom lines only, cursor (2, 2). Codex prints a right-aligned quota
+    /// warning above the prompt and a warnings count on the hint line.
+    const DAEMON_HOSTED: &str =
+        include_str!("../tests/fixtures/2026-10-26-codex-v0.164-pane-53.txt");
+    /// Recorded 2026-10-28 from pane %113 (an in-process Codex 0.164 seat with
+    /// a session title), bottom lines only, cursor (2, 0).
+    const TITLED: &str = include_str!("../tests/fixtures/2026-10-28-codex-v0.164-pane-113.txt");
+
+    /// The quota warning has `·` segments and a `/`-word, the shape a footer
+    /// has; read as one it named model `⚠` and cwd `/status` (plan 181).
+    #[test]
+    fn quota_warning_line_is_not_a_footer() {
+        let warning = DAEMON_HOSTED
+            .lines()
+            .next()
+            .expect("fixture starts with the warning line");
+        assert!(warning.contains("5h limit"), "{warning:?}");
+        assert!(!is_codex_footer(warning), "{warning:?}");
+    }
+
+    #[test]
+    fn hint_lines_with_warning_counts_are_not_footers() {
+        for capture in [DAEMON_HOSTED, TITLED] {
+            let hint = capture.lines().last().expect("fixture ends with the hint");
+            assert!(hint.contains("f2 to view"), "{hint:?}");
+            assert!(!is_codex_footer(hint), "{hint:?}");
+        }
+    }
+
+    #[test]
+    fn composer_is_recognized_with_warning_lines_present() {
+        assert_eq!(
+            composer_region(DAEMON_HOSTED, 2, 2),
+            ComposerRegion::Recognized(String::new()),
+            "daemon-hosted layout, quota warning above the prompt"
+        );
+        assert_eq!(
+            composer_region(TITLED, 2, 0),
+            ComposerRegion::Recognized(String::new()),
+            "in-process layout with a session title"
         );
     }
 }

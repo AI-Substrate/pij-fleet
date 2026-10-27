@@ -1,0 +1,4 @@
+› Ask Codex to do anything
+
+  GPT-6.1-Sol low · ~/pi-hacking/fleet-181-codex-bind · Run probe script
+  ? for shortcuts                                      ⚠ 1 warning · f2 to view

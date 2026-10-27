@@ -199,6 +199,22 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
         }
         Harness::Codex => {
             args.push("--dangerously-bypass-approvals-and-sandbox".to_string());
+            // Plan 181. Run this seat's thread in-process: a shared Codex
+            // app-server keeps the environment of whichever TUI started it, so
+            // its tool shells claim that seat. Set this seat's identity per
+            // thread too, so a shell gets it even when the daemon hosts it.
+            // `check_for_update_on_startup` is Codex's own key: its update
+            // menu otherwise covers the prompt of a seat nobody is watching.
+            args.extend(
+                [
+                    "features.daemon_auto_start=false".to_string(),
+                    "check_for_update_on_startup=false".to_string(),
+                    codex_shell_env(PIJ_SESSION_ID, input.seat_id.as_str()),
+                    codex_shell_env(PIJ_SPAWN_ID, &input.spawn_id),
+                ]
+                .into_iter()
+                .flat_map(|setting| ["-c".to_string(), setting]),
+            );
             push_option(&mut args, "--model", input.model.as_deref());
             if let Some(effort) = &input.effort {
                 args.extend(["-c".to_string(), format!("model_reasoning_effort={effort}")]);
@@ -246,13 +262,15 @@ pub fn observed_launch_command(
         adapter: "spawn".to_string(),
         message: "the child log path is not valid UTF-8".to_string(),
     })?;
-    let mut args = Vec::with_capacity(plan.args.len() + 7);
+    let mut args = Vec::with_capacity(plan.args.len() + 9);
     args.extend([
         "__spawn-child".to_string(),
         "--status-file".to_string(),
         status_path.to_string(),
         "--log-file".to_string(),
         log_path.to_string(),
+        "--harness".to_string(),
+        plan.harness.as_str().to_string(),
         "--".to_string(),
         plan.executable.clone(),
     ]);
@@ -261,6 +279,70 @@ pub fn observed_launch_command(
         executable: wrapper_executable,
         args,
     })
+}
+
+/// What the launch wrapper records once its harness child is running: its own
+/// pid (the pane's process) and the child's. A lead, never evidence: the Codex
+/// binder confirms both against tmux and the process table before using them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpawnedChild {
+    /// The `__spawn-child` wrapper, which tmux runs as the pane's process.
+    pub wrapper_pid: u32,
+    /// The harness process the wrapper launched.
+    pub child_pid: u32,
+}
+
+impl SpawnedChild {
+    /// Where the record for the launch with this exit-status file lives.
+    #[must_use]
+    pub fn path(status_file: &Path) -> std::path::PathBuf {
+        status_file.with_extension("child")
+    }
+
+    /// The record's file contents.
+    #[must_use]
+    pub fn render(&self) -> String {
+        format!(
+            "wrapper_pid={}\nchild_pid={}\n",
+            self.wrapper_pid, self.child_pid
+        )
+    }
+
+    /// Read a record back; `None` for anything else.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        let mut wrapper_pid = None;
+        let mut child_pid = None;
+        for line in text.lines() {
+            match line.split_once('=')? {
+                ("wrapper_pid", value) => wrapper_pid = value.parse().ok(),
+                ("child_pid", value) => child_pid = value.parse().ok(),
+                _ => return None,
+            }
+        }
+        Some(Self {
+            wrapper_pid: wrapper_pid?,
+            child_pid: child_pid?,
+        })
+    }
+}
+
+/// The `-c` setting that gives one environment variable to every shell a
+/// Codex thread runs, whichever process hosts the thread.
+fn codex_shell_env(name: &str, value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("shell_environment_policy.set.{name}=\"{escaped}\"")
+}
+
+/// The `TMUX_PANE` a Codex seat's shells must see, as `-c` arguments the
+/// launch wrapper appends once tmux has named the pane (plan 181). Empty for
+/// any other harness, or when the wrapper runs outside a pane.
+#[must_use]
+pub fn pane_env_args(harness: Harness, pane: Option<&str>) -> Vec<String> {
+    match (harness, pane.filter(|pane| !pane.is_empty())) {
+        (Harness::Codex, Some(pane)) => vec!["-c".to_string(), codex_shell_env("TMUX_PANE", pane)],
+        _ => Vec::new(),
+    }
 }
 
 fn push_option(args: &mut Vec<String>, flag: &str, value: Option<&str>) {
@@ -356,6 +438,14 @@ mod tests {
                 "codex",
                 vec![
                     "--dangerously-bypass-approvals-and-sandbox",
+                    "-c",
+                    "features.daemon_auto_start=false",
+                    "-c",
+                    "check_for_update_on_startup=false",
+                    "-c",
+                    r#"shell_environment_policy.set.PIJ_SESSION_ID="pij-assigned""#,
+                    "-c",
+                    r#"shell_environment_policy.set.PIJ_SPAWN_ID="spawn-assigned""#,
                     "--model",
                     "provider/model",
                     "-c",
@@ -432,18 +522,20 @@ mod tests {
 
         assert_eq!(command.executable, "/opt/pij-rs");
         assert_eq!(
-            &command.args[..7],
+            &command.args[..9],
             [
                 "__spawn-child",
                 "--status-file",
                 "/tmp/spawn.status",
                 "--log-file",
                 "/tmp/spawn.log",
+                "--harness",
+                "omp",
                 "--",
                 "env"
             ]
         );
-        assert_eq!(&command.args[7..], plan.args);
+        assert_eq!(&command.args[9..], plan.args);
     }
 
     #[test]
@@ -572,6 +664,77 @@ mod tests {
             plan.args
                 .windows(2)
                 .any(|pair| pair == ["--effort", "high"])
+        );
+    }
+
+    /// Plan 181: a Codex seat's thread runs in-process, its shells carry its
+    /// own identity whichever process hosts them, and Codex's update menu
+    /// stays off the prompt. Live: canary pane %122, 2026-10-28.
+    #[test]
+    fn codex_launch_pins_its_thread_and_identity() {
+        let plan = build_spawn_plan(input(Harness::Codex)).expect("codex plan");
+        for setting in [
+            "features.daemon_auto_start=false",
+            "check_for_update_on_startup=false",
+            r#"shell_environment_policy.set.PIJ_SESSION_ID="pij-assigned""#,
+            r#"shell_environment_policy.set.PIJ_SPAWN_ID="spawn-assigned""#,
+        ] {
+            assert!(
+                plan.args.windows(2).any(|pair| pair == ["-c", setting]),
+                "{setting} missing from {:?}",
+                plan.args
+            );
+        }
+    }
+
+    #[test]
+    fn codex_resume_keeps_its_subcommand_first() {
+        let mut request = input(Harness::Codex);
+        request.resume = Some("01a17f40-5ad4-7ff3-aa69-991589587076".to_string());
+        let plan = build_spawn_plan(request).expect("resume plan");
+        assert_eq!(
+            &plan.args[2..5],
+            ["codex", "resume", "01a17f40-5ad4-7ff3-aa69-991589587076"]
+        );
+        assert!(
+            plan.args
+                .windows(2)
+                .any(|pair| pair == ["-c", "features.daemon_auto_start=false"])
+        );
+    }
+
+    #[test]
+    fn only_codex_gets_the_pane_setting() {
+        assert_eq!(
+            super::pane_env_args(Harness::Codex, Some("%122")),
+            ["-c", r#"shell_environment_policy.set.TMUX_PANE="%122""#]
+        );
+        assert!(super::pane_env_args(Harness::Codex, None).is_empty());
+        assert!(super::pane_env_args(Harness::Codex, Some("")).is_empty());
+        for harness in [Harness::Claude, Harness::Copilot, Harness::Omp, Harness::Pi] {
+            assert!(super::pane_env_args(harness, Some("%122")).is_empty());
+        }
+    }
+
+    #[test]
+    fn a_quote_in_a_value_cannot_end_the_setting() {
+        assert_eq!(
+            super::codex_shell_env("X", r#"a"b\c"#),
+            r#"shell_environment_policy.set.X="a\"b\\c""#
+        );
+    }
+
+    #[test]
+    fn spawned_child_record_round_trips_beside_the_status_file() {
+        let record = super::SpawnedChild {
+            wrapper_pid: 1533,
+            child_pid: 1567,
+        };
+        assert_eq!(super::SpawnedChild::parse(&record.render()), Some(record));
+        assert_eq!(super::SpawnedChild::parse("exit_code=0\n"), None);
+        assert_eq!(
+            super::SpawnedChild::path(std::path::Path::new("/t/pij-rs-spawn/s-1.status")),
+            std::path::PathBuf::from("/t/pij-rs-spawn/s-1.child")
         );
     }
 }

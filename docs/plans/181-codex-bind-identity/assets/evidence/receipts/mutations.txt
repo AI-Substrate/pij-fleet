@@ -1,0 +1,97 @@
+# Mutation receipts: each fix reverted alone, its test run, file restored.
+
+## M1 footer head must be two words
+$ cargo test -q -p pij-harnesses -- codex_0_164_warning_lines   # crates/harnesses/src/composer.rs: 'if head.next().is_some() {\n        return None;\n    }' -> ''
+adapter::codex_0_164_warning_lines::a_frame_showing_only_the_quota_warning_is_not_ready --- FAILED
+composer::codex_0_164_warning_lines::quota_warning_line_is_not_a_footer --- FAILED
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 176 filtered out; finished in 0.00s
+=> RED (killed)
+
+## M2 spawn drops daemon_auto_start/update/identity settings
+$ cargo test -q -p pij-harnesses -- codex_launch_pins_its_thread_and_identity   # crates/harnesses/src/spawn.rs: '"features.daemon_auto_start=false".to_string(),' -> '"model_verbosity=low".to_string(),'
+spawn::tests::codex_launch_pins_its_thread_and_identity --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 180 filtered out; finished in 0.00s
+=> RED (killed)
+
+## M3 wrapper appends no TMUX_PANE setting
+$ cargo test -q -p pij-cli --test spawn spawn_child_appends_the_codex_pane_setting   # crates/cli/src/main.rs: 'pij_harnesses::pane_env_args(*harness, pane.as_deref())' -> 'pij_harnesses::pane_env_args(*harness, None)'
+spawn_child_appends_the_codex_pane_setting --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 3.02s
+=> RED (killed)
+
+## M4 binder ignores the child's parent
+$ cargo test -q -p pij-daemon --lib -- codex_bind::tests::nothing_outside   # crates/daemon/src/codex_bind.rs: 'if files.parent != Some(child.wrapper_pid) {' -> 'if false && files.parent != Some(child.wrapper_pid) {'
+codex_bind::tests::nothing_outside_the_pane_or_the_wrappers_child_can_bind --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.07s
+=> RED (killed)
+
+## M5 binder ignores which process tmux runs as the pane
+$ cargo test -q -p pij-daemon --lib -- codex_bind::tests::nothing_outside   # crates/daemon/src/codex_bind.rs: 'if self.facts.pane_pid(pane).await? != Some(child.wrapper_pid) {' -> 'if false && self.facts.pane_pid(pane).await? != Some(child.wrapper_pid'
+codex_bind::tests::nothing_outside_the_pane_or_the_wrappers_child_can_bind --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.11s
+=> RED (killed)
+
+## M6 binder probes every pending row every tick
+$ cargo test -q -p pij-daemon --lib -- codex_bind::tests::an_unbindable   # crates/daemon/src/codex_bind.rs: '.filter(|seat| thread_started || !seen.rows.contains(&seat.id))' -> '.filter(|_| true)'
+codex_bind::tests::an_unbindable_pending_seat_launches_nothing_per_tick --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.06s
+=> RED (killed)
+
+## M7 binder binds a revived seat to another thread
+$ cargo test -q -p pij-daemon --lib -- codex_bind::tests::a_revived   # crates/daemon/src/codex_bind.rs: '.is_some_and(|recorded| recorded != thread)' -> '.is_some_and(|recorded| recorded != thread && false)'
+codex_bind::tests::a_revived_seat_binds_only_to_its_recorded_conversation --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.04s
+=> RED (killed)
+
+## M8 identity check ignores a seat's recorded thread
+$ cargo test -q -p pij-daemon --lib -- codex_caller_tests::a_seat_recording   # crates/daemon/src/http/codex_caller.rs: 'return Ok((recorded != thread).then(|| {' -> 'return Ok((recorded != thread && false).then(|| {'
+http::codex_caller_tests::a_seat_recording_another_thread_is_not_the_caller --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.19s
+=> RED (killed)
+
+## M9 identity check trusts a pane that holds no thread
+$ cargo test -q -p pij-daemon --lib -- codex_caller_tests   # crates/daemon/src/http/codex_caller.rs: 'None => format!("no Codex process in pane `{pane}` holds a thread pij ' -> 'None => return Ok(None),'
+http::codex_caller_tests::a_send_carrying_another_seats_identity_is_refused_by_name --- FAILED
+http::codex_caller_tests::an_inherited_pane_is_never_advised_or_allowed_to_be_adopted --- FAILED
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 633 filtered out; finished in 0.59s
+=> RED (killed)
+
+## M10 shim send skips the Codex check
+$ cargo test -q -p pij-daemon --lib -- codex_caller_tests::a_send   # crates/daemon/src/http/shim.rs: 'super::codex_caller::refusal_for(state, command, caller, seat, claimed' -> 'super::codex_caller::refusal_for(state, command, None, seat, claimed_p'
+http::codex_caller_tests::a_send_carrying_another_seats_identity_is_refused_by_name --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.09s
+=> RED (killed)
+
+## M11 adopt skips the Codex check
+$ cargo test -q -p pij-daemon --lib -- codex_caller_tests::an_inherited   # crates/daemon/src/http/identity.rs: 'if harness == "codex"' -> 'if harness == "nope"'
+http::codex_caller_tests::an_inherited_pane_is_never_advised_or_allowed_to_be_adopted --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.25s
+=> RED (killed)
+
+## M12 whoami skips the Codex check
+$ cargo test -q -p pij-daemon --lib -- codex_caller_tests::a_seat_recording   # crates/daemon/src/http/identity.rs: 'super::codex_caller::refusal_for(&state, WHOAMI, caller, seat, claimed' -> 'super::codex_caller::refusal_for(&state, WHOAMI, None, seat, claimed_p'
+http::codex_caller_tests::a_seat_recording_another_thread_is_not_the_caller --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.07s
+=> RED (killed)
+
+## M13 spawn timeout names nothing
+$ cargo test -q -p pij-daemon --lib -- codex_spawn_timeout_names_the_prompt_on_screen   # crates/daemon/src/http/mod.rs: 'reason = format!("{reason}: {seen}");' -> 'let _ = seen;'
+http::tests::codex_spawn_timeout_names_the_prompt_on_screen --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 637 filtered out; finished in 1.08s
+=> RED (killed)
+
+## M14 launch blocker needs the update header
+$ cargo test -q -p pij-harnesses -- codex::tests::the_update_prompt_is_named_without_its_header   # crates/harnesses/src/codex.rs: 'if capture.contains("Skip until next version") {' -> 'if capture.contains("Skip until next version") && capture.contains("Up'
+codex::tests::the_update_prompt_is_named_without_its_header --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 180 filtered out; finished in 0.00s
+=> RED (killed)
+
+## M15 the bind loop never calls the Codex binder
+$ cargo test -q -p pij-daemon --lib -- codex_bind::tests::the_daemon_bind_loop   # crates/daemon/src/lib.rs: codex.bind_once() -> Ok(0)
+codex_bind::tests::the_daemon_bind_loop_runs_the_codex_binder --- FAILED
+the loop never bound the row
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 638 filtered out; finished in 5.08s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+=> RED (killed)
+
+ALL KILLED

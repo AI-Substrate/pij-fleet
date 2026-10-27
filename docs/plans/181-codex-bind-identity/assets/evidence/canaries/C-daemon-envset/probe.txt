@@ -1,0 +1,18 @@
+== env
+CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS=1
+CODEX_CI=1
+CODEX_SESSION_ID=01a17f35-f948-7f93-9a76-3098bf8f1629
+CODEX_THREAD_ID=01a17f35-f948-7f93-9a76-3098bf8f1629
+CODEX_TOOL_CALL_ID=exec-7dba3083-41f8-4760-a629-b771c2d77883
+CODEX_VERSION=0.165.0
+PIJ_NPM_REGISTRY=https://packagefeedproxy.microsoft.io/npm/
+PIJ_SESSION_ID=pij-steep-lobster
+PIJ_SPAWN_ID=s-db79369e051883c3f03e4c7a0ef7f792
+TMUX=/private/tmp/tmux-501/default,62508,5
+TMUX_PANE=%116
+== ancestry
+ 9565 28580 Wed Oct 28 07:14:11 2026     /bin/sh /private/tmp/claude-501/-Users-jordanknight-pi-hacking-fleet-181-codex-bind/726e715b-0991-4322-ab03-b9dd3ab9972f/scratchpad/probe.sh C-daemon-envset no
+28580 40583 Wed Oct 28 06:35:26 2026     /Users/jordanknight/.codex/packages/app-server-daemon/releases/0.165.0-aarch64-apple-darwin/bin/codex app-server --listen unix:// --analytics-default-enabled -
+40583     1 Mon Oct 26 19:29:40 2026     /Users/jordanknight/.codex/packages/app-server-daemon/releases/0.165.0-aarch64-apple-darwin/bin/codex app-server daemon pid-update-loop
+== whoami
+{"ok":true,"command":"pij whoami","v":2,"data":{"id":"pij-steep-lobster","harness":"codex","session":null,"extension_build":null,"extension_path":null,"pane":"%116","proc":null,"folder":"/Users/jordanknight/pi-hacking/fleet-181-codex-bind","state":"idle","semantic_state":null,"role":"worker","parent":"pij-codex-bind","relay":false,"cross_session_inbound_accept":false,"native_extension_delivery":false,"spawn_id":"s-db79369e051883c3f03e4c7a0ef7f792","model":"gpt-6.1-sol","effort":"low","pending_fyis":0}}

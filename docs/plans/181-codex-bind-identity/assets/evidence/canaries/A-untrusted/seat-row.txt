@@ -1,0 +1,2 @@
+id|harness|pane|pid|proc_start|folder|parent|spawn_id|harness_session|tombstoned_at
+pij-poised-anteater|codex|%113|||/Users/jordanknight/pi-hacking/fleet-181-codex-bind|pij-codex-bind|s-bae6f8960832a109f01cb5c0774b308c||

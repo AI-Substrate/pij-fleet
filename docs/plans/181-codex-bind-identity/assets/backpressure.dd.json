@@ -1,0 +1,64 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 181 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC4: diagnosis, bind, identity, footer",
+          "phase": "ph-e341",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "Live repro receipts in assets/evidence/; EXTEND→RUN: fixture tests beside crates/harnesses/src/composer.rs and adapter.rs tests, plus the bind/identity tests in crates/daemon; cargo test -p pij-harnesses -p pij-daemon <filters>",
+          "state": "checked",
+          "probe": "crates/harnesses/tests/fixtures/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC5: docs",
+          "phase": "ph-e341",
+          "mode": "EXISTS",
+          "tier": "human-judgement",
+          "proof": "Prime reads the docs against the code.",
+          "state": "unchecked",
+          "probe": "docs/how/pij-pane-signals.md"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC6: proof, CI and the live canary",
+          "phase": "ph-e341",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutation receipts; clippy; fmt; GitHub CI on the exact head; prime post-merge canary.",
+          "state": "unchecked",
+          "probe": ".github/workflows"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC7: Codex binder steady-state cost (R12)",
+          "phase": "ph-e341",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Launch-counting tests on an injected facts port in crates/daemon/src/codex_bind_tests.rs (zero launches per quiet tick; bounded per Codex thread start and per bind); live spawn-rate baseline before merge (assets/evidence/receipts/r12-spawn-rate-baseline.txt) and the same probe after the prime deploys.",
+          "state": "checked",
+          "probe": "crates/daemon/src/codex_bind_tests.rs"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

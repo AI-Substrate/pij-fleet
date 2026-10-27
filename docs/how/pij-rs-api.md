@@ -158,6 +158,59 @@ A verified native claim for a session with no existing seat is held when its pan
 
 Same-process supersede is gated by `native_precedence` (plan 168): an optional `{last_user_message_at: ms|null, loaded_at: ms, history_unknown?: true}` on `/v1/register` and on the native receiver heartbeat. When a native claim would retire a live, attested same-process seat of another session, and the claim reports precedence, the claim must outrank the holder. That means a newer `last_user_message_at`, where `null` loses to any value, or an equal one with a later `loaded_at`. Otherwise the daemon answers HTTP 409, v2 `command:"pij register"`, `error:"refused"`, `details:{retryable:true,hold:"native-holder"}`, naming the holder, and writes nothing. The holder is spared only while its receiver lease is live. A lapsed lease, a claim without the field, or a holder whose heartbeat reports no field all keep the earlier newest-registrant supersede. A holder with no report since daemon start keeps the seat until it reports. This check is a **brake**, not a policy: removing it makes registration retire the same seats or more, never different ones. Reports live in daemon memory, on the receiver lease of the reporting incarnation. They are written under the same native lock as the lease decision, and they are monotonic per incarnation, so a delayed or out-of-order heartbeat never lowers them. A committed native registration installs its lease and report inside that lock; a takeover starts the lease afresh, and a repeat registration of the current holder never moves its expiry. An extension that cannot read its history sends `history_unknown: true`, never `null` (observed none) and never an omitted field (old extension). The daemon ranks it as having no prompt: held behind a live holder with history, the later load wins against a blank or unknown holder, and a lapsed lease is taken over. Contract and `/new` behaviour: `docs/how/copilot-native-extension.md` § Several sessions in one Copilot process.
 
+## Codex seats (plan 181)
+
+**What a Codex seat's identity is.** Since Codex 0.157 the TUI can run its
+threads in one shared, auto-started app-server daemon (`codex features list`:
+`daemon_auto_start`). That daemon keeps the environment of whichever TUI started
+it, so every tool shell it hosts can carry another seat's `PIJ_SESSION_ID` and
+`TMUX_PANE`. `CODEX_THREAD_ID` is always the shell's own thread. A Codex thread
+is named by the writer lock its process holds open,
+`<codex home>/thread-writer-locks/<thread>.lock` (`$CODEX_HOME`, else
+`~/.codex`), from the moment the thread starts. An in-process TUI holds its own
+lock. A daemon-hosted TUI holds none, and its pane's thread cannot be derived.
+
+**Spawn.** `pij-rs spawn --harness codex` launches with
+`-c features.daemon_auto_start=false`, so the seat's thread runs in-process and
+its shells are children of its TUI. It also passes
+`-c check_for_update_on_startup=false`, Codex's own key, so the update menu does
+not cover the prompt of a seat nobody is watching. Each of `PIJ_SESSION_ID`,
+`PIJ_SPAWN_ID` and `TMUX_PANE` is also set per thread
+(`-c shell_environment_policy.set.<NAME>="<value>"`), so a shell sees its own
+identity even if a shared daemon hosts it. The launch wrapper appends
+`TMUX_PANE` once tmux has named the pane, and records
+`<spawn evidence dir>/<spawn id>.child` with its own pid and the Codex child's.
+
+**What binds it.** The daemon's Codex binder, the counterpart of the Claude
+binder, binds a pending spawned Codex row when all of these are observed: the
+child the wrapper recorded has the wrapper as its parent and holds exactly one
+thread lock, the wrapper is the process tmux runs as the pane, and the child's
+start is read. The row gets that `proc` and `harness_session` = the thread. A
+process outside the pane's tree, or a recorded thread that differs from a
+revived seat's conversation, never binds. The binder reads the lock directory
+and the roster in-process on every tick and launches nothing unless a Codex
+thread started since the last tick or a new pending row appeared. Then it costs
+one process-file read per pending row (`/proc` on Linux, one `/usr/sbin/lsof`
+on macOS), and one tmux call and one `ps` per bind.
+
+**When it cannot bind.** A Codex spawn that times out adds what is on screen to
+`timed out after <n>s waiting for registration:`
+
+- `Codex is showing its update prompt`, quoting its `Update available …` header
+  when the capture includes it;
+- `Codex is not at its prompt; the screen ends` followed by the last line;
+- `Codex is at its prompt, but no registration arrived`.
+
+**How a Codex seat knows who it is.** A caller that sends `CODEX_THREAD_ID`
+(`pij` verbs routed through the shim, `whoami`, `adopt --harness codex`) must be
+the seat it resolves to: the thread the seat records, or, while it records none,
+the thread the Codex process in its pane holds. Otherwise the request is refused
+with `E-RS-CODEX-IDENTITY`, naming the thread, the seat or pane it claimed and
+what the daemon observed instead, and nothing is written. The refusal
+never advises `pij adopt`: adopting the inherited pane is how a Codex seat was
+once registered as a parentless stranger. Callers without `CODEX_THREAD_ID` are
+unaffected.
+
 ## Verified paneless external admission
 
 `pij inbox register --json` is served through Rust authority for external

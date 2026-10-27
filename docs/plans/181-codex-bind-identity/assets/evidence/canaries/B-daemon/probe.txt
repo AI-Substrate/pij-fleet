@@ -1,0 +1,18 @@
+== env
+CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS=1
+CODEX_CI=1
+CODEX_SESSION_ID=01a17f33-fede-7c92-afba-b421d49c9a9b
+CODEX_THREAD_ID=01a17f33-fede-7c92-afba-b421d49c9a9b
+CODEX_TOOL_CALL_ID=exec-51fac901-c44f-47e7-98dd-722016808d76
+CODEX_VERSION=0.165.0
+PIJ_NPM_REGISTRY=https://packagefeedproxy.microsoft.io/npm/
+PIJ_SESSION_ID=pij-parallel-bandicoot
+PIJ_SPAWN_ID=s-824372647206abac19f89dbfb5b35c3d
+TMUX=/private/tmp/tmux-501/default,62508,5
+TMUX_PANE=%45
+== ancestry
+ 7102 28580 Wed Oct 28 07:11:32 2026     /bin/sh /private/tmp/claude-501/-Users-jordanknight-pi-hacking-fleet-181-codex-bind/726e715b-0991-4322-ab03-b9dd3ab9972f/scratchpad/probe.sh B-daemon nosend
+28580 40583 Wed Oct 28 06:35:26 2026     /Users/jordanknight/.codex/packages/app-server-daemon/releases/0.165.0-aarch64-apple-darwin/bin/codex app-server --listen unix:// --analytics-default-enabled -
+40583     1 Mon Oct 26 19:29:40 2026     /Users/jordanknight/.codex/packages/app-server-daemon/releases/0.165.0-aarch64-apple-darwin/bin/codex app-server daemon pid-update-loop
+== whoami
+{"ok":false,"command":"pij whoami","v":2,"meta":"no live seat in the rs store owns pane `%45` — this seat is not registered here. Run `pij adopt \"$TMUX_PANE\" --harness <h>` first.","error":"refused"}

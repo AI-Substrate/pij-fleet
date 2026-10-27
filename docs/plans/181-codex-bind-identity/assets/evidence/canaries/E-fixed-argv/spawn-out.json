@@ -1,0 +1,2 @@
+{"ok":false,"command":"pij spawn","v":2,"meta":"spawn.failed: seat pij-continued-marlin in pane %122 timed out after 30s waiting for registration (exit code unavailable); log: /var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-rs-spawn/s-87b2599840e57f31783cbccf12f8430e.log; last output:\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n› Ask Codex to do anything\n\n  GPT-6.1-Sol low · ~/pi-hacking/fleet-181-codex-bind\n  ? for shortcuts","error":"adapter","details":{"bound":false,"dispatched":true,"pane":"%122","pid":null,"reason":"timed out after 30s waiting for registration"}}
+exit=1

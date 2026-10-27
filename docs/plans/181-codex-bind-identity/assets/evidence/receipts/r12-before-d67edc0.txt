@@ -1,0 +1,17 @@
+# R12 'before' for the prime's post-merge canary: machine daemon on d67edc0 (no Codex binder), 2026-10-27T22:21:12Z
+30971 Wed 28 Oct 08:11:42 2026    
+pending spawned Codex rows: 0
+$ pij-rs --json ping | jq .data.spawns   # t0
+{"total":8041,"by_op":{"date.utc-offset":16,"git.pa-watchdog-common-dir":38,"ps.proc-liveness":7679,"ps.registration-native-process":114,"ps.sidecar-process-group":1,"ps.tmux-harness-process-tree":4,"ps.uds-peer-start":50,"tmux.atomically reserve staged submit":1,"tmux.authorize staged submit commit":1,"tmux.control-client":1,"tmux.load submit buffer":3,"tmux.paste owned submit buffer":3,"tmux.pipe-pane attach":63,"tmux.pipe-pane detach":2,"tmux.restore pane input and release ownership":1,"tmux.set-options tap owner":63,"tmux.submit authorized staged body":1}}
+$ pij-rs --json ping | jq .data.spawns   # t0+20s
+{"total":8314,"by_op":{"date.utc-offset":17,"git.pa-watchdog-common-dir":38,"ps.proc-liveness":7945,"ps.registration-native-process":120,"ps.sidecar-process-group":1,"ps.tmux-harness-process-tree":4,"ps.uds-peer-start":50,"tmux.atomically reserve staged submit":1,"tmux.authorize staged submit commit":1,"tmux.control-client":1,"tmux.load submit buffer":3,"tmux.paste owned submit buffer":3,"tmux.pipe-pane attach":63,"tmux.pipe-pane detach":2,"tmux.restore pane input and release ownership":1,"tmux.set-options tap owner":63,"tmux.submit authorized staged body":1}}
+$ just spawn-rate --seconds 20
+seconds: 20.0
+daemon_pid: 30971
+total_new_per_s: 66.3
+polls: 230414
+sampled_per_s: 64.6
+attributed_per_s_lower_bound: {'other': 28.5, '<gone before seen>': 22.7, 'pij-rs daemon': 13.3}
+daemon_children_per_s_lower_bound: {'pij-rs': 13.3}
+statusline_runs_seen_per_s: 0.0
+top_commands_per_s_lower_bound: {'bash': 19.8, 'pij-rs': 13.5, 'node': 3.2, 'zsh': 1.3, '2.1.312': 0.9, 'sh': 0.8, '2.1.311': 0.5, 'git-ai': 0.5, 'launchd_sim': 0.4, 'git': 0.2, 'dlpuser_helper': 0.2, 'flowspace3': 0.2}

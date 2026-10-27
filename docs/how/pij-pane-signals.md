@@ -42,6 +42,14 @@ and the title is ignored, even when it contains `·` or looks like a path.
 Reading only the text after the last `·` took the title for the cwd, so Codex
 0.164 seats stayed `unrecognized` until plan 177.
 
+The first segment must be exactly `<model> <effort>`. Codex also prints a quota
+warning, `⚠ 5h limit: 49% left · resets at 12:33 AM on 27 Oct · /status`, with
+the rest of a footer's shape; it read as model `⚠`, cwd `/status` until plan
+181. Hint lines (`← for agents · ? for shortcuts … ⚠ 2 warnings · f2 to view`)
+are not footers either. `← for agents` marks a TUI hosted by the shared Codex
+app-server; how pij binds and identifies Codex seats is in
+[pij-rs-api](pij-rs-api.md#codex-seats-plan-181).
+
 ## Proof
 
 The signals are implemented in the daemon's pane observer

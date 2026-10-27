@@ -1,0 +1,9 @@
+$ lsof -n -P -p 1567 -FRn | grep -E "^p|^R|thread-writer|rollout"   # canary E TUI, pane %122, 2026-10-28 07:27
+p1567
+R1533
+n/Users/jordanknight/.codex/thread-writer-locks/01a17f40-5ad4-7ff3-aa69-991589587076.lock
+n/Users/jordanknight/.codex/sessions/2026/10/28/rollout-2026-10-28T07-24-46-01a17f40-5ad4-7ff3-aa69-991589587076.jsonl
+$ lsof -n -P -p 9154 -Fn | grep -E "thread-writer|rollout"   # canary A TUI, pane %113
+n/Users/jordanknight/.codex/sessions/2026/10/28/rollout-2026-10-28T07-03-38-01a17f2d-01da-7993-9a13-ade803d1189a.jsonl
+n/Users/jordanknight/.codex/thread-writer-locks/01a17f2d-01da-7993-9a13-ade803d1189a.lock
+$ lsof -p 28580 (shared Codex app-server) thread-writer-locks held: 4

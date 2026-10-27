@@ -1,0 +1,15 @@
+# R12 live baseline, 2026-10-27T21:50:38Z, machine daemon pid 45329 on 077d383 (no Codex binder)
+$ pij-rs --json ping | jq .data.spawns
+None
+(null: the spawns counter lands with PR #73, not on this base)
+pending spawned Codex rows on the machine now: 5
+$ python3 spawn-rate.py --seconds 20   (harness/scripts/spawn-rate.py from PR #73, run from scratch; `just spawn-rate` is not on this base)
+seconds: 20.0
+daemon_pid: 45329
+total_new_per_s: 887.5
+polls: 167686
+sampled_per_s: 844.5
+attributed_per_s_lower_bound: {'<gone before seen>': 655.2, 'other': 111.1, 'pij-rs daemon': 73.0, 'pij status line': 5.1}
+daemon_children_per_s_lower_bound: {'pij-rs': 70.3, 'tmux -u display-message': 0.8, 'tmux -u show-options': 0.7, 'tmux -u capture-pane': 0.7, 'pij-rs -u capture-pane': 0.2, 'pij-rs -u display-message': 0.1, 'pij-rs -u show-options': 0.1}
+statusline_runs_seen_per_s: 5.1
+top_commands_per_s_lower_bound: {'pij-rs': 70.8, 'bash': 36.7, 'adapter-c388787': 27.3, 'tmux': 13.8, 'cargo': 10.2, 'node': 7.4, 'build-script-bu': 3.8, 'clang': 3.5, 'rustc': 3.4, 'sh': 2.6, 'flowspace3': 1.9, '2.1.312': 1.6}

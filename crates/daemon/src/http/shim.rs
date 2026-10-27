@@ -1041,7 +1041,18 @@ async fn subject(
 ) -> std::result::Result<SeatDescriptor, Box<Response>> {
     let asserted = caller.and_then(|caller| caller.session_id.clone());
     let pane = caller.and_then(|caller| caller.pane.clone());
-    match identity::resolve_seat(state, command, asserted, pane).await {
+    let resolved = identity::resolve_seat(state, command, asserted, pane).await;
+    let seat = match &resolved {
+        Resolved::Seat(descriptor, _) => Some(descriptor),
+        Resolved::Refusal(_) => None,
+    };
+    let claimed_pane = caller.and_then(|caller| caller.pane.as_deref());
+    if let Some(refusal) =
+        super::codex_caller::refusal_for(state, command, caller, seat, claimed_pane).await
+    {
+        return Err(Box::new(refusal));
+    }
+    match resolved {
         Resolved::Seat(descriptor, _) => {
             let native = inbox_identity(caller, &descriptor);
             if paneless_pull(&descriptor)
