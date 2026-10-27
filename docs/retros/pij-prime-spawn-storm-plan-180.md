@@ -38,7 +38,12 @@ The prime's independent `measure-spawn` sample agrees: 17.1/s machine at 15:10:3
 daemon 5.1/s, Defender ~12–15%. Optional follow-ups (in-process liveness, and
 resolving git/tmux once) are pij-fleet#74.
 
-**Estimate vs actual** (local time, AEDT; the prime logged each for Vaughan):
+**Estimate vs actual** (local time, AEDT; the prime logged each for Vaughan).
+Machine: Apple M4 Max, 16 cores (12P+4E), 128 GB, macOS 26.7.1. Models: prime
+`pij-broad-rykard` claude-opus-5.5, effort unknown; worker
+`pij-interesting-capybara` claude-opus-5.5, effort xhigh (the seats table).
+Both seats ran in Copilot CLI.
+Load during the work: load1 3.8–13.5 at the measured points (other seats building).
 
 | milestone | estimate | actual | |
 |---|---|---|---|
