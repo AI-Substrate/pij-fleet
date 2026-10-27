@@ -210,7 +210,10 @@ fn control_answers_match_forked_answers_byte_for_byte() {
                 .capture(first, 30)
                 .await
                 .expect("capture")
-                .contains("a\tb ✓ %end 1 2 3"),
+                // Tab and non-ASCII rendering vary by tmux version and locale
+                // (ubuntu CI); byte parity with the forked client is asserted
+                // above. Here: a frame-like `%end` line stays content.
+                .contains("%end 1 2 3"),
             "a pane line that looks like a control frame is content"
         );
         server.tmux(&[
