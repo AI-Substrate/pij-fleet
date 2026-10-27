@@ -1,0 +1,45 @@
+# Plan 180 deploys and measurements (2026-10-27, all times UTC)
+# Deploys were run by the prime (pij-broad-rykard): this seat was mid-turn, and
+# its window-open messages sat pending. Steps 0-3 as written; the binaries were
+# staged at ~/.pij-rs/bin/pij-rs-<sha> so later cargo builds cannot touch them.
+
+## Window 1, phase 1 (f1d9b81, sha256 9044401504acd837..., tmux control mode)
+14:03:27Z  old daemon 5256 (d05776df) drained in 44 s; new pid 57934; ping healthy;
+           control client 58292 parented by 57934; Telegram long-poll up.
+## Window 2, phase 2 (4b918d6, sha256 a5cfe43cc6bc54ab..., + status line in pij-rs)
+14:19:21Z  57934 drained in 48 s; new pid 42036; ping ok; control client 42267 parented
+           by 42036; Telegram connected; ~/.pij-rs/copilot-statusline-pij.sh is the exec
+           script; a seat's status line renders.
+Rollback for both: relink to d05776df (90668c0), which reinstalls the plan-156 script at boot.
+
+## Instrument A: harness/scripts/spawn-rate.py (20 s; total from the PID counter)
+label            at      daemon  total/s  daemon kids/s*  status line/s*
+my baseline      12:43Z  5256    740.6    54.1            39.6
+before-w1        14:01Z  5256    1001.3   68.5            39.5   (my cargo test runs overlapped)
+after-w1 +2m     14:06Z  57934   216.4    8.7             46.0
+after-w1 +10m    14:15Z  57934   191.2    7.3             42.5
+before-w2        14:17Z  57934   198.1    8.1             39.5
+after-w2 +2m     14:21Z  42036   128.4    6.7             0.0
+* proc_pidinfo attribution: LOWER BOUNDS (pre-exec forks and fast exits are missed).
+
+## Instrument B: the prime's measure-spawn.py (30 s exec rate, 10 s classification, 5x top)
+label            at      execs/s  Defender total%  (wdavdaemon_enterprise / epsext)  idle%  load1
+baseline-1       12:41Z  794.7    216.0            75.5 / 82.6                       56.7   17.7
+before-w1        14:01Z  707.7    242.6            97.3 / 79.6                       53.7   13.5
+after-w1 +2m     14:06Z  220.7    134.9            23.1 / 92.5                       78.1   6.4
+after-w1 +10m    14:15Z  (PID-wrap artefact)  122.2  12.2 / 92.4                     80.6   7.2
+after-w2 +2m     14:21Z  230.4    74.7             10.0 / 49.6                       83.5   8.6
+
+## Instrument C: kinfo_proc ppid sampling of daemon 42036 (sees pre-exec forks), 14:21-14:24Z
+39-79 children/s (varies with sampler load); 81 of 81 zombies classified: ps. No tmux exec seen.
+Baseline by the same method (pid 5256, 12:5xZ): 250-480/s, ~89% tmux / ~9% ps / ~2% git.
+
+## Verdict against the brief
+- Total launches: -82.7% by A (740.6 -> 128.4), -71.0% by B (794.7 -> 230.4). B's total
+  includes Chrome, Copilot (node) and tomux, which plan 180 does not touch.
+- Defender: 216% -> 74.7% (-65%); wdavdaemon_enterprise 75.5% -> 10.0%.
+- Status line: ~40/s attributed -> 0 (one exec'd process per refresh).
+- pij daemon: tmux forks gone. The residual is ps (liveness and process-table probes),
+  39-79/s by C, 6.7/s by A's lower bound. "pij < 10/s" holds by A only; by C it does not.
+  Follow-up: a ps-free liveness (needs a ruling on a safe sysctl dependency, since unsafe_code
+  is forbid) or a per-op spawn counter to name the hot caller first.
