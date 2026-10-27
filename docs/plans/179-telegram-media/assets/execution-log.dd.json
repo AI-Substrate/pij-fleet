@@ -1,0 +1,27 @@
+{
+  "dd": {
+    "schema": "builder/execution-log"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Observed implementation evidence",
+        "plan": "../plan.dd.json#meta"
+      }
+    },
+    {
+      "name": "entries",
+      "value": [
+        {
+          "id": "lg-0001",
+          "at": "2026-10-27T04:20:00Z",
+          "text": "Cherry-picked ce2721d onto 26fc3ba as 7800d11 (author Vaughan Knight kept, -x trailer). One conflict, docs/how/pij-rs-api.md: kept main's 'watchdog is ported' unported-surfaces line and #49's inbox line that serves send --file for pij-telegram.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001"
+          ]
+        }
+      ]
+    }
+  ]
+}
