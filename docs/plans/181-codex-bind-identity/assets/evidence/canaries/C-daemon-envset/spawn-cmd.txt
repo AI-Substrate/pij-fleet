@@ -1,0 +1,1 @@
+pij-rs spawn --harness codex --model gpt-6.1-sol --effort low --role worker --name c181-C-daemon-envset --cwd /Users/jordanknight/pi-hacking/fleet-181-codex-bind --wait-seconds 30 --json --bin /private/tmp/claude-501/-Users-jordanknight-pi-hacking-fleet-181-codex-bind/726e715b-0991-4322-ab03-b9dd3ab9972f/scratchpad/binc/codex

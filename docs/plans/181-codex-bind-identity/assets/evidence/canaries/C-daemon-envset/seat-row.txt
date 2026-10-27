@@ -1,0 +1,2 @@
+id|harness|pane|pid|proc_start|folder|parent|spawn_id|harness_session|tombstoned_at
+pij-steep-lobster|codex|%116|||/Users/jordanknight/pi-hacking/fleet-181-codex-bind|pij-codex-bind|s-db79369e051883c3f03e4c7a0ef7f792||

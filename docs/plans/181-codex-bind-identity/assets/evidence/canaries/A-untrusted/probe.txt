@@ -1,0 +1,21 @@
+== env
+CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS=1
+CODEX_CI=1
+CODEX_SESSION_ID=01a17f2d-01da-7993-9a13-ade803d1189a
+CODEX_THREAD_ID=01a17f2d-01da-7993-9a13-ade803d1189a
+CODEX_TOOL_CALL_ID=exec-b5fe6d43-2089-4536-a98f-e9f68edd1477
+CODEX_VERSION=0.164.0
+PIJ_NPM_REGISTRY=https://packagefeedproxy.microsoft.io/npm/
+PIJ_SESSION_ID=pij-poised-anteater
+PIJ_SPAWN_ID=s-bae6f8960832a109f01cb5c0774b308c
+TMUX=/private/tmp/tmux-501/default,62508,0
+TMUX_PANE=%113
+== ancestry
+39473  9154 Wed Oct 28 07:06:06 2026     /bin/sh /private/tmp/claude-501/-Users-jordanknight-pi-hacking-fleet-181-codex-bind/726e715b-0991-4322-ab03-b9dd3ab9972f/scratchpad/probe.sh A-untrusted
+ 9154  9123 Wed Oct 28 07:03:37 2026     codex --dangerously-bypass-approvals-and-sandbox --model gpt-6.1-sol -c model_reasoning_effort=low
+ 9123 62508 Wed Oct 28 07:03:37 2026     /Users/jordanknight/.npm-global/bin/pij-rs __spawn-child --status-file /var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-rs-spawn/s-bae6f8960832a109f01cb5c0
+62508     1 Mon Oct 26 12:32:56 2026     tmux new-session -A -s pij -c /Users/jordanknight/pi-hacking/pij
+== whoami
+{"ok":true,"command":"pij whoami","v":2,"data":{"id":"pij-poised-anteater","harness":"codex","session":null,"extension_build":null,"extension_path":null,"pane":"%113","proc":null,"folder":"/Users/jordanknight/pi-hacking/fleet-181-codex-bind","state":"idle","semantic_state":null,"role":"worker","parent":"pij-codex-bind","relay":false,"cross_session_inbound_accept":false,"native_extension_delivery":false,"spawn_id":"s-bae6f8960832a109f01cb5c0774b308c","model":"gpt-6.1-sol","effort":"low","pending_fyis":0}}
+== send
+{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"ed6aeb904471edda-0000000000000601","outcome":{"outcome":"delivered","origin":"injected-to-transport"},"at":1793135167729,"cold_check":"busy"}}
