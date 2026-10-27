@@ -42,7 +42,7 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "Daemon tmux reads launch no process. pij-tmux answers list-panes, capture-pane, display-message -p and show-options over ONE persistent `tmux -u -C attach-session -f no-output,ignore-size,read-only` client. After warm-up (list-sessions + attach), 25 rounds of every observer/status read on 3 panes launch zero tmux processes. Writes (set-option, pipe-pane, send-keys, paste/load-buffer, kill, new-window) still fork. An argument the client cannot single-quote forks.",
+          "claim": "Daemon tmux reads launch no process. pij-tmux answers list-panes, capture-pane, display-message -p and show-options over ONE persistent `tmux -u -N -C new-session -A -s _pij -f no-output,ignore-size,read-only` client in its own `_pij` session (R-PRIME-1). After warm-up (one attach), 25 rounds of every observer/status read on 3 panes launch zero tmux processes. Writes (set-option, pipe-pane, send-keys, paste/load-buffer, kill, new-window) still fork. An argument the client cannot single-quote forks.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
           "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
