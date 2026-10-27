@@ -420,8 +420,9 @@ fn a_bare_attach_lands_where_it_would_without_the_control_client() {
 /// S1's documented residual, pinned so a change to it is a visible change.
 /// Attaching any client bumps its session's activity, and a command run from
 /// outside tmux with no `-t` resolves to the most recently active session. So
-/// right after the control client (re)attaches, such a command lands in `_pij`
-/// until the next keypress in another session. pij's own writes always target.
+/// right after the control client (re)attaches, such a command lands in `_pij`:
+/// until a keypress in another session, or indefinitely with no human attached.
+/// What lands there persists and is listed (see the foreign-window tests).
 #[test]
 fn an_untargeted_outside_command_resolves_to_pij_after_the_control_attach() {
     let server = Server::with_sessions(&["a", "b"]);
@@ -452,6 +453,17 @@ fn the_control_session_is_attached_read_only_and_never_listed() {
     );
     let ids: Vec<&str> = listed.iter().map(|pane| pane.id.as_str()).collect();
     assert_eq!(ids, server.panes, "only the operator's panes are listed");
+    // Its options and hooks are `_pij`'s alone, never global ones.
+    assert_eq!(
+        server
+            .tmux(&["show-options", "-gv", "destroy-unattached"])
+            .trim(),
+        "off"
+    );
+    let global = server.tmux(&["show-hooks", "-g"]);
+    assert!(!global.contains("destroy-unattached"), "{global}");
+    let own = server.tmux(&["show-hooks", "-t", CONTROL_SESSION]);
+    assert!(own.contains("after-new-window"), "{own}");
     assert!(listed.iter().all(|pane| pane.session != CONTROL_SESSION));
 }
 
@@ -474,6 +486,125 @@ fn the_server_still_exits_when_the_operator_closes_the_last_session() {
         let _ = block_on(adapter.list_panes());
         std::thread::sleep(Duration::from_millis(200));
     }
+}
+
+/// The `(session, window)` of every window on the server.
+fn windows(server: &Server) -> Vec<String> {
+    server
+        .tmux(&["list-windows", "-a", "-F", "#{session_name}:#{window_name}"])
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// R1 of the #73 recheck: an untargeted command from outside tmux can land a
+/// window in `_pij`. pij must still see it, and it must outlive the control
+/// client, including a later client that attaches to the same `_pij`.
+#[test]
+fn a_foreign_window_in_pij_stays_listed_and_outlives_the_control_client() {
+    let server = Server::start();
+    let adapter = server.adapter(true);
+    block_on(adapter.list_panes()).expect("warm");
+    server.run(&["new-window", "-n", "someones-job", "exec sleep 600"]);
+    let foreign = format!("{CONTROL_SESSION}:someones-job");
+    assert!(
+        windows(&server).contains(&foreign),
+        "{:?}",
+        windows(&server)
+    );
+    let listed = block_on(adapter.list_panes()).expect("list");
+    assert!(
+        listed
+            .iter()
+            .any(|pane| pane.session == CONTROL_SESSION && pane.window == "someones-job"),
+        "a foreign window in _pij is hidden from pij: {listed:?}"
+    );
+    assert_eq!(
+        listed.len(),
+        server.panes.len() + 1,
+        "only the control pane is hidden"
+    );
+    drop(adapter);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        windows(&server).contains(&foreign),
+        "destroyed with the client"
+    );
+    // A later client attaches to the same `_pij`; it must not re-arm destroy.
+    let again = server.adapter(true);
+    block_on(again.list_panes()).expect("warm again");
+    drop(again);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        windows(&server).contains(&foreign),
+        "destroyed by the second client"
+    );
+}
+
+/// A foreign window in `_pij` is real work, so `_pij` is not "alone" even when
+/// it is the last session: the client stays attached instead of leaving and
+/// re-attaching every backoff, and the server stays up for that window.
+#[test]
+fn a_foreign_window_keeps_the_client_attached_when_pij_is_the_last_session() {
+    let server = Server::start();
+    let adapter = server.adapter(true);
+    block_on(adapter.list_panes()).expect("warm");
+    server.run(&["new-window", "-n", "someones-job", "exec sleep 600"]);
+    let before = server.control_clients();
+    assert_eq!(before.len(), 1, "{before:?}");
+    server.run(&["kill-session", "-t", "work"]);
+    // The subscription is evaluated about once a second.
+    let settle = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < settle {
+        let _ = block_on(adapter.list_panes());
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let after = server.control_clients();
+    assert_eq!(
+        after.iter().map(|(pid, _)| *pid).collect::<Vec<_>>(),
+        before.iter().map(|(pid, _)| *pid).collect::<Vec<_>>(),
+        "the client left (or churned) while a foreign window kept _pij alive"
+    );
+    assert!(windows(&server).contains(&format!("{CONTROL_SESSION}:someones-job")));
+}
+
+/// The same for a pane split into `_pij`'s own window.
+#[test]
+fn a_foreign_pane_split_into_pij_stays_listed_and_outlives_the_control_client() {
+    let server = Server::start();
+    let adapter = server.adapter(true);
+    block_on(adapter.list_panes()).expect("warm");
+    let foreign = server
+        .run(&["split-window", "-P", "-F", "#{pane_id}", "exec sleep 600"])
+        .trim()
+        .to_string();
+    let listed = block_on(adapter.list_panes()).expect("list");
+    assert!(
+        listed.iter().any(|pane| pane.id == foreign),
+        "{foreign} hidden: {listed:?}"
+    );
+    drop(adapter);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        server
+            .tmux(&["list-panes", "-a", "-F", "#{pane_id}"])
+            .lines()
+            .any(|pane| pane == foreign),
+        "destroyed with the client"
+    );
+}
+
+/// With only its own window, `_pij` still goes when the client does.
+#[test]
+fn pij_with_only_its_own_window_goes_with_the_client() {
+    let server = Server::start();
+    let adapter = server.adapter(true);
+    block_on(adapter.list_panes()).expect("warm");
+    assert!(windows(&server).iter().any(|w| w.starts_with("_pij:")));
+    drop(adapter);
+    std::thread::sleep(Duration::from_millis(300));
+    let left = windows(&server);
+    assert!(left.iter().all(|w| w.starts_with("work:")), "{left:?}");
 }
 
 /// No server running means none is started: `-N` on the control attach.

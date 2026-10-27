@@ -1184,6 +1184,9 @@ async fn launch_seat_locked(
             pane.session.clone()
         }
     };
+    if session == pij_tmux::CONTROL_SESSION {
+        return control_session_refused(command_name);
+    }
 
     // The caller's spawn guard keeps classification, observed launch, and the
     // descriptor write in one daemon-local critical section.
@@ -3658,6 +3661,25 @@ pub(crate) const SEAT_RETIRED_CODE: &str = "E-RS-SEAT-RETIRED";
 pub(crate) fn retired_seat_refused(command: &str, seat: &SeatId, reason: String) -> Response {
     let mut answer: Envelope<()> = Envelope::refused(command, ErrorKind::Refused, reason);
     answer.details = Some(serde_json::json!({ "code": SEAT_RETIRED_CODE, "seat": seat }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
+}
+
+/// The stable code for a spawn into `_pij`, the daemon's own tmux session.
+pub(crate) const CONTROL_SESSION_CODE: &str = "E-RS-CONTROL-SESSION";
+
+/// `_pij` holds pij's tmux control client and is destroyed with it, so no seat
+/// is ever placed there, whether named or resolved from the caller's pane.
+fn control_session_refused(command: &str) -> Response {
+    let mut answer: Envelope<()> = Envelope::refused(
+        command,
+        ErrorKind::Refused,
+        format!(
+            "`{}` is the tmux session of pij's own control client, not a place for seats \
+             — pass --session <your tmux session>",
+            pij_tmux::CONTROL_SESSION
+        ),
+    );
+    answer.details = Some(serde_json::json!({ "code": CONTROL_SESSION_CODE }));
     envelope(StatusCode::BAD_REQUEST, &answer)
 }
 

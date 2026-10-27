@@ -38,11 +38,20 @@ const RESTART_BACKOFF: Duration = Duration::from_secs(5);
 /// keyboard input. Not a write barrier: see the module doc.
 const ATTACH_FLAGS: &str = "no-output,ignore-size,read-only";
 /// The control client's own session, created on first attach (R-PRIME-1).
-pub(crate) const CONTROL_SESSION: &str = "_pij";
-/// What `_pij`'s one pane runs: an idle process, not a shell.
+pub const CONTROL_SESSION: &str = "_pij";
+/// What `_pij`'s own pane runs: an idle process, not a shell.
 const IDLE_COMMAND: &str = "exec sleep 2147483647";
-/// The subscription that reports the server's session count.
+/// The `list-panes -f` filter for every pane except the control client's own,
+/// told apart by its start command (which tmux may report quoted). A window
+/// that lands in `_pij` from elsewhere stays visible to pij.
+pub(crate) const NOT_CONTROL_PANE: &str = "#{?#{m:*sleep 2147483647*,#{pane_start_command}},0,1}";
+/// The subscription that reports whether `_pij` is alone.
 const SESSIONS_SUBSCRIPTION: &str = "pij-sessions";
+/// `1` when `_pij` is the only session and holds nothing but the control pane.
+/// A window or pane that landed there is real work, so `_pij` is then not
+/// alone: the client stays, and so does the server.
+const ALONE: &str =
+    "#{&&:#{==:#{server_sessions},1},#{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}}}";
 
 /// One command's answer: its output lines, or tmux's error lines.
 pub(crate) type Reply = std::result::Result<Vec<Vec<u8>>, Vec<Vec<u8>>>;
@@ -54,8 +63,9 @@ pub(crate) enum Frame {
     Reply(Reply),
     /// The client is detached or the server is gone.
     Exit,
-    /// `_pij` is the only session left. The client leaves, so `_pij` (which is
-    /// `destroy-unattached`) cannot keep an emptied server alive.
+    /// `_pij` is the only session left and holds only the control pane. The
+    /// client leaves, so `_pij` (then `destroy-unattached`) cannot keep an
+    /// emptied server alive.
     Alone,
 }
 
@@ -303,9 +313,23 @@ impl ControlClient {
         // Before the handshake, so no waiter is queued for these replies: the
         // reader drops every block until the sentinel's. Untargeted, so each
         // applies to this client and its session, `_pij`.
-        let subscription = format!("{SESSIONS_SUBSCRIPTION}::#{{server_sessions}}");
+        //
+        // `_pij` is destroyed with its last client only while it holds nothing
+        // but the control pane. A window or pane that lands there from
+        // elsewhere (an untargeted command run outside tmux) switches that off
+        // for good, and a later client does not switch it back on.
+        let subscription = format!("{SESSIONS_SUBSCRIPTION}::{ALONE}");
+        let keep = "set-option destroy-unattached off";
         for setup in [
-            ["set-option", "destroy-unattached", "on"].as_slice(),
+            [
+                "if-shell",
+                "-F",
+                "#{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}}",
+                "set-option destroy-unattached on",
+            ]
+            .as_slice(),
+            ["set-hook", "after-new-window", keep].as_slice(),
+            ["set-hook", "after-split-window", keep].as_slice(),
             ["refresh-client", "-B", &subscription].as_slice(),
         ] {
             let line = command_line(&setup.iter().map(OsString::from).collect::<Vec<_>>())

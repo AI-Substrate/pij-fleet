@@ -1,6 +1,8 @@
 //! Real tmux adapter. Every Rust-workspace tmux syscall lives in this crate.
 
 mod control;
+
+pub use control::CONTROL_SESSION;
 mod parse;
 
 use std::collections::BTreeMap;
@@ -202,6 +204,10 @@ impl TmuxAdapter {
             }
             None => args.push(OsString::from("-a")),
         }
+        // The control client's own pane is pij's, never a seat's: no lookup,
+        // tap sweep, reap or caller-pane resolution should ever see it.
+        args.push(OsString::from("-f"));
+        args.push(OsString::from(control::NOT_CONTROL_PANE));
         args.push(OsString::from("-F"));
         args.push(OsString::from(LIST_FORMAT));
         args
@@ -755,12 +761,7 @@ impl TmuxAdapter {
 impl TmuxPort for TmuxAdapter {
     async fn list_panes(&self) -> Result<Vec<Pane>> {
         let output = self.stdout("list-panes", &self.list_args())?;
-        // The control client's own session is pij's, never a seat's: no lookup,
-        // tap sweep, reap or caller-pane resolution should ever see its pane.
-        Ok(parse_panes(&output)?
-            .into_iter()
-            .filter(|pane| pane.session != control::CONTROL_SESSION)
-            .collect())
+        parse_panes(&output)
     }
 
     async fn pane_process(&self, pane: &str) -> Result<Option<PaneProcess>> {
