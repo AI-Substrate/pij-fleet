@@ -44,6 +44,7 @@ Vaughan, 27 Oct 23:3x: 'fix it and do it' (brief: prime pij-broad-rykard). Basel
 - Changing what the observer, liveness or status line decide.
 - Defender configuration (EDR cannot be excluded by users).
 - The tmux plugin tomux/scripts/status.sh (not pij).
+- In-process liveness without ps (was plan 181 / B1) and resolving git/tmux once (R10): optional follow-ups in pij-fleet#74 (prime ruling R11).
 
 <a id="acceptance-criteria"></a>
 
