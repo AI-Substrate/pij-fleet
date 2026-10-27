@@ -141,6 +141,14 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0016",
+          "at": "2026-10-27T14:55:00Z",
+          "text": "WINDOW 3 (follow-up C) deployed by the prime at 14:44Z: 42036 drain-exited in 57 s (close to the 60 s cap), linked ~/.pij-rs/bin/pij-rs-893ae50 (sha256 11464c74), new pid 85679, control client 85915, Telegram connected, status-line script unchanged. STEP 4, counter reads 14:46:18Z->14:47:18Z (load1 6.1->5.45): daemon launches 6.65/s, ps.proc-liveness 6.53/s (98%). HOT CALLER: the death sweep (death_sweep::sweep every 5 s -> reaper::eligibility -> liveness::alive -> ProcLiveness `ps -o lstart= -p PID`), once per live seat with a process: 25 seats / 5 s = 5.0/s (~75%); the rest is request paths (whoami measured 0.96 ps per call). RECONCILED with kinfo over the same 60 s: kinfo's ps 379 and git 3 match the counter exactly; the other 3452 daemon children (57.5/s, the earlier '39-79/s') are FAILED PATH-SEARCH ATTEMPTS. Command::new(\"ps\") by bare name -> posix_spawnp tries each of the daemon's 32 PATH entries, and on macOS every miss creates and tears down a kernel process (P_WEXIT at first sight, never exec'd). Controlled experiment with the daemon's PATH: posix_spawnp(\"ps\") consumed 18.11 PIDs per launch, posix_spawn(\"/bin/ps\") 1.00. So the daemon creates ~18 processes per liveness check (~118/s), not 6.5/s. Misses before the hit: ps 17, date 17, lsof 18, git 12, tmux 12. Evidence: evidence/window3-counter.txt, evidence/scripts/.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }
