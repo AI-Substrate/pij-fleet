@@ -79,7 +79,8 @@ any other recipient still refuses it by name.
   job without uploading. The reply binding is written exactly as for text, so a
   Telegram reply routes back to the sending seat. A delivered file appends
   `telegram.outbound-media-delivered` (`conversation`, `from`, `msg_id`,
-  `method` actually used, `document`).
+  `method` actually used, `telegram_message_id` (Telegram's own id for the
+  message), `document`).
 - **No silent drop.** The receipt says `queued`, never delivered. Every failed
   attempt appends `telegram.outbound-delivery-failed` with `method`, `document`
   (`file_name`, `size`, `sha256`), `http_status` and `terminal`. A 4xx other than

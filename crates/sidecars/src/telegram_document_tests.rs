@@ -817,6 +817,10 @@ async fn a_photo_goes_with_send_photo_in_the_photo_field_and_records_delivery() 
     let delivered = f.events("telegram.outbound-media-delivered").await;
     assert_eq!(delivered.len(), 1, "{delivered:?}");
     assert_eq!(delivered[0]["method"], "sendPhoto");
+    assert_eq!(
+        delivered[0]["telegram_message_id"], 1,
+        "Telegram's own id for the delivered message"
+    );
     assert_eq!(delivered[0]["msg_id"], "doc-chart.png");
     assert_eq!(delivered[0]["from"], "pij-sender");
     assert_eq!(delivered[0]["document"]["sha256"], document.sha256);
@@ -876,6 +880,7 @@ async fn a_400_on_a_photo_falls_back_to_send_document_in_the_same_attempt() {
     );
     let delivered = f.events("telegram.outbound-media-delivered").await;
     assert_eq!(delivered[0]["method"], "sendDocument");
+    assert_eq!(delivered[0]["telegram_message_id"], 1);
     assert_eq!(f.events("telegram.binding").await.len(), 1);
     assert!(!document.staged.exists());
 }

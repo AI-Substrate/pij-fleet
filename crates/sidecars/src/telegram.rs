@@ -561,7 +561,7 @@ impl TelegramWorker {
             }
         };
         let boundary = document::boundary_for(&sha256, &[&bytes, caption.as_bytes()]);
-        loop {
+        let telegram_message_id = loop {
             let (content_type, body) = document::media_multipart(
                 &boundary,
                 method.field(),
@@ -596,7 +596,9 @@ impl TelegramWorker {
             let status = response.status();
             let reply: Option<ApiReply> = response.json().await.ok();
             if status.is_success() && reply.as_ref().is_some_and(|reply| reply.ok) {
-                break;
+                break reply
+                    .and_then(|reply| reply.result)
+                    .map(|message| message.message_id);
             }
             let description = reply
                 .and_then(|reply| reply.description)
@@ -621,9 +623,9 @@ impl TelegramWorker {
                     fail(method, Some(status.as_u16()), !retryable, reason),
                 )
                 .await;
-        }
+        };
         drop(bytes);
-        self.record_media_delivered(&chat_id, &request, method)
+        self.record_media_delivered(&chat_id, &request, method, telegram_message_id)
             .await;
         let outcome = self
             .bind_reply(&chat_id, request.from.clone(), request.msg_id.clone())
@@ -683,12 +685,14 @@ impl TelegramWorker {
         chat_id: &str,
         request: &document::DocumentJob,
         method: MediaMethod,
+        telegram_message_id: Option<i64>,
     ) {
         let detail = serde_json::json!({
             "conversation": chat_id,
             "from": request.from,
             "msg_id": request.msg_id,
             "method": method.api_method(),
+            "telegram_message_id": telegram_message_id,
             "document": {
                 "file_name": request.document.file_name,
                 "size": request.document.size,
@@ -1017,6 +1021,14 @@ struct ApiReply {
     ok: bool,
     #[serde(default)]
     description: Option<String>,
+    #[serde(default)]
+    result: Option<ApiMessage>,
+}
+
+/// The part of a sent `Message` pij records: Telegram's own id for it.
+#[derive(Deserialize)]
+struct ApiMessage {
+    message_id: i64,
 }
 
 #[derive(Deserialize)]
