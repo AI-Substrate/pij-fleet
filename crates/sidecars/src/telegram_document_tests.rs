@@ -19,9 +19,9 @@ use serde_json::{Value, json};
 
 use super::super::{TelegramConfig, TelegramWorker};
 use super::{
-    CAPTION_LIMIT, DocumentJob, MAX_FILES, MediaMethod, PHOTO_LIMIT_BYTES, StagedDocument,
-    StagedSend, TelegramDocumentRequest, boundary_for, media_multipart, prefixed_caption,
-    stage_send, stage_with_limit,
+    CAPTION_LIMIT, DocumentJob, LiveCopies, MAX_FILES, MediaMethod, PHOTO_LIMIT_BYTES,
+    StagedDocument, StagedSend, TelegramDocumentRequest, boundary_for, media_multipart,
+    prefixed_caption, stage_send, stage_with_limit,
 };
 
 const HTML: &[u8] = b"<html><body>pij attachment canary</body></html>\n";
@@ -52,7 +52,7 @@ fn stage_document(
     request: &TelegramDocumentRequest,
     staging: &Path,
 ) -> pij_core::error::Result<(pij_core::model::Job, StagedDocument)> {
-    single(stage_send(request, staging))
+    single(stage_send(request, staging, &LiveCopies::default()))
 }
 
 fn single(
@@ -208,7 +208,12 @@ fn missing_empty_directory_relative_and_oversized_files_refuse_at_enqueue() {
     for (path, limit, expected) in cases {
         let request = request(path.clone(), None);
         let error = match limit {
-            Some(limit) => single(stage_with_limit(&request, &staging, limit)),
+            Some(limit) => single(stage_with_limit(
+                &request,
+                &staging,
+                limit,
+                &LiveCopies::default(),
+            )),
             None => stage_document(&request, &staging),
         }
         .expect_err("must refuse");
@@ -678,6 +683,7 @@ fn several_files_stage_in_order_with_their_own_msg_ids_and_the_caption_on_the_fi
     let staged = stage_send(
         &files_request(files.clone(), Some("look"), None),
         &dir.join("staging"),
+        &LiveCopies::default(),
     )
     .expect("staged");
     assert!(staged.body.is_none());
@@ -732,6 +738,7 @@ fn a_body_is_queued_first_as_an_ordinary_text_send() {
     let staged = stage_send(
         &files_request(vec![write(&dir, "a.png", b"one")], None, Some("here it is")),
         &dir.join("staging"),
+        &LiveCopies::default(),
     )
     .expect("staged");
     let body = staged.body.expect("a body job");
@@ -760,8 +767,12 @@ fn one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged() {
         dir.join("absent.pdf"),
         write(&dir, "c.html", HTML),
     ];
-    let error = stage_send(&files_request(files, None, Some("body")), &staging)
-        .expect_err("one bad file refuses the send");
+    let error = stage_send(
+        &files_request(files, None, Some("body")),
+        &staging,
+        &LiveCopies::default(),
+    )
+    .expect_err("one bad file refuses the send");
     assert!(
         message(&error).contains("cannot be read"),
         "{}",
@@ -778,8 +789,12 @@ fn one_refused_file_refuses_the_whole_send_and_leaves_nothing_staged() {
 fn no_files_and_more_than_ten_refuse_before_staging() {
     let dir = fresh_dir("telegram-media-count");
     let staging = dir.join("staging");
-    let error =
-        stage_send(&files_request(vec![], None, Some("x")), &staging).expect_err("no files");
+    let error = stage_send(
+        &files_request(vec![], None, Some("x")),
+        &staging,
+        &LiveCopies::default(),
+    )
+    .expect_err("no files");
     assert!(
         message(&error).contains("at least one"),
         "{}",
@@ -788,7 +803,12 @@ fn no_files_and_more_than_ten_refuse_before_staging() {
     let eleven: Vec<_> = (0..=MAX_FILES)
         .map(|n| write(&dir, &format!("f{n}.txt"), b"x"))
         .collect();
-    let error = stage_send(&files_request(eleven, None, None), &staging).expect_err("eleven");
+    let error = stage_send(
+        &files_request(eleven, None, None),
+        &staging,
+        &LiveCopies::default(),
+    )
+    .expect_err("eleven");
     assert!(
         message(&error).contains("at most 10"),
         "{}",
@@ -946,6 +966,7 @@ async fn the_body_and_then_each_file_arrive_in_order() {
     let staged = stage_send(
         &files_request(files, Some("first"), Some("three files")),
         &f.dir.join("staging"),
+        &LiveCopies::default(),
     )
     .expect("stage");
     let jobs = staged
@@ -1074,12 +1095,47 @@ fn the_sweep_removes_copies_older_than_the_retention_only() {
     let old = aged("aaaa-1111", week + Duration::from_secs(60));
     let partial = aged(".partial-1-2-3", week * 2);
     let young = aged("bbbb-2222", week - Duration::from_secs(60));
-    assert_eq!(super::sweep_staged(&staging, now, week).expect("sweep"), 2);
+    assert_eq!(
+        super::sweep_staged(&staging, now, week, &LiveCopies::default()).expect("sweep"),
+        2
+    );
     assert!(!old.exists() && !partial.exists());
     assert!(young.exists(), "inside the retention: kept as evidence");
     assert_eq!(
-        super::sweep_staged(&dir.join("never-made"), now, week).expect("absent dir"),
+        super::sweep_staged(&dir.join("never-made"), now, week, &LiveCopies::default())
+            .expect("absent dir"),
         0
     );
+    std::fs::remove_dir_all(dir).expect("cleanup");
+}
+
+/// Review S1: the brake. However old, a copy a live job's payload names is
+/// kept; the same age without a live job goes.
+#[test]
+fn the_sweep_keeps_any_copy_a_live_job_sends() {
+    use std::time::{Duration, SystemTime};
+    let dir = fresh_dir("telegram-doc-sweep-brake");
+    let source = write(&dir, "report.html", HTML);
+    let staging = dir.join("staging");
+    let (job, document) = stage_document(&request(source, None), &staging).expect("stage");
+    let orphan = write(&staging, "eeee-5555", b"failed evidence");
+    let now = SystemTime::now();
+    let week = Duration::from_secs(7 * 24 * 3600);
+    for path in [&document.staged, &orphan] {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .expect("open")
+            .set_modified(now - week * 3)
+            .expect("age it");
+    }
+    let live = LiveCopies::from_payloads(&[job.payload]);
+    assert!(live.sends(&document.staged));
+    assert_eq!(
+        super::sweep_staged(&staging, now, week, &live).expect("sweep"),
+        1
+    );
+    assert!(document.staged.exists(), "a live job's copy is never swept");
+    assert!(!orphan.exists());
     std::fs::remove_dir_all(dir).expect("cleanup");
 }

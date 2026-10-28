@@ -3821,6 +3821,11 @@ pub(crate) enum DocumentRefusal {
     Internal(PijError),
 }
 
+/// One Telegram file send stages, queues and releases at a time, in this
+/// daemon (the one producer). Sends are rare; the turn is what makes the
+/// live-copy read in [`enqueue_telegram_document`] true until its releases.
+static TELEGRAM_STAGING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Stage every file by content and queue the send; the one producer for both
 /// the `/v1/sidecar` route and `pij send pij-telegram --file`.
 ///
@@ -3832,22 +3837,33 @@ pub(crate) enum DocumentRefusal {
 /// still live with other content is refused by name and this send's copies
 /// are released (N1); resending the identical request answers with the live
 /// rows.
+///
+/// No release ever deletes a copy a pending or running job sends (review B1):
+/// every release goes through `release_staged` with the live copies read
+/// ONCE, under [`TELEGRAM_STAGING`], so no other send can make a copy live
+/// between that read and a release.
 pub(crate) async fn enqueue_telegram_document(
     state: &AppState,
     request: pij_sidecars::telegram::TelegramDocumentRequest,
 ) -> std::result::Result<QueuedDocument, DocumentRefusal> {
+    let _staging_turn = TELEGRAM_STAGING.lock().await;
+    let live = pij_sidecars::telegram::LiveCopies::read(state.services.queue.as_ref())
+        .await
+        .map_err(DocumentRefusal::Internal)?;
     let staging = state.services.telegram_attachments.clone();
     let msg_id = request.msg_id.clone();
     // Up to 10 x 50 MB of copy and hash: off the async runtime.
-    let staged =
-        tokio::task::spawn_blocking(move || pij_sidecars::telegram::stage_send(&request, &staging))
-            .await
-            .map_err(|error| {
-                DocumentRefusal::Internal(PijError::Adapter {
-                    adapter: "sidecars/telegram".to_string(),
-                    message: format!("document staging task failed: {error}"),
-                })
-            })?;
+    let live_for_staging = live.clone();
+    let staged = tokio::task::spawn_blocking(move || {
+        pij_sidecars::telegram::stage_send(&request, &staging, &live_for_staging)
+    })
+    .await
+    .map_err(|error| {
+        DocumentRefusal::Internal(PijError::Adapter {
+            adapter: "sidecars/telegram".to_string(),
+            message: format!("document staging task failed: {error}"),
+        })
+    })?;
     let staged = staged.map_err(DocumentRefusal::Refused)?;
     let serial_key = staged
         .files
@@ -3863,18 +3879,8 @@ pub(crate) async fn enqueue_telegram_document(
         .collect();
     let rows = match state.services.queue.enqueue_all(jobs.clone()).await {
         Ok(pij_core::ports::BatchEnqueue::Queued(rows)) => rows,
-        Ok(pij_core::ports::BatchEnqueue::Conflict {
-            index,
-            id,
-            live_payload,
-        }) => {
-            // Release only copies no live row sends: an identical file under
-            // the same id stages to the very path a live row still reads.
-            pij_sidecars::telegram::release_staged(
-                documents
-                    .iter()
-                    .filter(|doc| !live_payload.contains(&*doc.staged.to_string_lossy())),
-            );
+        Ok(pij_core::ports::BatchEnqueue::Conflict { index, id, .. }) => {
+            pij_sidecars::telegram::release_staged(&documents, &live);
             let reused = &jobs[index].dedupe_key;
             return Err(DocumentRefusal::Refused(PijError::Adapter {
                 adapter: "sidecars/telegram".to_string(),
@@ -3886,7 +3892,7 @@ pub(crate) async fn enqueue_telegram_document(
             }));
         }
         Err(error) => {
-            pij_sidecars::telegram::release_staged(&documents);
+            pij_sidecars::telegram::release_staged(&documents, &live);
             return Err(DocumentRefusal::Internal(error));
         }
     };

@@ -5,8 +5,11 @@
 | loop | interval | work per tick | launches | scaling |
 |---|---|---|---|---|
 | telegram outbound | 250 ms | one in-process SQLite claim (`CLAIM_NEXT_SQL`); HTTP only when a job is due | 0 | per chat, not per seat; no per-seat work |
-| telegram inbound | 250 ms tick, pass = one `getUpdates` long poll (1 s) | ~1 HTTP call/s, as before the split | 0 | none |
-| staged-copy sweep | first outbound pass, then every 6 h | one `read_dir` + `metadata` per staged copy, in process | 0 | number of failed copies (≤ 10 per failed send, 7-day retention) |
+| telegram inbound | 250 ms tick, pass = one `getUpdates` long poll (1 s) | ~1 HTTP call/s, as before the split; while getUpdates fails: waits 1 s doubling to 60 s between calls (review N4) | 0 | none |
+| staged-copy sweep | first outbound pass, then every 6 h | one queue read (`live_payloads`, the brake) + one `read_dir` + `metadata` per staged copy, in process | 0 | number of failed copies (≤ 10 per failed send, 7-day retention) |
+| file-send producer | per `pij send --file` request | one queue read (`live_payloads`) under a per-daemon staging turn | 0 | per request, not per tick |
+
+Each loop pass is a tokio task (review N2: a panic ends the pass, not the loop), not a process.
 
 A job that keeps failing: at most `MAX_ATTEMPTS` = 10 HTTP calls in all, at most 5 in its first minute
 (waits 2, 4, 8, 16, 32 s), then about one per backoff, then it fails terminally. Before plan 183: one call

@@ -40,6 +40,8 @@ struct Api {
     polls: AtomicUsize,
     /// Updates `getUpdates` hands out once.
     updates: Mutex<Vec<Value>>,
+    /// When set, `getUpdates` fails with this status.
+    poll_status: Mutex<Option<StatusCode>>,
 }
 
 async fn reply(api: &Api) -> (StatusCode, Json<Value>) {
@@ -75,10 +77,16 @@ async fn upload_file(State(api): State<Arc<Api>>) -> (StatusCode, Json<Value>) {
     reply(&api).await
 }
 
-async fn get_updates(State(api): State<Arc<Api>>) -> Json<Value> {
+async fn get_updates(State(api): State<Arc<Api>>) -> (StatusCode, Json<Value>) {
     api.polls.fetch_add(1, Ordering::SeqCst);
+    if let Some(status) = *api.poll_status.lock().expect("poll status") {
+        return (
+            status,
+            Json(json!({"ok": false, "error_code": status.as_u16()})),
+        );
+    }
     let updates: Vec<Value> = std::mem::take(&mut *api.updates.lock().expect("updates"));
-    Json(json!({"ok": true, "result": updates}))
+    (StatusCode::OK, Json(json!({"ok": true, "result": updates})))
 }
 
 struct Fixture {
@@ -101,6 +109,7 @@ impl Fixture {
             sends: AtomicUsize::new(0),
             polls: AtomicUsize::new(0),
             updates: Mutex::new(Vec::new()),
+            poll_status: Mutex::new(None),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -171,6 +180,7 @@ impl Fixture {
                 chat_id: None,
             },
             &self.dir.join("staging"),
+            &super::LiveCopies::default(),
         )
         .expect("stage");
         for (job, _) in staged.files {
@@ -492,4 +502,158 @@ async fn the_shipped_loop_sweeps_expired_staged_copies() {
     .expect("swept on the first pass");
     loops.shutdown().await;
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Review S1: the sweep's age policy has a brake. A daemon that was down for
+/// more than the retention, with a file job still pending, keeps that job's
+/// copy; an unreferenced copy of the same age goes.
+#[tokio::test]
+async fn the_sweep_never_removes_a_copy_a_live_job_sends() {
+    let f = Fixture::new(Answer::Status(StatusCode::BAD_GATEWAY)).await;
+    let staging = f.dir.join("staging");
+    f.enqueue_file().await;
+    let live: Vec<_> = std::fs::read_dir(&staging)
+        .expect("staging")
+        .map(|entry| entry.expect("entry").path())
+        .collect();
+    assert_eq!(
+        live.len(),
+        1,
+        "one staged copy, referenced by the pending job"
+    );
+    let orphan = staging.join("dddd-4444");
+    std::fs::write(&orphan, b"failed job evidence").expect("orphan");
+    let old =
+        std::time::SystemTime::now() - super::FAILED_COPY_RETENTION - Duration::from_secs(3600);
+    for path in [&live[0], &orphan] {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .expect("open")
+            .set_modified(old)
+            .expect("age it");
+    }
+    let worker = TelegramWorker::new(
+        f.queue.clone(),
+        f.spine.clone(),
+        Arc::new(FakeRegistry::new()),
+        TelegramConfig {
+            token: "TOKEN".into(),
+            allowed_user_ids: vec![],
+            chat_id: "42".into(),
+            api_root: "http://127.0.0.1:1".into(),
+        },
+        f.dir.join("sweep.lock"),
+    )
+    .expect("worker")
+    .with_attachment_sweep(staging);
+    let loops = Arc::new(worker)
+        .start(Duration::from_millis(20), 1)
+        .expect("start");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while orphan.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the unreferenced copy is swept");
+    loops.shutdown().await;
+    assert!(
+        live[0].exists(),
+        "a pending job's copy is never swept, however old"
+    );
+}
+
+/// Review N3: shutdown signals BOTH loops before joining either, so inbound
+/// stops at once even while an upload holds the outbound pass.
+#[tokio::test]
+async fn shutdown_stops_inbound_while_outbound_is_still_uploading() {
+    let f = Fixture::with_upload_timeout(Answer::Stall, Some(Duration::from_millis(2_000))).await;
+    f.enqueue_file().await;
+    let loops = Arc::clone(&f.worker)
+        .start(Duration::from_millis(20), 32)
+        .expect("start");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while f.api.sends.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("upload in flight");
+    let shutdown = tokio::spawn(loops.shutdown());
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let polls = f.api.polls.load(Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(!shutdown.is_finished(), "the upload is still in flight");
+    assert_eq!(
+        f.api.polls.load(Ordering::SeqCst),
+        polls,
+        "inbound stopped polling without waiting for the upload"
+    );
+    tokio::time::timeout(Duration::from_secs(5), shutdown)
+        .await
+        .expect("shutdown completes when the upload ends")
+        .expect("join");
+}
+
+/// Review N4: while `getUpdates` fails fast, inbound backs off (1 s, doubling
+/// to 60 s) instead of failing on every 20 ms tick.
+#[tokio::test]
+async fn inbound_backs_off_while_get_updates_fails() {
+    let f = Fixture::new(Answer::Ok).await;
+    *f.api.poll_status.lock().expect("poll status") = Some(StatusCode::BAD_GATEWAY);
+    let loops = Arc::clone(&f.worker)
+        .start(Duration::from_millis(20), 1)
+        .expect("start");
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    loops.shutdown().await;
+    let polls = f.api.polls.load(Ordering::SeqCst);
+    assert!(
+        (1..=3).contains(&polls),
+        "attempts at 0 s and 1 s (then 3 s), not every tick: {polls}"
+    );
+}
+
+/// Review N2: a pass that panics does not kill its loop for good. Inbound is
+/// restarted with backoff, the restart is a spine event, and a message from
+/// the phone still arrives.
+#[tokio::test]
+async fn a_panicking_inbound_pass_is_restarted_and_recorded() {
+    let f = Fixture::new(Answer::Ok).await;
+    f.worker
+        .inbound_panics
+        .store(2, std::sync::atomic::Ordering::SeqCst);
+    f.bind("pij-target").await;
+    f.inbound("still listening");
+    let loops = Arc::clone(&f.worker)
+        .start(Duration::from_millis(20), 1)
+        .expect("start");
+    let delivered = tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let turns = f.turns("pij-target").await;
+            if !turns.is_empty() {
+                return turns;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("inbound came back after two panicking passes");
+    loops.shutdown().await;
+    assert_eq!(delivered, ["still listening"]);
+    let restarts = f.events("telegram.loop-restarted").await;
+    assert_eq!(restarts.len(), 2, "{restarts:?}");
+    assert_eq!(restarts[0]["loop"], "telegram inbound");
+    assert!(
+        restarts[0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("injected inbound panic")),
+        "{restarts:?}"
+    );
+    assert_eq!(restarts[0]["restarts"], 1);
+    assert_eq!(restarts[1]["restarts"], 2);
+    assert!(
+        restarts[1]["backoff_ms"].as_u64() > restarts[0]["backoff_ms"].as_u64(),
+        "backoff grows: {restarts:?}"
+    );
 }

@@ -771,6 +771,23 @@ impl Queue for SqliteQueue {
         .await
     }
 
+    async fn live_payloads(&self, kinds: &[String]) -> Result<Vec<String>> {
+        require_current_schema(&self.pool).await?;
+        let kinds_json = serde_json::to_string(kinds).map_err(|error| PijError::Adapter {
+            adapter: "store/queue".to_string(),
+            message: format!("could not encode the live-payload filter: {error}"),
+        })?;
+        // `jobs_claimable (state, kind, id)` serves both states.
+        sqlx::query_scalar(
+            "SELECT payload FROM jobs WHERE state IN ('pending', 'running') \
+             AND kind IN (SELECT value FROM json_each(?1))",
+        )
+        .bind(&kinds_json)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)
+    }
+
     async fn peek(&self, kinds: &[String]) -> Result<Option<(JobId, Job)>> {
         require_current_schema(&self.pool).await?;
         if kinds.is_empty() {

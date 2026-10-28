@@ -49,3 +49,20 @@ crate (pij-sidecars may not dev-depend on sqlx). A fake that agrees with
   worktree where the packet forbids `npm install` gets five red TS stages that
   are really absent tooling (CONF-001). `stretch:` have the checks extension
   mark a stage NOT RUN when `node_modules/.bin` is missing.
+
+**Review round (pij-review-pr83):**
+- *B1 was mine twice over.* I named the Err-path edge in my own report, called it
+  "rare", and shipped a Conflict filter that checked ONE live row when a request
+  spans many. A conflict is per row; the shared resource (a staged path) is per
+  request. The fix put the check in the release function's signature
+  (`release_staged(docs, &LiveCopies)`), so no caller can delete without
+  saying what is live. Lesson: when a delete needs a guard, make the guard a
+  required argument, not a filter at one call site.
+- *My safety argument was a number I never re-derived.* "13.5 minutes" was the
+  backoff sum, not a live job's lifetime (retry_after and upload time). The
+  brake made the number unnecessary; the doc now states the real worst case.
+- *Load-sensitive daemon test, third sighting.*
+  `a_live_idle_claude_frame_under_a_long_stale_working_is_refused` failed again
+  under a parallel multi-crate run and passed 640/640 twice alone. Likely cause:
+  its fake `tmux` is a shell script read under the capture timeout, so a slow
+  capture reads as "no idle evidence" and the send is allowed. Out of fence.

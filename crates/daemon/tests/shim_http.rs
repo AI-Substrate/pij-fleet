@@ -1330,3 +1330,80 @@ async fn a_symlinked_attachment_is_named_by_the_link_from_the_shim() {
     server.abort();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Plan 183 review B1 (probe 1): a conflict on a LATER file must not delete the
+/// copy an EARLIER live row of the same msg_id still sends.
+#[tokio::test]
+async fn a_conflict_on_a_later_file_keeps_every_live_copy() {
+    let (addr, server, _store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-b1-conflict");
+    let [a, b, c] = ["a.html", "b.html", "c.html"].map(|name| {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("<p>{name}</p>")).expect("source");
+        path
+    });
+    let (status, first) = sidecar_document(addr, &[&a, &b], None, "doc-b1").await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{first:?}");
+    let first = first.data.expect("queued");
+    let staged = |i: usize| {
+        std::path::PathBuf::from(
+            first["files"][i]["document"]["staged"]
+                .as_str()
+                .expect("staged"),
+        )
+    };
+    let (live_a, live_b) = (staged(0), staged(1));
+    let staging = live_a.parent().expect("staging").to_path_buf();
+
+    let (status, refused) = sidecar_document(addr, &[&a, &c], None, "doc-b1").await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST, "{refused:?}");
+    assert!(
+        refused.meta.unwrap_or_default().contains("doc-b1#2"),
+        "the conflicting row is named"
+    );
+    assert!(live_a.exists(), "live doc-b1#1 lost its staged copy");
+    assert!(live_b.exists(), "live doc-b1#2 lost its staged copy");
+    let mut copies: Vec<_> = std::fs::read_dir(&staging)
+        .expect("staging")
+        .map(|entry| entry.expect("entry").path())
+        .collect();
+    copies.sort();
+    let mut live = vec![live_a, live_b];
+    live.sort();
+    assert_eq!(
+        copies, live,
+        "only the live copies remain: c's copy was released"
+    );
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Plan 183 review B1 (probe 2): a staging refusal on a later file must not
+/// delete a live row's copy that an earlier file of the request shares.
+#[tokio::test]
+async fn a_staging_refusal_keeps_every_live_copy() {
+    let (addr, server, _store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-b1-refusal");
+    let a = dir.join("a.html");
+    let b = dir.join("b.html");
+    std::fs::write(&a, b"<p>a</p>").expect("a");
+    std::fs::write(&b, b"<p>b</p>").expect("b");
+    let (status, first) = sidecar_document(addr, &[&a, &b], None, "doc-b1r").await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{first:?}");
+    let first = first.data.expect("queued");
+    let live_a = std::path::PathBuf::from(
+        first["files"][0]["document"]["staged"]
+            .as_str()
+            .expect("staged"),
+    );
+    let missing = dir.join("missing.html");
+    let (status, refused) = sidecar_document(addr, &[&a, &missing], None, "doc-b1r").await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST, "{refused:?}");
+    assert!(
+        refused.meta.unwrap_or_default().contains("cannot be read"),
+        "refused for the missing file"
+    );
+    assert!(live_a.exists(), "live doc-b1r#1 lost its staged copy");
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}

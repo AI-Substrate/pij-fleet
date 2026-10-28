@@ -582,7 +582,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .join("sidecars")
-            .join("telegram-attachments"),
+            .join(pij_sidecars::telegram::ATTACHMENTS_DIR),
         codex_threads,
         offline: config.is_fully_offline(),
     })

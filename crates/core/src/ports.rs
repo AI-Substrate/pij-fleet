@@ -470,6 +470,20 @@ pub trait Queue: Send + Sync {
         spine: &dyn Spine,
     ) -> Result<(Option<Job>, Vec<Event>)>;
 
+    /// The payload of every pending or running job of any of `kinds`: one
+    /// read, so a caller deleting something a job needs can first ask which
+    /// live jobs need it (plan 183 review B1/S1).
+    ///
+    /// This default REFUSES rather than answering "none": a wrapper that has
+    /// not implemented it must make its caller keep everything, never delete.
+    async fn live_payloads(&self, kinds: &[String]) -> Result<Vec<String>> {
+        let _ = kinds;
+        Err(crate::error::PijError::Adapter {
+            adapter: "queue".to_string(),
+            message: "this queue cannot list live payloads".to_string(),
+        })
+    }
+
     /// Inspect the oldest live job of any of `kinds` without claiming or
     /// otherwise mutating it. Pending and already-claimed rows remain visible;
     /// repeated peeks return the same row until another actor completes it.

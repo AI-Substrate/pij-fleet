@@ -15,7 +15,7 @@ use pij_core::config::Config;
 use pij_core::model::SeatId;
 use pij_core::ports::Queue;
 use pij_sidecars::telegram::{
-    MAX_ATTEMPTS, TelegramConfig, TelegramDocumentRequest, TelegramWorker, stage_send,
+    LiveCopies, MAX_ATTEMPTS, TelegramConfig, TelegramDocumentRequest, TelegramWorker, stage_send,
 };
 use pij_store::SqliteQueue;
 use pij_testkit::{
@@ -105,6 +105,7 @@ async fn files_wait_behind_a_retrying_body_until_it_gives_up() {
             chat_id: None,
         },
         &dir.join("staging"),
+        &LiveCopies::default(),
     )
     .expect("stage");
     let jobs: Vec<_> = staged
@@ -151,4 +152,28 @@ async fn files_wait_behind_a_retrying_body_until_it_gives_up() {
     );
     server.abort();
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Review N1: the producer stages where the sweep looks. The daemon composes
+/// `Sidecars::new(.., <state>/sidecars, ..)` and the sweep reads
+/// `<that>/ATTACHMENTS_DIR`; `build_services` must stage into the same place,
+/// from the same constant, not a second spelling of the name. Fakes only.
+#[tokio::test]
+async fn the_producer_stages_where_the_sweep_looks() {
+    let fresh = FreshStore::new();
+    let state_dir = fresh_dir("telegram-attachments-seam");
+    let config = Config {
+        store_path: fresh.path(),
+        ..Config::default()
+    };
+    let services = pij_daemon::build_services(&config, &state_dir.join("pane-signals"))
+        .await
+        .expect("services");
+    assert_eq!(
+        services.telegram_attachments,
+        state_dir
+            .join("sidecars")
+            .join(pij_sidecars::telegram::ATTACHMENTS_DIR)
+    );
+    let _ = std::fs::remove_dir_all(state_dir);
 }

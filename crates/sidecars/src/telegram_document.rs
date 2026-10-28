@@ -146,24 +146,66 @@ pub struct StagedSend {
 /// Every refusal happens here, before anything is queued: no files or too
 /// many; a missing, empty, non-regular or oversized file; a caption that
 /// cannot fit even behind the bare sender tag.
-pub fn stage_send(request: &TelegramDocumentRequest, staging_dir: &Path) -> Result<StagedSend> {
-    stage_with_limit(request, staging_dir, DOCUMENT_LIMIT_BYTES)
+///
+/// A refusal releases what this request already staged, except any copy a
+/// live job sends (`live`): an identical file under the same id stages to the
+/// path a live row still reads.
+pub fn stage_send(
+    request: &TelegramDocumentRequest,
+    staging_dir: &Path,
+    live: &LiveCopies,
+) -> Result<StagedSend> {
+    stage_with_limit(request, staging_dir, DOCUMENT_LIMIT_BYTES, live)
+}
+
+/// The staged copies live jobs still send, by file name: a staged name
+/// (`<sha256>-<msg-key>`) is unique within the one staging directory, and a
+/// name never depends on how a caller spelled that directory.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LiveCopies(std::collections::HashSet<std::ffi::OsString>);
+
+impl LiveCopies {
+    /// Read every pending or running Telegram file job: one queue read.
+    pub async fn read(queue: &dyn pij_core::ports::Queue) -> Result<Self> {
+        let payloads = queue
+            .live_payloads(&[super::TELEGRAM_DOCUMENT_KIND.to_string()])
+            .await?;
+        Ok(Self::from_payloads(&payloads))
+    }
+
+    /// The copies these job payloads send. A payload that does not decode
+    /// names nothing; it cannot be a file job pij wrote.
+    pub fn from_payloads(payloads: &[String]) -> Self {
+        Self(
+            payloads
+                .iter()
+                .filter_map(|payload| serde_json::from_str::<DocumentJob>(payload).ok())
+                .filter_map(|job| job.document.staged.file_name().map(ToOwned::to_owned))
+                .collect(),
+        )
+    }
+
+    /// Does a live job send this copy?
+    pub fn sends(&self, path: &Path) -> bool {
+        path.file_name().is_some_and(|name| self.0.contains(name))
+    }
 }
 
 /// Remove staged copies (and abandoned `.partial-*` writes) whose mtime is
 /// older than `retention` at `now`; returns how many went.
 ///
-/// A RETENTION POLICY, not a brake: age is the reason to delete. Delivered
-/// copies are released at once, so what remains are failed jobs' evidence
-/// (N2). A copy is written at enqueue, and a live job retries for about
-/// 13.5 minutes at most (`MAX_ATTEMPTS`), so a week-old copy has no live
-/// job unless the daemon held it queued for that week; such a job then fails
-/// as "staged copy unreadable", never sends other bytes. In-process: one
-/// directory read, nothing launched.
+/// Age is a RETENTION POLICY: it is the reason to delete. Delivered copies
+/// are released at once, so what remains are failed jobs' evidence (N2).
+/// `live` is a one-directional BRAKE on that policy: a copy a pending or
+/// running job sends is never removed, however old (say a daemon down for
+/// longer than the retention with file jobs queued). Removing the brake
+/// deletes the same set or more. In-process: one directory read, nothing
+/// launched.
 pub fn sweep_staged(
     staging_dir: &Path,
     now: std::time::SystemTime,
     retention: std::time::Duration,
+    live: &LiveCopies,
 ) -> Result<usize> {
     let entries = match fs::read_dir(staging_dir) {
         Ok(entries) => entries,
@@ -177,6 +219,7 @@ pub fn sweep_staged(
             continue;
         };
         let expired = metadata.is_file()
+            && !live.sends(&entry.path())
             && metadata
                 .modified()
                 .ok()
@@ -189,10 +232,17 @@ pub fn sweep_staged(
     Ok(removed)
 }
 
-/// Delete staged copies that will never be queued.
-pub fn release_staged<'a>(documents: impl IntoIterator<Item = &'a StagedDocument>) {
+/// Delete staged copies that will never be queued, except any a live job
+/// sends. The ONE release seam (plan 183 review B1): every path that gives a
+/// copy back comes through here, so none can forget the brake.
+pub fn release_staged<'a>(
+    documents: impl IntoIterator<Item = &'a StagedDocument>,
+    live: &LiveCopies,
+) {
     for document in documents {
-        let _ = fs::remove_file(&document.staged);
+        if !live.sends(&document.staged) {
+            let _ = fs::remove_file(&document.staged);
+        }
     }
 }
 
@@ -200,6 +250,7 @@ pub(super) fn stage_with_limit(
     request: &TelegramDocumentRequest,
     staging_dir: &Path,
     limit: u64,
+    live: &LiveCopies,
 ) -> Result<StagedSend> {
     if request.files.is_empty() {
         return Err(refusal(
@@ -250,7 +301,7 @@ pub(super) fn stage_with_limit(
             Ok(staged) => files.push(staged),
             Err(error) => {
                 // All or nothing: nothing is queued, so nothing stays staged.
-                release_staged(files.iter().map(|(_, document)| document));
+                release_staged(files.iter().map(|(_, document)| document), live);
                 return Err(error);
             }
         }

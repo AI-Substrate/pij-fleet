@@ -964,6 +964,18 @@ impl Queue for FakeQueue {
         Ok((Some(job), events))
     }
 
+    async fn live_payloads(&self, kinds: &[String]) -> Result<Vec<String>> {
+        let state = self.state.lock().expect("fake queue mutex");
+        Ok(state
+            .live
+            .iter()
+            .map(|(_, job)| job)
+            .chain(state.claimed.values().map(|(job, _)| job))
+            .filter(|job| kinds.contains(&job.kind))
+            .map(|job| job.payload.clone())
+            .collect())
+    }
+
     async fn peek(&self, kinds: &[String]) -> Result<Option<(JobId, Job)>> {
         let state = self.state.lock().expect("fake queue mutex");
         let pending = state

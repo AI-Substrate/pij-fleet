@@ -32,12 +32,14 @@ Inbound still uses the persisted outbound binding, not name or swipe-reply parsi
   300. A 429's `retry_after` wins when it is longer, so a retry is never sooner
   than Telegram asked. The queue rounds each deadline UP to its whole-second
   clock, so even a 100 ms wait is never released early.
-- **Attempt cap.** After 10 attempts (about 13.5 minutes of waiting) the job fails
+- **Attempt cap.** After 10 attempts the job fails
   terminally (`state=failed`, outcome `gave up after 10 attempts; last failure:
   …`) and appends `telegram.outbound-gave-up` on the conversation seat
   (`conversation`, `from`, `msg_id`, `kind`, `attempts`, `retry_after_s`,
   token-free `reason`). A `retry_after` over 3600 s fails the job at once with
-  that reason instead of waiting.
+  that reason instead of waiting. pij's own waits add up to about 13.5 minutes;
+  with a `retry_after` of up to an hour per wait and up to 600 s per upload
+  attempt, one job can stay live for about 10.7 hours at worst.
 - **Order on a chat.** Text and file jobs on one chat's serial key are claimed
   strictly in queue order, even while the earliest is waiting out a backoff: a
   retrying body holds its files behind it. The cap bounds the hold; once the
@@ -49,11 +51,21 @@ Inbound still uses the persisted outbound binding, not name or swipe-reply parsi
 - **Inbound never waits on outbound.** Outbound sends and inbound polling are two
   separate loops. A retrying, failing or stalled send never delays `getUpdates`:
   a message from the phone reaches the bound seat while an upload is in flight.
+  While `getUpdates` itself fails, inbound waits 1 s, doubling to 60 s, between
+  calls (reset by a success) rather than failing on every tick.
+- **A crashed pass is not a dead loop.** Each pass of either loop runs on its
+  own; if one panics, that loop waits 1 s, doubling per consecutive panic to
+  60 s, appends `telegram.loop-restarted` (`loop`, `reason`, `restarts`,
+  `backoff_ms`) on seat `pij-telegram-loops`, logs it, and carries on.
+- **Shutdown.** Both loops are told to stop before either is joined, so inbound
+  stops at once even while an upload (up to 600 s) finishes.
 - **Cost.** Each loop ticks every 250 ms and launches no process. Outbound does
   one in-process SQLite claim per tick and an HTTP call only when a job is due:
   a job that never succeeds makes at most 10 calls in all (at most 5 in its first
   minute, then about one per backoff), not one per tick. Inbound is one
-  `getUpdates` long poll (1 s) per pass, about one call a second, as before.
+  `getUpdates` long poll (1 s) per pass, about one call a second, as before,
+  and at most one a second (then one a minute) while it fails. Each pass is a
+  task in the daemon, not a process.
 
 The API root is injectable in Rust tests, not via environment/credential files.
 Tests use only local fake HTTP endpoints; an isolated daemon cannot currently
@@ -119,11 +131,19 @@ any other recipient still refuses it by name.
   (`state=failed`); transport errors, 429 and 5xx retry without a fallback. A
   delivered job's staged copy is deleted; a failed job's copy is kept as evidence
   for 7 days (by its mtime, which is its enqueue time), then removed by a sweep
-  the outbound loop runs on start and every 6 hours: one directory read in
-  process, nothing launched. Abandoned `.partial-*` writes go the same way.
+  the outbound loop runs on start and every 6 hours: one directory read and one
+  queue read in process, nothing launched. Abandoned `.partial-*` writes go the
+  same way. Age is the policy; the brake is that a copy a pending or running
+  file job sends is NEVER removed, however old (for example after the daemon
+  was down for longer than a week with files queued).
+- **No copy a live job sends is ever released.** A refused or failed send gives
+  back the copies it staged, except any a pending or running job sends: an
+  identical file under the same id and position stages to the same path as the
+  live job. File sends stage and queue one at a time in a daemon, so that check
+  stays true until the release.
 - **One send, one batch.** The body and every file are queued in one store
   transaction: an internal error leaves nothing from the send queued, and the
-  staged copies are removed.
+  copies it staged are released (as above).
 - **`msg_id` reuse.** Resending the identical request while it is still queued
   answers with the live jobs. Reusing a `--msg-id` that is still queued with
   different content (other bytes, caption, body or source) is refused by name,
