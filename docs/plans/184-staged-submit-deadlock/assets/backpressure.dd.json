@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 184 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: diagnosis, own-text recognition, bounded holds",
+          "phase": "ph-c094",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "Canary receipts; EXTEND\u2192RUN: delivery tests in crates/core/src/delivery.rs and crates/daemon, tmux adapter tests on a private -L server; cargo test -p pij-core -p pij-tmux -p pij-daemon <filters>",
+          "state": "unchecked",
+          "probe": "crates/core/src/delivery.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4-AC5: launch cost and docs",
+          "phase": "ph-c094",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "pij-rs --json ping before/after; prime reads the docs.",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC6: proof, mutants and CI",
+          "phase": "ph-c094",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutant receipts; rust-check; GitHub CI on the exact head.",
+          "state": "unchecked",
+          "probe": ".github/workflows"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

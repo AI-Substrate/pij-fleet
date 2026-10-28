@@ -1,0 +1,93 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Delivery deadlock: pij's own staged text holds a seat forever",
+        "slug": "staged-submit-deadlock",
+        "ordinal": 184,
+        "status": "ready",
+        "summary": "pij-fleet#86: a `/compact` control delivery staged into a Claude seat's composer never committed; pij then holds that job, and every later message to the seat, as composer-busy against its own leftover text, retrying every ~5 s with two tmux launches each, forever.",
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "mode": "Full",
+        "log": "assets/execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Live on 2026-10-28/29. Seats pij-elated-walrus (%108) and pij-practical-marmot (%105), workers of the osk prime pij-collective-eagle. Each received a `--command compact` delivery from eagle (jobs 12791 at 18:46 and 12836 at 22:14). The staged submit pasted `/compact` into the composer but never committed; abort_staged_inner (crates/tmux/src/lib.rs) appended STAGED_SUBMIT_RECOVERY and released the pane. The job stayed pending and now sees a non-empty composer (draft_sha constant: its own `/compact` plus the recovery notice) and defers as composer-busy: 9,136 and 6,758 deferrals, about every 5 s, each costing `tmux.atomically reserve staged submit` plus `tmux.restore pane input and release ownership`. Delivery is FIFO per seat, so 6 later messages to walrus and 2 to marmot (from eagle and pij-sunny-flyingfish) have been stuck behind it since 18:46. Neither the sender nor the seat is told. These retries are now most of the daemon's remaining launches (~0.8 of ~1/s). Pane captures: assets/evidence/. Rulings: assets/rulings.md."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A control command that cannot commit fails with a named reason; it never wedges the seat.",
+        "pij never mistakes its own staged leftover for a human draft.",
+        "A held delivery backs off, costs no launches while waiting, and is surfaced to its sender."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Typing into a composer that holds a human draft (the composer gate stays).",
+        "Changing how messages (not control commands) are transported.",
+        "Copilot/Codex control support."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Diagnosis. Reproduce on main with a canary Claude seat you spawn (`pij send <canary> --command compact`, in states like the stuck seats: idle, and after a long turn), and name why the staged `/compact` never committed: the commit-authorization check, Claude's slash-command menu changing the composer rendering, timing, or something else. Record it with captured panes and events in assets/evidence/diagnosis.md before fixing. If it does not reproduce, say what was tried and fix the deadlock regardless (ac-0002..0004).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Own-text recognition. When a staged submit is aborted, the job records exactly what pij left in the composer (draft hash of the staged text plus the notice). A later attempt that finds exactly that text recognises it as pij's own, never as a human draft, and then either (a) clears its own text and fails the job with a named reason, or (b) commits it if it is still a valid submission. Anything else in the composer (any human edit) is still a human draft and is never touched. Test both: own leftover vs. own leftover plus one human keystroke.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Held deliveries are bounded and surfaced. A composer-busy hold backs off (state the schedule and cap). After a stated limit, the sender gets a named notice (`delivery.held` surfaced to the sender's inbox or similar), and a control command that cannot run fails terminally instead of blocking later messages to the same seat. Ordinary messages behind a failed control command are then delivered in order. Test: control head fails \u2192 the 6 queued messages deliver in order.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Cost (AGENTS.md \u00a7 Resource cost). While a delivery waits, the composer check costs no process launch: read the composer through the control-mode capture before reserving, and reserve (which launches) only when it looks submittable. Live before/after receipts with `pij-rs --json ping`; the prime takes the deployed reading. With the two stuck seats cleared, `tmux.atomically reserve staged submit` must not grow while nothing is deliverable.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Docs. docs/how (delivery / composer gate / control commands) describes the abort path, own-text recognition, the hold schedule, the sender notice and the terminal failure.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Proof. Every behaviour change has a test RED on main (quoted) and green on the branch, using the recorded pane captures as fixtures where they apply. Mutants: own-text treated as human; no backoff; no sender notice; control failure still blocks the queue. Each turns its test red, then is restored. Scoped cargo tests, `just rust-check`, clippy -D warnings, fmt; GitHub CI green on the exact head. Anything not run is NOT RUN with its reason.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-c094",
+          "title": "Diagnose and fix the staged-submit deadlock",
+          "brief": "One phase: reproduce with a canary, name why the staged /compact never committed, stop pij mistaking its own leftover for a human draft, bound and surface held deliveries, back off without launches, docs, mutants, PR. CS 3.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    }
+  ]
+}

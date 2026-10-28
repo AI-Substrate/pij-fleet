@@ -1,0 +1,254 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Delivery deadlock: pij's own staged text holds a seat forever",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "The composer gate stays: a human draft is never typed over or cleared. What changes is that pij can recognise its OWN leftover by exact content it recorded, and that a hold is bounded, cheap and visible. The sender is told; nothing waits silently. Reads before reserves: inspect the composer through the control-mode capture (no launch) and only reserve when submittable."
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One delivery path (gate, staged submit, hold policy); the fixes interact, so one owner."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "canary -> captured cause",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "recorded own text -> recognised",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "hold -> backoff -> sender notice -> terminal control failure",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "waiting delivery -> zero launches",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Delivery deadlock: pij's own staged text holds a seat forever",
+          "role": "pm",
+          "responsibility": "Canary diagnosis, red tests, own-text recognition, bounded/surfaced holds, launch-free waiting, docs, receipts, PR.",
+          "paths": [
+            "crates/core/src/",
+            "crates/tmux/src/",
+            "crates/tmux/tests/",
+            "crates/harnesses/src/",
+            "crates/daemon/src/",
+            "crates/daemon/tests/",
+            "docs/how/",
+            "docs/plans/184-staged-submit-deadlock"
+          ],
+          "reads": [],
+          "notes": "Read first: issue #86; assets/evidence/ pane captures; crates/tmux/src/lib.rs staged submit (reserve_submit_marker, abort_staged_inner, submit_recovery_script, STAGED_SUBMIT_RECOVERY in crates/core/src/ports.rs); crates/core/src/delivery.rs (composer-busy, deferrals); crates/harnesses/src/composer.rs; the delivery worker in crates/daemon; docs/how/pij-pane-signals.md; AGENTS.md \u00a7 Resource cost; memory of prior delivery bugs in docs/retros.",
+          "interface": "Delivery hold policy; staged-submit abort record",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/core/src/delivery.rs",
+          "crates/tmux/src/lib.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-184-staged-deadlock on fix/staged-submit-deadlock."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "claude",
+          "model": "claude-opus-5-5 reviewer seat, then prime verification"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Core and tmux tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-core",
+            "-p",
+            "pij-tmux"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-daemon"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Canary diagnosis on main.",
+          "Red tests.",
+          "Own-text recognition; bounded holds; launch-free waiting.",
+          "Docs; mutants; checks; PR; CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: an independent reviewer seat, then the prime verifies receipts, merges, bounces the daemon and takes the live cost reading.",
+        "inputs": [
+          "PR head SHA",
+          "receipts"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "Own-text recognition clears a human's text.",
+          "check": "Exact recorded content only; any difference is a human draft; test with one extra keystroke."
+        },
+        {
+          "id": "rk-0002",
+          "text": "Failing a control command loses a needed compaction.",
+          "check": "The sender is told by name and can resend; the seat is unblocked."
+        },
+        {
+          "id": "rk-0003",
+          "text": "Canaries cost quota and leak seats.",
+          "check": "At most 4 canary Claude seats, each closed and its window killed."
+        }
+      ]
+    }
+  ]
+}
