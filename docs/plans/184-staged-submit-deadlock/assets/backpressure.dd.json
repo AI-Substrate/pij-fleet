@@ -20,9 +20,10 @@
           "phase": "ph-c094",
           "mode": "EXTEND",
           "tier": "computational",
-          "proof": "Canary receipts; EXTEND\u2192RUN: delivery tests in crates/core/src/delivery.rs and crates/daemon, tmux adapter tests on a private -L server; cargo test -p pij-core -p pij-tmux -p pij-daemon <filters>",
-          "state": "unchecked",
-          "probe": "crates/core/src/delivery.rs"
+          "proof": "Canary receipts; EXTEND→RUN: delivery tests in crates/core/src/delivery.rs and crates/daemon, tmux adapter tests on a private -L server; cargo test -p pij-core -p pij-tmux -p pij-daemon <filters>",
+          "state": "checked",
+          "probe": "crates/core/src/delivery.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "bp-0002",
@@ -32,7 +33,9 @@
           "tier": "computational",
           "proof": "pij-rs --json ping before/after; prime reads the docs.",
           "state": "unchecked",
-          "probe": "pij-rs --json ping"
+          "probe": "pij-rs --json ping",
+          "receipt": "execution-log.dd.json#entries/lg-0004",
+          "note": "Docs proven (lg-0005); the deployed launch reading is the prime's."
         },
         {
           "id": "bp-0003",

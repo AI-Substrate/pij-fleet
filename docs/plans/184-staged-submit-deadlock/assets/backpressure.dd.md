@@ -20,8 +20,8 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-AC3: diagnosis, own-text recognition, bounded holds | ph-c094 | EXTEND | computational | Canary receipts; EXTEND→RUN: delivery tests in crates/core/src/delivery.rs and crates/daemon, tmux adapter tests on a private -L server; cargo test -p pij-core -p pij-tmux -p pij-daemon &lt;filters&gt; | [ ] unchecked | — | — | crates/core/src/delivery.rs |
-| bp-0002 | AC4-AC5: launch cost and docs | ph-c094 | EXISTS | computational | pij-rs --json ping before/after; prime reads the docs. | [ ] unchecked | — | — | pij-rs --json ping |
+| bp-0001 | AC1-AC3: diagnosis, own-text recognition, bounded holds | ph-c094 | EXTEND | computational | Canary receipts; EXTEND→RUN: delivery tests in crates/core/src/delivery.rs and crates/daemon, tmux adapter tests on a private -L server; cargo test -p pij-core -p pij-tmux -p pij-daemon &lt;filters&gt; | [x] checked | — | execution-log.dd.json#entries/lg-0003 | crates/core/src/delivery.rs |
+| bp-0002 | AC4-AC5: launch cost and docs | ph-c094 | EXISTS | computational | pij-rs --json ping before/after; prime reads the docs. | [ ] unchecked | Docs proven (lg-0005); the deployed launch reading is the prime's. | execution-log.dd.json#entries/lg-0004 | pij-rs --json ping |
 | bp-0003 | AC6: proof, mutants and CI | ph-c094 | EXISTS | computational | Mutant receipts; rust-check; GitHub CI on the exact head. | [ ] unchecked | — | — | .github/workflows |
 
 <a id="sensors"></a>

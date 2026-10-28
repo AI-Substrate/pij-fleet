@@ -42,32 +42,38 @@
         {
           "id": "ac-0001",
           "claim": "Diagnosis. Reproduce on main with a canary Claude seat you spawn (`pij send <canary> --command compact`, in states like the stuck seats: idle, and after a long turn), and name why the staged `/compact` never committed: the commit-authorization check, Claude's slash-command menu changing the composer rendering, timing, or something else. Record it with captured panes and events in assets/evidence/diagnosis.md before fixing. If it does not reproduce, say what was tried and fix the deadlock regardless (ac-0002..0004).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0001"
         },
         {
           "id": "ac-0002",
           "claim": "Own-text recognition. When a staged submit is aborted, the job records exactly what pij left in the composer (draft hash of the staged text plus the notice). A later attempt that finds exactly that text recognises it as pij's own, never as a human draft, and then either (a) clears its own text and fails the job with a named reason, or (b) commits it if it is still a valid submission. Anything else in the composer (any human edit) is still a human draft and is never touched. Test both: own leftover vs. own leftover plus one human keystroke.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0003",
-          "claim": "Held deliveries are bounded and surfaced. A composer-busy hold backs off (state the schedule and cap). After a stated limit, the sender gets a named notice (`delivery.held` surfaced to the sender's inbox or similar), and a control command that cannot run fails terminally instead of blocking later messages to the same seat. Ordinary messages behind a failed control command are then delivered in order. Test: control head fails \u2192 the 6 queued messages deliver in order.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "claim": "Held deliveries are bounded and surfaced. A composer-busy hold backs off (state the schedule and cap). After a stated limit, the sender gets a named notice (`delivery.held` surfaced to the sender's inbox or similar), and a control command that cannot run fails terminally instead of blocking later messages to the same seat. Ordinary messages behind a failed control command are then delivered in order. Test: control head fails → the 6 queued messages deliver in order.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0004",
-          "claim": "Cost (AGENTS.md \u00a7 Resource cost). While a delivery waits, the composer check costs no process launch: read the composer through the control-mode capture before reserving, and reserve (which launches) only when it looks submittable. Live before/after receipts with `pij-rs --json ping`; the prime takes the deployed reading. With the two stuck seats cleared, `tmux.atomically reserve staged submit` must not grow while nothing is deliverable.",
+          "claim": "Cost (AGENTS.md § Resource cost). While a delivery waits, the composer check costs no process launch: read the composer through the control-mode capture before reserving, and reserve (which launches) only when it looks submittable. Live before/after receipts with `pij-rs --json ping`; the prime takes the deployed reading. With the two stuck seats cleared, `tmux.atomically reserve staged submit` must not grow while nothing is deliverable.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004",
+          "note": "Pre-deploy proof in lg-0004; awaits the prime's deployed pij-rs --json ping reading."
         },
         {
           "id": "ac-0005",
           "claim": "Docs. docs/how (delivery / composer gate / control commands) describes the abort path, own-text recognition, the hold schedule, the sender notice and the terminal failure.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0006",
