@@ -82,4 +82,25 @@ fn live_processes_are_read_without_launching_ps() {
         );
     }
     drop(zombie);
+
+    // Review of #84, S2: a dead seat the reaper retains (its pane is still open)
+    // is probed on every sweep. "No such process" is told apart without a launch.
+    let mut dead = Command::new("/usr/bin/true")
+        .spawn()
+        .expect("spawn a child");
+    dead.wait().expect("reap the child");
+    let before = snapshot();
+    for _ in 0..10 {
+        assert_eq!(
+            block_on(adapter.proc_start(dead.id())).expect("probe a reaped pid"),
+            None,
+            "a reaped pid is dead, as ps says"
+        );
+    }
+    let after = snapshot();
+    assert_eq!(
+        ps_launches(&before, &after),
+        Vec::<(String, u64)>::new(),
+        "10 probes of a dead, retained seat launched `ps`"
+    );
 }

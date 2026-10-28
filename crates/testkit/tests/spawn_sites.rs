@@ -87,7 +87,11 @@ struct LaunchSite {
 
 /// Each function (from one `fn` line to the next) that launches a process.
 fn launch_sites(path: &Path, root: &Path) -> Vec<LaunchSite> {
-    let lines = production_lines(path);
+    let file = path.strip_prefix(root).unwrap().display().to_string();
+    sites_in(&file, &production_lines(path))
+}
+
+fn sites_in(file: &str, lines: &[String]) -> Vec<LaunchSite> {
     let starts: Vec<usize> = (0..lines.len())
         .filter(|&index| fn_name(&lines[index]).is_some())
         .collect();
@@ -134,7 +138,7 @@ fn launch_sites(path: &Path, root: &Path) -> Vec<LaunchSite> {
                 .any(|call| body.contains(call.as_str()));
         if launches {
             sites.push(LaunchSite {
-                file: path.strip_prefix(root).unwrap().display().to_string(),
+                file: file.to_string(),
                 function: name.clone(),
                 recorded: body.contains("spawns::record("),
             });
@@ -273,4 +277,36 @@ fn no_daemon_launch_searches_path_for_git_or_tmux() {
         resolved >= 5,
         "found only {resolved} resolved git/tmux launches; fix the scanner"
     );
+}
+
+/// Review of #84, S1: skipping a `#[cfg(test)]` function must never hide a
+/// production launch after it. Each case puts an unrecorded launch right after a
+/// test-only accessor, in a form the scanner might not read as its own `fn`.
+#[test]
+fn a_cfg_test_function_cannot_hide_a_launch() {
+    let cases = [
+        // The reviewer's injected case.
+        "#[cfg(test)] fn test_accessor() {}\n\
+         pub(in crate::orchestration) fn launch_unrecorded() { let _ = Command::new(\"/bin/ls\").output(); }",
+        "#[cfg(test)]\nfn accessor() {}\npub(self) fn launch() {\n    let _ = Command::new(\"/bin/ls\").output();\n}",
+        "#[cfg(test)]\nfn accessor() {}\nextern \"C\" fn launch() {\n    let _ = Command::new(\"/bin/ls\").output();\n}",
+        "#[cfg(test)]\nfn accessor() {}\npub(crate) const unsafe extern \"C\" fn launch() {\n    let _ = Command::new(\"/bin/ls\").output();\n}",
+        // No `fn` line at all: only the accessor's closing brace can end its segment.
+        "#[cfg(test)]\nfn accessor() {\n    let _ = 1;\n}\nconst LAUNCH: fn() = || {\n    let _ = Command::new(\"/bin/ls\").status();\n};",
+    ];
+    for source in cases {
+        let lines: Vec<String> = source.lines().map(str::to_string).collect();
+        let sites = sites_in("case.rs", &lines);
+        assert!(
+            sites.iter().any(|site| !site.recorded),
+            "a cfg(test) accessor hid this launch:\n{source}\nsites: {:?}",
+            sites.iter().map(|site| &site.function).collect::<Vec<_>>()
+        );
+        assert!(
+            sites
+                .iter()
+                .all(|site| site.function != "accessor" && site.function != "test_accessor"),
+            "the test-only accessor itself was counted as the launch site:\n{source}"
+        );
+    }
 }

@@ -1,0 +1,48 @@
+# Review #84 fixes: red on ce27a6a + the new tests only, macOS (2026-10-28T09:20:53Z)
+
+$ cargo test -p pij-testkit --test spawn_sites a_cfg_test_function_cannot_hide_a_launch
+test a_cfg_test_function_cannot_hide_a_launch ... FAILED
+
+---- a_cfg_test_function_cannot_hide_a_launch stdout ----
+thread 'a_cfg_test_function_cannot_hide_a_launch' (223045025) panicked at crates/testkit/tests/spawn_sites.rs:300:9:
+a cfg(test) accessor hid this launch:
+#[cfg(test)] fn test_accessor() {}
+pub(in crate::orchestration) fn launch_unrecorded() { let _ = Command::new("/bin/ls").output(); }
+sites: []
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+$ cargo test -p pij-harnesses --test liveness_launches
+test live_processes_are_read_without_launching_ps ... FAILED
+
+---- live_processes_are_read_without_launching_ps stdout ----
+thread 'live_processes_are_read_without_launching_ps' (223049249) panicked at crates/harnesses/tests/liveness_launches.rs:99:5:
+assertion `left == right` failed: 10 probes of a dead, retained seat launched `ps`
+  left: [("ps.proc-liveness-fallback", 10)]
+ right: []
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+$ cargo test -p pij-harnesses --lib proc::tests::a_reaped_pid_is_dead_without_running_ps
+test proc::tests::a_reaped_pid_is_dead_without_running_ps ... FAILED
+
+---- proc::tests::a_reaped_pid_is_dead_without_running_ps stdout ----
+thread 'proc::tests::a_reaped_pid_is_dead_without_running_ps' (223058713) panicked at crates/harnesses/src/proc.rs:528:13:
+liveness of live pid 6216 launched ps
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 184 filtered out; finished in 0.02s
+
+$ cargo test -p pij-core --lib program::tests::executability_is_access_x_ok_not_any_mode_bit
+test program::tests::executability_is_access_x_ok_not_any_mode_bit ... FAILED
+
+---- program::tests::executability_is_access_x_ok_not_any_mode_bit stdout ----
+thread 'program::tests::executability_is_access_x_ok_not_any_mode_bit' (223060496) panicked at crates/core/src/program.rs:186:9:
+assertion `left == right` failed
+  left: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-access-6827-1793179310937901000-0/first/pij-tool"
+ right: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-access-6827-1793179310937901000-0/second/pij-tool"
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 93 filtered out; finished in 0.00s

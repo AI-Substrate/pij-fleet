@@ -130,3 +130,35 @@ fn a_different_start_at_the_same_pid_reads_recycled_and_a_reaped_pid_dead() {
         Liveness::Dead { .. }
     ));
 }
+
+/// Review of #84, N1: `/proc/<tid>/stat` resolves for a thread id although no
+/// process has that id. procps' `ps -p` selects processes only and reports it
+/// absent, so a recorded pid recycled as another process's thread reads Dead.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_thread_id_reads_as_ps_reads_it() {
+    let (ready, wait) = std::sync::mpsc::channel();
+    let (stop, stopped) = std::sync::mpsc::channel::<()>();
+    let worker = std::thread::spawn(move || {
+        ready.send(()).expect("signal ready");
+        let _ = stopped.recv();
+    });
+    wait.recv().expect("thread started");
+    let pid = std::process::id();
+    let tids: Vec<u32> = std::fs::read_dir("/proc/self/task")
+        .expect("list this process's threads")
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+        .filter(|&tid| tid != pid)
+        .collect();
+    assert!(!tids.is_empty(), "no thread id other than the pid");
+    for tid in tids {
+        assert_eq!(ps_start(tid), None, "ps -p selects processes, not threads");
+        assert_eq!(
+            in_process(tid),
+            ps_start(tid),
+            "thread id {tid} differs from /bin/ps"
+        );
+    }
+    stop.send(()).expect("stop the thread");
+    worker.join().expect("join");
+}

@@ -173,6 +173,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    /// Review of #84, N2: executability is what `access(X_OK)` says, as for
+    /// `posix_spawnp`. A file whose only execute bit is its group's is not
+    /// executable by its owner, so the search moves on.
+    #[test]
+    fn executability_is_access_x_ok_not_any_mode_bit() {
+        let root = pij_testkit::fresh_dir("pij-program-access");
+        let (first, second) = (root.join("first"), root.join("second"));
+        tool(&first, 0o610);
+        let runnable = tool(&second, 0o755);
+        let path = joined(&[&first, &second]);
+        assert_eq!(
+            Resolver::new().resolve(OsStr::new(NAME), Some(&path)),
+            runnable.as_os_str()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn a_kept_path_that_vanished_is_searched_again() {
         let root = pij_testkit::fresh_dir("pij-program-vanish");

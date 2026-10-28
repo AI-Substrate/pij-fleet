@@ -525,7 +525,7 @@ mod tests {
 
     impl CommandRunner for NeverRunPs {
         fn run(&self, pid: u32) -> io::Result<CommandOutput> {
-            panic!("liveness of live pid {pid} launched ps");
+            panic!("liveness of pid {pid} launched ps");
         }
     }
 
@@ -544,6 +544,20 @@ mod tests {
         }
         let _ = child.kill();
         let _ = child.wait();
+    }
+
+    /// Review of #84, S2: a pid with no process is Dead without a `ps` launch.
+    #[test]
+    fn a_reaped_pid_is_dead_without_running_ps() {
+        let mut dead = std::process::Command::new("/usr/bin/true")
+            .spawn()
+            .expect("spawn a child");
+        dead.wait().expect("reap the child");
+        let adapter = ProcLiveness::with_parts(super::KernelStart, NeverRunPs);
+        assert_eq!(
+            block_on(adapter.proc_start(dead.id())).expect("probe a reaped pid"),
+            None
+        );
     }
 
     #[test]
