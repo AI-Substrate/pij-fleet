@@ -20,8 +20,8 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-AC5: retry, inbound, timeouts, producer, nits | ph-e5f9 | EXTEND | computational | EXTEND→RUN: sidecar telegram tests, store queue tests, daemon shim_http; cargo test -p pij-sidecars -p pij-store -p pij-daemon &lt;filters&gt; | [ ] unchecked | — | — | crates/sidecars/src/telegram.rs |
-| bp-0002 | AC6-AC7: cost and docs | ph-e5f9 | EXISTS | computational | Call-count test over a simulated window; prime reads the docs. | [ ] unchecked | — | — | crates/sidecars/src/ |
+| bp-0001 | AC1-AC5: retry, inbound, timeouts, producer, nits | ph-e5f9 | EXTEND | computational | EXTEND→RUN: sidecar telegram tests, store queue tests, daemon shim_http; cargo test -p pij-sidecars -p pij-store -p pij-daemon &lt;filters&gt; | [x] checked | — | execution-log.dd.json#entries/lg-0004 | crates/sidecars/src/telegram.rs |
+| bp-0002 | AC6-AC7: cost and docs | ph-e5f9 | EXISTS | computational | Call-count test over a simulated window; prime reads the docs. | [x] checked | — | execution-log.dd.json#entries/lg-0005 | crates/sidecars/src/ |
 | bp-0003 | AC8: proof, mutants and CI | ph-e5f9 | EXISTS | computational | Mutant receipts; rust-check; GitHub CI on the exact head. | [ ] unchecked | — | — | .github/workflows |
 
 <a id="sensors"></a>

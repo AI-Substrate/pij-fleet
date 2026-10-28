@@ -41,45 +41,52 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "Backoff. A Retry outcome is rescheduled with per-attempt exponential backoff with a cap, honours a 429's `parameters.retry_after` when longer, and never schedules a retry sooner than requested (fix the whole-second truncation in crates/store/src/queue.rs retry, or carry milliseconds). After a bounded number of attempts (or a bounded age) the job fails terminally with the reason recorded and an event appended. Body\u2192files order on a serial key is preserved explicitly, not by the 0 s truncation.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "claim": "Backoff. A Retry outcome is rescheduled with per-attempt exponential backoff with a cap, honours a 429's `parameters.retry_after` when longer, and never schedules a retry sooner than requested (fix the whole-second truncation in crates/store/src/queue.rs retry, or carry milliseconds). After a bounded number of attempts (or a bounded age) the job fails terminally with the reason recorded and an event appended. Body→files order on a serial key is preserved explicitly, not by the 0 s truncation.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0002",
           "claim": "Inbound never starves. `poll_inbound` runs every tick whatever the outbound job did (Retry, failure, success). A test holds an outbound job in Retry and shows an inbound update is delivered to the bound seat within one poll.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0003",
           "claim": "Request timeouts. The Telegram HTTP client has a connect timeout and a send timeout sized for a 50 MB upload on a slow link (state the numbers and why). A stalled upload ends as a Retry, not a hung worker, and inbound keeps polling meanwhile.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "ac-0004",
           "claim": "Hermetic producer test (S2). A shim_http-style test posts `/v1/sidecar` `telegram_document` with a body and two files and asserts body-first order and `#1`/`#2` ids, with no real tmux. The review's mutant X2 (the producer drops the body) dies.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "ac-0005",
           "claim": "Nits. N1: a reused `--msg-id` with different content is refused by name (or returns the live job's actual document), never a receipt for bytes that will not be sent, and leaves no orphan copy. N2: a failed job's staged copies are removed after a stated retention, by a sweep that launches nothing and runs rarely (state its cadence). N3: enqueue of body+files is one transaction, or the docs say exactly what an internal error leaves queued. N4: the CLI and shim name a symlinked `--file` the same way.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "ac-0006",
-          "claim": "Cost (AGENTS.md \u00a7 Resource cost). State the retry loop's steady-state cost: HTTP calls per minute for a job that keeps failing, CPU while idle, and that no process is launched. A test counts calls over a simulated window.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "claim": "Cost (AGENTS.md § Resource cost). State the retry loop's steady-state cost: HTTP calls per minute for a job that keeps failing, CPU while idle, and that no process is launched. A test counts calls over a simulated window.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0007",
           "claim": "Docs. docs/how/pij-telegram.md describes backoff, retry_after, the attempt cap and its terminal event, timeouts, inbound during outbound trouble, retention of failed copies and the msg-id rule.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0006"
         },
         {
           "id": "ac-0008",

@@ -35,10 +35,10 @@ One coder implements impl-guide tk-0001: red tests with a fake Telegram, the bac
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Red tests on fd7d3bb | — | ph-e5f9 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Backoff, retry_after, attempt cap, ordering | — | ph-e5f9 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Inbound every tick, request timeouts | — | ph-e5f9 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | Hermetic producer test and nits | — | ph-e5f9 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Red tests on fd7d3bb | — | ph-e5f9 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0001 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Backoff, retry_after, attempt cap, ordering | — | ph-e5f9 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Inbound every tick, request timeouts | — | ph-e5f9 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Hermetic producer test and nits | — | ph-e5f9 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Cost, docs, mutants, PR, CI | — | ph-e5f9 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -49,25 +49,25 @@ One coder implements impl-guide tk-0001: red tests with a fake Telegram, the bac
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | Each new test fails on fd7d3bb for the right reason (quoted) | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0001 | Each new test fails on fd7d3bb for the right reason (quoted) | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | Backoff and ordering tests green with an injected clock | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0002 | Backoff and ordering tests green with an injected clock | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | Inbound-during-retry and stalled-upload tests green | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | Inbound-during-retry and stalled-upload tests green | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0004 | X2 dies; N1-N4 tests green | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0004 | X2 dies; N1-N4 tests green | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0005
 

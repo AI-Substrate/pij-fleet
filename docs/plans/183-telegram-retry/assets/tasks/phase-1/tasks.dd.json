@@ -24,43 +24,47 @@
           "id": "tk-0001",
           "title": "Red tests on fd7d3bb",
           "phase": "ph-e5f9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0008"
           ],
-          "done": "tasks.dd.json#done_when/tk-0001"
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../execution-log.dd.json#entries/lg-0001"
         },
         {
           "id": "tk-0002",
           "title": "Backoff, retry_after, attempt cap, ordering",
           "phase": "ph-e5f9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
-          "done": "tasks.dd.json#done_when/tk-0002"
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "tk-0003",
           "title": "Inbound every tick, request timeouts",
           "phase": "ph-e5f9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
-          "done": "tasks.dd.json#done_when/tk-0003"
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "receipt": "../../execution-log.dd.json#entries/lg-0003"
         },
         {
           "id": "tk-0004",
           "title": "Hermetic producer test and nits",
           "phase": "ph-e5f9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004",
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
           ],
-          "done": "tasks.dd.json#done_when/tk-0004"
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "receipt": "../../execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "tk-0005",
@@ -83,7 +87,7 @@
           {
             "id": "dw-0001",
             "assertion": "Each new test fails on fd7d3bb for the right reason (quoted)",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],
@@ -91,7 +95,7 @@
           {
             "id": "dw-0002",
             "assertion": "Backoff and ordering tests green with an injected clock",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -99,7 +103,7 @@
           {
             "id": "dw-0003",
             "assertion": "Inbound-during-retry and stalled-upload tests green",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -107,7 +111,7 @@
           {
             "id": "dw-0004",
             "assertion": "X2 dies; N1-N4 tests green",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
