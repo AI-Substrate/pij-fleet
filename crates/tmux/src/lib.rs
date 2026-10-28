@@ -214,7 +214,8 @@ impl TmuxAdapter {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(&self.binary);
+        // Plan 182: resolved through PATH once, not searched on every launch.
+        let mut command = Command::new(pij_core::program::resolve(&self.binary));
         // `-u`: without a UTF-8 locale (a launchd-started daemon has no LANG)
         // tmux 3.6 rewrites the tab in every `-p`/`-F` answer as `_`.
         command.arg("-u");
@@ -1395,6 +1396,63 @@ fn harness_command(command: &str, harness: Harness) -> bool {
         Harness::Omp => "/@oh-my-pi/pi-coding-agent/",
     };
     script.contains(package)
+}
+
+/// Plan 182: tmux is resolved through PATH once and launched by the path found,
+/// so a launch no longer searches PATH (one kernel process per miss on macOS).
+/// The first PATH match still wins. Setting PATH here would need `unsafe`, so
+/// the test re-runs itself as a child with a decoy `tmux` first on PATH.
+#[cfg(test)]
+mod resolve_once {
+    use std::ffi::OsString;
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::TmuxAdapter;
+
+    const CHILD: &str = "PIJ_TMUX_RESOLVE_CHILD";
+
+    #[test]
+    fn tmux_launches_the_first_path_match_by_its_absolute_path() {
+        let tap = std::env::temp_dir();
+        if let Some(decoy) = std::env::var_os(CHILD) {
+            let adapter = TmuxAdapter::new(&tap);
+            assert_eq!(adapter.command().get_program(), decoy);
+            assert_eq!(adapter.control.program(), decoy);
+            // An injected executable is launched as given.
+            let fake = TmuxAdapter::with_binary("/opt/fake/tmux", &tap);
+            assert_eq!(fake.command().get_program(), "/opt/fake/tmux");
+            return;
+        }
+        let root = pij_testkit::fresh_dir("pij-tmux-resolve");
+        let (first, second) = (root.join("first"), root.join("second"));
+        let mut decoy = OsString::new();
+        for dir in [&first, &second] {
+            std::fs::create_dir_all(dir).unwrap();
+            let tmux = dir.join("tmux");
+            std::fs::write(&tmux, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o755)).unwrap();
+            if decoy.is_empty() {
+                decoy = tmux.into_os_string();
+            }
+        }
+        let path = std::env::join_paths([&first, &second]).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path",
+                "--exact",
+            ])
+            .env("PATH", path)
+            .env(CHILD, &decoy)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let _ = std::fs::remove_dir_all(root);
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,19 @@
+# Before-readings: machine daemon (main), 2026-10-28T08:12:57Z
+## daemon identity
+{"build":"pij-rs 0.1.0","pid":null,"started_at":null,"version":null,"git_sha":null}
+## ping spawns t0
+08:12:57
+{"total":471474,"by_op":{"date.utc-offset":43,"git.pa-watchdog-common-dir":873,"lsof.codex-process-files":2,"ps.proc-liveness":463247,"ps.registration-native-process":6998,"ps.sidecar-process-group":1,"ps.tmux-harness-process-tree":18,"ps.uds-peer-start":106,"tmux.atomically reserve staged submit":5,"tmux.authorize staged submit commit":5,"tmux.control-client":1,"tmux.load submit buffer":15,"tmux.new-window":3,"tmux.paste owned submit buffer":15,"tmux.pipe-pane attach":65,"tmux.pipe-pane detach":2,"tmux.restore pane input and release ownership":5,"tmux.set-options tap owner":65,"tmux.submit authorized staged body":5}}
+## ping spawns t0+20s
+08:13:17
+{"total":471736,"by_op":{"date.utc-offset":43,"git.pa-watchdog-common-dir":873,"lsof.codex-process-files":2,"ps.proc-liveness":463509,"ps.registration-native-process":6998,"ps.sidecar-process-group":1,"ps.tmux-harness-process-tree":18,"ps.uds-peer-start":106,"tmux.atomically reserve staged submit":5,"tmux.authorize staged submit commit":5,"tmux.control-client":1,"tmux.load submit buffer":15,"tmux.new-window":3,"tmux.paste owned submit buffer":15,"tmux.pipe-pane attach":65,"tmux.pipe-pane detach":2,"tmux.restore pane input and release ownership":5,"tmux.set-options tap owner":65,"tmux.submit authorized staged body":5}}
+## just spawn-rate --seconds 20 (concurrent window)
+seconds: 20.0
+daemon_pid: 41991
+total_new_per_s: 34.1
+polls: 256511
+sampled_per_s: 33.3
+attributed_per_s_lower_bound: {'<gone before seen>': 13.2, 'pij-rs daemon': 12.2, 'other': 7.8}
+daemon_children_per_s_lower_bound: {'pij-rs': 12.2}
+statusline_runs_seen_per_s: 0.0
+top_commands_per_s_lower_bound: {'pij-rs': 12.4, 'bash': 2.8, 'flowspace3': 1.0, 'gc': 1.0, 'zsh': 0.6, '2.1.312': 0.5, 'node': 0.4, 'launchd_sim': 0.4, 'copilot': 0.3, 'dlpuser_helper': 0.2, 'git-ai': 0.1, 'Microsoft Edge': 0.0}

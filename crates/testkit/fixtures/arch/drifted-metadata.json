@@ -145,6 +145,14 @@
           "kind": null
         },
         {
+          "name": "time",
+          "kind": null
+        },
+        {
+          "name": "proc_pidinfo",
+          "kind": null
+        },
+        {
           "name": "pij-testkit",
           "kind": "dev"
         }

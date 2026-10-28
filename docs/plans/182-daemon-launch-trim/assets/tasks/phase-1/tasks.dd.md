@@ -35,10 +35,10 @@ One coder implements impl-guide tk-0001: before-readings, the ADR, in-process li
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Before-readings and ADR | — | ph-62c6 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Red tests on fd7d3bb | — | ph-62c6 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Before-readings and ADR | — | ph-62c6 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Red tests on fd7d3bb | — | ph-62c6 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0003 | In-process liveness | — | ph-62c6 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | Resolve git and tmux once | — | ph-62c6 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Resolve git and tmux once | — | ph-62c6 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Docs, mutants, PR, CI | — | ph-62c6 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -49,13 +49,13 @@ One coder implements impl-guide tk-0001: before-readings, the ADR, in-process li
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | Before-readings recorded; ADR written with the choice | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0001 | Before-readings recorded; ADR written with the choice | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | Each new test fails on fd7d3bb for the right reason (quoted) | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0002 | Each new test fails on fd7d3bb for the right reason (quoted) | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
@@ -67,7 +67,7 @@ One coder implements impl-guide tk-0001: before-readings, the ADR, in-process li
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0004 | Decoy, install-after-boot and spawn_sites tests green | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0004 | Decoy, install-after-boot and spawn_sites tests green | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0005
 

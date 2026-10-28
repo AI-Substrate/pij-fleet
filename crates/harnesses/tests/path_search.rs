@@ -82,12 +82,14 @@ fn assert_no_decoy_ran(ran: &str, what: &str) {
 #[test]
 fn liveness_runs_bin_ps_never_a_ps_found_on_path() {
     if is_child() {
-        let start = block_on(ProcLiveness::new().proc_start(std::process::id()))
-            .expect("probe this process")
-            .expect("this process exists");
-        // Packed as YYYYMMDDhhmmss. The decoy answers 2015; this process is newer.
-        let year = start / 10_000_000_000;
-        assert!(year > 2015, "start {start} came from the decoy");
+        // Plan 182: a live pid is answered in-process, so probe a reaped one,
+        // which only `ps` can decide. The decoy would answer 2015 for it.
+        let mut dead = Command::new("/usr/bin/true")
+            .spawn()
+            .expect("spawn a child");
+        dead.wait().expect("reap the child");
+        let start = block_on(ProcLiveness::new().proc_start(dead.id())).expect("probe a dead pid");
+        assert_eq!(start, None, "start {start:?} came from the decoy");
         return;
     }
     assert_no_decoy_ran(

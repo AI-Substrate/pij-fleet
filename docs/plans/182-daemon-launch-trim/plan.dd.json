@@ -42,32 +42,38 @@
         {
           "id": "ac-0001",
           "claim": "In-process liveness. `ProcLiveness::proc_start` (crates/harnesses/src/proc.rs) reads a process's start time with no process launch, on macOS (sysctl KERN_PROC_PID / kinfo_proc p_starttime, or proc_pidinfo) and Linux (/proc/<pid>/stat field 22 plus btime, std only). Every caller gets the same answer it got from `/bin/ps -o lstart=`: parity tests for this process, a child, a dead PID and a PID whose start time differs (the recycled-PID case), at the precision the comparison uses. No TTL, no cache (R1).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "ac-0002",
           "claim": "Dependency on the record. If macOS needs a crate (unsafe_code stays forbidden in the workspace), docs/adr/ gets an ADR comparing at least two candidates and the std-only alternatives: licence, maintenance and download history, transitive dependencies, build scripts, unsafe surface, and a release at least 7 days old (R2). The chosen crate is pinned, added to crates/testkit/arch-allowlist.toml, and the lockfile and audit gates pass. Linux uses std only.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Resolve git and tmux once. The daemon resolves `git` and `tmux` through its PATH on first use and launches the resolved absolute path afterwards. Only a found path is kept, never a miss, so a tool installed after boot is found. The first PATH match still wins (a decoy-on-PATH test, as in crates/harnesses/tests/path_search.rs). `crates/testkit/tests/spawn_sites.rs` is extended so a bare `git`/`tmux` launch in the daemon crates fails.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0004",
-          "claim": "Cost (AGENTS.md \u00a7 Resource cost). Steady state: the death sweep and request paths launch nothing for liveness. Live before/after receipts: two `pij-rs --json ping | jq .data.spawns` readings 20 s apart and `just spawn-rate --seconds 20`, before on main and after on the branch build where possible; the prime takes the deployed after-reading. `ps.proc-liveness` goes to 0, and no new per-tick launch appears.",
+          "claim": "Cost (AGENTS.md § Resource cost). Steady state: the death sweep and request paths launch nothing for liveness. Live before/after receipts: two `pij-rs --json ping | jq .data.spawns` readings 20 s apart and `just spawn-rate --seconds 20`, before on main and after on the branch build where possible; the prime takes the deployed after-reading. `ps.proc-liveness` goes to 0, and no new per-tick launch appears.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0009",
+          "note": "Before 13.1/s (lg-0001) and steady-state 0 in test (lg-0009); the deployed after-reading is the prime's, post-merge."
         },
         {
           "id": "ac-0005",
-          "claim": "Docs. docs/how/macos-defender.md \u00a7 What pij does about launches describes in-process liveness and resolve-once, with the new numbers; the ADR is linked.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "claim": "Docs. docs/how/macos-defender.md § What pij does about launches describes in-process liveness and resolve-once, with the new numbers; the ADR is linked.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0006"
         },
         {
           "id": "ac-0006",

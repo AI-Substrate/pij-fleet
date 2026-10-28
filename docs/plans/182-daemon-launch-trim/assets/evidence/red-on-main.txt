@@ -1,0 +1,73 @@
+# Red on main fd7d3bb (2026-10-28T08:31:10Z). Tree: git archive fd7d3bb + the new test files/modules copied in verbatim (plus the cfg(test) ControlClient::program accessor the tmux test reads). No production change.
+
+$ cargo test -p pij-harnesses --test liveness_launches
+
+test live_processes_are_read_without_launching_ps ... FAILED
+
+
+---- live_processes_are_read_without_launching_ps stdout ----
+
+thread 'live_processes_are_read_without_launching_ps' (221691796) panicked at crates/harnesses/tests/liveness_launches.rs:54:5:
+assertion `left == right` failed: 20 liveness probes of live processes launched `ps`
+  left: [("ps.proc-liveness", 20)]
+ right: []
+
+
+    live_processes_are_read_without_launching_ps
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+
+$ cargo test -p pij-testkit --test spawn_sites   (re-run after ordering the bare-launch assertion before the vacuity guard)
+
+test no_daemon_launch_searches_path_for_ps_or_date ... ok
+test every_daemon_launch_site_records_itself ... ok
+test no_daemon_launch_searches_path_for_git_or_tmux ... FAILED
+
+
+---- no_daemon_launch_searches_path_for_git_or_tmux stdout ----
+
+thread 'no_daemon_launch_searches_path_for_git_or_tmux' (221699710) panicked at crates/testkit/tests/spawn_sites.rs:263:5:
+these launches search PATH for git or tmux on every launch; use `Command::new(pij_core::program::resolve("git"))`:
+  crates/daemon/src/pa_watchdog.rs:991: tokio::process::Command::new("git")
+  crates/daemon/src/http/governance.rs:1406: let output = tokio::process::Command::new("git")
+  crates/daemon/src/orchestration/repo.rs:110: let output = Command::new("git")
+  crates/tmux/src/control.rs:284: let mut command = Command::new(&self.binary);
+  crates/tmux/src/lib.rs:217: let mut command = Command::new(&self.binary);
+
+
+    no_daemon_launch_searches_path_for_git_or_tmux
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+$ cargo test -p pij-tmux --lib resolve_once
+
+test resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path ... FAILED
+
+
+---- resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path stdout ----
+
+thread 'resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path' (221694759) panicked at crates/tmux/src/lib.rs:1449:9:
+
+test resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path ... FAILED
+
+
+---- resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path stdout ----
+
+thread 'resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path' (221694765) panicked at crates/tmux/src/lib.rs:1418:13:
+assertion `left == right` failed
+  left: "tmux"
+ right: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-tmux-resolve-85726-1793176279728158000-0/first/tmux"
+
+
+    resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.00s
+
+
+
+
+    resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.01s
+

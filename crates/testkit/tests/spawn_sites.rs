@@ -115,7 +115,19 @@ fn launch_sites(path: &Path, root: &Path) -> Vec<LaunchSite> {
         .map(|(name, _, _)| format!(".{name}()"))
         .collect();
     let mut sites = Vec::new();
-    for (name, body, builder) in &functions {
+    for ((name, body, builder), &start) in functions.iter().zip(&starts) {
+        // A `#[cfg(test)]` function (an accessor a test reads) never runs in the daemon.
+        let test_only = lines[..start]
+            .iter()
+            .rev()
+            .take_while(|line| {
+                let line = line.trim_start();
+                line.starts_with("///") || line.starts_with("#[")
+            })
+            .any(|line| line.trim() == "#[cfg(test)]");
+        if test_only {
+            continue;
+        }
         let launches = (body.contains("Command::new(") && !builder)
             || builder_calls
                 .iter()
@@ -211,5 +223,54 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
         "these launches search PATH (one kernel process per PATH miss on macOS); use \
          \"/bin/ps\" or \"/bin/date\":\n  {}",
         bare.join("\n  ")
+    );
+}
+
+/// Plan 182 (pij-fleet#74): `git` and `tmux` live wherever the user installed
+/// them, so they cannot be named by a fixed path. The daemon resolves them
+/// through PATH once with `pij_core::program::resolve` and launches the path it
+/// found; a bare name would search PATH again on every launch (12 kernel
+/// processes per `git` or `tmux` launch with the daemon's PATH on macOS).
+#[test]
+fn no_daemon_launch_searches_path_for_git_or_tmux() {
+    const BARE: [&str; 3] = [
+        "Command::new(\"git\")",
+        "Command::new(\"tmux\")",
+        // The tmux adapters' configurable binary, launched unresolved.
+        "Command::new(&self.binary)",
+    ];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().expect("the workspace root");
+    let mut files = Vec::new();
+    for krate in DAEMON_CRATES {
+        rust_files(&root.join("crates").join(krate).join("src"), &mut files);
+    }
+    let mut resolved = 0;
+    let mut bare = Vec::new();
+    for path in &files {
+        for (index, line) in production_lines(path).iter().enumerate() {
+            resolved += line
+                .matches("Command::new(pij_core::program::resolve(")
+                .count();
+            if BARE.iter().any(|pattern| line.contains(pattern)) {
+                bare.push(format!(
+                    "{}:{}: {}",
+                    path.strip_prefix(&root).unwrap().display(),
+                    index + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    assert!(
+        bare.is_empty(),
+        "these launches search PATH for git or tmux on every launch; use \
+         `Command::new(pij_core::program::resolve(\"git\"))`:\n  {}",
+        bare.join("\n  ")
+    );
+    // Guard against a vacuous pass: the three git sites and two tmux builders.
+    assert!(
+        resolved >= 5,
+        "found only {resolved} resolved git/tmux launches; fix the scanner"
     );
 }

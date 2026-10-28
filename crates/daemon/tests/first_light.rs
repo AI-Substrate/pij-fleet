@@ -89,16 +89,21 @@ async fn ping_counts_the_daemons_process_launches_by_operation() {
         spawns["by_op"]
             .as_object()
             .expect("spawns.by_op")
-            .get("ps.proc-liveness")
+            .get("ps.proc-liveness-fallback")
             .map_or(0, |count| count.as_u64().expect("a count"))
     };
 
     let before = spawns().await;
-    // A real launch site: the shared liveness probe runs `ps` once per check.
+    // A real launch site: a live pid is read in-process (plan 182), so probe a
+    // reaped one, which only the `ps` fallback can decide.
+    let mut dead = std::process::Command::new("/usr/bin/true")
+        .spawn()
+        .expect("spawn a child");
+    dead.wait().expect("reap the child");
     pij_harnesses::proc::ProcLiveness::new()
-        .proc_start(std::process::id())
+        .proc_start(dead.id())
         .await
-        .expect("ps answers for this process");
+        .expect("ps answers for a reaped pid");
     let after = spawns().await;
 
     assert!(liveness(&after) > liveness(&before), "{before} -> {after}");

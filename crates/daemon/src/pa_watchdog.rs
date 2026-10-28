@@ -988,7 +988,7 @@ async fn git_common_dir(folder: &str) -> Option<String> {
     pij_core::spawns::record("git.pa-watchdog-common-dir");
     let output = tokio::time::timeout(
         GIT_WAIT,
-        tokio::process::Command::new("git")
+        tokio::process::Command::new(pij_core::program::resolve("git"))
             .args([
                 "-C",
                 folder,

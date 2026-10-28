@@ -212,6 +212,12 @@ impl ControlClient {
         self.enabled
     }
 
+    /// The program the control client would launch.
+    #[cfg(test)]
+    pub(crate) fn program(&self) -> OsString {
+        self.command().get_program().to_os_string()
+    }
+
     pub(crate) fn with_enabled(&self, enabled: bool) -> Self {
         Self::new(self.binary.clone(), self.server.clone(), enabled)
     }
@@ -275,7 +281,8 @@ impl ControlClient {
     }
 
     fn command(&self) -> Command {
-        let mut command = Command::new(&self.binary);
+        // Plan 182: resolved through PATH once, not searched on every launch.
+        let mut command = Command::new(pij_core::program::resolve(&self.binary));
         command.arg("-u");
         if let Some(server) = &self.server {
             command.args(["-L", server]);

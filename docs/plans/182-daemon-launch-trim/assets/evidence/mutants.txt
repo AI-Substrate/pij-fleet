@@ -1,0 +1,132 @@
+# Mutants on the branch working tree (2026-10-28T08:31:57Z); each applied, its tests run, then restored byte-for-byte
+## mutant M1 liveness falls back to /bin/ps: crates/harnesses/src/proc.rs
+-   if let Some(start) = self.reader.start(pid).and_then(local_lstart) {
++   if let Some(start) = None::<i64>.and_then(local_lstart) {
+$ cargo test -p pij-harnesses --test liveness_launches  -> exit 101
+test live_processes_are_read_without_launching_ps ... FAILED
+thread 'live_processes_are_read_without_launching_ps' (221707335) panicked at crates/harnesses/tests/liveness_launches.rs:54:5:
+assertion `left == right` failed: 20 liveness probes of live processes launched `ps`
+  left: [("ps.proc-liveness-fallback", 20)]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+error: test failed, to rerun pass `-p pij-harnesses --test liveness_launches`
+$ cargo test -p pij-harnesses --lib proc::tests::a_live_process_is_answered_without_running_ps  -> exit 101
+test proc::tests::a_live_process_is_answered_without_running_ps ... FAILED
+thread 'proc::tests::a_live_process_is_answered_without_running_ps' (221707973) panicked at crates/harnesses/src/proc.rs:525:13:
+liveness of live pid 89906 launched ps
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 183 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-harnesses --lib`
+restored crates/harnesses/src/proc.rs
+
+## mutant M2 a miss gets cached: crates/core/src/program.rs
+-   None => name.to_os_string(),
++   None => { found.insert(name.to_os_string(), PathBuf::from(name)); name.to_os_string() }
+$ cargo test -p pij-core --lib program::  -> exit 0
+test program::tests::a_name_with_a_slash_is_never_searched ... ok
+test program::tests::a_miss_is_not_kept_so_a_tool_installed_later_is_found ... ok
+test program::tests::the_first_path_match_wins_and_is_kept ... ok
+test program::tests::a_kept_path_that_vanished_is_searched_again ... ok
+test program::tests::a_non_executable_match_is_skipped_like_posix_spawnp_does ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 88 filtered out; finished in 0.00s
+restored crates/core/src/program.rs
+
+## mutant M3 PATH order ignored: crates/core/src/program.rs
+-   .find(|candidate| executable(candidate))
++   .filter(|candidate| executable(candidate)).last()
+$ cargo test -p pij-core --lib program::  -> exit 101
+test program::tests::a_name_with_a_slash_is_never_searched ... ok
+test program::tests::the_first_path_match_wins_and_is_kept ... FAILED
+test program::tests::a_miss_is_not_kept_so_a_tool_installed_later_is_found ... ok
+test program::tests::a_kept_path_that_vanished_is_searched_again ... ok
+test program::tests::a_non_executable_match_is_skipped_like_posix_spawnp_does ... ok
+thread 'program::tests::the_first_path_match_wins_and_is_kept' (221720754) panicked at crates/core/src/program.rs:133:9:
+assertion `left == right` failed
+  left: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-order-92497-1793176358909632000-3/second/pij-tool"
+ right: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-order-92497-1793176358909632000-3/first/pij-tool"
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 88 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p pij-core --lib`
+$ cargo test -p pij-tmux --lib resolve_once  -> exit 101
+test resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path ... FAILED
+thread 'resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path' (221721401) panicked at crates/tmux/src/lib.rs:1450:9:
+test resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path ... FAILED
+thread 'resolve_once::tmux_launches_the_first_path_match_by_its_absolute_path' (221721404) panicked at crates/tmux/src/lib.rs:1419:13:
+assertion `left == right` failed
+  left: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-tmux-resolve-92719-1793176361216417000-0/second/tmux"
+ right: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-tmux-resolve-92719-1793176361216417000-0/first/tmux"
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.00s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p pij-tmux --lib`
+restored crates/core/src/program.rs
+
+## mutant M4 current offset instead of the offset at the start instant: crates/harnesses/src/proc.rs
+-   instant.to_offset(time::UtcOffset::local_offset_at(instant).ok()?)
++   instant.to_offset(time::UtcOffset::local_offset_at(time::OffsetDateTime::now_utc()).ok()?)
+$ cargo test -p pij-harnesses --lib proc::tests::local_lstart_uses_the_offset_at_the_start_instant  -> exit 101
+test proc::tests::local_lstart_uses_the_offset_at_the_start_instant ... FAILED
+thread 'proc::tests::local_lstart_uses_the_offset_at_the_start_instant' (221722721) panicked at crates/harnesses/src/proc.rs:578:9:
+test proc::tests::local_lstart_uses_the_offset_at_the_start_instant ... FAILED
+thread 'proc::tests::local_lstart_uses_the_offset_at_the_start_instant' (221722724) panicked at crates/harnesses/src/proc.rs:565:13:
+assertion `left == right` failed
+  left: Some(20260701110000)
+ right: Some(20260701100000)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 183 filtered out; finished in 0.00s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 183 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p pij-harnesses --lib`
+restored crates/harnesses/src/proc.rs
+
+## mutant M5 kept path used without the vanish check: crates/core/src/program.rs
+-   if executable(kept) {
++   if true {
+$ cargo test -p pij-core --lib program::  -> exit 101
+test program::tests::a_name_with_a_slash_is_never_searched ... ok
+test program::tests::a_kept_path_that_vanished_is_searched_again ... FAILED
+test program::tests::a_miss_is_not_kept_so_a_tool_installed_later_is_found ... ok
+test program::tests::the_first_path_match_wins_and_is_kept ... ok
+test program::tests::a_non_executable_match_is_skipped_like_posix_spawnp_does ... ok
+thread 'program::tests::a_kept_path_that_vanished_is_searched_again' (221723682) panicked at crates/core/src/program.rs:189:9:
+assertion `left == right` failed
+  left: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-vanish-93190-1793176368605605000-0/old/pij-tool"
+ right: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-vanish-93190-1793176368605605000-0/new/pij-tool"
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 88 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-core --lib`
+restored crates/core/src/program.rs
+
+## mutant M6 fallback probe searches PATH for ps: crates/harnesses/src/proc.rs
+-   let output = Command::new("/bin/ps")
+            .args(["-o", "lstart=PIJ_LSTART"
++   let output = Command::new("ps")
+            .args(["-o", "lstart=PIJ_LSTART"
+$ cargo test -p pij-harnesses --test path_search liveness_runs_bin_ps  -> exit 101
+test liveness_runs_bin_ps_never_a_ps_found_on_path ... FAILED
+thread 'liveness_runs_bin_ps_never_a_ps_found_on_path' (221724388) panicked at crates/harnesses/tests/path_search.rs:60:5:
+test liveness_runs_bin_ps_never_a_ps_found_on_path ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.04s
+thread 'liveness_runs_bin_ps_never_a_ps_found_on_path' (221724393) panicked at crates/harnesses/tests/path_search.rs:92:9:
+assertion `left == right` failed: start Some(20150101000000) came from the decoy
+  left: Some(20150101000000)
+ right: None
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.06s
+error: test failed, to rerun pass `-p pij-harnesses --test path_search`
+restored crates/harnesses/src/proc.rs
+
+## mutant M2 (re-run as a real negative cache; the first M2 above was neutralised by the vanish check, so it was not a miss cache at all). Two edits: the None arm keeps the miss, AND the kept-branch honours it:
++   None => { found.insert(name, PathBuf::from(name)); name }
+## mutant M2b kept miss is honoured: crates/core/src/program.rs
+-   if let Some(kept) = found.get(name) {
+            if executable(kept) {
++   if let Some(kept) = found.get(name) {
+            if executable(kept) || kept.as_os_str() == name {
+$ cargo test -p pij-core --lib program::  -> exit 101
+test program::tests::a_name_with_a_slash_is_never_searched ... ok
+test program::tests::a_miss_is_not_kept_so_a_tool_installed_later_is_found ... FAILED
+test program::tests::the_first_path_match_wins_and_is_kept ... ok
+test program::tests::a_non_executable_match_is_skipped_like_posix_spawnp_does ... ok
+test program::tests::a_kept_path_that_vanished_is_searched_again ... ok
+thread 'program::tests::a_miss_is_not_kept_so_a_tool_installed_later_is_found' (221737401) panicked at crates/core/src/program.rs:172:9:
+assertion `left == right` failed
+  left: "pij-tool"
+ right: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-install-95886-1793176388961437000-1/bin/pij-tool"
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 88 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-core --lib`
+restored crates/core/src/program.rs
+

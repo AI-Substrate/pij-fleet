@@ -88,8 +88,8 @@ why = "Every tmux syscall in the workspace lives here; getrandom mints non-recyc
 
 [crates.pij-harnesses]
 internal = ["pij-core", "pij-testkit@dev"]
-external = ["async-trait", "serde_json", "sha2"]
-why = "Per-harness adapters plus exact-pid process liveness. pij-core supplies the frozen ports, async-trait implements them, sha2 fingerprints human drafts without storing their text, and testkit@dev supplies only the executor used by adapter tests."
+external = ["async-trait", "proc_pidinfo", "serde_json", "sha2", "time"]
+why = "Per-harness adapters plus exact-pid process liveness. pij-core supplies the frozen ports, async-trait implements them, sha2 fingerprints human drafts without storing their text, proc_pidinfo (macOS only, pinned) and time's local-offset read a process start in-process in the same local wall time `ps -o lstart=` prints (ADR 0001, plan 182), and testkit@dev supplies only the executor used by adapter tests."
 
 [crates.pij-transport]
 internal = ["pij-core"]

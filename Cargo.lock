@@ -1145,6 +1145,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_threads"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cabcc654086861f9e1bc5115258de62ef92c79b20f4615a1b0cc57c4e82027d4"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1268,8 +1277,10 @@ dependencies = [
  "async-trait",
  "pij-core",
  "pij-testkit",
+ "proc_pidinfo",
  "serde_json",
  "sha2",
+ "time",
 ]
 
 [[package]]
@@ -1421,6 +1432,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proc_pidinfo"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29492a7b48a00ab80202528e235d2f80a04ccff3747540b4ec6881f2f2bc42d1"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -2189,7 +2209,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
+ "libc",
  "num-conv",
+ "num_threads",
  "powerfmt",
  "serde_core",
  "time-core",

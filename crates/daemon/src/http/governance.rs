@@ -1403,7 +1403,7 @@ fn lease_stale(name: &str, current: Option<&str>, provided: Option<&str>) -> Gov
 
 async fn current_head(repo: &Path) -> GovResult<Option<String>> {
     pij_core::spawns::record("git.governance-head");
-    let output = tokio::process::Command::new("git")
+    let output = tokio::process::Command::new(pij_core::program::resolve("git"))
         .arg("-C")
         .arg(repo)
         .args(["rev-parse", "--verify", "HEAD"])
