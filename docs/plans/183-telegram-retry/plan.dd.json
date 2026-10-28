@@ -104,8 +104,9 @@
           "id": "ph-e5f9",
           "title": "Fix the Telegram retry loop and the #71 follow-ups",
           "brief": "One phase: red tests with a fake Telegram, backoff and 429, inbound polling, request timeout, the hermetic producer test, nits N1-N4, docs, mutants, PR. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0011"
         }
       ]
     }

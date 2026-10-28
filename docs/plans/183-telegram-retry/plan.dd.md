@@ -66,4 +66,4 @@ The review of #71 (plan 179, merged 2026-10-28 as 077d383) found that `SendOutco
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-e5f9 | Fix the Telegram retry loop and the #71 follow-ups | One phase: red tests with a fake Telegram, backoff and 429, inbound polling, request timeout, the hermetic producer test, nits N1-N4, docs, mutants, PR. CS 3. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-e5f9 | Fix the Telegram retry loop and the #71 follow-ups | One phase: red tests with a fake Telegram, backoff and 429, inbound polling, request timeout, the hermetic producer test, nits N1-N4, docs, mutants, PR. CS 3. | [x] checked | — | assets/execution-log.dd.json#entries/lg-0011 | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
