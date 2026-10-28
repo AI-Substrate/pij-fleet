@@ -1,0 +1,105 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Telegram sidecar: retry backoff, inbound never starves, follow-ups from #71",
+        "slug": "telegram-retry",
+        "ordinal": 183,
+        "status": "ready",
+        "summary": "pij-fleet#77: a failing Telegram send retries every ~250 ms forever, ignores retry_after and starves inbound polling; with #71 each retry can be a 50 MB upload. Plus a hermetic body+files test and four nits.",
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "mode": "Full",
+        "log": "assets/execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "The review of #71 (plan 179, merged 2026-10-28 as 077d383) found that `SendOutcome::Retry` calls `queue.retry(id, 100ms)`, which truncates to whole seconds, so `not_before = now` and the 250 ms loop retries at once, with no attempt cap and the 429 `retry_after` ignored. `run_once` returns before `poll_inbound()` on a Retry, so Jordan's Telegram messages to pij are not picked up while any outbound job retries. `reqwest::Client::new()` has no timeout, so a stalled upload hangs the worker. The daemon producer's body + multi-file path has no hermetic test (a mutant that drops the body survives shim_http). Nits N1-N4 are in #77. Rulings: assets/rulings.md."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A failing Telegram send backs off, honours retry_after and eventually gives up on the record.",
+        "Inbound Telegram messages are never starved by outbound trouble.",
+        "The producer's body + files path is proven hermetically."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Saving inbound media to disk (#70).",
+        "Changing which API method a file uses.",
+        "The legacy TS telegram bridge."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Backoff. A Retry outcome is rescheduled with per-attempt exponential backoff with a cap, honours a 429's `parameters.retry_after` when longer, and never schedules a retry sooner than requested (fix the whole-second truncation in crates/store/src/queue.rs retry, or carry milliseconds). After a bounded number of attempts (or a bounded age) the job fails terminally with the reason recorded and an event appended. Body\u2192files order on a serial key is preserved explicitly, not by the 0 s truncation.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Inbound never starves. `poll_inbound` runs every tick whatever the outbound job did (Retry, failure, success). A test holds an outbound job in Retry and shows an inbound update is delivered to the bound seat within one poll.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Request timeouts. The Telegram HTTP client has a connect timeout and a send timeout sized for a 50 MB upload on a slow link (state the numbers and why). A stalled upload ends as a Retry, not a hung worker, and inbound keeps polling meanwhile.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Hermetic producer test (S2). A shim_http-style test posts `/v1/sidecar` `telegram_document` with a body and two files and asserts body-first order and `#1`/`#2` ids, with no real tmux. The review's mutant X2 (the producer drops the body) dies.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Nits. N1: a reused `--msg-id` with different content is refused by name (or returns the live job's actual document), never a receipt for bytes that will not be sent, and leaves no orphan copy. N2: a failed job's staged copies are removed after a stated retention, by a sweep that launches nothing and runs rarely (state its cadence). N3: enqueue of body+files is one transaction, or the docs say exactly what an internal error leaves queued. N4: the CLI and shim name a symlinked `--file` the same way.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost (AGENTS.md \u00a7 Resource cost). State the retry loop's steady-state cost: HTTP calls per minute for a job that keeps failing, CPU while idle, and that no process is launched. A test counts calls over a simulated window.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Docs. docs/how/pij-telegram.md describes backoff, retry_after, the attempt cap and its terminal event, timeouts, inbound during outbound trouble, retention of failed copies and the msg-id rule.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Proof. Every behaviour change has a test RED on main fd7d3bb (quoted) and green on the branch, against a fake Telegram (never the real API). Mutants: retry_after ignored; inbound skipped on Retry; no timeout; body dropped (X2). Each turns its test red, then is restored. Scoped cargo tests, `just rust-check`, clippy -D warnings, fmt; GitHub CI green on the exact head. Anything not run is NOT RUN with its reason.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-e5f9",
+          "title": "Fix the Telegram retry loop and the #71 follow-ups",
+          "brief": "One phase: red tests with a fake Telegram, backoff and 429, inbound polling, request timeout, the hermetic producer test, nits N1-N4, docs, mutants, PR. CS 3.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    }
+  ]
+}

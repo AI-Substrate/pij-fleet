@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 183 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC5: retry, inbound, timeouts, producer, nits",
+          "phase": "ph-e5f9",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND\u2192RUN: sidecar telegram tests, store queue tests, daemon shim_http; cargo test -p pij-sidecars -p pij-store -p pij-daemon <filters>",
+          "state": "unchecked",
+          "probe": "crates/sidecars/src/telegram.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC6-AC7: cost and docs",
+          "phase": "ph-e5f9",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Call-count test over a simulated window; prime reads the docs.",
+          "state": "unchecked",
+          "probe": "crates/sidecars/src/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC8: proof, mutants and CI",
+          "phase": "ph-e5f9",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutant receipts; rust-check; GitHub CI on the exact head.",
+          "state": "unchecked",
+          "probe": ".github/workflows"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
