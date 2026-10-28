@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 185 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: diagnosis, hot-path fixes, bounded taps",
+          "phase": "ph-9a02",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "Profiles in evidence; EXTEND\u2192RUN: pane observer, tmux adapter tap tests, sidecar bg tests; private-daemon workload replays; cargo test -p pij-tmux -p pij-daemon -p pij-sidecars <filters>",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/pane_observer.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4-AC5: live cost and docs",
+          "phase": "ph-9a02",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Before/after CPU, RSS, spawns, du; prime reads the docs.",
+          "state": "unchecked",
+          "probe": "ps / pij-rs --json ping"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC6: proof, mutants and CI",
+          "phase": "ph-9a02",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutant receipts; rust-check; GitHub CI on the exact head.",
+          "state": "unchecked",
+          "probe": ".github/workflows"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

@@ -1,0 +1,255 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Daemon CPU and memory: 240% CPU, 8-11 GB churn, unbounded tap files",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Measure, then cut. Work proportional to change, not to the size of the world: read only taps that grew, only bg records that are running, only what a tick needs. Every buffer has a bound. Every fix keeps the observable behaviour (signals, completions, deliveries) identical and is proven so."
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One owner: the hot paths share the observer tick and the measurement."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "live daemon -> attributed profile",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "hot path -> bounded, launch-free",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "tap file -> bounded size, correct offsets",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "before/after CPU, RSS, du",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Daemon CPU and memory: 240% CPU, 8-11 GB churn, unbounded tap files",
+          "role": "pm",
+          "responsibility": "Read-only profiling, diagnosis, the hot-path fixes, bounded taps, before/after measurements, docs, receipts, PR.",
+          "paths": [
+            "crates/daemon/src/",
+            "crates/daemon/tests/",
+            "crates/tmux/src/",
+            "crates/tmux/tests/",
+            "crates/sidecars/src/",
+            "crates/core/src/",
+            "crates/harnesses/src/",
+            "docs/how/",
+            "docs/plans/185-daemon-cpu-memory"
+          ],
+          "reads": [],
+          "notes": "Read first: this plan's summary; AGENTS.md \u00a7 Resource cost; crates/daemon/src/pane_observer.rs; crates/tmux/src/lib.rs (attach_pane_tap, drain_pane_tap) and control.rs; crates/sidecars/src/background.rs observe_completions; crates/daemon daemon_log; issues #62, #79, #90. Plans 180-183 changed this path today.",
+          "interface": "Pane observer tick; tap files; bg completion observation",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/daemon/src/pane_observer.rs",
+          "crates/tmux/src/lib.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-185-daemon-burn on perf/daemon-cpu-memory."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "claude",
+          "model": "claude-opus-5-5 reviewer seat, then prime verification"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "tmux and sidecar tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-tmux",
+            "-p",
+            "pij-sidecars"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-daemon"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Read-only profiles of the live daemon; diagnosis to the prime.",
+          "Red tests / recorded-workload baselines.",
+          "Hot-path fixes; bounded taps.",
+          "Docs; mutants; checks; PR; CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: an independent reviewer seat, then the prime verifies receipts, merges, bounces the daemon and takes the live cost reading.",
+        "inputs": [
+          "PR head SHA",
+          "receipts"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "Profiling the live daemon perturbs the fleet.",
+          "check": "Read-only tools only (sample, vmmap, ps); never attach a debugger that pauses it."
+        },
+        {
+          "id": "rk-0002",
+          "text": "Truncating a tap file loses unread signal bytes.",
+          "check": "Truncate only below the consumed offset, under the tap mutex; test the offset math."
+        },
+        {
+          "id": "rk-0003",
+          "text": "A private daemon for bisecting touches the real tmux server.",
+          "check": "Private -L tmux server and a temp state dir only (PrivateTmux)."
+        }
+      ]
+    }
+  ]
+}
