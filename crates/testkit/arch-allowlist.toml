@@ -64,7 +64,9 @@ internal = ["pij-testkit@dev"]
 # would force `block_on` inside the store adapter and deadlock on a tokio worker.
 # `serde` is the wire shape of the domain and `thiserror` types the taxonomy;
 # both are codecs, and neither is permission for core to perform IO.
-external = ["async-trait", "serde", "serde_json", "thiserror"]
+# `nix` is the one, narrow exception: `program` (plan 182) asks `access(X_OK)`
+# about PATH candidates, as `posix_spawnp` does, so git/tmux resolve once.
+external = ["async-trait", "nix", "serde", "serde_json", "thiserror"]
 why = "Pure domain: types, config, errors, the seven frozen ports, and the logic over them. No IO, no tokio, no SQL, no HTTP — enforced here rather than asserted in a doc comment."
 
 [crates.pij-store]
@@ -88,8 +90,8 @@ why = "Every tmux syscall in the workspace lives here; getrandom mints non-recyc
 
 [crates.pij-harnesses]
 internal = ["pij-core", "pij-testkit@dev"]
-external = ["async-trait", "serde_json", "sha2"]
-why = "Per-harness adapters plus exact-pid process liveness. pij-core supplies the frozen ports, async-trait implements them, sha2 fingerprints human drafts without storing their text, and testkit@dev supplies only the executor used by adapter tests."
+external = ["async-trait", "nix", "proc_pidinfo", "serde_json", "sha2", "time"]
+why = "Per-harness adapters plus exact-pid process liveness. pij-core supplies the frozen ports, async-trait implements them, sha2 fingerprints human drafts without storing their text, proc_pidinfo (macOS only, pinned) and time's local-offset read a process start in-process in the same local wall time `ps -o lstart=` prints, and nix's kill(pid, 0) tells a dead pid apart without a launch (ADR 0001, plan 182), and testkit@dev supplies only the executor used by adapter tests."
 
 [crates.pij-transport]
 internal = ["pij-core"]

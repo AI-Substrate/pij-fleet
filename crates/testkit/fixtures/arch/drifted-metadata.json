@@ -21,6 +21,10 @@
           "kind": null
         },
         {
+          "name": "nix",
+          "kind": null
+        },
+        {
           "name": "pij-testkit",
           "kind": "dev"
         },
@@ -142,6 +146,18 @@
         },
         {
           "name": "sha2",
+          "kind": null
+        },
+        {
+          "name": "time",
+          "kind": null
+        },
+        {
+          "name": "nix",
+          "kind": null
+        },
+        {
+          "name": "proc_pidinfo",
           "kind": null
         },
         {

@@ -57,26 +57,71 @@ fn production_lines(path: &Path) -> Vec<String> {
     lines[..end].to_vec()
 }
 
+/// The function a line declares, whatever its attributes, visibility and
+/// qualifiers: `#[…]`, `pub`, `pub(…)` of any kind, `const`, `async`, `unsafe`
+/// and `extern "…"`, in any order. A form this misses would merge its body
+/// into the previous function's segment (review of #84, S1).
 fn fn_name(line: &str) -> Option<String> {
-    let trimmed = line.trim_start();
-    let rest = [
-        "pub(crate) ",
-        "pub(super) ",
-        "pub ",
-        "const ",
-        "async ",
-        "unsafe ",
-    ]
-    .iter()
-    .fold(trimmed, |rest, prefix| {
-        rest.strip_prefix(prefix).unwrap_or(rest)
-    });
+    let mut rest = line.trim_start();
+    loop {
+        if let Some(attribute) = rest.strip_prefix("#[") {
+            rest = attribute.split_once(']')?.1.trim_start();
+        } else if let Some(scoped) = rest.strip_prefix("pub(") {
+            rest = scoped.split_once(')')?.1.trim_start();
+        } else if let Some(abi) = rest.strip_prefix("extern \"") {
+            rest = abi.split_once('"')?.1.trim_start();
+        } else if let Some(next) = ["pub ", "const ", "async ", "unsafe ", "extern "]
+            .iter()
+            .find_map(|prefix| rest.strip_prefix(prefix))
+        {
+            rest = next.trim_start();
+        } else {
+            break;
+        }
+    }
     let name = rest.strip_prefix("fn ")?;
     Some(
         name.chars()
             .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
             .collect(),
     )
+}
+
+/// Whether the function declared at `start` is `#[cfg(test)]`, by an attribute
+/// on its own line or the same one.
+fn test_only(lines: &[String], start: usize) -> bool {
+    lines[start].trim_start().starts_with("#[cfg(test)]")
+        || lines[..start]
+            .iter()
+            .rev()
+            .take_while(|line| {
+                let line = line.trim_start();
+                line.starts_with("///") || line.starts_with("#[")
+            })
+            .any(|line| line.trim() == "#[cfg(test)]")
+}
+
+/// The line holding the closing brace of the function declared at `start`.
+/// `None` when the braces never balance, so the caller scans the whole segment.
+fn closing_line(lines: &[String], start: usize, end: usize) -> Option<usize> {
+    let mut depth = 0_i32;
+    let mut opened = false;
+    for (index, line) in lines.iter().enumerate().take(end).skip(start) {
+        for ch in line.chars() {
+            match ch {
+                '{' => {
+                    depth += 1;
+                    opened = true;
+                }
+                '}' => depth -= 1,
+                _ => {}
+            }
+            if opened && depth == 0 {
+                return Some(index);
+            }
+        }
+    }
+    None
 }
 
 struct LaunchSite {
@@ -87,42 +132,64 @@ struct LaunchSite {
 
 /// Each function (from one `fn` line to the next) that launches a process.
 fn launch_sites(path: &Path, root: &Path) -> Vec<LaunchSite> {
-    let lines = production_lines(path);
+    let file = path.strip_prefix(root).unwrap().display().to_string();
+    sites_in(&file, &production_lines(path))
+}
+
+fn sites_in(file: &str, lines: &[String]) -> Vec<LaunchSite> {
     let starts: Vec<usize> = (0..lines.len())
         .filter(|&index| fn_name(&lines[index]).is_some())
         .collect();
-    let functions: Vec<(String, String, bool)> = starts
-        .iter()
-        .enumerate()
-        .map(|(position, &start)| {
-            let end = starts.get(position + 1).copied().unwrap_or(lines.len());
-            let signature = lines[start..end]
-                .iter()
-                .position(|line| line.contains('{'))
-                .map_or(String::new(), |open| lines[start..=start + open].join(" "));
-            (
-                fn_name(&lines[start]).unwrap(),
-                lines[start..end].join("\n"),
-                signature.contains("-> Command"),
-            )
-        })
-        .collect();
-    // Builders defined in this file (`fn command(&self) -> Command`): calling
+    // Each segment runs from one `fn` line to the next. A `#[cfg(test)]`
+    // function (an accessor a test reads) never runs in the daemon, so its own
+    // body is skipped, but only up to its closing brace: whatever follows it in
+    // the segment is still production code and is scanned under its own name.
+    let mut segments: Vec<(String, String, bool)> = Vec::new();
+    for (position, &start) in starts.iter().enumerate() {
+        let end = starts.get(position + 1).copied().unwrap_or(lines.len());
+        let name = fn_name(&lines[start]).unwrap();
+        let from = if test_only(lines, start) {
+            match closing_line(lines, start, end) {
+                Some(close) if close + 1 < end => {
+                    segments.push((
+                        format!("<after cfg(test) fn {name}>"),
+                        lines[close + 1..end].join("\n"),
+                        false,
+                    ));
+                    continue;
+                }
+                Some(_) => continue,
+                None => start,
+            }
+        } else {
+            start
+        };
+        let signature = lines[from..end]
+            .iter()
+            .position(|line| line.contains('{'))
+            .map_or(String::new(), |open| lines[from..=from + open].join(" "));
+        segments.push((
+            name,
+            lines[from..end].join("\n"),
+            signature.contains("-> Command"),
+        ));
+    }
+    // Builders defined in this file (`fn command(&self, …) -> Command`): calling
     // one launches a process, so its callers are launch sites.
-    let builder_calls: Vec<String> = functions
+    let builder_calls: Vec<String> = segments
         .iter()
         .filter(|(_, _, builder)| *builder)
-        .map(|(name, _, _)| format!(".{name}()"))
+        .map(|(name, _, _)| format!(".{name}("))
         .collect();
     let mut sites = Vec::new();
-    for (name, body, builder) in &functions {
+    for (name, body, builder) in &segments {
         let launches = (body.contains("Command::new(") && !builder)
             || builder_calls
                 .iter()
                 .any(|call| body.contains(call.as_str()));
         if launches {
             sites.push(LaunchSite {
-                file: path.strip_prefix(root).unwrap().display().to_string(),
+                file: file.to_string(),
                 function: name.clone(),
                 recorded: body.contains("spawns::record("),
             });
@@ -212,4 +279,101 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
          \"/bin/ps\" or \"/bin/date\":\n  {}",
         bare.join("\n  ")
     );
+}
+
+/// Plan 182 (pij-fleet#74): `git` and `tmux` live wherever the user installed
+/// them, so they cannot be named by a fixed path. The daemon launches them
+/// through `pij_core::program::launch`, which resolves PATH once and launches
+/// the path it found. A bare name would search PATH again on every launch (12
+/// kernel processes per `git` or `tmux` launch with the daemon's PATH on macOS).
+///
+/// A TRIPWIRE, NOT A PROOF: it matches literal source text only. A bare launch
+/// spelled any other way (`Command::new(binary)`, `Command::new(TMUX)`,
+/// `Command::new(OsStr::new("git"))`) passes it. What it does catch is the shape
+/// every one of these launches had before plan 182.
+#[test]
+fn no_daemon_launch_searches_path_for_git_or_tmux() {
+    const BARE: [&str; 3] = [
+        "Command::new(\"git\")",
+        "Command::new(\"tmux\")",
+        // The tmux adapters' configurable binary, launched unresolved.
+        "Command::new(&self.binary)",
+    ];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().expect("the workspace root");
+    let mut files = Vec::new();
+    for krate in DAEMON_CRATES {
+        rust_files(&root.join("crates").join(krate).join("src"), &mut files);
+    }
+    let mut resolved = 0;
+    let mut bare = Vec::new();
+    for path in &files {
+        for (index, line) in production_lines(path).iter().enumerate() {
+            resolved += line.matches("pij_core::program::launch").count();
+            if BARE.iter().any(|pattern| line.contains(pattern)) {
+                bare.push(format!(
+                    "{}:{}: {}",
+                    path.strip_prefix(&root).unwrap().display(),
+                    index + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    assert!(
+        bare.is_empty(),
+        "these launches search PATH for git or tmux on every launch; use \
+         `pij_core::program::launch(\"git\", |git| Command::new(git)...)`:\n  {}",
+        bare.join("\n  ")
+    );
+    // Guard against a vacuous pass: three git launches and three tmux launches
+    // (`run`, `run_with_stdin`, the control client's `start`).
+    assert!(
+        resolved >= 6,
+        "found only {resolved} resolved git/tmux launches; fix the scanner"
+    );
+}
+
+/// Review of #84, S1: skipping a `#[cfg(test)]` function must never hide a
+/// production launch after it. Each case puts an unrecorded launch right after a
+/// test-only accessor, in a form the scanner might not read as its own `fn`.
+#[test]
+fn a_cfg_test_function_cannot_hide_a_launch() {
+    // (source, the name the unrecorded launch must be reported under)
+    let cases = [
+        // The reviewer's injected case: `fn_name` must read every fn form.
+        (
+            "#[cfg(test)] fn test_accessor() {}\n\
+             pub(in crate::orchestration) fn launch_unrecorded() { let _ = Command::new(\"/bin/ls\").output(); }",
+            "launch_unrecorded",
+        ),
+        (
+            "#[cfg(test)]\nfn accessor() {}\npub(self) fn launch() {\n    let _ = Command::new(\"/bin/ls\").output();\n}",
+            "launch",
+        ),
+        (
+            "#[cfg(test)]\nfn accessor() {}\nextern \"C\" fn launch() {\n    let _ = Command::new(\"/bin/ls\").output();\n}",
+            "launch",
+        ),
+        (
+            "#[cfg(test)]\nfn accessor() {}\npub(crate) const unsafe extern \"C\" fn launch() {\n    let _ = Command::new(\"/bin/ls\").output();\n}",
+            "launch",
+        ),
+        // No `fn` line at all: only the accessor's closing brace can end its segment.
+        (
+            "#[cfg(test)]\nfn accessor() {\n    let _ = 1;\n}\nconst LAUNCH: fn() = || {\n    let _ = Command::new(\"/bin/ls\").status();\n};",
+            "<after cfg(test) fn accessor>",
+        ),
+    ];
+    for (source, expected) in cases {
+        let lines: Vec<String> = source.lines().map(str::to_string).collect();
+        let sites = sites_in("case.rs", &lines);
+        let names: Vec<&str> = sites.iter().map(|site| site.function.as_str()).collect();
+        assert!(
+            sites
+                .iter()
+                .any(|site| !site.recorded && site.function == expected),
+            "a cfg(test) accessor hid or misattributed this launch (expected {expected}):\n{source}\nsites: {names:?}"
+        );
+    }
 }

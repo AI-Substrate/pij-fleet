@@ -7,7 +7,7 @@ license.workspace = true
 [lints]
 workspace = true
 
-# Three dependencies, each a codec or a macro — never IO. `serde` is the wire
+# Codecs and a macro, never IO, plus one narrow exception (`nix`, below). `serde` is the wire
 # shape of the domain; `thiserror` types the error taxonomy; `async-trait` makes
 # the port traits object-safe and async (workshop 001 R3-AMEND-2: sqlx has no
 # sync API, and async-trait is a proc macro, so core stays tokio-free).
@@ -19,6 +19,9 @@ serde = { workspace = true }
 # HTTP — the arch gate still refuses every client and server crate here.
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# `access(X_OK)` for `program`'s PATH search (plan 182, review of #84 N2): the
+# test `posix_spawnp` applies, which `std` does not expose. Used nowhere else.
+nix = { workspace = true }
 
 # Test substrate only: the shared fakes and the hand-rolled executor. `@dev` is
 # what keeps it out of the shipped crate, and the arch gate enforces the suffix.

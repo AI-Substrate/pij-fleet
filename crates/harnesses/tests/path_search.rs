@@ -82,12 +82,54 @@ fn assert_no_decoy_ran(ran: &str, what: &str) {
 #[test]
 fn liveness_runs_bin_ps_never_a_ps_found_on_path() {
     if is_child() {
-        let start = block_on(ProcLiveness::new().proc_start(std::process::id()))
-            .expect("probe this process")
-            .expect("this process exists");
-        // Packed as YYYYMMDDhhmmss. The decoy answers 2015; this process is newer.
-        let year = start / 10_000_000_000;
-        assert!(year > 2015, "start {start} came from the decoy");
+        // Plan 182: live and reaped pids are answered in-process, so probe one
+        // only `ps` can decide: a zombie on macOS, a thread id on Linux. The
+        // decoy would answer 2015 for either.
+        let fallback = || {
+            pij_core::spawns::snapshot()
+                .by_op
+                .get("ps.proc-liveness-fallback")
+                .copied()
+                .unwrap_or(0)
+        };
+        let before = fallback();
+        #[cfg(target_os = "macos")]
+        {
+            let zombie = Command::new("/usr/bin/true")
+                .spawn()
+                .expect("spawn a child");
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let start =
+                block_on(ProcLiveness::new().proc_start(zombie.id())).expect("probe a zombie");
+            assert!(
+                start.is_some_and(|start| start / 10_000_000_000 > 2015),
+                "start {start:?} came from the decoy"
+            );
+            drop(zombie);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let (park, parked) = std::sync::mpsc::channel::<()>();
+            let worker = std::thread::spawn(move || {
+                let _ = parked.recv();
+            });
+            let pid = std::process::id();
+            let tid: u32 = std::fs::read_dir("/proc/self/task")
+                .expect("list threads")
+                .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+                .find(|&tid| tid != pid)
+                .expect("a thread id other than the pid");
+            let start = block_on(ProcLiveness::new().proc_start(tid)).expect("probe a thread id");
+            assert_eq!(start, None, "start {start:?} came from the decoy");
+            drop(park);
+            worker.join().expect("join");
+        }
+        // The probe must really have reached `ps`, or this test proves nothing.
+        assert_eq!(
+            fallback() - before,
+            1,
+            "the probe never reached the ps fallback"
+        );
         return;
     }
     assert_no_decoy_ran(

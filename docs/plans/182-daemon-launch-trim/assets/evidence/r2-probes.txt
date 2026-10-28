@@ -1,0 +1,47 @@
+# R2 probes, 2026-10-28T08:23:09Z, macOS 27.0.1 arm64
+## time 0.3.55 local-offset inside tokio multi_thread (8 workers + 4 extra threads)
+$ exp (src below)
+TZ="" (set, empty → UTC by libc rule): threads alive=4+tokio8; ["1775000000:Ok(+00:00:00)", "1782864000:Ok(+00:00:00)", "1793175789:Ok(+00:00:00)"]
+TZ unset (system /etc/localtime): threads alive=4+tokio8; ["1775000000:Ok(+10:00:00)", "1782864000:Ok(+10:00:00)", "1793175802:Ok(+10:00:00)"]
+TZ=Australia/Melbourne: threads alive=4+tokio8; ["1775000000:Ok(+11:00:00)", "1782864000:Ok(+10:00:00)", "1793175791:Ok(+11:00:00)"]
+TZ=America/New_York: threads alive=4+tokio8; ["1775000000:Ok(-04:00:00)", "1782864000:Ok(-04:00:00)", "1793175793:Ok(-04:00:00)"]
+
+time-0.3.55 src/sys/local_offset_at/unix.rs calls localtime_r and reads tm_gmtoff with no thread check; num_threads gates only refresh_tz (tzset), src/sys/refresh_tz/unix.rs:47.
+
+## exp src
+#![forbid(unsafe_code)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 8)]
+async fn main() {
+    let threads: Vec<_> = (0..4).map(|_| std::thread::spawn(|| std::thread::sleep(std::time::Duration::from_secs(2)))).collect();
+    let r = tokio::spawn(async {
+        // 2026-04-05 (before AU DST end) and 2026-07-01 (winter), and now
+        [1_775_000_000i64, 1_782_864_000, time::OffsetDateTime::now_utc().unix_timestamp()].map(|s| {
+            let t = time::OffsetDateTime::from_unix_timestamp(s).unwrap();
+            format!("{s}:{:?}", time::UtcOffset::local_offset_at(t))
+        })
+    }).await.unwrap();
+    println!("threads alive=4+tokio8; {r:?}");
+    for t in threads { t.join().unwrap(); }
+}
+
+## macOS localtime_r follows a TZ change in-process (scratch probe, not workspace code; uses unsafe set_var only to change TZ)
+offset at 2026-07-01T00:00Z, tokio multi_thread, TZ unset:
+start: Ok(+10:00:00)
+after TZ change, no refresh: Ok(-04:00:00)
+refresh_tz -> Some(()); then: Ok(-04:00:00)
+
+## proc_pidinfo PROC_PIDTBSDINFO vs ps (macOS 27.0.1 arm64)
+zombie 88882: bsd: None; short ok=false        | ps: 88882 Z Wed Oct 28 18:18:12 2026
+self 88881: bsd: start 2026-10-28 18:18:11 +10 | (own process: answered)
+arg 1 (launchd, root): bsd: None               | ps: Mon Oct 26 12:22:33 2026
+arg 374 (mds, root): bsd: None                 | ps: Mon Oct 26 12:23:12 2026
+arg 418 (_windowserver): bsd: None             | ps: Mon Oct 26 12:23:12 2026
+arg 41991 (daemon, own): bsd: start 2026-10-28 08:27:43 +10 | ps: Wed Oct 28 08:27:43 2026
+arg 99999 (absent): bsd: None
+
+## sysctl 0.7.1 cannot address kern.proc.pid.N
+Ctl::Oid([1,14,1,pid]) -> IoError ENOENT (oidfmt) for self, 1, 99999, 41991
+Ctl::Name("kern.proc.pid.N", Struct, "S") -> IoError ENOENT (sysctlbyname) for self, zombie, 1, 99999, 41991, 374, 418, 0
+
+## Live fleet seat pids (pij-rs --json list, 2026-10-28)
+63 seat pids with a proc: 63 present, owned by jordanknight (62 S, 1 R); 4 seats without proc.

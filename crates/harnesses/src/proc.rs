@@ -1,9 +1,17 @@
 //! Exact-pid process liveness for macOS and Linux.
 //!
-//! `ps -p <pid>` is deliberately narrower than the process-table snapshots used
-//! by discovery: liveness may inspect only the pid the caller named. Removing
-//! that constraint would make the adapter inspect more processes, so it is a
-//! one-directional safety interlock (a brake), not policy.
+//! Liveness inspects only the pid the caller named, never a process-table
+//! snapshot like discovery. Removing that constraint would make the adapter
+//! inspect more processes, so it is a one-directional safety interlock (a brake),
+//! not policy.
+//!
+//! Plan 182 (ADR 0001): the start instant is read in-process (`proc_pidinfo` on
+//! macOS, `/proc` on Linux) and converted with libc `localtime_r`, the same
+//! conversion `ps -o lstart=` applies, so a live process costs no launch. A pid
+//! with no process (`kill(pid, 0)` → `ESRCH`) is absent, also without a launch.
+//! Only a process that exists but is not readable here (a zombie, another
+//! user's process on macOS) runs today's exact-pid `/bin/ps` probe, so those
+//! answers stay byte-for-byte what they were.
 
 use std::io;
 use std::process::{Command, ExitStatus};
@@ -40,6 +48,7 @@ const ADAPTER: &str = "process-liveness/ps";
 /// COMPOSED (wave 1). The refusal it replaced no longer exists; no new config
 /// field is required.
 pub struct ProcLiveness {
+    reader: Arc<dyn StartReader>,
     runner: Arc<dyn CommandRunner>,
 }
 
@@ -47,13 +56,24 @@ impl ProcLiveness {
     /// Construct the real process adapter.
     pub fn new() -> Self {
         Self {
+            reader: Arc::new(KernelStart),
             runner: Arc::new(PsRunner),
         }
     }
 
+    /// The `ps` protocol alone, as fixtures script it.
     #[cfg(test)]
     fn with_runner(runner: impl CommandRunner + 'static) -> Self {
+        Self::with_parts(NoInProcessAnswer, runner)
+    }
+
+    #[cfg(test)]
+    fn with_parts(
+        reader: impl StartReader + 'static,
+        runner: impl CommandRunner + 'static,
+    ) -> Self {
         Self {
+            reader: Arc::new(reader),
             runner: Arc::new(runner),
         }
     }
@@ -68,12 +88,163 @@ impl Default for ProcLiveness {
 #[async_trait]
 impl LivenessPort for ProcLiveness {
     async fn proc_start(&self, pid: u32) -> Result<Option<u64>> {
+        match self.reader.read(pid) {
+            InProcess::Started(start) => {
+                if let Some(start) = local_lstart(start) {
+                    return Ok(Some(start));
+                }
+            }
+            InProcess::NoSuchProcess => return Ok(None),
+            InProcess::Unanswered => {}
+        }
         let output = self.runner.run(pid).map_err(|error| PijError::Adapter {
             adapter: ADAPTER.to_string(),
             message: format!("could not inspect pid {pid}: {error}"),
         })?;
         classify(pid, output)
     }
+}
+
+/// What the kernel says about a pid, read without launching anything.
+enum InProcess {
+    /// The process's start instant, whole seconds since the Unix epoch.
+    Started(i64),
+    /// The kernel has no process with this id (`kill(pid, 0)` → `ESRCH`): the
+    /// same fact `ps -p` reports as an empty selection.
+    NoSuchProcess,
+    /// A process exists but its start was not readable here (a zombie, another
+    /// user's process on macOS, a thread id on Linux): `ps` decides, as before.
+    Unanswered,
+}
+
+trait StartReader: Send + Sync {
+    fn read(&self, pid: u32) -> InProcess;
+}
+
+/// The kernel's own record of when `pid` started.
+struct KernelStart;
+
+impl StartReader for KernelStart {
+    fn read(&self, pid: u32) -> InProcess {
+        if let Some(start) = kernel_start(pid) {
+            InProcess::Started(start)
+        } else if no_such_process(pid) {
+            InProcess::NoSuchProcess
+        } else {
+            InProcess::Unanswered
+        }
+    }
+}
+
+/// Review of #84, S2: a dead seat the reaper retains (its pane is still open) is
+/// probed every sweep, so "no such process" must not cost a `ps` launch.
+///
+/// This is a POLICY input, not a brake: `ESRCH` decides `Dead`. It inherits
+/// what `ESRCH` means, which is the kernel's own "no process has this id", the
+/// fact `ps -p` reports when its selection comes back empty. A zombie or another
+/// user's process still exists (`kill` answers `Ok` or `EPERM`) and goes to `ps`.
+/// Ids that `kill` would read as a process group or "every process" (0, and
+/// anything above `i32::MAX`) are never sent; `ps` decides those.
+fn no_such_process(pid: u32) -> bool {
+    match i32::try_from(pid) {
+        Ok(raw) if raw > 0 => matches!(
+            nix::sys::signal::kill(nix::unistd::Pid::from_raw(raw), None),
+            Err(nix::errno::Errno::ESRCH)
+        ),
+        _ => false,
+    }
+}
+
+/// `proc_bsdinfo.pbi_start_tvsec` is the kernel's `p_start`, the field `ps`
+/// reads through `kinfo_proc.p_starttime`. It answers only for the caller's own
+/// live processes; zombies and other users' processes return nothing.
+#[cfg(target_os = "macos")]
+fn kernel_start(pid: u32) -> Option<i64> {
+    use proc_pidinfo::{Pid, ProcBSDInfo, proc_pidinfo};
+    let info = proc_pidinfo::<ProcBSDInfo>(Pid(pid)).ok()??;
+    (info.pbi_pid.0 == pid)
+        .then(|| i64::try_from(info.pbi_start_tvsec).ok())
+        .flatten()
+}
+
+/// procps computes `lstart` as `/proc/stat` `btime` plus field 22 of
+/// `/proc/<pid>/stat` divided by the clock tick, so this does the same.
+///
+/// `/proc/<tid>/stat` also resolves for a thread id that no process has, while
+/// `ps -p` selects processes only. So the pid must lead its thread group
+/// (`Tgid`), or `ps` decides (review of #84, N1).
+#[cfg(target_os = "linux")]
+fn kernel_start(pid: u32) -> Option<i64> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    if linux_tgid(&status)? != pid {
+        return None;
+    }
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let boot = std::fs::read_to_string("/proc/stat").ok()?;
+    linux_start(&stat, &boot)
+}
+
+/// The `Tgid:` (thread group, i.e. process) id from `/proc/<pid>/status`.
+#[cfg(any(target_os = "linux", test))]
+fn linux_tgid(status: &str) -> Option<u32> {
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("Tgid:"))?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// `USER_HZ`: the unit of `/proc/<pid>/stat` times, fixed at 100 by the kernel ABI.
+#[cfg(any(target_os = "linux", test))]
+const LINUX_CLOCK_TICKS: i64 = 100;
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_start(stat: &str, boot: &str) -> Option<i64> {
+    // The command name (field 2) is parenthesised and may hold spaces or `)`,
+    // so fields count from the LAST `)`: field 3 is the first after it.
+    let (_, rest) = stat.rsplit_once(')')?;
+    let ticks: i64 = rest.split_whitespace().nth(22 - 3)?.parse().ok()?;
+    let btime: i64 = boot
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(btime + ticks / LINUX_CLOCK_TICKS)
+}
+
+/// Fixtures that exercise the `ps` protocol never consult the real kernel.
+#[cfg(test)]
+struct NoInProcessAnswer;
+
+#[cfg(test)]
+impl StartReader for NoInProcessAnswer {
+    fn read(&self, _pid: u32) -> InProcess {
+        InProcess::Unanswered
+    }
+}
+
+/// Pack a start instant as the local wall time `ps -o lstart=` prints.
+///
+/// The offset is the one in force AT the start instant (libc `localtime_r`,
+/// what `ps` itself calls), never the current one: across a DST change the
+/// current offset would move a live seat's identity and read it as recycled.
+fn local_lstart(epoch_seconds: i64) -> Option<u64> {
+    let instant = time::OffsetDateTime::from_unix_timestamp(epoch_seconds).ok()?;
+    // macOS: re-read the zone the way a fresh `ps` would (sound there; see ADR 0001).
+    #[cfg(target_os = "macos")]
+    let _ = time::util::refresh_tz();
+    let local = instant.to_offset(time::UtcOffset::local_offset_at(instant).ok()?);
+    let year = u64::try_from(local.year()).ok()?;
+    Some(
+        year * 10_000_000_000
+            + u64::from(u8::from(local.month())) * 100_000_000
+            + u64::from(local.day()) * 1_000_000
+            + u64::from(local.hour()) * 10_000
+            + u64::from(local.minute()) * 100
+            + u64::from(local.second()),
+    )
 }
 
 struct CommandOutput {
@@ -90,7 +261,8 @@ struct PsRunner;
 
 impl CommandRunner for PsRunner {
     fn run(&self, pid: u32) -> io::Result<CommandOutput> {
-        pij_core::spawns::record("ps.proc-liveness");
+        // Plan 182: only the in-process read's misses reach `ps` now.
+        pij_core::spawns::record("ps.proc-liveness-fallback");
         let output = Command::new("/bin/ps")
             .args(["-o", "lstart=PIJ_LSTART", "-p", &pid.to_string()])
             .env("LC_ALL", "C")
@@ -405,6 +577,93 @@ mod tests {
             stdout: stdout.to_vec(),
             stderr: stderr.to_vec(),
         }
+    }
+
+    /// Plan 182: a live process is answered in-process; the `ps` runner is
+    /// only for pids the kernel read cannot answer.
+    struct NeverRunPs;
+
+    impl CommandRunner for NeverRunPs {
+        fn run(&self, pid: u32) -> io::Result<CommandOutput> {
+            panic!("liveness of pid {pid} launched ps");
+        }
+    }
+
+    #[test]
+    fn a_live_process_is_answered_without_running_ps() {
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn a live child");
+        let in_process = ProcLiveness::with_parts(super::KernelStart, NeverRunPs);
+        let ps = ProcLiveness::with_parts(super::NoInProcessAnswer, super::PsRunner);
+        for pid in [std::process::id(), child.id()] {
+            let observed = block_on(in_process.proc_start(pid)).expect("probe a live pid");
+            assert!(observed.is_some());
+            assert_eq!(observed, block_on(ps.proc_start(pid)).expect("ps probe"));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    /// Review of #84, S2: a pid with no process is Dead without a `ps` launch.
+    #[test]
+    fn a_reaped_pid_is_dead_without_running_ps() {
+        let mut dead = std::process::Command::new("/usr/bin/true")
+            .spawn()
+            .expect("spawn a child");
+        dead.wait().expect("reap the child");
+        let adapter = ProcLiveness::with_parts(super::KernelStart, NeverRunPs);
+        assert_eq!(
+            block_on(adapter.proc_start(dead.id())).expect("probe a reaped pid"),
+            None
+        );
+    }
+
+    #[test]
+    fn linux_tgid_reads_the_thread_group_line() {
+        let status = "Name:\tpij-rs\nUmask:\t0022\nState:\tS (sleeping)\nTgid:\t4242\nNgid:\t0\nPid:\t4243\n";
+        assert_eq!(super::linux_tgid(status), Some(4242));
+        assert_eq!(super::linux_tgid("Name:\tx\nPid:\t1\n"), None);
+    }
+
+    #[test]
+    fn linux_start_is_btime_plus_field_22_in_clock_ticks() {
+        // A command name holding `) (` must not shift the fields.
+        let stat = "4242 (a) (b c) S 1 4242 4242 0 -1 4194560 100 0 0 0 1 2 0 0 20 0 1 0 \
+                    123456 1000 10 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 17 3 0 0";
+        let boot = "cpu  1 2 3\nbtime 1782864000\nprocesses 9\n";
+        assert_eq!(super::linux_start(stat, boot), Some(1_782_864_000 + 1234));
+        assert_eq!(super::linux_start("4242 (a) S", boot), None);
+        assert_eq!(super::linux_start(stat, "cpu 1\n"), None);
+    }
+
+    /// The offset is the one in force at the START instant. Using the current
+    /// offset would move a pre-DST seat's identity by an hour: read as recycled.
+    #[test]
+    fn local_lstart_uses_the_offset_at_the_start_instant() {
+        const CHILD: &str = "PIJ_LSTART_TZ_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            // Melbourne: daylight time (+11) until 5 April 2026, standard (+10) in July.
+            assert_eq!(super::local_lstart(1_775_000_000), Some(20_260_401_103_320));
+            assert_eq!(super::local_lstart(1_782_864_000), Some(20_260_701_100_000));
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "proc::tests::local_lstart_uses_the_offset_at_the_start_instant",
+                "--exact",
+            ])
+            .env("TZ", "Australia/Melbourne")
+            .env(CHILD, "1")
+            .output()
+            .expect("re-run under TZ=Australia/Melbourne");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]

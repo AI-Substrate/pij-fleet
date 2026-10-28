@@ -1,0 +1,118 @@
+{
+  "dd": {
+    "schema": "builder/execution-log"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Observed implementation evidence",
+        "plan": "../plan.dd.json#meta"
+      }
+    },
+    {
+      "name": "entries",
+      "value": [
+        {
+          "id": "lg-0001",
+          "at": "2026-10-28T08:13:17Z",
+          "text": "Before-readings on the live machine daemon (main, read-only): two `pij-rs --json ping` readings 20 s apart, 08:12:57 to 08:13:17Z: total 471474 -> 471736 = 13.1/s, of which ps.proc-liveness 463247 -> 463509 = 13.1/s (all of it). `just spawn-rate --seconds 20` in the same window: machine 34.1 new processes/s; pij-rs daemon >= 12.2/s. Live seats: 63 seat pids, all present and own-user. assets/evidence/before-main.txt, assets/evidence/r2-probes.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004"
+          ]
+        },
+        {
+          "id": "lg-0002",
+          "at": "2026-10-28T08:23:00Z",
+          "text": "R2: no candidate passed as written, so the coder stopped and asked the prime. sysctl 0.7.1 cannot address kern.proc.pid.N (ENOENT by oid and by name). Every proc_pidinfo-based crate returns nothing for zombies and other users' pids (launchd, mds, WindowServer), where ps prints a time. libproc runs bindgen in build.rs; sysinfo pulls in objc2; darwin-libproc was last released in 2020. The prime ruled: proc_pidinfo =0.1.4 as the fast path, with a /bin/ps fallback recorded as ps.proc-liveness-fallback. The prime's concern that time's local-offset refuses in a multi-threaded process was tested and does not hold for 0.3.55: Ok inside a tokio multi_thread runtime, with historical DST offsets. Approved with guards; ADR notes added on setenv soundness and timezone changes. Ages: proc_pidinfo 0.1.4 2025-06-03; num_threads 0.1.8 2026-10-17 (11 days). docs/adr/0001-in-process-process-start-time.md, assets/evidence/r2-probes.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002"
+          ]
+        },
+        {
+          "id": "lg-0003",
+          "at": "2026-10-28T08:31:10Z",
+          "text": "Red on main fd7d3bb: git archive fd7d3bb plus only the new tests, copied in verbatim, and the cfg(test) ControlClient::program accessor the tmux test reads. liveness_launches: `20 liveness probes of live processes launched ps`, left [(\"ps.proc-liveness\", 20)]. spawn_sites no_daemon_launch_searches_path_for_git_or_tmux lists pa_watchdog.rs:991, governance.rs:1406, repo.rs:110, control.rs:284 and lib.rs:217. tmux resolve_once: left \"tmux\" vs right <decoy>/first/tmux. assets/evidence/red-on-main.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0004",
+          "at": "2026-10-28T08:40:00Z",
+          "text": "In-process liveness: crates/harnesses/src/proc.rs. StartReader/KernelStart is proc_pidinfo PROC_PIDTBSDINFO on macOS (pbi_pid checked) and /proc/<pid>/stat field 22 / 100 + btime on Linux (procps' formula). local_lstart uses libc localtime_r with the offset at the start instant; on a miss the unchanged /bin/ps probe runs, recorded as ps.proc-liveness-fallback. No TTL, no cache. Green on macOS: liveness_parity (self, live child, zombie, pid 1, reaped pid equal /bin/ps under the host TZ, America/New_York, Australia/Melbourne and UTC, from a multi-threaded process; Recycled and Dead verdicts), liveness_launches (0 ps launches for 20 live probes; zombie = 1 fallback), proc unit tests (a_live_process_is_answered_without_running_ps, local_lstart DST, linux_start parser), path_search (fallback still /bin/ps). Linux path: clippy -D warnings clean for aarch64-unknown-linux-musl; Linux parity runs in CI.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001"
+          ]
+        },
+        {
+          "id": "lg-0005",
+          "at": "2026-10-28T08:45:00Z",
+          "text": "Resolve-once: crates/core/src/program.rs (pij_core::program::resolve). It keeps hits only, searches again when a kept path has vanished, finds the first executable PATH match as posix_spawnp does, and never searches a name containing /. Wired into TmuxAdapter::command, ControlClient::command and the three git sites (pa_watchdog git_common_dir, governance current_head, orchestration repo git). Tests: core program:: (order, mode, install-after-boot, vanish, slash), tmux resolve_once (decoy-first PATH in a re-run child; adapter and control client launch <first>/tmux), and spawn_sites no_daemon_launch_searches_path_for_git_or_tmux (the scanner now skips #[cfg(test)] fns).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0003"
+          ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-28T08:48:00Z",
+          "text": "Docs: docs/how/macos-defender.md § What pij does about launches (plans 180 and 182) gains bullets on resolve-once and liveness without ps, with the 13.1/s before number, the fallback op name and a link to ADR 0001; the ping example names ps.proc-liveness-fallback.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-28T08:36:00Z",
+          "text": "Mutants, each applied, run and restored byte for byte. M1 liveness falls back to /bin/ps: liveness_launches red (ps.proc-liveness-fallback 20) and the unit test red (`liveness of live pid ... launched ps`). M2 a miss gets cached: the first, one-line form survived because the vanish check neutralises it, so it was not a real negative cache; re-run as a real negative cache, a_miss_is_not_kept red (left \"pij-tool\"). M3 PATH order ignored: core order test red and tmux resolve_once red (<second>/tmux). M4 current offset: DST test red (20260701110000 vs 20260701100000). M5 no vanish check: vanish test red. M6 bare ps in the fallback: path_search red (decoy 2015). assets/evidence/mutants.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-10-28T08:55:00Z",
+          "text": "Gates on the branch tree (macOS): cargo fmt --all --check clean; cargo clippy --workspace --all-targets -D warnings clean; cargo test --locked --workspace --no-fail-fast exit 0 (109 ok test binaries); pij-arch-check ok (10 crates, 98 edges, 0 violations; arch_drift fixtures gained the two pij-harnesses edges). One flake seen once in a full parallel run, not reproduced (http::tests::a_live_idle_claude_frame_under_a_long_stale_working_is_refused, which uses a fake tmux by absolute path; 5/5 green alone). NOT RUN: harness checks' TS stages (typecheck, lint, vitest, local-paths, npm lockfile), because this worktree has no node_modules and the packet forbids installing them; this change touches no TS, and CI runs them. Rust audit: no cargo-audit on this machine and no Rust audit gate in CI; the npm audit gate is unaffected.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-28T08:56:00Z",
+          "text": "Cost: steady state, the death sweep and request paths launch nothing for a live seat's liveness (liveness_launches: 0 ps launches for 20 probes). The fallback fires only per death or per zombie/foreign pid. Resolve-once adds no per-tick work: one PATH search per program per daemon, plus a stat per git/tmux launch. Before: ps.proc-liveness 13.1/s (lg-0001). After on a branch build: NOT RUN, because the packet forbids a second daemon against the default tmux server, and a private daemon has no seats to sweep. The prime takes the deployed after-reading.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004"
+          ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-28T08:58:00Z",
+          "text": "GitHub CI run 40660147860 on the exact head 64b521074ce1a4e7d0eafd8118881e3da1759a42: rust-lint, rust-test, check (22) and check (24) all success. nextest ran 1682 tests: 1682 passed, 4 skipped (none of them this plan's). The JUnit artifact (junit-linux) shows each new test PASS on Linux: liveness_parity (3, including parity_holds_in_other_timezones), liveness_launches, proc unit tests (a_live_process, linux_start, local_lstart DST), core program:: (5), tmux resolve_once, spawn_sites git_or_tmux, arch_drift (6), path_search liveness_runs_bin_ps and first_light ping_counts. So Linux parity with procps is proven in CI. The TS stages that were NOT RUN locally (typecheck, lint, vitest, lockfile-allowlist, npm audit) ran green in check (22)/(24).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0001"
+          ]
+        },
+        {
+          "id": "lg-0011",
+          "at": "2026-10-28T09:25:14Z",
+          "text": "Review of #84 (pij-review-pr84; prime ruling: fix S1, S2, N1, N2, N3). Red first. Test-only commit e54ea68 (ce27a6a + new tests), red on macOS (assets/evidence/review-red.txt) and on Linux CI run 40663695557. S1: spawn_sites a_cfg_test_function_cannot_hide_a_launch, the reviewer injected case, sites: []. S2: liveness_launches `10 probes of a dead, retained seat launched ps`, left [(ps.proc-liveness-fallback, 10)]; proc unit `liveness of pid … launched ps`. N1 (Linux CI only): a_thread_id_reads_as_ps_reads_it, thread id 14248, left Some(20261028092455), right None. N2: executability_is_access_x_ok_not_any_mode_bit picks first/pij-tool (mode 0610).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0012",
+          "at": "2026-10-28T09:45:00Z",
+          "text": "Fixes. S1: fn_name reads attributes, pub(…) of any kind, const/async/unsafe and extern \"…\" in any order; a cfg(test) fn (attribute on its own line or the same one) is skipped only up to its closing brace, and the rest of its segment is scanned as <after cfg(test) fn X>; builder calls match .name( so builders taking arguments still count. S2: proc_start asks kill(pid, 0) (nix) when the in-process read has no answer; ESRCH means absent (Ok(None)) with no launch, and only an existing unreadable process (zombie, foreign) reaches ps; ids 0 and >i32::MAX are never sent. N1: Linux requires Tgid == pid. N2: executable = is_file && access(X_OK) (nix in pij-core, allowlisted); pij_core::program::launch/launch_async re-resolve once when spawning a kept path fails with ENOENT, now used by tmux run/run_with_stdin/control start and the three git sites. N3: tripwire doc says literal-only. Tests made load-bearing again: path_search probes a zombie (macOS) or thread id (Linux) and asserts the fallback ran; first_light counts date.utc-offset. ADR and macos-defender cost statements corrected (the retained-dead-seat class now costs 0). Mutants all red (assets/evidence/review-mutants.txt): S1a pub(…), S1b extern, S1c brace end, S2 no ESRCH, S2b any kill error read as ESRCH (pid 1 reads None vs ps), N2a mode bits, N2b no retry, M1 and M6 re-run. Pre-existing flake http::tests::a_live_idle_claude_frame_under_a_long_stale_working_is_refused also fails 2/3 full runs on main fd7d3bb.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        }
+      ]
+    }
+  ]
+}

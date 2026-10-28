@@ -1,0 +1,112 @@
+# Review #84 mutants on the fix tree (2026-10-28T09:41:32Z); each applied, its tests run, then restored byte for byte
+## mutant S1a fn_name misses pub(...) of any kind: crates/testkit/tests/spawn_sites.rs
+-   } else if let Some(scoped) = rest.strip_prefix("pub(") {
++   } else if let Some(scoped) = rest.strip_prefix("pub(NEVER)(") {
+$ cargo test -p pij-testkit --test spawn_sites a_cfg_test  -> exit 101
+test a_cfg_test_function_cannot_hide_a_launch ... FAILED
+thread 'a_cfg_test_function_cannot_hide_a_launch' (223568329) panicked at crates/testkit/tests/spawn_sites.rs:372:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-testkit --test spawn_sites`
+restored crates/testkit/tests/spawn_sites.rs
+
+## mutant S1b fn_name misses extern "ABI": crates/testkit/tests/spawn_sites.rs
+-   } else if let Some(abi) = rest.strip_prefix("extern \"") {
++   } else if let Some(abi) = rest.strip_prefix("extern NEVER\"") {
+$ cargo test -p pij-testkit --test spawn_sites a_cfg_test  -> exit 101
+test a_cfg_test_function_cannot_hide_a_launch ... FAILED
+thread 'a_cfg_test_function_cannot_hide_a_launch' (223568845) panicked at crates/testkit/tests/spawn_sites.rs:372:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-testkit --test spawn_sites`
+restored crates/testkit/tests/spawn_sites.rs
+
+## mutant S1c a skipped cfg(test) segment does not end at its closing brace: crates/testkit/tests/spawn_sites.rs
+-   Some(close) if close + 1 < end => {
++   Some(close) if false && close + 1 < end => {
+$ cargo test -p pij-testkit --test spawn_sites a_cfg_test  -> exit 101
+test a_cfg_test_function_cannot_hide_a_launch ... FAILED
+thread 'a_cfg_test_function_cannot_hide_a_launch' (223569079) panicked at crates/testkit/tests/spawn_sites.rs:372:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-testkit --test spawn_sites`
+restored crates/testkit/tests/spawn_sites.rs
+
+## mutant S2 no ESRCH check: a dead pid falls back to ps: crates/harnesses/src/proc.rs
+-   Err(nix::errno::Errno::ESRCH)
++   Err(nix::errno::Errno::ENOSYS)
+$ cargo test -p pij-harnesses --test liveness_launches  -> exit 101
+test live_processes_are_read_without_launching_ps ... FAILED
+thread 'live_processes_are_read_without_launching_ps' (223571054) panicked at crates/harnesses/tests/liveness_launches.rs:101:5:
+assertion `left == right` failed: 10 probes of a dead, retained seat launched `ps`
+  left: [("ps.proc-liveness-fallback", 10)]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+error: test failed, to rerun pass `-p pij-harnesses --test liveness_launches`
+$ cargo test -p pij-harnesses --lib proc::tests::a_reaped_pid_is_dead_without_running_ps  -> exit 101
+test proc::tests::a_reaped_pid_is_dead_without_running_ps ... FAILED
+thread 'proc::tests::a_reaped_pid_is_dead_without_running_ps' (223572059) panicked at crates/harnesses/src/proc.rs:588:13:
+liveness of pid 12494 launched ps
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 185 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-harnesses --lib`
+restored crates/harnesses/src/proc.rs
+
+## mutant S2b ESRCH read for every kill error (EPERM too): another user's live process reads Dead: crates/harnesses/src/proc.rs
+-   Err(nix::errno::Errno::ESRCH)
++   Err(_)
+$ cargo test -p pij-harnesses --test liveness_parity in_process_start_times_match_ps  -> exit 101
+test in_process_start_times_match_ps_for_every_kind_of_pid ... FAILED
+thread 'in_process_start_times_match_ps_for_every_kind_of_pid' (223572940) panicked at crates/harnesses/tests/liveness_parity.rs:60:9:
+assertion `left == right` failed: pid 1 (pid 1) differs from /bin/ps
+  left: None
+ right: Some(20261026122233)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.49s
+error: test failed, to rerun pass `-p pij-harnesses --test liveness_parity`
+restored crates/harnesses/src/proc.rs
+
+## mutant N2a executability by mode bits again: crates/core/src/program.rs
+-   && nix::unistd::access(path, nix::unistd::AccessFlags::X_OK).is_ok()
++   && std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(path).unwrap().permissions()) & 0o111 != 0
+$ cargo test -p pij-core --lib program::tests::executability  -> exit 101
+test program::tests::executability_is_access_x_ok_not_any_mode_bit ... FAILED
+thread 'program::tests::executability_is_access_x_ok_not_any_mode_bit' (223584730) panicked at crates/core/src/program.rs:255:9:
+assertion `left == right` failed
+  left: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-access-17244-1793180544336766000-0/first/pij-tool"
+ right: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-access-17244-1793180544336766000-0/second/pij-tool"
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 94 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p pij-core --lib`
+restored crates/core/src/program.rs
+
+## mutant N2b no retry when the launch finds the kept path gone: crates/core/src/program.rs
+-   Err(error) if error.kind() == io::ErrorKind::NotFound && kept && self.forget(name) => {
++   Err(error) if false && error.kind() == io::ErrorKind::NotFound && kept && self.forget(name) => {
+$ cargo test -p pij-core --lib program::tests::a_launch_that  -> exit 101
+test program::tests::a_launch_that_finds_its_kept_path_gone_resolves_again_once ... FAILED
+thread 'program::tests::a_launch_that_finds_its_kept_path_gone_resolves_again_once' (223588208) panicked at crates/core/src/program.rs:301:24:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 94 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p pij-core --lib`
+restored crates/core/src/program.rs
+
+## mutant M1 (re-run) liveness falls back to /bin/ps for live pids: crates/harnesses/src/proc.rs
+-   if let Some(start) = kernel_start(pid) {
++   if let Some(start) = None::<i64> {
+$ cargo test -p pij-harnesses --test liveness_launches  -> exit 101
+test live_processes_are_read_without_launching_ps ... FAILED
+thread 'live_processes_are_read_without_launching_ps' (223590230) panicked at crates/harnesses/tests/liveness_launches.rs:59:5:
+assertion `left == right` failed: 20 liveness probes of live processes launched `ps`
+  left: [("ps.proc-liveness-fallback", 20)]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+error: test failed, to rerun pass `-p pij-harnesses --test liveness_launches`
+restored crates/harnesses/src/proc.rs
+
+## mutant M6 (re-run) fallback probe searches PATH for ps: crates/harnesses/src/proc.rs
+-   let output = Command::new("/bin/ps")
++   let output = Command::new("ps")
+$ cargo test -p pij-harnesses --test path_search liveness_runs_bin_ps  -> exit 101
+test liveness_runs_bin_ps_never_a_ps_found_on_path ... FAILED
+thread 'liveness_runs_bin_ps_never_a_ps_found_on_path' (223591377) panicked at crates/harnesses/tests/path_search.rs:60:5:
+test liveness_runs_bin_ps_never_a_ps_found_on_path ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.69s
+thread 'liveness_runs_bin_ps_never_a_ps_found_on_path' (223591389) panicked at crates/harnesses/tests/path_search.rs:104:13:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.71s
+error: test failed, to rerun pass `-p pij-harnesses --test path_search`
+restored crates/harnesses/src/proc.rs
+

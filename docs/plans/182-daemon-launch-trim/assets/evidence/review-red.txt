@@ -1,0 +1,81 @@
+# Review #84 fixes: red on ce27a6a + the new tests only, macOS (2026-10-28T09:20:53Z)
+
+$ cargo test -p pij-testkit --test spawn_sites a_cfg_test_function_cannot_hide_a_launch
+test a_cfg_test_function_cannot_hide_a_launch ... FAILED
+
+---- a_cfg_test_function_cannot_hide_a_launch stdout ----
+thread 'a_cfg_test_function_cannot_hide_a_launch' (223045025) panicked at crates/testkit/tests/spawn_sites.rs:300:9:
+a cfg(test) accessor hid this launch:
+#[cfg(test)] fn test_accessor() {}
+pub(in crate::orchestration) fn launch_unrecorded() { let _ = Command::new("/bin/ls").output(); }
+sites: []
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+$ cargo test -p pij-harnesses --test liveness_launches
+test live_processes_are_read_without_launching_ps ... FAILED
+
+---- live_processes_are_read_without_launching_ps stdout ----
+thread 'live_processes_are_read_without_launching_ps' (223049249) panicked at crates/harnesses/tests/liveness_launches.rs:99:5:
+assertion `left == right` failed: 10 probes of a dead, retained seat launched `ps`
+  left: [("ps.proc-liveness-fallback", 10)]
+ right: []
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+$ cargo test -p pij-harnesses --lib proc::tests::a_reaped_pid_is_dead_without_running_ps
+test proc::tests::a_reaped_pid_is_dead_without_running_ps ... FAILED
+
+---- proc::tests::a_reaped_pid_is_dead_without_running_ps stdout ----
+thread 'proc::tests::a_reaped_pid_is_dead_without_running_ps' (223058713) panicked at crates/harnesses/src/proc.rs:528:13:
+liveness of live pid 6216 launched ps
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 184 filtered out; finished in 0.02s
+
+$ cargo test -p pij-core --lib program::tests::executability_is_access_x_ok_not_any_mode_bit
+test program::tests::executability_is_access_x_ok_not_any_mode_bit ... FAILED
+
+---- program::tests::executability_is_access_x_ok_not_any_mode_bit stdout ----
+thread 'program::tests::executability_is_access_x_ok_not_any_mode_bit' (223060496) panicked at crates/core/src/program.rs:186:9:
+assertion `left == right` failed
+  left: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-access-6827-1793179310937901000-0/first/pij-tool"
+ right: "/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pij-program-access-6827-1793179310937901000-0/second/pij-tool"
+
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 93 filtered out; finished in 0.00s
+
+# Linux: GitHub CI run 40663695557 on e54ea68 (ce27a6a + these tests only), rust-test job (ubuntu, nextest). Expected reds:
+rust-test	test	2026-10-28T09:24:06.1558799Z     thread 'program::tests::executability_is_access_x_ok_not_any_mode_bit' (8334) panicked at crates/core/src/program.rs:186:9:
+rust-test	test	2026-10-28T09:24:06.1561002Z       left: "/tmp/pij-program-access-8332-1793179446152401148-0/first/pij-tool"
+rust-test	test	2026-10-28T09:24:06.1561959Z      right: "/tmp/pij-program-access-8332-1793179446152401148-0/second/pij-tool"
+rust-test	test	2026-10-28T09:24:54.3881607Z     thread 'proc::tests::a_reaped_pid_is_dead_without_running_ps' (13839) panicked at crates/harnesses/src/proc.rs:528:13:
+rust-test	test	2026-10-28T09:24:54.3882316Z     liveness of pid 13840 launched ps
+rust-test	test	2026-10-28T09:24:55.5704882Z     thread 'live_processes_are_read_without_launching_ps' (14224) panicked at crates/harnesses/tests/liveness_launches.rs:101:5:
+rust-test	test	2026-10-28T09:24:55.5705713Z     assertion `left == right` failed: 10 probes of a dead, retained seat launched `ps`
+rust-test	test	2026-10-28T09:24:55.5706215Z       left: [("ps.proc-liveness-fallback", 10)]
+rust-test	test	2026-10-28T09:24:55.5706523Z      right: []
+rust-test	test	2026-10-28T09:24:55.6054612Z     thread 'a_thread_id_reads_as_ps_reads_it' (14248) panicked at crates/harnesses/tests/liveness_parity.rs:156:9:
+rust-test	test	2026-10-28T09:24:55.6055909Z     assertion `left == right` failed: thread id 14248 differs from /bin/ps
+rust-test	test	2026-10-28T09:24:55.6056622Z       left: Some(20261028092455)
+rust-test	test	2026-10-28T09:24:55.6057068Z      right: None
+rust-test	test	2026-10-28T09:25:06.1207627Z     thread 'a_cfg_test_function_cannot_hide_a_launch' (15543) panicked at crates/testkit/tests/spawn_sites.rs:300:9:
+rust-test	test	2026-10-28T09:25:14.6735543Z     thread 'program::tests::executability_is_access_x_ok_not_any_mode_bit' (8334) panicked at crates/core/src/program.rs:186:9:
+rust-test	test	2026-10-28T09:25:14.6737220Z       left: "/tmp/pij-program-access-8332-1793179446152401148-0/first/pij-tool"
+rust-test	test	2026-10-28T09:25:14.6738476Z      right: "/tmp/pij-program-access-8332-1793179446152401148-0/second/pij-tool"
+rust-test	test	2026-10-28T09:25:14.6757504Z     thread 'proc::tests::a_reaped_pid_is_dead_without_running_ps' (13839) panicked at crates/harnesses/src/proc.rs:528:13:
+rust-test	test	2026-10-28T09:25:14.6758543Z     liveness of pid 13840 launched ps
+rust-test	test	2026-10-28T09:25:14.6780478Z     thread 'live_processes_are_read_without_launching_ps' (14224) panicked at crates/harnesses/tests/liveness_launches.rs:101:5:
+rust-test	test	2026-10-28T09:25:14.6781896Z     assertion `left == right` failed: 10 probes of a dead, retained seat launched `ps`
+rust-test	test	2026-10-28T09:25:14.6782380Z       left: [("ps.proc-liveness-fallback", 10)]
+rust-test	test	2026-10-28T09:25:14.6782691Z      right: []
+rust-test	test	2026-10-28T09:25:14.6791896Z     thread 'a_thread_id_reads_as_ps_reads_it' (14248) panicked at crates/harnesses/tests/liveness_parity.rs:156:9:
+rust-test	test	2026-10-28T09:25:14.6792618Z     assertion `left == right` failed: thread id 14248 differs from /bin/ps
+rust-test	test	2026-10-28T09:25:14.6793015Z       left: Some(20261028092455)
+rust-test	test	2026-10-28T09:25:14.6793283Z      right: None
+rust-test	test	2026-10-28T09:25:14.6802340Z     thread 'a_cfg_test_function_cannot_hide_a_launch' (15543) panicked at crates/testkit/tests/spawn_sites.rs:300:9:
+Summary: 1686 tests run: 1680 passed, 6 failed. The 6th, pij-tmux adapter::capture_proves_zero_and_more_than_the_pane_contains (adapter.rs:181), is a real-tmux test unrelated to these tests; this commit changed no production code, and it passed on 64b5210 and ce27a6a.
+
+# Pre-existing flake (macOS): http::tests::a_live_idle_claude_frame_under_a_long_stale_working_is_refused fails in full parallel runs of pij-daemon --lib on main fd7d3bb too (scratch tree: git archive fd7d3bb + plan-182 tests only): 3 runs -> ok, FAILED (638/2), FAILED (639/1). Alone it passes.

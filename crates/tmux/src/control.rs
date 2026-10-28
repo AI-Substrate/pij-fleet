@@ -212,6 +212,15 @@ impl ControlClient {
         self.enabled
     }
 
+    /// The program the control client would launch.
+    #[cfg(test)]
+    pub(crate) fn program(&self) -> OsString {
+        pij_core::program::launch(&self.binary, |program| {
+            Ok::<_, io::Error>(self.command(program).get_program().to_os_string())
+        })
+        .expect("no spawn, so no error")
+    }
+
     pub(crate) fn with_enabled(&self, enabled: bool) -> Self {
         Self::new(self.binary.clone(), self.server.clone(), enabled)
     }
@@ -274,8 +283,10 @@ impl ControlClient {
         }
     }
 
-    fn command(&self) -> Command {
-        let mut command = Command::new(&self.binary);
+    /// The tmux command for `program`, the executable `pij_core::program::launch`
+    /// resolved (plan 182: PATH is searched once, not on every launch).
+    fn command(&self, program: OsString) -> Command {
+        let mut command = Command::new(program);
         command.arg("-u");
         if let Some(server) = &self.server {
             command.args(["-L", server]);
@@ -287,14 +298,15 @@ impl ControlClient {
         pij_core::spawns::record("tmux.control-client");
         // `-N`: no server means no client; never start one just to read it.
         // `-A`: attach to `_pij`, creating it first if it is absent.
-        let mut child = self
-            .command()
-            .args(["-N", "-C", "new-session", "-A", "-s", CONTROL_SESSION])
-            .args(["-f", ATTACH_FLAGS, IDLE_COMMAND])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+        let mut child = pij_core::program::launch(&self.binary, |program| {
+            self.command(program)
+                .args(["-N", "-C", "new-session", "-A", "-s", CONTROL_SESSION])
+                .args(["-f", ATTACH_FLAGS, IDLE_COMMAND])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+        })?;
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
             let _ = child.kill();
             let _ = child.wait();
