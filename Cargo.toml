@@ -65,7 +65,7 @@ sha2 = "0.10"
 # Fence matching uses a pinned standard glob engine, never a reduced custom matcher.
 globset = "=0.4.20"
 thiserror = "2"
-toml = "0.9"
+toml = "1.1"
 # The store, per workshop 001 R1: SQLite through sqlx, with embedded migrations
 # and the `_sqlx_migrations` checksum table. rustls rather than native-tls so the
 # build stays `cargo build` on every platform.
