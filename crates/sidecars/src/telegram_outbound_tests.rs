@@ -235,7 +235,8 @@ async fn failed_later_part_stops_and_preserves_whole_job_retry() {
     f.enqueue(&"x".repeat(9000)).await;
     let _ = f.worker.run_once(1).await;
     assert_failure(&f, 2, 3, Some(400)).await;
-    f.queue.advance(Duration::from_secs(1));
+    f.queue
+        .advance(f.queue.retried().last().expect("a retry").1);
     f.worker
         .run_once(1)
         .await
@@ -294,7 +295,8 @@ async fn transport_failure_records_each_attempt_without_leaking_the_token() {
         let events = f.spine.tail(None, Seq(0)).await.expect("events");
         assert_eq!(events.len(), attempt as usize);
         assert_eq!(events.last().expect("attempt event").payload, message);
-        f.queue.advance(Duration::from_secs(1));
+        f.queue
+            .advance(f.queue.retried().last().expect("a retry").1);
     }
     assert!(f.queue.acked().is_empty());
     assert_eq!(f.queue.retried().len(), 2);

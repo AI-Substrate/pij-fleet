@@ -26,9 +26,113 @@ pub struct LoopHandle {
 impl LoopHandle {
     /// Stop future passes and wait for the current pass to finish.
     pub async fn shutdown(self) {
-        let _ = self.stop.send(());
-        let _ = self.joined.await;
+        let _ = self.signal().await;
     }
+
+    /// Stop future passes now; the returned handle joins the current pass.
+    /// Signal every loop first, then join, so one long pass never delays
+    /// another loop's stop.
+    pub(crate) fn signal(self) -> JoinHandle<()> {
+        let _ = self.stop.send(());
+        self.joined
+    }
+}
+
+/// One pass of a supervised loop panicked; the loop restarts after `backoff`.
+#[derive(Clone, Debug)]
+pub(crate) struct Restart {
+    /// The loop's name.
+    pub name: &'static str,
+    /// The panic's message.
+    pub reason: String,
+    /// Consecutive panicking passes, this one included.
+    pub restarts: u32,
+    /// The wait before the next pass.
+    pub backoff: Duration,
+}
+
+/// Longest wait between panicking passes of a supervised loop.
+pub(crate) const RESTART_CAP: Duration = Duration::from_secs(60);
+
+/// [`start_resilient_loop`], plus: each pass runs in its own task, so a
+/// panic ends that pass, never the loop. The loop waits `restart_base`
+/// doubling to [`RESTART_CAP`] per consecutive panic, tells `on_restart`,
+/// then carries on; a pass that returns resets the count. Nothing launched.
+pub(crate) fn start_supervised_loop<F, Fut, R, RFut>(
+    name: &'static str,
+    interval: Duration,
+    restart_base: Duration,
+    mut run_once: F,
+    mut on_restart: R,
+) -> Result<LoopHandle>
+where
+    F: FnMut() -> Fut + Send + 'static,
+    Fut: Future<Output = Result<Processed>> + Send + 'static,
+    R: FnMut(Restart) -> RFut + Send + 'static,
+    RFut: Future<Output = ()> + Send + 'static,
+{
+    if interval.is_zero() {
+        return Err(PijError::Adapter {
+            adapter: format!("sidecars/{name}"),
+            message: "consumer interval must be greater than zero".to_string(),
+        });
+    }
+    let (stop, mut stop_rx) = oneshot::channel();
+    let joined = tokio::spawn(async move {
+        let mut schedule = tokio::time::interval(interval);
+        schedule.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut restarts = 0_u32;
+        loop {
+            tokio::select! {
+                biased;
+                _ = &mut stop_rx => break,
+                _ = schedule.tick() => {}
+            }
+            match tokio::spawn(run_once()).await {
+                Ok(outcome) => {
+                    restarts = 0;
+                    if let Err(error) = outcome {
+                        eprintln!("pij-rs {name}: {error}");
+                    }
+                }
+                Err(failed) => {
+                    restarts = restarts.saturating_add(1);
+                    let factor = 1_u32.checked_shl(restarts - 1).unwrap_or(u32::MAX);
+                    let backoff = restart_base.saturating_mul(factor).min(RESTART_CAP);
+                    let reason = panic_reason(failed);
+                    eprintln!(
+                        "pij-rs {name}: pass panicked ({reason}); restart {restarts} in {} ms",
+                        backoff.as_millis()
+                    );
+                    on_restart(Restart {
+                        name,
+                        reason,
+                        restarts,
+                        backoff,
+                    })
+                    .await;
+                    tokio::select! {
+                        biased;
+                        _ = &mut stop_rx => break,
+                        _ = tokio::time::sleep(backoff) => {}
+                    }
+                }
+            }
+        }
+    });
+    Ok(LoopHandle { stop, joined })
+}
+
+fn panic_reason(failed: tokio::task::JoinError) -> String {
+    if !failed.is_panic() {
+        return failed.to_string();
+    }
+    let payload = failed.into_panic();
+    payload
+        .downcast_ref::<&str>()
+        .map(|reason| (*reason).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "panic with a non-string payload".to_string())
 }
 
 pub(crate) fn start_resilient_loop<F, Fut>(

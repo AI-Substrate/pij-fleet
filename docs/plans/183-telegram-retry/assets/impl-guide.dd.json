@@ -1,0 +1,257 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Telegram sidecar: retry backoff, inbound never starves, follow-ups from #71",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Outbound trouble never silences inbound. Backoff is computed in one place from the attempt count and the server's hint, with an injected clock; tests never sleep in wall time. The queue keeps its ordering guarantee explicitly. Fakes stand in for Telegram everywhere; no test, and no coder, contacts the real API."
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One worker loop and its queue; the fixes interact (ordering, backoff, inbound), so one owner."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "Retry + attempt + retry_after -> not_before",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "tick -> inbound polled regardless",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "stalled upload -> Retry within the timeout",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "producer body + files -> ordered jobs",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Telegram sidecar: retry backoff, inbound never starves, follow-ups from #71",
+          "role": "pm",
+          "responsibility": "Red tests with a fake Telegram, backoff, inbound, timeouts, hermetic producer test, nits, docs, receipts, PR.",
+          "paths": [
+            "crates/sidecars/src/",
+            "crates/store/src/",
+            "crates/daemon/src/http/",
+            "crates/daemon/tests/",
+            "crates/cli/src/",
+            "docs/how/pij-telegram.md",
+            "docs/plans/183-telegram-retry"
+          ],
+          "reads": [],
+          "notes": "Read first: issue #77; plan 179 (docs/plans/179-telegram-media); crates/sidecars/src/telegram.rs (run_once, poll_inbound, send paths), runtime.rs, crates/store/src/queue.rs (retry, claim ordering), crates/daemon/src/http/mod.rs enqueue_telegram_document, crates/daemon/tests/shim_http.rs; docs/how/pij-telegram.md; AGENTS.md \u00a7 Resource cost.",
+          "interface": "Sidecar queue retry schedule; telegram events",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0007",
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/sidecars/src/telegram.rs",
+          "crates/store/src/queue.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-183-tg-retry on fix/telegram-retry."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "claude",
+          "model": "claude-opus-5-5 reviewer seat, then prime verification"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Sidecar and store tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-sidecars",
+            "-p",
+            "pij-store"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon shim tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-daemon",
+            "--test",
+            "shim_http"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Red tests on fd7d3bb with a fake Telegram.",
+          "Backoff + inbound + timeouts.",
+          "Producer test and nits.",
+          "Docs; mutants; checks; PR; CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: an independent reviewer seat, then the prime verifies receipts, merges, bounces the daemon and takes the live cost reading.",
+        "inputs": [
+          "PR head SHA",
+          "receipts"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "A store schema change (e.g. an attempt counter) needs a migration.",
+          "check": "Prefer existing columns; if a migration is needed, say so to the prime BEFORE writing it (the store is backed up before merging any migration)."
+        },
+        {
+          "id": "rk-0002",
+          "text": "Backoff reorders a body and its files.",
+          "check": "An explicit ordering test on one serial key with the first job retrying."
+        },
+        {
+          "id": "rk-0003",
+          "text": "A real Telegram call from a test or the coder.",
+          "check": "Fakes only; the credential file is never read in tests (R2)."
+        }
+      ]
+    }
+  ]
+}

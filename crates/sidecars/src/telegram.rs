@@ -12,14 +12,14 @@ use pij_core::ports::{Queue, Registry, Spine};
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 
-use crate::common::{LoopHandle, Processed, enqueue_turn, now_ms, start_resilient_loop};
+use crate::common::{LoopHandle, Processed, Restart, enqueue_turn, now_ms, start_supervised_loop};
 
 #[path = "telegram_document.rs"]
 mod document;
 
 pub use document::{
-    CAPTION_LIMIT, DOCUMENT_LIMIT_BYTES, MAX_FILES, MediaMethod, PHOTO_LIMIT_BYTES, StagedDocument,
-    StagedSend, TelegramDocumentRequest, release_staged, stage_send,
+    CAPTION_LIMIT, DOCUMENT_LIMIT_BYTES, LiveCopies, MAX_FILES, MediaMethod, PHOTO_LIMIT_BYTES,
+    StagedDocument, StagedSend, TelegramDocumentRequest, release_staged, stage_send, sweep_staged,
 };
 
 /// Queue kind for outbound Telegram work.
@@ -38,11 +38,85 @@ const OUTBOUND_FAILED_KIND: &str = "telegram.outbound-delivery-failed";
 const OUTBOUND_MEDIA_DELIVERED_KIND: &str = "telegram.outbound-media-delivered";
 const INBOUND_MEDIA_UNSUPPORTED_KIND: &str = "telegram.inbound-media-unsupported";
 const INBOUND_ENQUEUED_KIND: &str = "telegram.inbound-enqueued";
+const OUTBOUND_GAVE_UP_KIND: &str = "telegram.outbound-gave-up";
+const LOOP_RESTARTED_KIND: &str = "telegram.loop-restarted";
+const LOOPS_SEAT: &str = "pij-telegram-loops";
 const CURSOR_SEAT: &str = "pij-telegram-cursor";
 const REFUSAL_KIND: &str = "telegram.inbound-refused";
 // Match the TS bridge's margin below Telegram's 4096-character hard cap.
 const TEXT_LIMIT: usize = 4000;
 const PREFIX_LIMIT: usize = 1024;
+
+/// First retry delay; it doubles per attempt (plan 183).
+pub const RETRY_BASE: Duration = Duration::from_secs(2);
+/// The longest backoff pij chooses itself; a 429's `retry_after` may be longer.
+pub const RETRY_CAP: Duration = Duration::from_secs(300);
+/// Attempts before a job fails terminally, so a stuck head holds its chat
+/// for a bounded time. pij's own waits are 2, 4, … 256, 300 s (about 13.5
+/// minutes); a `retry_after` up to [`RETRY_AFTER_CEILING`] per wait and an
+/// upload up to [`UPLOAD_TIMEOUT`] per attempt make the worst case for one
+/// job 9 h of waiting plus 100 min of uploading: about 10.7 hours.
+pub const MAX_ATTEMPTS: u32 = 10;
+/// The longest `retry_after` pij will honour. Longer, and the job fails now
+/// rather than being retried sooner than Telegram asked.
+pub const RETRY_AFTER_CEILING: Duration = Duration::from_secs(3600);
+/// Time to open a connection to the Bot API.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// `sendMessage` and `getUpdates` (a 1 s long poll): small bodies.
+pub const API_TIMEOUT: Duration = Duration::from_secs(30);
+/// One file upload. 50 MB at 1 Mbit/s takes 400 s; 600 s covers an uplink
+/// down to about 0.7 Mbit/s, and a stalled upload still ends as a retry.
+pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(600);
+/// How often the outbound loop sweeps failed jobs' staged copies.
+pub const SWEEP_EVERY: Duration = Duration::from_secs(6 * 3600);
+/// How long a failed job's staged copy is kept as evidence.
+pub const FAILED_COPY_RETENTION: Duration = Duration::from_secs(7 * 24 * 3600);
+/// First wait after a panicking pass; doubles per consecutive panic to a minute.
+pub const RESTART_BASE: Duration = Duration::from_secs(1);
+/// First wait after a failed `getUpdates`; doubles per consecutive failure.
+pub const INBOUND_RETRY_BASE: Duration = Duration::from_secs(1);
+/// Longest wait between failed `getUpdates` calls.
+pub const INBOUND_RETRY_CAP: Duration = Duration::from_secs(60);
+/// The staging directory's name under the sidecars' state directory.
+pub const ATTACHMENTS_DIR: &str = "telegram-attachments";
+
+/// Request timeouts, injectable so a stalled-upload test runs in milliseconds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Timeouts {
+    /// Connection establishment.
+    pub connect: Duration,
+    /// `sendMessage` and `getUpdates`.
+    pub api: Duration,
+    /// One file upload.
+    pub upload: Duration,
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Self {
+            connect: CONNECT_TIMEOUT,
+            api: API_TIMEOUT,
+            upload: UPLOAD_TIMEOUT,
+        }
+    }
+}
+
+/// When to try a failed job again, or `None` when it must fail now.
+///
+/// `attempt` counts earlier retries (the job's `attempt`). The wait is
+/// [`RETRY_BASE`] doubled per attempt up to [`RETRY_CAP`], or Telegram's
+/// `retry_after` when that is longer: never sooner than asked.
+pub fn retry_delay(attempt: u32, retry_after: Option<Duration>) -> Option<Duration> {
+    if attempt.saturating_add(1) >= MAX_ATTEMPTS {
+        return None;
+    }
+    if retry_after.is_some_and(|wait| wait > RETRY_AFTER_CEILING) {
+        return None;
+    }
+    let factor = 1_u32.checked_shl(attempt.min(31)).unwrap_or(u32::MAX);
+    let backoff = RETRY_BASE.saturating_mul(factor).min(RETRY_CAP);
+    Some(retry_after.map_or(backoff, |wait| wait.max(backoff)))
+}
 
 /// Validated Telegram credentials loaded from the legacy file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -281,8 +355,32 @@ pub struct TelegramWorker {
     spine: Arc<dyn Spine>,
     registry: Arc<dyn Registry>,
     client: reqwest::Client,
+    timeouts: Timeouts,
     config: TelegramConfig,
+    attachments: Option<PathBuf>,
+    /// Test hook: inbound passes left to panic (review N2's witness).
+    #[cfg(test)]
+    inbound_panics: std::sync::atomic::AtomicU32,
     _lock: BridgeLock,
+}
+
+/// The two running Telegram loops: outbound sends and inbound polling run
+/// apart, so a retrying or stalled upload never silences the operator.
+#[derive(Debug)]
+pub struct TelegramLoops {
+    outbound: LoopHandle,
+    inbound: LoopHandle,
+}
+
+impl TelegramLoops {
+    /// Stop both loops, THEN join their in-progress passes: an upload holding
+    /// the outbound pass never keeps inbound polling during shutdown.
+    pub async fn shutdown(self) {
+        let outbound = self.outbound.signal();
+        let inbound = self.inbound.signal();
+        let _ = outbound.await;
+        let _ = inbound.await;
+    }
 }
 
 impl TelegramWorker {
@@ -294,26 +392,200 @@ impl TelegramWorker {
         config: TelegramConfig,
         lock_path: PathBuf,
     ) -> Result<Self> {
+        let timeouts = Timeouts::default();
+        // Per-request timeouts sit on each request; the client bounds connect.
+        let client = reqwest::Client::builder()
+            .connect_timeout(timeouts.connect)
+            .build()
+            .map_err(http_error)?;
         Ok(Self {
             queue,
             spine,
             registry,
-            client: reqwest::Client::new(),
+            client,
+            timeouts,
             config,
+            attachments: None,
+            #[cfg(test)]
+            inbound_panics: std::sync::atomic::AtomicU32::new(0),
             _lock: BridgeLock::acquire(lock_path)?,
         })
     }
 
-    /// Start the shipped resilient loop. A failed pass is logged; later passes continue.
-    pub fn start(self: Arc<Self>, interval: Duration, limit: usize) -> Result<LoopHandle> {
-        start_resilient_loop("telegram", interval, move || {
-            let worker = Arc::clone(&self);
-            async move { worker.run_once(limit).await }
-        })
+    /// Sweep failed jobs' staged copies under `dir` (N2), from the outbound loop.
+    pub fn with_attachment_sweep(mut self, dir: PathBuf) -> Self {
+        self.attachments = Some(dir);
+        self
     }
 
-    /// Claim at most `limit` outbound rows, then poll inbound once.
+    /// Start the shipped loops: outbound and inbound, each resilient on its
+    /// own. A failed pass is logged; later passes continue.
+    pub fn start(self: Arc<Self>, interval: Duration, limit: usize) -> Result<TelegramLoops> {
+        let outbound = Arc::clone(&self);
+        // In-process and launch-free; first sweep on the first pass.
+        let swept = Arc::new(std::sync::Mutex::new(None::<std::time::Instant>));
+        let restarted = Arc::clone(&self);
+        let outbound = start_supervised_loop(
+            "telegram outbound",
+            interval,
+            RESTART_BASE,
+            move || {
+                let worker = Arc::clone(&outbound);
+                let swept = Arc::clone(&swept);
+                async move {
+                    let due = {
+                        let mut last = swept.lock().unwrap_or_else(|poison| poison.into_inner());
+                        let due = last.is_none_or(|at| at.elapsed() >= SWEEP_EVERY);
+                        if due {
+                            *last = Some(std::time::Instant::now());
+                        }
+                        due
+                    };
+                    if due {
+                        worker.sweep_attachments().await;
+                    }
+                    worker.run_outbound(limit).await
+                }
+            },
+            move |restart| {
+                let worker = Arc::clone(&restarted);
+                async move { worker.record_restart(restart).await }
+            },
+        )?;
+        // While getUpdates fails, wait INBOUND_RETRY_BASE doubling to
+        // INBOUND_RETRY_CAP between calls instead of failing every tick.
+        let retry = Arc::new(std::sync::Mutex::new((0_u32, None::<std::time::Instant>)));
+        let restarted = Arc::clone(&self);
+        let inbound = start_supervised_loop(
+            "telegram inbound",
+            interval,
+            RESTART_BASE,
+            move || {
+                let worker = Arc::clone(&self);
+                let retry = Arc::clone(&retry);
+                async move {
+                    #[cfg(test)]
+                    if worker
+                        .inbound_panics
+                        .fetch_update(
+                            std::sync::atomic::Ordering::SeqCst,
+                            std::sync::atomic::Ordering::SeqCst,
+                            |left| left.checked_sub(1),
+                        )
+                        .is_ok()
+                    {
+                        panic!("injected inbound panic");
+                    }
+                    let waiting = retry
+                        .lock()
+                        .unwrap_or_else(|poison| poison.into_inner())
+                        .1
+                        .is_some_and(|at| std::time::Instant::now() < at);
+                    if waiting {
+                        return Ok(Processed::default());
+                    }
+                    let polled = worker.poll_inbound().await;
+                    let mut retry = retry.lock().unwrap_or_else(|poison| poison.into_inner());
+                    match polled {
+                        Ok(()) => {
+                            *retry = (0, None);
+                            Ok(Processed::default())
+                        }
+                        Err(error) => {
+                            retry.0 = retry.0.saturating_add(1);
+                            let factor = 1_u32.checked_shl(retry.0 - 1).unwrap_or(u32::MAX);
+                            let wait = INBOUND_RETRY_BASE
+                                .saturating_mul(factor)
+                                .min(INBOUND_RETRY_CAP);
+                            retry.1 = Some(std::time::Instant::now() + wait);
+                            Err(error)
+                        }
+                    }
+                }
+            },
+            move |restart| {
+                let worker = Arc::clone(&restarted);
+                async move { worker.record_restart(restart).await }
+            },
+        )?;
+        Ok(TelegramLoops { outbound, inbound })
+    }
+
+    /// A pass panicked and its loop restarts: say so on the spine, so a
+    /// silent inbound (the operator's control channel) is never invisible.
+    async fn record_restart(&self, restart: Restart) {
+        let detail = serde_json::json!({
+            "loop": restart.name,
+            "reason": restart.reason,
+            "restarts": restart.restarts,
+            "backoff_ms": u64::try_from(restart.backoff.as_millis()).unwrap_or(u64::MAX),
+        });
+        let recorded = async {
+            self.spine
+                .append(Event {
+                    seq: None,
+                    v: 1,
+                    at: now_ms()?,
+                    kind: LOOP_RESTARTED_KIND.to_string(),
+                    seat: Some(SeatId::from(LOOPS_SEAT)),
+                    payload: detail.to_string(),
+                })
+                .await
+        }
+        .await;
+        if let Err(error) = recorded {
+            eprintln!("pij-rs telegram: could not record loop restart {detail}: {error}");
+        }
+    }
+
+    /// Remove failed jobs' staged copies older than [`FAILED_COPY_RETENTION`].
+    async fn sweep_attachments(&self) {
+        let Some(dir) = self.attachments.clone() else {
+            return;
+        };
+        // The brake: one queue read. Unreadable means keep everything.
+        let live = match LiveCopies::read(self.queue.as_ref()).await {
+            Ok(live) => live,
+            Err(error) => {
+                eprintln!("pij-rs telegram: staged-copy sweep skipped, live jobs unknown: {error}");
+                return;
+            }
+        };
+        let swept = tokio::task::spawn_blocking(move || {
+            document::sweep_staged(
+                &dir,
+                std::time::SystemTime::now(),
+                FAILED_COPY_RETENTION,
+                &live,
+            )
+        })
+        .await;
+        match swept {
+            Ok(Ok(0)) => {}
+            Ok(Ok(removed)) => {
+                eprintln!("pij-rs telegram: removed {removed} staged copies past retention");
+            }
+            Ok(Err(error)) => eprintln!("pij-rs telegram: staged-copy sweep failed: {error}"),
+            Err(error) => eprintln!("pij-rs telegram: staged-copy sweep task failed: {error}"),
+        }
+    }
+
+    /// One outbound pass, then one inbound poll whatever the outbound pass did.
     pub async fn run_once(&self, limit: usize) -> Result<Processed> {
+        let outbound = self.run_outbound(limit).await;
+        let inbound = self.poll_inbound().await;
+        match (outbound, inbound) {
+            (Ok(processed), Ok(())) => Ok(processed),
+            (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+            (Err(error), Err(inbound)) => {
+                eprintln!("pij-rs telegram: {inbound}");
+                Err(error)
+            }
+        }
+    }
+
+    /// Claim at most `limit` outbound rows. A retry stops the pass.
+    pub async fn run_outbound(&self, limit: usize) -> Result<Processed> {
         let mut count = 0;
         while count < limit {
             let Some((id, job)) = self
@@ -336,9 +608,12 @@ impl TelegramWorker {
             };
             match outcome {
                 SendOutcome::Done => self.queue.ack(id, Outcome::Done).await?,
-                SendOutcome::Retry(error) => {
-                    self.queue.retry(id, Duration::from_millis(100)).await?;
-                    return Err(error);
+                SendOutcome::Retry(error, retry_after) => {
+                    if let Some(delay) = retry_delay(job.attempt, retry_after) {
+                        self.queue.retry(id, delay).await?;
+                        return Err(error);
+                    }
+                    self.give_up(id, &job, retry_after, error).await?;
                 }
                 SendOutcome::Terminal(error) => {
                     self.queue
@@ -354,8 +629,68 @@ impl TelegramWorker {
             }
             count += 1;
         }
-        self.poll_inbound().await?;
         Ok(Processed { count })
+    }
+
+    /// Fail a job that ran out of attempts, or was told to wait past
+    /// [`RETRY_AFTER_CEILING`], and say so on the spine.
+    async fn give_up(
+        &self,
+        id: pij_core::model::JobId,
+        job: &Job,
+        retry_after: Option<Duration>,
+        error: PijError,
+    ) -> Result<()> {
+        let attempts = u64::from(job.attempt) + 1;
+        let why = match retry_after {
+            Some(wait) if wait > RETRY_AFTER_CEILING => format!(
+                "Telegram asked to wait {} s, past pij's {} s ceiling",
+                wait.as_secs(),
+                RETRY_AFTER_CEILING.as_secs()
+            ),
+            _ => format!("gave up after {attempts} attempts"),
+        };
+        let reason = format!("{why}; last failure: {error}");
+        let request: serde_json::Value = serde_json::from_str(&job.payload).unwrap_or_default();
+        let chat_id = request["chat_id"]
+            .as_str()
+            .unwrap_or(&self.config.chat_id)
+            .to_string();
+        let mut detail = serde_json::json!({
+            "conversation": chat_id,
+            "from": request["from"],
+            "msg_id": request["msg_id"],
+            "kind": job.kind,
+            "attempts": attempts,
+            "retry_after_s": retry_after.map(|wait| wait.as_secs()),
+            "reason": reason,
+        });
+        let recorded = async {
+            self.spine
+                .append(Event {
+                    seq: None,
+                    v: 1,
+                    at: now_ms()?,
+                    kind: OUTBOUND_GAVE_UP_KIND.to_string(),
+                    seat: Some(conversation_seat(&chat_id)),
+                    payload: detail.to_string(),
+                })
+                .await
+        }
+        .await;
+        if let Err(error) = recorded {
+            detail["persistence_error"] = serde_json::json!(error.to_string());
+        }
+        self.queue
+            .ack(
+                id,
+                Outcome::Failed {
+                    reason: reason.clone(),
+                },
+            )
+            .await?;
+        eprintln!("pij-rs telegram: {detail}");
+        Ok(())
     }
 
     async fn process_send(&self, job: &Job) -> SendOutcome {
@@ -384,7 +719,7 @@ impl TelegramWorker {
         }
         let sender = match self.registry.get(&request.from).await {
             Ok(sender) => sender,
-            Err(error) => return SendOutcome::Retry(error),
+            Err(error) => return SendOutcome::Retry(error, None),
         };
         // TS resolveRepositoryContext consulted git for repository/worktree identity.
         // The recorded folder's basename is enough to orient the operator here,
@@ -403,19 +738,24 @@ impl TelegramWorker {
         );
         for (index, text) in parts.iter().enumerate() {
             let mut status = None;
+            let mut retry_after = None;
             let result = async {
                 let response = self
                     .client
                     .post(&url)
+                    .timeout(self.timeouts.api)
                     .json(&serde_json::json!({"chat_id": chat_id, "text": text}))
                     .send()
                     .await
                     .map_err(http_error)?;
                 status = Some(response.status().as_u16());
                 if !response.status().is_success() {
+                    let code = response.status();
+                    let reply: Option<ApiReply> = response.json().await.ok();
+                    retry_after = reply.as_ref().and_then(ApiReply::retry_after);
                     return Err(PijError::Adapter {
                         adapter: "sidecars/telegram".to_string(),
-                        message: format!("sendMessage returned HTTP {}", response.status()),
+                        message: format!("sendMessage returned HTTP {code}"),
                     });
                 }
                 let response: SendResponse = response.json().await.map_err(http_error)?;
@@ -437,6 +777,7 @@ impl TelegramWorker {
                     "part": index + 1,
                     "parts": parts.len(),
                     "http_status": status,
+                    "retry_after_s": retry_after.map(|wait: Duration| wait.as_secs()),
                     "reason": error.to_string(),
                 });
                 let recorded = async {
@@ -458,10 +799,13 @@ impl TelegramWorker {
                 // AC5a preserves whole-job retries, including already sent parts.
                 // The failed attempt/part is durable; transport errors have no
                 // HTTP status and http_error removes the credential-bearing URL.
-                return SendOutcome::Retry(PijError::Adapter {
-                    adapter: "sidecars/telegram".to_string(),
-                    message: detail.to_string(),
-                });
+                return SendOutcome::Retry(
+                    PijError::Adapter {
+                        adapter: "sidecars/telegram".to_string(),
+                        message: detail.to_string(),
+                    },
+                    retry_after,
+                );
             }
         }
         self.bind_reply(&chat_id, request.from, request.msg_id)
@@ -546,7 +890,7 @@ impl TelegramWorker {
         }
         let sender = match self.registry.get(&request.from).await {
             Ok(sender) => sender,
-            Err(error) => return SendOutcome::Retry(error),
+            Err(error) => return SendOutcome::Retry(error, None),
         };
         let context = sender
             .as_ref()
@@ -579,6 +923,7 @@ impl TelegramWorker {
             let response = match self
                 .client
                 .post(&url)
+                .timeout(self.timeouts.upload)
                 .header(reqwest::header::CONTENT_TYPE, content_type)
                 .body(body)
                 .send()
@@ -594,12 +939,15 @@ impl TelegramWorker {
                 }
             };
             let status = response.status();
+            // The body is part of the upload's time: a reply that never ends
+            // is a stall, bounded by the same request timeout.
             let reply: Option<ApiReply> = response.json().await.ok();
             if status.is_success() && reply.as_ref().is_some_and(|reply| reply.ok) {
                 break reply
                     .and_then(|reply| reply.result)
                     .map(|message| message.message_id);
             }
+            let retry_after = reply.as_ref().and_then(ApiReply::retry_after);
             let description = reply
                 .and_then(|reply| reply.description)
                 .unwrap_or_else(|| "no description".to_string());
@@ -617,12 +965,9 @@ impl TelegramWorker {
                 continue;
             }
             let retryable = status.is_server_error() || status.as_u16() == 429;
-            return self
-                .document_failure(
-                    &chat_id,
-                    fail(method, Some(status.as_u16()), !retryable, reason),
-                )
-                .await;
+            let mut detail = fail(method, Some(status.as_u16()), !retryable, reason);
+            detail["retry_after_s"] = serde_json::json!(retry_after.map(|wait| wait.as_secs()));
+            return self.document_failure(&chat_id, detail).await;
         };
         drop(bytes);
         self.record_media_delivered(&chat_id, &request, method, telegram_message_id)
@@ -646,6 +991,7 @@ impl TelegramWorker {
     async fn document_failure(&self, chat_id: &str, mut detail: serde_json::Value) -> SendOutcome {
         self.record_document_failure(chat_id, &mut detail).await;
         let terminal = detail["terminal"].as_bool().unwrap_or(true);
+        let retry_after = detail["retry_after_s"].as_u64().map(Duration::from_secs);
         let error = PijError::Adapter {
             adapter: "sidecars/telegram".to_string(),
             message: detail.to_string(),
@@ -653,7 +999,7 @@ impl TelegramWorker {
         if terminal {
             SendOutcome::Terminal(error)
         } else {
-            SendOutcome::Retry(error)
+            SendOutcome::Retry(error, retry_after)
         }
     }
 
@@ -760,6 +1106,7 @@ impl TelegramWorker {
                 self.config.api_root, self.config.token
             ))
             .query(&[("timeout", "1"), ("offset", &offset.to_string())])
+            .timeout(self.timeouts.api)
             .send()
             .await
             .map_err(http_error)?;
@@ -1007,7 +1354,8 @@ struct Cursor {
 
 enum SendOutcome {
     Done,
-    Retry(PijError),
+    /// Try again; Telegram's `retry_after`, when it gave one.
+    Retry(PijError, Option<Duration>),
     Terminal(PijError),
 }
 
@@ -1023,6 +1371,25 @@ struct ApiReply {
     description: Option<String>,
     #[serde(default)]
     result: Option<ApiMessage>,
+    #[serde(default)]
+    parameters: Option<ResponseParameters>,
+}
+
+impl ApiReply {
+    /// A 429's `parameters.retry_after`, in seconds.
+    fn retry_after(&self) -> Option<Duration> {
+        self.parameters
+            .as_ref()?
+            .retry_after
+            .map(Duration::from_secs)
+    }
+}
+
+/// Bot API `ResponseParameters`: the part pij reads.
+#[derive(Deserialize)]
+struct ResponseParameters {
+    #[serde(default)]
+    retry_after: Option<u64>,
 }
 
 /// The part of a sent `Message` pij records: Telegram's own id for it.
@@ -1149,6 +1516,10 @@ mod outbound_tests;
 #[cfg(test)]
 #[path = "telegram_inbound_tests.rs"]
 mod inbound_tests;
+
+#[cfg(test)]
+#[path = "telegram_retry_tests.rs"]
+mod retry_tests;
 
 #[cfg(test)]
 mod tests {

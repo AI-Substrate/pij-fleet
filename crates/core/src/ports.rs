@@ -367,12 +367,62 @@ pub struct ExtensionClaim {
     pub events: Vec<Event>,
 }
 
+/// One row of a queued [`Queue::enqueue_all`] batch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Enqueued {
+    /// The live row's id: new, or the one this job collapsed onto.
+    pub id: JobId,
+    /// True when this job made a new row; false when it collapsed onto a live
+    /// row carrying the same payload.
+    pub fresh: bool,
+}
+
+/// The answer to [`Queue::enqueue_all`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BatchEnqueue {
+    /// Every job queued, or collapsed onto a live row with the same payload.
+    Queued(Vec<Enqueued>),
+    /// Job `index` reuses the key of live row `id`, whose payload differs.
+    /// Nothing from the batch was queued.
+    Conflict {
+        /// Position of the colliding job in the batch.
+        index: usize,
+        /// The live row it collided with.
+        id: JobId,
+        /// What that live row will actually run.
+        live_payload: String,
+    },
+}
+
 /// The job queue every delivery and sidecar rides on (R4).
 #[async_trait]
 pub trait Queue: Send + Sync {
     /// Enqueue, collapsing onto any LIVE job with the same `dedupe_key` — N
     /// rapid submits become one row, and the returned id is that row's.
     async fn enqueue(&self, job: Job) -> Result<JobId>;
+
+    /// Enqueue `jobs` in order, all or nothing (plan 183 N1/N3).
+    ///
+    /// A job whose key is live collapses onto that row, as [`Queue::enqueue`]
+    /// does, only when the live row carries the same payload; a differing
+    /// payload is a [`BatchEnqueue::Conflict`] and nothing from the batch is
+    /// queued, so a producer never answers with a receipt for bytes that will
+    /// not be sent. Production stores make the batch ONE transaction: an error
+    /// part-way leaves nothing from it queued.
+    ///
+    /// This default exists only so test wrapper queues compile. It is NOT
+    /// atomic and detects no conflict: it enqueues one job at a time and
+    /// reports every row as fresh.
+    async fn enqueue_all(&self, jobs: Vec<Job>) -> Result<BatchEnqueue> {
+        let mut queued = Vec::with_capacity(jobs.len());
+        for job in jobs {
+            queued.push(Enqueued {
+                id: self.enqueue(job).await?,
+                fresh: true,
+            });
+        }
+        Ok(BatchEnqueue::Queued(queued))
+    }
 
     /// Enqueue one destination delivery unless its durable delivered-id record exists.
     ///
@@ -419,6 +469,20 @@ pub trait Queue: Send + Sync {
         evidence: &ParkingEvidence<'_>,
         spine: &dyn Spine,
     ) -> Result<(Option<Job>, Vec<Event>)>;
+
+    /// The payload of every pending or running job of any of `kinds`: one
+    /// read, so a caller deleting something a job needs can first ask which
+    /// live jobs need it (plan 183 review B1/S1).
+    ///
+    /// This default REFUSES rather than answering "none": a wrapper that has
+    /// not implemented it must make its caller keep everything, never delete.
+    async fn live_payloads(&self, kinds: &[String]) -> Result<Vec<String>> {
+        let _ = kinds;
+        Err(crate::error::PijError::Adapter {
+            adapter: "queue".to_string(),
+            message: "this queue cannot list live payloads".to_string(),
+        })
+    }
 
     /// Inspect the oldest live job of any of `kinds` without claiming or
     /// otherwise mutating it. Pending and already-claimed rows remain visible;

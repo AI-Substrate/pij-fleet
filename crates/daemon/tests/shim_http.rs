@@ -1164,3 +1164,246 @@ async fn telegram_attachment_misuse_refuses_by_name() {
     server.abort();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Every live job, oldest first: `(kind, dedupe_key, payload)`.
+async fn queued_jobs(store: &FreshStore) -> Vec<(String, String, String)> {
+    let pool = pij_store::open(&store.path()).await.expect("open store");
+    sqlx::query_as(
+        "SELECT kind, dedupe_key, payload FROM jobs \
+         WHERE state IN ('pending', 'running') ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("jobs")
+}
+
+async fn sidecar_document(
+    addr: SocketAddr,
+    files: &[&std::path::Path],
+    body: Option<&str>,
+    msg_id: &str,
+) -> (reqwest::StatusCode, Envelope<serde_json::Value>) {
+    let response = post(
+        addr,
+        "/v1/sidecar",
+        serde_json::json!({
+            "sidecar": "telegram_document",
+            "request": {"from": SENDER, "files": files, "body": body, "msg_id": msg_id},
+        }),
+    )
+    .await;
+    (response.status(), response.json().await.expect("envelope"))
+}
+
+/// Plan 183 S2: the producer's body + files path, hermetically (no tmux):
+/// the body is queued first, then each file with its own `#n` id.
+#[tokio::test]
+async fn the_producer_queues_the_body_then_each_file_in_order() {
+    let (addr, server, store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-body-files");
+    let first = dir.join("a.html");
+    let second = dir.join("b.png");
+    std::fs::write(&first, b"<p>a</p>").expect("a");
+    std::fs::write(&second, b"not really a png").expect("b");
+
+    let (status, envelope) =
+        sidecar_document(addr, &[&first, &second], Some("two files"), "doc-s2").await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{envelope:?}");
+    let data = envelope.data.expect("queued");
+    let files = data["files"].as_array().expect("files");
+    assert_eq!(files[0]["msg_id"], "doc-s2#1");
+    assert_eq!(files[1]["msg_id"], "doc-s2#2");
+    assert!(
+        data["body_job_id"].as_u64() < files[0]["job_id"].as_u64()
+            && files[0]["job_id"].as_u64() < files[1]["job_id"].as_u64(),
+        "{data}"
+    );
+
+    let jobs = queued_jobs(&store).await;
+    let keys: Vec<_> = jobs
+        .iter()
+        .map(|(kind, key, _)| (kind.as_str(), key.as_str()))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            ("sidecar:telegram:send", "doc-s2"),
+            ("sidecar:telegram:document", "doc-s2#1"),
+            ("sidecar:telegram:document", "doc-s2#2"),
+        ],
+        "body first, then the files in order"
+    );
+    let body: serde_json::Value = serde_json::from_str(&jobs[0].2).expect("body payload");
+    assert_eq!(body["body"], "two files", "the body is queued, not dropped");
+
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Plan 183 N1: a msg_id that is still queued with other bytes is refused by
+/// name and leaves no orphan copy; the identical request answers with the
+/// live rows.
+#[tokio::test]
+async fn a_reused_msg_id_with_other_content_is_refused_and_leaves_no_copy() {
+    let (addr, server, store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-reused-msg-id");
+    let file = dir.join("report.html");
+    std::fs::write(&file, b"<p>first</p>").expect("first");
+
+    let (status, first) = sidecar_document(addr, &[&file], None, "doc-n1").await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{first:?}");
+    let first = first.data.expect("queued");
+    let staged = std::path::PathBuf::from(
+        first["files"][0]["document"]["staged"]
+            .as_str()
+            .expect("staged"),
+    );
+    let staging = staged.parent().expect("staging dir").to_path_buf();
+
+    let (status, again) = sidecar_document(addr, &[&file], None, "doc-n1").await;
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "identical resend: {again:?}"
+    );
+    let again = again.data.expect("same rows");
+    assert_eq!(again["files"][0]["job_id"], first["files"][0]["job_id"]);
+    assert!(staged.exists(), "the live job's copy is untouched");
+
+    std::fs::write(&file, b"<p>different bytes</p>").expect("edit");
+    let (status, refused) = sidecar_document(addr, &[&file], None, "doc-n1").await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST, "{refused:?}");
+    let meta = refused.meta.unwrap_or_default();
+    assert!(
+        meta.contains("doc-n1") && meta.contains("different content"),
+        "{meta}"
+    );
+    assert!(staged.exists(), "the live job still has its copy");
+    let copies: Vec<_> = std::fs::read_dir(&staging)
+        .expect("staging")
+        .map(|entry| entry.expect("entry").path())
+        .collect();
+    assert_eq!(
+        copies,
+        std::slice::from_ref(&staged),
+        "no orphan copy of the refused bytes"
+    );
+    let jobs = queued_jobs(&store).await;
+    assert_eq!(jobs.len(), 1, "nothing new queued");
+    assert!(
+        jobs[0].2.contains(
+            &first["files"][0]["document"]["sha256"]
+                .as_str()
+                .expect("sha")
+                .to_string()
+        )
+    );
+
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Plan 183 N4: the shim names a symlinked `--file` by the link, as the CLI
+/// now does (`a_symlinked_attachment_keeps_the_typed_name`).
+#[tokio::test]
+async fn a_symlinked_attachment_is_named_by_the_link_from_the_shim() {
+    let (addr, server, _store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-attachment-link");
+    let target = dir.join("target.html");
+    std::fs::write(&target, b"<p>linked</p>").expect("target");
+    let link = dir.join("link.html");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+    let response = post(
+        addr,
+        "/v1/shim/send",
+        serde_json::json!({
+            "argv": ["send", "pij-telegram", "--file", link.display().to_string()],
+            "caller": { "tmuxPane": PANE },
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let payload: Envelope<serde_json::Value> = response.json().await.expect("envelope");
+    let data = payload.data.expect("receipt");
+    assert_eq!(data["document"]["file_name"], "link.html", "{data}");
+    assert_eq!(data["document"]["size"], 13);
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Plan 183 review B1 (probe 1): a conflict on a LATER file must not delete the
+/// copy an EARLIER live row of the same msg_id still sends.
+#[tokio::test]
+async fn a_conflict_on_a_later_file_keeps_every_live_copy() {
+    let (addr, server, _store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-b1-conflict");
+    let [a, b, c] = ["a.html", "b.html", "c.html"].map(|name| {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("<p>{name}</p>")).expect("source");
+        path
+    });
+    let (status, first) = sidecar_document(addr, &[&a, &b], None, "doc-b1").await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{first:?}");
+    let first = first.data.expect("queued");
+    let staged = |i: usize| {
+        std::path::PathBuf::from(
+            first["files"][i]["document"]["staged"]
+                .as_str()
+                .expect("staged"),
+        )
+    };
+    let (live_a, live_b) = (staged(0), staged(1));
+    let staging = live_a.parent().expect("staging").to_path_buf();
+
+    let (status, refused) = sidecar_document(addr, &[&a, &c], None, "doc-b1").await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST, "{refused:?}");
+    assert!(
+        refused.meta.unwrap_or_default().contains("doc-b1#2"),
+        "the conflicting row is named"
+    );
+    assert!(live_a.exists(), "live doc-b1#1 lost its staged copy");
+    assert!(live_b.exists(), "live doc-b1#2 lost its staged copy");
+    let mut copies: Vec<_> = std::fs::read_dir(&staging)
+        .expect("staging")
+        .map(|entry| entry.expect("entry").path())
+        .collect();
+    copies.sort();
+    let mut live = vec![live_a, live_b];
+    live.sort();
+    assert_eq!(
+        copies, live,
+        "only the live copies remain: c's copy was released"
+    );
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Plan 183 review B1 (probe 2): a staging refusal on a later file must not
+/// delete a live row's copy that an earlier file of the request shares.
+#[tokio::test]
+async fn a_staging_refusal_keeps_every_live_copy() {
+    let (addr, server, _store) = daemon().await;
+    let dir = pij_testkit::fresh_dir("pij-shim-b1-refusal");
+    let a = dir.join("a.html");
+    let b = dir.join("b.html");
+    std::fs::write(&a, b"<p>a</p>").expect("a");
+    std::fs::write(&b, b"<p>b</p>").expect("b");
+    let (status, first) = sidecar_document(addr, &[&a, &b], None, "doc-b1r").await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{first:?}");
+    let first = first.data.expect("queued");
+    let live_a = std::path::PathBuf::from(
+        first["files"][0]["document"]["staged"]
+            .as_str()
+            .expect("staged"),
+    );
+    let missing = dir.join("missing.html");
+    let (status, refused) = sidecar_document(addr, &[&a, &missing], None, "doc-b1r").await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST, "{refused:?}");
+    assert!(
+        refused.meta.unwrap_or_default().contains("cannot be read"),
+        "refused for the missing file"
+    );
+    assert!(live_a.exists(), "live doc-b1r#1 lost its staged copy");
+    server.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}

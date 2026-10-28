@@ -2156,11 +2156,18 @@ async fn resolve_command_seat(
 
 /// An absolute, existing path for `--file`; a missing file fails here, loudly,
 /// before anything reaches the daemon.
+///
+/// Absolute, NOT canonical: a symlink keeps the name that was typed, exactly
+/// as the shim's `pij send pij-telegram --file` names it (plan 183 N4). The
+/// daemon still reads the bytes through the link.
 fn resolve_attachment(path: &Path) -> Result<PathBuf, PijError> {
-    std::fs::canonicalize(path).map_err(|error| PijError::Adapter {
+    let unreadable = |error: std::io::Error| PijError::Adapter {
         adapter: "pij sidecar telegram".to_string(),
         message: format!("could not read --file `{}`: {error}", path.display()),
-    })
+    };
+    let absolute = std::path::absolute(path).map_err(unreadable)?;
+    std::fs::metadata(&absolute).map_err(unreadable)?;
+    Ok(absolute)
 }
 
 fn resolve_send_body(body: Option<String>, body_file: Option<String>) -> Result<String, PijError> {
@@ -3538,6 +3545,24 @@ mod tests {
             error.kind(),
             clap::error::ErrorKind::MissingRequiredArgument
         );
+    }
+
+    /// Plan 183 N4: a symlinked `--file` is sent under the link's name, as
+    /// the shim sends it, not under its target's.
+    #[test]
+    fn a_symlinked_attachment_keeps_the_typed_name() {
+        let dir = pij_testkit::fresh_dir("pij-cli-attachment-link");
+        let target = dir.join("target.html");
+        std::fs::write(&target, b"x").expect("target");
+        let link = dir.join("link.html");
+        std::os::unix::fs::symlink(&target, &link).expect("symlink");
+        let resolved = super::resolve_attachment(&link).expect("readable link");
+        assert_eq!(resolved, link, "absolute as typed, symlink not resolved");
+        assert_eq!(
+            resolved.file_name().and_then(|name| name.to_str()),
+            Some("link.html")
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
