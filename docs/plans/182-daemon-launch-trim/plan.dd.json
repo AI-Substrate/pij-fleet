@@ -1,0 +1,93 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Daemon launches: in-process liveness, resolve git and tmux once",
+        "slug": "daemon-launch-trim",
+        "ordinal": 182,
+        "status": "ready",
+        "summary": "pij-fleet#74: read process start times in-process instead of /bin/ps (the daemon's last ~13 launches/s), and resolve git/tmux through PATH once per daemon.",
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "mode": "Full",
+        "log": "assets/execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "After plan 180 (#73, live 2026-10-28) the machine daemon still launches ~13 processes/s, essentially all `ps.proc-liveness`: `ProcLiveness::proc_start` runs `/bin/ps -o lstart= -p PID` for every liveness check (the 5 s death sweep over every live seat, plus whoami/request paths). Defender's EDR inspects every launch. pij-fleet#74 (Vaughan) proposes: (1) read the start time in-process; the workspace forbids unsafe_code, so macOS needs a vetted dependency and an ADR; (2) resolve `git` and `tmux` through PATH once per daemon instead of a posix_spawnp PATH search per launch (12 kernel-process misses each on a 32-entry PATH). Semantics must not change: no TTL or cache of liveness (plan 180 R8 rejected one). Rulings: assets/rulings.md."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "`ps.proc-liveness` is 0 in `pij-rs ping`, with identical liveness answers.",
+        "git and tmux launches no longer search PATH each time.",
+        "Any new dependency is chosen on the record (ADR)."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Caching liveness answers or adding a TTL.",
+        "Changing the death sweep's cadence or the reaper's rules.",
+        "Other launch sites (they are rare; name any you find for a follow-up)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "In-process liveness. `ProcLiveness::proc_start` (crates/harnesses/src/proc.rs) reads a process's start time with no process launch, on macOS (sysctl KERN_PROC_PID / kinfo_proc p_starttime, or proc_pidinfo) and Linux (/proc/<pid>/stat field 22 plus btime, std only). Every caller gets the same answer it got from `/bin/ps -o lstart=`: parity tests for this process, a child, a dead PID and a PID whose start time differs (the recycled-PID case), at the precision the comparison uses. No TTL, no cache (R1).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Dependency on the record. If macOS needs a crate (unsafe_code stays forbidden in the workspace), docs/adr/ gets an ADR comparing at least two candidates and the std-only alternatives: licence, maintenance and download history, transitive dependencies, build scripts, unsafe surface, and a release at least 7 days old (R2). The chosen crate is pinned, added to crates/testkit/arch-allowlist.toml, and the lockfile and audit gates pass. Linux uses std only.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Resolve git and tmux once. The daemon resolves `git` and `tmux` through its PATH on first use and launches the resolved absolute path afterwards. Only a found path is kept, never a miss, so a tool installed after boot is found. The first PATH match still wins (a decoy-on-PATH test, as in crates/harnesses/tests/path_search.rs). `crates/testkit/tests/spawn_sites.rs` is extended so a bare `git`/`tmux` launch in the daemon crates fails.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Cost (AGENTS.md \u00a7 Resource cost). Steady state: the death sweep and request paths launch nothing for liveness. Live before/after receipts: two `pij-rs --json ping | jq .data.spawns` readings 20 s apart and `just spawn-rate --seconds 20`, before on main and after on the branch build where possible; the prime takes the deployed after-reading. `ps.proc-liveness` goes to 0, and no new per-tick launch appears.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Docs. docs/how/macos-defender.md \u00a7 What pij does about launches describes in-process liveness and resolve-once, with the new numbers; the ADR is linked.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Proof. Every behaviour change has a test RED on main fd7d3bb (quoted) and green on the branch. Mutants: liveness falls back to /bin/ps; a miss gets cached; PATH order ignored. Each turns its test red, then is restored. Scoped cargo tests, `just rust-check`, clippy -D warnings, fmt; GitHub CI green on the exact head. Anything not run is NOT RUN with its reason.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-62c6",
+          "title": "Trim the daemon's remaining launches",
+          "brief": "One phase: before-readings, ADR, in-process liveness, resolve-once, spawn_sites, docs, mutants, PR. CS 3.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    }
+  ]
+}

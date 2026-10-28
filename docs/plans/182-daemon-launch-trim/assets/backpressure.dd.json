@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 182 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: liveness parity, dependency, resolve-once",
+          "phase": "ph-62c6",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND\u2192RUN: proc.rs tests, path_search.rs, spawn_sites.rs; cargo test -p pij-harnesses -p pij-testkit -p pij-daemon <filters>",
+          "state": "unchecked",
+          "probe": "crates/harnesses/src/proc.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4-AC5: live launch cost and docs",
+          "phase": "ph-62c6",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "RUN: pij-rs --json ping spawns + just spawn-rate before/after; prime reads the docs.",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC6: proof, mutants and CI",
+          "phase": "ph-62c6",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutant receipts; rust-check; GitHub CI on the exact head.",
+          "state": "unchecked",
+          "probe": ".github/workflows"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
