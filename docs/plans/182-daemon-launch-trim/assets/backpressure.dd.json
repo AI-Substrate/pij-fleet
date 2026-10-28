@@ -20,9 +20,10 @@
           "phase": "ph-62c6",
           "mode": "EXTEND",
           "tier": "computational",
-          "proof": "EXTEND\u2192RUN: proc.rs tests, path_search.rs, spawn_sites.rs; cargo test -p pij-harnesses -p pij-testkit -p pij-daemon <filters>",
-          "state": "unchecked",
-          "probe": "crates/harnesses/src/proc.rs"
+          "proof": "EXTEND→RUN: proc.rs tests, path_search.rs, spawn_sites.rs; cargo test -p pij-harnesses -p pij-testkit -p pij-daemon <filters>",
+          "state": "checked",
+          "probe": "crates/harnesses/src/proc.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0010"
         },
         {
           "id": "bp-0002",
@@ -32,7 +33,8 @@
           "tier": "computational",
           "proof": "RUN: pij-rs --json ping spawns + just spawn-rate before/after; prime reads the docs.",
           "state": "unchecked",
-          "probe": "pij-rs --json ping"
+          "probe": "pij-rs --json ping",
+          "note": "AC5 docs done (lg-0006); AC4 before-reading lg-0001; deployed after-reading is the prime's."
         },
         {
           "id": "bp-0003",
@@ -41,8 +43,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Mutant receipts; rust-check; GitHub CI on the exact head.",
-          "state": "unchecked",
-          "probe": ".github/workflows"
+          "state": "checked",
+          "probe": ".github/workflows",
+          "receipt": "execution-log.dd.json#entries/lg-0010"
         }
       ]
     },

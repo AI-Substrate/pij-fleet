@@ -78,8 +78,10 @@
         {
           "id": "ac-0006",
           "claim": "Proof. Every behaviour change has a test RED on main fd7d3bb (quoted) and green on the branch. Mutants: liveness falls back to /bin/ps; a miss gets cached; PATH order ignored. Each turns its test red, then is restored. Scoped cargo tests, `just rust-check`, clippy -D warnings, fmt; GitHub CI green on the exact head. Anything not run is NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0010",
+          "note": "Red on main lg-0003; mutants lg-0007; local gates lg-0008; CI lg-0010."
         }
       ]
     },

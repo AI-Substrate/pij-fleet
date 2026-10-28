@@ -37,9 +37,9 @@ One coder implements impl-guide tk-0001: before-readings, the ADR, in-process li
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | tk-0001 | Before-readings and ADR | — | ph-62c6 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0002 | Red tests on fd7d3bb | — | ph-62c6 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | In-process liveness | — | ph-62c6 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | In-process liveness | — | ph-62c6 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0010 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | Resolve git and tmux once | — | ph-62c6 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0005 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | Docs, mutants, PR, CI | — | ph-62c6 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Docs, mutants, PR, CI | — | ph-62c6 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0010 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -61,7 +61,7 @@ One coder implements impl-guide tk-0001: before-readings, the ADR, in-process li
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | Parity tests green on macOS and Linux; no launch | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | Parity tests green on macOS and Linux; no launch | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 
@@ -73,4 +73,4 @@ One coder implements impl-guide tk-0001: before-readings, the ADR, in-process li
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0005 | Docs updated; mutant receipts; CI green on the exact head | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0005 | Docs updated; mutant receipts; CI green on the exact head | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |

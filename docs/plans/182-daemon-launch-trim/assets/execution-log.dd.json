@@ -84,6 +84,15 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0004"
           ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-28T08:58:00Z",
+          "text": "GitHub CI run 40660147860 on the exact head 64b521074ce1a4e7d0eafd8118881e3da1759a42: rust-lint, rust-test, check (22) and check (24) all success. nextest ran 1682 tests: 1682 passed, 4 skipped (none of them this plan's). The JUnit artifact (junit-linux) shows each new test PASS on Linux: liveness_parity (3, including parity_holds_in_other_timezones), liveness_launches, proc unit tests (a_live_process, linux_start, local_lstart DST), core program:: (5), tmux resolve_once, spawn_sites git_or_tmux, arch_drift (6), path_search liveness_runs_bin_ps and first_light ping_counts. So Linux parity with procps is proven in CI. The TS stages that were NOT RUN locally (typecheck, lint, vitest, lockfile-allowlist, npm audit) ran green in check (22)/(24).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0001"
+          ]
         }
       ]
     }
