@@ -21,7 +21,7 @@
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | bp-0001 | AC1-AC3: liveness parity, dependency, resolve-once | ph-62c6 | EXTEND | computational | EXTEND→RUN: proc.rs tests, path_search.rs, spawn_sites.rs; cargo test -p pij-harnesses -p pij-testkit -p pij-daemon &lt;filters&gt; | [x] checked | — | execution-log.dd.json#entries/lg-0010 | crates/harnesses/src/proc.rs |
-| bp-0002 | AC4-AC5: live launch cost and docs | ph-62c6 | EXISTS | computational | RUN: pij-rs --json ping spawns + just spawn-rate before/after; prime reads the docs. | [ ] unchecked | AC5 docs done (lg-0006); AC4 before-reading lg-0001; deployed after-reading is the prime's. | — | pij-rs --json ping |
+| bp-0002 | AC4-AC5: live launch cost and docs | ph-62c6 | EXISTS | computational | RUN: pij-rs --json ping spawns + just spawn-rate before/after; prime reads the docs. | [ ] unchecked | Cost: liveness launches 0 for live and dead pids; ps.proc-liveness-fallback fires only for an existing unreadable pid (zombie, foreign), 0.2/s per such retained seat. git/tmux: one PATH search per program per daemon, plus a stat per launch. AC5 docs done (lg-0006, lg-0012); AC4 before-reading lg-0001; the deployed after-reading is the prime's. | — | pij-rs --json ping |
 | bp-0003 | AC6: proof, mutants and CI | ph-62c6 | EXISTS | computational | Mutant receipts; rust-check; GitHub CI on the exact head. | [x] checked | — | execution-log.dd.json#entries/lg-0010 | .github/workflows |
 
 <a id="sensors"></a>

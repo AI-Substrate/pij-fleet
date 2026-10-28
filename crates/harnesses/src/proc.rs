@@ -7,9 +7,10 @@
 //!
 //! Plan 182 (ADR 0001): the start instant is read in-process (`proc_pidinfo` on
 //! macOS, `/proc` on Linux) and converted with libc `localtime_r`, the same
-//! conversion `ps -o lstart=` applies, so a live process costs no launch. When
-//! the in-process read has no answer (a dead pid, a zombie, another user's
-//! process on macOS) the adapter runs today's exact-pid `/bin/ps` probe, so those
+//! conversion `ps -o lstart=` applies, so a live process costs no launch. A pid
+//! with no process (`kill(pid, 0)` → `ESRCH`) is absent, also without a launch.
+//! Only a process that exists but is not readable here (a zombie, another
+//! user's process on macOS) runs today's exact-pid `/bin/ps` probe, so those
 //! answers stay byte-for-byte what they were.
 
 use std::io;
@@ -87,8 +88,14 @@ impl Default for ProcLiveness {
 #[async_trait]
 impl LivenessPort for ProcLiveness {
     async fn proc_start(&self, pid: u32) -> Result<Option<u64>> {
-        if let Some(start) = self.reader.start(pid).and_then(local_lstart) {
-            return Ok(Some(start));
+        match self.reader.read(pid) {
+            InProcess::Started(start) => {
+                if let Some(start) = local_lstart(start) {
+                    return Ok(Some(start));
+                }
+            }
+            InProcess::NoSuchProcess => return Ok(None),
+            InProcess::Unanswered => {}
         }
         let output = self.runner.run(pid).map_err(|error| PijError::Adapter {
             adapter: ADAPTER.to_string(),
@@ -98,41 +105,94 @@ impl LivenessPort for ProcLiveness {
     }
 }
 
-/// A process's start instant, read without launching anything.
-///
-/// `None` means "no in-process answer", never "dead": the caller then asks `ps`,
-/// which tells absent, zombie, foreign and unreadable apart exactly as before.
+/// What the kernel says about a pid, read without launching anything.
+enum InProcess {
+    /// The process's start instant, whole seconds since the Unix epoch.
+    Started(i64),
+    /// The kernel has no process with this id (`kill(pid, 0)` → `ESRCH`): the
+    /// same fact `ps -p` reports as an empty selection.
+    NoSuchProcess,
+    /// A process exists but its start was not readable here (a zombie, another
+    /// user's process on macOS, a thread id on Linux): `ps` decides, as before.
+    Unanswered,
+}
+
 trait StartReader: Send + Sync {
-    /// Whole seconds since the Unix epoch.
-    fn start(&self, pid: u32) -> Option<i64>;
+    fn read(&self, pid: u32) -> InProcess;
 }
 
 /// The kernel's own record of when `pid` started.
 struct KernelStart;
 
-#[cfg(target_os = "macos")]
 impl StartReader for KernelStart {
-    /// `proc_bsdinfo.pbi_start_tvsec` is the kernel's `p_start`, the field `ps`
-    /// reads through `kinfo_proc.p_starttime`. It answers only for the caller's
-    /// own live processes; zombies and other users' processes return nothing.
-    fn start(&self, pid: u32) -> Option<i64> {
-        use proc_pidinfo::{Pid, ProcBSDInfo, proc_pidinfo};
-        let info = proc_pidinfo::<ProcBSDInfo>(Pid(pid)).ok()??;
-        (info.pbi_pid.0 == pid)
-            .then(|| i64::try_from(info.pbi_start_tvsec).ok())
-            .flatten()
+    fn read(&self, pid: u32) -> InProcess {
+        if let Some(start) = kernel_start(pid) {
+            InProcess::Started(start)
+        } else if no_such_process(pid) {
+            InProcess::NoSuchProcess
+        } else {
+            InProcess::Unanswered
+        }
     }
 }
 
-#[cfg(target_os = "linux")]
-impl StartReader for KernelStart {
-    /// procps computes `lstart` as `/proc/stat` `btime` plus field 22 of
-    /// `/proc/<pid>/stat` divided by the clock tick, so this does the same.
-    fn start(&self, pid: u32) -> Option<i64> {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-        let boot = std::fs::read_to_string("/proc/stat").ok()?;
-        linux_start(&stat, &boot)
+/// Review of #84, S2: a dead seat the reaper retains (its pane is still open) is
+/// probed every sweep, so "no such process" must not cost a `ps` launch.
+///
+/// This is a POLICY input, not a brake: `ESRCH` decides `Dead`. It inherits
+/// what `ESRCH` means, which is the kernel's own "no process has this id", the
+/// fact `ps -p` reports when its selection comes back empty. A zombie or another
+/// user's process still exists (`kill` answers `Ok` or `EPERM`) and goes to `ps`.
+/// Ids that `kill` would read as a process group or "every process" (0, and
+/// anything above `i32::MAX`) are never sent; `ps` decides those.
+fn no_such_process(pid: u32) -> bool {
+    match i32::try_from(pid) {
+        Ok(raw) if raw > 0 => matches!(
+            nix::sys::signal::kill(nix::unistd::Pid::from_raw(raw), None),
+            Err(nix::errno::Errno::ESRCH)
+        ),
+        _ => false,
     }
+}
+
+/// `proc_bsdinfo.pbi_start_tvsec` is the kernel's `p_start`, the field `ps`
+/// reads through `kinfo_proc.p_starttime`. It answers only for the caller's own
+/// live processes; zombies and other users' processes return nothing.
+#[cfg(target_os = "macos")]
+fn kernel_start(pid: u32) -> Option<i64> {
+    use proc_pidinfo::{Pid, ProcBSDInfo, proc_pidinfo};
+    let info = proc_pidinfo::<ProcBSDInfo>(Pid(pid)).ok()??;
+    (info.pbi_pid.0 == pid)
+        .then(|| i64::try_from(info.pbi_start_tvsec).ok())
+        .flatten()
+}
+
+/// procps computes `lstart` as `/proc/stat` `btime` plus field 22 of
+/// `/proc/<pid>/stat` divided by the clock tick, so this does the same.
+///
+/// `/proc/<tid>/stat` also resolves for a thread id that no process has, while
+/// `ps -p` selects processes only. So the pid must lead its thread group
+/// (`Tgid`), or `ps` decides (review of #84, N1).
+#[cfg(target_os = "linux")]
+fn kernel_start(pid: u32) -> Option<i64> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    if linux_tgid(&status)? != pid {
+        return None;
+    }
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let boot = std::fs::read_to_string("/proc/stat").ok()?;
+    linux_start(&stat, &boot)
+}
+
+/// The `Tgid:` (thread group, i.e. process) id from `/proc/<pid>/status`.
+#[cfg(any(target_os = "linux", test))]
+fn linux_tgid(status: &str) -> Option<u32> {
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("Tgid:"))?
+        .trim()
+        .parse()
+        .ok()
 }
 
 /// `USER_HZ`: the unit of `/proc/<pid>/stat` times, fixed at 100 by the kernel ABI.
@@ -160,8 +220,8 @@ struct NoInProcessAnswer;
 
 #[cfg(test)]
 impl StartReader for NoInProcessAnswer {
-    fn start(&self, _pid: u32) -> Option<i64> {
-        None
+    fn read(&self, _pid: u32) -> InProcess {
+        InProcess::Unanswered
     }
 }
 
@@ -558,6 +618,13 @@ mod tests {
             block_on(adapter.proc_start(dead.id())).expect("probe a reaped pid"),
             None
         );
+    }
+
+    #[test]
+    fn linux_tgid_reads_the_thread_group_line() {
+        let status = "Name:\tpij-rs\nUmask:\t0022\nState:\tS (sleeping)\nTgid:\t4242\nNgid:\t0\nPid:\t4243\n";
+        assert_eq!(super::linux_tgid(status), Some(4242));
+        assert_eq!(super::linux_tgid("Name:\tx\nPid:\t1\n"), None);
     }
 
     #[test]

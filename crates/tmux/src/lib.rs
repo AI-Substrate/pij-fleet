@@ -213,9 +213,10 @@ impl TmuxAdapter {
         args
     }
 
-    fn command(&self) -> Command {
-        // Plan 182: resolved through PATH once, not searched on every launch.
-        let mut command = Command::new(pij_core::program::resolve(&self.binary));
+    /// The tmux command for `program`, the executable `pij_core::program::launch`
+    /// resolved (plan 182: PATH is searched once, not on every launch).
+    fn command(&self, program: OsString) -> Command {
+        let mut command = Command::new(program);
         // `-u`: without a UTF-8 locale (a launchd-started daemon has no LANG)
         // tmux 3.6 rewrites the tab in every `-p`/`-F` answer as `_`.
         command.arg("-u");
@@ -225,26 +226,35 @@ impl TmuxAdapter {
         command
     }
 
+    /// The program a launch runs, through the same `launch` path `run` uses.
+    #[cfg(test)]
+    fn launched_program(&self) -> OsString {
+        pij_core::program::launch(&self.binary, |program| {
+            Ok::<_, io::Error>(self.command(program).get_program().to_os_string())
+        })
+        .expect("no spawn, so no error")
+    }
+
     fn run(&self, operation: &str, args: &[OsString]) -> Result<Output> {
         pij_core::spawns::record(&format!("tmux.{operation}"));
-        let output = self
-            .command()
-            .args(args)
-            .output()
-            .map_err(|error| self.spawn_error(operation, error))?;
+        let output = pij_core::program::launch(&self.binary, |program| {
+            self.command(program).args(args).output()
+        })
+        .map_err(|error| self.spawn_error(operation, error))?;
         self.finish(operation, output)
     }
 
     fn run_with_stdin(&self, operation: &str, args: &[OsString], input: &[u8]) -> Result<Output> {
         pij_core::spawns::record(&format!("tmux.{operation}"));
-        let mut child = self
-            .command()
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| self.spawn_error(operation, error))?;
+        let mut child = pij_core::program::launch(&self.binary, |program| {
+            self.command(program)
+                .args(args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        })
+        .map_err(|error| self.spawn_error(operation, error))?;
         let mut stdin = child.stdin.take().expect("piped tmux stdin");
         if let Err(error) = stdin.write_all(input) {
             let _ = child.kill();
@@ -1416,11 +1426,11 @@ mod resolve_once {
         let tap = std::env::temp_dir();
         if let Some(decoy) = std::env::var_os(CHILD) {
             let adapter = TmuxAdapter::new(&tap);
-            assert_eq!(adapter.command().get_program(), decoy);
+            assert_eq!(adapter.launched_program(), decoy);
             assert_eq!(adapter.control.program(), decoy);
             // An injected executable is launched as given.
             let fake = TmuxAdapter::with_binary("/opt/fake/tmux", &tap);
-            assert_eq!(fake.command().get_program(), "/opt/fake/tmux");
+            assert_eq!(fake.launched_program(), "/opt/fake/tmux");
             return;
         }
         let root = pij_testkit::fresh_dir("pij-tmux-resolve");
@@ -1713,7 +1723,7 @@ mod tests {
         let mut adapter = super::TmuxAdapter::new(std::env::temp_dir());
         adapter.server = Some(server.clone());
         let output = adapter
-            .command()
+            .command(pij_core::program::resolve(&adapter.binary))
             .env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .args([

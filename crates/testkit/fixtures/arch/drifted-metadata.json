@@ -21,6 +21,10 @@
           "kind": null
         },
         {
+          "name": "nix",
+          "kind": null
+        },
+        {
           "name": "pij-testkit",
           "kind": "dev"
         },
@@ -146,6 +150,10 @@
         },
         {
           "name": "time",
+          "kind": null
+        },
+        {
+          "name": "nix",
           "kind": null
         },
         {

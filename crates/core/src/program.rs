@@ -9,17 +9,21 @@
 //! path it found.
 //!
 //! Only a hit is kept, never a miss, so a tool installed after the daemon
-//! started is found on its next launch. A kept path that has since vanished
-//! (an upgrade moved it) is searched for again. The first PATH match still wins.
+//! started is found on its next launch. A candidate counts when
+//! `access(X_OK)` allows it, the test `posix_spawnp` itself applies. A kept
+//! path that has since vanished (an upgrade moved it) is searched for again,
+//! both before a launch and when the launch itself fails with `ENOENT`
+//! ([`launch`]). The first PATH match still wins.
 //!
 //! Like [`crate::spawns`], this is process-wide on purpose, because the launch
 //! sites live in several crates. It is the one exception to core's no-IO rule:
-//! it reads `PATH` and the file metadata of candidates, nothing else, and it
-//! never launches anything.
+//! it reads `PATH` and asks the filesystem about candidates, nothing else. It
+//! launches only what its callers' closures launch.
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
-use std::os::unix::fs::PermissionsExt;
+use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -33,6 +37,40 @@ static FOUND: Resolver = Resolver::new();
 /// fails, or searches, exactly as it did before).
 pub fn resolve(name: impl AsRef<OsStr>) -> OsString {
     FOUND.resolve(name.as_ref(), std::env::var_os("PATH").as_deref())
+}
+
+/// Launch `name` through `spawn`, which receives the program to run. If a kept
+/// path has vanished between the check and the spawn (`ENOENT`), it is
+/// forgotten, `name` is resolved again, and `spawn` runs once more.
+///
+/// # Errors
+/// Whatever `spawn` returns.
+pub fn launch<T>(
+    name: impl AsRef<OsStr>,
+    spawn: impl FnMut(OsString) -> io::Result<T>,
+) -> io::Result<T> {
+    FOUND.launch(name.as_ref(), std::env::var_os("PATH").as_deref(), spawn)
+}
+
+/// [`launch`] for a spawn that is awaited.
+///
+/// # Errors
+/// Whatever `spawn`'s future returns.
+pub async fn launch_async<T, F, Fut>(name: impl AsRef<OsStr>, mut spawn: F) -> io::Result<T>
+where
+    F: FnMut(OsString) -> Fut,
+    Fut: Future<Output = io::Result<T>>,
+{
+    let name = name.as_ref();
+    let path = std::env::var_os("PATH");
+    let program = FOUND.resolve(name, path.as_deref());
+    let kept = program != name;
+    match spawn(program).await {
+        Err(error) if error.kind() == io::ErrorKind::NotFound && kept && FOUND.forget(name) => {
+            spawn(FOUND.resolve(name, path.as_deref())).await
+        }
+        other => other,
+    }
 }
 
 /// Kept PATH hits, by program name.
@@ -79,6 +117,35 @@ impl Resolver {
             None => name.to_os_string(),
         }
     }
+
+    /// Drop the kept path for `name`; `true` when there was one.
+    pub fn forget(&self, name: &OsStr) -> bool {
+        self.found
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(name)
+            .is_some()
+    }
+
+    /// [`launch`] against an explicit `PATH` value.
+    ///
+    /// # Errors
+    /// Whatever `spawn` returns.
+    pub fn launch<T>(
+        &self,
+        name: &OsStr,
+        path: Option<&OsStr>,
+        mut spawn: impl FnMut(OsString) -> io::Result<T>,
+    ) -> io::Result<T> {
+        let program = self.resolve(name, path);
+        let kept = program != name;
+        match spawn(program) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound && kept && self.forget(name) => {
+                spawn(self.resolve(name, path))
+            }
+            other => other,
+        }
+    }
 }
 
 /// The first PATH entry holding an executable `name`, in PATH order. An empty
@@ -95,9 +162,11 @@ fn search(name: &OsStr, path: &OsStr) -> Option<PathBuf> {
         .find(|candidate| executable(candidate))
 }
 
+/// A regular file `access(X_OK)` allows, as `posix_spawnp` requires: mode bits
+/// alone would also accept a file executable only by another user or group.
 fn executable(path: &Path) -> bool {
-    std::fs::metadata(path)
-        .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+    std::fs::metadata(path).is_ok_and(|meta| meta.is_file())
+        && nix::unistd::access(path, nix::unistd::AccessFlags::X_OK).is_ok()
 }
 
 #[cfg(test)]
@@ -206,6 +275,45 @@ mod tests {
         assert_eq!(
             resolver.resolve(OsStr::new(NAME), Some(&path)),
             moved.as_os_str()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// R3: a kept path that vanishes between the check and the spawn costs one
+    /// failed spawn, then the launch resolves again and runs what PATH holds now.
+    #[test]
+    fn a_launch_that_finds_its_kept_path_gone_resolves_again_once() {
+        let root = pij_testkit::fresh_dir("pij-program-relaunch");
+        let (old, new) = (root.join("old"), root.join("new"));
+        let gone = tool(&old, 0o755);
+        let resolver = Resolver::new();
+        let path = joined(&[&old, &new]);
+        let mut programs = Vec::new();
+        let status = resolver.launch(OsStr::new(NAME), Some(&path), |program| {
+            if programs.is_empty() {
+                // The upgrade lands after the check, before the spawn.
+                std::fs::remove_file(&gone).unwrap();
+                tool(&new, 0o755);
+            }
+            programs.push(program.clone());
+            std::process::Command::new(program).status()
+        });
+        assert!(status.expect("the second spawn runs").success());
+        assert_eq!(
+            programs,
+            [gone.clone(), new.join(NAME)].map(PathBuf::into_os_string)
+        );
+        // A spawn that fails for any other reason is not retried.
+        let mut calls = 0;
+        let error = resolver
+            .launch(OsStr::new(NAME), Some(&path), |_| {
+                calls += 1;
+                Err::<(), _>(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            })
+            .expect_err("a refused spawn stays refused");
+        assert_eq!(
+            (calls, error.kind()),
+            (1, std::io::ErrorKind::PermissionDenied)
         );
         let _ = std::fs::remove_dir_all(root);
     }

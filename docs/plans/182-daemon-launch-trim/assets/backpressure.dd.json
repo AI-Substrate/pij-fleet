@@ -34,7 +34,7 @@
           "proof": "RUN: pij-rs --json ping spawns + just spawn-rate before/after; prime reads the docs.",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "AC5 docs done (lg-0006); AC4 before-reading lg-0001; deployed after-reading is the prime's."
+          "note": "Cost: liveness launches 0 for live and dead pids; ps.proc-liveness-fallback fires only for an existing unreadable pid (zombie, foreign), 0.2/s per such retained seat. git/tmux: one PATH search per program per daemon, plus a stat per launch. AC5 docs done (lg-0006, lg-0012); AC4 before-reading lg-0001; the deployed after-reading is the prime's."
         },
         {
           "id": "bp-0003",

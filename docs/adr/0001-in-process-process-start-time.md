@@ -73,17 +73,27 @@ threads, so a `time` release that brings the refusal back turns them red.
 
 1. **macOS:** `proc_pidinfo =0.1.4` (released 2025-06-03), `PROC_PIDTBSDINFO`,
    `pbi_start_tvsec` as the fast path. The result is accepted only when the full
-   struct came back and `pbi_pid == pid`. When it answers nothing (dead, zombie,
-   another user's process, or any error), the daemon falls back to today's
-   `/bin/ps` probe unchanged, so those cases keep today's answer byte for byte.
-   The spawn counter records that launch as `ps.proc-liveness-fallback`, so
-   `ping` shows how often it fires. Live fleet, 2026-10-28: all 63 seat pids were
-   own-user, live processes, so the steady state launches nothing. A launch
-   happens only when a seat dies or its pid is recycled into a foreign process.
+   struct came back and `pbi_pid == pid`.
+   - When it answers nothing, `kill(pid, 0)` (nix) decides whether a process
+     exists. `ESRCH` means the kernel has no process with this id, the same fact
+     `ps -p` reports as an empty selection, so the answer is "absent" with no
+     launch (review of #84, S2). That decision is a **policy** input, not a
+     brake: `ESRCH` decides `Dead`. Ids `kill` would read as a process group or
+     "every process" (0, and anything above `i32::MAX`) are never sent.
+   - Only a process that exists but cannot be read here (a zombie, another
+     user's process, any read error) falls back to today's `/bin/ps` probe
+     unchanged, so those cases keep today's answer byte for byte. The spawn
+     counter records that launch as `ps.proc-liveness-fallback`, so `ping` shows
+     how often it fires.
+   - Live fleet, 2026-10-28: all 63 seat pids were own-user, live processes, so
+     the steady state launches nothing.
 2. **Linux:** `/proc/<pid>/stat` field 22 ÷ `USER_HZ` (100) + `/proc/stat` `btime`,
    with std only, exactly as procps computes `lstart`
    (`boot_time() + TICS_BEGAN / Hertz`, procps-ng 4.0.4 `src/ps/output.c:1059`).
-   A missing `/proc/<pid>` falls back to `/bin/ps`, as on macOS.
+   The pid must lead its thread group (`Tgid` in `/proc/<pid>/status`):
+   `/proc/<tid>/stat` also resolves for a thread id that no process has, while
+   `ps -p` selects processes only (review of #84, N1). A missing `/proc/<pid>`
+   is decided by `kill(pid, 0)` as on macOS; anything else falls back to `ps`.
 3. **Both:** enable `time`'s `local-offset` feature for the local-time step
    (`UtcOffset::local_offset_at(start)`, which is libc `localtime_r`). It adds
    `num_threads` 0.1.8 (MIT/Apache, jhpratt, released 2026-10-17, 11 days
@@ -92,9 +102,10 @@ threads, so a `time` release that brings the refusal back turns them red.
    live seat's identity by an hour, and the reaper would treat the seat as
    recycled. A test pins this under `TZ=Australia/Melbourne`, and the
    current-offset mutant turns it red.
-4. `proc_pidinfo` is a macOS-only target dependency, pinned with `=`. The
-   `crates/testkit/arch-allowlist.toml` row for `pij-harnesses` names both crates
-   and the reason.
+4. `proc_pidinfo` is a macOS-only target dependency, pinned with `=`. `nix`
+   (already a workspace dependency) is added to `pij-harnesses` for `kill` and
+   to `pij-core` for `access(X_OK)` in the git/tmux PATH search. The
+   `crates/testkit/arch-allowlist.toml` rows name each crate and the reason.
 
 ## Soundness: `localtime_r` and `setenv`
 
@@ -137,14 +148,21 @@ In-process conversion depends on libc:
 
 ## Consequences
 
-- `ps.proc-liveness` (13.1/s) is gone. What remains is
-  `ps.proc-liveness-fallback`, about one launch per seat death or per foreign or
-  zombie pid.
+- `ps.proc-liveness` (13.1/s) is gone, and so is the per-sweep cost of a dead
+  seat the reaper retains (its process is gone, but its pane is still open and
+  not reincarnated). The reviewer found that class costing 0.2 launches/s per
+  seat, indefinitely; `kill(pid, 0)` now answers it without a launch. What
+  remains is `ps.proc-liveness-fallback`: 0.2 launches/s per retained seat whose
+  pid is a **zombie** or now belongs to **another user's** process, and nothing
+  else. Both are rare (a zombie is reaped by its parent; a foreign pid reads
+  Recycled and is retired). After deploy, the prime's `ping` reading shows the
+  rate; a non-zero steady state names a seat stuck in one of those two states.
 - Liveness answers are unchanged. The fast path reads the same kernel field
   (`p_start`) that `kinfo_proc` reports, with the same conversion, and every
-  other case still runs `ps`. Parity tests compare against `/bin/ps` for this
-  process, a live child, a zombie, pid 1 and a reaped pid, under the host
-  timezone, `America/New_York`, `Australia/Melbourne` and `UTC`.
+  other case either gets the kernel's own "no such process" or still runs
+  `ps`. Parity tests compare against `/bin/ps` for this process, a live child, a
+  zombie, pid 1, a reaped pid and (Linux) a thread id, under the host timezone,
+  `America/New_York`, `Australia/Melbourne` and `UTC`.
 - `proc_pidinfo` has a single maintainer and little download history. It is
   small enough to audit (756 lines, `libc` only, no build script), it is pinned,
   and the fallback means a broken release costs launches, not wrong answers.

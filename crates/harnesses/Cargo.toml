@@ -16,6 +16,9 @@ sha2 = { workspace = true }
 # applies to a start instant, so in-process liveness answers in the same local
 # wall time `ps -o lstart=` prints.
 time = { workspace = true, features = ["local-offset"] }
+# Review of #84, S2: `kill(pid, 0)` → ESRCH tells a dead pid apart without a
+# `ps` launch. Already a workspace dependency (transport, sidecars, cli).
+nix = { workspace = true, features = ["signal"] }
 
 # Plan 182 (ADR 0001): the safe `proc_pidinfo` wrapper reads a process's start
 # instant on macOS without launching `ps`. Pinned; Linux reads /proc with std.

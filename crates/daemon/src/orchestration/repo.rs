@@ -107,12 +107,14 @@ fn parse_ordinal(value: &str) -> Option<u32> {
 
 fn git(repo_root: &Path, args: &[&str]) -> Result<String> {
     pij_core::spawns::record("git.orchestration-repo");
-    let output = Command::new(pij_core::program::resolve("git"))
-        .arg("-C")
-        .arg(repo_root)
-        .args(args)
-        .output()
-        .map_err(|error| adapter_failure(format!("could not execute git: {error}")))?;
+    let output = pij_core::program::launch("git", |git| {
+        Command::new(git)
+            .arg("-C")
+            .arg(repo_root)
+            .args(args)
+            .output()
+    })
+    .map_err(|error| adapter_failure(format!("could not execute git: {error}")))?;
     if !output.status.success() {
         return Err(adapter_failure(format!(
             "git {} failed ({}): {}",

@@ -1235,6 +1235,7 @@ name = "pij-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "nix",
  "pij-testkit",
  "serde",
  "serde_json",
@@ -1275,6 +1276,7 @@ name = "pij-harnesses"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "nix",
  "pij-core",
  "pij-testkit",
  "proc_pidinfo",

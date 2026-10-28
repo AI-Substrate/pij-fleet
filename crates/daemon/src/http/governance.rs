@@ -1403,15 +1403,18 @@ fn lease_stale(name: &str, current: Option<&str>, provided: Option<&str>) -> Gov
 
 async fn current_head(repo: &Path) -> GovResult<Option<String>> {
     pij_core::spawns::record("git.governance-head");
-    let output = tokio::process::Command::new(pij_core::program::resolve("git"))
-        .arg("-C")
-        .arg(repo)
-        .args(["rev-parse", "--verify", "HEAD"])
-        .output()
-        .await
-        .map_err(|error| {
-            GovernanceError::internal(format!("cannot observe repository HEAD: {error}"))
-        })?;
+    let output = pij_core::program::launch_async("git", |git| async move {
+        tokio::process::Command::new(git)
+            .arg("-C")
+            .arg(repo)
+            .args(["rev-parse", "--verify", "HEAD"])
+            .output()
+            .await
+    })
+    .await
+    .map_err(|error| {
+        GovernanceError::internal(format!("cannot observe repository HEAD: {error}"))
+    })?;
     if !output.status.success() {
         return Ok(None);
     }

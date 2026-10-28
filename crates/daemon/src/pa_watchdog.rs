@@ -988,16 +988,19 @@ async fn git_common_dir(folder: &str) -> Option<String> {
     pij_core::spawns::record("git.pa-watchdog-common-dir");
     let output = tokio::time::timeout(
         GIT_WAIT,
-        tokio::process::Command::new(pij_core::program::resolve("git"))
-            .args([
-                "-C",
-                folder,
-                "rev-parse",
-                "--path-format=absolute",
-                "--git-common-dir",
-            ])
-            .kill_on_drop(true)
-            .output(),
+        pij_core::program::launch_async("git", |git| async move {
+            tokio::process::Command::new(git)
+                .args([
+                    "-C",
+                    folder,
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-common-dir",
+                ])
+                .kill_on_drop(true)
+                .output()
+                .await
+        }),
     )
     .await
     .ok()?
