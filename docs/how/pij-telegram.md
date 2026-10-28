@@ -20,9 +20,40 @@ then spaces, without dropping content or splitting Unicode characters.
 Each failed HTTP/API attempt appends `telegram.outbound-delivery-failed` on the
 conversation seat. Its JSON includes `conversation`, `from`, `msg_id`, `attempt`,
 `part`, `parts`, `http_status` (null for transport failure), and a token-free `reason`.
-The existing whole-job retry policy is unchanged: a late-part failure can resend
-earlier bubbles. Numbering makes repeated parts recognizable; it is not deduplication.
+A failure retries the whole job: a late-part failure can resend earlier bubbles.
+Numbering makes repeated parts recognizable; it is not deduplication. A 429's
+`parameters.retry_after` is recorded as `retry_after_s`.
 Inbound still uses the persisted outbound binding, not name or swipe-reply parsing.
+
+### Retries, timeouts and inbound (plan 183)
+
+- **Backoff.** A retrying job (transport error, 429, 5xx, and for text any
+  non-success) waits 2 s, then doubles per attempt up to 300 s: 2, 4, 8, … 256,
+  300. A 429's `retry_after` wins when it is longer, so a retry is never sooner
+  than Telegram asked. The queue rounds each deadline UP to its whole-second
+  clock, so even a 100 ms wait is never released early.
+- **Attempt cap.** After 10 attempts (about 13.5 minutes of waiting) the job fails
+  terminally (`state=failed`, outcome `gave up after 10 attempts; last failure:
+  …`) and appends `telegram.outbound-gave-up` on the conversation seat
+  (`conversation`, `from`, `msg_id`, `kind`, `attempts`, `retry_after_s`,
+  token-free `reason`). A `retry_after` over 3600 s fails the job at once with
+  that reason instead of waiting.
+- **Order on a chat.** Text and file jobs on one chat's serial key are claimed
+  strictly in queue order, even while the earliest is waiting out a backoff: a
+  retrying body holds its files behind it. The cap bounds the hold; once the
+  head fails, the rest go, in order. Other chats, and every other queue kind,
+  are not held.
+- **Timeouts.** Connect 10 s. `sendMessage` and `getUpdates` 30 s. A file upload
+  600 s: 50 MB at 1 Mbit/s takes 400 s, so this covers an uplink down to about
+  0.7 Mbit/s, and a stalled upload ends as a retry instead of hanging the worker.
+- **Inbound never waits on outbound.** Outbound sends and inbound polling are two
+  separate loops. A retrying, failing or stalled send never delays `getUpdates`:
+  a message from the phone reaches the bound seat while an upload is in flight.
+- **Cost.** Each loop ticks every 250 ms and launches no process. Outbound does
+  one in-process SQLite claim per tick and an HTTP call only when a job is due:
+  a job that never succeeds makes at most 10 calls in all (at most 5 in its first
+  minute, then about one per backoff), not one per tick. Inbound is one
+  `getUpdates` long poll (1 s) per pass, about one call a second, as before.
 
 The API root is injectable in Rust tests, not via environment/credential files.
 Tests use only local fake HTTP endpoints; an isolated daemon cannot currently
@@ -86,7 +117,20 @@ any other recipient still refuses it by name.
   (`file_name`, `size`, `sha256`), `http_status` and `terminal`. A 4xx other than
   429 (after any fallback), a foreign chat, or a damaged staged copy fails the job
   (`state=failed`); transport errors, 429 and 5xx retry without a fallback. A
-  delivered job's staged copy is deleted; a failed job's copy is kept as evidence.
+  delivered job's staged copy is deleted; a failed job's copy is kept as evidence
+  for 7 days (by its mtime, which is its enqueue time), then removed by a sweep
+  the outbound loop runs on start and every 6 hours: one directory read in
+  process, nothing launched. Abandoned `.partial-*` writes go the same way.
+- **One send, one batch.** The body and every file are queued in one store
+  transaction: an internal error leaves nothing from the send queued, and the
+  staged copies are removed.
+- **`msg_id` reuse.** Resending the identical request while it is still queued
+  answers with the live jobs. Reusing a `--msg-id` that is still queued with
+  different content (other bytes, caption, body or source) is refused by name,
+  nothing is queued, and the new copies are removed; once the earlier job has
+  finished, the id is free again.
+- **Symlinks.** A symlinked `--file` is read through the link and sent under the
+  link's own name, from the CLI and the shim alike.
 - **The token stays in the daemon.** It is read only from the credential file;
   it is never on the CLI's argv, and it never appears in a job payload, a job
   outcome, a spine event or a logged error (transport errors drop the URL, which

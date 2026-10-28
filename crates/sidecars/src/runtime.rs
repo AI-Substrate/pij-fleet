@@ -8,7 +8,7 @@ use pij_core::ports::{Queue, Registry, Spine};
 use crate::LoopHandle;
 use crate::background::BgWorker;
 use crate::chore::ChoreWorker;
-use crate::telegram::{TelegramConfig, TelegramWorker};
+use crate::telegram::{ATTACHMENTS_DIR, TelegramConfig, TelegramLoops, TelegramWorker};
 
 /// Constructed sidecar workers, not yet running.
 ///
@@ -47,9 +47,10 @@ impl Sidecars {
                     .parent()
                     .unwrap_or_else(|| Path::new("."))
                     .join("pij-telegram.lock");
-                Some(Arc::new(TelegramWorker::new(
-                    queue, spine, registry, config, lock,
-                )?))
+                Some(Arc::new(
+                    TelegramWorker::new(queue, spine, registry, config, lock)?
+                        .with_attachment_sweep(state_dir.join(ATTACHMENTS_DIR)),
+                ))
             }
             _ => None,
         };
@@ -76,7 +77,7 @@ impl Sidecars {
 /// Owned handles for every running sidecar loop.
 #[derive(Debug)]
 pub struct SidecarHandles {
-    telegram: Option<LoopHandle>,
+    telegram: Option<TelegramLoops>,
     background: LoopHandle,
     chore: LoopHandle,
 }

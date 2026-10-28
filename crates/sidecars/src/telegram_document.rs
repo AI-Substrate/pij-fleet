@@ -150,6 +150,45 @@ pub fn stage_send(request: &TelegramDocumentRequest, staging_dir: &Path) -> Resu
     stage_with_limit(request, staging_dir, DOCUMENT_LIMIT_BYTES)
 }
 
+/// Remove staged copies (and abandoned `.partial-*` writes) whose mtime is
+/// older than `retention` at `now`; returns how many went.
+///
+/// A RETENTION POLICY, not a brake: age is the reason to delete. Delivered
+/// copies are released at once, so what remains are failed jobs' evidence
+/// (N2). A copy is written at enqueue, and a live job retries for about
+/// 13.5 minutes at most (`MAX_ATTEMPTS`), so a week-old copy has no live
+/// job unless the daemon held it queued for that week; such a job then fails
+/// as "staged copy unreadable", never sends other bytes. In-process: one
+/// directory read, nothing launched.
+pub fn sweep_staged(
+    staging_dir: &Path,
+    now: std::time::SystemTime,
+    retention: std::time::Duration,
+) -> Result<usize> {
+    let entries = match fs::read_dir(staging_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(io_failure("list", staging_dir, &error)),
+    };
+    let mut removed = 0;
+    for entry in entries {
+        let entry = entry.map_err(|error| io_failure("list", staging_dir, &error))?;
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let expired = metadata.is_file()
+            && metadata
+                .modified()
+                .ok()
+                .and_then(|modified| now.duration_since(modified).ok())
+                .is_some_and(|age| age > retention);
+        if expired && fs::remove_file(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 /// Delete staged copies that will never be queued.
 pub fn release_staged<'a>(documents: impl IntoIterator<Item = &'a StagedDocument>) {
     for document in documents {

@@ -647,6 +647,53 @@ impl Queue for FakeQueue {
         Ok(id)
     }
 
+    /// Atomic like SqliteQueue's: the whole batch is decided, then applied,
+    /// under one lock, and no fake enqueue can fail part-way.
+    async fn enqueue_all(&self, jobs: Vec<Job>) -> Result<pij_core::ports::BatchEnqueue> {
+        use pij_core::ports::{BatchEnqueue, Enqueued};
+        let mut state = self.state.lock().expect("fake queue mutex");
+        let mut live_ids = Vec::with_capacity(jobs.len());
+        for (index, job) in jobs.iter().enumerate() {
+            let live = state
+                .live
+                .iter()
+                .map(|(id, job)| (*id, job))
+                .chain(state.claimed.iter().map(|(id, (job, _))| (JobId(*id), job)))
+                .find(|(_, live)| same_live(live, job));
+            match live {
+                Some((id, live)) if live.payload != job.payload => {
+                    return Ok(BatchEnqueue::Conflict {
+                        index,
+                        id,
+                        live_payload: live.payload.clone(),
+                    });
+                }
+                Some((id, _)) => live_ids.push(Some(id)),
+                // A later job of the batch may reuse an earlier one's key.
+                None => live_ids.push(None),
+            }
+        }
+        let mut queued = Vec::with_capacity(jobs.len());
+        for (job, live) in jobs.into_iter().zip(live_ids) {
+            if let Some(id) = live {
+                queued.push(Enqueued { id, fresh: false });
+                continue;
+            }
+            if let Some((id, _)) = state.live.iter().find(|(_, live)| same_live(live, &job)) {
+                queued.push(Enqueued {
+                    id: *id,
+                    fresh: false,
+                });
+                continue;
+            }
+            state.next_id += 1;
+            let id = JobId(state.next_id);
+            queued.push(Enqueued { id, fresh: true });
+            state.live.push((id, job));
+        }
+        Ok(BatchEnqueue::Queued(queued))
+    }
+
     async fn enqueue_delivery(&self, job: Job) -> Result<DeliveryEnqueue> {
         require_delivery_job(&job)?;
         let mut state = self.state.lock().expect("fake queue mutex");

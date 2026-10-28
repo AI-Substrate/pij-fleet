@@ -535,7 +535,8 @@ async fn a_server_error_retries_then_succeeds() {
     assert_eq!(failed[0]["terminal"], false);
 
     *f.api.status.lock().expect("status") = None;
-    f.queue.advance(Duration::from_secs(1));
+    f.queue
+        .advance(f.queue.retried().last().expect("a retry").1);
     f.worker.run_once(1).await.expect("retry succeeds");
     assert_eq!(f.uploads().len(), 2);
     assert!(matches!(f.queue.acked().as_slice(), [(_, Outcome::Done)]));
@@ -1014,7 +1015,17 @@ async fn the_token_never_leaks_on_any_media_failure_path() {
         let (job, _) =
             stage_document(&request(source, Some("c")), &f.dir.join("staging")).expect("stage");
         assert!(!leaks(&job.payload), "{case}: payload {}", job.payload);
-        f.queue.enqueue(job).await.expect("enqueue");
+        f.queue.enqueue(job.clone()).await.expect("enqueue");
+        // Plan 183 N1: a conflicting reuse of the msg_id hands back the live
+        // row's payload; it carries no credential either.
+        let mut reuse = job;
+        reuse.payload = reuse.payload.replace("\"c\"", "\"other caption\"");
+        match f.queue.enqueue_all(vec![reuse]).await.expect("enqueue_all") {
+            pij_core::ports::BatchEnqueue::Conflict { live_payload, .. } => {
+                assert!(!leaks(&live_payload), "{case}: live payload {live_payload}");
+            }
+            other => panic!("{case}: a reused msg_id with other content conflicts, got {other:?}"),
+        }
         let result = f.worker.run_once(1).await;
         if let Err(error) = &result {
             assert!(!leaks(&error.to_string()), "{case}: logged error {error}");
@@ -1036,4 +1047,39 @@ async fn the_token_never_leaks_on_any_media_failure_path() {
         }
         assert!(failures > 0, "{case}: the failure path was exercised");
     }
+}
+
+// ------------------------------------------------- plan 183 N2: retention
+
+/// Failed jobs' copies go after the retention; younger ones and a missing
+/// directory are left alone. Clock injected: no sleeping.
+#[test]
+fn the_sweep_removes_copies_older_than_the_retention_only() {
+    use std::time::{Duration, SystemTime};
+    let dir = fresh_dir("telegram-doc-sweep");
+    let staging = dir.join("staging");
+    std::fs::create_dir_all(&staging).expect("staging");
+    let now = SystemTime::now();
+    let week = Duration::from_secs(7 * 24 * 3600);
+    let aged = |name: &str, age: Duration| {
+        let path = write(&staging, name, b"evidence");
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("open")
+            .set_modified(now - age)
+            .expect("set mtime");
+        path
+    };
+    let old = aged("aaaa-1111", week + Duration::from_secs(60));
+    let partial = aged(".partial-1-2-3", week * 2);
+    let young = aged("bbbb-2222", week - Duration::from_secs(60));
+    assert_eq!(super::sweep_staged(&staging, now, week).expect("sweep"), 2);
+    assert!(!old.exists() && !partial.exists());
+    assert!(young.exists(), "inside the retention: kept as evidence");
+    assert_eq!(
+        super::sweep_staged(&dir.join("never-made"), now, week).expect("absent dir"),
+        0
+    );
+    std::fs::remove_dir_all(dir).expect("cleanup");
 }

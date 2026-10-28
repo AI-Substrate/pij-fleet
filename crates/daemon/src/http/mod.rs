@@ -3827,7 +3827,11 @@ pub(crate) enum DocumentRefusal {
 /// Every refusal (no files or too many; missing, empty, oversized; caption too
 /// long) is answered here, before a row exists, so a caller is never told
 /// "queued" for a file the worker could not send. The body is queued first and
-/// the files after it, in order, on the chat's serial key.
+/// the files after it, in order, on the chat's serial key, in ONE batch: an
+/// internal error leaves nothing from the send queued (N3). A `msg_id` that is
+/// still live with other content is refused by name and this send's copies
+/// are released (N1); resending the identical request answers with the live
+/// rows.
 pub(crate) async fn enqueue_telegram_document(
     state: &AppState,
     request: pij_sidecars::telegram::TelegramDocumentRequest,
@@ -3850,36 +3854,57 @@ pub(crate) async fn enqueue_telegram_document(
         .first()
         .map(|(job, _)| job.serial_key.clone())
         .unwrap_or_default();
-    let body_job_id = match staged.body {
-        Some(job) => match state.services.queue.enqueue(job).await {
-            Ok(job_id) => Some(job_id),
-            Err(error) => {
-                pij_sidecars::telegram::release_staged(staged.files.iter().map(|(_, doc)| doc));
-                return Err(DocumentRefusal::Internal(error));
-            }
-        },
-        None => None,
-    };
-    let mut files = Vec::with_capacity(staged.files.len());
-    let mut pending = staged.files.into_iter();
-    while let Some((job, document)) = pending.next() {
-        let file_msg_id = job.dedupe_key.clone();
-        match state.services.queue.enqueue(job).await {
-            Ok(job_id) => files.push(QueuedFile {
-                job_id,
-                msg_id: file_msg_id,
-                document,
-            }),
-            Err(error) => {
-                // Jobs already queued will still send; the rest never will.
-                let unqueued: Vec<_> = std::iter::once(document)
-                    .chain(pending.map(|(_, doc)| doc))
-                    .collect();
-                pij_sidecars::telegram::release_staged(&unqueued);
-                return Err(DocumentRefusal::Internal(error));
-            }
+    let has_body = staged.body.is_some();
+    let (file_jobs, documents): (Vec<_>, Vec<_>) = staged.files.into_iter().unzip();
+    let jobs: Vec<_> = staged
+        .body
+        .into_iter()
+        .chain(file_jobs.iter().cloned())
+        .collect();
+    let rows = match state.services.queue.enqueue_all(jobs.clone()).await {
+        Ok(pij_core::ports::BatchEnqueue::Queued(rows)) => rows,
+        Ok(pij_core::ports::BatchEnqueue::Conflict {
+            index,
+            id,
+            live_payload,
+        }) => {
+            // Release only copies no live row sends: an identical file under
+            // the same id stages to the very path a live row still reads.
+            pij_sidecars::telegram::release_staged(
+                documents
+                    .iter()
+                    .filter(|doc| !live_payload.contains(&*doc.staged.to_string_lossy())),
+            );
+            let reused = &jobs[index].dedupe_key;
+            return Err(DocumentRefusal::Refused(PijError::Adapter {
+                adapter: "sidecars/telegram".to_string(),
+                message: format!(
+                    "msg_id `{reused}` is still queued as sidecar job {} with different content; \
+                     wait for it to finish or send with a new --msg-id",
+                    id.0
+                ),
+            }));
         }
-    }
+        Err(error) => {
+            pij_sidecars::telegram::release_staged(&documents);
+            return Err(DocumentRefusal::Internal(error));
+        }
+    };
+    let mut rows = rows.into_iter();
+    let body_job_id = if has_body {
+        rows.next().map(|row| row.id)
+    } else {
+        None
+    };
+    let files = rows
+        .zip(file_jobs)
+        .zip(documents)
+        .map(|((row, job), document)| QueuedFile {
+            job_id: row.id,
+            msg_id: job.dedupe_key,
+            document,
+        })
+        .collect();
     Ok(QueuedDocument {
         serial_key,
         msg_id,

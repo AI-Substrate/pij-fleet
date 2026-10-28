@@ -21,8 +21,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use pij_core::error::{PijError, Result};
 use pij_core::model::{DeliveryFailure, DeliveryOrigin, Job, JobId, Outcome, SeatId};
 use pij_core::ports::{
-    DeferNoopReason, DeferOutcome, DeliveryAck, DeliveryEnqueue, ExtensionClaim, ExtensionLease,
-    ParkedDelivery, Queue, ReleaseOutcome,
+    BatchEnqueue, DeferNoopReason, DeferOutcome, DeliveryAck, DeliveryEnqueue, Enqueued,
+    ExtensionClaim, ExtensionLease, ParkedDelivery, Queue, ReleaseOutcome,
 };
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
@@ -215,15 +215,14 @@ impl SqliteQueue {
         .await
         .map_err(adapter_error)?;
 
-        let row = sqlx::query(
-            "SELECT id, kind, serial_key, payload, dedupe_key, dedupe_origin, attempt FROM jobs \
-             WHERE state = 'pending' \
-               AND not_before <= unixepoch() \
-               AND kind IN (SELECT value FROM json_each(?1)) \
-               AND serial_key NOT IN (SELECT serial_key FROM jobs WHERE state = 'running') \
-             ORDER BY id LIMIT 1",
-        )
+        // Telegram rows on one chat keep FIFO even while the head backs off
+        // (plan 183): a body retrying in 30 s must not be overtaken by its own
+        // files. Scoped to those kinds only; every other kind still claims the
+        // lowest-id ELIGIBLE row. Bounded because the worker's attempt cap ends
+        // a stuck head terminally, and a failed row no longer blocks.
+        let row = sqlx::query(CLAIM_NEXT_SQL)
         .bind(&kinds_json)
+        .bind(FIFO_KIND_PATTERN)
         .fetch_optional(&mut *tx)
         .await
         .map_err(adapter_error)?;
@@ -260,6 +259,49 @@ impl SqliteQueue {
         })
         .await
     }
+}
+
+/// Kinds whose rows on one `serial_key` are claimed strictly in id order, even
+/// past a head that is not yet due: the Telegram sidecar's text and file jobs,
+/// which share a chat's key. A LIKE pattern, bound as data.
+pub const FIFO_KIND_PATTERN: &str = "sidecar:telegram:%";
+
+/// The claim's row selection: `?1` the JSON kind list, `?2`
+/// [`FIFO_KIND_PATTERN`]. Public so the cost test explains THIS query, not a
+/// copy of it.
+pub const CLAIM_NEXT_SQL: &str = "SELECT id, kind, serial_key, payload, dedupe_key, dedupe_origin, attempt FROM jobs \
+     WHERE state = 'pending' \
+       AND not_before <= unixepoch() \
+       AND kind IN (SELECT value FROM json_each(?1)) \
+       AND serial_key NOT IN (SELECT serial_key FROM jobs WHERE state = 'running') \
+       AND (kind NOT LIKE ?2 OR NOT EXISTS (\
+           SELECT 1 FROM jobs AS earlier \
+           WHERE earlier.serial_key = jobs.serial_key AND earlier.state = 'pending' \
+             AND earlier.id < jobs.id AND earlier.kind LIKE ?2)) \
+     ORDER BY id LIMIT 1";
+
+/// The absolute deadline `delay` from now, in whole epoch seconds rounded UP:
+/// the queue compares whole seconds, and truncating released a 100 ms retry
+/// at once and a 1 s retry up to a second early (plan 183). Zero stays
+/// immediately eligible.
+fn not_before_after(delay: Duration, what: &str) -> Result<i64> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| PijError::Adapter {
+            adapter: "store/queue".to_string(),
+            message: format!("cannot schedule a {what} before the Unix epoch: {error}"),
+        })?;
+    now.checked_add(delay)
+        .and_then(|deadline| {
+            deadline
+                .as_secs()
+                .checked_add(u64::from(!delay.is_zero() && deadline.subsec_nanos() != 0))
+        })
+        .and_then(|seconds| i64::try_from(seconds).ok())
+        .ok_or_else(|| PijError::Adapter {
+            adapter: "store/queue".to_string(),
+            message: format!("{what} deadline exceeds SQLite's integer timestamp range"),
+        })
 }
 
 fn adapter_error(error: sqlx::Error) -> PijError {
@@ -466,6 +508,66 @@ impl Queue for SqliteQueue {
 
             tx.commit().await.map_err(adapter_error)?;
             Ok(JobId(id as u64))
+        })
+        .await
+    }
+
+    /// One transaction for the whole batch: an error or a conflict on any row
+    /// rolls back every row before it (plan 183 N1/N3).
+    async fn enqueue_all(&self, jobs: Vec<Job>) -> Result<BatchEnqueue> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let mut queued = Vec::with_capacity(jobs.len());
+            for (index, job) in jobs.iter().enumerate() {
+                let inserted: Option<i64> = sqlx::query_scalar(
+                    "INSERT INTO jobs (kind, serial_key, payload, dedupe_key, dedupe_origin, enqueued_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, unixepoch()) ON CONFLICT DO NOTHING RETURNING id",
+                )
+                .bind(&job.kind)
+                .bind(&job.serial_key)
+                .bind(&job.payload)
+                .bind(&job.dedupe_key)
+                .bind(job.dedupe_origin.as_deref().unwrap_or_default())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+                if let Some(id) = inserted {
+                    queued.push(Enqueued {
+                        id: JobId(id as u64),
+                        fresh: true,
+                    });
+                    continue;
+                }
+                // The same scoped read-back as `enqueue`, so a collapse lands
+                // on exactly the row `enqueue` would have answered with.
+                let (id, live_payload): (i64, String) = sqlx::query_as(
+                    "SELECT id, payload FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 \
+                     AND dedupe_origin = ?3 AND state IN ('pending', 'running') \
+                     ORDER BY id LIMIT 1",
+                )
+                .bind(&job.kind)
+                .bind(&job.dedupe_key)
+                .bind(job.dedupe_origin.as_deref().unwrap_or_default())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+                if live_payload != job.payload {
+                    tx.rollback().await.map_err(adapter_error)?;
+                    return Ok(BatchEnqueue::Conflict {
+                        index,
+                        id: JobId(id as u64),
+                        live_payload,
+                    });
+                }
+                queued.push(Enqueued {
+                    id: JobId(id as u64),
+                    fresh: false,
+                });
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(BatchEnqueue::Queued(queued))
         })
         .await
     }
@@ -799,7 +901,13 @@ impl Queue for SqliteQueue {
     /// exists between "this attempt failed" and "it will be tried again".
     async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
         require_current_schema(&self.pool).await?;
-        let seconds = i64::try_from(delay.as_secs()).unwrap_or(i64::MAX);
+        // Zero keeps the database clock, exactly as before; a positive delay is
+        // never released early.
+        let not_before = if delay.is_zero() {
+            None
+        } else {
+            Some(not_before_after(delay, "retry")?)
+        };
 
         let pool = self.pool.clone();
         owned_write(async move {
@@ -807,11 +915,11 @@ impl Queue for SqliteQueue {
             let affected = sqlx::query(
                 "UPDATE jobs \
              SET state = 'pending', worker = NULL, claimed_at = NULL, \
-                 attempt = attempt + 1, not_before = unixepoch() + ?2 \
+                 attempt = attempt + 1, not_before = COALESCE(?2, unixepoch()) \
              WHERE id = ?1 AND state = 'running'",
             )
             .bind(job.0 as i64)
-            .bind(seconds)
+            .bind(not_before)
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?
@@ -994,28 +1102,10 @@ impl Queue for SqliteQueue {
             };
             require_delivery_job(&delivery)?;
 
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|error| PijError::Adapter {
-                    adapter: "store/queue".to_string(),
-                    message: format!("cannot schedule deferral before the Unix epoch: {error}"),
-                })?;
             // Eligibility compares whole epoch seconds. Round the absolute positive
             // deadline UP, not just the delay: truncating now can release even a
             // whole-second delay early. Zero must remain immediately eligible.
-            let not_before = now
-                .checked_add(delay)
-                .and_then(|deadline| {
-                    deadline
-                        .as_secs()
-                        .checked_add(u64::from(!delay.is_zero() && deadline.subsec_nanos() != 0))
-                })
-                .and_then(|seconds| i64::try_from(seconds).ok())
-                .ok_or_else(|| PijError::Adapter {
-                    adapter: "store/queue".to_string(),
-                    message: "deferral deadline exceeds SQLite's integer timestamp range"
-                        .to_string(),
-                })?;
+            let not_before = not_before_after(delay, "deferral")?;
             sqlx::query(
                 "UPDATE jobs \
              SET state = 'pending', worker = NULL, claimed_at = NULL, not_before = ?2 \
