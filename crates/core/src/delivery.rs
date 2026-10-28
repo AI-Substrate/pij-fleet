@@ -60,6 +60,21 @@ pub fn parked_events(
     job: &crate::model::Job,
     evidence: &crate::ports::ParkingEvidence<'_>,
 ) -> Result<Vec<crate::model::Event>> {
+    parked_events_via(job_id, job, evidence, "extension-stream")
+}
+
+/// [`parked_events`] for a delivery that was attempted on `transport` (a pane
+/// delivery parks with `pty`, plan 184), so the sender receipt names the path
+/// that actually failed.
+///
+/// # Errors
+/// A stored delivery payload cannot be decoded as a message.
+pub fn parked_events_via(
+    job_id: crate::model::JobId,
+    job: &crate::model::Job,
+    evidence: &crate::ports::ParkingEvidence<'_>,
+    transport: &str,
+) -> Result<Vec<crate::model::Event>> {
     let message: Msg = serde_json::from_str(&job.payload).map_err(|error| PijError::Adapter {
         adapter: "delivery/parking".into(),
         message: format!("invalid parked delivery payload: {error}"),
@@ -86,7 +101,7 @@ pub fn parked_events(
             serde_json::json!({
                 "msg_id":message.msg_id,
                 "outcome":{"outcome":"refused","reason":evidence.outcome.as_str()},
-                "transport":"extension-stream",
+                "transport":transport,
             }),
         ),
         event(
@@ -97,6 +112,42 @@ pub fn parked_events(
             }),
         ),
     ])
+}
+
+/// Sender-addressed fact that a pane delivery is still held at the hold limit
+/// (plan 184). The delivery stays queued; the sender is told once, by name.
+pub const HOLD_LIMIT_EVENT_KIND: &str = "delivery.hold-limit";
+
+/// Build the [`HOLD_LIMIT_EVENT_KIND`] fact for a held job, addressed like a
+/// park: to the local sender, or to no seat for a forwarded message.
+///
+/// # Errors
+/// A stored delivery payload cannot be decoded as a message.
+pub fn hold_limit_event(
+    job_id: crate::model::JobId,
+    job: &crate::model::Job,
+    reason: &str,
+    at: u64,
+) -> Result<crate::model::Event> {
+    let message: Msg = serde_json::from_str(&job.payload).map_err(|error| PijError::Adapter {
+        adapter: "delivery/hold-limit".into(),
+        message: format!("invalid held delivery payload: {error}"),
+    })?;
+    let mut payload = serde_json::json!({
+        "messageId": message.msg_id, "jobId": job_id, "recipient": job.serial_key,
+        "reason": reason, "attempts": job.attempt.saturating_add(1),
+    });
+    if let Some(machine) = &message.from_machine {
+        payload["from_machine"] = machine.as_str().into();
+    }
+    Ok(crate::model::Event {
+        seq: None,
+        v: 1,
+        at,
+        kind: HOLD_LIMIT_EVENT_KIND.into(),
+        seat: message.from_machine.is_none().then(|| message.from.clone()),
+        payload: payload.to_string(),
+    })
 }
 
 /// Maximum complete framed message accepted by pane typing.
@@ -151,6 +202,9 @@ pub enum DeliveryDeferralReason {
     HumanTyping,
     /// The pane or composer could not be recognized safely.
     Unrecognized,
+    /// pij just cleared its own leftover from an earlier aborted stage of this
+    /// text; the next attempt finds the composer blank (plan 184).
+    LeftoverCleared,
 }
 
 impl DeliveryDeferralReason {
@@ -162,6 +216,7 @@ impl DeliveryDeferralReason {
             Self::ComposerBusy => "composer-busy",
             Self::HumanTyping => "human-typing",
             Self::Unrecognized => "unrecognized",
+            Self::LeftoverCleared => "leftover-cleared",
         }
     }
 }

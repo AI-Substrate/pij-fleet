@@ -827,6 +827,15 @@ pub enum DeliveryFailure {
     /// The native receiver stopped renewing its lease, regardless of host liveness.
     #[serde(rename = "undelivered:native-receiver-unavailable")]
     NativeReceiverUnavailable,
+    /// A pane control command was still held (a non-blank composer, typing,
+    /// an unrecognized pane) at the hold limit (plan 184); it fails so later
+    /// deliveries to the same seat are not blocked behind it.
+    #[serde(rename = "undelivered:hold-limit")]
+    HoldLimit,
+    /// A pane delivery's staged text never committed; pij cleared its own
+    /// exact leftover and did not submit it (plan 184).
+    #[serde(rename = "undelivered:staged-unsent")]
+    StagedUnsent,
 }
 
 impl DeliveryFailure {
@@ -837,6 +846,8 @@ impl DeliveryFailure {
             Self::HarnessSwallowed => "undelivered:harness-swallowed",
             Self::OperatorReleased => "undelivered:operator-released",
             Self::NativeReceiverUnavailable => "undelivered:native-receiver-unavailable",
+            Self::HoldLimit => "undelivered:hold-limit",
+            Self::StagedUnsent => "undelivered:staged-unsent",
         }
     }
 }

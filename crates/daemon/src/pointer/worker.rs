@@ -2,16 +2,16 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::delivery::{
-    DeliveryDeferralReason, DeliveryRung, MAX_TYPED_FRAME_BYTES, control_kind, delivery_kind,
-    select_rung,
+    DeliveryDeferralReason, DeliveryRung, HOLD_LIMIT_EVENT_KIND, MAX_TYPED_FRAME_BYTES,
+    control_kind, delivery_kind, hold_limit_event, parked_events_via, select_rung,
 };
 use pij_core::error::{PijError, Result};
 use pij_core::framing::frame_message;
 use pij_core::model::{
-    DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, Msg, Outcome, Receipt,
-    SeatDescriptor, SystemState,
+    DeliveryFailure, DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, Msg, Outcome,
+    Receipt, SeatDescriptor, SystemState,
 };
-use pij_core::ports::{Queue, Registry, SeatFilter, TmuxPort, Transport};
+use pij_core::ports::{ParkingEvidence, Queue, Registry, SeatFilter, TmuxPort, Transport};
 use pij_harnesses::{InteractionGate, StagedSubmission};
 
 use crate::delivery::{publish_delivery_held, publish_delivery_outcome, publish_socket_released};
@@ -33,6 +33,33 @@ const WORKER_ID: &str = "pointer-drain";
 /// How long a Copilot seat must stay `idle` before a control is typed into it.
 /// Its intra-turn idle blips measured 2–4 ms in the plan 186 canary.
 const COPILOT_IDLE_SETTLE: Duration = Duration::from_millis(250);
+
+/// The longest a composer-busy pane delivery waits between attempts (plan 184).
+///
+/// Composer-busy holds back off 1 s, 2 s, 4 s … to this cap. Waiting is
+/// launch-free (the gate looks through the control client before reserving),
+/// so the cap bounds how late a delivery lands after the composer clears, not
+/// what waiting costs.
+const HOLD_BACKOFF_CAP: Duration = Duration::from_secs(60);
+
+/// Attempts after which a held pane delivery is surfaced (plan 184): a control
+/// command fails by name, a body tells its sender once and stays queued. For a
+/// composer-busy hold that is about seven minutes (1+2+…+32 s, then six 60 s
+/// waits), longer at the drain cadence's granularity; every retry counts.
+const HOLD_LIMIT_ATTEMPTS: u32 = 12;
+
+/// Backoff for a held pane delivery. A composer that holds text (a parked
+/// draft, or a leftover not yet recognized) waits on a person with no deadline,
+/// so it backs off: [`retry_delay`] capped at [`HOLD_BACKOFF_CAP`]. Typing
+/// already waits out its grace inside the gate, and the other holds are
+/// transient, so they retry on the next tick as before.
+fn hold_delay(reason: DeliveryDeferralReason, attempt: u32) -> Duration {
+    if reason == DeliveryDeferralReason::ComposerBusy {
+        retry_delay(attempt).min(HOLD_BACKOFF_CAP)
+    } else {
+        Duration::ZERO
+    }
+}
 
 /// One delivery-queue drain pass below the socket transport.
 ///
@@ -281,9 +308,7 @@ impl DrainWorker {
                 .await;
         }
         if msg.command.is_some() {
-            return self
-                .submit_command_claim(job_id, job.attempt, pane, &msg)
-                .await;
+            return self.submit_command_claim(job_id, job, pane, &msg).await;
         }
         let Some(socket_available) = socket_available else {
             return self.defer_body(job_id, "socket-availability-unknown").await;
@@ -345,10 +370,7 @@ impl DrainWorker {
                 self.announce_control_body_claim(job_id, job.attempt, pane, &msg)
                     .await
             }
-            DeliveryRung::TypedBody => {
-                self.submit_body_claim(job_id, job.attempt, pane, &msg)
-                    .await
-            }
+            DeliveryRung::TypedBody => self.submit_body_claim(job_id, job, pane, &msg).await,
             DeliveryRung::Observe | DeliveryRung::Queue => {
                 self.defer_body(job_id, "delivery-unavailable").await
             }
@@ -404,7 +426,7 @@ impl DrainWorker {
     async fn submit_command_claim(
         &self,
         job_id: JobId,
-        attempt: u32,
+        job: &Job,
         pane: &str,
         msg: &Msg,
     ) -> Result<()> {
@@ -419,25 +441,53 @@ impl DrainWorker {
                 self.ack_delivered_claim(job_id, msg, DeliveryOrigin::InjectedToTransport)
                     .await
             }
+            // A control command is a moment, not a message: a held one fails by
+            // name at the limit so it cannot block later deliveries forever.
+            Ok(StagedSubmission::Deferred { reason, draft_sha })
+                if job.attempt.saturating_add(1) >= HOLD_LIMIT_ATTEMPTS =>
+            {
+                let recorded = self
+                    .record_deferral(job_id, reason.as_str(), draft_sha.as_deref())
+                    .await;
+                self.fail_pane_delivery(
+                    job_id,
+                    job,
+                    msg,
+                    DeliveryFailure::HoldLimit,
+                    format!(
+                        "{rendered} was still held ({}) after {HOLD_LIMIT_ATTEMPTS} attempts",
+                        reason.as_str()
+                    ),
+                )
+                .await?;
+                recorded
+            }
             Ok(StagedSubmission::Deferred { reason, draft_sha }) => {
-                if matches!(
+                let delay = if matches!(
                     reason,
                     DeliveryDeferralReason::TapUnowned | DeliveryDeferralReason::Unrecognized
                 ) {
-                    self.retry_deferred(
-                        job_id,
-                        retry_delay(attempt),
-                        reason.as_str(),
-                        draft_sha.as_deref(),
-                    )
-                    .await
+                    retry_delay(job.attempt)
                 } else {
-                    self.release_held_body(job_id, reason, draft_sha.as_deref())
-                        .await
-                }
+                    hold_delay(reason, job.attempt)
+                };
+                self.retry_deferred(job_id, delay, reason.as_str(), draft_sha.as_deref())
+                    .await
+            }
+            Ok(StagedSubmission::LeftoverCleared { draft_sha }) => {
+                self.fail_pane_delivery(
+                    job_id,
+                    job,
+                    msg,
+                    DeliveryFailure::StagedUnsent,
+                    format!(
+                        "{rendered} was staged but never submitted; pij cleared its own leftover (draft {draft_sha})"
+                    ),
+                )
+                .await
             }
             Err(error) => {
-                self.retry_deferred(job_id, retry_delay(attempt), "submit-error", None)
+                self.retry_deferred(job_id, retry_delay(job.attempt), "submit-error", None)
                     .await?;
                 Err(error)
             }
@@ -447,7 +497,7 @@ impl DrainWorker {
     async fn submit_body_claim(
         &self,
         job_id: JobId,
-        attempt: u32,
+        job: &Job,
         pane: &str,
         msg: &Msg,
     ) -> Result<()> {
@@ -462,6 +512,7 @@ impl DrainWorker {
             return self
                 .announce_pull_claim(
                     job_id,
+                    job.attempt,
                     pane,
                     msg,
                     OVERSIZE_BODY_POINTER_EVENT_KIND,
@@ -480,11 +531,22 @@ impl DrainWorker {
                     .await
             }
             Ok(StagedSubmission::Deferred { reason, draft_sha }) => {
-                self.release_held_body(job_id, reason, draft_sha.as_deref())
+                self.hold_body(job_id, job, msg, reason, draft_sha.as_deref())
                     .await
             }
+            // The body itself is still wanted: the composer is now blank, so the
+            // next attempt stages it cleanly.
+            Ok(StagedSubmission::LeftoverCleared { draft_sha }) => {
+                self.retry_deferred(
+                    job_id,
+                    Duration::ZERO,
+                    DeliveryDeferralReason::LeftoverCleared.as_str(),
+                    Some(&draft_sha),
+                )
+                .await
+            }
             Err(error) => {
-                self.retry_deferred(job_id, retry_delay(attempt), "submit-error", None)
+                self.retry_deferred(job_id, retry_delay(job.attempt), "submit-error", None)
                     .await?;
                 Err(error)
             }
@@ -494,13 +556,14 @@ impl DrainWorker {
     async fn announce_control_body_claim(
         &self,
         job_id: JobId,
-        _attempt: u32,
+        attempt: u32,
         pane: &str,
         msg: &Msg,
     ) -> Result<()> {
         let pointer = render_control_body_pointer(&msg.from, msg.from_machine.as_deref());
         self.announce_pull_claim(
             job_id,
+            attempt,
             pane,
             msg,
             CONTROL_BODY_POINTER_EVENT_KIND,
@@ -510,9 +573,11 @@ impl DrainWorker {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn announce_pull_claim(
         &self,
         job_id: JobId,
+        attempt: u32,
         pane: &str,
         msg: &Msg,
         event_kind: &str,
@@ -559,8 +624,22 @@ impl DrainWorker {
                 self.defer_body(job_id, reason).await
             }
             Ok(StagedSubmission::Deferred { reason, draft_sha }) => {
-                self.release_held_body(job_id, reason, draft_sha.as_deref())
-                    .await
+                self.retry_deferred(
+                    job_id,
+                    hold_delay(reason, attempt),
+                    reason.as_str(),
+                    draft_sha.as_deref(),
+                )
+                .await
+            }
+            Ok(StagedSubmission::LeftoverCleared { draft_sha }) => {
+                self.retry_deferred(
+                    job_id,
+                    Duration::ZERO,
+                    DeliveryDeferralReason::LeftoverCleared.as_str(),
+                    Some(&draft_sha),
+                )
+                .await
             }
             Err(error) => {
                 self.defer_body(job_id, "submit-error").await?;
@@ -607,16 +686,6 @@ impl DrainWorker {
 
     async fn release_body(&self, job_id: JobId) -> Result<()> {
         self.queue.retry(job_id, Duration::ZERO).await
-    }
-
-    async fn release_held_body(
-        &self,
-        job_id: JobId,
-        reason: DeliveryDeferralReason,
-        draft_sha: Option<&str>,
-    ) -> Result<()> {
-        self.retry_deferred(job_id, Duration::ZERO, reason.as_str(), draft_sha)
-            .await
     }
 
     async fn defer_body(&self, job_id: JobId, reason: &str) -> Result<()> {
@@ -692,6 +761,71 @@ impl DrainWorker {
         self.queue.retry(job_id, retry_delay(attempt)).await
     }
 
+    /// Hold a body behind a composer that is not safe to type into: back off,
+    /// and at [`HOLD_LIMIT_ATTEMPTS`] tell the local sender once, by name. The
+    /// body stays queued; a message is not stale the way a control command is.
+    async fn hold_body(
+        &self,
+        job_id: JobId,
+        job: &Job,
+        msg: &Msg,
+        reason: DeliveryDeferralReason,
+        draft_sha: Option<&str>,
+    ) -> Result<()> {
+        if job.attempt.saturating_add(1) >= HOLD_LIMIT_ATTEMPTS
+            && msg.from_machine.is_none()
+            && self
+                .event_bus
+                .latest_matching_message(&msg.from, HOLD_LIMIT_EVENT_KIND, &msg.msg_id)
+                .await?
+                .is_none()
+        {
+            let at = (self.clock)()?;
+            self.event_bus
+                .publish(hold_limit_event(job_id, job, reason.as_str(), at)?)
+                .await?;
+        }
+        self.retry_deferred(
+            job_id,
+            hold_delay(reason, job.attempt),
+            reason.as_str(),
+            draft_sha,
+        )
+        .await
+    }
+
+    /// Fail a pane delivery by name and tell its sender: the job is terminal
+    /// first, then the sender-addressed `delivery.parked` fact the park-notice
+    /// follower turns into one notice (plan 184).
+    async fn fail_pane_delivery(
+        &self,
+        job_id: JobId,
+        job: &Job,
+        msg: &Msg,
+        failure: DeliveryFailure,
+        detail: String,
+    ) -> Result<()> {
+        let _delivery_order = self.event_bus.socket_delivery_order.lock().await;
+        self.queue
+            .ack(
+                job_id,
+                Outcome::Failed {
+                    reason: format!("{}: {detail}", failure.as_str()),
+                },
+            )
+            .await?;
+        let evidence = ParkingEvidence {
+            outcome: failure,
+            reason: &detail,
+            at: (self.clock)()?,
+        };
+        for event in parked_events_via(job_id, job, &evidence, "pty")? {
+            self.event_bus.publish(event).await?;
+        }
+        debug_assert_eq!(msg.to.as_str(), job.serial_key);
+        Ok(())
+    }
+
     async fn fail_claim(&self, job_id: JobId, reason: String) -> Result<()> {
         self.queue.ack(job_id, Outcome::Failed { reason }).await
     }
@@ -733,6 +867,9 @@ mod tests {
     use tokio::sync::Notify;
 
     use super::{DrainWorker, EventBus, PointerPolicy, retry_delay};
+
+    // `pointer/worker/tests/plan184.rs`: plan 184's own file, so it can run on main too.
+    mod plan184;
     use crate::pointer::{OVERSIZE_BODY_POINTER_EVENT_KIND, POINTER_ANNOUNCED_EVENT_KIND};
 
     const CADENCE: Duration = Duration::from_secs(90);
@@ -1103,6 +1240,8 @@ mod tests {
             })
             .with_attached_tap(pane)
             .script_capture("╰──── hello ─╯")
+            // A held attempt only looks; a clear one looks, then re-reads under ownership.
+            .script_capture("╰────       ─╯")
             .script_capture("╰────       ─╯");
         let fixture = fixture_with_grace(FakeTransport::reachable(), tmux, 60_000);
         register(&fixture, seat("pij-control-draft", Some(pane))).await;
@@ -1681,6 +1820,8 @@ mod tests {
             })
             .with_attached_tap(pane)
             .script_capture("╰──── hello ─╯")
+            // A held attempt only looks; a clear one looks, then re-reads under ownership.
+            .script_capture("╰────       ─╯")
             .script_capture("╰────       ─╯");
         let mut fixture = fixture_with_grace(FakeTransport::unreachable(), tmux, 60_000);
         fixture.worker.clock = || Ok(1_788_600_000_000);

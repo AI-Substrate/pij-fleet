@@ -735,6 +735,47 @@ pub struct LaunchCommand {
 /// Notice appended to an aborted composer transaction before input is restored.
 pub const STAGED_SUBMIT_RECOVERY: &str = "[pij: delivery staged but not submitted; inspect the staged text and press Ctrl-C to clear it]";
 
+/// Columns a composer indents its continuation rows by (Claude: under `❯ `).
+const CONTINUATION_INDENT: usize = 2;
+
+/// Exactly what an aborted staged submit of `text` leaves in the composer: the
+/// staged text, then [`STAGED_SUBMIT_RECOVERY`] on its own line (plan 184).
+#[must_use]
+pub fn staged_leftover(text: &str) -> String {
+    format!("{text}\n{STAGED_SUBMIT_RECOVERY}")
+}
+
+/// Whether recognized composer text `observed` is EXACTLY pij's own
+/// [`staged_leftover`] of `text`, and nothing a person has touched.
+///
+/// The only freedom is the composer's own rendering: each row break must stand
+/// where the leftover has a space or a newline (a soft wrap, or the notice's
+/// line), continuation rows lose up to [`CONTINUATION_INDENT`] leading spaces,
+/// and trailing row padding is ignored. Every other character must match, so
+/// one typed character, a deleted one, or a doubled space inside a row is a
+/// human draft (plan 184 R1). Rendering this cannot account for reads as a
+/// human draft too: the safe direction.
+#[must_use]
+pub fn is_staged_leftover(observed: &str, text: &str) -> bool {
+    let mut rows = observed.split('\n');
+    let mut seen = rows.next().unwrap_or_default().trim_end().to_string();
+    for row in rows {
+        let indent = row.len() - row.trim_start_matches(' ').len();
+        seen.push('\n');
+        seen.push_str(row[indent.min(CONTINUATION_INDENT)..].trim_end());
+    }
+    let expected = staged_leftover(text);
+    let (mut want, mut got) = (expected.chars(), seen.chars());
+    loop {
+        match (want.next(), got.next()) {
+            (None, None) => return true,
+            (Some(' ' | '\n'), Some('\n')) => {}
+            (Some(want), Some(got)) if want == got && want != '\n' => {}
+            _ => return false,
+        }
+    }
+}
+
 /// Opaque ownership of one pane composer staged for explicit commit or abort.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagedSubmit {
@@ -783,6 +824,22 @@ pub trait TmuxPort: Send + Sync {
 
     /// Leave staged text unsent, show recovery when needed, and restore input.
     async fn abort_submit(&self, staged: &StagedSubmit) -> Result<()>;
+
+    /// Delete pij's own leftover from an earlier aborted stage of `text`, inside
+    /// this owned transaction, before anything is staged (plan 184).
+    ///
+    /// `observed` is the composer text the caller captured under THIS ownership,
+    /// so no human input can have arrived since. Refuses and sends nothing
+    /// unless the token still owns the pane with input disabled, nothing is
+    /// staged yet, and `observed` is exactly [`staged_leftover`] of `text`
+    /// ([`is_staged_leftover`]); then deletes exactly that many characters.
+    /// Never presses Enter. The caller still commits or aborts the transaction.
+    async fn clear_staged_leftover(
+        &self,
+        staged: &StagedSubmit,
+        text: &str,
+        observed: &str,
+    ) -> Result<()>;
 
     /// SUBMIT `text` to a pane as a turn: type it AND send it.
     ///
@@ -907,4 +964,63 @@ pub trait SessionStatusPort: Send + Sync {
     /// `Err` is reserved for a source failure. An unsupported harness or a missing
     /// transcript is a normal reply.
     async fn status(&self, target: &SessionTarget) -> Result<SessionStatusReply>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{STAGED_SUBMIT_RECOVERY, is_staged_leftover, staged_leftover};
+
+    /// The two stuck composers of pij-fleet#86, as `composer_region` returns
+    /// them: walrus (180 columns) on one row, marmot (80 columns) wrapped.
+    const WALRUS: &str = "/compact\n  [pij: delivery staged but not submitted; inspect the staged text and press Ctrl-C to clear it]";
+    const MARMOT: &str = "/compact\n  [pij: delivery staged but not submitted; inspect the staged text and press\n  Ctrl-C to clear it]";
+
+    #[test]
+    fn the_live_leftovers_are_recognised_at_both_widths() {
+        assert!(is_staged_leftover(WALRUS, "/compact"));
+        assert!(is_staged_leftover(MARMOT, "/compact"));
+        assert!(is_staged_leftover(&staged_leftover("/compact"), "/compact"));
+        assert!(is_staged_leftover(
+            "/compact\n  [pij: delivery staged but not submitted; inspect the staged text and press Ctrl-C to clear it]   ",
+            "/compact"
+        ));
+    }
+
+    #[test]
+    fn one_keystroke_anywhere_is_a_human_draft() {
+        let leftover = staged_leftover("/compact");
+        for (at, _) in leftover.char_indices() {
+            let mut typed = leftover.clone();
+            typed.insert(at, 'x');
+            assert!(!is_staged_leftover(&typed, "/compact"), "insert at {at}");
+            let mut deleted = leftover.clone();
+            deleted.remove(at);
+            assert!(!is_staged_leftover(&deleted, "/compact"), "delete at {at}");
+        }
+        assert!(!is_staged_leftover(&format!("{leftover}x"), "/compact"));
+        assert!(!is_staged_leftover(&format!("x{leftover}"), "/compact"));
+    }
+
+    #[test]
+    fn whitespace_edits_inside_a_row_are_human_too() {
+        let doubled = WALRUS.replacen("staged but", "staged  but", 1);
+        assert!(!is_staged_leftover(&doubled, "/compact"));
+        let broken_word = MARMOT.replacen("Ctrl-C", "Ctrl-\n  C", 1);
+        assert!(!is_staged_leftover(&broken_word, "/compact"));
+        let joined = format!("/compact {STAGED_SUBMIT_RECOVERY}");
+        assert!(
+            !is_staged_leftover(&joined, "/compact"),
+            "the notice's own line break is not a space"
+        );
+        let deep_indent = WALRUS.replacen("\n  [", "\n   [", 1);
+        assert!(!is_staged_leftover(&deep_indent, "/compact"));
+    }
+
+    #[test]
+    fn another_texts_leftover_or_a_bare_command_is_not_ours() {
+        assert!(!is_staged_leftover(WALRUS, "/new"));
+        assert!(!is_staged_leftover("/compact", "/compact"));
+        assert!(!is_staged_leftover(STAGED_SUBMIT_RECOVERY, "/compact"));
+        assert!(!is_staged_leftover("", "/compact"));
+    }
 }

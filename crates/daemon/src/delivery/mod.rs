@@ -1241,11 +1241,14 @@ impl DeliveryService {
                                     .interaction
                                     .submit_with_owned_input(pane, &framed)
                                     .await
+                                    // A cleared leftover of an identical earlier frame queues
+                                    // this message for the now-blank composer.
+                                    .map(StagedSubmission::into_deferral)
                                 {
-                                    Ok(StagedSubmission::Submitted) => DeliveryOutcome::Delivered {
+                                    Ok(None) => DeliveryOutcome::Delivered {
                                         origin: DeliveryOrigin::TypedToPane,
                                     },
-                                    Ok(StagedSubmission::Deferred { reason, draft_sha }) => {
+                                    Ok(Some((reason, draft_sha))) => {
                                         self.queue
                                             .forget_delivered(
                                                 &to,
@@ -2675,6 +2678,16 @@ mod tests {
         }
         async fn abort_submit(&self, staged: &StagedSubmit) -> pij_core::error::Result<()> {
             self.inner.abort_submit(staged).await
+        }
+        async fn clear_staged_leftover(
+            &self,
+            staged: &StagedSubmit,
+            text: &str,
+            observed: &str,
+        ) -> pij_core::error::Result<()> {
+            self.inner
+                .clear_staged_leftover(staged, text, observed)
+                .await
         }
         async fn submit(&self, pane: &str, text: &str) -> pij_core::error::Result<()> {
             self.inner.submit(pane, text).await

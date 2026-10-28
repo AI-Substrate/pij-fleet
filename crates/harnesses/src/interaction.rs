@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use pij_core::delivery::{DEFAULT_TYPING_GRACE_MS, DeliveryDeferralReason};
 use pij_core::error::{PijError, Result};
 use pij_core::framing::self_injection_matches;
-use pij_core::ports::{StagedSubmit, TmuxPort};
+use pij_core::ports::{StagedSubmit, TmuxPort, is_staged_leftover};
 use sha2::{Digest, Sha256};
 
 use crate::composer::{ComposerRegion, composer_region};
@@ -138,6 +138,29 @@ pub enum StagedSubmission {
         /// Short SHA-256 fingerprint of the recognized draft, when present.
         draft_sha: Option<String>,
     },
+    /// The composer held exactly pij's own leftover from an earlier aborted
+    /// stage of this same text; it was cleared and nothing was submitted
+    /// (plan 184). The caller fails the delivery by name: the sender resends.
+    LeftoverCleared {
+        /// Short SHA-256 fingerprint of the leftover that was cleared.
+        draft_sha: String,
+    },
+}
+
+impl StagedSubmission {
+    /// For a caller that only queues what was not submitted: `None` when
+    /// submitted, else the deferral it amounts to. A cleared leftover defers as
+    /// [`DeliveryDeferralReason::LeftoverCleared`]: the composer is now blank.
+    #[must_use]
+    pub fn into_deferral(self) -> Option<(DeliveryDeferralReason, Option<String>)> {
+        match self {
+            Self::Submitted => None,
+            Self::Deferred { reason, draft_sha } => Some((reason, draft_sha)),
+            Self::LeftoverCleared { draft_sha } => {
+                Some((DeliveryDeferralReason::LeftoverCleared, Some(draft_sha)))
+            }
+        }
+    }
 }
 
 /// Tracks composer edits separately from tmux-mode, tap and recognition latches.
@@ -182,6 +205,21 @@ impl<'a> PaneTransaction<'a> {
 
     async fn abort(self) -> Result<()> {
         self.gate.tmux.abort_submit(&self.staged).await
+    }
+
+    /// Clear pij's own leftover, then release the pane; nothing is submitted.
+    async fn clear_leftover(self, text: &str, observed: &str) -> Result<StagedSubmission> {
+        let cleared = self
+            .gate
+            .tmux
+            .clear_staged_leftover(&self.staged, text, observed)
+            .await;
+        let released = self.gate.tmux.abort_submit(&self.staged).await;
+        cleared?;
+        released?;
+        Ok(StagedSubmission::LeftoverCleared {
+            draft_sha: short_sha256(observed),
+        })
     }
 
     async fn stage_and_commit(mut self, text: &str) -> Result<StagedSubmission> {
@@ -418,38 +456,56 @@ impl InteractionGate {
     /// Pane typing additionally requires `composer_idle`, even after the parked-
     /// draft policy veto has expired. Both facts come from this one capture.
     pub async fn fresh_injection_verdict(&self, pane: &str) -> Result<InjectionVerdict> {
+        Ok(self.injection_observation(pane).await?.0)
+    }
+
+    /// [`Self::fresh_injection_verdict`] plus the recognized composer text it
+    /// judged, when the composer was recognized.
+    async fn injection_observation(
+        &self,
+        pane: &str,
+    ) -> Result<(InjectionVerdict, Option<String>)> {
         if !self.refresh_live_tap(pane).await? {
-            return Ok(InjectionVerdict {
-                permitted: false,
-                composer_idle: false,
-                reason: Some(DeliveryDeferralReason::TapUnowned),
-                draft_sha: None,
-                next_retry_at: None,
-                last_edit_age: None,
-            });
+            return Ok((
+                InjectionVerdict {
+                    permitted: false,
+                    composer_idle: false,
+                    reason: Some(DeliveryDeferralReason::TapUnowned),
+                    draft_sha: None,
+                    next_retry_at: None,
+                    last_edit_age: None,
+                },
+                None,
+            ));
         }
         let listed = self.tmux.list_panes().await?;
         let Some(listed) = listed.into_iter().find(|listed| listed.id == pane) else {
             let permitted = self.permits_with_additional_veto(pane, true).await?;
-            return Ok(InjectionVerdict {
-                permitted,
-                composer_idle: false,
-                reason: Some(DeliveryDeferralReason::Unrecognized),
-                draft_sha: None,
-                next_retry_at: None,
-                last_edit_age: None,
-            });
+            return Ok((
+                InjectionVerdict {
+                    permitted,
+                    composer_idle: false,
+                    reason: Some(DeliveryDeferralReason::Unrecognized),
+                    draft_sha: None,
+                    next_retry_at: None,
+                    last_edit_age: None,
+                },
+                None,
+            ));
         };
         let (Some(cursor_x), Some(cursor_y)) = (listed.cursor_x, listed.cursor_y) else {
             let permitted = self.permits_with_additional_veto(pane, true).await?;
-            return Ok(InjectionVerdict {
-                permitted,
-                composer_idle: false,
-                reason: Some(DeliveryDeferralReason::Unrecognized),
-                draft_sha: None,
-                next_retry_at: None,
-                last_edit_age: None,
-            });
+            return Ok((
+                InjectionVerdict {
+                    permitted,
+                    composer_idle: false,
+                    reason: Some(DeliveryDeferralReason::Unrecognized),
+                    draft_sha: None,
+                    next_retry_at: None,
+                    last_edit_age: None,
+                },
+                None,
+            ));
         };
         let capture = self.tmux.capture(pane, CAPTURE_LINES).await?;
         match composer_region(&capture, cursor_x, cursor_y) {
@@ -472,25 +528,31 @@ impl InteractionGate {
                     .and_then(|age| self.typing_grace.checked_sub(age))
                     .filter(|remaining| !remaining.is_zero());
                 let human_typing = next_retry_at.is_some();
-                Ok(InjectionVerdict {
-                    permitted: !human_typing,
-                    composer_idle,
-                    reason: human_typing.then_some(DeliveryDeferralReason::HumanTyping),
-                    draft_sha: (!composer_idle).then(|| short_sha256(&content)),
-                    next_retry_at,
-                    last_edit_age,
-                })
+                Ok((
+                    InjectionVerdict {
+                        permitted: !human_typing,
+                        composer_idle,
+                        reason: human_typing.then_some(DeliveryDeferralReason::HumanTyping),
+                        draft_sha: (!composer_idle).then(|| short_sha256(&content)),
+                        next_retry_at,
+                        last_edit_age,
+                    },
+                    Some(content),
+                ))
             }
             ComposerRegion::Unrecognized => {
                 let permitted = self.permits_with_additional_veto(pane, true).await?;
-                Ok(InjectionVerdict {
-                    permitted,
-                    composer_idle: false,
-                    reason: Some(DeliveryDeferralReason::Unrecognized),
-                    draft_sha: None,
-                    next_retry_at: None,
-                    last_edit_age: None,
-                })
+                Ok((
+                    InjectionVerdict {
+                        permitted,
+                        composer_idle: false,
+                        reason: Some(DeliveryDeferralReason::Unrecognized),
+                        draft_sha: None,
+                        next_retry_at: None,
+                        last_edit_age: None,
+                    },
+                    None,
+                ))
             }
         }
     }
@@ -498,16 +560,33 @@ impl InteractionGate {
     /// Own pane input before observing, then stage and commit only into a blank composer.
     ///
     /// Ordering makes external-input races impossible: acquisition happens before
-    /// the one fresh permission capture, and ownership lasts through Enter. This
+    /// the deciding capture, and ownership lasts through Enter. This
     /// deliberately replaces the rejected post-stage rendered-pixel comparison.
+    ///
+    /// **Reads before reserves (plan 184).** Reserving the pane launches tmux
+    /// twice (reserve, then restore), so a launch-free look through the control
+    /// client comes first, and a composer that is plainly not submittable defers
+    /// without reserving. The look is a BRAKE, never the decision: it can only
+    /// skip an attempt, and everything it lets through is judged again under
+    /// ownership. The one composer that is not blank but is acted on is pij's
+    /// own [`pij_core::ports::staged_leftover`] of this same `text`, matched
+    /// exactly and only once the typing grace has passed; it is cleared and
+    /// reported as [`StagedSubmission::LeftoverCleared`], never submitted.
     pub async fn submit_with_owned_input(
         &self,
         pane: &str,
         text: &str,
     ) -> Result<StagedSubmission> {
+        let (look, observed) = self.injection_observation(pane).await?;
+        let own_leftover = observed
+            .as_deref()
+            .is_some_and(|observed| is_staged_leftover(observed, text));
+        if !look.permitted || !(look.composer_idle || own_leftover) {
+            return Ok(Self::deferred(look));
+        }
         let transaction = PaneTransaction::new(self, self.tmux.acquire_submit(pane).await?);
-        let verdict = match self.fresh_injection_verdict(pane).await {
-            Ok(verdict) => verdict,
+        let (verdict, observed) = match self.injection_observation(pane).await {
+            Ok(observation) => observation,
             Err(error) => {
                 return match transaction.abort().await {
                     Ok(()) => Err(error),
@@ -520,16 +599,26 @@ impl InteractionGate {
                 };
             }
         };
+        if verdict.permitted
+            && !verdict.composer_idle
+            && let Some(observed) = observed.filter(|observed| is_staged_leftover(observed, text))
+        {
+            return transaction.clear_leftover(text, &observed).await;
+        }
         if !verdict.permitted || !verdict.composer_idle {
             transaction.abort().await?;
-            return Ok(StagedSubmission::Deferred {
-                reason: verdict
-                    .reason
-                    .unwrap_or(DeliveryDeferralReason::ComposerBusy),
-                draft_sha: verdict.draft_sha,
-            });
+            return Ok(Self::deferred(verdict));
         }
         transaction.stage_and_commit(text).await
+    }
+
+    fn deferred(verdict: InjectionVerdict) -> StagedSubmission {
+        StagedSubmission::Deferred {
+            reason: verdict
+                .reason
+                .unwrap_or(DeliveryDeferralReason::ComposerBusy),
+            draft_sha: verdict.draft_sha,
+        }
     }
 
     /// True only when both independent gates report clear.
@@ -1500,6 +1589,118 @@ mod tests {
         assert!(
             !block_on(gate.permits_injection("%108")).expect("unknown gate"),
             "losing sight of a pane must revoke stale permission"
+        );
+    }
+
+    /// Plan 184: a gate whose typing grace has already passed.
+    fn settled_gate(tmux: &Arc<FakeTmux>) -> InteractionGate {
+        InteractionGate::with_typing_grace(
+            Arc::clone(tmux) as Arc<dyn TmuxPort>,
+            Duration::from_secs(60),
+            0,
+        )
+    }
+
+    #[test]
+    fn own_exact_leftover_is_cleared_inside_ownership_and_never_submitted() {
+        let leftover = pij_core::ports::staged_leftover("/compact");
+        let tmux = Arc::new(FakeTmux::new().with_attached_tap("%108"));
+        tmux.arrange_composer_text("%108", &leftover);
+        let gate = settled_gate(&tmux);
+
+        assert_eq!(
+            block_on(gate.submit_with_owned_input("%108", "/compact")).expect("leftover"),
+            StagedSubmission::LeftoverCleared {
+                draft_sha: short_sha256(&leftover),
+            }
+        );
+        let calls = tmux.calls();
+        let at = |prefix: &str| {
+            calls
+                .iter()
+                .position(|call| call.starts_with(prefix))
+                .unwrap_or_else(|| panic!("{prefix} missing from {calls:?}"))
+        };
+        assert!(at("acquire_submit:%108") < at("clear_staged_leftover:%108"));
+        assert!(at("clear_staged_leftover:%108") < at("abort_submit:%108"));
+        assert!(!calls.iter().any(|call| call.starts_with("submit:")));
+        assert!(!tmux.pane_input_disabled("%108"));
+    }
+
+    #[test]
+    fn own_leftover_still_waits_out_the_typing_grace() {
+        let leftover = pij_core::ports::staged_leftover("/compact");
+        let tmux = Arc::new(FakeTmux::new().with_attached_tap("%108"));
+        tmux.arrange_composer_text("%108", &leftover);
+        let gate = InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>);
+
+        assert!(matches!(
+            block_on(gate.submit_with_owned_input("%108", "/compact")).expect("fresh"),
+            StagedSubmission::Deferred {
+                reason: DeliveryDeferralReason::HumanTyping,
+                ..
+            }
+        ));
+        assert!(
+            tmux.calls()
+                .iter()
+                .all(|call| !call.starts_with("acquire_submit")),
+            "a composer judged unsafe by a launch-free look is never reserved"
+        );
+    }
+
+    #[test]
+    fn a_leftover_one_keystroke_away_or_of_other_text_is_a_human_draft() {
+        let leftover = pij_core::ports::staged_leftover("/compact");
+        for (composer, text) in [
+            (format!("{leftover}x"), "/compact"),
+            (leftover.replacen("/compact", "/compac", 1), "/compact"),
+            (leftover.clone(), "/new"),
+        ] {
+            let tmux = Arc::new(FakeTmux::new().with_attached_tap("%108"));
+            tmux.arrange_composer_text("%108", &composer);
+            let gate = settled_gate(&tmux);
+
+            assert_eq!(
+                block_on(gate.submit_with_owned_input("%108", text)).expect("draft"),
+                StagedSubmission::Deferred {
+                    reason: DeliveryDeferralReason::ComposerBusy,
+                    draft_sha: Some(short_sha256(&composer)),
+                },
+                "{composer:?} for {text}"
+            );
+            assert!(
+                tmux.calls()
+                    .iter()
+                    .all(|call| !call.starts_with("acquire_submit")
+                        && !call.starts_with("clear_staged_leftover")),
+                "{composer:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_clear_verb_itself_refuses_any_difference_and_unowned_panes() {
+        let leftover = pij_core::ports::staged_leftover("/compact");
+        let tmux = FakeTmux::new().with_clear_composer("%108");
+        let staged = block_on(tmux.acquire_submit("%108")).expect("own the pane");
+        for observed in [format!("{leftover}x"), leftover.replacen(' ', "  ", 1)] {
+            assert!(block_on(tmux.clear_staged_leftover(&staged, "/compact", &observed)).is_err());
+        }
+        assert!(
+            tmux.calls()
+                .iter()
+                .all(|call| !call.starts_with("clear_staged_leftover")),
+            "nothing is cleared on a refusal"
+        );
+        assert!(
+            tmux.pane_input_disabled("%108"),
+            "the caller still owns the pane"
+        );
+        block_on(tmux.abort_submit(&staged)).expect("release");
+        assert!(
+            block_on(tmux.clear_staged_leftover(&staged, "/compact", &leftover)).is_err(),
+            "a released token clears nothing"
         );
     }
 }

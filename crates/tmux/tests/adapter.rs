@@ -403,7 +403,7 @@ async fn dropped_staged_submit_restores_input_without_enter() {
     expected.extend_from_slice(body.as_bytes());
     expected.extend_from_slice(b"\x1b[201~");
     let command = format!(
-        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 5",
+        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 20",
         expected.len(),
         output_path.display()
     );
@@ -450,7 +450,7 @@ async fn stage_deadline_aborts_and_restores_input() {
     fs::create_dir_all(&session.tap_root).expect("create deadline fixture directory");
     let wrapper = session.tap_root.join("tmux-deadline-wrapper");
     let script = format!(
-        "#!/bin/sh\n[ \"$1\" = -u ] && shift\ncase \"${{6-}}\" in *paste-buffer*) sleep 0.2 ;; esac\nexec tmux -L {} \"$@\"\n",
+        "#!/bin/sh\n[ \"$1\" = -u ] && shift\ncase \"${{6-}}\" in *paste-buffer*) sleep 0.5 ;; esac\nexec tmux -L {} \"$@\"\n",
         shell_literal(&session.server)
     );
     write_executable(&wrapper, &script);
@@ -472,9 +472,241 @@ async fn stage_deadline_aborts_and_restores_input() {
         .await
         .expect_err("staging beyond the transaction bound must abort");
 
-    assert!(error.to_string().contains("exceeded 1s"), "{error}");
+    assert!(error.to_string().contains("exceeded 4s"), "{error}");
     wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
     wait_for_submit_marker_clear(&session, &pane.id, EVENTUALLY);
+}
+
+/// Plan 184: clearing pij's own leftover deletes exactly its characters, with
+/// the pane still owned afterwards, and never presses Enter.
+#[tokio::test]
+async fn clear_staged_leftover_sends_one_backspace_per_leftover_character() {
+    let _serial = transaction_test_guard().await;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let output_path = std::env::temp_dir().join(format!(
+        "pij-rs-submit-clear-{}-{nonce}.bin",
+        std::process::id()
+    ));
+    let leftover = pij_core::ports::staged_leftover("/compact");
+    let expected = vec![0x7f_u8; leftover.chars().count()];
+    let command = format!(
+        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 20",
+        expected.len() + 1,
+        output_path.display()
+    );
+    let Some(session) = TestSession::start_or_skip_with_command("submit-clear", &command) else {
+        return;
+    };
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = tmux
+        .list_panes()
+        .await
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+
+    let staged = tmux
+        .acquire_submit(&pane.id)
+        .await
+        .expect("acquire pane input");
+    tmux.clear_staged_leftover(&staged, "/compact", &leftover)
+        .await
+        .expect("clear the exact leftover");
+    assert!(
+        pane_input_off(&session, &pane.id),
+        "still owned after clearing"
+    );
+    tmux.abort_submit(&staged).await.expect("release");
+    wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
+
+    // dd waits for one byte more than the clear sends: only the clear's bytes
+    // are there, and no Enter followed them.
+    let observed = wait_for_file(&output_path, expected.len(), EVENTUALLY);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        fs::read(&output_path).expect("read clear capture"),
+        expected
+    );
+    assert_eq!(observed, expected);
+    fs::remove_file(output_path).expect("remove clear capture");
+}
+
+/// Plan 184: the verb itself refuses any byte difference and sends nothing.
+#[tokio::test]
+async fn clear_staged_leftover_refuses_a_composer_a_human_touched() {
+    let _serial = transaction_test_guard().await;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let output_path = std::env::temp_dir().join(format!(
+        "pij-rs-submit-refuse-{}-{nonce}.bin",
+        std::process::id()
+    ));
+    let command = format!(
+        "stty raw -echo; dd bs=1 count=1 of={} 2>/dev/null; sleep 20",
+        output_path.display()
+    );
+    let Some(session) = TestSession::start_or_skip_with_command("submit-refuse", &command) else {
+        return;
+    };
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = tmux
+        .list_panes()
+        .await
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+    let leftover = pij_core::ports::staged_leftover("/compact");
+
+    let staged = tmux
+        .acquire_submit(&pane.id)
+        .await
+        .expect("acquire pane input");
+    for touched in [
+        format!("{leftover}x"),
+        leftover.replacen("/compact", "/compac", 1),
+    ] {
+        let error = tmux
+            .clear_staged_leftover(&staged, "/compact", &touched)
+            .await
+            .expect_err("a touched composer is a human draft");
+        assert!(error.to_string().contains("nothing cleared"), "{error}");
+    }
+    assert!(
+        pane_input_off(&session, &pane.id),
+        "refusal keeps ownership"
+    );
+    tmux.abort_submit(&staged).await.expect("release");
+    wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        fs::read(&output_path).map_or(true, |bytes| bytes.is_empty()),
+        "a refusal sends no byte"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+/// Plan 184: a stage whose every launch sits at the measured p99 (~350 ms on
+/// the fleet machine, `/usr/bin/true` included) still commits. Under the old
+/// 1 s bound and 2 s watchdog this exact transaction stranded `/compact`.
+#[tokio::test]
+async fn staging_at_the_measured_launch_tail_still_submits() {
+    let _serial = transaction_test_guard().await;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let output_path = std::env::temp_dir().join(format!(
+        "pij-rs-submit-tail-{}-{nonce}.bin",
+        std::process::id()
+    ));
+    let expected = b"\x1b[200~/compact\x1b[201~\r".to_vec();
+    let command = format!(
+        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 20",
+        expected.len(),
+        output_path.display()
+    );
+    let Some(session) = TestSession::start_or_skip_with_command("submit-tail", &command) else {
+        return;
+    };
+    fs::create_dir_all(&session.tap_root).expect("create tail fixture directory");
+    let wrapper = session.tap_root.join("tmux-tail-wrapper");
+    let script = format!(
+        "#!/bin/sh\n[ \"$1\" = -u ] && shift\nsleep 0.35\nexec tmux -L {} \"$@\"\n",
+        shell_literal(&session.server)
+    );
+    write_executable(&wrapper, &script);
+    let tmux = TmuxAdapter::with_binary(&wrapper, &session.tap_root);
+    let pane = tmux
+        .list_panes()
+        .await
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+
+    tmux.submit(&pane.id, "/compact")
+        .await
+        .expect("a stage at the launch tail must commit");
+    let observed = wait_for_file(&output_path, expected.len(), EVENTUALLY);
+    assert_eq!(observed, expected, "the command, then Enter, once");
+    fs::remove_file(output_path).expect("remove tail capture");
+}
+
+/// Plan 184 diagnosis (pij-fleet#86): slow launches alone strand a SHORT command.
+///
+/// Staging `/compact` costs three owned pastes, two launches each. When every
+/// launch is slow (launch latency here has a p99 of hundreds of milliseconds),
+/// the stage bound trips before Enter, and the abort leaves exactly what the
+/// stuck seats showed: the command, then the notice.
+#[tokio::test]
+async fn slow_launches_strand_a_short_command_with_the_recovery_notice() {
+    let _serial = transaction_test_guard().await;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let output_path = std::env::temp_dir().join(format!(
+        "pij-rs-submit-slow-{}-{nonce}.bin",
+        std::process::id()
+    ));
+    let mut expected = Vec::new();
+    expected.extend_from_slice(b"\x1b[200~/compact\x1b[201~\x1b[200~\n");
+    expected.extend_from_slice(pij_core::ports::STAGED_SUBMIT_RECOVERY.as_bytes());
+    expected.extend_from_slice(b"\x1b[201~");
+    let command = format!(
+        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 10",
+        expected.len(),
+        output_path.display()
+    );
+    let Some(session) = TestSession::start_or_skip_with_command("submit-slow", &command) else {
+        return;
+    };
+    fs::create_dir_all(&session.tap_root).expect("create slow fixture directory");
+    let wrapper = session.tap_root.join("tmux-slow-wrapper");
+    // Only the closing paste (the third) is slow. A stall before the body
+    // trips the in-loop bound and leaves no body; the live composers held the
+    // body, so the stall came after it, ending between the stage bound and the
+    // watchdog.
+    let pastes = session.tap_root.join("pastes");
+    let script = format!(
+        "#!/bin/sh\n[ \"$1\" = -u ] && shift\ncase \"${{6-}}\" in *paste-buffer*) n=$(($(cat {pastes} 2>/dev/null || echo 0) + 1)); echo $n > {pastes}; [ $n = 3 ] && sleep 4.05 ;; esac\nexec tmux -L {} \"$@\"\n",
+        shell_literal(&session.server),
+        pastes = shell_literal(&pastes.to_string_lossy()),
+    );
+    write_executable(&wrapper, &script);
+    let tmux = TmuxAdapter::with_binary(&wrapper, &session.tap_root);
+    let pane = tmux
+        .list_panes()
+        .await
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+
+    let mut staged = tmux
+        .acquire_submit(&pane.id)
+        .await
+        .expect("acquire pane input");
+    let error = tmux
+        .stage_submit(&mut staged, "/compact")
+        .await
+        .expect_err("a slow stage must abort before Enter");
+
+    assert!(error.to_string().contains("exceeded 4s"), "{error}");
+    wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
+    let observed = wait_for_file(&output_path, expected.len(), EVENTUALLY);
+    assert_eq!(
+        observed, expected,
+        "the stuck seats' composer, byte for byte"
+    );
+    fs::remove_file(output_path).expect("remove slow-stage capture");
 }
 
 #[test]
@@ -911,7 +1143,7 @@ async fn committed_marker_transition_failure_never_sends_enter() {
     expected.extend_from_slice(body.as_bytes());
     expected.extend_from_slice(b"\x1b[201~");
     let command = format!(
-        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 5",
+        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 20",
         expected.len(),
         output_path.display()
     );
@@ -982,7 +1214,7 @@ async fn post_enter_cleanup_failure_remains_success_and_submits_once() {
     expected.extend_from_slice(body.as_bytes());
     expected.extend_from_slice(b"\x1b[201~\r");
     let command = format!(
-        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 5",
+        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 20",
         expected.len(),
         output_path.display()
     );

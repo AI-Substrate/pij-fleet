@@ -31,7 +31,8 @@ use pij_core::model::{
 use pij_core::ports::{
     DeferNoopReason, DeferOutcome, DeliveryAck, DeliveryEnqueue, HarnessPort, LaunchCommand,
     LivenessPort, Queue, Registry, ReleaseOutcome, STAGED_SUBMIT_RECOVERY, SeatFilter,
-    SessionStatusPort, Spine, StagedSubmit, TmuxPort, Transport,
+    SessionStatusPort, Spine, StagedSubmit, TmuxPort, Transport, is_staged_leftover,
+    staged_leftover,
 };
 use pij_core::session_status::{SessionStatusReply, SessionTarget};
 
@@ -1917,6 +1918,19 @@ impl FakeTmux {
         );
     }
 
+    /// Arrange a composer that holds `text`, with the caret after its last
+    /// character: what an aborted staged submit leaves behind (plan 184).
+    pub fn arrange_composer_text(&self, pane: &str, text: &str) {
+        self.arrange_pane(pane);
+        let (capture, cursor_x, cursor_y) = render_staged_composer(text);
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        if let Some(listed) = state.panes.iter_mut().find(|listed| listed.id == pane) {
+            listed.cursor_x = Some(cursor_x);
+            listed.cursor_y = Some(cursor_y);
+        }
+        state.standing_capture = Some(capture);
+    }
+
     /// Serve `text` for every capture that outruns the scripted queue.
     ///
     /// Pairs with [`FakeTmux::with_pane`] when a test needs a composer with
@@ -2197,6 +2211,48 @@ impl TmuxPort for FakeTmux {
                 listed.cursor_x = Some(cursor_x);
                 listed.cursor_y = Some(cursor_y);
             }
+        }
+        Ok(())
+    }
+
+    async fn clear_staged_leftover(
+        &self,
+        staged: &StagedSubmit,
+        text: &str,
+        observed: &str,
+    ) -> Result<()> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        let owned = state
+            .staged
+            .get(&staged.token)
+            .is_some_and(|(owned, _)| owned == staged && !owned.staged);
+        if !owned || !state.input_disabled.contains(&staged.pane) {
+            return Err(PijError::Adapter {
+                adapter: "fake-tmux".to_string(),
+                message: "staged submit ownership mismatch".to_string(),
+            });
+        }
+        if !is_staged_leftover(observed, text) {
+            return Err(PijError::Adapter {
+                adapter: "fake-tmux".to_string(),
+                message: "composer is not exactly pij's own leftover; nothing cleared".to_string(),
+            });
+        }
+        let chars = staged_leftover(text).chars().count();
+        state
+            .recorder
+            .record(format!("clear_staged_leftover:{}:{chars}", staged.pane));
+        state.standing_capture = Some(
+            "\u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{256f}"
+                .to_string(),
+        );
+        if let Some(listed) = state
+            .panes
+            .iter_mut()
+            .find(|listed| listed.id == staged.pane)
+        {
+            listed.cursor_x = Some(0);
+            listed.cursor_y = Some(0);
         }
         Ok(())
     }

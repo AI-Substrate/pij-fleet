@@ -20,7 +20,10 @@ use async_trait::async_trait;
 use pij_core::delivery::MAX_TYPED_FRAME_BYTES;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Harness, Pane, PaneProcess, ProcIdentity};
-use pij_core::ports::{LaunchCommand, STAGED_SUBMIT_RECOVERY, StagedSubmit, TmuxPort};
+use pij_core::ports::{
+    LaunchCommand, STAGED_SUBMIT_RECOVERY, StagedSubmit, TmuxPort, is_staged_leftover,
+    staged_leftover,
+};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::{Instant, sleep};
 
@@ -45,8 +48,21 @@ pub fn tap_sink_path(root: &Path, pane: &str) -> PathBuf {
 const TAP_SINK_OPTION: &str = "@pij-tap-sink";
 const SUBMIT_CHUNK_BYTES: usize = 1_000;
 const SUBMIT_CHUNK_PAUSE: Duration = Duration::from_millis(10);
-const SUBMIT_STAGE_LIMIT: Duration = Duration::from_secs(1);
-const SUBMIT_RECOVERY_LIMIT_SECS: u64 = 2;
+/// Staging a body under owned input is bounded, but by LAUNCH latency, not by
+/// tmux or the pane's program: a one-chunk body is three owned pastes at two
+/// launches each, and nothing in it waits for the pane to read. Plan 184
+/// measured process launch on this machine at p50 7 ms but p90 140 ms, p99
+/// 280-390 ms and max 553 ms under ordinary load (`/usr/bin/true` included), so
+/// the old 1 s bound tripped on a tail of six launches and stranded the staged
+/// text. 4 s covers six launches at the worst observed latency (3.3 s); a
+/// staged body normally takes tens of milliseconds, so the bound only lengthens
+/// the rare tail in which the human's input stays disabled.
+const SUBMIT_STAGE_LIMIT: Duration = Duration::from_secs(4);
+/// The watchdog that restores input if the daemon never does. It must outlast
+/// the stage bound plus an abort's notice paste and restore (three more
+/// launches, 1.7 s at the worst observed latency): an earlier watchdog takes
+/// the token mid-abort and the restore fails `exit 75`, as walrus showed.
+const SUBMIT_RECOVERY_LIMIT_SECS: u64 = 8;
 const SUBMIT_OWNER_OPTION: &str = "@pij-submit-owner";
 
 fn unsupported_terminal_control(text: &str) -> Option<(usize, char)> {
@@ -954,6 +970,42 @@ impl TmuxPort for TmuxAdapter {
     async fn abort_submit(&self, staged: &StagedSubmit) -> Result<()> {
         let _submit = self.submit_lock.lock().await;
         self.abort_staged_inner(staged)
+    }
+
+    async fn clear_staged_leftover(
+        &self,
+        staged: &StagedSubmit,
+        text: &str,
+        observed: &str,
+    ) -> Result<()> {
+        let _submit = self.submit_lock.lock().await;
+        self.require_staged(staged)?;
+        if staged.staged {
+            return Err(self.error(format!(
+                "staged submit {:?} already staged text; a leftover is cleared only before staging",
+                staged.token
+            )));
+        }
+        if !is_staged_leftover(observed, text) {
+            return Err(self.error(format!(
+                "composer of pane {:?} is not exactly pij's own staged leftover; nothing cleared",
+                staged.pane
+            )));
+        }
+        // One BSpace per character of the exact leftover, with input re-enabled
+        // only inside this server-side command and only while the token owns it.
+        let chars = staged_leftover(text).chars().count();
+        let target = shell_quote(&staged.pane);
+        let clear = format!(
+            "select-pane -e -t {target} ; send-keys -t {target} -N {chars} BSpace ; select-pane -d -t {target}"
+        );
+        self.run_if_submit_token(
+            &staged.pane,
+            &staged.token,
+            "clear own staged leftover",
+            &clear,
+        )?;
+        Ok(())
     }
 
     async fn submit(&self, pane: &str, text: &str) -> Result<()> {
