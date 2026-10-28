@@ -111,6 +111,22 @@
             "../plan.dd.json#acceptance_criteria/ac-0003",
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0013",
+          "at": "2026-10-28T09:58:00Z",
+          "text": "GitHub CI run 40667228005 on the exact head 65c6f1576ad193da40b80fb09c6400e82eb2a76f: rust-lint, rust-test, check (22) and check (24) all success. The junit-linux artifact (1719 testcases) shows every review test PASS on Linux: a_thread_id_reads_as_ps_reads_it, a_cfg_test_function_cannot_hide_a_launch, a_reaped_pid_is_dead_without_running_ps, liveness_launches, executability_is_access_x_ok_not_any_mode_bit, a_launch_that_finds_its_kept_path_gone_resolves_again_once, linux_tgid, path_search, liveness_parity (incl. TZ re-runs), resolve_once, git_or_tmux, first_light ping_counts.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0014",
+          "at": "2026-10-28T10:30:00Z",
+          "text": "Merge, deploy and cost (prime pij-far-jackal; assets/reviews/prime-verification.md; independent review assets/reviews/review-pr84.md). PR #84 merged at head 65c6f15 as main e84da89; #74 closed; refs/notes empty; N4 tracked as #85. Deployed with just bounce-rs (daemon pid 30264 -> 29541, 75 seats). Cost from pij-rs --json ping: before, on 17dea30, 16 launches/s total with ps.proc-liveness 15.8/s; after, a steady 60 s on e84da89, 63 launches = 1.05/s, with ps.proc-liveness 0 (op absent) and ps.proc-liveness-fallback 0. The remainder is #86 stuck-delivery tmux retries (48), ps.registration-native-process (12), date.utc-offset (2) and git.pa-watchdog-common-dir (1). just spawn-rate --seconds 20: pij-rs daemon children >=0.7/s.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004"
+          ]
         }
       ]
     }

@@ -63,10 +63,10 @@
         {
           "id": "ac-0004",
           "claim": "Cost (AGENTS.md § Resource cost). Steady state: the death sweep and request paths launch nothing for liveness. Live before/after receipts: two `pij-rs --json ping | jq .data.spawns` readings 20 s apart and `just spawn-rate --seconds 20`, before on main and after on the branch build where possible; the prime takes the deployed after-reading. `ps.proc-liveness` goes to 0, and no new per-tick launch appears.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0009",
-          "note": "Before 13.1/s (lg-0001) and steady-state 0 in test (lg-0009); the deployed after-reading is the prime's, post-merge."
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0014",
+          "note": "Before 15.8/s ps.proc-liveness (prime, 17dea30); after 0, daemon 1.05 launches/s total (lg-0014)."
         },
         {
           "id": "ac-0005",
@@ -92,8 +92,9 @@
           "id": "ph-62c6",
           "title": "Trim the daemon's remaining launches",
           "brief": "One phase: before-readings, ADR, in-process liveness, resolve-once, spawn_sites, docs, mutants, PR. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/reviews/prime-verification.md"
         }
       ]
     }
