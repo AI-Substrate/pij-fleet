@@ -89,6 +89,24 @@
             "../plan.dd.json#acceptance_criteria/ac-0005",
             "../plan.dd.json#acceptance_criteria/ac-0008"
           ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-28T10:30:00Z",
+          "text": "Independent review, seat pij-review-pr83. At 15c28e2: merge after fixes (B1 blocker staged-copy release, S1 sweep brake, nits N1-N4), with probes and 8 injections. Recheck at 77a48a5: MERGE, 0 blockers; both probes pass; follow-ups W1 (restart/inbound backoff guards unpinned: three injections survived) and R1 (delivered-copy removal can race an identical resend: spurious terminal failure, nothing lost), filed as pij-fleet#87. assets/reviews/review-pr83-at-15c28e2.md, assets/reviews/review-pr83-recheck-at-77a48a5.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0008"
+          ]
+        },
+        {
+          "id": "lg-0011",
+          "at": "2026-10-28T10:30:00Z",
+          "text": "Prime verification (pij-far-jackal): PR #83 merged at head 77a48a5 (CI 40663843738 green) as main 17dea30; no migration; refs/notes empty; #77 closed. Deployed with just bounce-rs (daemon pid 41991 -> 30264, ping healthy). Live canary: body binding at 1793180040094, then telegram.outbound-media-delivered for file 1 (1793180042485) and file 2 (1793180046691): body first, files in order. Cost AFTER: two pij-rs --json ping readings 20 s apart, no telegram op and no new launch site. Verdict: ac-0006 and ac-0008 met, phase can close. assets/reviews/prime-verification.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "../plan.dd.json#acceptance_criteria/ac-0008",
+            "../plan.dd.json#phases/ph-e5f9"
+          ]
         }
       ]
     }
