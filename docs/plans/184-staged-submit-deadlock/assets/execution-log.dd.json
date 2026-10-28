@@ -66,6 +66,15 @@
             "../plan.dd.json#acceptance_criteria/ac-0006",
             "backpressure.dd.json#rows/bp-0003"
           ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-28T22:57:22Z",
+          "text": "ac-0006 GitHub CI on exact head 73ad3c890c639840acda893668bfe0f9e743b83e: run 40783348999 success (check (22) pass, check (24) pass, rust-lint pass, rust-test pass). The previous head 1f2fecb (run 40782757933) failed only the TS PARKED_OUTCOMES seam, fixed in 73ad3c8. Docs: lg-0005; mutants and red/green: assets/evidence/receipts.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
         }
       ]
     }

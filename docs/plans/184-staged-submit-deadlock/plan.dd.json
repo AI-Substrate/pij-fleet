@@ -78,8 +78,9 @@
         {
           "id": "ac-0006",
           "claim": "Proof. Every behaviour change has a test RED on main (quoted) and green on the branch, using the recorded pane captures as fixtures where they apply. Mutants: own-text treated as human; no backoff; no sender notice; control failure still blocks the queue. Each turns its test red, then is restored. Scoped cargo tests, `just rust-check`, clippy -D warnings, fmt; GitHub CI green on the exact head. Anything not run is NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0007"
         }
       ]
     },

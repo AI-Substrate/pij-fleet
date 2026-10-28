@@ -44,8 +44,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Mutant receipts; rust-check; GitHub CI on the exact head.",
-          "state": "unchecked",
-          "probe": ".github/workflows"
+          "state": "checked",
+          "probe": ".github/workflows",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
         }
       ]
     },
