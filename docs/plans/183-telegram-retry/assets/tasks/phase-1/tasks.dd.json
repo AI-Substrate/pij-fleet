@@ -70,13 +70,14 @@
           "id": "tk-0005",
           "title": "Cost, docs, mutants, PR, CI",
           "phase": "ph-e5f9",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0006",
             "../../../plan.dd.json#acceptance_criteria/ac-0007",
             "../../../plan.dd.json#acceptance_criteria/ac-0008"
           ],
-          "done": "tasks.dd.json#done_when/tk-0005"
+          "done": "tasks.dd.json#done_when/tk-0005",
+          "receipt": "../../execution-log.dd.json#entries/lg-0008"
         }
       ]
     },
@@ -119,7 +120,7 @@
           {
             "id": "dw-0005",
             "assertion": "Call-count test; docs; mutants; CI green on the exact head",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ]

@@ -41,3 +41,11 @@ crate (pij-sidecars may not dev-depend on sqlx). A fake that agrees with
   literal (`crates/daemon/src/lib.rs` "telegram-attachments") while the sweep
   uses `pij_sidecars::telegram::ATTACHMENTS_DIR`; the CLI e2e test pins the
   same path. Out of fence; one-token follow-up.
+- *Load-sensitive tests read as failures (medium).* Each local `just rust-check`
+  run had one failure outside this diff (pij-harnesses `prompt_hook_*`;
+  pij-daemon `a_live_idle_claude_frame_under_a_long_stale_working_is_refused`).
+  Each passes 5/5 alone, and CI was green. Captured as `harness observe` DL-001.
+- *`harness checks` without node_modules says FAIL, not NOT RUN (low).* A
+  worktree where the packet forbids `npm install` gets five red TS stages that
+  are really absent tooling (CONF-001). `stretch:` have the checks extension
+  mark a stage NOT RUN when `node_modules/.bin` is missing.

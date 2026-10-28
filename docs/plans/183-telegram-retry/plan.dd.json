@@ -91,8 +91,9 @@
         {
           "id": "ac-0008",
           "claim": "Proof. Every behaviour change has a test RED on main fd7d3bb (quoted) and green on the branch, against a fake Telegram (never the real API). Mutants: retry_after ignored; inbound skipped on Retry; no timeout; body dropped (X2). Each turns its test red, then is restored. Scoped cargo tests, `just rust-check`, clippy -D warnings, fmt; GitHub CI green on the exact head. Anything not run is NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         }
       ]
     },
