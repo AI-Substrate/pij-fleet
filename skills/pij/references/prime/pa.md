@@ -57,6 +57,9 @@ the handover files you check, you are read-only.
 2. **Watchdog duty** — the Needs a look list.
    - `ready`/idle, quiet a whole interval: is it stalled or just done? Capture its pane. If it is
      stalled, send **one** specific ask. If it is done, tell the prime in your round line.
+   - An idle seat with an **open assignment** (`pij node show <seat> --json` → `assignments`) and no
+     declared park (`question`/`waiting`/`blocked`/`hold`) is **stalled, not done**. Send it one specific
+     resume ask and tell the prime. A repo-specifics slot never overrides this rule.
    - `question`: make sure its owner knows. Tell the prime once, not every round.
    - `waiting` / `hold` / `blocked`: deliberate. Leave them, unless the wait looks wrong (e.g. it is
      waiting on a dead seat). Then tell the prime.
