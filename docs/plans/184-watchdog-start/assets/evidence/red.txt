@@ -1,0 +1,21 @@
+# Plan 184 RED against the stub surface, 2026-10-29T06:29:21Z
+test watchdog::tests::without_a_start_interval_every_check_uses_every ... ok
+test watchdog::tests::a_recorded_start_phase_end_is_final ... ok
+test watchdog::tests::the_nudge_and_the_pa_brief_name_the_same_report_command ... ok
+test watchdog::tests::the_start_phase_runs_until_the_first_report_after_arming ... FAILED
+test watchdog::tests::the_start_nudge_names_the_start_check_and_what_follows ... FAILED
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 94 filtered out; finished in 0.00s
+test http::watchdog::tests::grammar_accepts_a_start_interval_with_or_without_every ... FAILED
+test http::watchdog::tests::grammar_accepts_on_off_status_with_optional_seat_and_interval ... ok
+test http::watchdog::tests::grammar_refuses_what_it_cannot_honour ... FAILED
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 642 filtered out; finished in 0.00s
+test watchdog_start_columns_migrate_and_end_only_their_own_arming ... FAILED
+test watchdog_migrations_move_a_schema_28_store_to_current_losing_nothing ... ok
+thread 'watchdog_start_columns_migrate_and_end_only_their_own_arming' (506674242) panicked at crates/store/tests/store_integration.rs:1364:5:
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 26 filtered out; finished in 1.05s
+test pa_watchdog::tests::a_start_interval_nudges_first_then_hands_over_to_every ... FAILED
+test pa_watchdog::tests::a_report_after_arming_ends_the_start_phase_without_a_nudge ... FAILED
+test pa_watchdog::tests::on_with_start_shows_both_intervals_and_the_live_phase ... FAILED
+test pa_watchdog::tests::an_opted_in_seat_is_nudged_when_quiet_and_told_how_to_stop ... ok
+test pa_watchdog::tests::the_start_phase_is_persisted_before_its_nudge_is_sent ... FAILED
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 640 filtered out; finished in 0.30s

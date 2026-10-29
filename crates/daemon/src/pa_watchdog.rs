@@ -72,7 +72,8 @@ use pij_core::usage_limit::{
 };
 use pij_core::watchdog::{
     IdleEdge, PRIME_ACTIVE_REASON, PRIME_ROLE, PrimeActive, PrimeObservation, PrimeVerdict,
-    fleet_working, is_watched_pa, optin_due, optin_nudge, prime_active_body, scope_prime,
+    WatchdogPhase, fleet_working, is_watched_pa, optin_due, optin_nudge, prime_active_body,
+    scope_prime,
 };
 use serde_json::json;
 use tokio::sync::Mutex;
@@ -769,6 +770,13 @@ impl PaWatchdog {
     /// ([`optin_due`]). A cold seat is not nudged: the send guard's own
     /// verdict would refuse the send, so the round audits the skip instead
     /// (plan 178). Both are brakes: removing either only nudges more.
+    ///
+    /// An opt-in armed with `--start` uses that interval for its first check
+    /// (plan 184). The start phase ends at the seat's first `report.now` after
+    /// arming or the start check, whichever comes first, and the end is
+    /// persisted before the start nudge is sent: if it cannot be recorded,
+    /// nothing is sent. The report edge reads `report.now` itself, because the
+    /// seat's last event also counts the watchdog's own events.
     async fn optin_round(
         &self,
         services: &Services,
@@ -797,9 +805,47 @@ impl PaWatchdog {
             let Some(seat) = seats.iter().find(|seat| seat.id == optin.seat) else {
                 continue;
             };
+            let starting = optin.start_secs.is_some() && optin.started_at_ms.is_none();
+            let latest_report = if starting {
+                match services
+                    .spine
+                    .latest_matching(&seat.id, &[pij_core::report::CARD_EVENT_KIND])
+                    .await
+                {
+                    Ok(event) => event.map(|event| event.at),
+                    Err(cause) => {
+                        eprintln!("watchdog: report read for {} failed: {cause}", seat.id);
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+            let phase = optin.phase(latest_report);
+            if let (true, WatchdogPhase::Every, Some(report_at)) = (starting, phase, latest_report)
+            {
+                // The seat reported since arming: record the end of its start
+                // phase. A failure only means the next round reads it again.
+                if let Err(cause) = services
+                    .watchdogs()
+                    .end_watchdog_start(&seat.id, optin.set_at_ms, report_at)
+                    .await
+                {
+                    eprintln!(
+                        "watchdog: start phase for {} not recorded: {cause}",
+                        seat.id
+                    );
+                }
+            }
             let quiet_from = seat.last_event_at.unwrap_or(0).max(optin.set_at_ms) / 1_000;
             let anchor = quiet_from.max(nudged.get(&seat.id).copied().unwrap_or(0));
-            if !optin_due(seat, optin, anchor, unanswered.contains(&seat.id), now_secs) {
+            if !optin_due(
+                seat,
+                optin.active_interval_secs(phase),
+                anchor,
+                unanswered.contains(&seat.id),
+                now_secs,
+            ) {
                 continue;
             }
             let verdict = match crate::http::cold_wake::verdict(services, seat, now_ms).await {
@@ -809,13 +855,33 @@ impl PaWatchdog {
                     continue;
                 }
             };
+            if phase == WatchdogPhase::Start {
+                // Persist before announce: the start check is over once it
+                // fires, delivered or skipped cold. A record that does not land
+                // (a re-arm raced this round, or the store failed) sends nothing.
+                match services
+                    .watchdogs()
+                    .end_watchdog_start(&seat.id, optin.set_at_ms, now_ms)
+                    .await
+                {
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    Err(cause) => {
+                        eprintln!(
+                            "watchdog: start phase for {} not recorded: {cause}",
+                            seat.id
+                        );
+                        continue;
+                    }
+                }
+            }
             nudged.insert(seat.id.clone(), now_secs);
             unanswered.insert(seat.id.clone());
             let cold = pij_core::cold_wake::refusal(&seat.id, &verdict).is_some();
             let delivery = if cold {
                 "skipped: cold".to_string()
             } else {
-                let body = optin_nudge(&seat.id, now_secs.saturating_sub(quiet_from), optin);
+                let body = optin_nudge(&seat.id, now_secs.saturating_sub(quiet_from), optin, phase);
                 match services
                     .delivery
                     .send(BG_ACTOR.into(), seat.id.clone(), body)
@@ -827,6 +893,8 @@ impl PaWatchdog {
             };
             let mut payload = json!({
                 "interval_secs": optin.interval_secs,
+                "start_secs": optin.start_secs,
+                "phase": phase,
                 "set_by": optin.set_by,
                 "quiet_secs": now_secs.saturating_sub(quiet_from),
                 "delivery": delivery,

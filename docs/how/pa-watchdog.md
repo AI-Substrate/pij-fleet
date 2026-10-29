@@ -91,7 +91,7 @@ Between events, a round reads no spine history: one registry list, one role join
 
 ## Opt-in watchdog (not a PA)
 
-Any seat that is not a PA (a worker or a prime included) is watched only while it is opted in with `pij watchdog on`, and the nudge goes to that seat itself. It gets a stall nudge after a whole quiet interval (`PIJ_RS_WATCHDOG_SECS`, default 20 min), never while it is working or has declared a wait. See [pij-rs-api.md § Opt-in watchdog](pij-rs-api.md#opt-in-watchdog).
+Any seat that is not a PA (a worker or a prime included) is watched only while it is opted in with `pij watchdog on`, and the nudge goes to that seat itself. It gets a stall nudge after a whole quiet interval (`PIJ_RS_WATCHDOG_SECS`, default 20 min), never while it is working or has declared a wait. `--start <dur>` makes the first check shorter: after the seat's first `report.now` or that check, whichever comes first, it uses `--every` with no second call (plan 184). See [pij-rs-api.md § Opt-in watchdog](pij-rs-api.md#opt-in-watchdog).
 
 Two brakes keep it from costing more than it saves (plan 178). Each can only ever spare a nudge:
 
@@ -102,4 +102,4 @@ Both nudges and the PA brief name the same card command, `pij report now "<did>"
 
 ## `pij watchdog status`
 
-`{pas, optins}`: the live PAs (role `pa`, a registry row, not tombstoned) and the opt-ins of live seats. A retired seat keeps its role or opt-in row in the store, but it is not watched, so it is not listed.
+`{pas, optins}`: the live PAs (role `pa`, a registry row, not tombstoned) and the opt-ins of live seats. Each opt-in carries `interval_secs`, `start_secs` (null without `--start`), `started_at_ms`, the live `phase` (`start` or `every`) and `active_interval_secs`. A retired seat keeps its role or opt-in row in the store, but it is not watched, so it is not listed.

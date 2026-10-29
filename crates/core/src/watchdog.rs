@@ -398,6 +398,48 @@ pub struct WatchdogOptIn {
     pub set_by: SeatId,
     /// When, in milliseconds since the epoch.
     pub set_at_ms: u64,
+    /// The first check's quiet interval (`--start`), when one was given
+    /// (plan 184). `None` means every check uses `interval_secs`.
+    #[serde(default)]
+    pub start_secs: Option<u64>,
+    /// When the start phase ended, in milliseconds since the epoch: the
+    /// seat's first `report.now` after arming or the start nudge, whichever
+    /// came first. `None` while the start phase is still running.
+    #[serde(default)]
+    pub started_at_ms: Option<u64>,
+}
+
+/// Which interval an opt-in is using (plan 184).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WatchdogPhase {
+    /// The first check, at `start_secs`.
+    Start,
+    /// Every later check, at `interval_secs`.
+    Every,
+}
+
+impl WatchdogOptIn {
+    /// The phase now, given when the seat last sent `report.now`. The start
+    /// phase runs until it is recorded as over or the seat reports after
+    /// arming, whichever comes first (plan 184 R2). A report from before
+    /// arming, or at the same instant, does not end it.
+    pub fn phase(&self, latest_report_at_ms: Option<u64>) -> WatchdogPhase {
+        let reported_since_arming = latest_report_at_ms.is_some_and(|at| at > self.set_at_ms);
+        if self.start_secs.is_some() && self.started_at_ms.is_none() && !reported_since_arming {
+            WatchdogPhase::Start
+        } else {
+            WatchdogPhase::Every
+        }
+    }
+
+    /// The quiet interval that applies in `phase`.
+    pub fn active_interval_secs(&self, phase: WatchdogPhase) -> u64 {
+        match (phase, self.start_secs) {
+            (WatchdogPhase::Start, Some(start)) => start,
+            _ => self.interval_secs,
+        }
+    }
 }
 
 /// Is an opted-in, non-PA seat due a nudge?
@@ -414,7 +456,7 @@ pub struct WatchdogOptIn {
 /// only nudges more.
 pub fn optin_due(
     seat: &SeatDescriptor,
-    optin: &WatchdogOptIn,
+    interval_secs: u64,
     last_activity_at_secs: u64,
     nudged_since_work: bool,
     now_secs: u64,
@@ -423,26 +465,38 @@ pub fn optin_due(
         && seat.role.as_deref() != Some(PA_ROLE)
         && seat.nudgeable()
         && !(nudged_since_work && seat.semantic_state == Some(SemanticState::Ready))
-        && now_secs.saturating_sub(last_activity_at_secs) >= optin.interval_secs
+        && now_secs.saturating_sub(last_activity_at_secs) >= interval_secs
 }
 
 /// The nudge an opted-in seat receives. Every nudge says how to stop it and
 /// that the seat should, when no more work is coming.
-pub fn optin_nudge(seat: &SeatId, quiet_secs: u64, optin: &WatchdogOptIn) -> String {
+pub fn optin_nudge(
+    seat: &SeatId,
+    quiet_secs: u64,
+    optin: &WatchdogOptIn,
+    phase: WatchdogPhase,
+) -> String {
     let who = if optin.set_by == optin.seat {
         "you".to_string()
     } else {
         optin.set_by.to_string()
     };
+    let every = crate::cold_wake::human_duration(optin.interval_secs.saturating_mul(1_000));
+    let which = match (phase, optin.start_secs) {
+        (WatchdogPhase::Start, Some(start)) => format!(
+            "watchdog start check after {}, then every {every}",
+            crate::cold_wake::human_duration(start.saturating_mul(1_000))
+        ),
+        _ => format!("watchdog on every {every}"),
+    };
     format!(
-        "[pij watchdog] {seat}: quiet {} (watchdog on every {}, set by {who}). \
+        "[pij watchdog] {seat}: quiet {} ({which}, set by {who}). \
          Keep going if working, and report with `pij report now \"<did>\" \"<next>\"`. \
          If this unit of work is finished, run `pij report state done`; \
          if you are idle but available, run `pij report state ready`, \
          and this watchdog stays quiet until you next work. \
          No more work coming? Stop this watchdog: `pij watchdog off`.",
         crate::cold_wake::human_duration(quiet_secs.saturating_mul(1_000)),
-        crate::cold_wake::human_duration(optin.interval_secs.saturating_mul(1_000)),
     )
 }
 
@@ -461,9 +515,97 @@ mod tests {
             interval_secs: 60,
             set_by: "pij-w".into(),
             set_at_ms: 0,
+            start_secs: None,
+            started_at_ms: None,
         };
-        let nudge = optin_nudge(&optin.seat, 60, &optin);
+        let nudge = optin_nudge(&optin.seat, 60, &optin, WatchdogPhase::Every);
         assert!(nudge.contains(CARD), "{nudge}");
         assert!(brief.contains(CARD), "the PA brief names {CARD}");
+    }
+
+    fn armed(start_secs: Option<u64>, started_at_ms: Option<u64>) -> WatchdogOptIn {
+        WatchdogOptIn {
+            seat: "pij-w".into(),
+            interval_secs: 1_200,
+            set_by: "pij-p".into(),
+            set_at_ms: 10_000,
+            start_secs,
+            started_at_ms,
+        }
+    }
+
+    /// Plan 184: `--every` alone is today's watchdog, whatever the seat reports.
+    #[test]
+    fn without_a_start_interval_every_check_uses_every() {
+        let optin = armed(None, None);
+        for report in [None, Some(5_000), Some(20_000)] {
+            assert_eq!(optin.phase(report), WatchdogPhase::Every, "{report:?}");
+        }
+        assert_eq!(optin.active_interval_secs(WatchdogPhase::Every), 1_200);
+    }
+
+    /// Plan 184 R2: the start phase runs until the seat's first `report.now`
+    /// AFTER arming; a report from before arming, or at the same instant, does
+    /// not end it.
+    #[test]
+    fn the_start_phase_runs_until_the_first_report_after_arming() {
+        let optin = armed(Some(120), None);
+        assert_eq!(optin.phase(None), WatchdogPhase::Start);
+        assert_eq!(
+            optin.phase(Some(9_000)),
+            WatchdogPhase::Start,
+            "before arming"
+        );
+        assert_eq!(
+            optin.phase(Some(10_000)),
+            WatchdogPhase::Start,
+            "same instant"
+        );
+        assert_eq!(
+            optin.phase(Some(10_001)),
+            WatchdogPhase::Every,
+            "after arming"
+        );
+        assert_eq!(optin.active_interval_secs(WatchdogPhase::Start), 120);
+        assert_eq!(optin.active_interval_secs(WatchdogPhase::Every), 1_200);
+    }
+
+    /// Plan 184 R2: once recorded (report or start nudge), the start phase is
+    /// over for this arming, with or without a report.
+    #[test]
+    fn a_recorded_start_phase_end_is_final() {
+        assert_eq!(
+            armed(Some(120), Some(50_000)).phase(None),
+            WatchdogPhase::Every
+        );
+    }
+
+    /// Plan 184 AC4: the start nudge says it is the start check and names the
+    /// interval that follows; later nudges read exactly as before.
+    #[test]
+    fn the_start_nudge_names_the_start_check_and_what_follows() {
+        let optin = armed(Some(120), None);
+        let start = optin_nudge(&optin.seat, 120, &optin, WatchdogPhase::Start);
+        assert!(
+            start.starts_with(
+                "[pij watchdog] pij-w: quiet 2m (watchdog start check after 2m, then every 20m, set by pij-p)."
+            ),
+            "{start}"
+        );
+        assert!(
+            start.ends_with("No more work coming? Stop this watchdog: `pij watchdog off`."),
+            "{start}"
+        );
+        for every in [
+            optin_nudge(&optin.seat, 1_200, &optin, WatchdogPhase::Every),
+            optin_nudge(&optin.seat, 1_200, &armed(None, None), WatchdogPhase::Every),
+        ] {
+            assert!(
+                every.starts_with(
+                    "[pij watchdog] pij-w: quiet 20m (watchdog on every 20m, set by pij-p)."
+                ),
+                "{every}"
+            );
+        }
     }
 }

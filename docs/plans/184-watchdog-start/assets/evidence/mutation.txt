@@ -1,0 +1,27 @@
+# Plan 184 mutants (each must turn a test red; sources restored byte-identical after each)
+## MW1 a report at the arming instant ends the start phase (crates/core/src/watchdog.rs)
+  -p pij-core --lib watchdog: KILLED ['watchdog::tests::the_start_phase_runs_until_the_first_report_after_arming']
+## MW2 reports never end the start phase (crates/core/src/watchdog.rs)
+  -p pij-core --lib watchdog: KILLED ['watchdog::tests::the_start_phase_runs_until_the_first_report_after_arming']
+  -p pij-daemon --lib -- pa_watchdog::tests::a_start pa_watchdog::tests:: KILLED ['pa_watchdog::tests::a_report_after_arming_ends_the_start_phase_without_a_nudge', 'pa_watchdog::tests::on_with_start_shows_both_intervals_and_the_live_phase']
+## MW3 the start nudge is sent without its record (crates/daemon/src/pa_watchdog.rs)
+  -p pij-daemon --lib -- pa_watchdog::tests::a_start pa_watchdog::tests:: KILLED ['pa_watchdog::tests::a_start_interval_nudges_first_then_hands_over_to_every', 'pa_watchdog::tests::the_start_phase_is_persisted_before_its_nudge_is_sent']
+## MW4 a failed record still sends the start nudge (crates/daemon/src/pa_watchdog.rs)
+  -p pij-daemon --lib -- pa_watchdog::tests::a_start pa_watchdog::tests:: KILLED ['pa_watchdog::tests::the_start_phase_is_persisted_before_its_nudge_is_sent']
+## MW5 the start interval is never used (crates/core/src/watchdog.rs)
+  -p pij-core --lib watchdog: KILLED ['watchdog::tests::the_start_phase_runs_until_the_first_report_after_arming']
+  -p pij-daemon --lib -- pa_watchdog::tests::a_start pa_watchdog::tests:: KILLED ['pa_watchdog::tests::a_start_interval_nudges_first_then_hands_over_to_every', 'pa_watchdog::tests::on_with_start_shows_both_intervals_and_the_live_phase', 'pa_watchdog::tests::the_start_phase_is_persisted_before_its_nudge_is_sent']
+## MW6 the round does not record a report as the end of the start phase (crates/daemon/src/pa_watchdog.rs)
+  -p pij-daemon --lib -- pa_watchdog::tests::a_start pa_watchdog::tests:: KILLED ['pa_watchdog::tests::a_report_after_arming_ends_the_start_phase_without_a_nudge']
+## MW7 --start has no 1m floor (crates/daemon/src/http/watchdog.rs)
+  -p pij-daemon --lib -- http::watchdog: KILLED ['http::watchdog::tests::grammar_refuses_what_it_cannot_honour']
+## MW8 a re-arm with a different --start is treated as unchanged (crates/daemon/src/http/watchdog.rs)
+  -p pij-daemon --lib -- pa_watchdog::tests::a_start pa_watchdog::tests:: KILLED ['pa_watchdog::tests::on_with_start_shows_both_intervals_and_the_live_phase']
+## MW9 status ignores the seat's reports (crates/daemon/src/http/watchdog.rs)
+  -p pij-daemon --lib -- pa_watchdog::tests::a_start pa_watchdog::tests:: KILLED ['pa_watchdog::tests::on_with_start_shows_both_intervals_and_the_live_phase']
+## MW10 ending the start phase ignores which arming (crates/store/src/orchestration.rs)
+  -p pij-store --test store_integration watchdog_start: KILLED ['watchdog_start_columns_migrate_and_end_only_their_own_arming']
+## MW11 a re-arm keeps the old start-phase end (crates/store/src/orchestration.rs)
+  -p pij-store --test store_integration watchdog_start: KILLED ['watchdog_start_columns_migrate_and_end_only_their_own_arming']
+## MW12 start_secs accepts 0 (crates/store/migrations/0031_watchdog_start.sql)
+  -p pij-store --test store_integration watchdog_start: KILLED ['watchdog_start_columns_migrate_and_end_only_their_own_arming']

@@ -1231,6 +1231,8 @@ fn optin(seat: &str, by: &str, at_ms: u64) -> pij_core::watchdog::WatchdogOptIn 
         interval_secs: INTERVAL,
         set_by: by.into(),
         set_at_ms: at_ms,
+        start_secs: None,
+        started_at_ms: None,
     }
 }
 
@@ -1441,6 +1443,8 @@ async fn any_seat_can_switch_another_seats_watchdog_and_the_subject_is_told() {
             interval_secs: 1_800,
             set_by: "pij-prime".into(),
             set_at_ms: watchdogs.list_watchdogs().await.unwrap()[0].set_at_ms,
+            start_secs: None,
+            started_at_ms: None,
         }]
     );
 
@@ -2045,4 +2049,368 @@ async fn status_lists_only_live_pas_and_opt_ins() {
         .map(|optin| optin["seat"].as_str().unwrap())
         .collect();
     assert_eq!(optins, ["pij-worker"], "{listing}");
+}
+
+fn started(seat: &str, by: &str, at_ms: u64, start_secs: u64) -> pij_core::watchdog::WatchdogOptIn {
+    pij_core::watchdog::WatchdogOptIn {
+        start_secs: Some(start_secs),
+        ..optin(seat, by, at_ms)
+    }
+}
+
+async fn report_now(services: &crate::Services, seat: &str, at: u64) {
+    services
+        .event_bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at,
+            kind: pij_core::report::CARD_EVENT_KIND.into(),
+            seat: Some(seat.into()),
+            payload: "{}".into(),
+        })
+        .await
+        .unwrap();
+}
+
+/// Plan 184 AC3: `--start 2m --every 20m`. The first check fires after the
+/// start interval and says so; the start phase is recorded; every later check
+/// uses --every, measured from that nudge, with no second call.
+#[tokio::test]
+async fn a_start_interval_nudges_first_then_hands_over_to_every() {
+    const START: u64 = 120;
+    let (services, _store) = services().await;
+    let start = now_ms();
+    services
+        .registry
+        .put(seat("pij-worker", "/nowhere", None))
+        .await
+        .unwrap();
+    services
+        .watchdogs()
+        .set_watchdog(&started("pij-worker", "pij-prime", start, START))
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let at = |secs: u64| start + secs * 1_000;
+
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, at(START - 1))
+            .await
+            .unwrap()
+            .is_empty(),
+        "not quiet for the start interval yet"
+    );
+    assert_eq!(
+        watchdog
+            .round(&services, INTERVAL, at(START))
+            .await
+            .unwrap(),
+        vec![RoundOutcome::OptInNudged {
+            seat: "pij-worker".into(),
+            delivery: "queued".into()
+        }]
+    );
+    let nudges = drain(&services, "pij-worker").await;
+    assert_eq!(nudges.len(), 1);
+    assert!(
+        nudges[0].body.starts_with(
+            "[pij watchdog] pij-worker: quiet 2m (watchdog start check after 2m, then every 20m"
+        ),
+        "{}",
+        nudges[0].body
+    );
+    assert_eq!(
+        services.watchdogs().list_watchdogs().await.unwrap()[0].started_at_ms,
+        Some(at(START)),
+        "the start phase is recorded"
+    );
+    let audit = audits(&events(&services).await, "watchdog.nudge");
+    assert_eq!(audit[0]["phase"], "start", "{}", audit[0]);
+
+    for secs in [START + 1, START + 60, START + INTERVAL - 1] {
+        assert!(
+            watchdog
+                .round(&services, INTERVAL, at(secs))
+                .await
+                .unwrap()
+                .is_empty(),
+            "after the start nudge, quiet is measured against --every ({secs}s)"
+        );
+    }
+    assert_eq!(
+        watchdog
+            .round(&services, INTERVAL, at(START + INTERVAL))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    let nudges = drain(&services, "pij-worker").await;
+    // Quiet counts from arming: the round's seats carry no last event.
+    assert!(
+        nudges[0].body.starts_with(
+            "[pij watchdog] pij-worker: quiet 22m (watchdog on every 20m, set by pij-prime)."
+        ),
+        "{}",
+        nudges[0].body
+    );
+
+    // A daemon restart forgets its in-memory nudge times. The recorded start
+    // phase means the start check never repeats; any nudge is the --every one.
+    let restarted = PaWatchdog::default();
+    restarted
+        .round(&services, INTERVAL, at(START + INTERVAL + START))
+        .await
+        .unwrap();
+    let after: Vec<String> = drain(&services, "pij-worker")
+        .await
+        .into_iter()
+        .map(|nudge| nudge.body)
+        .collect();
+    assert!(
+        !after.is_empty() && after.iter().all(|body| !body.contains("start check")),
+        "no second start check after a restart: {after:?}"
+    );
+}
+
+/// Plan 184 R2: the seat's first `report.now` after arming ends the start
+/// phase without a nudge; from then on it is the --every watchdog.
+#[tokio::test]
+async fn a_report_after_arming_ends_the_start_phase_without_a_nudge() {
+    const START: u64 = 120;
+    let (services, _store) = services().await;
+    let start = now_ms();
+    services
+        .registry
+        .put(seat("pij-worker", "/nowhere", None))
+        .await
+        .unwrap();
+    // A report from before arming does not count.
+    report_now(&services, "pij-worker", start - 5_000).await;
+    services
+        .watchdogs()
+        .set_watchdog(&started("pij-worker", "pij-prime", start, START))
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let at = |secs: u64| start + secs * 1_000;
+    report_now(&services, "pij-worker", at(30)).await;
+
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, at(30 + START))
+            .await
+            .unwrap()
+            .is_empty(),
+        "the report ended the start phase; --every is not due"
+    );
+    assert_eq!(
+        services.watchdogs().list_watchdogs().await.unwrap()[0].started_at_ms,
+        Some(at(30)),
+        "the round records the report as the end of the start phase"
+    );
+    assert!(drain(&services, "pij-worker").await.is_empty());
+    assert_eq!(
+        watchdog
+            .round(&services, INTERVAL, at(30 + INTERVAL))
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "then the --every check"
+    );
+    let nudges = drain(&services, "pij-worker").await;
+    assert!(
+        nudges[0]
+            .body
+            .contains("(watchdog on every 20m, set by pij-prime)"),
+        "{}",
+        nudges[0].body
+    );
+}
+
+/// Plan 184 AC3: the start phase is persisted BEFORE its nudge is sent. If
+/// the record cannot be written, nothing is sent, so a seat never gets a
+/// start nudge the store does not know about (and never gets it twice).
+#[tokio::test]
+async fn the_start_phase_is_persisted_before_its_nudge_is_sent() {
+    const START: u64 = 120;
+    let (services, store) = services().await;
+    let start = now_ms();
+    services
+        .registry
+        .put(seat("pij-worker", "/nowhere", None))
+        .await
+        .unwrap();
+    services
+        .watchdogs()
+        .set_watchdog(&started("pij-worker", "pij-prime", start, START))
+        .await
+        .unwrap();
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::raw_sql(
+        "CREATE TRIGGER pij_test_block_start BEFORE UPDATE OF started_at ON seat_watchdogs \
+         BEGIN SELECT RAISE(ABORT, 'blocked by test'); END;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let watchdog = PaWatchdog::default();
+    let at = |secs: u64| start + secs * 1_000;
+
+    assert!(
+        watchdog
+            .round(&services, INTERVAL, at(START))
+            .await
+            .unwrap()
+            .is_empty(),
+        "the record failed, so nothing is sent"
+    );
+    assert!(drain(&services, "pij-worker").await.is_empty());
+    assert_eq!(
+        services.watchdogs().list_watchdogs().await.unwrap()[0].started_at_ms,
+        None
+    );
+
+    sqlx::raw_sql("DROP TRIGGER pij_test_block_start")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        watchdog
+            .round(&services, INTERVAL, at(START + 1))
+            .await
+            .unwrap()
+            .len(),
+        1,
+        "once it can be recorded, the start check is sent"
+    );
+    assert_eq!(drain(&services, "pij-worker").await.len(), 1);
+}
+
+/// Plan 184 AC4 and AC5: `on --start` reports both intervals; `status` shows
+/// the live phase (a report ends it before any round records it); the same
+/// call again is a no-op; `--every` alone drops the start interval.
+#[tokio::test]
+async fn on_with_start_shows_both_intervals_and_the_live_phase() {
+    let (services, _store) = services().await;
+    for id in ["pij-prime", "pij-worker"] {
+        services
+            .registry
+            .put(seat(id, "/nowhere", None))
+            .await
+            .unwrap();
+    }
+    let events = Arc::clone(&services.event_bus);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = crate::http::router_with_config(
+        services,
+        crate::http::HttpConfig {
+            auth: crate::http::AuthRing::new("key".to_string(), std::iter::empty())
+                .expect("local-only auth"),
+            machine_alias: "workstation".into(),
+        },
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let call = |argv: Vec<&'static str>| async move {
+        reqwest::Client::new()
+            .post(format!("http://{addr}/v1/watchdog"))
+            .bearer_auth("key")
+            .json(&serde_json::json!({"argv": argv, "caller": {"PIJ_SESSION_ID": "pij-prime"}}))
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()
+    };
+    let status = || async {
+        call(vec!["watchdog", "status", "pij-worker"]).await["data"]["optins"][0].clone()
+    };
+
+    let on = call(vec![
+        "watchdog",
+        "on",
+        "pij-worker",
+        "--start",
+        "2m",
+        "--every",
+        "20m",
+    ])
+    .await;
+    assert_eq!(
+        (
+            on["data"]["changed"].clone(),
+            on["data"]["start_secs"].clone(),
+            on["data"]["interval_secs"].clone()
+        ),
+        (true.into(), 120.into(), 1_200.into()),
+        "{on}"
+    );
+    let listed = status().await;
+    assert_eq!(
+        (
+            listed["phase"].clone(),
+            listed["active_interval_secs"].clone(),
+            listed["start_secs"].clone(),
+            listed["started_at_ms"].clone()
+        ),
+        (
+            "start".into(),
+            120.into(),
+            120.into(),
+            serde_json::Value::Null
+        ),
+        "{listed}"
+    );
+
+    let again = call(vec![
+        "watchdog",
+        "on",
+        "pij-worker",
+        "--every",
+        "20m",
+        "--start",
+        "2m",
+    ])
+    .await;
+    assert_eq!(again["data"]["changed"], false, "{again}");
+
+    let armed_at = listed["set_at_ms"].as_u64().unwrap();
+    events
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: armed_at + 1,
+            kind: pij_core::report::CARD_EVENT_KIND.into(),
+            seat: Some("pij-worker".into()),
+            payload: "{}".into(),
+        })
+        .await
+        .unwrap();
+    let listed = status().await;
+    assert_eq!(
+        (
+            listed["phase"].clone(),
+            listed["active_interval_secs"].clone()
+        ),
+        ("every".into(), 1_200.into()),
+        "a report ends the start phase in status before any round: {listed}"
+    );
+
+    let every = call(vec!["watchdog", "on", "pij-worker", "--every", "20m"]).await;
+    assert_eq!(
+        every["data"]["changed"], true,
+        "dropping --start is a change: {every}"
+    );
+    let listed = status().await;
+    server.abort();
+    assert_eq!(
+        (listed["phase"].clone(), listed["start_secs"].clone()),
+        ("every".into(), serde_json::Value::Null),
+        "{listed}"
+    );
 }
