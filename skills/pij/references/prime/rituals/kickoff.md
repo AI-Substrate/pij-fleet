@@ -20,9 +20,10 @@ Run steps in order. Artifacts make the process reconstructable; conversation doe
 8. **Observe the actual native binding result / pushed turn.** Native spawn waits by default; `--no-wait` is explicit admission, not readiness. Never poll a booting peer as a substitute for delivery.
 9. **Verify placement.**
    Read `pij list --json`, `pij node show <id> --json`, the actual branch and tmux panes; folder, recorded parent, model and window must match the brief. List `--here` scopes to caller cwd, not every stream worktree; `tree` is unported (read `node show`).
-10. **Arm the stall watchdog.** `pij watchdog on <id>` (default 20 min) at spawn, for every PM and
-    worker. It nudges the seat itself after a quiet interval and stays silent while it works or has declared
-    a parked state. A PA's idle nudge needs a worker edge and a brief that acts on it; this does not.
+10. **Arm the stall watchdog — it, not the prime, checks the start.** `pij watchdog on <id> --every 2m`
+    at spawn, for every PM and worker. It nudges the seat itself after a quiet interval and stays silent
+    while it works or has declared a parked state, so an ack-then-idle start is caught in ~2 min at no prime
+    cost. The seat relaxes it to `--every 20m` after its first `report.now` (brief template).
     (2026-10-29, Tether s004: a PM acked its brief, idled 17 min, then idled 3.5 h after `/thesis`.)
 10a. **Canary legs (a) and (b).** `pij canary <id> --expect-model <m> [--wait <ms>]` runs both (§ Canary);
     record its receipt at pass time; (c) remains pending. A spawned stream already carries `--role pm`;
@@ -32,8 +33,8 @@ Run steps in order. Artifacts make the process reconstructable; conversation doe
     --packet <brief> --wait`; its first instruction is `/pij prime`. The seat
     runs the header's `pij ack <dispatch-id> --packet-sha <sha>` first. `--wait` (default 5 s)
     returns at delivery *or* ack, so it does not prove the ack: close leg (c) when
-    `pij node show <id> --json` shows the dispatch `acked`. Then confirm the stream's first `report.now`
-    lands after the dispatch: an ack followed by idle is a stall, not readiness. Send one explicit start.
+    `pij node show <id> --json` shows the dispatch `acked`. An ack followed by idle is a stall,
+    not readiness; step 10's 2-minute watchdog nudges it, so the prime does not watch for the start.
 12. **Sync the spine; keep the structure tree live.** Fill id, `briefed`, stamp.
     Send a roster change only to the streams whose work it changes (protocol rule 2; `pij tree` is unported); briefs name o-prime/sibling ids and windows.
 13. **Report one hop up.** Use [`reports.md`](./reports.md); if this is a
