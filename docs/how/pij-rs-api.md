@@ -695,7 +695,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/orchestration` | `orchestration baton define/list/show/request/grant/return/reclaim`; `prime set/retire/unset <seat>`; `role set <seat> <role>` / `role unset <seat>` | `baton-define`, `baton-list`, `baton-show`, `baton-request`, `baton-grant`, `baton-return`, `baton-reclaim`, `prime-set`, `prime-retire`, `prime-unset`, `orchestration-role-set`, `role-unset` |
 | POST `/v1/role` | `role [<seat>] <role>` / `role [<seat>] --unset`; typed `{seat?, role, caller}` | `role-set` |
 | POST `/v1/link` | `link <seat> [--parent <you>] --role <pm/worker/pa>`; argv + `caller` only | — (`crates/cli/tests/seat_roles.rs`) |
-| POST `/v1/watchdog` | `watchdog on [<seat>] [--every <duration>]`; `off [<seat>]`; `status [<seat>]`; argv + `caller` only | — ([Opt-in watchdog](#opt-in-watchdog)) |
+| POST `/v1/watchdog` | `watchdog on [<seat>] [--start <duration>] [--every <duration>]`; `off [<seat>]`; `status [<seat>]`; argv + `caller` only | — ([Opt-in watchdog](#opt-in-watchdog)) |
 | POST `/v1/report` | `report now/state/question/blocked/clear/verify`; state metadata flags below | `report-question`, `report-verify` |
 | GET and POST `/v1/anomalies` | `anomalies [--here] [--project <slug>]`; GET `here=<absolute-path>&project=<slug>` | `anomalies-list`, `anomalies-argv` |
 | GET and POST `/v1/decisions` | `decisions [--state <open/answered/all>] [--asked_by <seat>] [--parent <seat>]`; GET keys `state`, `asked_by`, `parent` (literal underscore; `--asked-by` refuses) | `decisions-list`, `decisions-argv` |
@@ -929,10 +929,12 @@ Every edge appends a `watchdog.round` event. Its payload carries `outcome` (`nud
 
 ## Opt-in watchdog
 
-Any other seat is watched only while it is opted in. `pij watchdog on [<seat>] [--every <duration>]` turns it on, `pij watchdog off [<seat>]` turns it off, and `pij watchdog status [<seat>]` lists `{pas, optins}`. The seat defaults to the caller. **Any seat may switch any live seat's watchdog**; the store row (`seat_watchdogs`, migration 0029) records `set_by` and `set_at`.
+Any other seat is watched only while it is opted in. `pij watchdog on [<seat>] [--start <duration>] [--every <duration>]` turns it on, `pij watchdog off [<seat>]` turns it off, and `pij watchdog status [<seat>]` lists `{pas, optins}`. The seat defaults to the caller. **Any seat may switch any live seat's watchdog**; the store row (`seat_watchdogs`, migration 0029) records `set_by` and `set_at`.
 
 - `--every` defaults to the PA interval and must be at least `1m`.
-- The change is persisted before it is announced. A real change appends one `watchdog.on` or `watchdog.off` event. When the caller is not the subject, the subject is also sent a held FYI that names the change and points to `pij watchdog status`; it opens no turn, and the receipt's `subject_told` reports it. These notices are **coalesced**: until the subject reads its FYIs, they share the id `watchdog-control:<seat>:<seq of its latest fyi.delivered>`, which the store ignores when repeated. So on/off churn leaves at most one pending notice per seat. The receipt's `changed` says whether anything changed. A no-op, such as `off` on a seat that is already off or `on` at the current interval, notifies nobody; it is audited as `watchdog.unchanged`, with the actor and the action.
+- `--start <duration>` (plan 184; migration 0031 adds `start_secs` and `started_at`) sets the quiet interval for the **first** check, with the same `1m` floor, and is accepted only with `on`. The start phase ends at the seat's first `report.now` after arming, or at the start check, whichever comes first; then every check uses `--every`, with no second call. The end is persisted (`started_at`) **before** the start nudge is sent, and a record that does not land sends nothing, so the start check never repeats, a daemon restart included. A start check skipped because the seat is cold also ends the phase. `--start` may be longer than `--every`. `pij watchdog on <seat> --start 2m --every 20m` is the kickoff form for a freshly briefed seat.
+- `status` lists each opt-in with `interval_secs`, `start_secs` (null without `--start`), `started_at_ms`, the live `phase` (`start` or `every`; a report since arming already counts) and `active_interval_secs`. The `on` receipt carries `start_secs`.
+- The change is persisted before it is announced. A real change appends one `watchdog.on` or `watchdog.off` event. When the caller is not the subject, the subject is also sent a held FYI that names the change and points to `pij watchdog status`; it opens no turn, and the receipt's `subject_told` reports it. These notices are **coalesced**: until the subject reads its FYIs, they share the id `watchdog-control:<seat>:<seq of its latest fyi.delivered>`, which the store ignores when repeated. So on/off churn leaves at most one pending notice per seat. The receipt's `changed` says whether anything changed. A no-op, such as `off` on a seat that is already off or `on` with the current `--every` and `--start`, notifies nobody and keeps the phase (to restart an identical start window, `off` then `on`); it is audited as `watchdog.unchanged`, with the actor and the action.
 - Refusals:
   - `E-RS-ARG` (400) for bad grammar, including the old TS leaves such as `disable-all`;
   - `E-RS-NO-SEAT` (404) for a missing or tombstoned seat;
@@ -943,6 +945,8 @@ Any other seat is watched only while it is opted in. `pij watchdog on [<seat>] [
 ```text
 [pij watchdog] <seat>: quiet 20m (watchdog on every 20m, set by <who>). Keep going if working, and report with `pij report now "<did>" "<next>"`. If this unit of work is finished, run `pij report state done`; if you are idle but available, run `pij report state ready`. No more work coming? Stop this watchdog: `pij watchdog off`.
 ```
+
+The start check (`--start`) reads `(watchdog start check after 2m, then every 20m, set by <who>)` in place of `(watchdog on every 20m, set by <who>)`; the rest is the same. Its `watchdog.nudge` audit carries `phase: "start"` and `start_secs`.
 
 ## Revive
 

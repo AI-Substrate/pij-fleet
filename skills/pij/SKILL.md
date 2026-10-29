@@ -47,7 +47,7 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 | `commit-trailers` | § Shared conventions C11 — narrow native CLI forwarding; trailer-only stdout, native stderr and exit status |
 | `fleet-report` | native forward (plan 162) — writes a project's Context Tax folder (`report.json`, static page, tables); no daemon, store read read-only; `--anonymise` before sharing |
 | `bg` (`create/list/tail/kill/emit`) | § Shared conventions C7 — shipped rs detached jobs and event sources; result injected from `pij-bg` |
-| `watchdog` | § C9 — rs; `on\|off\|status [<seat>] [--every 30m]`; any seat may switch any seat; PAs always on |
+| `watchdog` | § C9 — rs; `on\|off\|status [<seat>] [--start 2m] [--every 30m]`; `--start` is the first check, then `--every` (plan 184); any seat may switch any seat; PAs always on |
 | `orchestration` (`baton`/`prime`/`role`) | prime route — rs; destructive baton return/reclaim require observed `--lease-id` |
 | `role` | node route — rs explicit assertion/unset, joined through RoleService |
 | `project` `stream` `fence` `dispatch` `ack` `canary` `attest` `spine` `task` (`set/close`) `report` (`now/question/blocked/state/clear/verify`) `node` (`show`) `anomalies` | node route — rs governance records, receipts and projections |

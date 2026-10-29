@@ -335,7 +335,8 @@ impl SqliteOrchestration {
     pub async fn list_watchdogs(&self) -> Result<Vec<WatchdogOptIn>> {
         require_current_schema(&self.pool).await?;
         let rows = sqlx::query(
-            "SELECT seat, interval_secs, set_by, set_at FROM seat_watchdogs ORDER BY seat",
+            "SELECT seat, interval_secs, set_by, set_at, start_secs, started_at \
+             FROM seat_watchdogs ORDER BY seat",
         )
         .fetch_all(&self.pool)
         .await
@@ -343,22 +344,54 @@ impl SqliteOrchestration {
         rows.into_iter().map(watchdog_optin).collect()
     }
 
-    /// Turn a seat's watchdog on, or change its interval. Last writer wins.
+    /// Turn a seat's watchdog on, or change its intervals. Last writer wins,
+    /// and the whole row is replaced, so a re-arm restarts the start phase.
     pub async fn set_watchdog(&self, optin: &WatchdogOptIn) -> Result<()> {
         require_current_schema(&self.pool).await?;
+        let optional = |value: Option<u64>, field: &str| {
+            value
+                .map(|value| i64::try_from(value).map_err(|_| store_range(field)))
+                .transpose()
+        };
         sqlx::query(
-            "INSERT INTO seat_watchdogs (seat, interval_secs, set_by, set_at) VALUES (?1, ?2, ?3, ?4) \
+            "INSERT INTO seat_watchdogs (seat, interval_secs, set_by, set_at, start_secs, started_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
              ON CONFLICT(seat) DO UPDATE SET interval_secs=excluded.interval_secs, \
-             set_by=excluded.set_by, set_at=excluded.set_at",
+             set_by=excluded.set_by, set_at=excluded.set_at, \
+             start_secs=excluded.start_secs, started_at=excluded.started_at",
         )
         .bind(optin.seat.as_str())
         .bind(i64::try_from(optin.interval_secs).map_err(|_| store_range("interval_secs"))?)
         .bind(optin.set_by.as_str())
         .bind(i64::try_from(optin.set_at_ms).map_err(|_| store_range("set_at"))?)
+        .bind(optional(optin.start_secs, "start_secs")?)
+        .bind(optional(optin.started_at_ms, "started_at")?)
         .execute(&self.pool)
         .await
         .map_err(adapter_error)?;
         Ok(())
+    }
+
+    /// End a seat's start phase at `at_ms` (plan 184), only for the arming
+    /// that set it at `set_at_ms`. Returns whether this call ended it.
+    pub async fn end_watchdog_start(
+        &self,
+        seat: &SeatId,
+        set_at_ms: u64,
+        at_ms: u64,
+    ) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let done = sqlx::query(
+            "UPDATE seat_watchdogs SET started_at=?3 \
+             WHERE seat=?1 AND set_at=?2 AND start_secs IS NOT NULL AND started_at IS NULL",
+        )
+        .bind(seat.as_str())
+        .bind(i64::try_from(set_at_ms).map_err(|_| store_range("set_at"))?)
+        .bind(i64::try_from(at_ms).map_err(|_| store_range("started_at"))?)
+        .execute(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(done.rows_affected() > 0)
     }
 
     /// Turn a seat's watchdog off. Returns whether it was on.
@@ -646,6 +679,16 @@ fn watchdog_optin(row: sqlx::sqlite::SqliteRow) -> Result<WatchdogOptIn> {
             row.try_get("set_at").map_err(adapter_error)?,
             "watchdog set_at",
         )?,
+        start_secs: row
+            .try_get::<Option<i64>, _>("start_secs")
+            .map_err(adapter_error)?
+            .map(|value| sql_u64(value, "watchdog start_secs"))
+            .transpose()?,
+        started_at_ms: row
+            .try_get::<Option<i64>, _>("started_at")
+            .map_err(adapter_error)?
+            .map(|value| sql_u64(value, "watchdog started_at"))
+            .transpose()?,
     })
 }
 

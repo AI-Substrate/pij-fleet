@@ -491,7 +491,7 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Opt a seat in or out of the watchdog: `watchdog on|off|status [<seat>] [--every 30m]`.
+    /// Opt a seat in or out of the watchdog: `watchdog on|off|status [<seat>] [--start 2m] [--every 30m]`.
     Watchdog {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,

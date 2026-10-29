@@ -1,4 +1,5 @@
-//! `pij watchdog on|off|status [<seat>] [--every <duration>]` (2026-10-09).
+//! `pij watchdog on|off|status [<seat>] [--start <duration>] [--every <duration>]`
+//! (2026-10-09; `--start`, plan 184).
 //!
 //! PAs are watched by role and need no opt-in. Any other seat is watched only
 //! while it is opted in, and any seat may turn any seat's watchdog on or off.
@@ -20,8 +21,8 @@ use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope, system_time_ms};
 
 const COMMAND: &str = "pij watchdog";
-const USAGE: &str =
-    "expected watchdog on [<seat>] [--every <duration>] | off [<seat>] | status [<seat>]";
+const USAGE: &str = "expected watchdog on [<seat>] [--start <duration>] [--every <duration>] | \
+     off [<seat>] | status [<seat>]";
 /// The shortest interval a nudge can name honestly (it reports minutes).
 const MIN_INTERVAL_SECS: u64 = 60;
 
@@ -37,6 +38,7 @@ struct Call {
     action: Action,
     seat: Option<SeatId>,
     every_secs: Option<u64>,
+    start_secs: Option<u64>,
     caller: CallerContext,
 }
 
@@ -103,7 +105,7 @@ fn parse(body: Value) -> std::result::Result<Call, String> {
         Some("status") => Action::Status,
         _ => return Err(USAGE.into()),
     };
-    let (mut seat, mut every_secs) = (None, None);
+    let (mut seat, mut every_secs, mut start_secs) = (None, None, None);
     while let Some(token) = tokens.next() {
         match token {
             "--json" => {}
@@ -114,6 +116,14 @@ fn parse(body: Value) -> std::result::Result<Call, String> {
                     return Err("--every must be at least 1m".into());
                 }
                 every_secs = Some(secs);
+            }
+            "--start" if action == Action::On && start_secs.is_none() => {
+                let text = tokens.next().ok_or_else(|| USAGE.to_string())?;
+                let secs = parse_duration_ms(text, "--start")? / 1_000;
+                if secs < MIN_INTERVAL_SECS {
+                    return Err("--start must be at least 1m".into());
+                }
+                start_secs = Some(secs);
             }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown or repeated watchdog flag: {flag}"));
@@ -128,6 +138,7 @@ fn parse(body: Value) -> std::result::Result<Call, String> {
         action,
         seat,
         every_secs,
+        start_secs,
         caller,
     })
 }
@@ -203,9 +214,31 @@ pub(crate) async fn watchdog(
             optins.retain(|optin| &optin.seat == seat);
             pas.retain(|pa| pa == seat);
         }
+        // Each opt-in names its live phase (plan 184): a report since arming
+        // ends the start phase before any round records it.
+        let mut listed = Vec::with_capacity(optins.len());
+        for optin in optins {
+            let latest_report = if optin.start_secs.is_some() && optin.started_at_ms.is_none() {
+                match services
+                    .spine
+                    .latest_matching(&optin.seat, &[pij_core::report::CARD_EVENT_KIND])
+                    .await
+                {
+                    Ok(event) => event.map(|event| event.at),
+                    Err(cause) => return store_failure(cause),
+                }
+            } else {
+                None
+            };
+            let phase = optin.phase(latest_report);
+            let mut row = json!(optin);
+            row["phase"] = json!(phase);
+            row["active_interval_secs"] = json!(optin.active_interval_secs(phase));
+            listed.push(row);
+        }
         return envelope(
             StatusCode::OK,
-            &Envelope::ok(COMMAND, json!({"pas": pas, "optins": optins})),
+            &Envelope::ok(COMMAND, json!({"pas": pas, "optins": listed})),
         );
     }
 
@@ -250,16 +283,19 @@ pub(crate) async fn watchdog(
             Ok(optins) => optins.into_iter().find(|optin| optin.seat == target.id),
             Err(cause) => return store_failure(cause),
         };
-        // Already on at this interval: a no-op notifies nobody and records
-        // nothing (review of #38).
-        if let Some(current) = current.filter(|current| current.interval_secs == interval_secs) {
+        // Already on with these intervals: a no-op notifies nobody, records
+        // nothing and keeps the phase (review of #38; plan 184 R4).
+        if let Some(current) = current.filter(|current| {
+            current.interval_secs == interval_secs && current.start_secs == call.start_secs
+        }) {
             audit_unchanged(&state, &actor.id, &target.id, "on", now).await;
             return envelope(
                 StatusCode::OK,
                 &Envelope::ok(
                     COMMAND,
                     json!({"seat": current.seat, "enabled": true, "changed": false,
-                           "interval_secs": current.interval_secs, "set_by": current.set_by}),
+                           "interval_secs": current.interval_secs,
+                           "start_secs": current.start_secs, "set_by": current.set_by}),
                 ),
             );
         }
@@ -268,15 +304,25 @@ pub(crate) async fn watchdog(
             interval_secs,
             set_by: actor.id.clone(),
             set_at_ms: now,
+            start_secs: call.start_secs,
+            started_at_ms: None,
         };
         if let Err(cause) = store.set_watchdog(&optin).await {
             return store_failure(cause);
         }
         let every = pij_core::cold_wake::human_duration(optin.interval_secs * 1_000);
+        let intervals = match optin.start_secs {
+            Some(start) => format!(
+                "start {}, then every {every}",
+                pij_core::cold_wake::human_duration(start * 1_000)
+            ),
+            None => format!("every {every}"),
+        };
         (
             json!({"seat": optin.seat, "enabled": true, "changed": true,
-                   "interval_secs": optin.interval_secs, "set_by": optin.set_by}),
-            format!("{} turned it on (every {every})", actor.id),
+                   "interval_secs": optin.interval_secs, "start_secs": optin.start_secs,
+                   "set_by": optin.set_by}),
+            format!("{} turned it on ({intervals})", actor.id),
         )
     } else {
         let was_on = match store.clear_watchdog(&target.id).await {
@@ -399,8 +445,50 @@ mod tests {
                 &["watchdog", "on", "--every", "5m", "--every", "9m"][..],
                 "repeated flag",
             ),
+            (
+                &["watchdog", "off", "--start", "2m"][..],
+                "--start only with on",
+            ),
+            (
+                &["watchdog", "status", "--start", "2m"][..],
+                "--start only with on",
+            ),
+            (
+                &["watchdog", "on", "--start", "30s"][..],
+                "start under a minute",
+            ),
+            (
+                &["watchdog", "on", "--start", "2m", "--start", "3m"][..],
+                "repeated --start",
+            ),
+            (&["watchdog", "on", "--start"][..], "--start needs a value"),
         ] {
             assert!(call(argv).is_err(), "{why}: {argv:?}");
         }
+        assert_eq!(
+            call(&["watchdog", "on", "--start", "30s"]).unwrap_err(),
+            "--start must be at least 1m"
+        );
+    }
+
+    /// Plan 184 AC1: `--start` arms a short first check; `--every` is optional
+    /// and either order works.
+    #[test]
+    fn grammar_accepts_a_start_interval_with_or_without_every() {
+        let both = call(&["watchdog", "on", "--start", "2m", "--every", "20m"]).unwrap();
+        assert_eq!((both.start_secs, both.every_secs), (Some(120), Some(1_200)));
+        let swapped =
+            call(&["watchdog", "on", "pij-x", "--every", "20m", "--start", "2m"]).unwrap();
+        assert_eq!(
+            (
+                swapped.seat.as_ref().map(SeatId::as_str),
+                swapped.start_secs,
+                swapped.every_secs
+            ),
+            (Some("pij-x"), Some(120), Some(1_200))
+        );
+        let alone = call(&["watchdog", "on", "--start", "2m"]).unwrap();
+        assert_eq!((alone.start_secs, alone.every_secs), (Some(120), None));
+        assert_eq!(call(&["watchdog", "on"]).unwrap().start_secs, None);
     }
 }

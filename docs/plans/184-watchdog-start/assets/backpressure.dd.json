@@ -1,0 +1,90 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 184 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1, AC5: grammar and re-arm",
+          "phase": "ph-e3bb",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "crates/daemon/src/http/watchdog.rs parse() unit tests (floor, repeat, on-only) and a daemon HTTP test for the no-op re-arm",
+          "state": "checked",
+          "probe": "watchdog.rs tests",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2: migration and store",
+          "phase": "ph-e3bb",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "crates/store/tests/store_integration.rs: migrate to 31; pre-0031 rows read as no start; set/list round-trip; mark-started keyed on set_at",
+          "state": "checked",
+          "probe": "store_integration.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3: the round",
+          "phase": "ph-e3bb",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "crates/daemon/src/pa_watchdog_tests.rs: start nudge after --start; started_at persisted before the send (a failing delivery still leaves it set); report.now ends the phase without a nudge; --every alone unchanged; parked/working silent",
+          "state": "checked",
+          "probe": "pa_watchdog_tests.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4: status, receipts, nudge text",
+          "phase": "ph-e3bb",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "crates/core/tests/watchdog.rs (phase(), active interval, nudge text) and a daemon HTTP status test",
+          "state": "checked",
+          "probe": "core watchdog.rs + daemon status test",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC6: docs and skill",
+          "phase": "ph-e3bb",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "skill verb coverage and pij-skill-check stay green; docs name --start",
+          "state": "checked",
+          "probe": "just pij-skill-check / skill_verb_coverage",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC7: mutants and gates",
+          "phase": "ph-e3bb",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "mutant receipts in evidence/; cargo fmt, clippy -D warnings; CI",
+          "state": "checked",
+          "probe": "evidence/mutation.txt, CI run",
+          "receipt": "execution-log.dd.json#entries/lg-0003"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

@@ -1264,6 +1264,8 @@ async fn watchdog_migrations_move_a_schema_28_store_to_current_losing_nothing() 
         interval_secs: 1_800,
         set_by: SeatId::from("pij-prime"),
         set_at_ms: 30,
+        start_secs: None,
+        started_at_ms: None,
     };
     store.set_watchdog(&optin).await.unwrap();
     assert_eq!(store.list_watchdogs().await.unwrap(), vec![optin]);
@@ -1293,4 +1295,116 @@ async fn watchdog_migrations_move_a_schema_28_store_to_current_losing_nothing() 
     };
     assert!(!store.claim_limit_wake(&again).await.unwrap());
     assert_eq!(store.limit_wakes().await.unwrap(), vec![wake]);
+}
+
+/// Plan 184: migration 0031 gives `seat_watchdogs` a start interval and the
+/// end of its start phase. A schema-30 opt-in survives as a plain `--every`
+/// opt-in; ending the start phase is keyed on the arming (`set_at`), so a
+/// stale reader can never mark a newer arming.
+#[tokio::test]
+async fn watchdog_start_columns_migrate_and_end_only_their_own_arming() {
+    let fresh = FreshStore::new();
+    {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(fresh.path())
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .expect("open schema-30 store");
+        let schema_30 = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                pij_store::migrate::MIGRATIONS
+                    .iter()
+                    .filter(|migration| migration.version <= 30)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        schema_30.run(&pool).await.expect("apply through 0030");
+        sqlx::raw_sql(
+            "INSERT INTO seat_watchdogs (seat, interval_secs, set_by, set_at) \
+             VALUES ('pij-old', 1200, 'pij-prime', 7);",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed a schema-30 opt-in");
+        pool.close().await;
+    }
+    let pool = pij_store::open(&fresh.path())
+        .await
+        .expect("this build migrates 30 → current");
+    assert_eq!(
+        pij_store::schema_version(&pool).await.unwrap(),
+        pij_store::SCHEMA_VERSION
+    );
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let old = pij_core::watchdog::WatchdogOptIn {
+        seat: SeatId::from("pij-old"),
+        interval_secs: 1_200,
+        set_by: SeatId::from("pij-prime"),
+        set_at_ms: 7,
+        start_secs: None,
+        started_at_ms: None,
+    };
+    assert_eq!(
+        store.list_watchdogs().await.unwrap(),
+        vec![old.clone()],
+        "a schema-30 opt-in reads as --every alone"
+    );
+
+    let armed = pij_core::watchdog::WatchdogOptIn {
+        set_at_ms: 40,
+        start_secs: Some(120),
+        ..old.clone()
+    };
+    store.set_watchdog(&armed).await.unwrap();
+    assert_eq!(store.list_watchdogs().await.unwrap(), vec![armed.clone()]);
+
+    let seat = SeatId::from("pij-old");
+    assert!(
+        !store.end_watchdog_start(&seat, 7, 99).await.unwrap(),
+        "a stale arming (set_at 7) cannot end the current one (set_at 40)"
+    );
+    assert_eq!(store.list_watchdogs().await.unwrap(), vec![armed.clone()]);
+    assert!(store.end_watchdog_start(&seat, 40, 99).await.unwrap());
+    let ended = pij_core::watchdog::WatchdogOptIn {
+        started_at_ms: Some(99),
+        ..armed.clone()
+    };
+    assert_eq!(store.list_watchdogs().await.unwrap(), vec![ended.clone()]);
+    assert!(
+        !store.end_watchdog_start(&seat, 40, 150).await.unwrap(),
+        "the start phase ends once"
+    );
+    assert_eq!(store.list_watchdogs().await.unwrap(), vec![ended]);
+
+    let rearmed = pij_core::watchdog::WatchdogOptIn {
+        set_at_ms: 200,
+        ..armed
+    };
+    store.set_watchdog(&rearmed).await.unwrap();
+    assert_eq!(
+        store.list_watchdogs().await.unwrap(),
+        vec![rearmed],
+        "re-arming restarts the start phase"
+    );
+    assert!(
+        !store
+            .end_watchdog_start(&SeatId::from("pij-never"), 200, 1)
+            .await
+            .unwrap()
+    );
+    assert!(
+        sqlx::query(
+            "INSERT INTO seat_watchdogs (seat, interval_secs, set_by, set_at, start_secs) \
+             VALUES ('pij-bad', 60, 'pij-prime', 1, 0)"
+        )
+        .execute(&pij_store::open(&fresh.path()).await.unwrap())
+        .await
+        .is_err(),
+        "start_secs is NULL or positive"
+    );
 }

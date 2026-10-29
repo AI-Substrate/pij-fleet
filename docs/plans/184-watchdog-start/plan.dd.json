@@ -1,0 +1,164 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Opt-in watchdog start interval: pij watchdog on <seat> --start 2m --every 20m",
+        "slug": "watchdog-start",
+        "ordinal": 184,
+        "status": "in-progress",
+        "summary": "Add a start interval to the opt-in seat watchdog: `pij watchdog on <seat> --start 2m --every 20m`. The first stall check uses --start; after the seat's first report or the first start nudge, the watchdog uses --every with no second call.",
+        "mode": "Simple",
+        "log": "assets/execution-log.dd.json#entries",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Vaughan via the Tether prime (pij-causal-salamander), brief tether-governance/.harness/government/briefs/xgov-pij-watchdog-start.md. A stream seat that acks its brief and then idles is caught only by --every, so primes arm `--every 2m` at spawn and rely on the seat re-arming itself `--every 20m` after its first report; the seat forgetting is the failure. `--start <dur>` makes the first check short and switches to `--every` by itself."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "`pij watchdog on [<seat>] --start <dur> [--every <dur>]` arms a short first stall check that hands over to --every with no second call.",
+        "`--every` alone behaves exactly as today.",
+        "`pij watchdog status` shows both intervals and which phase is active."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Changing when a seat counts as stalled (working or parked seats stay silent; the plan-178 answered-nudge brake stays).",
+        "PA watchdog behaviour.",
+        "Deploying the daemon (a separate, owner-coordinated bounce)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Grammar: `watchdog on [<seat>] [--start <dur>] [--every <dur>]`. --start is at least 1m (same floor as --every), only with `on`, and refused when repeated; the usage text names it. --start alone keeps the default --every.",
+          "state": "checked",
+          "note": "parse tests in http/watchdog.rs; MW7"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Store: migration 0031 adds `start_secs` (NULL or > 0) and `started_at` to `seat_watchdogs`. Rows from before it read as no start (every phase). set/list round-trip both; ending the start phase is a conditional update keyed on the row's `set_at`, so a re-arm is never marked by a stale round.",
+          "state": "checked",
+          "note": "store_integration watchdog_start_columns_migrate_and_end_only_their_own_arming; MW10-MW12"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Round: in the start phase a seat quiet for --start is nudged once; `started_at` is persisted BEFORE the nudge is sent; afterwards the quiet interval is --every, measured from that nudge. A `report.now` by the seat after arming ends the start phase with no nudge. Working or parked seats stay silent in both phases; --every alone is unchanged.",
+          "state": "checked",
+          "note": "pa_watchdog tests a_start_interval..., a_report_after_arming..., the_start_phase_is_persisted_before_its_nudge_is_sent; MW2-MW6"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Status and receipts: each opt-in in `status` carries `start_secs`, `started_at_ms`, `phase` (start|every) and `active_interval_secs`; the phase is derived live from the seat's latest report.now, so it is right before the round persists it. The `on` receipt and the subject's FYI name the start interval; the start nudge says it is the start check and names the --every that follows.",
+          "state": "checked",
+          "note": "core nudge-text test; on_with_start_shows_both_intervals_and_the_live_phase; MW9"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Re-arm: `on` with the same --start and --every is a no-op (phase kept, audited `watchdog.unchanged`); any change rewrites the row with `set_at` now and the start phase restarted when --start is given. To restart an identical start window: `off` then `on`.",
+          "state": "checked",
+          "note": "on_with_start... (identical re-arm no-op; --every alone drops --start); MW8"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and skill: docs/how/pij-rs-api.md § Opt-in watchdog, docs/how/pa-watchdog.md, skills/pij SKILL.md verb row and 00-routing.md; the kickoff step-10 change from #92 (`pij watchdog on <id> --start 2m --every 20m`, drop the self-relax line) folded into #92 or a follow-up.",
+          "state": "checked",
+          "note": "docs and skill updated; pij-skill-check failure set identical to main; kickoff fold deferred to after deploy, diff posted on #92 (issuecomment-6489818704)"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Proof: tests first with RED shown; mutants on the phase switch, the persist-before-send order, the report edge and the grammar floor; cargo fmt/clippy -D warnings; CI green.",
+          "state": "checked",
+          "note": "evidence/red.txt, green.txt, mutation.txt (12/12 killed); CI on the PR"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-e3bb",
+          "title": "Start interval in store, round, handler and docs",
+          "brief": "Migration + core phase logic + store + round + handler + docs, tests first.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": "last_event_at counts every spine event for the seat, including watchdog.on and watchdog.nudge, so it cannot mark the first report; the edge reads the latest `report.now` (CARD_EVENT_KIND) via spine.latest_matching, as the PA path does. A daemon restart loses the in-memory nudged map; started_at is persisted, so the start phase never repeats."
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ],
+  "references": []
+}

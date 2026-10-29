@@ -1,0 +1,92 @@
+# Plan 184 GREEN, 2026-10-29T06:43:28Z
+fmt: clean
+## clippy
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 54.89s
+## pij-core
+   1 test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   4 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+   1 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+## pij-store
+   1 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+   1 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.35s
+   1 test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+   1 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s
+   1 test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+   1 test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.88s
+   1 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+   1 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+## pij-daemon
+   1 test http::native_tests::native_registration_preserves_claimed_host_and_reports_atomic_binding_transitions ... FAILED
+   1 test http::native_tests::native_spawn_wait_resolves_prebound_child_resuming_saved_session ... FAILED
+   1 test http::native_tests::native_sqlite_http_dead_legacy_and_uncorrelated_prebind_owners_are_not_taken_over ... FAILED
+   1 test http::native_tests::native_sqlite_http_fresh_session_retires_dead_pane_owner_without_retargeting_m1 ... FAILED
+   1 test http::native_tests::native_sqlite_http_prebind_precedes_saved_session_without_retargeting_work ... FAILED
+   1 test http::tests::a_live_idle_claude_frame_under_a_long_stale_working_is_refused ... FAILED
+   1 test pane_observer::tests::tombstoning_an_observed_seat_detaches_marker_and_captured_bytes ... FAILED
+   1 test result: FAILED. 638 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 52.42s
+   1 thread 'http::native_tests::native_registration_preserves_claimed_host_and_reports_atomic_binding_transitions' (506903064) panicked at crates/daemon/src/http/native_tests.rs:213:5:
+   1 thread 'http::native_tests::native_spawn_wait_resolves_prebound_child_resuming_saved_session' (506903231) panicked at crates/daemon/src/http/native_tests.rs:213:5:
+   1 thread 'http::native_tests::native_sqlite_http_dead_legacy_and_uncorrelated_prebind_owners_are_not_taken_over' (506903247) panicked at crates/daemon/src/http/native_tests.rs:213:5:
+   1 thread 'http::native_tests::native_sqlite_http_fresh_session_retires_dead_pane_owner_without_retargeting_m1' (506903382) panicked at crates/daemon/src/http/native_tests.rs:213:5:
+   1 thread 'http::native_tests::native_sqlite_http_prebind_precedes_saved_session_without_retargeting_work' (506903594) panicked at crates/daemon/src/http/native_tests.rs:213:5:
+   1 thread 'http::tests::a_live_idle_claude_frame_under_a_long_stale_working_is_refused' (506904254) panicked at crates/daemon/src/http/tests.rs:7420:5:
+   1 thread 'pane_observer::tests::tombstoning_an_observed_seat_detaches_marker_and_captured_bytes' (506908824) panicked at crates/daemon/src/pane_observer.rs:989:9:
+## the 7 pij-daemon lib failures, rerun serially (load1 28): 7/7 ok
+## pij-daemon integration tests
+   1 test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   2 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.51s
+   1 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.61s
+   1 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.19s
+   1 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.68s
+   1 test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+   1 test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.76s
+   1 test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.83s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+   1 test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.92s
+   2 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.24s
+   1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+   1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s
+   1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+   1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.69s
+   1 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+   1 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+   1 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+   1 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+   1 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.38s
+## pij-cli
+   1 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.49s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.98s
+   1 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.31s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.12s
+   1 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.19s
+   1 test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 62.62s
+   1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+   1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+   1 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.69s
+   1 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+   1 test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+   1 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.10s
+   1 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s
+## just pij-skill-check: fails on origin/main too; the failure set is IDENTICAL to base (21 lines, pre-existing; #92 reported the same)
