@@ -56,7 +56,7 @@ recording approval.
 | `ASK_USER` | Requirement ambiguous / needs a human decision | Ask inline (dispatch invariants 9–10); block only dependent work |
 | `RUN_LOCAL` | Safe, cheap, read-only | Do it yourself |
 | `DELEGATE` | A tasked phase is ready | Write the coder packet → dispatch the pointer. **One whole phase per packet**, and say so |
-| `REVIEW` | Coder reports done | Compact the coder → acquire/canary the reviewer if not live → dispatch the review packet at the exact head SHA |
+| `REVIEW` | Coder reports done | Compact the coder → acquire/canary the reviewer if not live → dispatch the review packet at the exact head SHA. The packet forbids `git checkout`/`switch`/`reset` in the shared worktree: review by `git show <sha>:<path>`, `git diff <base> <sha>`, or a throwaway `git worktree add --detach` |
 | `FIX` | Verdict needs changes | Compact the reviewer → send the coder the review record's findings only |
 | `APPROVE` | Verdict approves | Compact the reviewer → sanity pass → run the repo's gates → record approval and the stop report → merge or hand to the prime |
 
@@ -84,6 +84,9 @@ pij dispatch <seat> --packet <absolute-packet-path> --json
 - **Models**: no defaults. Discover ids per § C4; pass effort with `--effort`, never a model
   suffix. OMP and Pi refuse a linked-worktree `--cwd` (peer route § Spawn and revive): for worktree
   work use `claude` or `copilot`, or spawn OMP/Pi from the main checkout and have it work by absolute path.
+- **Reviewer checkout detaches the shared worktree** — a reviewer's `git checkout <sha>` in the coder/PM
+  worktree detached HEAD, and each later PM commit forked off the branch (Tether s005, 2026-10-30: 26 commits
+  on no branch, 7 forks repaired by cherry-pick). Review read-only by SHA or in its own throwaway worktree.
 - **Lazy reviewer** — spawn the reviewer at the first `REVIEW`, never with the coder: an idle
   live peer still costs cache writes.
 - **Canary before trust (§ C2)**, provided peers too. Place and name the panes (§ C5).
