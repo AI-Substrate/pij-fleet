@@ -1,0 +1,244 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Remote compact for Copilot seats",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Reuse, don't add: Copilot compact rides the exact pane control path Claude's compact uses, with the same gates and failure outcomes. Only the control policy and the routing decision change. Messages stay on the native extension. A human draft in the composer is never typed over."
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One small policy and routing change; one owner."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "copilot compact -> allowed; new/reload -> refused",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "copilot compact -> pane control path; bodies -> extension",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "canary compact -> Copilot compaction events",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Remote compact for Copilot seats",
+          "role": "pm",
+          "responsibility": "Red tests, policy change, routing, canary, docs and skills, mutants, PR.",
+          "paths": [
+            "crates/core/src/control.rs",
+            "crates/core/tests/",
+            "crates/daemon/src/",
+            "crates/daemon/tests/",
+            "crates/harnesses/src/",
+            ".copilot/extensions/pij/",
+            "docs/how/",
+            "skills/pij/",
+            "docs/plans/186-copilot-compact"
+          ],
+          "reads": [],
+          "notes": "Read first: issue #94; crates/core/src/control.rs; crates/daemon/src/pointer/worker.rs (Copilot exclusions at :118 and :209, test copilot_drain_never_claims_native_body_or_legacy_control); how Claude's compact is delivered end to end; docs/how/copilot-native-extension.md; legacy plan 137 impl-guide item 8 (for the original reason only; do not touch pij-legacy); AGENTS.md \u00a7 Resource cost.",
+          "interface": "Control policy for Copilot; control routing for extension-delivered seats",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/core/src/control.rs",
+          "crates/daemon/src/pointer/worker.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-186-copilot-compact on fix/copilot-compact."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "claude",
+          "model": "claude-opus-5-5 reviewer seat, then prime verification"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Core tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-core"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-daemon"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Red tests.",
+          "Policy and routing.",
+          "Live canary.",
+          "Docs and skills; mutants; checks; PR; CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: an independent reviewer seat, then the prime verifies receipts, merges, bounces the daemon and takes the live cost reading.",
+        "inputs": [
+          "PR head SHA",
+          "receipts"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "Typing into a Copilot pane races the extension's own delivery.",
+          "check": "Same gates as Claude (idle, empty composer, typing); canary proves busy and idle cases."
+        },
+        {
+          "id": "rk-0002",
+          "text": "Conflicts with PR #91's staged-submit rework.",
+          "check": "Don't edit staged-submit internals; rebase onto main if #91 merges first."
+        },
+        {
+          "id": "rk-0003",
+          "text": "Canaries cost quota and leak seats.",
+          "check": "At most 2 Copilot canaries, each closed and its window killed."
+        }
+      ]
+    }
+  ]
+}
