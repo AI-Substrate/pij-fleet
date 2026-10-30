@@ -122,6 +122,16 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0014",
+          "at": "2026-10-30T10:30:00Z",
+          "text": "PR #99 review fixes (prime rulings). B1 no drop: removed drop_final_turn/FINAL_TURN_DROPPED; the final turn waits for a tombstoned owner, as on main, with the once-guard and RepeatedFailureLog. RED on 3f02e3f: `a_revived_owner_still_gets_its_sources_final_turn_once` 'the revived owner gets its final turn left: 0 right: 1'; GREEN after (background:: 56 passed). Cost of a waiting source: 2 in-process sqlite reads per 100 ms tick, 0 launches. S1: own orphans_swept flag; ledger rewrite skipped when unchanged. RED: `a_failing_pane_does_not_make_the_sweep_run_every_tick` 'errors, sweeps left: (3, 3) right: (3, 1)'; GREEN after (pane_observer:: 13 passed). N1 witnessed (`the_sweep_spares_a_sink_this_adapter_still_tracks`, M18). N2: MTIME_SETTLE is a tripwire, not a proof (no test fakes a coarse-mtime filesystem; reviewer mutant M-F stays green). N3: newest shares spine_head/sql_u64 (no panic). N4 comment fixed. N5 NOT DONE as asked: the contract runs under testkit's no-op block_on, which panics on Pending, so tokio::time::sleep cannot work there; std::thread::sleep kept, with a comment. N6 docs fixed. Mutants 19/19 killed (M1, M2, M5-M21), each by its intended test. Private replay (B1 build): CPU 1.15 s/60 s (1.9%), RSS 17.5/17.6/17.6 MB, spine +0, one refusal line. evidence/b1-*.txt, s1-*.txt, mutants.txt, private-branch3.txt.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }

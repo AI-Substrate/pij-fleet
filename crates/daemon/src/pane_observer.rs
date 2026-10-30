@@ -54,6 +54,10 @@ pub struct PaneObserver {
     gate: Arc<InteractionGate>,
     sink_dir: PathBuf,
     world_reconciled: AtomicBool,
+    /// The orphaned-tap sweep's own once-flag. `world_reconciled` waits for an
+    /// error-free pass, and one failing pane would otherwise re-run the sweep
+    /// every tick (PR #99 review S1).
+    orphans_swept: AtomicBool,
     interval: Duration,
     panes: Mutex<BTreeMap<String, PaneState>>,
     reported_attach_failures: Mutex<BTreeSet<(String, String)>>,
@@ -82,6 +86,7 @@ impl PaneObserver {
             gate,
             sink_dir,
             world_reconciled: AtomicBool::new(false),
+            orphans_swept: AtomicBool::new(false),
             interval,
             reported_attach_failures: Mutex::new(BTreeSet::new()),
             panes: Mutex::new(BTreeMap::new()),
@@ -205,11 +210,16 @@ impl PaneObserver {
             }
         }
 
-        if reconcile_world {
+        if !self.orphans_swept.load(Ordering::Acquire) {
             // Once per boot, after retirement: sinks of panes this server no
             // longer has. Pane absence is the policy; the adapter's mtime grace
-            // is a brake that can only spare (plan 185, F5).
-            match self.tmux.sweep_orphan_taps().await {
+            // is a brake that can only spare (plan 185, F5). Retried only while
+            // the sweep itself fails.
+            let swept = self.tmux.sweep_orphan_taps().await;
+            if swept.is_ok() {
+                self.orphans_swept.store(true, Ordering::Release);
+            }
+            match swept {
                 Ok(sweep) if sweep.claimed > 0 || sweep.removed > 0 || sweep.spared_recent > 0 => {
                     eprintln!(
                         "pij-rs pane observer: orphaned-tap sweep removed {} sink(s), {} bytes, of panes tmux no longer lists; claimed {} pre-ledger sink(s); spared {} written within the grace",
@@ -558,6 +568,45 @@ mod tests {
             .filter(|call| *call == "sweep_orphan_taps")
             .count();
         assert_eq!(sweeps, 1, "one sweep per boot");
+    }
+
+    /// PR #99 review S1: a pane that keeps failing keeps the world unreconciled,
+    /// and the sweep used to ride that flag: a sweep (and a ledger rewrite)
+    /// every 600 ms. It has its own once-flag now.
+    #[tokio::test]
+    async fn a_failing_pane_does_not_make_the_sweep_run_every_tick() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .script_tap_error("drain one")
+                .script_tap_error("drain two")
+                .script_tap_error("drain three"),
+        );
+        let registry = registry(&["%1"]).await;
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let observer = PaneObserver::new(
+            Arc::clone(&registry) as Arc<dyn Registry>,
+            Arc::clone(&tmux) as Arc<dyn TmuxPort>,
+            Arc::clone(&gate),
+            PathBuf::from("/tmp/pij-observer-sweep-failing"),
+            Duration::from_millis(1),
+        )
+        .expect("observer");
+        let errors = {
+            let mut errors = 0;
+            for _ in 0..3 {
+                if observer.observe_once().await.is_err() {
+                    errors += 1;
+                }
+            }
+            errors
+        };
+        let sweeps = tmux
+            .calls()
+            .iter()
+            .filter(|call| *call == "sweep_orphan_taps")
+            .count();
+        assert_eq!((errors, sweeps), (3, 1), "errors, sweeps");
     }
 
     #[tokio::test]

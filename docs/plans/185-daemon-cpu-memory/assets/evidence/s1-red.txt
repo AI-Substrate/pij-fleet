@@ -1,0 +1,5 @@
+thread 'pane_observer::tests::a_failing_pane_does_not_make_the_sweep_run_every_tick' panicked at crates/daemon/src/pane_observer.rs:599:9:
+assertion `left == right` failed: errors, sweeps
+  left: (3, 3)
+ right: (3, 1)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 646 filtered out; finished in 0.00s

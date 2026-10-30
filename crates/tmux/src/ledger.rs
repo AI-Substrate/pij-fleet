@@ -4,7 +4,9 @@
 //! the tap root says nothing about which server wrote it. Each adapter records
 //! every sink it creates in its own server's ledger, before the sink exists. The
 //! orphan sweep then only ever considers its own ledger: a default-server
-//! observer cannot remove a `-L` server's tap even when both share a tap root.
+//! observer cannot remove a `-L` server's tap when the two daemons have distinct
+//! state dirs. In one shared tap root the same pane id is the same file in both
+//! ledgers, so ownership by name cannot separate them.
 
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};

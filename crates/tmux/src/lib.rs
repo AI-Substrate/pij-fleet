@@ -37,8 +37,8 @@ use crate::parse::{LIST_FORMAT, parse_one_pane, parse_panes};
 /// next write lands at offset 0, where the reader restarts. The length is
 /// re-read on the open file first and a sink that grew is left alone. A write
 /// landing between that re-read and the truncation (one syscall apart, and only
-/// as the first write of a new burst) is lost; the burst's later writes still
-/// report the pane active.
+/// as the first write of a new burst) is lost. A longer burst's later writes
+/// still report the pane active; a single-write burst can vanish whole.
 ///
 /// # Errors
 /// The sink cannot be opened for writing, inspected or truncated.
@@ -1346,7 +1346,9 @@ impl TmuxPort for TmuxAdapter {
                     sweep.claimed += 1;
                 }
             }
-            ledger.rewrite(&owned).map_err(ledger_error)?;
+            if sweep.claimed > 0 {
+                ledger.rewrite(&owned).map_err(ledger_error)?;
+            }
             ledger.mark_legacy_claimed().map_err(ledger_error)?;
         }
         if owned.is_empty() {
@@ -1356,6 +1358,8 @@ impl TmuxPort for TmuxAdapter {
             parse_panes(&self.stdout("list-panes", &self.server_list_args())?)?
                 .iter()
                 .map(|pane| sink_file_name(&pane.id))
+                // A sink this adapter still tracks is retirement's to remove, even
+                // if its pane has just left the listing. A brake: it only spares.
                 .chain(
                     self.taps
                         .lock()
@@ -1365,6 +1369,7 @@ impl TmuxPort for TmuxAdapter {
                 )
                 .collect();
         let now = SystemTime::now();
+        let listed = owned.len();
         for name in owned.clone() {
             if live.contains(&name) || !is_sink_name(&name) {
                 continue;
@@ -1406,7 +1411,11 @@ impl TmuxPort for TmuxAdapter {
             }
             owned.remove(&name);
         }
-        ledger.rewrite(&owned).map_err(ledger_error)?;
+        // Rewrite only on a change: the file is created and renamed, and Defender
+        // inspects that create.
+        if owned.len() != listed {
+            ledger.rewrite(&owned).map_err(ledger_error)?;
+        }
         Ok(sweep)
     }
 

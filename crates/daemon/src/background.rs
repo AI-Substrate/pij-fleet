@@ -38,8 +38,6 @@ pub const EMIT_TEXT_MAX: usize = 16 * 1024;
 pub const EMIT_DATA_MAX: usize = 256 * 1024;
 /// Pending events per source; emits beyond this are dropped and counted.
 pub const PENDING_CAP: u64 = 10_000;
-/// Spine kind recording that a source's final turn was dropped, with its reason.
-pub const FINAL_TURN_DROPPED: &str = "bg.final-turn-dropped";
 /// Default `--min-interval` between two wakes from one source.
 pub const DEFAULT_MIN_INTERVAL_MS: u64 = 60_000;
 /// Default `--inline-max`: events listed in the turn itself.
@@ -1207,7 +1205,9 @@ impl BackgroundService {
         .map_err(|error| fault(format!("completion event: {error}")))?;
         // Once per job: a notify that fails after this point is retried every
         // tick, and re-publishing here put 2.4M `bg.lost` rows on the live spine
-        // at 10/s for one stranded source (plan 185, D2). One indexed seek.
+        // at 10/s for one stranded source (plan 185, D2). The lookup scans the
+        // owner's rows of this kind through the (seat, kind) index until one
+        // names this msg_id: on a first publish it reads them all, once per job.
         if self
             .event_bus
             .latest_matching_message(&job.owner, kind, &msg_id)
@@ -1252,18 +1252,21 @@ impl BackgroundService {
         mut body: String,
         msg_id: &str,
     ) -> Result<()> {
-        let owner = self.registry.get(&job.owner).await?.ok_or_else(|| {
-            refusal(format!(
-                "owner {} of source {} is gone; its final turn waits",
-                job.owner, job.job_id
-            ))
-        })?;
-        if owner.tombstoned_at.is_some() {
-            // A tombstone is permanent, so this final turn can never be handed
-            // off. End the job's work once, with the reason on the spine, rather
-            // than retrying it every tick for ever (plan 185, D2).
-            return self.drop_final_turn(job, msg_id).await;
-        }
+        // A tombstoned owner can be resumed or revived, so the final turn waits
+        // for it. Waiting costs two indexed sqlite reads per tick and no launch:
+        // the completion event above is published once (plan 185, D2), and the
+        // background loop logs a repeating refusal once.
+        let owner = self
+            .registry
+            .get(&job.owner)
+            .await?
+            .filter(|owner| owner.tombstoned_at.is_none())
+            .ok_or_else(|| {
+                refusal(format!(
+                    "owner {} of source {} is gone; its final turn waits",
+                    job.owner, job.job_id
+                ))
+            })?;
         let now = now_ms()?;
         // A batch cut before the end may already have been accepted (a crash
         // before it settled): finish it under its own msg_id, which makes the
@@ -1315,37 +1318,6 @@ impl BackgroundService {
         if let Some(batch) = last {
             self.store
                 .settle_batch(&job.job_id, batch.batch_no, state, now)
-                .await?;
-        }
-        self.store.mark_notified(&job.job_id).await
-    }
-
-    /// Record why a source's final turn will never be delivered, then stop
-    /// ticking it. The record is written before the row changes (P9) and only
-    /// once, so a crash between the two re-runs this without a second record.
-    async fn drop_final_turn(&self, job: &BackgroundJob, msg_id: &str) -> Result<()> {
-        if self
-            .event_bus
-            .latest_matching_message(&job.owner, FINAL_TURN_DROPPED, msg_id)
-            .await?
-            .is_none()
-        {
-            let payload = serde_json::to_string(&serde_json::json!({
-                "job_id": job.job_id,
-                "owner": job.owner,
-                "msg_id": msg_id,
-                "reason": format!("owner {} is tombstoned", job.owner),
-            }))
-            .map_err(|error| fault(format!("final-turn drop event: {error}")))?;
-            self.event_bus
-                .publish(Event {
-                    seq: None,
-                    v: 1,
-                    at: now_ms()?,
-                    kind: FINAL_TURN_DROPPED.to_string(),
-                    seat: Some(job.owner.clone()),
-                    payload,
-                })
                 .await?;
         }
         self.store.mark_notified(&job.job_id).await
@@ -2482,31 +2454,38 @@ mod tests {
             .collect()
     }
 
-    /// Plan 185 D2: on main this tick failed for ever ("owner ... is gone; its
-    /// final turn waits") and re-published `bg.killed` every 100 ms.
+    /// PR #99 review B1: a tombstone is not permanent (resume and revive lift
+    /// it), so a source's final turn waits for its owner, as on main, without
+    /// re-publishing the completion every tick.
     #[tokio::test]
-    async fn a_tombstoned_owners_source_ends_once_with_its_reason() {
+    async fn a_revived_owner_still_gets_its_sources_final_turn_once() {
         let fixture = Fixture::new(FakeLiveness::new()).await;
         killed_source_with_two_events(&fixture, false).await;
-        fixture
-            .registry
-            .tombstone(&SeatId::from("owner"), "test")
-            .await
-            .unwrap();
+        let owner = SeatId::from("owner");
+        let alive = fixture.registry.get(&owner).await.unwrap().unwrap();
+        fixture.registry.tombstone(&owner, "test").await.unwrap();
+        for _ in 0..3 {
+            let _ = fixture.service.tick().await;
+        }
+        assert!(
+            fixture.to("owner").is_empty(),
+            "nothing is delivered while it waits"
+        );
+        fixture.registry.put(alive).await.unwrap();
         for _ in 0..3 {
             fixture.service.tick().await.unwrap();
         }
-        assert!(
-            fixture.service.lookup("bg-src").await.unwrap().notified,
-            "the job stops being ticked"
+        let finals = fixture
+            .to("owner")
+            .into_iter()
+            .filter(|msg| msg.msg_id == "pij-bg:bg-src:finished")
+            .count();
+        assert_eq!(finals, 1, "the revived owner gets its final turn");
+        assert_eq!(
+            spine_kinds(&fixture, "bg.killed").await.len(),
+            1,
+            "the completion is published once, not per tick"
         );
-        assert_eq!(spine_kinds(&fixture, "bg.killed").await.len(), 1);
-        let dropped = spine_kinds(&fixture, FINAL_TURN_DROPPED).await;
-        assert_eq!(dropped.len(), 1, "the reason is recorded once");
-        let payload: serde_json::Value = serde_json::from_str(&dropped[0].payload).unwrap();
-        assert_eq!(payload["reason"], "owner owner is tombstoned");
-        assert_eq!(payload["msg_id"], "pij-bg:bg-src:finished");
-        assert!(fixture.to("owner").is_empty());
     }
 
     /// Plan 185 D2: a notify that fails after publishing is retried, and the

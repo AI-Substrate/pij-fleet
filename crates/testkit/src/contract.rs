@@ -1092,6 +1092,9 @@ pub async fn tmux_contract(tmux: &dyn TmuxPort, fixture: &dyn TmuxContractFixtur
         if capture.contains(fixture.sent_keys_capture()) || std::time::Instant::now() >= deadline {
             break capture;
         }
+        // Not `tokio::time::sleep`: this contract runs under the testkit's no-op
+        // `block_on`, which panics on a Pending future. There is no runtime
+        // here for a thread sleep to block.
         std::thread::sleep(Duration::from_millis(20));
     };
     assert!(

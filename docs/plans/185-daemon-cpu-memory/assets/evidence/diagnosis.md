@@ -93,7 +93,7 @@ The private-daemon replay of F1–F5 ([`private-branch.txt`](private-branch.txt)
 | Fix | Answers | Design |
 |---|---|---|
 | F1 | D1 | Find the newest seq with `SELECT MAX(seq)` (a new `Spine::newest` port method). An attach then reads only the rows after its cursor. |
-| F2 | D2 | Publish a job's completion event once: skip it if the spine already holds that kind and `msg_id` for the owner (`latest_matching_message`, an indexed seek). Log a repeating background-tick failure once, not every tick. |
+| F2 | D2 | Publish a job's completion event once: skip it if the spine already holds that kind and `msg_id` for the owner (`latest_matching_message`). Log a repeating background-tick failure once, not every tick. The final turn still waits for a tombstoned owner (prime ruling on review B1: resume and revive lift tombstones). |
 | F3 | D3 | Keep terminal record ids in memory and stop opening them. A record never leaves a terminal state. |
 | F4 | D4 | `drain_pane_tap` stats the sink first and opens it only when the length has changed. |
 | F6 | D6 | Page only the dispatch recipients' `delivery.outcome` and `dispatch` rows through the spine's `(seat, kind, at)` index (`matching_since`), instead of decoding the spine or a seat's history. |
@@ -105,10 +105,10 @@ The 2.4 M `bg.lost` rows already in the spine stay there; the spine is append-on
 
 | | main `d459dda` | branch |
 |---|---:|---:|
-| CPU over 60 s | 62 % of a core | 1.4 % |
-| RSS +15 s / +60 s / +120 s | 4.74 / 5.26 / 5.63 GB | 17 / 15 / 15 MB |
+| CPU over 60 s | 62 % of a core | 1.9 % |
+| RSS +15 s / +60 s / +120 s | 4.74 / 5.26 / 5.63 GB | 17.5 / 17.6 / 17.6 MB |
 | Spine growth | 10 rows/s | 0 |
-| Repeated log lines | 10/s | 0 |
+| Repeated log lines | 10/s | 1 line, once |
 | One attach, 3 M rows | 6.3–7.2 s, 5.1 GB | 0.4–1.2 ms, 14 MB |
 
-Receipts: [`private-main.txt`](private-main.txt), [`private-branch2.txt`](private-branch2.txt), [`attach-before.txt`](attach-before.txt), [`attach-after.txt`](attach-after.txt); harness [`private-daemon.sh`](private-daemon.sh).
+Receipts: [`private-main.txt`](private-main.txt), [`private-branch3.txt`](private-branch3.txt) (after review B1; `private-branch2.txt` was the superseded drop build), [`attach-before.txt`](attach-before.txt), [`attach-after.txt`](attach-after.txt); harness [`private-daemon.sh`](private-daemon.sh).

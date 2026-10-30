@@ -1713,13 +1713,54 @@ fn the_claiming_sweep_removes_only_old_sinks_of_absent_panes() {
         "another server's sink is never claimed"
     );
 
+    let ledger = session
+        .tap_root
+        .join(format!(".owners/L-{}.list", session.server));
+    backdate(&ledger, old);
+    let before = fs::metadata(&ledger)
+        .expect("ledger")
+        .modified()
+        .expect("mtime");
     let again = block_on(tmux.sweep_orphan_taps()).expect("second sweep");
     assert_eq!(again.claimed, 0, "the claim happens once");
+    assert_eq!(
+        fs::metadata(&ledger)
+            .expect("ledger")
+            .modified()
+            .expect("mtime"),
+        before,
+        "a sweep that changed nothing does not rewrite the ledger"
+    );
     backdate(&young, old);
     let later = block_on(tmux.sweep_orphan_taps()).expect("third sweep");
     assert_eq!(later.removed, 1, "the brake only delayed it");
     assert!(!young.exists());
     assert!(live.exists());
+}
+
+/// PR #99 review N1: a sink this adapter still tracks is spared even when its
+/// pane has left `list-panes` (the pane died mid-boot, before retirement ran).
+/// A brake: without it the sweep removes the same set or more.
+#[test]
+fn the_sweep_spares_a_sink_this_adapter_still_tracks() {
+    let Some(session) = TestSession::start_or_skip("tap-sweep-tracked") else {
+        return;
+    };
+    session.run(["new-window", "-d", "-t", &session.name, "cat"]);
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let panes = block_on(tmux.list_panes()).expect("list isolated panes");
+    let doomed = panes.last().expect("second pane").id.clone();
+    let sink = tap_sink_path(&session.tap_root, &doomed);
+    block_on(tmux.attach_pane_tap(&doomed, &sink)).expect("attach tap");
+    session.run(["kill-pane", "-t", &doomed]);
+    backdate(&sink, ORPHAN_TAP_GRACE * 2);
+
+    let sweep = block_on(tmux.sweep_orphan_taps()).expect("sweep");
+    assert_eq!(sweep.removed, 0, "{sweep:?}");
+    assert!(
+        sink.exists(),
+        "a tracked sink is retirement's to remove, not the sweep's"
+    );
 }
 
 #[test]

@@ -115,13 +115,19 @@ impl SqliteOrchestration {
     /// Observe the committed head without decoding or copying event history.
     /// This cursor is never used to allocate a future event sequence.
     pub async fn spine_head(&self) -> Result<Seq> {
-        require_current_schema(&self.pool).await?;
-        let seq: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) FROM spine_events")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(adapter_error)?;
-        Ok(Seq(sql_u64(seq, "spine head")?))
+        spine_head(&self.pool).await
     }
+}
+
+/// The committed head, `Seq(0)` when empty: one seek on the rowid b-tree. A
+/// corrupt negative value is an error, never a panic.
+async fn spine_head(pool: &Pool<Sqlite>) -> Result<Seq> {
+    require_current_schema(pool).await?;
+    let seq: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) FROM spine_events")
+        .fetch_one(pool)
+        .await
+        .map_err(adapter_error)?;
+    Ok(Seq(sql_u64(seq, "spine head")?))
 }
 
 fn adapter_error(error: sqlx::Error) -> PijError {
@@ -177,15 +183,7 @@ impl Spine for SqliteSpine {
     }
 
     async fn newest(&self) -> Result<Seq> {
-        require_current_schema(&self.pool).await?;
-        // MAX over the INTEGER PRIMARY KEY is a single b-tree seek.
-        let newest: Option<i64> = sqlx::query_scalar("SELECT MAX(seq) FROM spine_events")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(adapter_error)?;
-        Ok(Seq(newest.map_or(0, |seq| {
-            u64::try_from(seq).expect("spine sequences are positive")
-        })))
+        spine_head(&self.pool).await
     }
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {

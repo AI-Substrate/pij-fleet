@@ -1,0 +1,5 @@
+thread 'background::tests::a_revived_owner_still_gets_its_sources_final_turn_once' panicked at crates/daemon/src/background.rs:2535:9:
+assertion `left == right` failed: the revived owner gets its final turn
+  left: 0
+ right: 1
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 646 filtered out; finished in 0.06s

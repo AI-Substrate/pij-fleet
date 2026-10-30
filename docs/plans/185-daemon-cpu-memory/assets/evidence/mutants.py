@@ -4,7 +4,7 @@ import subprocess, sys, shutil
 ROOT=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,text=True).stdout.strip()
 M=[
  ('M1 SqliteSpine::newest answers the oldest','crates/store/src/spine.rs',
-  'sqlx::query_scalar("SELECT MAX(seq) FROM spine_events")','sqlx::query_scalar("SELECT MIN(seq) FROM spine_events")',
+  'SELECT COALESCE(MAX(seq), 0) FROM spine_events','SELECT COALESCE(MIN(seq), 0) FROM spine_events',
   ['-p','pij-store','--test','store_integration','--','the_sqlite_spine_honours_the_same_contract']),
  ('M2 subscribe scans the whole spine again','crates/daemon/src/events/mod.rs',
   'let newest = self.spine.newest().await?;',
@@ -43,7 +43,7 @@ M=[
   'if !others.contains(&name) && owned.insert(name) {','if owned.insert(name) {',
   ['-p','pij-tmux','--test','adapter','--','the_claiming_sweep']),
  ('M15 observer sweeps every tick','crates/daemon/src/pane_observer.rs',
-  '        if reconcile_world {\n            // Once per boot','        if true {\n            // Once per boot',
+  '        if !self.orphans_swept.load(Ordering::Acquire) {','        if true {',
   ['-p','pij-daemon','--lib','--','pane_observer::tests::the_orphan']),
  ('M16 reconcile reads the whole spine','crates/daemon/src/http/governance.rs',
   'for event in self.seat_kind_events(seat, "delivery.outcome").await? {',
@@ -53,6 +53,19 @@ M=[
   'let history = self.seat_kind_events(&dispatch.to, "dispatch").await?;',
   'let history: Vec<Event> = self.event_bus.tail(Some(&dispatch.to), Seq(0)).await?.into_iter().filter(|event| event.kind == "dispatch").collect();',
   ['-p','pij-daemon','--lib','--','http::governance::tests::reconciliation_projects']),
+ ('M18 sweep forgets the tracked-tap veto','crates/tmux/src/lib.rs',
+  '                        .keys()\n','                        .keys()\n                        .take(0)\n',
+  ['-p','pij-tmux','--test','adapter','--','the_sweep_spares']),
+ ('M19 sweep flag rides world_reconciled again','crates/daemon/src/pane_observer.rs',
+  '            if swept.is_ok() {','            if swept.is_ok() && !reconcile_world {',
+  ['-p','pij-daemon','--lib','--','pane_observer::tests::a_failing_pane']),
+ ('M20 sweep always rewrites the ledger','crates/tmux/src/lib.rs',
+  '        if owned.len() != listed {','        if owned.len() != listed || true {',
+  ['-p','pij-tmux','--test','adapter','--','the_claiming_sweep']),
+ ('M21 a waiting source re-publishes every tick','crates/daemon/src/background.rs',
+  '.latest_matching_message(&job.owner, kind, &msg_id)\n            .await?\n            .is_none()',
+  '.latest_matching_message(&job.owner, kind, &msg_id)\n            .await?\n            .is_none() || true',
+  ['-p','pij-daemon','--lib','--','background::tests::a_revived']),
 ]
 only=sys.argv[1:]
 for name,path,old,new,args in M:
