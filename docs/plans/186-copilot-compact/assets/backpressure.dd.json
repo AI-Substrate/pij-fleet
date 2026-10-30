@@ -1,0 +1,57 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 186 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: policy, routing, live canary",
+          "phase": "ph-fa03",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: crates/core control tests and fixture; daemon pointer/control tests; canary receipts. cargo test -p pij-core -p pij-daemon <filters>",
+          "state": "checked",
+          "probe": "crates/core/src/control.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0004"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4-AC5: cost and docs",
+          "phase": "ph-fa03",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "pij-rs --json ping before/after; no new launch site (spawn_sites.rs stays green); prime reads the docs.",
+          "state": "checked",
+          "probe": "pij-rs --json ping",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC6: proof, mutants and CI",
+          "phase": "ph-fa03",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutant receipts; rust-check; GitHub CI on the exact head.",
+          "state": "checked",
+          "probe": ".github/workflows",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

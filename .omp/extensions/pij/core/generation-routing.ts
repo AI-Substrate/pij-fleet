@@ -1,6 +1,6 @@
 /** The shim has one authority: an explicit rs route or a named refusal.
  * Business grammar and caller authorization remain in the daemon. */
-import { COPILOT_CONTROL_REFUSAL, validateCommand } from "./commands.js";
+import { COPILOT_COMMANDS, COPILOT_CONTROL_REFUSAL, validateCommand } from "./commands.js";
 import { COLD_WAKE_CODE, PIJ_ENVELOPE_VERSION } from "./daemon-wire.js";
 import { renderRosterTable } from "./roster-table.js";
 
@@ -344,7 +344,9 @@ export function copilotControlRefusal(
 	command: string,
 ): string | undefined {
 	const validation = validateCommand(command);
-	return validation.ok && harness === "copilot" ? COPILOT_CONTROL_REFUSAL : undefined;
+	return validation.ok && harness === "copilot" && !COPILOT_COMMANDS.includes(validation.value)
+		? COPILOT_CONTROL_REFUSAL
+		: undefined;
 }
 
 /** Wire names are frozen; omitted evidence is not invented or defaulted. */

@@ -2,12 +2,14 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::delivery::{
-    DeliveryDeferralReason, DeliveryRung, MAX_TYPED_FRAME_BYTES, delivery_kind, select_rung,
+    DeliveryDeferralReason, DeliveryRung, MAX_TYPED_FRAME_BYTES, control_kind, delivery_kind,
+    select_rung,
 };
 use pij_core::error::{PijError, Result};
 use pij_core::framing::frame_message;
 use pij_core::model::{
     DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, Msg, Outcome, Receipt,
+    SeatDescriptor, SystemState,
 };
 use pij_core::ports::{Queue, Registry, SeatFilter, TmuxPort, Transport};
 use pij_harnesses::{InteractionGate, StagedSubmission};
@@ -27,6 +29,10 @@ use super::{
 const HELD_ATTEMPT_LIMIT: u32 = 4;
 
 const WORKER_ID: &str = "pointer-drain";
+
+/// How long a Copilot seat must stay `idle` before a control is typed into it.
+/// Its intra-turn idle blips measured 2–4 ms in the plan 186 canary.
+const COPILOT_IDLE_SETTLE: Duration = Duration::from_millis(250);
 
 /// One delivery-queue drain pass below the socket transport.
 ///
@@ -113,11 +119,23 @@ impl DrainWorker {
     /// error is surfaced.
     pub async fn drain_once(&self) -> Result<usize> {
         let seats = self.registry.list(SeatFilter::default()).await?;
+        // Copilot bodies belong to its native extension; only its typed controls,
+        // queued on their own kind, are drained here (plan 186). That kind is
+        // listed even for a paneless seat: only a claim that lists it sweeps an
+        // expired control claim, and until then its serial key holds every
+        // native body (review S1). A paneless claim is released with backoff.
         let mut kinds: Vec<String> = seats
             .iter()
-            .filter(|seat| !matches!(seat.harness, Harness::Copilot | Harness::Omp | Harness::Pi))
-            .filter(|seat| seat.pane.is_some() || seat.tombstoned_at.is_some())
-            .map(|seat| delivery_kind(&seat.id))
+            .filter(|seat| !matches!(seat.harness, Harness::Omp | Harness::Pi))
+            .filter(|seat| {
+                seat.harness == Harness::Copilot
+                    || seat.pane.is_some()
+                    || seat.tombstoned_at.is_some()
+            })
+            .map(|seat| match seat.harness {
+                Harness::Copilot => control_kind(&seat.id),
+                _ => delivery_kind(&seat.id),
+            })
             .collect();
         if kinds.is_empty() || self.queue.peek(&kinds).await?.is_none() {
             return Ok(0);
@@ -170,7 +188,11 @@ impl DrainWorker {
                     .await;
             }
         };
-        let expected_kind = delivery_kind(&msg.to);
+        let expected_kind = if job.kind == control_kind(&msg.to) && msg.command.is_some() {
+            control_kind(&msg.to)
+        } else {
+            delivery_kind(&msg.to)
+        };
         if job.kind != expected_kind || job.serial_key != msg.to.0 {
             return self
                 .fail_claim(
@@ -205,8 +227,9 @@ impl DrainWorker {
                 .await;
         }
         // Re-read after claiming: registration may have changed the harness since
-        // the inventory. Native seats never enter any pane or socket rung.
-        if recipient.harness == Harness::Copilot {
+        // the inventory. Native bodies never enter any pane or socket rung, and
+        // only a Copilot seat's control kind reaches its pane.
+        if (recipient.harness == Harness::Copilot) != (job.kind == control_kind(&msg.to)) {
             return self.defer_body(job_id, "native-consumer-owned").await;
         }
         let Some(pane) = recipient.pane.as_deref() else {
@@ -242,6 +265,20 @@ impl DrainWorker {
         }
         if recipient.proc.is_none() {
             return self.release_or_backoff(job_id, job, &msg, "pre-bind").await;
+        }
+        // BRAKE, not a policy: Copilot's busy footer reads as an empty composer,
+        // so its published turn state holds a control until the turn ends.
+        // Copilot also publishes `idle` for a few milliseconds between steps of
+        // one turn, so the brake needs a SETTLED idle: the row has no state
+        // change time, so it reads twice, COPILOT_IDLE_SETTLE apart (review S3).
+        // Removing either read only types the same control sooner.
+        if msg.command.is_some()
+            && recipient.harness == Harness::Copilot
+            && !self.copilot_idle_settled(&recipient).await?
+        {
+            return self
+                .release_or_backoff(job_id, job, &msg, "recipient-busy")
+                .await;
         }
         if msg.command.is_some() {
             return self
@@ -317,6 +354,20 @@ impl DrainWorker {
             }
             DeliveryRung::Pty => unreachable!("commands are handled before socket capability"),
         }
+    }
+
+    /// Idle now and still idle [`COPILOT_IDLE_SETTLE`] later: one registry read
+    /// more, no launch.
+    async fn copilot_idle_settled(&self, recipient: &SeatDescriptor) -> Result<bool> {
+        if recipient.state != SystemState::Idle {
+            return Ok(false);
+        }
+        tokio::time::sleep(COPILOT_IDLE_SETTLE).await;
+        Ok(self
+            .registry
+            .get(&recipient.id)
+            .await?
+            .is_some_and(|seat| seat.state == SystemState::Idle && seat.tombstoned_at.is_none()))
     }
 
     async fn ack_delivered_claim(
@@ -2852,9 +2903,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn copilot_drain_never_claims_native_body_or_legacy_control() {
+    async fn copilot_drain_never_claims_native_bodies_or_body_kind_controls() {
+        // Plan 186 narrowed this: the drain claims only a Copilot seat's control
+        // kind. Bodies, and any control left on the body kind, stay native.
         for attached in [false, true] {
-            for command in [None, Some("compact")] {
+            for command in [None, Some("compact"), Some("new"), Some("reload")] {
                 let fixture = fixture(FakeTransport::reachable(), FakeTmux::new());
                 let mut recipient = seat("pij-native-drain", Some("%137"));
                 recipient.harness = Harness::Copilot;

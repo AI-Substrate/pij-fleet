@@ -42,8 +42,9 @@ state word; completion is `pij report state done`.
 ## Completion interrupt — compact EARLY
 
 On a coder's done-report or a reviewer's verdict, compact that peer as the **first** tool
-action (§ C3, fire-and-forget), then handle the report. Copilot and paneless seats refuse
-`--command compact`; leave them.
+action (§ C3, fire-and-forget), then handle the report. Copilot seats compact like Claude
+(plan 186); let it land before the next packet (§ C3). Paneless seats refuse `--command
+compact`; leave them.
 
 ## Decision protocol
 

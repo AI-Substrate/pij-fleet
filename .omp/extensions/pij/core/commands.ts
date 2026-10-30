@@ -11,6 +11,8 @@ import { err, ok, type Result } from "./types.js";
  *  execute via a captured command context (see PiRuntimePort.control). */
 export const ALLOWED_COMMANDS = controlContract.commands as readonly AllowedCommand[];
 export const COPILOT_CONTROL_REFUSAL = controlContract.copilot_refusal;
+/** Controls pij types into a Copilot pane (plan 186); the rest are refused. */
+export const COPILOT_COMMANDS = controlContract.copilot_commands as readonly AllowedCommand[];
 
 export type AllowedCommand = "compact" | ControlCommand;
 

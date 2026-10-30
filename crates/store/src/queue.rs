@@ -199,7 +199,7 @@ impl SqliteQueue {
         sqlx::query(
             "UPDATE jobs \
              SET state = 'failed', \
-                 outcome = printf(CASE WHEN kind LIKE 'delivery:%' \
+                 outcome = printf(CASE WHEN kind LIKE 'delivery:%' OR kind LIKE 'delivery-control:%' \
                                   THEN 'control claim lease expired after %d seconds for worker %s; outcome unknown: acknowledgement missing' \
                                   ELSE 'claim lease expired after %d seconds for worker %s' END, \
                                   ?1, COALESCE(worker, '<unknown>')), \
@@ -751,6 +751,7 @@ impl Queue for SqliteQueue {
                    OR worker != 'native-cli:' || serial_key OR claimed_at <= unixepoch() - ?5) \
                AND NOT EXISTS (SELECT 1 FROM jobs earlier \
                    WHERE earlier.serial_key = jobs.serial_key AND earlier.id < jobs.id \
+                     AND earlier.kind != 'delivery-control:' || jobs.serial_key \
                      AND earlier.state IN ('pending', 'running')) \
              RETURNING kind, serial_key, payload, dedupe_key, dedupe_origin, attempt",
         ).bind(id).bind(recipient.as_str()).bind(i64::from(attempt)).bind(evidence.outcome.as_str())
@@ -983,7 +984,7 @@ impl Queue for SqliteQueue {
             let row = sqlx::query(
                 "SELECT serial_key, dedupe_key, deferral_reason, deferral_event_at_ms, deferral_reason_changes \
              FROM jobs WHERE id = ?1 AND state IN ('pending', 'running') \
-               AND kind = 'delivery:' || serial_key",
+               AND kind IN ('delivery:' || serial_key, 'delivery-control:' || serial_key)",
             )
             .bind(id)
             .fetch_optional(&mut *tx)
@@ -1055,7 +1056,8 @@ impl Queue for SqliteQueue {
         require_current_schema(&self.pool).await?;
         let rows = sqlx::query(
             "SELECT id, dedupe_key, deferral_reason, deferral_count, deferral_since_ms \
-             FROM jobs WHERE serial_key = ?1 AND kind = 'delivery:' || serial_key \
+             FROM jobs WHERE serial_key = ?1 \
+               AND kind IN ('delivery:' || serial_key, 'delivery-control:' || serial_key) \
                AND state IN ('pending', 'running') AND deferral_reason IS NOT NULL ORDER BY id",
         )
         .bind(recipient.as_str())
@@ -1458,7 +1460,8 @@ impl Queue for SqliteQueue {
             "SELECT 1 FROM delivered_messages \
                WHERE recipient = ?1 AND msg_id = ?2 AND sender_machine = ?3 \
              UNION ALL \
-             SELECT 1 FROM jobs WHERE kind = 'delivery:' || ?1 AND dedupe_key = ?2 \
+             SELECT 1 FROM jobs WHERE kind IN ('delivery:' || ?1, 'delivery-control:' || ?1) \
+               AND dedupe_key = ?2 \
                AND dedupe_origin = ?3 \
              LIMIT 1",
         )
@@ -1576,7 +1579,7 @@ impl Queue for SqliteQueue {
 
 fn require_delivery_job(job: &Job) -> Result<()> {
     let expected = format!("delivery:{}", job.serial_key);
-    if job.kind == expected {
+    if job.kind == expected || job.kind == format!("delivery-control:{}", job.serial_key) {
         return Ok(());
     }
     Err(PijError::Adapter {

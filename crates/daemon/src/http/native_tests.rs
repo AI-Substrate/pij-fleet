@@ -3561,7 +3561,14 @@ async fn body_only_http_endpoint_explicitly_refuses_copilot_controls_instead_of_
             .json(&json!({"from":"pij-peer", "to":{"seat":seat.id}, "body":"", "msg_id":command, "command":command}))
             .send().await.unwrap().json().await.unwrap();
         assert_eq!(response["ok"], false);
-        assert_eq!(response["meta"], pij_core::control::COPILOT_CONTROL_REFUSAL);
+        if command == "compact" {
+            // Plan 186: compact is allowed for Copilot, so this paneless seat
+            // refuses it by name, never silently queued as a body.
+            let meta = response["meta"].as_str().unwrap_or_default();
+            assert!(meta.starts_with("E-RS-CONTROL-PANELESS"), "{meta}");
+        } else {
+            assert_eq!(response["meta"], pij_core::control::COPILOT_CONTROL_REFUSAL);
+        }
     }
     assert!(
         queue

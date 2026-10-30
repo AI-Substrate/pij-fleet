@@ -212,6 +212,17 @@ pub fn delivery_kind(seat: &SeatId) -> String {
     format!("delivery:{seat}")
 }
 
+/// The kind of a Copilot seat's typed controls (plan 186).
+///
+/// Copilot's native extension claims `delivery:<seat>`, so its controls queue
+/// apart from its bodies, on the same serial key: neither claimer can take the
+/// other's rows, and the queue's one-running-claim-per-serial-key rule keeps a
+/// typed control from overlapping a native body claim. Order across the two
+/// kinds is by row id among eligible rows, not strict FIFO.
+pub fn control_kind(seat: &SeatId) -> String {
+    format!("delivery-control:{seat}")
+}
+
 /// Whether a body contains a terminal control character that a stock composer
 /// cannot represent losslessly. Linefeed remains ordinary body text.
 #[must_use]

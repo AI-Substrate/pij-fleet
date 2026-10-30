@@ -931,13 +931,11 @@ impl Queue for FakeQueue {
                         .is_some_and(|body| {
                             body.get("command").is_none_or(serde_json::Value::is_null)
                         })
-            }) && !state
-                .live
-                .iter()
-                .any(|(earlier, job)| earlier < &id && job.serial_key == recipient.as_str())
-                && !state.claimed.iter().any(|(earlier, (job, _))| {
-                    *earlier < id.0 && job.serial_key == recipient.as_str()
-                });
+            }) && !state.live.iter().any(|(earlier, job)| {
+                earlier < &id && job.serial_key == recipient.as_str() && !is_control_job(job)
+            }) && !state.claimed.iter().any(|(earlier, (job, _))| {
+                *earlier < id.0 && job.serial_key == recipient.as_str() && !is_control_job(job)
+            });
             if !valid {
                 return Ok((None, Vec::new()));
             }
@@ -1129,9 +1127,12 @@ impl Queue for FakeQueue {
         sender_machine: Option<&str>,
     ) -> Result<bool> {
         let state = self.state.lock().expect("fake queue mutex");
-        let kind = format!("delivery:{}", recipient.as_str());
+        let kinds = [
+            format!("delivery:{}", recipient.as_str()),
+            format!("delivery-control:{}", recipient.as_str()),
+        ];
         let is_it = |job: &Job| {
-            job.kind == kind
+            kinds.contains(&job.kind)
                 && job.dedupe_key == msg_id
                 && job.dedupe_origin.as_deref() == sender_machine
         };
@@ -1251,8 +1252,7 @@ impl Queue for FakeQueue {
                     .find(|(id, _)| *id == job)
                     .map(|(_, row)| row)
             });
-            let Some(row) = row.filter(|row| row.kind == format!("delivery:{}", row.serial_key))
-            else {
+            let Some(row) = row.filter(|row| is_delivery_job(row)) else {
                 return Ok(Vec::new());
             };
             let previous = state.deferrals.get(&job.0);
@@ -1313,10 +1313,7 @@ impl Queue for FakeQueue {
             .iter()
             .map(|(id, row)| (*id, row))
             .chain(state.claimed.iter().map(|(id, (row, _))| (JobId(*id), row)))
-            .filter(|(_, row)| {
-                row.serial_key == recipient.as_str()
-                    && row.kind == format!("delivery:{}", row.serial_key)
-            })
+            .filter(|(_, row)| row.serial_key == recipient.as_str() && is_delivery_job(row))
             .filter_map(|(id, _)| state.deferrals.get(&id.0).map(|(fact, _, _)| fact.clone()))
             .collect();
         deferrals.sort_by_key(|fact| fact.job_id);
@@ -1582,9 +1579,19 @@ impl FakeQueue {
     }
 }
 
+/// A delivery row: a seat's `delivery:` kind or its Copilot `delivery-control:`
+/// kind (plan 186), mirroring the store.
+fn is_delivery_job(job: &Job) -> bool {
+    job.kind == format!("delivery:{}", job.serial_key) || is_control_job(job)
+}
+
+fn is_control_job(job: &Job) -> bool {
+    job.kind == format!("delivery-control:{}", job.serial_key)
+}
+
 fn require_delivery_job(job: &Job) -> Result<()> {
     let expected = format!("delivery:{}", job.serial_key);
-    if job.kind == expected {
+    if is_delivery_job(job) {
         return Ok(());
     }
     Err(PijError::Adapter {

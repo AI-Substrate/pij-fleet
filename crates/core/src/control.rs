@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 /// The complete set of supported remote controls.
 pub const ALLOWED_COMMANDS: [&str; 3] = ["compact", "new", "reload"];
-/// Copilot intentionally offers only its native, user-operated controls.
+/// The controls pij types into a Copilot pane (plan 186). Copilot messages stay
+/// on its native extension; only these ride the pane control path.
+pub const COPILOT_COMMANDS: [&str; 1] = ["compact"];
+/// Every other control is left to Copilot's native, user-operated controls.
 pub const COPILOT_CONTROL_REFUSAL: &str =
     "E-RS-CONTROL-UNSUPPORTED: use Copilot's native user controls";
 
@@ -42,12 +45,13 @@ pub fn validate_command(command: &str, body: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Refuse targets that cannot execute remote controls.
+/// Refuse targets that cannot execute `command`.
 ///
 /// # Errors
-/// Copilot and paneless targets return stable refusal codes.
-pub fn validate_target(target: &SeatDescriptor) -> Result<(), String> {
-    if target.harness == Harness::Copilot {
+/// Copilot controls other than [`COPILOT_COMMANDS`] and paneless targets return
+/// stable refusal codes.
+pub fn validate_target(command: &str, target: &SeatDescriptor) -> Result<(), String> {
+    if target.harness == Harness::Copilot && !COPILOT_COMMANDS.contains(&command) {
         return Err(COPILOT_CONTROL_REFUSAL.to_string());
     }
     if target
@@ -93,6 +97,26 @@ mod tests {
                 .expect("fixture");
         assert_eq!(fixture["commands"], serde_json::json!(ALLOWED_COMMANDS));
         assert_eq!(fixture["copilot_refusal"], COPILOT_CONTROL_REFUSAL);
+        assert_eq!(
+            fixture["copilot_commands"],
+            serde_json::json!(COPILOT_COMMANDS)
+        );
+    }
+
+    #[test]
+    fn copilot_allows_compact_only_and_paneless_copilot_refuses_by_name() {
+        let mut copilot = SeatDescriptor::new("copilot", Harness::Copilot, "/tree");
+        copilot.pane = Some("%1".into());
+        assert_eq!(validate_target("compact", &copilot), Ok(()));
+        for command in ["new", "reload"] {
+            assert_eq!(
+                validate_target(command, &copilot),
+                Err(COPILOT_CONTROL_REFUSAL.to_string())
+            );
+        }
+        copilot.pane = None;
+        let refusal = validate_target("compact", &copilot).expect_err("paneless");
+        assert!(refusal.starts_with("E-RS-CONTROL-PANELESS"), "{refusal}");
     }
 
     #[test]

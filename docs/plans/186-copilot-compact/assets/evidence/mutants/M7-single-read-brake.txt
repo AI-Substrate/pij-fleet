@@ -1,0 +1,17 @@
+# M7-single-read-brake
+# file: crates/daemon/src/pointer/worker.rs
+# - tokio::time::sleep(COPILOT_IDLE_SETTLE).await;
+        Ok(self
+# + return Ok(true);
+        Ok(self
+
+$ cargo test -p pij-daemon --test copilot_compact --no-fail-fast
+exit=101
+test copilot_compact_is_typed_through_the_pane_gate_and_bodies_stay_native ... ok
+test copilot_compact_is_never_typed_over_a_composer_draft ... ok
+test copilot_compact_waits_out_an_idle_blip_inside_a_turn ... FAILED
+test copilot_compact_waits_for_a_working_seat_and_runs_once_it_is_idle ... ok
+test an_abandoned_copilot_control_claim_never_wedges_native_bodies ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.68s
+error: test failed, to rerun pass `-p pij-daemon --test copilot_compact`
+error: 1 target failed:
