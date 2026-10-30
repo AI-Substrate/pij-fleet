@@ -51,14 +51,14 @@
           "claim": "Own-text recognition. When a staged submit is aborted, the job records exactly what pij left in the composer (draft hash of the staged text plus the notice). A later attempt that finds exactly that text recognises it as pij's own, never as a human draft, and then either (a) clears its own text and fails the job with a named reason, or (b) commits it if it is still a valid submission. Anything else in the composer (any human edit) is still a human draft and is never touched. Test both: own leftover vs. own leftover plus one human keystroke.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "ac-0003",
           "claim": "Held deliveries are bounded and surfaced. A composer-busy hold backs off (state the schedule and cap). After a stated limit, the sender gets a named notice (`delivery.held` surfaced to the sender's inbox or similar), and a control command that cannot run fails terminally instead of blocking later messages to the same seat. Ordinary messages behind a failed control command are then delivered in order. Test: control head fails → the 6 queued messages deliver in order.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "ac-0004",
@@ -80,7 +80,7 @@
           "claim": "Proof. Every behaviour change has a test RED on main (quoted) and green on the branch, using the recorded pane captures as fixtures where they apply. Mutants: own-text treated as human; no backoff; no sender notice; control failure still blocks the queue. Each turns its test red, then is restored. Scoped cargo tests, `just rust-check`, clippy -D warnings, fmt; GitHub CI green on the exact head. Anything not run is NOT RUN with its reason.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0007"
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008"
         }
       ]
     },
