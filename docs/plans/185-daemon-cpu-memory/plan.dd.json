@@ -9,7 +9,7 @@
         "title": "Daemon CPU and memory: 240% CPU, 8-11 GB churn, unbounded tap files",
         "slug": "daemon-cpu-memory",
         "ordinal": 185,
-        "status": "ready",
+        "status": "shipped",
         "summary": "Found 2026-10-29: the machine daemon (main d459dda, 75 seats) runs at 200-280% CPU and swings between 8 and 11 GB RSS within a minute of a fresh start; pane-signal tap files total 3.2 GB (largest 380 MB) and are never trimmed.",
         "backpressure": "assets/backpressure.dd.json#rows",
         "mode": "Full",
@@ -68,8 +68,8 @@
           "claim": "Cost (AGENTS.md § Resource cost). Before/after on the live machine daemon: CPU% over 60 s, RSS at +15 s/+60 s/+10 min, `pij-rs --json ping` spawns, `just spawn-rate`, and `du -sh ~/.pij-rs/pane-signals`. Targets: idle CPU under 50% of one core with the current fleet, RSS flat (not climbing) and under 1 GB, or a stated, justified number. The prime takes the deployed reading.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0008",
-          "note": "Private-daemon after (review-fix build, lg-0014): CPU 62% -> 1.9%, RSS 5.6 GB climbing -> 17.6 MB flat, spine growth 10/s -> 0; live before recorded (lg-0008). Deployed reading: prime, post-merge."
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0015",
+          "note": "Live (prime, pid 63433): tap growth fixed (sweep removed 150 sinks / 3.14 GB; pane-signals 2.9 GB -> 3.0 MB) and spine flood fixed (22 rows since deploy, none bg.lost; launches 0.21/s). CPU (~160-205%) and RSS (2.9-4.1 GB swinging) NOT fixed live: /v1/events replay of a far-behind cursor, handed to plan 187 with this baseline. Waiting-source refusal logged 439x in ~8 min: plan 187 ac-0004. Private replay (cursor 10 behind): 1.9% CPU, 17.6 MB flat (lg-0014)."
         },
         {
           "id": "ac-0005",
