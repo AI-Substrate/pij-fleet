@@ -8,7 +8,7 @@
       "value": {
         "title": "Plan 184 backpressure",
         "plan": "../plan.dd.json#meta",
-        "certainty": "Partial"
+        "certainty": "Proven"
       }
     },
     {
@@ -32,9 +32,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "pij-rs --json ping before/after; prime reads the docs.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
-          "receipt": "execution-log.dd.json#entries/lg-0004",
+          "receipt": "execution-log.dd.json#entries/lg-0009",
           "note": "Docs proven (lg-0005); the deployed launch reading is the prime's."
         },
         {
