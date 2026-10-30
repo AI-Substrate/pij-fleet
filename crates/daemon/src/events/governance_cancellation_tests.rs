@@ -133,6 +133,10 @@ impl Spine for PauseAfterAppend {
         self.raw.tail(seat, since).await
     }
 
+    async fn newest(&self) -> Result<Seq> {
+        self.raw.newest().await
+    }
+
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         self.raw.latest_matching(seat, kinds).await
     }

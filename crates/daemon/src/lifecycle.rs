@@ -194,6 +194,35 @@ impl TickLoop {
     }
 }
 
+/// Logs a tick's failure once while it keeps repeating.
+///
+/// One stranded bg source failed the 100 ms background tick with the same
+/// sentence for days, ten `daemon.log` lines a second (plan 185, D2; #90). A
+/// success clears the memory, so a failure that comes back is logged again.
+#[derive(Debug, Default)]
+pub(crate) struct RepeatedFailureLog {
+    last: std::sync::Mutex<Option<String>>,
+}
+
+impl RepeatedFailureLog {
+    /// The failure text worth logging for this tick, or `None` when the tick
+    /// succeeded or repeated the previous tick's failure exactly.
+    pub(crate) fn observe(&self, failure: Option<String>) -> Option<String> {
+        let mut last = self.last.lock().expect("failure log mutex");
+        match failure {
+            None => {
+                *last = None;
+                None
+            }
+            Some(text) if last.as_deref() == Some(text.as_str()) => None,
+            Some(text) => {
+                *last = Some(text.clone());
+                Some(text)
+            }
+        }
+    }
+}
+
 async fn run_ticks<F, Fut, W, Wake>(
     mut stop_rx: oneshot::Receiver<()>,
     mut schedule: tokio::time::Interval,
@@ -225,6 +254,23 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::*;
+
+    #[test]
+    fn a_repeated_tick_failure_is_logged_once_until_it_changes_or_clears() {
+        let log = RepeatedFailureLog::default();
+        let gone = || Some("owner pij-x is gone".to_string());
+        assert_eq!(log.observe(gone()), gone(), "the first failure is logged");
+        assert_eq!(log.observe(gone()), None, "an identical repeat is not");
+        assert_eq!(log.observe(gone()), None);
+        let other = Some("store busy".to_string());
+        assert_eq!(log.observe(other.clone()), other, "a different failure is");
+        assert_eq!(log.observe(None), None, "success logs nothing");
+        assert_eq!(
+            log.observe(gone()),
+            gone(),
+            "a failure after success is new"
+        );
+    }
 
     #[test]
     fn a_configured_alias_wins_without_consulting_hostname() {

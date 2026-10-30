@@ -1203,16 +1203,28 @@ impl BackgroundService {
             "msg_id": msg_id,
         }))
         .map_err(|error| fault(format!("completion event: {error}")))?;
-        self.event_bus
-            .publish(Event {
-                seq: None,
-                v: 1,
-                at: job.finished_at.unwrap_or(job.started_at),
-                kind: kind.to_string(),
-                seat: Some(job.owner.clone()),
-                payload,
-            })
-            .await?;
+        // Once per job: a notify that fails after this point is retried every
+        // tick, and re-publishing here put 2.4M `bg.lost` rows on the live spine
+        // at 10/s for one stranded source (plan 185, D2). The lookup scans the
+        // owner's rows of this kind through the (seat, kind) index until one
+        // names this msg_id: on a first publish it reads them all, once per job.
+        if self
+            .event_bus
+            .latest_matching_message(&job.owner, kind, &msg_id)
+            .await?
+            .is_none()
+        {
+            self.event_bus
+                .publish(Event {
+                    seq: None,
+                    v: 1,
+                    at: job.finished_at.unwrap_or(job.started_at),
+                    kind: kind.to_string(),
+                    seat: Some(job.owner.clone()),
+                    payload,
+                })
+                .await?;
+        }
         if job.kind == BackgroundKind::Events {
             return self.finish_source(job, body, &msg_id).await;
         }
@@ -1240,6 +1252,10 @@ impl BackgroundService {
         mut body: String,
         msg_id: &str,
     ) -> Result<()> {
+        // A tombstoned owner can be resumed or revived, so the final turn waits
+        // for it. Waiting costs two indexed sqlite reads per tick and no launch:
+        // the completion event above is published once (plan 185, D2), and the
+        // background loop logs a repeating refusal once.
         let owner = self
             .registry
             .get(&job.owner)
@@ -2425,6 +2441,93 @@ mod tests {
         fixture.service.tick().await.unwrap();
         assert_eq!(fixture.held_fyis().await, 1, "the refused final turn waits");
         assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+    }
+
+    async fn spine_kinds(fixture: &Fixture, kind: &str) -> Vec<Event> {
+        fixture
+            .spine
+            .tail(None, Seq(0))
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == kind)
+            .collect()
+    }
+
+    /// PR #99 review B1: a tombstone is not permanent (resume and revive lift
+    /// it), so a source's final turn waits for its owner, as on main, without
+    /// re-publishing the completion every tick.
+    #[tokio::test]
+    async fn a_revived_owner_still_gets_its_sources_final_turn_once() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        killed_source_with_two_events(&fixture, false).await;
+        let owner = SeatId::from("owner");
+        let alive = fixture.registry.get(&owner).await.unwrap().unwrap();
+        fixture.registry.tombstone(&owner, "test").await.unwrap();
+        for _ in 0..3 {
+            let _ = fixture.service.tick().await;
+        }
+        assert!(
+            fixture.to("owner").is_empty(),
+            "nothing is delivered while it waits"
+        );
+        fixture.registry.put(alive).await.unwrap();
+        for _ in 0..3 {
+            fixture.service.tick().await.unwrap();
+        }
+        let finals = fixture
+            .to("owner")
+            .into_iter()
+            .filter(|msg| msg.msg_id == "pij-bg:bg-src:finished")
+            .count();
+        assert_eq!(finals, 1, "the revived owner gets its final turn");
+        assert_eq!(
+            spine_kinds(&fixture, "bg.killed").await.len(),
+            1,
+            "the completion is published once, not per tick"
+        );
+    }
+
+    /// Plan 185 D2: a notify that fails after publishing is retried, and the
+    /// retry must not publish the completion a second time.
+    #[tokio::test]
+    async fn a_retried_completion_publishes_its_event_once() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        killed_source_with_two_events(&fixture, false).await;
+        arm(&fixture, "final-before-admission");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "the first notify fails"
+        );
+        fixture.service.tick().await.unwrap();
+        assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+        assert_eq!(spine_kinds(&fixture, "bg.killed").await.len(), 1);
+    }
+
+    /// The once-guard is per message: a second job's completion still publishes.
+    #[tokio::test]
+    async fn every_new_job_still_publishes_its_own_completion() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        for job_id in ["bg-one", "bg-two"] {
+            let job = fixture.source(job_id, "tok", false, 0, 5).await;
+            assert!(fixture.service.store.request_kill(job_id).await.unwrap());
+            std::fs::write(receipt_path(&job), "143 1700000009\n").unwrap();
+            fixture.service.tick().await.unwrap();
+        }
+        let killed = spine_kinds(&fixture, "bg.killed").await;
+        let ids: Vec<String> = killed
+            .iter()
+            .map(|event| {
+                serde_json::from_str::<serde_json::Value>(&event.payload).unwrap()["msg_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["pij-bg:bg-one:finished", "pij-bg:bg-two:finished"]
+        );
     }
 
     fn arm(fixture: &Fixture, name: &'static str) {

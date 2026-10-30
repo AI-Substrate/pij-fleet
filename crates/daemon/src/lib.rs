@@ -1034,10 +1034,13 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     // Infallible by construction: every refusal happened in step 8b.
     let sidecars = sidecars.start()?;
     let background = Arc::clone(&services.background);
+    let background_failures = Arc::new(lifecycle::RepeatedFailureLog::default());
     let background_loop = lifecycle::TickLoop::start_validated(background_interval, move || {
         let background = Arc::clone(&background);
+        let failures = Arc::clone(&background_failures);
         async move {
-            if let Err(error) = background.tick().await {
+            let failure = background.tick().await.err().map(|error| error.to_string());
+            if let Some(error) = failures.observe(failure) {
                 eprintln!("pij-rs: background reconciliation failed: {error}");
             }
             Ok(())

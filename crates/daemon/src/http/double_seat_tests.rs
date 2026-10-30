@@ -637,6 +637,10 @@ impl Spine for Gate {
     ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
         self.inner.tail(seat, since).await
     }
+
+    async fn newest(&self) -> pij_core::error::Result<Seq> {
+        self.inner.newest().await
+    }
     async fn latest_matching(
         &self,
         seat: &SeatId,

@@ -58,3 +58,4 @@ The counts are exact and run since the daemon started, so take two readings a kn
 
 - **EDR monitoring:** the exclusions stop antivirus file scanning only. Defender's EDR component (`wdavdaemon_enterprise`) still observes every process launch, so the daemon's process launches still cost EDR CPU. Only the device's administrators can tune that.
 - **The daemon's own CPU use:** pij-rs's CPU use without scanning is a separate issue, tracked in [pij-fleet#62](https://github.com/AI-Substrate/pij-fleet/issues/62).
+- **`open()` is not free either:** Defender inspects file opens as well as launches. Plan 185 measured single opens of a daemon state file at 3–138 ms. So a loop that opens files every tick costs CPU here even when it launches nothing. [daemon-cost.md](daemon-cost.md) lists what the daemon still opens, and how to measure it.

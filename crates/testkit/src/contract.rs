@@ -222,6 +222,11 @@ pub async fn spine_contract(spine: &dyn Spine) {
             .is_empty(),
         "an empty spine tails as an empty list, not an error"
     );
+    assert_eq!(
+        spine.newest().await.expect("initial newest"),
+        Seq(0),
+        "an empty spine's newest sequence is Seq(0), not an error"
+    );
 
     let event = |kind: &str, seat: Option<SeatId>, payload: &str| Event {
         seq: None,
@@ -255,6 +260,11 @@ pub async fn spine_contract(spine: &dyn Spine) {
     assert!(
         first < second && second < third && third < fourth,
         "append must allocate a strictly increasing total order"
+    );
+    assert_eq!(
+        spine.newest().await.expect("newest"),
+        fourth,
+        "newest is the highest assigned sequence"
     );
 
     let after_first = spine.tail(None, first).await.expect("tail after first");
@@ -1070,10 +1080,23 @@ pub async fn tmux_contract(tmux: &dyn TmuxPort, fixture: &dyn TmuxContractFixtur
     tmux.send_keys(&pane.id, fixture.sent_keys())
         .await
         .expect("send_keys must not fail");
-    let after_send = tmux
-        .capture(&pane.id, 100)
-        .await
-        .expect("capture after send_keys must not fail");
+    // Visible, not visible at once: a real pane echoes through its pty after
+    // `send-keys` returns, and a fast CI runner captured before the echo landed
+    // (plan 185, run 41017656947: 0.070 s, a blank pane). A fake is immediate.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let after_send = loop {
+        let capture = tmux
+            .capture(&pane.id, 100)
+            .await
+            .expect("capture after send_keys must not fail");
+        if capture.contains(fixture.sent_keys_capture()) || std::time::Instant::now() >= deadline {
+            break capture;
+        }
+        // Not `tokio::time::sleep`: this contract runs under the testkit's no-op
+        // `block_on`, which panics on a Pending future. There is no runtime
+        // here for a thread sleep to block.
+        std::thread::sleep(Duration::from_millis(20));
+    };
     assert!(
         after_send.contains(fixture.sent_keys_capture()),
         "literal sent keys must become visible; expected {:?} in {after_send:?}",

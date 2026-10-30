@@ -123,6 +123,19 @@ pub trait Registry: Send + Sync {
     ) -> Result<Option<Seq>>;
 }
 
+/// What one [`TmuxPort::sweep_orphan_taps`] pass did, so a removal is attributable.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TapSweep {
+    /// Unledgered sinks this pass took ownership of (the one-time legacy claim).
+    pub claimed: u64,
+    /// Sinks removed because their pane is gone.
+    pub removed: u64,
+    /// Bytes those sinks held.
+    pub removed_bytes: u64,
+    /// Orphaned sinks spared because they were written within the grace.
+    pub spared_recent: u64,
+}
+
 /// The append-only history: reports, events, receipts.
 #[async_trait]
 pub trait Spine: Send + Sync {
@@ -131,6 +144,13 @@ pub trait Spine: Send + Sync {
 
     /// Events after `since`, oldest first, optionally only for one seat.
     async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>>;
+
+    /// The highest assigned sequence, or `Seq(0)` for an empty spine.
+    ///
+    /// One indexed read. Required, not defaulted to `tail(None, Seq(0))`: that
+    /// default decoded a 3M-row spine on every cursor attach (plan 185, D1), and
+    /// a wrapper that forgot to delegate would silently bring it back.
+    async fn newest(&self) -> Result<Seq>;
 
     /// Latest event for one mandatory seat matching any non-empty `kinds`.
     ///
@@ -929,6 +949,11 @@ pub trait TmuxPort: Send + Sync {
     /// An empty vector means an attached tap emitted nothing; an absent tap is an
     /// error so absence never masquerades as an empty observation.
     async fn drain_pane_tap(&self, pane: &str) -> Result<Vec<u8>>;
+
+    /// Remove the tap sinks this adapter's own tmux server owns whose pane that
+    /// server no longer lists. Pane absence decides; a sink written within the
+    /// adapter's grace is spared (a brake, never a reason to remove).
+    async fn sweep_orphan_taps(&self) -> Result<TapSweep>;
 
     /// Detach the output tap and release its sink. A pane already gone is the
     /// successful terminal outcome rather than an error. Process-local ownership

@@ -1,0 +1,9 @@
+label=branch2 pid=18083 alias=<redacted> rows=2978027
++15s rss_kb=17280
++60s rss_kb=15328
+cpu_time_before=  0:00.90 cpu_time_after_60s=  0:01.72
++120s rss_kb=15312
+spine_growth_over_run=0 rows in 121s
+bg_lost_rows_added=0 final_turn_dropped=1
+daemon_log_lines=      18 reconciliation_lines=0
+spawns_total=2

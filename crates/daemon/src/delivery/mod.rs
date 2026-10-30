@@ -2711,6 +2711,9 @@ mod tests {
         async fn drain_pane_tap(&self, pane: &str) -> pij_core::error::Result<Vec<u8>> {
             self.inner.drain_pane_tap(pane).await
         }
+        async fn sweep_orphan_taps(&self) -> pij_core::error::Result<pij_core::ports::TapSweep> {
+            self.inner.sweep_orphan_taps().await
+        }
         async fn detach_pane_tap(&self, pane: &str) -> pij_core::error::Result<()> {
             self.inner.detach_pane_tap(pane).await
         }
@@ -3372,6 +3375,10 @@ mod tests {
             since: Seq,
         ) -> pij_core::error::Result<Vec<Event>> {
             self.inner.tail(seat, since).await
+        }
+
+        async fn newest(&self) -> pij_core::error::Result<Seq> {
+            self.inner.newest().await
         }
 
         async fn latest_matching(

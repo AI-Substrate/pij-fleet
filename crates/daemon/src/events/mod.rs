@@ -186,13 +186,10 @@ impl EventBus {
         // reset peer emitted NOTHING for ever while its status read Connected —
         // and made the backwards-cursor branch downstream unreachable, because no
         // low frame ever left this side (review F7).
-        let newest = self
-            .spine
-            .tail(None, Seq(0))
-            .await?
-            .last()
-            .and_then(|event| event.seq)
-            .unwrap_or(Seq(0));
+        //
+        // One indexed read: decoding the whole spine to learn one number cost
+        // 6-7 s and 5 GB per attach on a 3M-row spine (plan 185, D1).
+        let newest = self.spine.newest().await?;
 
         if since > newest {
             return Err(PijError::CursorBeyondSpine {
@@ -274,6 +271,10 @@ impl Spine for EventBus {
 
     async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>> {
         self.spine.tail(seat, since).await
+    }
+
+    async fn newest(&self) -> Result<Seq> {
+        self.spine.newest().await
     }
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {

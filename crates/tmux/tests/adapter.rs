@@ -14,7 +14,7 @@ use pij_core::ports::TmuxPort;
 use pij_testkit::block_on;
 use pij_testkit::contract::{TmuxContractFixture, tmux_contract};
 use pij_testkit::fakes::FakeTmux;
-use pij_tmux::{TmuxAdapter, tap_sink_path};
+use pij_tmux::{ORPHAN_TAP_GRACE, TAP_TRIM_BYTES, TmuxAdapter, tap_sink_path};
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 static TRANSACTION_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -1558,6 +1558,209 @@ fn pane_tap_drains_each_raw_byte_once_and_detaches_cleanly() {
     block_on(tmux.detach_pane_tap(&pane.id)).expect("detach tap");
     assert!(!sink.exists(), "detach owns sink cleanup");
     assert!(block_on(tmux.drain_pane_tap(&pane.id)).is_err());
+}
+
+/// Plan 185 F5: a live tap's sink is emptied once consumed past the cap, and the
+/// reader's offset follows the truncation: every byte is returned exactly once.
+#[test]
+fn a_consumed_tap_is_trimmed_and_offsets_survive_the_truncation() {
+    let Some(session) = TestSession::start_or_skip_with_command("tap-trim", "sh") else {
+        return;
+    };
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = block_on(tmux.list_panes())
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+    let sink = tap_sink_path(&session.tap_root, &pane.id);
+    block_on(tmux.attach_pane_tap(&pane.id, &sink)).expect("attach tap");
+    let burst: usize = 1_200_000;
+    // `$((1+1))` keeps the marker out of the echoed command line.
+    session.run([
+        "send-keys",
+        "-t",
+        &pane.id,
+        &format!("head -c {burst} /dev/zero | tr '\\000' a; echo MARK-$((1+1))"),
+        "Enter",
+    ]);
+    let first = drain_until_quiet(&tmux, &session.server, &pane.id, "MARK-2");
+    let a_count = first.iter().filter(|byte| **byte == b'a').count();
+    assert!(a_count >= burst, "every burst byte is returned: {a_count}");
+    assert!(
+        a_count < burst + 200,
+        "no byte is returned twice across a truncation: {a_count}"
+    );
+    let length = fs::metadata(&sink).expect("sink").len();
+    assert!(
+        length < TAP_TRIM_BYTES,
+        "the sink was trimmed below the cap after consumption: {length}"
+    );
+
+    session.run(["send-keys", "-t", &pane.id, "echo TWO-$((2+2))", "Enter"]);
+    let second = drain_until_quiet(&tmux, &session.server, &pane.id, "TWO-4");
+    let text = String::from_utf8_lossy(&second);
+    assert_eq!(text.matches("TWO-4").count(), 1, "{text:?}");
+    assert!(
+        !text.contains("aaaa"),
+        "nothing before the truncation is replayed: {text:?}"
+    );
+    block_on(tmux.detach_pane_tap(&pane.id)).expect("detach tap");
+}
+
+/// Plan 185 F4: an unchanged tap is stat-ed, not opened. Proof by denial: with
+/// read permission removed, a drain that opened the sink would fail.
+#[test]
+fn an_unchanged_tap_drains_without_opening_its_sink() {
+    let Some(session) = TestSession::start_or_skip("tap-stat") else {
+        return;
+    };
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = block_on(tmux.list_panes())
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+    let sink = tap_sink_path(&session.tap_root, &pane.id);
+    block_on(tmux.attach_pane_tap(&pane.id, &sink)).expect("attach tap");
+    block_on(tmux.send_keys(&pane.id, "tap-stat")).expect("emit bytes");
+    drain_until_quiet(&tmux, &session.server, &pane.id, "tap-stat");
+
+    fs::set_permissions(&sink, fs::Permissions::from_mode(0o200)).expect("deny read");
+    let quiet = block_on(tmux.drain_pane_tap(&pane.id));
+    fs::set_permissions(&sink, fs::Permissions::from_mode(0o600)).expect("restore");
+    assert_eq!(
+        quiet.expect("an unchanged sink is not opened"),
+        Vec::<u8>::new()
+    );
+    block_on(tmux.detach_pane_tap(&pane.id)).expect("detach tap");
+}
+
+fn backdate(path: &Path, age: Duration) {
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("open for backdating")
+        .set_modified(SystemTime::now() - age)
+        .expect("backdate");
+}
+
+fn legacy_sink(root: &Path, pane: &str, age: Duration) -> PathBuf {
+    fs::create_dir_all(root).expect("tap root");
+    let path = tap_sink_path(root, pane);
+    fs::write(&path, b"legacy").expect("legacy sink");
+    backdate(&path, age);
+    path
+}
+
+/// Plan 185 F5 ruling: only the default server's adapter claims pre-ledger
+/// sinks. A `-L` adapter sharing the tap root never removes one.
+#[test]
+fn a_named_server_adapter_never_claims_or_sweeps_a_pre_ledger_sink() {
+    let Some(session) = TestSession::start_or_skip("tap-sweep-named") else {
+        return;
+    };
+    let old = ORPHAN_TAP_GRACE * 2;
+    let orphan = legacy_sink(&session.tap_root, "%9999", old);
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let sweep = block_on(tmux.sweep_orphan_taps()).expect("sweep");
+    assert_eq!((sweep.claimed, sweep.removed), (0, 0));
+    assert!(orphan.exists(), "an unowned sink is never removed");
+}
+
+/// Plan 185 F5 ruling: the claim only adds ownership. Pane absence decides each
+/// removal, and the mtime grace is a brake that can only spare.
+#[test]
+fn the_claiming_sweep_removes_only_old_sinks_of_absent_panes() {
+    let Some(session) = TestSession::start_or_skip("tap-sweep-claim") else {
+        return;
+    };
+    let tmux =
+        TmuxAdapter::for_server(&session.server, &session.tap_root).with_legacy_sink_claim(true);
+    let live_pane = block_on(tmux.list_panes())
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+    let old = ORPHAN_TAP_GRACE * 2;
+    let live = legacy_sink(&session.tap_root, &live_pane.id, old);
+    let orphan = legacy_sink(&session.tap_root, "%9999", old);
+    let young = legacy_sink(&session.tap_root, "%9998", Duration::from_secs(10));
+    let other_server = legacy_sink(&session.tap_root, "%9997", old);
+    fs::create_dir_all(session.tap_root.join(".owners")).expect("ledger dir");
+    fs::write(
+        session.tap_root.join(".owners/L-elsewhere.list"),
+        "_9997.raw\n",
+    )
+    .expect("another server's ledger");
+
+    let sweep = block_on(tmux.sweep_orphan_taps()).expect("first sweep");
+    assert_eq!(
+        sweep.claimed, 3,
+        "live, orphan and young; not the other server's"
+    );
+    assert_eq!(sweep.removed, 1);
+    assert_eq!(sweep.removed_bytes, 6);
+    assert_eq!(sweep.spared_recent, 1);
+    assert!(
+        live.exists(),
+        "a pre-ledger sink whose pane is live survives"
+    );
+    assert!(!orphan.exists(), "an old sink of an absent pane is removed");
+    assert!(young.exists(), "a sink younger than the grace survives");
+    assert!(
+        other_server.exists(),
+        "another server's sink is never claimed"
+    );
+
+    let ledger = session
+        .tap_root
+        .join(format!(".owners/L-{}.list", session.server));
+    backdate(&ledger, old);
+    let before = fs::metadata(&ledger)
+        .expect("ledger")
+        .modified()
+        .expect("mtime");
+    let again = block_on(tmux.sweep_orphan_taps()).expect("second sweep");
+    assert_eq!(again.claimed, 0, "the claim happens once");
+    assert_eq!(
+        fs::metadata(&ledger)
+            .expect("ledger")
+            .modified()
+            .expect("mtime"),
+        before,
+        "a sweep that changed nothing does not rewrite the ledger"
+    );
+    backdate(&young, old);
+    let later = block_on(tmux.sweep_orphan_taps()).expect("third sweep");
+    assert_eq!(later.removed, 1, "the brake only delayed it");
+    assert!(!young.exists());
+    assert!(live.exists());
+}
+
+/// PR #99 review N1: a sink this adapter still tracks is spared even when its
+/// pane has left `list-panes` (the pane died mid-boot, before retirement ran).
+/// A brake: without it the sweep removes the same set or more.
+#[test]
+fn the_sweep_spares_a_sink_this_adapter_still_tracks() {
+    let Some(session) = TestSession::start_or_skip("tap-sweep-tracked") else {
+        return;
+    };
+    session.run(["new-window", "-d", "-t", &session.name, "cat"]);
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let panes = block_on(tmux.list_panes()).expect("list isolated panes");
+    let doomed = panes.last().expect("second pane").id.clone();
+    let sink = tap_sink_path(&session.tap_root, &doomed);
+    block_on(tmux.attach_pane_tap(&doomed, &sink)).expect("attach tap");
+    session.run(["kill-pane", "-t", &doomed]);
+    backdate(&sink, ORPHAN_TAP_GRACE * 2);
+
+    let sweep = block_on(tmux.sweep_orphan_taps()).expect("sweep");
+    assert_eq!(sweep.removed, 0, "{sweep:?}");
+    assert!(
+        sink.exists(),
+        "a tracked sink is retirement's to remove, not the sweep's"
+    );
 }
 
 #[test]

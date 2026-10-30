@@ -15,6 +15,10 @@ The pij daemon maintains three live signals for every tmux pane from one
 - **Connected** comes from the all-server pane id set. New live ids attach a
   tap; absent ids and `pane_dead=1` retire the signal and detach the tap.
 
+Tap files are bounded on disk: a live sink is emptied once consumed past
+1 MiB, and each boot sweeps the sinks of panes the server no longer lists.
+See [daemon-cost.md](daemon-cost.md#tap-files-on-disk).
+
 ## Delivery contract
 
 The existing daemon `SendBuffer` owns the queue. Messages received while

@@ -1,0 +1,29 @@
+== mutant main
+test background::tests::a_retried_completion_publishes_its_event_once ... FAILED
+test background::tests::a_tombstoned_owners_source_ends_once_with_its_reason ... FAILED
+test background::tests::every_new_job_still_publishes_its_own_completion ... ok
+test background::tests::a_retried_batch_never_rewrites_its_published_file ... ok
+thread 'background::tests::a_retried_completion_publishes_its_event_once' panicked at crates/daemon/src/background.rs:2519:9:
+  left: 2
+ right: 1
+thread 'background::tests::a_tombstoned_owners_source_ends_once_with_its_reason' panicked at crates/daemon/src/background.rs:2494:42:
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.20s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+== mutant guard
+test background::tests::a_tombstoned_owners_source_ends_once_with_its_reason ... ok
+test background::tests::a_retried_completion_publishes_its_event_once ... FAILED
+test background::tests::every_new_job_still_publishes_its_own_completion ... ok
+test background::tests::a_retried_batch_never_rewrites_its_published_file ... ok
+thread 'background::tests::a_retried_completion_publishes_its_event_once' panicked at crates/daemon/src/background.rs:2517:9:
+  left: 2
+ right: 1
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.25s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+== mutant tomb
+test background::tests::a_retried_completion_publishes_its_event_once ... ok
+test background::tests::a_tombstoned_owners_source_ends_once_with_its_reason ... FAILED
+test background::tests::every_new_job_still_publishes_its_own_completion ... ok
+test background::tests::a_retried_batch_never_rewrites_its_published_file ... ok
+thread 'background::tests::a_tombstoned_owners_source_ends_once_with_its_reason' panicked at crates/daemon/src/background.rs:2499:42:
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.25s
+error: test failed, to rerun pass `-p pij-daemon --lib`

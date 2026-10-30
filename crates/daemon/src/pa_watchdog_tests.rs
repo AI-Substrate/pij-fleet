@@ -1516,6 +1516,9 @@ impl pij_core::ports::Spine for CountingSpine {
         self.rows.fetch_add(rows.len(), Ordering::Relaxed);
         Ok(rows)
     }
+    async fn newest(&self) -> pij_core::error::Result<pij_core::model::Seq> {
+        self.inner.newest().await
+    }
     async fn latest_matching(
         &self,
         seat: &SeatId,

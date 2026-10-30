@@ -1,0 +1,9 @@
+label=main pid=71114 alias=<redacted> rows=2978027
++15s rss_kb=4743728
++60s rss_kb=5259056
+cpu_time_before=  0:43.39 cpu_time_after_60s=  1:20.61
++120s rss_kb=5625824
+spine_growth_over_run=1199 rows in 120s
+bg_lost_rows_added=1199 final_turn_dropped=0
+daemon_log_lines=    1221 reconciliation_lines=1205
+spawns_total=2

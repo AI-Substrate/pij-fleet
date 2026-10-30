@@ -1,0 +1,11 @@
+test bg_worker_never_reopens_a_terminal_record_and_still_reads_new_ones ... FAILED
+
+failures:
+--
+thread 'bg_worker_never_reopens_a_terminal_record_and_still_reads_new_ones' panicked at crates/sidecars/tests/sidecars.rs:1244:10:
+an unchanged directory opens no terminal record: Adapter { adapter: "sidecars/bg", message: "could not read record $TMPDIR/pij-test-4194-1793228309532515000-0.sqlite.bg-index/done-a.json: Permission denied (os error 13)" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p pij-sidecars --test sidecars`

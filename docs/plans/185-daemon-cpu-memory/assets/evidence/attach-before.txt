@@ -1,0 +1,14 @@
+== 561000
+filled 561000 rows in 2.500613333s
+attach rows=561000 cursor_lag=10 elapsed=926.816458ms
+attach rows=561000 cursor_lag=10 elapsed=853.380625ms
+attach rows=561000 cursor_lag=10 elapsed=872.523ms
+        6.09 real         1.97 user         3.23 sys
+           995655680  maximum resident set size
+== 2978027
+filled 2978027 rows in 16.395861042s
+attach rows=2978027 cursor_lag=10 elapsed=6.301720708s
+attach rows=2978027 cursor_lag=10 elapsed=6.973769792s
+attach rows=2978027 cursor_lag=10 elapsed=7.171268542s
+       38.16 real        10.82 user        20.32 sys
+          5126291456  maximum resident set size
