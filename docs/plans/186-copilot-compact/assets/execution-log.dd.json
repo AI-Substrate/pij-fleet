@@ -1,0 +1,83 @@
+{
+  "dd": {
+    "schema": "builder/execution-log"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Observed implementation evidence",
+        "plan": "../plan.dd.json#meta"
+      }
+    },
+    {
+      "name": "entries",
+      "value": [
+        {
+          "id": "lg-0001",
+          "at": "2026-10-30T05:36:05Z",
+          "text": "RED on main d459dda (git archive export, branch tests copied in): cargo test -p pij-store --test queue_copilot_control 0/8 pass (enqueue_delivery refuses delivery-control:); cargo test -p pij-daemon --test control_commands 6/8 (Copilot compact 400 E-RS-CONTROL-UNSUPPORTED; paneless Copilot compact not PANELESS); --test copilot_compact 0/3 (send refused). Evidence assets/evidence/red-main.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        },
+        {
+          "id": "lg-0002",
+          "at": "2026-10-30T05:36:05Z",
+          "text": "GREEN on branch 2e94eff, cwd worktree root: cargo test -p pij-core --lib control:: 5 passed (copilot_allows_compact_only_and_paneless_copilot_refuses_by_name, control_fixture_matches_the_authoritative_policy); -p pij-store --test queue_copilot_control 8 passed (overlap guard, ordering, bookkeeping, parking; SQLite and fake); -p pij-daemon --test control_commands 8 passed, --test copilot_compact 3 passed (typed through gate with bodies native; waits while working; never over a draft); --lib copilot_drain_never_claims_native_bodies_or_body_kind_controls, copilot_compact_queues_for_the_pane_and_other_controls_refuse, body_only_http_endpoint_explicitly_refuses_copilot_controls_instead_of_dropping_field pass. cargo fmt --all --check clean; cargo clippy --locked --workspace --all-targets -D warnings exit 0. just rust-check: 1 unrelated load-sensitive failure (http::tests::a_live_idle_claude_frame_under_a_long_stale_working_is_refused, Claude cold-wake body send; passes 3/3 alone).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "backpressure.dd.json#rows/bp-0001"
+          ]
+        },
+        {
+          "id": "lg-0003",
+          "at": "2026-10-30T05:36:05Z",
+          "text": "Mutants M1-M6 (assets/evidence/mutants/, run.py from repo root): Copilot compact refused, Copilot new allowed, drain claims Copilot bodies, compact typed over a draft, busy brake removed, waiting compact blocks native parking. Each exit 101 with the named tests red; restored tree green. First run voided (stale cargo artifacts after restore), rerun clean.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        },
+        {
+          "id": "lg-0004",
+          "at": "2026-10-30T05:36:05Z",
+          "text": "Canary on isolated branch daemon 127.0.0.1:17186, own state dir and HOME, tmux -L c186; Copilot seat pij-c186-b (native extension attached). c186-busy admitted mid-turn queued/pty on delivery-control:pij-c186-b, held recipient-busy x5, typed 18.7s after idle; c186-idle held once, typed 4.3s after idle. Copilot events.jsonl: compaction_complete success true outcome applied twice (37558->30530, 31166->30795 tokens). Canary torn down. Evidence assets/evidence/canary.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "backpressure.dd.json#rows/bp-0001"
+          ]
+        },
+        {
+          "id": "lg-0005",
+          "at": "2026-10-30T05:36:05Z",
+          "text": "Cost: canary daemon pij-rs --json ping spawns 13 -> 39 for two delivered compacts = 13 launches each, all at existing call sites (staged submit 10, send_control identity ps 2, date 1); 7 recipient-busy holds launched 0. No new loop/poll/timer/launch site; drain cadence unchanged; idle per-tick cost one indexed peek. Machine daemon read-only before/after recorded. Evidence assets/evidence/canary.md section Cost.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0006",
+          "at": "2026-10-30T05:36:05Z",
+          "text": "Docs and skills in 2e94eff: docs/how/copilot-native-extension.md (remote compact section, control kind, not-FIFO ordering), docs/how/pij-rs-api.md Control and bg bullet, skills/pij/references/routes/peer.md remote controls, skills/pij/references/prime/pa.md step 1c (Copilot compacts like Claude; plan 178 report-size rule now paneless-only).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
+        },
+        {
+          "id": "lg-0007",
+          "at": "2026-10-30T05:39:06Z",
+          "text": "GitHub CI on PR #95 head 2e94eff, run 41009260062: check (22) pass, check (24) pass (lockfile allowlist, npm run typecheck, npm run lint: Biome 211 files clean, npm test), rust-lint pass, rust-test pass. Local TS stages NOT RUN (worktree has no node_modules; install out of scope); CI is their proof. The receipts commit that follows changes only plan docs; its own CI run is reported in the coder reply.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006",
+            "backpressure.dd.json#rows/bp-0003"
+          ]
+        }
+      ]
+    }
+  ]
+}

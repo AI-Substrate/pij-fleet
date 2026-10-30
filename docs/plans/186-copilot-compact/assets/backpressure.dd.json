@@ -21,8 +21,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: crates/core control tests and fixture; daemon pointer/control tests; canary receipts. cargo test -p pij-core -p pij-daemon <filters>",
-          "state": "unchecked",
-          "probe": "crates/core/src/control.rs"
+          "state": "checked",
+          "probe": "crates/core/src/control.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "pij-rs --json ping before/after; no new launch site (spawn_sites.rs stays green); prime reads the docs.",
-          "state": "unchecked",
-          "probe": "pij-rs --json ping"
+          "state": "checked",
+          "probe": "pij-rs --json ping",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "bp-0003",
@@ -41,8 +43,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Mutant receipts; rust-check; GitHub CI on the exact head.",
-          "state": "unchecked",
-          "probe": ".github/workflows"
+          "state": "checked",
+          "probe": ".github/workflows",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
         }
       ]
     },

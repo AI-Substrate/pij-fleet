@@ -43,38 +43,44 @@
         {
           "id": "ac-0001",
           "claim": "Policy. crates/core/src/control.rs allows `compact` for a Copilot seat that has a pane; `new` and `reload` still refuse with the existing code, and a paneless Copilot seat refuses compact by name. The shared fixture crates/core/tests/fixtures/control-commands.json and its consumers (including the TS/extension side if it reads it) move together.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0002",
           "claim": "Routing. A Copilot compact control is delivered through the same pane control path Claude's compact uses (wait for idle, empty composer, typing gate, staged submit, the same failure outcomes), while Copilot message bodies are still never claimed by the pointer drain (keep the intent of `copilot_drain_never_claims_native_body_or_legacy_control`, narrowed to bodies and to new/reload). Copilot's idle/busy and composer readings are the ones pij already uses for Copilot panes; if a Copilot-specific frame is missing, add it with a captured-pane fixture.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Branch canary. The deployed daemon runs main, so prove the branch on an isolated daemon you start yourself: its own port, its own state dir, and a private tmux server (`tmux -L <name>`), never the default server or ~/.pij-rs. Spawn at most 2 canary Copilot seats in it, put some context in one, send `--command compact` and capture the pane before and after, the delivery events, and Copilot's own compaction evidence (`session.compaction_start`/`session.compaction_complete` in its session events). Also prove the busy case: a compact sent while the canary works waits and runs once it is idle. Record in assets/evidence/canary.md, then close the canaries, kill the private server and stop the daemon. The prime repeats the canary on the live fleet after deploy.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "ac-0004",
           "claim": "Cost (AGENTS.md § Resource cost). No new loop, poll or launch site; a compact costs what Claude's compact costs. State it as a backpressure row and quote `pij-rs --json ping` spawns before and after the canary.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "ac-0005",
           "claim": "Docs and skills. docs/how/copilot-native-extension.md:42 and docs/how/pij-rs-api.md (§ Control and bg) describe Copilot compact; skills/pij text that says Copilot can't be compacted, including the PA rule from plan 178 (R5: the PA reports Copilot size instead of compacting), is updated so a PA or PM compacts Copilot seats like Claude seats.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0006"
         },
         {
           "id": "ac-0006",
           "claim": "Proof. Each behaviour change has a test RED on main (quoted) and green on the branch. Mutants: Copilot compact still refused; Copilot new allowed; Copilot message body claimed by the pointer drain; compact typed while the composer is non-empty. Each turns a test red, then is restored. Scoped cargo tests, `just rust-check`, clippy -D warnings, fmt; GitHub CI green on the exact head. Anything not run is NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0007"
         }
       ]
     },
