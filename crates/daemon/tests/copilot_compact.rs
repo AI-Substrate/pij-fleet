@@ -52,8 +52,21 @@ fn copilot(state: SystemState) -> SeatDescriptor {
     seat
 }
 
+/// A Copilot 1.0.105 frame as the plan 186 canary captured it (`tmux -L c186`),
+/// with `composer` on the prompt row (row 3).
+fn copilot_frame(composer: &str) -> String {
+    let rule = "─".repeat(80);
+    format!(
+        " ● DONE\n $SCRATCH/canary/work                       Session: 13.41 AIC used\n{rule}\n{composer}\n{rule}\n Interactive · Allow All · / commands · tab next tab GPT-6.1 Sol · 922K context\n4% work ⛓ pij-c186-b • gpt-6.1-sol · xhigh · 922K context • xhigh • 38k/922k •"
+    )
+}
+
 /// `draft` puts text in the Copilot pane's composer; otherwise it is blank.
 async fn fixture(state: SystemState, draft: bool) -> Fixture {
+    fixture_with_lease(state, draft, Config::default().claim_lease_secs).await
+}
+
+async fn fixture_with_lease(state: SystemState, draft: bool, claim_lease_secs: u64) -> Fixture {
     let store = FreshStore::new();
     let config = Config {
         adapters: Adapters {
@@ -63,6 +76,7 @@ async fn fixture(state: SystemState, draft: bool) -> Fixture {
             ..Adapters::default()
         },
         store_path: store.path(),
+        claim_lease_secs,
         ..Config::default()
     };
     let mut services =
@@ -90,11 +104,12 @@ async fn fixture(state: SystemState, draft: bool) -> Fixture {
             session: "s".to_string(),
             window: "w".to_string(),
             title: "t".to_string(),
-            cursor_x: Some(11),
-            cursor_y: Some(0),
+            // The caret sits at the end of the draft, as a human leaves it.
+            cursor_x: Some(13),
+            cursor_y: Some(3),
         })
         .with_attached_tap(PANE)
-        .with_standing_capture("╰──── hello ─╯")
+        .with_standing_capture(copilot_frame("❯ hello world"))
     } else {
         tmux
     };
@@ -258,5 +273,78 @@ async fn copilot_compact_is_never_typed_over_a_composer_draft() {
             .is_some(),
         "the compact waits for the draft to clear"
     );
+    fixture.server.abort();
+}
+
+/// Review S1: the drain claims a compact and the daemon dies before it acks.
+/// The seat comes back paneless. The expired control claim must still be swept,
+/// or its serial key holds every native body for that seat forever.
+#[tokio::test]
+async fn an_abandoned_copilot_control_claim_never_wedges_native_bodies() {
+    let fixture = fixture_with_lease(SystemState::Idle, false, 1).await;
+    send_compact(&fixture).await;
+    let seat = SeatId::from("copilot");
+    fixture
+        .services
+        .queue
+        .claim(&[control_kind(&seat)], "pointer-drain")
+        .await
+        .expect("claim")
+        .expect("the drain holds the compact, then the daemon dies");
+    native_body(&fixture).await;
+    let mut paneless = copilot(SystemState::Idle);
+    paneless.pane = None;
+    fixture
+        .services
+        .registry
+        .put(paneless)
+        .await
+        .expect("paneless");
+
+    tokio::time::sleep(Duration::from_millis(2_200)).await;
+    let _ = fixture.worker.drain_once().await;
+    let claimed = fixture
+        .services
+        .queue
+        .claim(&[delivery_kind(&seat)], "native-cli:copilot")
+        .await
+        .expect("native claim")
+        .map(|(_, job)| job.dedupe_key);
+    assert_eq!(claimed.as_deref(), Some("body-186"));
+    assert!(
+        submissions(&fixture).is_empty(),
+        "nothing typed into a paneless seat"
+    );
+    fixture.server.abort();
+}
+
+/// Review S3: Copilot publishes `idle` for a few milliseconds between steps of
+/// one turn. A compact read during that blip must still wait for the turn.
+#[tokio::test]
+async fn copilot_compact_waits_out_an_idle_blip_inside_a_turn() {
+    let fixture = fixture(SystemState::Idle, false).await;
+    send_compact(&fixture).await;
+    let registry = Arc::clone(&fixture.services.registry);
+    let blip = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        registry
+            .put(copilot(SystemState::Working))
+            .await
+            .expect("working again");
+    });
+
+    assert_eq!(fixture.worker.drain_once().await.expect("drain"), 1);
+    blip.await.expect("blip");
+    assert!(
+        submissions(&fixture).is_empty(),
+        "typed during an idle blip"
+    );
+    let deferrals = fixture
+        .services
+        .queue
+        .delivery_deferrals(&"copilot".into())
+        .await
+        .expect("deferrals");
+    assert_eq!(deferrals[0].reason, "recipient-busy");
     fixture.server.abort();
 }

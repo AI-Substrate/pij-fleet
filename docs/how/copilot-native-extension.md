@@ -43,15 +43,21 @@ turns are not forwarded automatically.
 
 Remote `compact` works for Copilot (plan 186): `pij send <seat> --command compact`
 types `/compact` into the seat's pane through the same pane control path as
-Claude's compact (the typing gate and an empty composer), and it also waits
-while the seat's published state is `working`, because Copilot's busy footer
-reads as an empty composer. Copilot messages stay on this extension. `new` and
+Claude's compact (the typing gate and an empty composer). It also waits for a
+*settled* idle, because Copilot's busy footer reads as an empty composer: the
+seat's published state must be `idle` on two registry reads 250 ms apart (Copilot
+publishes `idle` for 2–4 ms between steps of one turn). Copilot messages stay on this extension. `new` and
 `reload` still refuse with `E-RS-CONTROL-UNSUPPORTED`; native user-driven session
 lifecycle remains separate. The compact queues on `delivery-control:<seat>`, not
 on the extension's `delivery:<seat>` kind, so the extension never claims it. Both
 kinds share the seat's serial key, so a typed compact never overlaps a claimed
 native body. Order across the two kinds is by row id among the rows due now, not
-strict FIFO: a compact queued behind pending bodies may run before the later ones.
+strict FIFO, in both directions. A compact queued behind pending bodies may run
+before the later ones. A compact sent just before a body usually runs *after*
+that body: the extension claims the body within milliseconds of its push, the
+drain only ticks every few seconds, and by then the seat is `working`, so the
+compact waits for that turn to end. Let a compact land (`pij state`) before
+dispatching the next packet to a Copilot seat.
 
 New manual sessions receive an ordinary memorable Pij ID from the daemon, just
 like spawned seats. The native session ID remains the internal resume key.

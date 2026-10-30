@@ -166,6 +166,13 @@ loop, poll, timer or launch site; the drain cadence is unchanged, and its
 per-tick cost for a Copilot seat with nothing queued is one `peek` that now
 includes `delivery-control:<seat>` (an indexed SQL read, no launch).
 
+**After review (S1, S3), still no launches.** The drain's `peek` now also lists
+paneless Copilot seats' control kind: the same single indexed read, one more
+kind. A Copilot control that passes the first idle read now waits 250 ms and
+re-reads its registry row before typing. That is one SQL read, and it adds
+250 ms to that drain pass only when a Copilot control is about to be typed. A
+`working` seat still holds at once, with no wait.
+
 Machine daemon, read-only, before and after (moved by the live fleet, not by
 this canary, which never addressed it):
 
@@ -179,8 +186,10 @@ this canary, which never addressed it):
 B publishes `idle` then `working` 2–4 ms apart at every step inside a turn (for
 example ...244749 idle, ...244752 working). A drain pass that read the registry
 inside that window would see `idle` and type `/compact` mid-turn. Over this run
-none did: every pass during a turn held. Closing that window needs the extension
-to stop publishing intra-turn idles, which is outside this plan's scope.
+none did: every pass during a turn held. **Closed after review (S3):** the brake
+now needs `idle` on two registry reads 250 ms apart, so a blip of a few
+milliseconds holds the compact (`copilot_compact_waits_out_an_idle_blip_inside_a_turn`,
+mutant M7). The canary above ran before that change.
 
 ## Teardown
 

@@ -8,7 +8,8 @@ use pij_core::delivery::{
 use pij_core::error::{PijError, Result};
 use pij_core::framing::frame_message;
 use pij_core::model::{
-    DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, Msg, Outcome, Receipt, SystemState,
+    DeliveryOrigin, DeliveryOutcome, Event, Harness, Job, JobId, Msg, Outcome, Receipt,
+    SeatDescriptor, SystemState,
 };
 use pij_core::ports::{Queue, Registry, SeatFilter, TmuxPort, Transport};
 use pij_harnesses::{InteractionGate, StagedSubmission};
@@ -28,6 +29,10 @@ use super::{
 const HELD_ATTEMPT_LIMIT: u32 = 4;
 
 const WORKER_ID: &str = "pointer-drain";
+
+/// How long a Copilot seat must stay `idle` before a control is typed into it.
+/// Its intra-turn idle blips measured 2–4 ms in the plan 186 canary.
+const COPILOT_IDLE_SETTLE: Duration = Duration::from_millis(250);
 
 /// One delivery-queue drain pass below the socket transport.
 ///
@@ -115,11 +120,18 @@ impl DrainWorker {
     pub async fn drain_once(&self) -> Result<usize> {
         let seats = self.registry.list(SeatFilter::default()).await?;
         // Copilot bodies belong to its native extension; only its typed controls,
-        // queued on their own kind, are drained here (plan 186).
+        // queued on their own kind, are drained here (plan 186). That kind is
+        // listed even for a paneless seat: only a claim that lists it sweeps an
+        // expired control claim, and until then its serial key holds every
+        // native body (review S1). A paneless claim is released with backoff.
         let mut kinds: Vec<String> = seats
             .iter()
             .filter(|seat| !matches!(seat.harness, Harness::Omp | Harness::Pi))
-            .filter(|seat| seat.pane.is_some() || seat.tombstoned_at.is_some())
+            .filter(|seat| {
+                seat.harness == Harness::Copilot
+                    || seat.pane.is_some()
+                    || seat.tombstoned_at.is_some()
+            })
             .map(|seat| match seat.harness {
                 Harness::Copilot => control_kind(&seat.id),
                 _ => delivery_kind(&seat.id),
@@ -256,10 +268,13 @@ impl DrainWorker {
         }
         // BRAKE, not a policy: Copilot's busy footer reads as an empty composer,
         // so its published turn state holds a control until the turn ends.
-        // Removing this check only types the same control sooner.
+        // Copilot also publishes `idle` for a few milliseconds between steps of
+        // one turn, so the brake needs a SETTLED idle: the row has no state
+        // change time, so it reads twice, COPILOT_IDLE_SETTLE apart (review S3).
+        // Removing either read only types the same control sooner.
         if msg.command.is_some()
             && recipient.harness == Harness::Copilot
-            && recipient.state == SystemState::Working
+            && !self.copilot_idle_settled(&recipient).await?
         {
             return self
                 .release_or_backoff(job_id, job, &msg, "recipient-busy")
@@ -339,6 +354,20 @@ impl DrainWorker {
             }
             DeliveryRung::Pty => unreachable!("commands are handled before socket capability"),
         }
+    }
+
+    /// Idle now and still idle [`COPILOT_IDLE_SETTLE`] later: one registry read
+    /// more, no launch.
+    async fn copilot_idle_settled(&self, recipient: &SeatDescriptor) -> Result<bool> {
+        if recipient.state != SystemState::Idle {
+            return Ok(false);
+        }
+        tokio::time::sleep(COPILOT_IDLE_SETTLE).await;
+        Ok(self
+            .registry
+            .get(&recipient.id)
+            .await?
+            .is_some_and(|seat| seat.state == SystemState::Idle && seat.tombstoned_at.is_none()))
     }
 
     async fn ack_delivered_claim(
