@@ -1,0 +1,8 @@
+# Bottom of the pane only (composer and footer); transcript, worktree and branch redacted.
+────────────────────────────────────────────────────────────────────────────────
+❯ /compact
+  [pij: delivery staged but not submitted; inspect the staged text and press
+  Ctrl-C to clear it]
+────────────────────────────────────────────────────────────────────────────────
+  <ctx%> <worktree> ⎇ <branch> rs ⛓ pij-practical-marmot ✉1 •…
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

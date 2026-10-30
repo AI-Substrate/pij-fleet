@@ -40,6 +40,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::BG_ACTOR;
 use pij_core::cold_wake::refusal;
+use pij_core::delivery::HOLD_LIMIT_EVENT_KIND;
 use pij_core::error::Result;
 use pij_core::events::EventFilter;
 use pij_core::model::{
@@ -80,10 +81,76 @@ struct Parked {
     reason: String,
 }
 
+/// The `delivery.hold-limit` payload (`pij_core::delivery::hold_limit_event`).
+#[derive(Deserialize)]
+struct HoldLimit {
+    #[serde(rename = "messageId")]
+    message_id: String,
+    #[serde(rename = "jobId")]
+    job_id: JobId,
+    recipient: String,
+    reason: String,
+    holds: u32,
+}
+
+/// Audit record of a hold-limit notice, keyed by the held message's `msg_id`.
+/// Its own kind, so a later park notice for the same message is never read as
+/// already sent (plan 184).
+pub const HOLD_NOTICE_KIND: &str = "delivery.hold-notice";
+
 /// The stable notice id for one parked job: the queue's dedupe key.
 #[must_use]
 pub fn notice_id(job_id: JobId) -> String {
     format!("park-notice-{}", job_id.0)
+}
+
+/// The stable notice id for one job held at the hold limit.
+#[must_use]
+pub fn hold_notice_id(job_id: JobId) -> String {
+    format!("hold-notice-{}", job_id.0)
+}
+
+fn hold_body(held: &HoldLimit) -> String {
+    format!(
+        "[pij] message {} to {} is still held ({}) after {} composer holds. It stays queued for now and fails by name if the hold continues.",
+        held.message_id, held.recipient, held.reason, held.holds
+    )
+}
+
+/// One notice owed to a sender, whichever fact owes it.
+struct Owed {
+    message_id: String,
+    job_id: JobId,
+    recipient: String,
+    id: String,
+    body: String,
+    audit_kind: &'static str,
+}
+
+impl Owed {
+    /// The notice `event` owes, or `None` when it does not decode as one.
+    fn from_event(event: &Event) -> Option<Self> {
+        if event.kind == HOLD_LIMIT_EVENT_KIND {
+            let held = serde_json::from_str::<HoldLimit>(&event.payload).ok()?;
+            return Some(Self {
+                id: hold_notice_id(held.job_id),
+                body: hold_body(&held),
+                audit_kind: HOLD_NOTICE_KIND,
+                message_id: held.message_id,
+                job_id: held.job_id,
+                recipient: held.recipient,
+            });
+        }
+        let parked = serde_json::from_str::<Parked>(&event.payload).ok()?;
+        Some(Self {
+            id: notice_id(parked.job_id),
+            body: body(&parked),
+            audit_kind: NOTICE_KIND,
+            message_id: parked.message_id,
+            job_id: parked.job_id,
+            recipient: parked.recipient,
+        })
+    }
 }
 
 fn body(parked: &Parked) -> String {
@@ -107,8 +174,8 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
         return Ok(());
     };
     // User spine kinds are open strings; a same-named event that does not
-    // decode as a park receipt is not one.
-    let Ok(parked) = serde_json::from_str::<Parked>(&event.payload) else {
+    // decode as a park receipt (or hold-limit fact) is not one.
+    let Some(owed) = Owed::from_event(event) else {
         return Ok(());
     };
     let Some(seat) = services
@@ -119,13 +186,13 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
     else {
         return Ok(());
     };
-    let id = notice_id(parked.job_id);
+    let id = owed.id.clone();
     let audited = services
         .event_bus
-        .latest_matching_message(sender, NOTICE_KIND, &parked.message_id)
+        .latest_matching_message(sender, owed.audit_kind, &owed.message_id)
         .await?
         .and_then(|prior| serde_json::from_str::<serde_json::Value>(&prior.payload).ok())
-        .is_some_and(|prior| prior["job_id"] == json!(parked.job_id));
+        .is_some_and(|prior| prior["job_id"] == json!(owed.job_id));
     let admitted = services.delivery.admitted(sender, &id).await?
         || fyi_held(services, sender, &id, event.at).await?;
     let (channel, notice) = if admitted {
@@ -138,7 +205,7 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
         let msg = Msg {
             from: SeatId::from(BG_ACTOR),
             to: sender.clone(),
-            body: body(&parked),
+            body: owed.body.clone(),
             msg_id: id.clone(),
             from_machine: None,
             in_reply_to: None,
@@ -156,13 +223,13 @@ pub async fn notify(services: &Services, event: &Event) -> Result<()> {
             seq: None,
             v: 1,
             at: event.at,
-            kind: NOTICE_KIND.into(),
+            kind: owed.audit_kind.into(),
             seat: Some(sender.clone()),
             payload: json!({
-                "msg_id": parked.message_id,
-                "job_id": parked.job_id,
+                "msg_id": owed.message_id,
+                "job_id": owed.job_id,
                 "notice_msg_id": id,
-                "recipient": parked.recipient,
+                "recipient": owed.recipient,
                 "channel": channel,
                 "notice": notice,
             })
@@ -277,8 +344,12 @@ async fn sweep(services: &Services) -> bool {
         }
     };
     let mut settled = true;
-    for seat in seats.iter().filter(|seat| seat.tombstoned_at.is_none()) {
-        let mut pages = match Pages::new(&seat.id, PARKED_KIND, since) {
+    let owing = seats
+        .iter()
+        .filter(|seat| seat.tombstoned_at.is_none())
+        .flat_map(|seat| [PARKED_KIND, HOLD_LIMIT_EVENT_KIND].map(|kind| (seat, kind)));
+    for (seat, kind) in owing {
+        let mut pages = match Pages::new(&seat.id, kind, since) {
             Ok(pages) => pages,
             Err(error) => {
                 eprintln!("pij-rs park notice sweep: {error}");
@@ -308,7 +379,7 @@ async fn sweep(services: &Services) -> bool {
 pub async fn follow(services: Services) {
     let events = services
         .event_bus
-        .subscribe_live(EventFilter::kinds([PARKED_KIND]));
+        .subscribe_live(EventFilter::kinds([PARKED_KIND, HOLD_LIMIT_EVENT_KIND]));
     run(services, events).await;
 }
 
@@ -793,6 +864,87 @@ mod tests {
         assert!(notice_jobs(&pool).await.is_empty());
         assert_eq!(audits(&services).await, 1);
         clock.abort();
+    }
+
+    /// Plan 184: a delivery held at the hold limit tells its sender once, under
+    /// its own id and audit kind, so the same message parking later is still
+    /// told, and neither notice repeats on replay.
+    #[tokio::test]
+    async fn a_hold_limit_notice_is_sent_once_and_never_hides_a_later_park_notice() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        let pool = pool(&store).await;
+        let (job, parked) = park(&services, "held, then parked", 0).await;
+        let payload: String = sqlx::query_scalar("SELECT payload FROM jobs WHERE id = ?1")
+            .bind(job.0 as i64)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let held = pij_core::delivery::hold_limit_event(
+            job,
+            &pij_core::model::Job {
+                kind: delivery_kind(&TARGET.into()),
+                serial_key: TARGET.into(),
+                payload,
+                dedupe_key: String::new(),
+                dedupe_origin: None,
+                attempt: 11,
+            },
+            "composer-busy",
+            12,
+            now_ms(),
+        )
+        .unwrap();
+        assert_eq!(held.seat.as_ref().map(SeatId::as_str), Some(SENDER));
+
+        for event in [&held, &parked, &held, &parked] {
+            notify(&services, event).await.unwrap();
+        }
+
+        let mut expected = vec![hold_notice_id(job), notice_id(job)];
+        expected.sort();
+        assert_eq!(notice_jobs(&pool).await, expected);
+        let body: String = sqlx::query_scalar(
+            "SELECT json_extract(payload, '$.body') FROM jobs WHERE dedupe_key = ?1",
+        )
+        .bind(hold_notice_id(job))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            body.contains("is still held (composer-busy) after 12 composer holds"),
+            "{body}"
+        );
+    }
+
+    /// Plan 184: the follower serves hold-limit facts live, not only by hand.
+    #[tokio::test]
+    async fn the_follower_notifies_a_hold_limit_as_it_is_published() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        let pool = pool(&store).await;
+        let follower = tokio::spawn(follow(services.clone()));
+        let receipt = services
+            .delivery
+            .send(SENDER.into(), TARGET.into(), "held at the limit")
+            .await
+            .unwrap();
+        let (job, queued) = services
+            .queue
+            .peek(&[delivery_kind(&TARGET.into())])
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(queued.payload.contains(&receipt.msg_id));
+        let held =
+            pij_core::delivery::hold_limit_event(job, &queued, "composer-busy", 12, now_ms())
+                .unwrap();
+        services.event_bus.publish(held).await.unwrap();
+
+        let want = vec![hold_notice_id(job)];
+        until(async || notice_jobs(&pool).await == want).await;
+        assert_eq!(notice_jobs(&pool).await, want);
+        follower.abort();
     }
 
     /// A sender the cold-wake check would not refuse gets an ordinary,

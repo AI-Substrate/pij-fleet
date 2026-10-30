@@ -735,6 +735,85 @@ pub struct LaunchCommand {
 /// Notice appended to an aborted composer transaction before input is restored.
 pub const STAGED_SUBMIT_RECOVERY: &str = "[pij: delivery staged but not submitted; inspect the staged text and press Ctrl-C to clear it]";
 
+/// Columns a composer indents its continuation rows by (Claude: under `❯ `).
+const CONTINUATION_INDENT: usize = 2;
+
+/// Exactly what an aborted staged submit of `text` leaves in the composer: the
+/// staged text, then [`STAGED_SUBMIT_RECOVERY`] on its own line (plan 184).
+#[must_use]
+pub fn staged_leftover(text: &str) -> String {
+    format!("{text}\n{STAGED_SUBMIT_RECOVERY}")
+}
+
+/// Whether recognized composer text `observed` is EXACTLY pij's own
+/// [`staged_leftover`] of `text`. See [`is_rendered_leftover`].
+#[must_use]
+pub fn is_staged_leftover(observed: &str, text: &str) -> bool {
+    is_rendered_leftover(observed, &staged_leftover(text))
+}
+
+/// Whether recognized composer text `observed` is EXACTLY `leftover` (what an
+/// aborted stage left), and nothing a person has touched (plan 184 R1).
+///
+/// The only freedom is what the composer's own rendering does, and only where
+/// the screen proves it:
+/// - each row break stands where the leftover has a newline, or a space that a
+///   soft wrap consumed. A break counts as a wrap only if the next word could
+///   not have fitted on the row: the row, a space and that word must be wider
+///   than the widest row shown, which is at most the composer's width;
+/// - continuation rows lose up to [`CONTINUATION_INDENT`] leading spaces;
+/// - trailing spaces on a row, and on a line of `leftover`, are ignored,
+///   because a capture cannot show them.
+///
+/// Every other character must match, so a typed or deleted character, a
+/// doubled space or a line break that the row width says is not a wrap is a
+/// human draft. Rendering this cannot account for reads as a human draft too:
+/// the safe direction. What remains unseen is whitespace at a line end: the
+/// caller's caret check covers the last row, and its post-clear read stops a
+/// clear that did not leave the composer blank.
+#[must_use]
+pub fn is_rendered_leftover(observed: &str, leftover: &str) -> bool {
+    let mut lines = observed.split('\n');
+    let mut rows = vec![lines.next().unwrap_or_default().trim_end().to_string()];
+    for row in lines {
+        let indent = row.len() - row.trim_start_matches(' ').len();
+        rows.push(
+            row[indent.min(CONTINUATION_INDENT)..]
+                .trim_end()
+                .to_string(),
+        );
+    }
+    let widest = rows
+        .iter()
+        .map(|row| row.chars().count())
+        .max()
+        .unwrap_or(0);
+    let seen = rows.join("\n");
+    // Line-end spaces, pij's own included, are invisible to a capture.
+    let leftover = leftover
+        .split('\n')
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let (mut want, mut got) = (leftover.chars(), seen.chars());
+    let mut row = 0;
+    loop {
+        match (want.next(), got.next()) {
+            (None, None) => return true,
+            (Some('\n'), Some('\n')) => row += 1,
+            (Some(' '), Some('\n')) => {
+                let next_word = rows[row + 1].chars().take_while(|ch| *ch != ' ').count();
+                if rows[row].chars().count() + 1 + next_word <= widest {
+                    return false;
+                }
+                row += 1;
+            }
+            (Some(want), Some(got)) if want == got && want != '\n' => {}
+            _ => return false,
+        }
+    }
+}
+
 /// Opaque ownership of one pane composer staged for explicit commit or abort.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagedSubmit {
@@ -744,6 +823,12 @@ pub struct StagedSubmit {
     pub token: String,
     /// Whether any composer bytes have been staged under this ownership token.
     pub staged: bool,
+    /// The body text actually pasted so far (plan 184), so an abort's leftover
+    /// is recorded as what reached the composer, not what was meant to.
+    pub pasted: String,
+    /// A bracketed paste was opened and not yet closed: an abort must close it
+    /// before pasting the recovery notice.
+    pub paste_open: bool,
 }
 
 /// Every tmux syscall in the workspace.
@@ -783,6 +868,24 @@ pub trait TmuxPort: Send + Sync {
 
     /// Leave staged text unsent, show recovery when needed, and restore input.
     async fn abort_submit(&self, staged: &StagedSubmit) -> Result<()>;
+
+    /// Delete pij's own leftover from an earlier aborted stage, inside
+    /// this owned transaction, before anything is staged (plan 184).
+    ///
+    /// `leftover` is exactly what pij left (see [`staged_leftover`]); `observed`
+    /// is the composer text the caller captured under THIS ownership, so no
+    /// human input can have arrived since. Refuses and sends nothing unless the
+    /// token still owns the pane with input disabled, nothing is staged yet, and
+    /// `observed` is exactly `leftover` ([`is_rendered_leftover`]); then deletes
+    /// exactly that many characters and lets the pane render before returning.
+    /// Never presses Enter. The caller re-reads the composer, then commits or
+    /// aborts the transaction.
+    async fn clear_staged_leftover(
+        &self,
+        staged: &StagedSubmit,
+        leftover: &str,
+        observed: &str,
+    ) -> Result<()>;
 
     /// SUBMIT `text` to a pane as a turn: type it AND send it.
     ///
@@ -907,4 +1010,85 @@ pub trait SessionStatusPort: Send + Sync {
     /// `Err` is reserved for a source failure. An unsupported harness or a missing
     /// transcript is a normal reply.
     async fn status(&self, target: &SessionTarget) -> Result<SessionStatusReply>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{STAGED_SUBMIT_RECOVERY, is_staged_leftover, staged_leftover};
+
+    /// The two stuck composers of pij-fleet#86, as `composer_region` returns
+    /// them: walrus (180 columns) on one row, marmot (80 columns) wrapped.
+    const WALRUS: &str = "/compact\n  [pij: delivery staged but not submitted; inspect the staged text and press Ctrl-C to clear it]";
+    const MARMOT: &str = "/compact\n  [pij: delivery staged but not submitted; inspect the staged text and press\n  Ctrl-C to clear it]";
+
+    #[test]
+    fn the_live_leftovers_are_recognised_at_both_widths() {
+        assert!(is_staged_leftover(WALRUS, "/compact"));
+        assert!(is_staged_leftover(MARMOT, "/compact"));
+        assert!(is_staged_leftover(&staged_leftover("/compact"), "/compact"));
+        assert!(is_staged_leftover(
+            "/compact\n  [pij: delivery staged but not submitted; inspect the staged text and press Ctrl-C to clear it]   ",
+            "/compact"
+        ));
+    }
+
+    #[test]
+    fn one_keystroke_anywhere_is_a_human_draft() {
+        let leftover = staged_leftover("/compact");
+        for (at, _) in leftover.char_indices() {
+            let mut typed = leftover.clone();
+            typed.insert(at, 'x');
+            assert!(!is_staged_leftover(&typed, "/compact"), "insert at {at}");
+            let mut deleted = leftover.clone();
+            deleted.remove(at);
+            assert!(!is_staged_leftover(&deleted, "/compact"), "delete at {at}");
+        }
+        assert!(!is_staged_leftover(&format!("{leftover}x"), "/compact"));
+        assert!(!is_staged_leftover(&format!("x{leftover}"), "/compact"));
+    }
+
+    #[test]
+    fn whitespace_edits_inside_a_row_are_human_too() {
+        let doubled = WALRUS.replacen("staged but", "staged  but", 1);
+        assert!(!is_staged_leftover(&doubled, "/compact"));
+        let broken_word = MARMOT.replacen("Ctrl-C", "Ctrl-\n  C", 1);
+        assert!(!is_staged_leftover(&broken_word, "/compact"));
+        let joined = format!("/compact {STAGED_SUBMIT_RECOVERY}");
+        assert!(
+            !is_staged_leftover(&joined, "/compact"),
+            "the notice's own line break is not a space"
+        );
+        let deep_indent = WALRUS.replacen("\n  [", "\n   [", 1);
+        assert!(!is_staged_leftover(&deep_indent, "/compact"));
+    }
+
+    /// Review S3: a row break the width says is not a wrap is a typed newline.
+    #[test]
+    fn a_break_where_the_next_word_would_have_fitted_is_human() {
+        // In MARMOT "press" ends a full row and "Ctrl-C" could not fit: a wrap.
+        assert!(is_staged_leftover(MARMOT, "/compact"));
+        // A break after "delivery": that row is far shorter than the next one,
+        // so "staged" would have fitted. Only a typed newline puts it there.
+        let early = WALRUS.replacen("delivery staged", "delivery\n  staged", 1);
+        assert!(!is_staged_leftover(&early, "/compact"));
+    }
+
+    #[test]
+    fn a_leftover_line_ending_in_a_space_still_matches_its_capture() {
+        let leftover = super::staged_leftover("first chunk of ");
+        let captured = format!("first chunk of\n  {STAGED_SUBMIT_RECOVERY}");
+        assert!(super::is_rendered_leftover(&captured, &leftover));
+        assert!(!super::is_rendered_leftover(
+            &captured.replacen("of", "of x", 1),
+            &leftover
+        ));
+    }
+
+    #[test]
+    fn another_texts_leftover_or_a_bare_command_is_not_ours() {
+        assert!(!is_staged_leftover(WALRUS, "/new"));
+        assert!(!is_staged_leftover("/compact", "/compact"));
+        assert!(!is_staged_leftover(STAGED_SUBMIT_RECOVERY, "/compact"));
+        assert!(!is_staged_leftover("", "/compact"));
+    }
 }

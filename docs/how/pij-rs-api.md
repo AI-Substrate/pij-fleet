@@ -381,6 +381,21 @@ in `details.native_receiver_reason` and human-readable `meta`. A live host or an
 Expiry parks native bodies with `undelivered:native-receiver-unavailable`,
 publishes sender-addressed `delivery.parked`, and refuses subsequent sends.
 
+Pane deliveries (plan 184) add two terminal outcomes, each publishing a
+sender-addressed `delivery.parked` with transport `pty`. They cover Claude seats
+and Copilot controls on `delivery-control:<seat>`:
+
+- `undelivered:hold-limit`: still held at the hold limit (seven minutes for a
+  control command, twenty for a body);
+- `undelivered:staged-unsent`: a command whose own staged leftover pij cleared
+  and did not submit, or any delivery whose composer did not read blank after
+  that clear (`composer not cleared; left for the operator`).
+
+A **body** held past seven minutes stays queued, and its sender is told once
+through a `delivery.hold-limit` fact and a `hold-notice-<job_id>` notice,
+audited as `delivery.hold-notice`. Schedule, limit and own-text rules:
+[pij-pane-signals](pij-pane-signals.md#staged-submits-their-leftovers-and-held-deliveries-plan-184).
+
 **Every park tells its sender once.** For any parked outcome the daemon's
 `pij-bg` sends the sender one short message naming the msg id, the target, the
 outcome and reason, and "Resend after the target recovers". The notice's msg_id
@@ -495,7 +510,9 @@ regardless of reason changes and surviving daemon restart. Events add `job_id`,
 `deferral_count` and `reason_changes` (transitions since the previous event, zero
 on the first) alongside the current `reason` and `since_ms`; counts are not ACKs.
 Deferrals include composer safety, missing binding/pane/transport, pending
-consent, and transport errors. Not counted here: native Copilot inbox-pull holds
+consent, and transport errors. `leftover-cleared` (plan 184) means pij just
+cleared its own staged leftover and the next attempt stages into a blank
+composer. Not counted here: native Copilot inbox-pull holds
 (the reason is returned in the pull response and `native_receiver_reason` in
 `pij state`) and held-for-approval socket backoff, which stops at its attempt limit. Diagnostic publication failure cannot bypass the
 original retry/backoff or consent policy.

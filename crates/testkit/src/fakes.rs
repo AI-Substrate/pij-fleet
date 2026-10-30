@@ -31,7 +31,8 @@ use pij_core::model::{
 use pij_core::ports::{
     DeferNoopReason, DeferOutcome, DeliveryAck, DeliveryEnqueue, HarnessPort, LaunchCommand,
     LivenessPort, Queue, Registry, ReleaseOutcome, STAGED_SUBMIT_RECOVERY, SeatFilter,
-    SessionStatusPort, Spine, StagedSubmit, TmuxPort, Transport,
+    SessionStatusPort, Spine, StagedSubmit, TmuxPort, Transport, is_rendered_leftover,
+    staged_leftover,
 };
 use pij_core::session_status::{SessionStatusReply, SessionTarget};
 
@@ -1786,11 +1787,24 @@ struct TmuxState {
     capture_failures: BTreeSet<String>,
     next_stage: u64,
     stage_errors: VecDeque<String>,
+    /// Stages that paste this many characters, then abort like the adapter:
+    /// the prefix and the recovery notice stay in the composer (plan 184).
+    stage_aborts: VecDeque<usize>,
+    /// What the composer still shows after a clear, when the clear did not
+    /// blank it (a human's whitespace the capture could not show, plan 184).
+    clear_residue: Option<String>,
     commit_errors: VecDeque<String>,
     cleanup_errors: VecDeque<String>,
     input_disabled: BTreeSet<String>,
     staged: BTreeMap<String, (StagedSubmit, String)>,
     recorder: Recorder,
+}
+
+/// The capture, caret column and caret row of a composer holding `text`, as
+/// [`FakeTmux`] renders it (plan 184): for tests that script a capture.
+#[must_use]
+pub fn composer_capture(text: &str) -> (String, u32, u32) {
+    render_staged_composer(text)
 }
 
 fn render_staged_composer(text: &str) -> (String, u32, u32) {
@@ -1917,6 +1931,19 @@ impl FakeTmux {
         );
     }
 
+    /// Arrange a composer that holds `text`, with the caret after its last
+    /// character: what an aborted staged submit leaves behind (plan 184).
+    pub fn arrange_composer_text(&self, pane: &str, text: &str) {
+        self.arrange_pane(pane);
+        let (capture, cursor_x, cursor_y) = render_staged_composer(text);
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        if let Some(listed) = state.panes.iter_mut().find(|listed| listed.id == pane) {
+            listed.cursor_x = Some(cursor_x);
+            listed.cursor_y = Some(cursor_y);
+        }
+        state.standing_capture = Some(capture);
+    }
+
     /// Serve `text` for every capture that outruns the scripted queue.
     ///
     /// Pairs with [`FakeTmux::with_pane`] when a test needs a composer with
@@ -1976,6 +2003,28 @@ impl FakeTmux {
             .calls
             .clone()
     }
+
+    /// Make the next stage paste only the first `chars` characters, then abort
+    /// as the real adapter does on its stage bound: the composer is left with
+    /// that prefix and [`STAGED_SUBMIT_RECOVERY`], input is restored, and the
+    /// stage returns an error (plan 184).
+    #[must_use]
+    pub fn script_stage_abort_after(self, chars: usize) -> Self {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .stage_aborts
+            .push_back(chars);
+        self
+    }
+
+    /// Make every clear leave `residue` in the composer instead of blanking it.
+    #[must_use]
+    pub fn script_clear_residue(self, residue: impl Into<String>) -> Self {
+        self.state.lock().expect("fake tmux mutex").clear_residue = Some(residue.into());
+        self
+    }
+
     /// Fail the next staged body write after releasing fake pane ownership.
     #[must_use]
     pub fn script_stage_error(self, message: impl Into<String>) -> Self {
@@ -2067,6 +2116,8 @@ impl TmuxPort for FakeTmux {
             pane: pane.to_string(),
             token: format!("fake-stage-{}", state.next_stage),
             staged: false,
+            pasted: String::new(),
+            paste_open: false,
         };
         state.recorder.record(format!("acquire_submit:{pane}"));
         state
@@ -2088,6 +2139,33 @@ impl TmuxPort for FakeTmux {
             return Err(PijError::Adapter {
                 adapter: "fake-tmux".to_string(),
                 message: "staged submit ownership mismatch".to_string(),
+            });
+        }
+        if let Some(chars) = state.stage_aborts.pop_front() {
+            let pasted: String = text.chars().take(chars).collect();
+            staged.staged = true;
+            staged.pasted = pasted.clone();
+            state.staged.remove(&staged.token);
+            state.input_disabled.remove(&staged.pane);
+            state
+                .recorder
+                .record(format!("stage_abort:{}:{chars}", staged.pane));
+            let (capture, cursor_x, cursor_y) = render_staged_composer(&staged_leftover(&pasted));
+            state.standing_capture = Some(capture);
+            if let Some(listed) = state
+                .panes
+                .iter_mut()
+                .find(|listed| listed.id == staged.pane)
+            {
+                listed.cursor_x = Some(cursor_x);
+                listed.cursor_y = Some(cursor_y);
+            }
+            return Err(PijError::Adapter {
+                adapter: "fake-tmux".to_string(),
+                message: format!(
+                    "staging for pane {:?} exceeded the stage bound",
+                    staged.pane
+                ),
             });
         }
         if let Some(message) = state.stage_errors.pop_front() {
@@ -2197,6 +2275,54 @@ impl TmuxPort for FakeTmux {
                 listed.cursor_x = Some(cursor_x);
                 listed.cursor_y = Some(cursor_y);
             }
+        }
+        Ok(())
+    }
+
+    async fn clear_staged_leftover(
+        &self,
+        staged: &StagedSubmit,
+        leftover: &str,
+        observed: &str,
+    ) -> Result<()> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        let owned = state
+            .staged
+            .get(&staged.token)
+            .is_some_and(|(owned, _)| owned == staged && !owned.staged);
+        if !owned || !state.input_disabled.contains(&staged.pane) {
+            return Err(PijError::Adapter {
+                adapter: "fake-tmux".to_string(),
+                message: "staged submit ownership mismatch".to_string(),
+            });
+        }
+        if !is_rendered_leftover(observed, leftover) {
+            return Err(PijError::Adapter {
+                adapter: "fake-tmux".to_string(),
+                message: "composer is not exactly pij's own leftover; nothing cleared".to_string(),
+            });
+        }
+        let chars = leftover.chars().count();
+        state
+            .recorder
+            .record(format!("clear_staged_leftover:{}:{chars}", staged.pane));
+        let (capture, cursor_x, cursor_y) = match state.clear_residue.clone() {
+            Some(residue) => render_staged_composer(&residue),
+            None => (
+                "\u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{256f}"
+                    .to_string(),
+                0,
+                0,
+            ),
+        };
+        state.standing_capture = Some(capture);
+        if let Some(listed) = state
+            .panes
+            .iter_mut()
+            .find(|listed| listed.id == staged.pane)
+        {
+            listed.cursor_x = Some(cursor_x);
+            listed.cursor_y = Some(cursor_y);
         }
         Ok(())
     }

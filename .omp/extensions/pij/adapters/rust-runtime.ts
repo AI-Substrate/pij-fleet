@@ -143,6 +143,8 @@ const PARKED_OUTCOMES = new Set([
 	"undelivered:harness-swallowed",
 	"undelivered:operator-released",
 	"undelivered:native-receiver-unavailable",
+	"undelivered:hold-limit",
+	"undelivered:staged-unsent",
 ]);
 
 /** How much of an arriving body the announcement shows. */
