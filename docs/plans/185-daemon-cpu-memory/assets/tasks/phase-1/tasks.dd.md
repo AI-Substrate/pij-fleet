@@ -39,7 +39,7 @@ One coder implements impl-guide tk-0001: profile the live daemon read-only, diag
 | tk-0002 | Red tests and workload baselines | — | ph-9a02 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0003 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) |
 | tk-0003 | Hot-path fixes | — | ph-9a02 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0007 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) |
 | tk-0004 | Bounded tap files | — | ph-9a02 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0006 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) |
-| tk-0005 | Measurements, docs, mutants, PR, CI | — | ph-9a02 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) |
+| tk-0005 | Measurements, docs, mutants, PR, CI | — | ph-9a02 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0012 | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) |
 
 <a id="done-when"></a>
 
@@ -73,4 +73,4 @@ One coder implements impl-guide tk-0001: profile the live daemon read-only, diag
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0005 | Before/after receipts; docs; mutants; CI green on the exact head | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0005 | Before/after receipts; docs; mutants; CI green on the exact head | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
