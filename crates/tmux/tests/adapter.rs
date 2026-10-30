@@ -477,6 +477,75 @@ async fn stage_deadline_aborts_and_restores_input() {
     wait_for_submit_marker_clear(&session, &pane.id, EVENTUALLY);
 }
 
+/// Review S4: a stage bound tripped between chunks closes the open bracketed
+/// paste before pasting the notice, and records exactly the chunk it pasted.
+#[tokio::test]
+async fn an_abort_between_chunks_closes_the_paste_and_records_what_was_pasted() {
+    let _serial = transaction_test_guard().await;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let output_path = std::env::temp_dir().join(format!(
+        "pij-rs-submit-chunk-abort-{}-{nonce}.bin",
+        std::process::id()
+    ));
+    let body = "a".repeat(1_500);
+    let first_chunk = &body[..1_000];
+    let mut expected = Vec::new();
+    expected.extend_from_slice(b"\x1b[200~");
+    expected.extend_from_slice(first_chunk.as_bytes());
+    expected.extend_from_slice(b"\x1b[201~\x1b[200~\n");
+    expected.extend_from_slice(pij_core::ports::STAGED_SUBMIT_RECOVERY.as_bytes());
+    expected.extend_from_slice(b"\x1b[201~");
+    let command = format!(
+        "stty raw -echo; dd bs=1 count={} of={} 2>/dev/null; sleep 20",
+        expected.len(),
+        output_path.display()
+    );
+    let Some(session) = TestSession::start_or_skip_with_command("submit-chunk", &command) else {
+        return;
+    };
+    fs::create_dir_all(&session.tap_root).expect("create chunk fixture directory");
+    // The second paste (the first chunk) stalls past the stage bound, so the
+    // in-loop check aborts before the second chunk and before the closer.
+    let pastes = session.tap_root.join("pastes");
+    let wrapper = session.tap_root.join("tmux-chunk-wrapper");
+    let script = format!(
+        "#!/bin/sh\n[ \"$1\" = -u ] && shift\ncase \"${{6-}}\" in *paste-buffer*) n=$(($(cat {pastes} 2>/dev/null || echo 0) + 1)); echo $n > {pastes}; [ $n = 2 ] && sleep 4.05 ;; esac\nexec tmux -L {} \"$@\"\n",
+        shell_literal(&session.server),
+        pastes = shell_literal(&pastes.to_string_lossy()),
+    );
+    write_executable(&wrapper, &script);
+    let tmux = TmuxAdapter::with_binary(&wrapper, &session.tap_root);
+    let pane = tmux
+        .list_panes()
+        .await
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+
+    let mut staged = tmux
+        .acquire_submit(&pane.id)
+        .await
+        .expect("acquire pane input");
+    let error = tmux
+        .stage_submit(&mut staged, &body)
+        .await
+        .expect_err("the stage bound trips between chunks");
+
+    assert!(error.to_string().contains("exceeded 4s"), "{error}");
+    assert_eq!(staged.pasted, first_chunk, "the record is what was pasted");
+    wait_for_pane_input(&session, &pane.id, false, EVENTUALLY);
+    let observed = wait_for_file(&output_path, expected.len(), EVENTUALLY);
+    assert_eq!(
+        observed, expected,
+        "closed paste, then the notice in its own"
+    );
+    fs::remove_file(output_path).expect("remove chunk-abort capture");
+}
+
 /// Plan 184: clearing pij's own leftover deletes exactly its characters, with
 /// the pane still owned afterwards, and never presses Enter.
 #[tokio::test]
@@ -513,7 +582,7 @@ async fn clear_staged_leftover_sends_one_backspace_per_leftover_character() {
         .acquire_submit(&pane.id)
         .await
         .expect("acquire pane input");
-    tmux.clear_staged_leftover(&staged, "/compact", &leftover)
+    tmux.clear_staged_leftover(&staged, &leftover, &leftover)
         .await
         .expect("clear the exact leftover");
     assert!(
@@ -573,7 +642,7 @@ async fn clear_staged_leftover_refuses_a_composer_a_human_touched() {
         leftover.replacen("/compact", "/compac", 1),
     ] {
         let error = tmux
-            .clear_staged_leftover(&staged, "/compact", &touched)
+            .clear_staged_leftover(&staged, &leftover, &touched)
             .await
             .expect_err("a touched composer is a human draft");
         assert!(error.to_string().contains("nothing cleared"), "{error}");
@@ -617,8 +686,11 @@ async fn staging_at_the_measured_launch_tail_still_submits() {
     };
     fs::create_dir_all(&session.tap_root).expect("create tail fixture directory");
     let wrapper = session.tap_root.join("tmux-tail-wrapper");
+    // Only the commands production LAUNCHES are slowed. Reads (show-options,
+    // display-message) launch here only because a wrapper binary turns the
+    // control client off; in the daemon they never launch.
     let script = format!(
-        "#!/bin/sh\n[ \"$1\" = -u ] && shift\nsleep 0.35\nexec tmux -L {} \"$@\"\n",
+        "#!/bin/sh\n[ \"$1\" = -u ] && shift\ncase \"$1\" in show-options|display-message|list-panes|capture-pane) ;; *) sleep 0.35 ;; esac\nexec tmux -L {} \"$@\"\n",
         shell_literal(&session.server)
     );
     write_executable(&wrapper, &script);

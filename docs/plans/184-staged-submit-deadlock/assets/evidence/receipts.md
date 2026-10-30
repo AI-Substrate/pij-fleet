@@ -63,3 +63,50 @@ pre-mutant copy was identical.
   did before (reserve, three pastes, commit). A recognised leftover costs
   reserve, one clear, and restore, once.
 - **The deployed live reading** is the prime's, after merge and bounce.
+
+## Review round (#91): B1, S1–S5, and the Copilot control kind
+
+After rebasing onto main 8687560 (plan 186 merged), "old" is the pre-review
+head `8317d09` (the rebased `cff8819`) in a scratch worktree, with the new
+`plan184.rs` copied in. The scratch copy also made `InteractionGate::with_clock`
+public so the walrus test could compile. It left out the residue test, whose
+fake hook only the fix adds.
+
+### Red on old → green on the branch
+
+| test | old (quoted) |
+|---|---|
+| `human_typing_never_counts_toward_the_limit_and_waits_out_the_grace` (B1) | `typing never fails a command: Some("undelivered:hold-limit: /compact was still held (human-typing) after 12 attempts")` |
+| `the_walrus_deploy_clears_its_own_leftover_and_drains_the_queue_in_order` (S5) | `held, not failed  left: ("failed", Some("undelivered:hold-limit: /compact was still held (human-typing) after 12 attempts"))  right: ("pending", None)` |
+| `a_held_body_tells_its_sender_once_then_fails_by_name` (S1, real queue) | `told once, across passes on the real queue  left: 5  right: 1` |
+| `a_copilot_control_held_unrecognized_fails_by_name_at_the_limit` (plan 186 kind) | `terminal at the hold limit` (never terminal) |
+| `held_command_fails_by_name_after_seven_minutes_held_and_tells_its_sender` | `failed early, at 363000 ms` |
+| `composer_busy_backs_off_on_its_own_holds_to_a_minute_and_never_reserves` (attempt 9180) | `left: []  right: [1, 2, 4, 8, 16, 32, 60, 60]` (failed at once on legacy attempts) |
+| `failed_control_head_unblocks_the_messages_queued_behind_it_in_order` | `left: []` |
+
+Green on old by design:
+- `own_staged_leftover_fails…` and `a_copilot_control_clears_its_own_leftover…`
+  (full-text recognition was already there);
+- `own_leftover_plus_one_keystroke…`, the R1 guard.
+
+S2, S3 and S4 use APIs the fix introduces. Their red is the mutant table below.
+An old-code variant of the real-tmux S4 test was inconclusive: the stage did
+not trip the old bound under that wrapper.
+
+### Mutants (all killed; `diff -rq crates/` identical afterwards)
+
+| mutant | killed by |
+|---|---|
+| B1a typing counts toward the limit | `human_typing_never_counts…` |
+| B1b typing retries on the next tick (ignores `retry_after`) | `human_typing_never_counts…` |
+| S1 hold-limit fact without `msg_id` | `a_held_body_tells_its_sender_once…` (real queue) |
+| S2 mutant A: clear decided on the look with `staged_leftover(text)` | `the_clear_is_decided_on_the_owned_read_not_the_look` |
+| S3 no re-read after the clear | `a_clear_that_does_not_read_blank_sends_nothing_more`; `a_clear_that_leaves_residue_sends_nothing_more_and_fails_by_name` |
+| S4 notice pasted inside the open paste | `an_abort_between_chunks_closes_the_paste_and_records_what_was_pasted` (real tmux) |
+| S4 no record of what was pasted | `a_partial_stage_is_recognised_from_what_was_actually_pasted` |
+
+### Scoped gates on the branch
+- `cargo test -p pij-core -p pij-harnesses -p pij-tmux -p pij-testkit -p pij-daemon --no-fail-fast`:
+  exit 0, 74 test binaries ok.
+- `cargo fmt --all --check`: ok.
+- `cargo clippy --locked --workspace --all-targets -- -D warnings`: ok.

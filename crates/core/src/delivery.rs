@@ -127,15 +127,18 @@ pub fn hold_limit_event(
     job_id: crate::model::JobId,
     job: &crate::model::Job,
     reason: &str,
+    holds: u32,
     at: u64,
 ) -> Result<crate::model::Event> {
     let message: Msg = serde_json::from_str(&job.payload).map_err(|error| PijError::Adapter {
         adapter: "delivery/hold-limit".into(),
         message: format!("invalid held delivery payload: {error}"),
     })?;
+    // `msg_id` is the key `Spine::latest_matching_message` matches on, so the
+    // worker can find this fact and state it only once (review S1).
     let mut payload = serde_json::json!({
-        "messageId": message.msg_id, "jobId": job_id, "recipient": job.serial_key,
-        "reason": reason, "attempts": job.attempt.saturating_add(1),
+        "msg_id": message.msg_id, "messageId": message.msg_id, "jobId": job_id,
+        "recipient": job.serial_key, "reason": reason, "holds": holds,
     });
     if let Some(machine) = &message.from_machine {
         payload["from_machine"] = machine.as_str().into();

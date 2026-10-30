@@ -90,7 +90,7 @@ struct HoldLimit {
     job_id: JobId,
     recipient: String,
     reason: String,
-    attempts: u32,
+    holds: u32,
 }
 
 /// Audit record of a hold-limit notice, keyed by the held message's `msg_id`.
@@ -112,8 +112,8 @@ pub fn hold_notice_id(job_id: JobId) -> String {
 
 fn hold_body(held: &HoldLimit) -> String {
     format!(
-        "[pij] message {} to {} is still held ({}) after {} attempts. It stays queued and is delivered when the target's composer is clear.",
-        held.message_id, held.recipient, held.reason, held.attempts
+        "[pij] message {} to {} is still held ({}) after {} composer holds. It stays queued for now and fails by name if the hold continues.",
+        held.message_id, held.recipient, held.reason, held.holds
     )
 }
 
@@ -891,6 +891,7 @@ mod tests {
                 attempt: 11,
             },
             "composer-busy",
+            12,
             now_ms(),
         )
         .unwrap();
@@ -911,7 +912,7 @@ mod tests {
         .await
         .unwrap();
         assert!(
-            body.contains("is still held (composer-busy) after 12 attempts"),
+            body.contains("is still held (composer-busy) after 12 composer holds"),
             "{body}"
         );
     }
@@ -936,7 +937,8 @@ mod tests {
             .unwrap();
         assert!(queued.payload.contains(&receipt.msg_id));
         let held =
-            pij_core::delivery::hold_limit_event(job, &queued, "composer-busy", now_ms()).unwrap();
+            pij_core::delivery::hold_limit_event(job, &queued, "composer-busy", 12, now_ms())
+                .unwrap();
         services.event_bus.publish(held).await.unwrap();
 
         let want = vec![hold_notice_id(job)];

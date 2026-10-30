@@ -55,3 +55,36 @@ and 8 GB RSS, with `background reconciliation failed … owner … is gone` at a
 10 Hz (most of a 500 MB `daemon.log`). A one-chunk stage could be two launches
 instead of six (opener, body and closer in one buffer); that would cut its cost
 by two thirds and narrow the tail.
+
+## Review round (#91, reviewer pij-review-pr91)
+
+**magicWand (round 2):** a shared "hold clock" abstraction in core. B1 was a
+policy that counted retries when it meant time. `attempt` looked like the
+natural counter, and every other retry path moves it. A typed "held since"
+with its own reasons would have made the wrong counter unwritable.
+
+**difficulties:**
+- **I counted the wrong thing** (high, my blocker). The hold limit counted
+  `attempt`, so `human-typing` burned through it in one grace, and the walrus
+  deploy would have failed its head as "human-typing after 12 attempts". Both
+  were false. Fixed by holding time per job in the worker since the first
+  counted hold. Typing never counts and waits out the gate's `retry_after`.
+- **My "told once" test passed on a fake that resets `attempt`** (medium).
+  The dedupe key was `msg_id`, but the fact carried `messageId`. That is the
+  same cross-seam literal trap as plan 114. The test now runs on the real
+  queue across passes, and a mutant that drops `msg_id` turns it red.
+- **No test told the look from the owned read apart** (medium). Every fixture
+  served one capture to both. A witness now scripts a different second capture.
+- **"Changes no characters" was false** (medium). The screen cannot show a
+  person's whitespace at a line end, and N backspaces then stop short. The fix
+  re-reads after the clear and fails by name if the composer is not blank. It
+  also checks the caret and judges a row break as a wrap only where the next
+  word could not have fitted. A residual remains and is documented: invisible
+  whitespace at a line end other than the caret's row is deleted with pij's
+  text, and the delivery then fails by name.
+- **The disk filled mid-fix** (environment). No shell could start, so I could
+  not even report it over pij. The prime freed space. Keep builds scoped
+  (`-p`).
+- **A merged sibling (plan 186) moved Copilot controls onto
+  `delivery-control:`.** The rebase was clean, and its live case (held
+  `unrecognized`) is why `unrecognized` now counts toward the limits.

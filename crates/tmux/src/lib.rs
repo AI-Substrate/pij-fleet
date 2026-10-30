@@ -21,8 +21,7 @@ use pij_core::delivery::MAX_TYPED_FRAME_BYTES;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Harness, Pane, PaneProcess, ProcIdentity};
 use pij_core::ports::{
-    LaunchCommand, STAGED_SUBMIT_RECOVERY, StagedSubmit, TmuxPort, is_staged_leftover,
-    staged_leftover,
+    LaunchCommand, STAGED_SUBMIT_RECOVERY, StagedSubmit, TmuxPort, is_rendered_leftover,
 };
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::{Instant, sleep};
@@ -63,6 +62,9 @@ const SUBMIT_STAGE_LIMIT: Duration = Duration::from_secs(4);
 /// launches, 1.7 s at the worst observed latency): an earlier watchdog takes
 /// the token mid-abort and the restore fails `exit 75`, as walrus showed.
 const SUBMIT_RECOVERY_LIMIT_SECS: u64 = 8;
+/// How long a cleared leftover is given to render before the gate re-reads the
+/// composer to confirm it is blank (plan 184 review S3). Input stays disabled.
+const CLEAR_SETTLE: Duration = Duration::from_millis(250);
 const SUBMIT_OWNER_OPTION: &str = "@pij-submit-owner";
 
 fn unsupported_terminal_control(text: &str) -> Option<(usize, char)> {
@@ -312,9 +314,13 @@ impl TmuxAdapter {
         Ok(())
     }
 
-    async fn stage_body_owned(&self, staged: &StagedSubmit, text: &str) -> Result<()> {
+    /// Stage `text` as one bracketed paste, recording on `staged` exactly what
+    /// each successful paste delivered (plan 184), so an abort knows what it
+    /// leaves behind and can close a paste it opened.
+    async fn stage_body_owned(&self, staged: &mut StagedSubmit, text: &str) -> Result<()> {
         let started = Instant::now();
         self.paste_bytes_owned(staged, b"\x1b[200~")?;
+        staged.paste_open = true;
         let mut start = 0;
         while start < text.len() {
             if started.elapsed() >= SUBMIT_STAGE_LIMIT {
@@ -328,12 +334,14 @@ impl TmuxAdapter {
                 end -= 1;
             }
             self.paste_bytes_owned(staged, &text.as_bytes()[start..end])?;
+            staged.pasted.push_str(&text[start..end]);
             start = end;
             if start < text.len() {
                 sleep(SUBMIT_CHUNK_PAUSE).await;
             }
         }
         self.paste_bytes_owned(staged, b"\x1b[201~")?;
+        staged.paste_open = false;
         if started.elapsed() >= SUBMIT_STAGE_LIMIT {
             return Err(self.error(format!(
                 "staging for pane {:?} exceeded {:?}; body was not submitted",
@@ -768,7 +776,10 @@ impl TmuxAdapter {
     fn abort_staged_inner(&self, staged: &StagedSubmit) -> Result<()> {
         self.require_staged(staged)?;
         let notice_result = if staged.staged {
-            let notice = format!("\x1b[200~\n{STAGED_SUBMIT_RECOVERY}\x1b[201~");
+            // Close a paste the stage opened, so the notice is its own paste and
+            // not nested inside an unterminated one (plan 184 review S4).
+            let close = if staged.paste_open { "\x1b[201~" } else { "" };
+            let notice = format!("{close}\x1b[200~\n{STAGED_SUBMIT_RECOVERY}\x1b[201~");
             self.paste_bytes_owned(staged, notice.as_bytes())
         } else {
             Ok(())
@@ -844,6 +855,8 @@ impl TmuxPort for TmuxAdapter {
             pane: pane.to_string(),
             token: self.mint_submit_token()?,
             staged: false,
+            pasted: String::new(),
+            paste_open: false,
         };
         self.reserve_submit_marker(&staged)?;
 
@@ -975,7 +988,7 @@ impl TmuxPort for TmuxAdapter {
     async fn clear_staged_leftover(
         &self,
         staged: &StagedSubmit,
-        text: &str,
+        leftover: &str,
         observed: &str,
     ) -> Result<()> {
         let _submit = self.submit_lock.lock().await;
@@ -986,7 +999,7 @@ impl TmuxPort for TmuxAdapter {
                 staged.token
             )));
         }
-        if !is_staged_leftover(observed, text) {
+        if !is_rendered_leftover(observed, leftover) {
             return Err(self.error(format!(
                 "composer of pane {:?} is not exactly pij's own staged leftover; nothing cleared",
                 staged.pane
@@ -994,7 +1007,7 @@ impl TmuxPort for TmuxAdapter {
         }
         // One BSpace per character of the exact leftover, with input re-enabled
         // only inside this server-side command and only while the token owns it.
-        let chars = staged_leftover(text).chars().count();
+        let chars = leftover.chars().count();
         let target = shell_quote(&staged.pane);
         let clear = format!(
             "select-pane -e -t {target} ; send-keys -t {target} -N {chars} BSpace ; select-pane -d -t {target}"
@@ -1005,6 +1018,8 @@ impl TmuxPort for TmuxAdapter {
             "clear own staged leftover",
             &clear,
         )?;
+        // Still owned: give the pane time to render before the caller re-reads.
+        sleep(CLEAR_SETTLE).await;
         Ok(())
     }
 
