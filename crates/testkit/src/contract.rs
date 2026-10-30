@@ -1080,10 +1080,20 @@ pub async fn tmux_contract(tmux: &dyn TmuxPort, fixture: &dyn TmuxContractFixtur
     tmux.send_keys(&pane.id, fixture.sent_keys())
         .await
         .expect("send_keys must not fail");
-    let after_send = tmux
-        .capture(&pane.id, 100)
-        .await
-        .expect("capture after send_keys must not fail");
+    // Visible, not visible at once: a real pane echoes through its pty after
+    // `send-keys` returns, and a fast CI runner captured before the echo landed
+    // (plan 185, run 41017656947: 0.070 s, a blank pane). A fake is immediate.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let after_send = loop {
+        let capture = tmux
+            .capture(&pane.id, 100)
+            .await
+            .expect("capture after send_keys must not fail");
+        if capture.contains(fixture.sent_keys_capture()) || std::time::Instant::now() >= deadline {
+            break capture;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
     assert!(
         after_send.contains(fixture.sent_keys_capture()),
         "literal sent keys must become visible; expected {:?} in {after_send:?}",

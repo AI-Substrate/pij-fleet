@@ -114,6 +114,14 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0013",
+          "at": "2026-10-30T08:40:00Z",
+          "text": "CI run 41017656947 (head 17f95db, docs-only over the green c239913) failed rust-test twice in `real_tmux_honours_the_shared_contract_inside_its_own_session`: 'literal sent keys must become visible' on a blank pane; JUnit 0.070 s vs 0.139 s on the passing run. A capture-after-send_keys race in the shared contract, not reproducible locally (15/15 green). Fixed by polling the capture for up to 5 s (D-185-4); CI re-run on the new head recorded in the PR.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }
