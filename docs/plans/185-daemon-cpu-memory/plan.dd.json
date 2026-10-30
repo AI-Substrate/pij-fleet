@@ -42,32 +42,42 @@
         {
           "id": "ac-0001",
           "claim": "Diagnosis before fixing. Profile the live machine daemon read-only (macOS `sample`, `vmmap --summary`, `heap`/`footprint` if useful, `pij-rs --json ping`, per-thread CPU) and attribute its CPU and allocation to code paths with numbers, in assets/evidence/diagnosis.md. Say whether it is a regression from a specific merge today (#73 control mode, #81, #83, #84) or a scaling cliff (seats, tap sizes, bg records), with evidence: e.g. replay a captured workload against older builds in a private daemon on a private tmux server. Send the prime the diagnosis before fixing.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0001",
+          "note": "D1-D5 attributed with sample numbers; cliff, not a merge; replay table in lg-0002; D6 found by the replay (lg-0007)."
         },
         {
           "id": "ac-0002",
           "claim": "Fix the named hot paths. Each fix is launch-free and bounded: no per-tick full-directory reads where an index or notification will do, no per-tick open/read of every tap where only changed taps need it, no unbounded buffers. Every fix cites the diagnosis line it answers.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0007",
+          "note": "F1-F6, each citing its D line; launch-free; red/green lg-0003..lg-0007."
         },
         {
           "id": "ac-0003",
           "claim": "Bounded tap files. A pane tap's file cannot grow without bound: rotate or truncate once the daemon has consumed it (keep correctness of offsets), with a stated per-pane cap. Existing oversized files are trimmed safely on startup. Test the offset math across a truncation.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0006",
+          "note": "TAP_TRIM_BYTES 1 MiB at first quiet drain; offsets across truncation tested on real tmux; orphan sweep with per-server ledger."
         },
         {
           "id": "ac-0004",
-          "claim": "Cost (AGENTS.md \u00a7 Resource cost). Before/after on the live machine daemon: CPU% over 60 s, RSS at +15 s/+60 s/+10 min, `pij-rs --json ping` spawns, `just spawn-rate`, and `du -sh ~/.pij-rs/pane-signals`. Targets: idle CPU under 50% of one core with the current fleet, RSS flat (not climbing) and under 1 GB, or a stated, justified number. The prime takes the deployed reading.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "claim": "Cost (AGENTS.md § Resource cost). Before/after on the live machine daemon: CPU% over 60 s, RSS at +15 s/+60 s/+10 min, `pij-rs --json ping` spawns, `just spawn-rate`, and `du -sh ~/.pij-rs/pane-signals`. Targets: idle CPU under 50% of one core with the current fleet, RSS flat (not climbing) and under 1 GB, or a stated, justified number. The prime takes the deployed reading.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008",
+          "note": "Private-daemon after: CPU 62% -> 1.4%, RSS 5.6 GB climbing -> 15 MB flat; live before recorded. Deployed reading: prime, post-merge."
         },
         {
           "id": "ac-0005",
           "claim": "Docs. docs/how describes the daemon's steady-state cost per seat (CPU, memory, file growth), how to measure it, and the tap-file bound.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0010",
+          "note": "docs/how/daemon-cost.md."
         },
         {
           "id": "ac-0006",

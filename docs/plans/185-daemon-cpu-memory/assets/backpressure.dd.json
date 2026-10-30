@@ -20,9 +20,10 @@
           "phase": "ph-9a02",
           "mode": "EXTEND",
           "tier": "computational",
-          "proof": "Profiles in evidence; EXTEND\u2192RUN: pane observer, tmux adapter tap tests, sidecar bg tests; private-daemon workload replays; cargo test -p pij-tmux -p pij-daemon -p pij-sidecars <filters>",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/pane_observer.rs"
+          "proof": "Profiles in evidence; EXTEND→RUN: pane observer, tmux adapter tap tests, sidecar bg tests; private-daemon workload replays; cargo test -p pij-tmux -p pij-daemon -p pij-sidecars <filters>",
+          "state": "checked",
+          "probe": "crates/daemon/src/pane_observer.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0007"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Before/after CPU, RSS, spawns, du; prime reads the docs.",
-          "state": "unchecked",
-          "probe": "ps / pij-rs --json ping"
+          "state": "checked",
+          "probe": "ps / pij-rs --json ping",
+          "receipt": "execution-log.dd.json#entries/lg-0008"
         },
         {
           "id": "bp-0003",

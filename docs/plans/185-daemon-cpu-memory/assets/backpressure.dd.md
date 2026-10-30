@@ -20,8 +20,8 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-AC3: diagnosis, hot-path fixes, bounded taps | ph-9a02 | EXTEND | computational | Profiles in evidence; EXTEND→RUN: pane observer, tmux adapter tap tests, sidecar bg tests; private-daemon workload replays; cargo test -p pij-tmux -p pij-daemon -p pij-sidecars &lt;filters&gt; | [ ] unchecked | — | — | crates/daemon/src/pane_observer.rs |
-| bp-0002 | AC4-AC5: live cost and docs | ph-9a02 | EXISTS | computational | Before/after CPU, RSS, spawns, du; prime reads the docs. | [ ] unchecked | — | — | ps / pij-rs --json ping |
+| bp-0001 | AC1-AC3: diagnosis, hot-path fixes, bounded taps | ph-9a02 | EXTEND | computational | Profiles in evidence; EXTEND→RUN: pane observer, tmux adapter tap tests, sidecar bg tests; private-daemon workload replays; cargo test -p pij-tmux -p pij-daemon -p pij-sidecars &lt;filters&gt; | [x] checked | — | execution-log.dd.json#entries/lg-0007 | crates/daemon/src/pane_observer.rs |
+| bp-0002 | AC4-AC5: live cost and docs | ph-9a02 | EXISTS | computational | Before/after CPU, RSS, spawns, du; prime reads the docs. | [x] checked | — | execution-log.dd.json#entries/lg-0008 | ps / pij-rs --json ping |
 | bp-0003 | AC6: proof, mutants and CI | ph-9a02 | EXISTS | computational | Mutant receipts; rust-check; GitHub CI on the exact head. | [ ] unchecked | — | — | .github/workflows |
 
 <a id="sensors"></a>
