@@ -9,7 +9,7 @@
         "title": "Event replay streams in pages, so a lagging client converges",
         "slug": "events-replay-stream",
         "ordinal": 187,
-        "status": "ready",
+        "status": "shipped",
         "summary": "After plan 185 deployed (pid 63433), the daemon still burns about 200% CPU with RSS swinging between 2.9 and 4.1 GB every few seconds. A sample attributes the busy time to /v1/events: EventBus::subscribe reads the whole spine tail from the client's cursor (sqlx workers plus SqliteRow decode and drop), and the replay is collected in full before the first frame is sent.",
         "backpressure": "assets/backpressure.dd.json#rows",
         "mode": "Full",
@@ -77,8 +77,8 @@
           "claim": "Cost (AGENTS.md § Resource cost). No new loop or launch site. State the replay cost per attach as a backpressure row (rows read per page, pages per attach, memory per attach). Private before/after receipts; the prime takes the deployed reading (CPU, RSS at +15 s, +60 s, +10 min).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0005",
-          "note": "No new loop, timer or launch site. Cost row bp-0004 (rows per page 1,000, pages per attach = ceil(rows behind / 1,000), <= 1 page in memory). Private before/after lg-0002/lg-0005. The deployed reading (+15 s, +60 s, +10 min) is the prime's, after merge."
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0011",
+          "note": "Live (prime, pid 67958): CPU 195% -> 16% and memory 2.2 GB -> 38 MB at +10 min (94%/153 MB at +15 s, 33%/38 MB at +60 s), flat; launches 0.21/s unchanged; no new loop, timer or launch site. Cost row bp-0004 (1,000 rows a page, ceil(rows behind / 1,000) pages per attach, <= 1 page in memory). Private before/after lg-0002/lg-0005. assets/reviews/prime-verification.md."
         },
         {
           "id": "ac-0006",
@@ -97,8 +97,9 @@
           "id": "ph-90cf",
           "title": "Stream the /v1/events replay and stop the per-tick refusal log",
           "brief": "One phase: prove the lagging-cursor loop, stream the replay in bounded pages, log the waiting-source refusal once, measure on a private replay with a chainglass-like client, docs, mutants, PR. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0011"
         }
       ]
     }
