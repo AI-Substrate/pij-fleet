@@ -10,6 +10,8 @@ The daemon was at ~200 % CPU and 8–11 GB RSS. The profile named six causes; no
 
 **A cost test that runs on every PR, against a recorded workload.** Every functional test was green while one attach cost 7 s and 5 GB, and while the spine grew by 300 MB a day. The two things that found the problems were a 10 s `sample` of the live daemon and a private daemon replaying a seeded 3 M-row store with a chainglass-like client. Both are now scripts in the evidence folder (`sample-busy.py`, `private-daemon.sh`), but nobody runs them unless a human notices a fan. Wanted: `just cost-replay` that boots a private daemon on a seeded store of realistic size and fails when CPU, RSS growth or spine growth over 60 s exceeds a stated budget. The replay also caught D6 after F1–F5 looked finished, which no unit test would have done: the RSS high-water was set at boot, not in any code path I had touched.
 
+**Postscript (live reading after deploy).** Taps and spine growth were fixed live. CPU and RSS were not: chainglass's cursor is far behind, so each attach still decodes a huge replay. My replay's client was always 10 events behind the head, so it measured exactly the case F1 fixed and none of the case it didn't. A recorded workload is only as good as the consumers it records: replay the real cursor positions, not a convenient one. Handed to plan 187.
+
 ## Difficulties
 
 | # | severity | what | encoded? |

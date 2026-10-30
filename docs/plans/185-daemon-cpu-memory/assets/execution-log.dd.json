@@ -132,6 +132,14 @@
             "../plan.dd.json#acceptance_criteria/ac-0004",
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0015",
+          "at": "2026-10-30T08:30:00Z",
+          "text": "Merge, deploy and live reading (prime): PR #99 merged at 9f7b36e (CI 41023465167) as main 32b136e. Recheck: merge, 0 blockers. Daemon pid 72069 -> 63433. Before: CPU 260%, RSS 12.4 GB, pane-signals 2.9 GB, daemon.log 751 MB. After: tap sweep removed 150 sinks / 3,143,183,942 bytes, claimed 234 pre-ledger sinks, spared 0; pane-signals 3.0 MB; 22 spine rows since deploy, none bg.lost; launches 0.21/s. NOT fixed live: CPU ~160-205%, RSS 2.9-4.1 GB swinging; a sample puts it in /v1/events subscribe -> SqliteSpine::tail full replay decode (a far-behind cursor; F1 fixed only the head lookup) -> plan 187. NOT as designed: the waiting-source refusal logged 439 times in ~8 min -> plan 187 ac-0004. assets/reviews/prime-verification.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004"
+          ]
         }
       ]
     }
