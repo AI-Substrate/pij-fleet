@@ -65,8 +65,7 @@ impl Spine for TestSpine {
             .lock()
             .expect("test spine mutex")
             .push(since);
-        self.pause_if_armed().await;
-        Ok(self
+        let snapshot = self
             .events
             .lock()
             .expect("test spine mutex")
@@ -74,7 +73,9 @@ impl Spine for TestSpine {
             .filter(|event| event.seq.is_some_and(|seq| seq > since))
             .filter(|event| seat.is_none_or(|seat| event.seat.as_ref() == Some(seat)))
             .cloned()
-            .collect())
+            .collect();
+        self.pause_if_armed().await;
+        Ok(snapshot)
     }
 
     async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>> {
@@ -82,8 +83,10 @@ impl Spine for TestSpine {
             .lock()
             .expect("test spine mutex")
             .push((since, limit));
-        self.pause_if_armed().await;
-        Ok(self
+        // Snapshot, THEN pause: an event published during the pause is not in
+        // this page, so it reaches the subscriber only through a live receiver
+        // created before the read (plan 187 review S2).
+        let snapshot = self
             .events
             .lock()
             .expect("test spine mutex")
@@ -91,7 +94,9 @@ impl Spine for TestSpine {
             .filter(|event| event.seq.is_some_and(|seq| seq > since))
             .take(limit)
             .cloned()
-            .collect())
+            .collect();
+        self.pause_if_armed().await;
+        Ok(snapshot)
     }
 
     async fn newest(&self) -> Result<Seq> {
@@ -206,10 +211,10 @@ async fn every_subscriber_receives_the_same_event_set() {
 async fn a_slow_subscriber_never_blocks_publish_and_reports_drops() {
     let spine: Arc<dyn Spine> = Arc::new(TestSpine::default());
     let bus = EventBus::new(spine, 2).expect("bus");
-    let mut stalled = bus
-        .subscribe(Some(Seq(0)), EventFilter::all())
-        .await
-        .expect("subscribe");
+    // A live-only subscriber counts its drops and keeps going (park notices and
+    // governance re-reconcile on a change). A replaying `subscribe` ends instead:
+    // see a_lag_after_the_final_page_ends_the_stream_and_skips_nothing.
+    let mut stalled = bus.subscribe_live(EventFilter::all());
 
     for number in 1..=20 {
         timeout(
@@ -491,4 +496,82 @@ async fn dropping_a_subscription_mid_replay_reads_no_further_pages() {
         vec![(Seq(0), REPLAY_PAGE_ROWS)],
         "nothing past the page the client was reading"
     );
+}
+
+async fn drain(subscription: &mut pij_daemon::events::Subscription) -> (Vec<u64>, bool) {
+    let mut received = Vec::new();
+    loop {
+        match timeout(Duration::from_millis(100), subscription.next()).await {
+            Ok(Some(event)) => received.push(event.seq.expect("seq").0),
+            Ok(None) => return (received, true),
+            Err(_) => return (received, false),
+        }
+    }
+}
+
+/// Review S3: the live ring overflowing WHILE pages are still being read loses
+/// nothing, because a later page reads what the ring overwrote; the stream
+/// stays open.
+#[tokio::test]
+async fn a_lag_during_a_paged_replay_loses_nothing_and_keeps_the_stream() {
+    let page = REPLAY_PAGE_ROWS as u64;
+    let bus = EventBus::new(Arc::new(TestSpine::default()) as Arc<dyn Spine>, 4).expect("bus");
+    publish_numbered(&bus, 1..=2 * page + 500).await;
+    let mut subscription = bus
+        .subscribe(Some(Seq(0)), EventFilter::all())
+        .await
+        .expect("subscribe");
+    let mut received = Vec::new();
+    for _ in 0..10 {
+        received.push(next_seq(&mut subscription).await);
+    }
+    publish_numbered(&bus, 2 * page + 501..=2 * page + 600).await;
+    let (rest, ended) = drain(&mut subscription).await;
+    received.extend(rest);
+    assert_eq!(received, (1..=2 * page + 600).collect::<Vec<_>>());
+    assert!(!ended, "a covered lag keeps the stream open");
+    publish_numbered(&bus, 2 * page + 601..=2 * page + 601).await;
+    assert_eq!(
+        next_seq(&mut subscription).await,
+        2 * page + 601,
+        "and live"
+    );
+}
+
+/// Review S3: the ring overflowing AFTER the final short page was read, before
+/// the consumer drained it, used to drop events silently. The stream now ends
+/// at the gap, having delivered nothing past it, so the client reconnects from
+/// its last cursor and the spine replays what the ring lost.
+#[tokio::test]
+async fn a_lag_after_the_final_page_ends_the_stream_and_skips_nothing() {
+    let page = REPLAY_PAGE_ROWS as u64;
+    let bus = EventBus::new(Arc::new(TestSpine::default()) as Arc<dyn Spine>, 4).expect("bus");
+    publish_numbered(&bus, 1..=page + 500).await;
+    let mut subscription = bus
+        .subscribe(Some(Seq(0)), EventFilter::all())
+        .await
+        .expect("subscribe");
+    let mut received = Vec::new();
+    for _ in 0..=page {
+        // Taking the first event of page two reads it: the final, short page.
+        received.push(next_seq(&mut subscription).await);
+    }
+    publish_numbered(&bus, page + 501..=page + 510).await;
+    let (rest, ended) = drain(&mut subscription).await;
+    received.extend(rest);
+    let past_the_gap: Vec<u64> = received
+        .iter()
+        .copied()
+        .filter(|seq| *seq > page + 500)
+        .collect();
+    assert_eq!(
+        past_the_gap,
+        Vec::<u64>::new(),
+        "nothing past the gap: delivering those would skip the events the ring lost"
+    );
+    assert!(
+        received.iter().copied().eq(1..=page + 500),
+        "everything up to the gap, once, in order"
+    );
+    assert!(ended, "a lag that may have lost an event ends the stream");
 }

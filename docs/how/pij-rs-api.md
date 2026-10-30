@@ -1018,6 +1018,8 @@ No `since` means live-only. Replay takes a URL-encoded JSON cursor map such as `
 
 A replay is paged (plan 187): the daemon reads `REPLAY_PAGE_ROWS` (1,000) rows by `seq` before it sends the Hello, and the next page only after the client has taken the last one, so the first frame waits for one page whatever the client's lag, and a client that disconnects stops the replay within the page in flight. After a page shorter than the limit the stream continues live; the live subscription is opened before the first page, and seq comparison drops anything both legs carry. The frame format, the cursor contract and the `cursor_reset` refusal (HTTP 409) for a cursor beyond the spine are unchanged.
 
+**A consumer may see the stream end, and should reconnect from its last cursor.** The daemon ends the body with an error, never silently, when a replay page after the first fails, or when its live buffer (`event_buffer_capacity`) overflowed after the replay so that an event may be missing: it stops at the gap instead of skipping it, and the reconnect replays the gap from the spine. A buffer overflow during the replay is covered by the later pages and does not end the stream. chainglass and the OMP/pi extension already reconnect from their cursors; `pij-rs tail` reports the error.
+
 All producers append through the sole EventBus/store ordering seam, commit before broadcasting the returned seq, and preserve replay/live boundary ordering without duplicate/skipped rows. Caller cancellation after admission does not abandon commit/broadcast; shutdown joins admitted producers before flush. Destructive governance mutations commit state and spine event atomically or neither. Consumers must not advance a cursor past an unemitted row.
 
 ## Unsupported status

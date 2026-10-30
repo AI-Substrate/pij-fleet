@@ -220,6 +220,9 @@ impl EventBus {
             filter,
             last_seq: since,
             dropped: Arc::new(AtomicU64::new(0)),
+            ends_on_gap: true,
+            lagged: false,
+            ended: false,
         };
         // Plan 187: one page, never the backlog. Collecting the whole tail here
         // cost 5.6 s and gigabytes from cursor 0 on the live 4.2M-row spine, and
@@ -261,6 +264,9 @@ impl EventBus {
             filter,
             last_seq: Seq(0),
             dropped: Arc::new(AtomicU64::new(0)),
+            ends_on_gap: false,
+            lagged: false,
+            ended: false,
         }
     }
 }
@@ -330,10 +336,20 @@ pub struct Subscription {
     filter: EventFilter,
     last_seq: Seq,
     dropped: Arc<AtomicU64>,
+    /// A replaying subscription ends at a live gap; a live-only one counts it.
+    ends_on_gap: bool,
+    /// The live ring overwrote events since the last one this stream passed.
+    lagged: bool,
+    /// Ended for good: a failed page or a gap. Polling again yields nothing.
+    ended: bool,
 }
 
 impl Subscription {
-    /// Number of live events discarded because this subscriber lagged.
+    /// Number of live events the ring overwrote before this subscriber read them.
+    ///
+    /// It counts every overwrite, including those during a replay that later
+    /// pages covered, so it measures pressure, not loss. A replaying
+    /// subscription never loses one silently: it ends instead (see `poll_next`).
     pub fn dropped_count(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
     }
@@ -365,6 +381,9 @@ impl Stream for Subscription {
     type Item = Event;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.ended {
+            return Poll::Ready(None);
+        }
         loop {
             if let Some(event) = self.replay.pop_front() {
                 return Poll::Ready(Some(event));
@@ -390,6 +409,7 @@ impl Stream for Subscription {
                 eprintln!("pij-rs: event replay after {} failed: {error}", since.0);
                 self.paging = None;
                 self.replay.clear();
+                self.ended = true;
                 return Poll::Ready(None);
             }
         }
@@ -406,6 +426,17 @@ impl Stream for Subscription {
                     if seq <= self.last_seq {
                         continue;
                     }
+                    // After a lag, the ring kept only the newest events. If the
+                    // first new one is not the next seq, events between are
+                    // missing here; end instead of skipping them, and the client's
+                    // reconnect from `last_seq` replays them from the spine. A lag
+                    // that only overwrote what pages already read leaves no gap,
+                    // so a lag during the replay stays lossless (review S3).
+                    if self.lagged && self.ends_on_gap && seq.0 != self.last_seq.0 + 1 {
+                        self.ended = true;
+                        return Poll::Ready(None);
+                    }
+                    self.lagged = false;
                     self.last_seq = seq;
                     if self.filter.matches(&event) {
                         return Poll::Ready(Some(event));
@@ -413,6 +444,7 @@ impl Stream for Subscription {
                 }
                 Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(count)))) => {
                     self.dropped.fetch_add(count, Ordering::Relaxed);
+                    self.lagged = true;
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
                 Poll::Pending => return Poll::Pending,

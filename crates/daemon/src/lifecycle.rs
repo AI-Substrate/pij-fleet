@@ -218,6 +218,11 @@ impl RepeatedFailureLog {
         let mut lines = Vec::new();
         let mut current = BTreeMap::new();
         for (source, text) in failures {
+            // Each job yields at most one failure a tick today (every branch of
+            // the tick `continue`s, and notify and pump visit disjoint jobs), so
+            // the same-tick check is a guard, not a path. If a job ever yields two
+            // different texts in one tick, the last one is remembered and the
+            // first logs again every tick: key by (job, step) then.
             if last.get(&source) != Some(&text) && current.get(&source) != Some(&text) {
                 lines.push(text.clone());
             }

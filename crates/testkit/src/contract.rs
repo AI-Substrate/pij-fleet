@@ -353,9 +353,6 @@ pub async fn spine_contract(spine: &dyn Spine) {
     assert_eq!(found.payload, older_message.payload);
 }
 
-/// Every promise the [`Queue`] port makes (R4).
-///
-/// # Panics
 /// Every promise [`Spine::tail_page`] makes: every seat, `seq` order, at most
 /// `limit`, strictly after the cursor, and pages that neither repeat nor skip an
 /// event when each page's last `seq` is the next cursor, including a page that
@@ -392,9 +389,17 @@ pub async fn spine_page_contract(spine: &dyn Spine) {
     assert_eq!(first.len(), 3, "a page holds at most `limit` events");
     let mut paged = Vec::new();
     let mut cursor = Seq(0);
+    let mut short = false;
     loop {
         let page = spine.tail_page(cursor, 3).await.expect("page");
         assert!(page.len() <= 3, "a page never exceeds its limit");
+        // A replay stops paging at the first short page, so a short page must
+        // be the end of the spine: only an empty page may follow it.
+        assert!(
+            !short || page.is_empty(),
+            "a page is short only at the end of the spine"
+        );
+        short = page.len() < 3;
         let Some(last) = page.last() else { break };
         cursor = last.seq.expect("a paged event carries its sequence");
         paged.extend(page.iter().map(|event| event.seq.expect("seq")));
@@ -496,6 +501,9 @@ pub async fn spine_window_contract(spine: &dyn Spine) {
     );
 }
 
+/// Every promise the [`Queue`] port makes (R4).
+///
+/// # Panics
 /// On the first broken promise, naming which one.
 pub async fn queue_contract(queue: &dyn Queue) {
     let kinds = vec!["deliver".to_string()];

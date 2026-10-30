@@ -4914,6 +4914,105 @@ async fn a_multi_page_replay_streams_every_frame_once_then_stays_live() {
     server.abort();
 }
 
+/// A spine whose `fail_on`-th page read fails.
+struct FailingPageSpine {
+    inner: FakeSpine,
+    page_reads: AtomicUsize,
+    fail_on: usize,
+}
+
+#[async_trait]
+impl Spine for FailingPageSpine {
+    async fn append(&self, event: Event) -> Result<Seq> {
+        self.inner.append(event).await
+    }
+    async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>> {
+        self.inner.tail(seat, since).await
+    }
+    async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>> {
+        if self.page_reads.fetch_add(1, Ordering::SeqCst) + 1 == self.fail_on {
+            return Err(PijError::Adapter {
+                adapter: "test/failing-page".into(),
+                message: "injected: database is locked".into(),
+            });
+        }
+        self.inner.tail_page(since, limit).await
+    }
+    async fn newest(&self) -> Result<Seq> {
+        self.inner.newest().await
+    }
+    async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
+        self.inner.latest_matching(seat, kinds).await
+    }
+    async fn latest_matching_message(
+        &self,
+        seat: &SeatId,
+        kind: &str,
+        msg_id: &str,
+    ) -> Result<Option<Event>> {
+        self.inner.latest_matching_message(seat, kind, msg_id).await
+    }
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        self.inner.matching_since(seat, window).await
+    }
+}
+
+/// Review S1: a replay page that fails after the first ends the WHOLE body,
+/// as an error, even with a federated remote leg that never ends. Before, the
+/// local leg ended alone and `merge` waited on the remote one: a 200 left open
+/// and silent, which a client that does not recycle reads as healthy.
+#[tokio::test]
+async fn a_failed_replay_page_ends_the_body_even_with_a_remote_leg() {
+    let page = crate::events::REPLAY_PAGE_ROWS as u64;
+    let spine = Arc::new(FailingPageSpine {
+        inner: FakeSpine::new(),
+        page_reads: AtomicUsize::new(0),
+        fail_on: 2,
+    });
+    let bus = crate::events::EventBus::new(spine, 1_024).expect("bus");
+    let event = |at: u64| Event {
+        seq: None,
+        v: wire::EVENT_VERSION,
+        at,
+        kind: "message".to_string(),
+        seat: None,
+        payload: "{}".to_string(),
+    };
+    for at in 1..=page + 5 {
+        bus.publish(event(at)).await.expect("publish");
+    }
+    let local = bus
+        .subscribe(Some(Seq(0)), EventFilter::all())
+        .await
+        .expect("the first page reads")
+        .map(|event| StreamFrame::Event {
+            machine: "workstation".to_string(),
+            cursor: event.seq.expect("seq").0,
+            event,
+        });
+    let mut body = event_body(local, Some(tokio_stream::pending::<StreamFrame>()));
+    for _ in 0..page {
+        body.next().await.expect("page one").expect("a frame");
+    }
+    bus.publish(event(page + 6)).await.expect("publish live");
+
+    let after = tokio::time::timeout(Duration::from_millis(500), body.next())
+        .await
+        .expect("the body must end, not hang open and silent");
+    let error = after
+        .expect("an error item, not a clean end that reads as complete")
+        .expect_err("no frame after the failed page");
+    assert!(
+        error.to_string().contains("reconnect"),
+        "the error tells the client what to do: {error}"
+    );
+    assert!(body.next().await.is_none(), "and then the body is finished");
+}
+
 #[tokio::test]
 async fn explicit_since_replays_then_stays_live() {
     let spine = Arc::new(FakeSpine::new());

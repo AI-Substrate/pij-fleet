@@ -81,6 +81,24 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-30T10:10:00Z",
+          "text": "Review of #102 (assets/reviews: /Users/jordanknight/pi-hacking/review-102-pij-review-pr102.md, merge after fixes, 0 blockers). RED on 0b05852 behaviour (assets/evidence/review-red.txt): S1 a_failed_replay_page_ends_the_body_even_with_a_remote_leg -> the body must end, not hang open and silent: Elapsed(()); S3 a_lag_after_the_final_page_ends_the_stream_and_skips_nothing -> left [1507, 1508, 1509, 1510] right [] (delivered past a gap of 1501-1506). S2: overlap test now snapshots then pauses; the reviewer mutant (live receiver after the first page) survives the 0b05852 test and fails the new one (mutants-review.txt S2-control vs S2-receiver-after-first-page).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0010",
+          "at": "2026-10-30T10:30:00Z",
+          "text": "Review fixes green: S1 event_body ends the whole body with an io error when the local leg ends (failed page, gap, shutdown), remote leg or not; S3 a replaying subscription ends at a post-lag seq gap instead of skipping it (lag during the replay stays lossless, live-only subscribers keep counting drops); N1 page contract asserts a short page is followed only by an empty one; N2 Queue doc header moved back; N3 dropped_count documented as pressure, not loss; N4 comment. docs/how/pij-rs-api.md: a consumer may see the stream end and should reconnect from its cursor. Mutants 10/10 killed incl. S1 x2, S2, S3 x2 (mutants-review.txt), control survives on the old test. cargo test -p pij-store -p pij-daemon -p pij-testkit -p pij-sidecars exit 0 (63 binaries, 0 failed); clippy -D warnings, fmt clean.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }
