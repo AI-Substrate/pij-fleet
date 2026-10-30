@@ -145,6 +145,14 @@ pub trait Spine: Send + Sync {
     /// Events after `since`, oldest first, optionally only for one seat.
     async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>>;
 
+    /// At most `limit` events after `since`, oldest first, from every seat.
+    ///
+    /// The replay read for an event stream: a keyset page by `seq`, so its cost
+    /// follows `limit`, never the backlog behind the cursor. Required, like
+    /// [`Self::newest`]: a default of `tail(None, since)` truncated would read
+    /// the whole backlog for one page (plan 187).
+    async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>>;
+
     /// The highest assigned sequence, or `Seq(0)` for an empty spine.
     ///
     /// One indexed read. Required, not defaulted to `tail(None, Seq(0))`: that

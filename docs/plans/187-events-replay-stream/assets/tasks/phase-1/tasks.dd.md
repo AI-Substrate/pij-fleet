@@ -35,9 +35,9 @@ One coder implements impl-guide tk-0001: diagnosis, red tests, paged replay, log
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Diagnosis on a private daemon | — | ph-90cf | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Red tests | — | ph-90cf | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Paged replay and log once | — | ph-90cf | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Diagnosis on a private daemon | — | ph-90cf | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Red tests | — | ph-90cf | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Paged replay and log once | — | ph-90cf | [x] checked | — | ../../execution-log.dd.json#entries/lg-0006 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | Convergence, cost, docs, mutants, PR | — | ph-90cf | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -48,19 +48,19 @@ One coder implements impl-guide tk-0001: diagnosis, red tests, paged replay, log
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | diagnosis.md proves or refutes the loop with numbers | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0001 | diagnosis.md proves or refutes the loop with numbers | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | Each new test fails on main for the right reason (quoted) | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0002 | Each new test fails on main for the right reason (quoted) | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | First frame fast, memory bounded, no gaps or repeats; one log line | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | First frame fast, memory bounded, no gaps or repeats; one log line | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 

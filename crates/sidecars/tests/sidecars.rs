@@ -884,6 +884,14 @@ impl Spine for FailBindingSpine {
     async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<pij_core::model::Event>> {
         self.inner.tail(seat, since).await
     }
+    async fn tail_page(
+        &self,
+        since: pij_core::model::Seq,
+        limit: usize,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.tail_page(since, limit).await
+    }
+
     async fn newest(&self) -> Result<Seq> {
         self.inner.newest().await
     }

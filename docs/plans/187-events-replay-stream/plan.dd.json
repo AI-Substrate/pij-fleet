@@ -43,36 +43,46 @@
         {
           "id": "ac-0001",
           "claim": "Diagnosis. Prove or refute the lagging-cursor loop before fixing: on a private daemon with a seeded spine like the live one (about 3M rows, mostly bg.lost behind the client's cursor), drive a client that behaves like chainglass (5 s recycle, cursor advances only on the five resume kinds) and record time-to-first-frame, whether the cursor ever advances, and daemon CPU/RSS. Read-only on the live daemon: you may read daemon.log and run read-only sqlite queries, nothing else. If the hypothesis is wrong, say so with evidence and find the real cause from the live sample before fixing. Write assets/evidence/diagnosis.md.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0002",
+          "note": "Proven: main never sends a frame (not even hello) to a chainglass-like client from cursor 0 (12 connections, cursor 0 -> 0, ~220% CPU, RSS -> 13.3 GB); one attach 5.61 s > 5 s recycle. assets/evidence/diagnosis.md; lg-0001, lg-0002."
         },
         {
           "id": "ac-0002",
-          "claim": "Streaming replay. subscribe/the /v1/events handler sends the replay in bounded keyset pages by seq (state the page size), writing each page before reading the next, then switches to live with the existing seq dedupe. A client gets its first frame within a stated bound regardless of backlog; daemon memory for one attach is bounded by a page. No event is missed or duplicated across pages or at the replay\u2192live switch, including events appended during the replay, a cursor at 0, at the head, and beyond it (the CursorBeyondSpine refusal stays). Client disconnect stops the replay promptly (no reading the rest of the backlog into a closed socket).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "claim": "Streaming replay. subscribe/the /v1/events handler sends the replay in bounded keyset pages by seq (state the page size), writing each page before reading the next, then switches to live with the existing seq dedupe. A client gets its first frame within a stated bound regardless of backlog; daemon memory for one attach is bounded by a page. No event is missed or duplicated across pages or at the replay→live switch, including events appended during the replay, a cursor at 0, at the head, and beyond it (the CursorBeyondSpine refusal stays). Client disconnect stops the replay promptly (no reading the rest of the backlog into a closed socket).",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0006",
+          "note": "REPLAY_PAGE_ROWS = 1,000; first page read before the Hello, next only when drained (crates/daemon/src/events/mod.rs subscribe, Subscription::poll_next); Spine::tail_page keyset by seq. Red lg-0003, green lg-0006, mutants lg-0007. Cursor beyond the spine still refused (cursor_refusal_tests, events_bus)."
         },
         {
           "id": "ac-0003",
           "claim": "Convergence. With the chainglass-like client from ac-0001 on the 3M-row seed, the cursor reaches the head and then each recycle replays only new rows. Record the time to converge and steady-state CPU/RSS.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005",
+          "note": "Cursor 0 -> head in 3 connections (15 s) on the 4,157,703-row seed, then 2 frames a recycle (rows after the last resume kind, chainglass's own cursor rule); steady 1-2% CPU, 36 MB RSS."
         },
         {
           "id": "ac-0004",
           "claim": "Log once. The waiting-source refusal (background reconciliation of a source whose owner is gone) logs once per source per boot, and again only if the reason changes or the source ends. Find why plan 185's RepeatedFailureLog didn't hold it live (439 lines in 8 minutes) and test that exact path.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004",
+          "note": "The live log already held: pid 63433 logged the refusal once at boot; the 439 was the pre-bounce daemon's minute 08:11 (lg-0001). The change makes plan 185's log per source (a second stranded source is logged; another failure never re-logs it). Red/green lg-0004, mutant lg-0007. Not a live fix."
         },
         {
           "id": "ac-0005",
-          "claim": "Cost (AGENTS.md \u00a7 Resource cost). No new loop or launch site. State the replay cost per attach as a backpressure row (rows read per page, pages per attach, memory per attach). Private before/after receipts; the prime takes the deployed reading (CPU, RSS at +15 s, +60 s, +10 min).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "claim": "Cost (AGENTS.md § Resource cost). No new loop or launch site. State the replay cost per attach as a backpressure row (rows read per page, pages per attach, memory per attach). Private before/after receipts; the prime takes the deployed reading (CPU, RSS at +15 s, +60 s, +10 min).",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005",
+          "note": "No new loop, timer or launch site. Cost row bp-0004 (rows per page 1,000, pages per attach = ceil(rows behind / 1,000), <= 1 page in memory). Private before/after lg-0002/lg-0005. The deployed reading (+15 s, +60 s, +10 min) is the prime's, after merge."
         },
         {
           "id": "ac-0006",
-          "claim": "Docs and proof. docs/how/daemon-cost.md and docs/how/pij-rs-api.md describe paged replay and the first-frame bound. Each behaviour change has a test RED on main (quoted) and green on the branch. Mutants: collect the whole replay before sending; page boundary drops or repeats a row; no dedupe at the replay\u2192live switch; refusal logged every tick. Each turns its test red, then is restored. Scoped cargo tests, clippy -D warnings, fmt; CI green on the exact head. Anything not run is NOT RUN with its reason.",
+          "claim": "Docs and proof. docs/how/daemon-cost.md and docs/how/pij-rs-api.md describe paged replay and the first-frame bound. Each behaviour change has a test RED on main (quoted) and green on the branch. Mutants: collect the whole replay before sending; page boundary drops or repeats a row; no dedupe at the replay→live switch; refusal logged every tick. Each turns its test red, then is restored. Scoped cargo tests, clippy -D warnings, fmt; CI green on the exact head. Anything not run is NOT RUN with its reason.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         }

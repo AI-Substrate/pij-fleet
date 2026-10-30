@@ -39,6 +39,11 @@ pub const MATCHING_AFTER_SQL: &str = "SELECT seq, v, at, kind, seat, payload FRO
      INDEXED BY spine_by_seat_kind_at \
      WHERE seat = ?1 AND kind = ?2 AND at > ?3 ORDER BY at, seq LIMIT ?4";
 
+/// One replay page: a keyset seek on the rowid (`seq` is the rowid), so a page
+/// costs the rows it returns wherever its cursor sits in a large backlog.
+pub const TAIL_PAGE_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     WHERE seq > ?1 ORDER BY seq LIMIT ?2";
+
 /// An owned, lazy registry transaction returning its committed event and binding.
 /// The publisher acquires its ordering lock before polling, then owns this future
 /// independently of the requesting handler so cancellation cannot strand a commit.
@@ -180,6 +185,24 @@ impl Spine for SqliteSpine {
         .map_err(adapter_error)?;
 
         rows.iter().map(decode_event).collect()
+    }
+
+    async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>> {
+        require_current_schema(&self.pool).await?;
+        let since = i64::try_from(since.0).map_err(|_| PijError::Adapter {
+            adapter: "store/spine".to_string(),
+            message: "tail_page cursor exceeds a signed 64-bit integer".to_string(),
+        })?;
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        sqlx::query(TAIL_PAGE_SQL)
+            .bind(since)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .iter()
+            .map(decode_event)
+            .collect()
     }
 
     async fn newest(&self) -> Result<Seq> {

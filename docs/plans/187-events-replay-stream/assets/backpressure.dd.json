@@ -21,8 +21,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: events/subscribe tests in crates/daemon and crates/store spine paging; private daemon replay with a chainglass-like client; cargo test -p pij-store -p pij-daemon <filters>",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/events/mod.rs"
+          "state": "checked",
+          "probe": "crates/daemon/src/events/mod.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0006"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Log-count test; private CPU/RSS and per-attach rows/memory receipts; prime's deployed reading.",
-          "state": "unchecked",
-          "probe": "pij-rs --json ping"
+          "state": "checked",
+          "probe": "pij-rs --json ping",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "bp-0003",
@@ -43,6 +45,17 @@
           "proof": "Mutant receipts; clippy; fmt; GitHub CI on the exact head.",
           "state": "unchecked",
           "probe": ".github/workflows"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC5: replay cost per attach",
+          "phase": "ph-90cf",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Per attach: one MAX(seq) read, then ceil(rows behind / 1,000) page reads (REPLAY_PAGE_ROWS = 1,000), each a rowid seek (SEARCH spine_events USING INTEGER PRIMARY KEY (rowid>?)) costing its 1,000 rows; the first page is read before the Hello, each later one only after the client took the last; at most one page (~0.4 MB at ~370 B a row) in memory; a disconnect stops within the page in flight. No loop, timer, poll or launch site added; scales with attaches x rows behind, not with seats or ticks. Private: main ~220% CPU and 6 -> 13.3 GB RSS; branch 1-2% CPU, 36 MB RSS after a 15 s convergence. Deployed reading: the prime.",
+          "state": "checked",
+          "probe": "docs/plans/187-events-replay-stream/assets/evidence/private-replay.sh",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
         }
       ]
     },

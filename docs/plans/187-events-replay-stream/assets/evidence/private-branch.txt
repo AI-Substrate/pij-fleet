@@ -1,0 +1,25 @@
+label=branch-c0 bin=pij-rs-branch pid=23968 head=4157703 start_cursor=0 client_seconds=120
+idle +10s cpu_s=0.17 rss_kb=16512
++5s cpu_pct=135 rss_kb=35920
++11s cpu_pct=136 rss_kb=35952
++17s cpu_pct=27 rss_kb=35968
++23s cpu_pct=2 rss_kb=35968
++28s cpu_pct=1 rss_kb=35968
++34s cpu_pct=2 rss_kb=35968
++40s cpu_pct=1 rss_kb=35968
++45s cpu_pct=1 rss_kb=35968
++51s cpu_pct=1 rss_kb=36032
++56s cpu_pct=1 rss_kb=36032
++62s cpu_pct=1 rss_kb=36032
++67s cpu_pct=1 rss_kb=36032
++73s cpu_pct=1 rss_kb=36032
++78s cpu_pct=1 rss_kb=36032
++83s cpu_pct=1 rss_kb=36032
++89s cpu_pct=1 rss_kb=36032
++95s cpu_pct=2 rss_kb=36032
++100s cpu_pct=1 rss_kb=36032
++106s cpu_pct=1 rss_kb=36032
++111s cpu_pct=1 rss_kb=36032
++118s cpu_pct=1 rss_kb=36032
++123s cpu_pct=1 rss_kb=36032
+daemon_log_lines=       9 reconciliation_lines=0

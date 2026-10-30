@@ -356,6 +356,76 @@ pub async fn spine_contract(spine: &dyn Spine) {
 /// Every promise the [`Queue`] port makes (R4).
 ///
 /// # Panics
+/// Every promise [`Spine::tail_page`] makes: every seat, `seq` order, at most
+/// `limit`, strictly after the cursor, and pages that neither repeat nor skip an
+/// event when each page's last `seq` is the next cursor, including a page that
+/// ends exactly at the head and a cursor at or beyond it.
+///
+/// # Panics
+/// On the first broken promise, naming which one.
+pub async fn spine_page_contract(spine: &dyn Spine) {
+    assert!(
+        spine
+            .tail_page(Seq(0), 3)
+            .await
+            .expect("empty page")
+            .is_empty(),
+        "an empty spine pages as an empty list, not an error"
+    );
+    let mut appended = Vec::new();
+    for number in 0..7_u64 {
+        let seat = (number % 3 != 0).then(|| SeatId::from(format!("pij-page-{}", number % 2)));
+        let seq = spine
+            .append(Event {
+                seq: None,
+                v: 1,
+                at: 1_724_800_000_000 + number,
+                kind: "page".to_string(),
+                seat,
+                payload: number.to_string(),
+            })
+            .await
+            .expect("append");
+        appended.push(seq);
+    }
+    let first = spine.tail_page(Seq(0), 3).await.expect("first page");
+    assert_eq!(first.len(), 3, "a page holds at most `limit` events");
+    let mut paged = Vec::new();
+    let mut cursor = Seq(0);
+    loop {
+        let page = spine.tail_page(cursor, 3).await.expect("page");
+        assert!(page.len() <= 3, "a page never exceeds its limit");
+        let Some(last) = page.last() else { break };
+        cursor = last.seq.expect("a paged event carries its sequence");
+        paged.extend(page.iter().map(|event| event.seq.expect("seq")));
+    }
+    assert_eq!(
+        paged, appended,
+        "pages chained by their last seq cover every seat in order, once"
+    );
+    let head = *appended.last().expect("appended");
+    assert!(
+        spine.tail_page(head, 3).await.expect("at head").is_empty(),
+        "a cursor at the head pages nothing"
+    );
+    assert!(
+        spine
+            .tail_page(Seq(head.0 + 5), 3)
+            .await
+            .expect("beyond head")
+            .is_empty(),
+        "a cursor beyond the head pages nothing; refusing it is the caller's job"
+    );
+    let tail = spine.tail_page(appended[5], 3).await.expect("last page");
+    assert_eq!(
+        tail.iter()
+            .map(|event| event.seq.expect("seq"))
+            .collect::<Vec<_>>(),
+        vec![appended[6]],
+        "a short page is the rest of the spine"
+    );
+}
+
 /// Every promise [`Spine::matching_since`] makes, in one place: one seat, one
 /// kind, `(at, seq)` order whatever the append order, an inclusive first page,
 /// and pages that neither repeat nor skip an event, including equal-time ties.

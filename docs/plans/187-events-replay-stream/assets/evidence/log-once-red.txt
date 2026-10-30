@@ -1,0 +1,7 @@
+== red: tick_failures/tick_log_lines seam added with main 32b136e's log semantics (RepeatedFailureLog over the tick's first error)
+test background::tests::each_stranded_sources_refusal_is_logged_once_per_source ... FAILED
+thread 'background::tests::each_stranded_sources_refusal_is_logged_once_per_source' (252184321) panicked at crates/daemon/src/background.rs:2556:9:
+assertion `left == right` failed: each stranded source once, however many ticks
+  left: ["background/refused: owner owner of source bg-a is gone; its final turn waits"]
+ right: ["background/refused: owner owner of source bg-a is gone; its final turn waits", "background/refused: owner owner of source bg-b is gone; its final turn waits"]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 660 filtered out; finished in 0.04s

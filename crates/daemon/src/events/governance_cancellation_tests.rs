@@ -133,6 +133,14 @@ impl Spine for PauseAfterAppend {
         self.raw.tail(seat, since).await
     }
 
+    async fn tail_page(
+        &self,
+        since: pij_core::model::Seq,
+        limit: usize,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.raw.tail_page(since, limit).await
+    }
+
     async fn newest(&self) -> Result<Seq> {
         self.raw.newest().await
     }

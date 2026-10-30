@@ -1,0 +1,14 @@
+label=main-c0 bin=pij-rs-main pid=98439 head=4157703 start_cursor=0 client_seconds=60
+idle +10s cpu_s=0.15 rss_kb=16432
++6s cpu_pct=144 rss_kb=5971360
++12s cpu_pct=219 rss_kb=7693168
++18s cpu_pct=200 rss_kb=6750448
++23s cpu_pct=210 rss_kb=6922352
++29s cpu_pct=228 rss_kb=7881984
++34s cpu_pct=215 rss_kb=8932960
++40s cpu_pct=237 rss_kb=10234720
++46s cpu_pct=228 rss_kb=11515856
++52s cpu_pct=245 rss_kb=12222720
++58s cpu_pct=233 rss_kb=12770928
++64s cpu_pct=131 rss_kb=13323232
+daemon_log_lines=       9 reconciliation_lines=0

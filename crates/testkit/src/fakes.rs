@@ -339,6 +339,21 @@ impl Spine for FakeSpine {
             .collect())
     }
 
+    async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>> {
+        let state = self.state.lock().expect("fake spine mutex");
+        Ok(state
+            .events
+            .iter()
+            .filter(|(seq, _)| *seq > since)
+            .take(limit)
+            .map(|(seq, event)| {
+                let mut event = event.clone();
+                event.seq = Some(*seq);
+                event
+            })
+            .collect())
+    }
+
     async fn newest(&self) -> Result<Seq> {
         Ok(Seq(self.state.lock().expect("fake spine mutex").seq))
     }
@@ -491,6 +506,14 @@ impl Spine for CountingSpine {
             });
         }
         self.inner.tail(seat, since).await
+    }
+
+    async fn tail_page(
+        &self,
+        since: pij_core::model::Seq,
+        limit: usize,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.tail_page(since, limit).await
     }
 
     async fn newest(&self) -> Result<Seq> {

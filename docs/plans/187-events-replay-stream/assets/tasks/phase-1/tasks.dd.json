@@ -24,32 +24,35 @@
           "id": "tk-0001",
           "title": "Diagnosis on a private daemon",
           "phase": "ph-90cf",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
-          "done": "tasks.dd.json#done_when/tk-0001"
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../execution-log.dd.json#entries/lg-0002"
         },
         {
           "id": "tk-0002",
           "title": "Red tests",
           "phase": "ph-90cf",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0006"
           ],
-          "done": "tasks.dd.json#done_when/tk-0002"
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../execution-log.dd.json#entries/lg-0004"
         },
         {
           "id": "tk-0003",
           "title": "Paged replay and log once",
           "phase": "ph-90cf",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
           ],
-          "done": "tasks.dd.json#done_when/tk-0003"
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "receipt": "../../execution-log.dd.json#entries/lg-0006"
         },
         {
           "id": "tk-0004",
@@ -72,7 +75,7 @@
           {
             "id": "dw-0001",
             "assertion": "diagnosis.md proves or refutes the loop with numbers",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -80,7 +83,7 @@
           {
             "id": "dw-0002",
             "assertion": "Each new test fails on main for the right reason (quoted)",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],
@@ -88,7 +91,7 @@
           {
             "id": "dw-0003",
             "assertion": "First frame fast, memory bounded, no gaps or repeats; one log line",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
