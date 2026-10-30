@@ -85,7 +85,7 @@
         {
           "id": "lg-0009",
           "at": "2026-10-30T10:10:00Z",
-          "text": "Review of #102 (assets/reviews: /Users/jordanknight/pi-hacking/review-102-pij-review-pr102.md, merge after fixes, 0 blockers). RED on 0b05852 behaviour (assets/evidence/review-red.txt): S1 a_failed_replay_page_ends_the_body_even_with_a_remote_leg -> the body must end, not hang open and silent: Elapsed(()); S3 a_lag_after_the_final_page_ends_the_stream_and_skips_nothing -> left [1507, 1508, 1509, 1510] right [] (delivered past a gap of 1501-1506). S2: overlap test now snapshots then pauses; the reviewer mutant (live receiver after the first page) survives the 0b05852 test and fails the new one (mutants-review.txt S2-control vs S2-receiver-after-first-page).",
+          "text": "Review of #102 (assets/reviews/review-pr102.md: merge after fixes, 0 blockers). RED on 0b05852 behaviour (assets/evidence/review-red.txt): S1 a_failed_replay_page_ends_the_body_even_with_a_remote_leg -> the body must end, not hang open and silent: Elapsed(()); S3 a_lag_after_the_final_page_ends_the_stream_and_skips_nothing -> left [1507, 1508, 1509, 1510] right [] (delivered past a gap of 1501-1506). S2: overlap test now snapshots then pauses; the reviewer mutant (live receiver after the first page) survives the 0b05852 test and fails the new one (mutants-review.txt S2-control vs S2-receiver-after-first-page).",
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0002",
             "../plan.dd.json#acceptance_criteria/ac-0006"
@@ -98,6 +98,15 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0002",
             "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        },
+        {
+          "id": "lg-0011",
+          "at": "2026-10-30T09:45:00Z",
+          "text": "Prime verification (assets/reviews/prime-verification.md): recheck at b207016 merge, 0 blockers (review-pr102-recheck.md); R1 filed as issue #103. PR #102 merged at b207016 (CI 41032623616) as main 4dc485f; daemon redeployed pid 63433 -> 67958 at 19:33:22. Live (top): before 195% CPU, 2.2 GB (2.9-4.1 GB swinging earlier); after +15 s 94% / 153 MB, +60 s 33% / 38 MB, +10 min 16% / 38 MB; launches 0.21/s; chainglass connected (2 node connections).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#phases/ph-90cf"
           ]
         }
       ]
