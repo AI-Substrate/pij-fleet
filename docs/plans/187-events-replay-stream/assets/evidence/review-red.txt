@@ -1,0 +1,20 @@
+== review S1/S3 red: tests added on head 0b05852's behaviour (event_body seam = the old plain merge; Subscription unchanged)
+test replay_and_live_overlap_is_joined_once_by_store_sequence ... ok
+test every_subscriber_receives_the_same_event_set ... ok
+test a_slow_subscriber_never_blocks_publish_and_reports_drops ... ok
+test a_cursor_attach_never_reads_the_spine_before_its_cursor ... ok
+test a_replay_reads_one_page_before_its_first_event_and_the_next_only_when_drained ... ok
+test dropping_a_subscription_mid_replay_reads_no_further_pages ... ok
+test events_appended_during_a_paged_replay_arrive_once_in_order ... ok
+test a_backlog_of_exactly_one_page_and_a_cursor_at_the_head_switch_to_live_once ... ok
+test a_lag_after_the_final_page_ends_the_stream_and_skips_nothing ... FAILED
+test a_lag_during_a_paged_replay_loses_nothing_and_keeps_the_stream ... ok
+thread 'a_lag_after_the_final_page_ends_the_stream_and_skips_nothing' (252557598) panicked at crates/daemon/tests/events_bus.rs:567:5:
+assertion `left == right` failed: nothing past the gap: delivering those would skip the events the ring lost
+  left: [1507, 1508, 1509, 1510]
+ right: []
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+test http::tests::a_failed_replay_page_ends_the_body_even_with_a_remote_leg ... FAILED
+thread 'http::tests::a_failed_replay_page_ends_the_body_even_with_a_remote_leg' (252557680) panicked at crates/daemon/src/http/tests.rs:5005:10:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 662 filtered out; finished in 0.53s
+the body must end, not hang open and silent: Elapsed(())

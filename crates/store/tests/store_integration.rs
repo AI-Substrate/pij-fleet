@@ -18,7 +18,9 @@ use pij_core::model::{
 use pij_core::ports::{Registry, SeatFilter, Spine};
 use pij_store::{SqliteRegistry, SqliteSpine};
 use pij_testkit::FreshStore;
-use pij_testkit::contract::{registry_contract, spine_contract, spine_window_contract};
+use pij_testkit::contract::{
+    registry_contract, spine_contract, spine_page_contract, spine_window_contract,
+};
 use sqlx::{Column, Row};
 
 fn native_copilot(id: &str) -> SeatDescriptor {
@@ -543,6 +545,37 @@ async fn the_sqlite_spine_honours_the_same_window_contract_the_fake_does() {
     let fresh = FreshStore::new();
     let pool = pij_store::open(&fresh.path()).await.expect("open");
     spine_window_contract(&SqliteSpine::new(pool)).await;
+}
+
+#[tokio::test]
+async fn the_sqlite_spine_honours_the_same_page_contract_the_fake_does() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    spine_page_contract(&SqliteSpine::new(pool)).await;
+}
+
+/// Plan 187: a replay page is a seek on the rowid, so its cost is the page,
+/// not the backlog between the cursor and the head.
+#[tokio::test]
+async fn a_replay_page_seeks_the_rowid_from_its_cursor() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let plan: Vec<String> = sqlx::query(&format!(
+        "EXPLAIN QUERY PLAN {}",
+        pij_store::spine::TAIL_PAGE_SQL
+    ))
+    .bind(1_000_i64)
+    .bind(1_000_i64)
+    .fetch_all(&pool)
+    .await
+    .expect("plan")
+    .iter()
+    .map(|row| row.get::<String, _>("detail"))
+    .collect();
+    assert_eq!(
+        plan,
+        vec!["SEARCH spine_events USING INTEGER PRIMARY KEY (rowid>?)".to_string()]
+    );
 }
 
 async fn explain(pool: &pij_store::StorePool, sql: &str, binds: &[i64]) -> Vec<String> {

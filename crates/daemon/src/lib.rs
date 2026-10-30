@@ -1039,8 +1039,7 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         let background = Arc::clone(&background);
         let failures = Arc::clone(&background_failures);
         async move {
-            let failure = background.tick().await.err().map(|error| error.to_string());
-            if let Some(error) = failures.observe(failure) {
+            for error in background.tick_log_lines(&failures).await {
                 eprintln!("pij-rs: background reconciliation failed: {error}");
             }
             Ok(())

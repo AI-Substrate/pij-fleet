@@ -3253,30 +3253,57 @@ async fn events(State(state): State<AppState>, Query(query): Query<EventQuery>) 
     // `/v1/events` is the explicit streaming exception to R4: the request
     // handler attaches to owned worker/bus streams; peer network IO remains in
     // the federation workers rather than running inline here.
-    let frames: Pin<Box<dyn Stream<Item = StreamFrame> + Send>> =
-        if query.scope.as_deref() != Some("local") {
-            if let Some(federation) = &state.federation {
-                Box::pin(local.merge(federation.subscribe_remote(&cursors)))
-            } else {
-                Box::pin(local)
-            }
-        } else {
-            Box::pin(local)
-        };
+    let remote = match (&state.federation, query.scope.as_deref()) {
+        (Some(federation), scope) if scope != Some("local") => {
+            Some(federation.subscribe_remote(&cursors))
+        }
+        _ => None,
+    };
     let hello = match wire::encode_hello(BUILD) {
         Ok(hello) => hello,
         Err(error) => return internal("pij events", error),
     };
-    let frames = frames
-        .map(encode_frame)
-        .map(|result| result.map(Bytes::from));
-    let stream = tokio_stream::once(Ok::<Bytes, io::Error>(Bytes::from(hello))).chain(frames);
+    let stream = tokio_stream::once(Ok::<Bytes, io::Error>(Bytes::from(hello)))
+        .chain(event_body(local, remote));
     (
         StatusCode::OK,
         [(axum::http::header::CONTENT_TYPE, "application/x-ndjson")],
         Body::from_stream(stream),
     )
         .into_response()
+}
+
+/// The `/v1/events` body after the hello: the local leg merged with the remote one.
+///
+/// The local leg ends only when it cannot go on truthfully: a replay page failed,
+/// a lag may have lost an event, or the bus shut down. The whole body then ends
+/// with an error, so the client sees a broken stream and reconnects from its
+/// cursor. A remote leg never ends, and `merge` alone would have held a 200 open
+/// and silent after the local leg stopped (plan 187 review S1).
+fn event_body<L, R>(
+    local: L,
+    remote: Option<R>,
+) -> Pin<Box<dyn Stream<Item = io::Result<Bytes>> + Send>>
+where
+    L: Stream<Item = StreamFrame> + Send + 'static,
+    R: Stream<Item = StreamFrame> + Send + 'static,
+{
+    // `None` marks the local leg's end, which ends the merged body.
+    let local = local.map(Some).chain(tokio_stream::once(None));
+    let frames: Pin<Box<dyn Stream<Item = Option<StreamFrame>> + Send>> = match remote {
+        Some(remote) => Box::pin(local.merge(remote.map(Some))),
+        None => Box::pin(local),
+    };
+    let ended = tokio_stream::once(Err(io::Error::other(
+        "pij events: the local event stream ended; reconnect from your last cursor",
+    )));
+    Box::pin(
+        frames
+            .map_while(|frame| frame)
+            .map(encode_frame)
+            .map(|result| result.map(Bytes::from))
+            .chain(ended),
+    )
 }
 
 fn encode_frame(frame: StreamFrame) -> io::Result<String> {

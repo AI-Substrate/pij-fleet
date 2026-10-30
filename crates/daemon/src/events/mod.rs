@@ -21,6 +21,13 @@ use tokio_stream::Stream;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
+/// Rows one replay page reads from the spine (plan 187).
+///
+/// An attach reads one page before it answers, and a stream holds at most one
+/// page in memory, so both are bounded by this, never by the backlog behind the
+/// cursor. Live payloads average about 370 bytes: a page is about 0.4 MB.
+pub const REPLAY_PAGE_ROWS: usize = 1_000;
+
 /// Appends every event durably before offering it to live subscribers.
 ///
 /// A subscriber attaches to the live channel before it tails the spine. Events
@@ -165,11 +172,16 @@ impl EventBus {
         let _guard = self.publish_lock.lock().await;
     }
 
-    /// Replay events after `since`, then continue with the live stream.
+    /// Replay events after `since` in pages, then continue with the live stream.
     ///
-    /// The live receiver is created first. Anything appended while the tail is
+    /// The live receiver is created first. Anything appended while the replay is
     /// read therefore appears on at least one leg; sequence comparison removes
     /// overlap. `None` replays from the start.
+    ///
+    /// The first page of [`REPLAY_PAGE_ROWS`] is read here, so a store failure
+    /// still refuses the attach and the caller can answer within one page. Later
+    /// pages are read by the stream only when its consumer has taken the previous
+    /// one: a slow or vanished client never makes the daemon read ahead of it.
     ///
     /// # Errors
     /// Store failures, or a replay row missing its store-assigned sequence.
@@ -198,28 +210,26 @@ impl EventBus {
             });
         }
 
-        let replayed = self.spine.tail(None, since).await?;
-        let mut replay = VecDeque::new();
-        let mut last_seq = since;
-
-        for event in replayed {
-            let seq = event.seq.ok_or_else(|| PijError::Adapter {
-                adapter: "daemon/events".to_string(),
-                message: "Spine::tail returned an event without its assigned sequence".to_string(),
-            })?;
-            last_seq = last_seq.max(seq);
-            if filter.matches(&event) {
-                replay.push_back(event);
-            }
-        }
-
-        Ok(Subscription {
-            replay,
+        let mut subscription = Subscription {
+            replay: VecDeque::new(),
+            paging: Some(Paging {
+                spine: self.spine.clone(),
+                next: None,
+            }),
             live: BroadcastStream::new(receiver),
             filter,
-            last_seq,
+            last_seq: since,
             dropped: Arc::new(AtomicU64::new(0)),
-        })
+            ends_on_gap: true,
+            lagged: false,
+            ended: false,
+        };
+        // Plan 187: one page, never the backlog. Collecting the whole tail here
+        // cost 5.6 s and gigabytes from cursor 0 on the live 4.2M-row spine, and
+        // chainglass recycles every 5 s, so it never saw a frame.
+        let page = self.spine.tail_page(since, REPLAY_PAGE_ROWS).await?;
+        subscription.accept_page(page)?;
+        Ok(subscription)
     }
 
     /// Return one latest durable policy fact for a mandatory seat scope.
@@ -249,10 +259,14 @@ impl EventBus {
     pub fn subscribe_live(&self, filter: EventFilter) -> Subscription {
         Subscription {
             replay: VecDeque::new(),
+            paging: None,
             live: BroadcastStream::new(self.live.subscribe()),
             filter,
             last_seq: Seq(0),
             dropped: Arc::new(AtomicU64::new(0)),
+            ends_on_gap: false,
+            lagged: false,
+            ended: false,
         }
     }
 }
@@ -271,6 +285,10 @@ impl Spine for EventBus {
 
     async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>> {
         self.spine.tail(seat, since).await
+    }
+
+    async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>> {
+        self.spine.tail_page(since, limit).await
     }
 
     async fn newest(&self) -> Result<Seq> {
@@ -299,19 +317,63 @@ impl Spine for EventBus {
     }
 }
 
+/// One replay page being read.
+type PageRead = Pin<Box<dyn Future<Output = Result<Vec<Event>>> + Send>>;
+
+/// The rest of a paged replay: the spine to read and the page in flight.
+struct Paging {
+    spine: Arc<dyn Spine>,
+    next: Option<PageRead>,
+}
+
 /// One replay-then-live event stream with an observable lag counter.
 pub struct Subscription {
+    /// The current replay page, already filtered.
     replay: VecDeque<Event>,
+    /// `Some` until a short page shows the replay has reached the head.
+    paging: Option<Paging>,
     live: BroadcastStream<Event>,
     filter: EventFilter,
     last_seq: Seq,
     dropped: Arc<AtomicU64>,
+    /// A replaying subscription ends at a live gap; a live-only one counts it.
+    ends_on_gap: bool,
+    /// The live ring overwrote events since the last one this stream passed.
+    lagged: bool,
+    /// Ended for good: a failed page or a gap. Polling again yields nothing.
+    ended: bool,
 }
 
 impl Subscription {
-    /// Number of live events discarded because this subscriber lagged.
+    /// Number of live events the ring overwrote before this subscriber read them.
+    ///
+    /// It counts every overwrite, including those during a replay that later
+    /// pages covered, so it measures pressure, not loss. A replaying
+    /// subscription never loses one silently: it ends instead (see `poll_next`).
     pub fn dropped_count(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
+    }
+
+    /// Queue one page and advance the cursor past it. A short page is the rest
+    /// of the spine as of its read, so the stream switches to live after it; the
+    /// live receiver already holds anything appended since.
+    fn accept_page(&mut self, page: Vec<Event>) -> Result<()> {
+        let full = page.len() >= REPLAY_PAGE_ROWS;
+        for event in page {
+            let seq = event.seq.ok_or_else(|| PijError::Adapter {
+                adapter: "daemon/events".to_string(),
+                message: "Spine::tail_page returned an event without its assigned sequence"
+                    .to_string(),
+            })?;
+            self.last_seq = self.last_seq.max(seq);
+            if self.filter.matches(&event) {
+                self.replay.push_back(event);
+            }
+        }
+        if !full {
+            self.paging = None;
+        }
+        Ok(())
     }
 }
 
@@ -319,8 +381,37 @@ impl Stream for Subscription {
     type Item = Event;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if let Some(event) = self.replay.pop_front() {
-            return Poll::Ready(Some(event));
+        if self.ended {
+            return Poll::Ready(None);
+        }
+        loop {
+            if let Some(event) = self.replay.pop_front() {
+                return Poll::Ready(Some(event));
+            }
+            let since = self.last_seq;
+            let Some(paging) = self.paging.as_mut() else {
+                break;
+            };
+            // The next page is read only now, when the consumer has taken the
+            // last one; dropping the stream drops the read.
+            let read = paging.next.get_or_insert_with(|| {
+                let spine = paging.spine.clone();
+                Box::pin(async move { spine.tail_page(since, REPLAY_PAGE_ROWS).await })
+            });
+            let page = match read.as_mut().poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(page) => page,
+            };
+            paging.next = None;
+            if let Err(error) = page.and_then(|page| self.accept_page(page)) {
+                // The stream ends rather than skip what it could not read; the
+                // client reconnects from the last cursor it saw.
+                eprintln!("pij-rs: event replay after {} failed: {error}", since.0);
+                self.paging = None;
+                self.replay.clear();
+                self.ended = true;
+                return Poll::Ready(None);
+            }
         }
 
         loop {
@@ -335,6 +426,17 @@ impl Stream for Subscription {
                     if seq <= self.last_seq {
                         continue;
                     }
+                    // After a lag, the ring kept only the newest events. If the
+                    // first new one is not the next seq, events between are
+                    // missing here; end instead of skipping them, and the client's
+                    // reconnect from `last_seq` replays them from the spine. A lag
+                    // that only overwrote what pages already read leaves no gap,
+                    // so a lag during the replay stays lossless (review S3).
+                    if self.lagged && self.ends_on_gap && seq.0 != self.last_seq.0 + 1 {
+                        self.ended = true;
+                        return Poll::Ready(None);
+                    }
+                    self.lagged = false;
                     self.last_seq = seq;
                     if self.filter.matches(&event) {
                         return Poll::Ready(Some(event));
@@ -342,6 +444,7 @@ impl Stream for Subscription {
                 }
                 Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(count)))) => {
                     self.dropped.fetch_add(count, Ordering::Relaxed);
+                    self.lagged = true;
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
                 Poll::Pending => return Poll::Pending,

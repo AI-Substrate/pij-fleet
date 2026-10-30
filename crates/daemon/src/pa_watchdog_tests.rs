@@ -1516,6 +1516,14 @@ impl pij_core::ports::Spine for CountingSpine {
         self.rows.fetch_add(rows.len(), Ordering::Relaxed);
         Ok(rows)
     }
+    async fn tail_page(
+        &self,
+        since: pij_core::model::Seq,
+        limit: usize,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.tail_page(since, limit).await
+    }
+
     async fn newest(&self) -> pij_core::error::Result<pij_core::model::Seq> {
         self.inner.newest().await
     }

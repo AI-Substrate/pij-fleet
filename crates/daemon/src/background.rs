@@ -23,6 +23,7 @@ use tokio::sync::Mutex;
 
 use crate::delivery::DeliveryService;
 use crate::events::EventBus;
+use crate::lifecycle::RepeatedFailureLog;
 
 const TAIL_BYTES: u64 = 64 * 1024;
 const TAIL_CHARS: usize = 1200;
@@ -202,6 +203,15 @@ __pij_bg_status=$?
 __pij_bg_finish "$__pij_bg_status"
 exit "$__pij_bg_status"
 "#;
+
+/// One failure from a background tick.
+#[derive(Debug)]
+pub struct TickFailure {
+    /// The job it came from, or `None` when the tick itself could not start.
+    pub job_id: Option<String>,
+    /// What failed.
+    pub error: PijError,
+}
 
 /// Serializes launch/recovery/kill while keeping child handles out of shutdown waits.
 pub struct BackgroundService {
@@ -634,26 +644,63 @@ impl BackgroundService {
     /// Reap local children, recover orphaned rows by identity/receipt, and notify endings.
     ///
     /// # Errors
-    /// Store, liveness, receipt, event, or delivery failures. Other jobs are still
-    /// visited when one fails, and unnotified terminal rows are retried next tick.
+    /// The first of [`Self::tick_failures`]. Other jobs are still visited when
+    /// one fails, and unnotified terminal rows are retried next tick.
     pub async fn tick(&self) -> Result<()> {
-        let mut first_error = None;
+        self.tick_failures()
+            .await
+            .into_iter()
+            .next()
+            .map_or(Ok(()), |failure| Err(failure.error))
+    }
+
+    /// One tick, then the failure lines worth logging: a refusal that repeats
+    /// every 100 ms tick is logged once (plan 185 D2, plan 187).
+    pub(crate) async fn tick_log_lines(&self, log: &RepeatedFailureLog) -> Vec<String> {
+        let failures = self.tick_failures().await;
+        log.observe(
+            failures
+                .into_iter()
+                .map(|failure| (failure.job_id, failure.error.to_string()))
+                .collect(),
+        )
+    }
+
+    /// One tick, returning every failure attributed to the job it came from, in
+    /// visit order, so a repeating refusal can be logged once per source.
+    pub async fn tick_failures(&self) -> Vec<TickFailure> {
+        let mut failures = Vec::new();
+        let mut fail = |job_id: &str, error: PijError| {
+            failures.push(TickFailure {
+                job_id: Some(job_id.to_string()),
+                error,
+            });
+        };
         let mut sources = Vec::new();
         {
             let mut children = self.children.lock().await;
-            let now = now_ms()?;
-            for job in self.store.pending().await? {
+            let read = async { Result::Ok((now_ms()?, self.store.pending().await?)) };
+            let (now, pending) = match read.await {
+                Ok(read) => read,
+                Err(error) => {
+                    return vec![TickFailure {
+                        job_id: None,
+                        error,
+                    }];
+                }
+            };
+            for job in pending {
                 // Completion first: a runner that already exited on its own (a
                 // late tick, a daemon restart) keeps its own result. The deadline
                 // applies only to a runner that is still alive now.
                 if let Err(error) = self.reconcile(&job, &mut children).await {
-                    first_error.get_or_insert(error);
+                    fail(&job.job_id, error);
                     continue;
                 }
                 let mut current = match self.lookup(&job.job_id).await {
                     Ok(current) => current,
                     Err(error) => {
-                        first_error.get_or_insert(error);
+                        fail(&job.job_id, error);
                         continue;
                     }
                 };
@@ -667,27 +714,27 @@ impl BackgroundService {
                             current.timed_out = true;
                             // Signals the still-live runner through the identity brakes.
                             if let Err(error) = self.reconcile(&current, &mut children).await {
-                                first_error.get_or_insert(error);
+                                fail(&job.job_id, error);
                                 continue;
                             }
                             match self.lookup(&job.job_id).await {
                                 Ok(latest) => current = latest,
                                 Err(error) => {
-                                    first_error.get_or_insert(error);
+                                    fail(&job.job_id, error);
                                     continue;
                                 }
                             }
                         }
                         Ok(false) => {}
                         Err(error) => {
-                            first_error.get_or_insert(error);
+                            fail(&job.job_id, error);
                             continue;
                         }
                     }
                 }
                 if terminal(current.state) {
                     if let Err(error) = self.notify(&current).await {
-                        first_error.get_or_insert(error);
+                        fail(&job.job_id, error);
                     }
                 } else if current.kind == BackgroundKind::Events
                     && current.state == BackgroundState::Running
@@ -700,10 +747,10 @@ impl BackgroundService {
         // lock (which create and kill need) across that.
         for job in sources {
             if let Err(error) = self.pump(&job).await {
-                first_error.get_or_insert(error);
+                fail(&job.job_id, error);
             }
         }
-        first_error.map_or(Ok(()), Err)
+        failures
     }
 
     /// Cut and deliver one batch for a live source when its owner may take it.
@@ -2486,6 +2533,49 @@ mod tests {
             1,
             "the completion is published once, not per tick"
         );
+    }
+
+    /// Plan 187 (ac-0004): the daemon's background loop logs each stranded
+    /// source's refusal once, through the same call it makes every 100 ms tick.
+    /// Plan 185 remembered only the tick's first error, so a second stranded
+    /// source was never logged and any other first error re-logged the first.
+    /// (Live, one source, it already held: pid 63433 logged it once at boot.)
+    #[tokio::test]
+    async fn each_stranded_sources_refusal_is_logged_once_per_source() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        for job_id in ["bg-a", "bg-b"] {
+            let job = fixture.source(job_id, "tok", false, 0, 5).await;
+            assert!(fixture.service.store.request_kill(job_id).await.unwrap());
+            std::fs::write(receipt_path(&job), "143 1700000009\n").unwrap();
+        }
+        let owner = SeatId::from("owner");
+        let alive = fixture.registry.get(&owner).await.unwrap().unwrap();
+        fixture.registry.tombstone(&owner, "test").await.unwrap();
+
+        let log = RepeatedFailureLog::default();
+        let mut lines = Vec::new();
+        for _ in 0..5 {
+            lines.extend(fixture.service.tick_log_lines(&log).await);
+        }
+        assert_eq!(
+            lines,
+            vec![
+                "background/refused: owner owner of source bg-a is gone; its final turn waits"
+                    .to_string(),
+                "background/refused: owner owner of source bg-b is gone; its final turn waits"
+                    .to_string(),
+            ],
+            "each stranded source once, however many ticks"
+        );
+
+        fixture.registry.put(alive).await.unwrap();
+        for _ in 0..3 {
+            assert_eq!(
+                fixture.service.tick_log_lines(&log).await,
+                Vec::<String>::new(),
+                "the revived owner's sources end cleanly"
+            );
+        }
     }
 
     /// Plan 185 D2: a notify that fails after publishing is retried, and the

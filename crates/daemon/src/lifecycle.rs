@@ -4,6 +4,7 @@
 //! know which services tick: callers inject one action, so future workers do not
 //! turn the scheduler into a dependency hub.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::future::Future;
 use std::io;
@@ -194,32 +195,48 @@ impl TickLoop {
     }
 }
 
-/// Logs a tick's failure once while it keeps repeating.
+/// Logs each source's tick failure once while it keeps repeating.
 ///
 /// One stranded bg source failed the 100 ms background tick with the same
-/// sentence for days, ten `daemon.log` lines a second (plan 185, D2; #90). A
-/// success clears the memory, so a failure that comes back is logged again.
+/// sentence for days, ten `daemon.log` lines a second (plan 185, D2; #90). The
+/// memory is per source (plan 187): a second stranded source is logged too, and
+/// another source's failure coming and going never re-logs the first. A source
+/// absent from a tick (it succeeded or ended) is forgotten, so a failure that
+/// comes back is logged again. A failure of the tick itself (key `None`) visited
+/// no source, so it forgets nothing else.
 #[derive(Debug, Default)]
 pub(crate) struct RepeatedFailureLog {
-    last: std::sync::Mutex<Option<String>>,
+    last: std::sync::Mutex<BTreeMap<Option<String>, String>>,
 }
 
 impl RepeatedFailureLog {
-    /// The failure text worth logging for this tick, or `None` when the tick
-    /// succeeded or repeated the previous tick's failure exactly.
-    pub(crate) fn observe(&self, failure: Option<String>) -> Option<String> {
+    /// The failure texts worth logging from one tick's `(source, text)` failures:
+    /// those whose source failed differently, or not at all, last tick.
+    pub(crate) fn observe(&self, failures: Vec<(Option<String>, String)>) -> Vec<String> {
         let mut last = self.last.lock().expect("failure log mutex");
-        match failure {
-            None => {
-                *last = None;
-                None
+        let tick_failed = failures.iter().any(|(source, _)| source.is_none());
+        let mut lines = Vec::new();
+        let mut current = BTreeMap::new();
+        for (source, text) in failures {
+            // Each job yields at most one failure a tick today (every branch of
+            // the tick `continue`s, and notify and pump visit disjoint jobs), so
+            // the same-tick check is a guard, not a path. If a job ever yields two
+            // different texts in one tick, the last one is remembered and the
+            // first logs again every tick: key by (job, step) then.
+            if last.get(&source) != Some(&text) && current.get(&source) != Some(&text) {
+                lines.push(text.clone());
             }
-            Some(text) if last.as_deref() == Some(text.as_str()) => None,
-            Some(text) => {
-                *last = Some(text.clone());
-                Some(text)
+            current.insert(source, text);
+        }
+        if tick_failed {
+            for (source, text) in last.iter() {
+                current
+                    .entry(source.clone())
+                    .or_insert_with(|| text.clone());
             }
         }
+        *last = current;
+        lines
     }
 }
 
@@ -256,18 +273,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_repeated_tick_failure_is_logged_once_until_it_changes_or_clears() {
+    fn a_repeated_tick_failure_is_logged_once_per_source_until_it_changes_or_clears() {
         let log = RepeatedFailureLog::default();
-        let gone = || Some("owner pij-x is gone".to_string());
-        assert_eq!(log.observe(gone()), gone(), "the first failure is logged");
-        assert_eq!(log.observe(gone()), None, "an identical repeat is not");
-        assert_eq!(log.observe(gone()), None);
-        let other = Some("store busy".to_string());
-        assert_eq!(log.observe(other.clone()), other, "a different failure is");
-        assert_eq!(log.observe(None), None, "success logs nothing");
+        let fail =
+            |source: Option<&str>, text: &str| (source.map(str::to_string), text.to_string());
+        let gone = fail(Some("bg-a"), "owner pij-x is gone");
         assert_eq!(
-            log.observe(gone()),
-            gone(),
+            log.observe(vec![gone.clone()]),
+            vec![gone.1.clone()],
+            "the first failure is logged"
+        );
+        assert!(
+            log.observe(vec![gone.clone()]).is_empty(),
+            "an identical repeat is not"
+        );
+        let busy = fail(Some("bg-b"), "store busy");
+        assert_eq!(
+            log.observe(vec![busy.clone(), gone.clone()]),
+            vec![busy.1.clone()],
+            "another source's failure is logged; the first is not re-logged"
+        );
+        assert!(
+            log.observe(vec![gone.clone()]).is_empty(),
+            "the other source clearing does not re-log the first"
+        );
+        let tick = fail(None, "store unreachable");
+        assert_eq!(log.observe(vec![tick.clone()]), vec![tick.1.clone()]);
+        assert!(
+            log.observe(vec![gone.clone()]).is_empty(),
+            "a tick that visited no source forgets none"
+        );
+        let changed = fail(Some("bg-a"), "owner pij-x is gone again");
+        assert_eq!(
+            log.observe(vec![changed.clone()]),
+            vec![changed.1.clone()],
+            "a changed reason is"
+        );
+        assert!(log.observe(Vec::new()).is_empty(), "success logs nothing");
+        assert_eq!(
+            log.observe(vec![changed.clone()]),
+            vec![changed.1],
             "a failure after success is new"
         );
     }

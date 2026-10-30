@@ -1,0 +1,22 @@
+== red: port + tests added, EventBus::subscribe unchanged from main 32b136e (still Spine::tail)
+test replay_and_live_overlap_is_joined_once_by_store_sequence ... ok
+test every_subscriber_receives_the_same_event_set ... ok
+test a_slow_subscriber_never_blocks_publish_and_reports_drops ... ok
+test a_cursor_attach_never_reads_the_spine_before_its_cursor ... FAILED
+test a_replay_reads_one_page_before_its_first_event_and_the_next_only_when_drained ... FAILED
+test dropping_a_subscription_mid_replay_reads_no_further_pages ... FAILED
+test events_appended_during_a_paged_replay_arrive_once_in_order ... ok
+test a_backlog_of_exactly_one_page_and_a_cursor_at_the_head_switch_to_live_once ... ok
+thread 'a_cursor_attach_never_reads_the_spine_before_its_cursor' (252163907) panicked at crates/daemon/tests/events_bus.rs:297:5:
+assertion `left == right` failed: no unbounded read
+  left: [Seq(48)]
+ right: []
+thread 'a_replay_reads_one_page_before_its_first_event_and_the_next_only_when_drained' (252163908) panicked at crates/daemon/tests/events_bus.rs:368:5:
+assertion `left == right` failed: never the whole backlog
+  left: [Seq(0)]
+ right: []
+thread 'dropping_a_subscription_mid_replay_reads_no_further_pages' (252163910) panicked at crates/daemon/tests/events_bus.rs:480:5:
+assertion `left == right` failed: never the whole backlog
+  left: [Seq(0)]
+ right: []
+test result: FAILED. 5 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s

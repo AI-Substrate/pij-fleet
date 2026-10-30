@@ -17,8 +17,8 @@ Launches per tick per seat: none. The launch sites and their rates are in [macos
 
 ## Request costs that used to scale with history
 
-- **`GET /v1/events?since=…`** (OMP/pi seats on reconnect, chainglass every few seconds) used to decode the whole spine to learn its newest sequence: 6–7 s and 5 GB per attach on a 3 M-row spine. It now reads `MAX(seq)` and only the rows after the cursor, so an attach costs what the consumer is behind by, not the spine's size.
-- **A stranded events source** (owner tombstoned) used to append its `bg.lost` completion every 100 ms for ever (2.4 M rows in three days) and log the same refusal ten times a second. The completion is now published once per job, and a repeating background-tick failure is logged once until it changes. The final turn still waits for the owner: a tombstone can be lifted by resume or revive.
+- **`GET /v1/events?since=…`** (OMP/pi seats on reconnect, chainglass every few seconds) used to decode the whole spine to learn its newest sequence: 6–7 s and 5 GB per attach on a 3 M-row spine (plan 185). It then still read and decoded **every row after the cursor** before sending the first frame, which from cursor 0 on the live 4.2 M-row spine was 5.6 s and gigabytes, longer than chainglass's 5 s recycle: it never saw a frame, its cursor never moved, and every attach repeated the read (plan 187). The replay is now paged: an attach reads one page of `REPLAY_PAGE_ROWS` (1,000) rows by `seq` before it answers, and the stream reads the next page only when the client has taken the last one. Per attach: one `MAX(seq)` read, then ⌈rows behind ÷ 1,000⌉ page reads, each a rowid seek costing its 1,000 rows; at most one page (about 0.4 MB) in memory; a disconnect stops it within the page in flight. The first frame waits for one page, whatever the backlog.
+- **A stranded events source** (owner tombstoned) used to append its `bg.lost` completion every 100 ms for ever (2.4 M rows in three days) and log the same refusal ten times a second. The completion is now published once per job, and a repeating background-tick failure is logged once per source until its reason changes or the source ends (plan 187: plan 185 remembered only the tick's first error, so a second stranded source was never logged). The final turn still waits for the owner: a tombstone can be lifted by resume or revive.
 
 ## Tap files on disk
 
@@ -61,5 +61,19 @@ Private daemon (temp state dir, private `-L` tmux server), same recorded workloa
 | One cursor attach, 3 M-row spine | 6.3–7.2 s, 5.1 GB peak RSS | 0.4–1.2 ms (one 357 ms outlier), 14 MB peak |
 
 The live machine reading before the fix (pid 95125, 2026-10-29): 197–208 % CPU, 8.4–9.1 GB RSS, 0.9 launches/s, 3.1 GB of tap files (3.19 GB of it orphans). The deployed after-reading is taken by the prime after merge.
+
+## Measured (plan 187)
+
+Private daemon on one seed copying the live spine's layout (4,157,703 rows: `seq`, `kind`, `seat` and `at` from the live store, synthetic payloads of the same length), and a client that behaves like chainglass: a 5 s recycle, a fresh process at cursor 0, and a cursor that advances only on `seat.put`, `seat.tombstone`, `role-set`, `report.now` and `report.state`. Scripts and receipts: [`docs/plans/187-events-replay-stream/assets/evidence/`](../plans/187-events-replay-stream/assets/evidence/). Release builds of main `32b136e` and this branch, 2026-10-30.
+
+| | main | branch |
+|---|---:|---:|
+| First frame | never (no `hello` in 12 connections); one uncut attach: 5.61 s | 1–22 ms |
+| Cursor | 0 → 0 in 60 s | 0 → 1,834,152 → 3,764,956 → head in 3 connections (15 s), then 2 frames a recycle |
+| Throughput to the client | 0 | about 380,000 rows/s (1,885,016 frames in one 5 s connection) |
+| CPU | about 220 % steady | 135 % while converging, then 1–2 % |
+| RSS | 6.0 GB at +6 s → 13.3 GB at +64 s, climbing | 36 MB, flat |
+
+The bar that matters for convergence is the longest stretch of the spine with none of the client's resume kinds: 291,544 rows live. The client must receive it within one 5 s connection, about 60,000 rows a second.
 
 Per seat, steady state: no launches; two `stat` calls and three control-client reads per tracked pane per 600 ms; at most `TAP_TRIM_BYTES` plus one burst of disk per pane; no spine growth unless something happens.

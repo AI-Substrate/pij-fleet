@@ -4844,6 +4844,175 @@ async fn events_are_live_by_default_and_frame_unknown_kinds_with_a_cursor() {
     server.abort();
 }
 
+/// Plan 187: a replay longer than one page reaches the wire as every frame
+/// once, in cursor order, after the hello, and then the stream stays live.
+#[tokio::test]
+async fn a_multi_page_replay_streams_every_frame_once_then_stays_live() {
+    let backlog = 2 * crate::events::REPLAY_PAGE_ROWS as u64 + 3;
+    let spine = Arc::new(FakeSpine::new());
+    let services = test_services(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        spine,
+    )
+    .await;
+    let bus = services.event_bus.clone();
+    let event = |at: u64| Event {
+        seq: None,
+        v: wire::EVENT_VERSION,
+        at,
+        kind: "message".to_string(),
+        seat: None,
+        payload: "{}".to_string(),
+    };
+    for at in 1..=backlog {
+        bus.publish(event(at)).await.expect("publish replay");
+    }
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let mut response = reqwest::Client::new()
+        .get(format!("http://{addr}/v1/events"))
+        .query(&[("since", r#"{"workstation":0}"#)])
+        .bearer_auth("key")
+        .send()
+        .await
+        .expect("events");
+
+    let mut pending = Vec::new();
+    let mut lines = Vec::new();
+    while lines.len() < backlog as usize + 1 {
+        let chunk = tokio::time::timeout(Duration::from_secs(5), response.chunk())
+            .await
+            .expect("replay stalled")
+            .expect("chunk")
+            .expect("stream ended");
+        pending.extend_from_slice(&chunk);
+        while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
+            let line: Vec<u8> = pending.drain(..=end).collect();
+            lines.push(line);
+        }
+    }
+    assert!(matches!(
+        wire::decode_event_line(1, std::str::from_utf8(&lines[0]).expect("utf8").trim())
+            .expect("hello"),
+        WireEvent::Hello { .. }
+    ));
+    let cursors: Vec<u64> = lines[1..]
+        .iter()
+        .map(|line| expect_event(serde_json::from_slice(line).expect("frame")).1)
+        .collect();
+    assert_eq!(cursors, (1..=backlog).collect::<Vec<_>>());
+
+    bus.publish(event(backlog + 1)).await.expect("publish live");
+    let live = tokio::time::timeout(Duration::from_secs(1), response.chunk())
+        .await
+        .expect("live stalled")
+        .expect("live chunk")
+        .expect("live");
+    let live: StreamFrame = serde_json::from_slice(&live).expect("live frame");
+    assert_eq!(expect_event(live).1, backlog + 1);
+
+    server.abort();
+}
+
+/// A spine whose `fail_on`-th page read fails.
+struct FailingPageSpine {
+    inner: FakeSpine,
+    page_reads: AtomicUsize,
+    fail_on: usize,
+}
+
+#[async_trait]
+impl Spine for FailingPageSpine {
+    async fn append(&self, event: Event) -> Result<Seq> {
+        self.inner.append(event).await
+    }
+    async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>> {
+        self.inner.tail(seat, since).await
+    }
+    async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>> {
+        if self.page_reads.fetch_add(1, Ordering::SeqCst) + 1 == self.fail_on {
+            return Err(PijError::Adapter {
+                adapter: "test/failing-page".into(),
+                message: "injected: database is locked".into(),
+            });
+        }
+        self.inner.tail_page(since, limit).await
+    }
+    async fn newest(&self) -> Result<Seq> {
+        self.inner.newest().await
+    }
+    async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
+        self.inner.latest_matching(seat, kinds).await
+    }
+    async fn latest_matching_message(
+        &self,
+        seat: &SeatId,
+        kind: &str,
+        msg_id: &str,
+    ) -> Result<Option<Event>> {
+        self.inner.latest_matching_message(seat, kind, msg_id).await
+    }
+    async fn matching_since(
+        &self,
+        seat: &SeatId,
+        window: &pij_core::ports::SpineWindow,
+    ) -> Result<Vec<Event>> {
+        self.inner.matching_since(seat, window).await
+    }
+}
+
+/// Review S1: a replay page that fails after the first ends the WHOLE body,
+/// as an error, even with a federated remote leg that never ends. Before, the
+/// local leg ended alone and `merge` waited on the remote one: a 200 left open
+/// and silent, which a client that does not recycle reads as healthy.
+#[tokio::test]
+async fn a_failed_replay_page_ends_the_body_even_with_a_remote_leg() {
+    let page = crate::events::REPLAY_PAGE_ROWS as u64;
+    let spine = Arc::new(FailingPageSpine {
+        inner: FakeSpine::new(),
+        page_reads: AtomicUsize::new(0),
+        fail_on: 2,
+    });
+    let bus = crate::events::EventBus::new(spine, 1_024).expect("bus");
+    let event = |at: u64| Event {
+        seq: None,
+        v: wire::EVENT_VERSION,
+        at,
+        kind: "message".to_string(),
+        seat: None,
+        payload: "{}".to_string(),
+    };
+    for at in 1..=page + 5 {
+        bus.publish(event(at)).await.expect("publish");
+    }
+    let local = bus
+        .subscribe(Some(Seq(0)), EventFilter::all())
+        .await
+        .expect("the first page reads")
+        .map(|event| StreamFrame::Event {
+            machine: "workstation".to_string(),
+            cursor: event.seq.expect("seq").0,
+            event,
+        });
+    let mut body = event_body(local, Some(tokio_stream::pending::<StreamFrame>()));
+    for _ in 0..page {
+        body.next().await.expect("page one").expect("a frame");
+    }
+    bus.publish(event(page + 6)).await.expect("publish live");
+
+    let after = tokio::time::timeout(Duration::from_millis(500), body.next())
+        .await
+        .expect("the body must end, not hang open and silent");
+    let error = after
+        .expect("an error item, not a clean end that reads as complete")
+        .expect_err("no frame after the failed page");
+    assert!(
+        error.to_string().contains("reconnect"),
+        "the error tells the client what to do: {error}"
+    );
+    assert!(body.next().await.is_none(), "and then the body is finished");
+}
+
 #[tokio::test]
 async fn explicit_since_replays_then_stays_live() {
     let spine = Arc::new(FakeSpine::new());
