@@ -1,12 +1,12 @@
 //! Detached background-command runner with observed process-group cancellation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -24,6 +24,8 @@ use crate::common::{LoopHandle, Processed, enqueue_turn, now_ms, start_resilient
 /// Queue kind for background-runner commands.
 pub const BG_KIND: &str = "sidecar:bg";
 const WORKER_ID: &str = "sidecar-bg";
+/// How old a state-directory mtime must be before an unchanged one is trusted.
+const MTIME_SETTLE: Duration = Duration::from_secs(2);
 static WORKER_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// A background runner request.
@@ -123,6 +125,21 @@ pub struct BgWorker {
     cancel_deadline: Duration,
     owner_id: String,
     own_pgid: u32,
+    scan: Mutex<ScanIndex>,
+}
+
+/// What the last completion pass learned about the state directory, so an idle
+/// worker opens nothing (plan 185, D3: it opened every record, terminal ones
+/// included, about 80 times a second, and `open()` is Defender-gated).
+///
+/// Every record write is a rename into the directory, which moves its mtime: an
+/// unchanged mtime proves no record was created or rewritten since the scan.
+/// A terminal record never becomes running again, so it is never re-read.
+#[derive(Debug, Default)]
+struct ScanIndex {
+    dir_mtime: Option<SystemTime>,
+    running: BTreeSet<String>,
+    terminal: BTreeSet<String>,
 }
 
 impl BgWorker {
@@ -142,6 +159,7 @@ impl BgWorker {
                 WORKER_GENERATION.fetch_add(1, Ordering::Relaxed)
             ),
             own_pgid: process_group_of(pid)?,
+            scan: Mutex::new(ScanIndex::default()),
         })
     }
 
@@ -351,21 +369,20 @@ impl BgWorker {
     }
 
     async fn observe_completions(&self) -> Result<()> {
-        let entries = fs::read_dir(&self.state_dir)
-            .map_err(|error| io_error("read state directory", &self.state_dir, error))?;
-        for entry in entries {
-            let path = entry
-                .map_err(|error| io_error("read state entry", &self.state_dir, error))?
-                .path();
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                continue;
-            }
-            let mut record: BgRecord = serde_json::from_str(
-                &fs::read_to_string(&path)
-                    .map_err(|error| io_error("read record", &path, error))?,
-            )
-            .map_err(codec_error)?;
+        for id in self.records_to_observe()? {
+            let path = self.record_path(&id);
+            let text = match fs::read_to_string(&path) {
+                Ok(text) => text,
+                // Not listed any more: a scan would not have visited it either.
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    self.scan.lock().expect("bg scan mutex").running.remove(&id);
+                    continue;
+                }
+                Err(error) => return Err(io_error("read record", &path, error)),
+            };
+            let mut record: BgRecord = serde_json::from_str(&text).map_err(codec_error)?;
             if record.status != BgStatus::Running {
+                self.index_terminal(&id);
                 continue;
             }
             let owned = self.owns_child(&record.id);
@@ -400,6 +417,7 @@ impl BgWorker {
             record.exit_code = exit_code;
             record.finished_at = Some(now_ms()?);
             self.persist(&record)?;
+            self.index_terminal(&record.id);
             let output = fs::read_to_string(&record.output_path)
                 .map_err(|error| io_error("read output", &record.output_path, error))?;
             enqueue_turn(
@@ -419,6 +437,49 @@ impl BgWorker {
             .await?;
         }
         Ok(())
+    }
+
+    /// Record ids whose state can still change: the running ones the index
+    /// knows, plus every unindexed record when the directory has changed.
+    fn records_to_observe(&self) -> Result<Vec<String>> {
+        // Read the mtime BEFORE listing: a record written after this read moves
+        // the mtime again, so the next pass lists it.
+        let mtime = fs::metadata(&self.state_dir)
+            .and_then(|metadata| metadata.modified())
+            .map_err(|error| io_error("inspect state directory", &self.state_dir, error))?;
+        let mut scan = self.scan.lock().expect("bg scan mutex");
+        if scan.dir_mtime != Some(mtime) {
+            let entries = fs::read_dir(&self.state_dir)
+                .map_err(|error| io_error("read state directory", &self.state_dir, error))?;
+            for entry in entries {
+                let path = entry
+                    .map_err(|error| io_error("read state entry", &self.state_dir, error))?
+                    .path();
+                if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                    continue;
+                }
+                let Some(id) = path.file_stem().and_then(|value| value.to_str()) else {
+                    continue;
+                };
+                if !scan.terminal.contains(id) {
+                    scan.running.insert(id.to_string());
+                }
+            }
+            // A filesystem with coarse timestamps can give a record written later
+            // in the same tick this very mtime. Trust only an mtime that has had
+            // time to move; until then every pass lists the directory again.
+            let settled = SystemTime::now()
+                .duration_since(mtime)
+                .is_ok_and(|age| age >= MTIME_SETTLE);
+            scan.dir_mtime = settled.then_some(mtime);
+        }
+        Ok(scan.running.iter().cloned().collect())
+    }
+
+    fn index_terminal(&self, id: &str) {
+        let mut scan = self.scan.lock().expect("bg scan mutex");
+        scan.running.remove(id);
+        scan.terminal.insert(id.to_string());
     }
 
     fn owns_child(&self, id: &str) -> bool {

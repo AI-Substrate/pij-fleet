@@ -339,6 +339,10 @@ impl Spine for FakeSpine {
             .collect())
     }
 
+    async fn newest(&self) -> Result<Seq> {
+        Ok(Seq(self.state.lock().expect("fake spine mutex").seq))
+    }
+
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         if kinds.is_empty() {
             return Err(PijError::Adapter {
@@ -487,6 +491,10 @@ impl Spine for CountingSpine {
             });
         }
         self.inner.tail(seat, since).await
+    }
+
+    async fn newest(&self) -> Result<Seq> {
+        self.inner.newest().await
     }
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
@@ -2388,6 +2396,12 @@ impl TmuxPort for FakeTmux {
         let mut state = self.state.lock().expect("fake tmux mutex");
         state.recorder.record(format!("pane_tap_sink:{pane}"));
         Ok(state.taps.get(pane).cloned())
+    }
+
+    async fn sweep_orphan_taps(&self) -> Result<pij_core::ports::TapSweep> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        state.recorder.record("sweep_orphan_taps".to_string());
+        Ok(pij_core::ports::TapSweep::default())
     }
 
     async fn drain_pane_tap(&self, pane: &str) -> Result<Vec<u8>> {

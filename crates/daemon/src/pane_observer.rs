@@ -205,6 +205,24 @@ impl PaneObserver {
             }
         }
 
+        if reconcile_world {
+            // Once per boot, after retirement: sinks of panes this server no
+            // longer has. Pane absence is the policy; the adapter's mtime grace
+            // is a brake that can only spare (plan 185, F5).
+            match self.tmux.sweep_orphan_taps().await {
+                Ok(sweep) if sweep.claimed > 0 || sweep.removed > 0 || sweep.spared_recent > 0 => {
+                    eprintln!(
+                        "pij-rs pane observer: orphaned-tap sweep removed {} sink(s), {} bytes, of panes tmux no longer lists; claimed {} pre-ledger sink(s); spared {} written within the grace",
+                        sweep.removed, sweep.removed_bytes, sweep.claimed, sweep.spared_recent
+                    );
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+
         for pane in panes {
             let tracked = self.is_tracked(&pane.id);
             let sink = self.sink_path(&pane.id);
@@ -508,6 +526,38 @@ mod tests {
         ) -> Result<Option<pij_core::model::Seq>> {
             self.inner.set_activity(seat, state, reason).await
         }
+    }
+
+    /// Plan 185 F5: the orphaned-tap sweep runs on the first observation of a
+    /// boot, and only then: it is not per-tick work.
+    #[tokio::test]
+    async fn the_orphan_sweep_runs_once_per_boot_not_per_tick() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .script_capture(framed(""))
+                .script_capture(framed(""))
+                .script_capture(framed("")),
+        );
+        let registry = registry(&["%1"]).await;
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let observer = PaneObserver::new(
+            Arc::clone(&registry) as Arc<dyn Registry>,
+            Arc::clone(&tmux) as Arc<dyn TmuxPort>,
+            Arc::clone(&gate),
+            PathBuf::from("/tmp/pij-observer-sweep"),
+            Duration::from_millis(1),
+        )
+        .expect("observer");
+        for _ in 0..3 {
+            observer.observe_once().await.expect("observation");
+        }
+        let sweeps = tmux
+            .calls()
+            .iter()
+            .filter(|call| *call == "sweep_orphan_taps")
+            .count();
+        assert_eq!(sweeps, 1, "one sweep per boot");
     }
 
     #[tokio::test]

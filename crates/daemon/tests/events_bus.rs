@@ -17,6 +17,8 @@ use tokio_stream::StreamExt;
 #[derive(Default)]
 struct TestSpine {
     events: Mutex<Vec<Event>>,
+    /// Every `since` a `tail` was asked for, in order.
+    tail_reads: Mutex<Vec<Seq>>,
     next: AtomicU64,
     pause_next_tail: AtomicBool,
     tail_started: Notify,
@@ -42,6 +44,10 @@ impl Spine for TestSpine {
     }
 
     async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>> {
+        self.tail_reads
+            .lock()
+            .expect("test spine mutex")
+            .push(since);
         if self.pause_next_tail.swap(false, Ordering::Relaxed) {
             self.tail_started.notify_one();
             self.release_tail.notified().await;
@@ -55,6 +61,10 @@ impl Spine for TestSpine {
             .filter(|event| seat.is_none_or(|seat| event.seat.as_ref() == Some(seat)))
             .cloned()
             .collect())
+    }
+
+    async fn newest(&self) -> Result<Seq> {
+        Ok(Seq(self.next.load(Ordering::Relaxed)))
     }
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
@@ -232,5 +242,49 @@ async fn replay_and_live_overlap_is_joined_once_by_store_sequence() {
         received,
         vec![1, 2, 3],
         "the overlap has no gap or duplicate"
+    );
+}
+
+/// Plan 185 D1: a cursor attach reads only what follows its cursor. Before, the
+/// beyond-the-spine check read `tail(None, Seq(0))` on every attach, which on the
+/// live 3M-row spine cost 6-7 s and 5 GB to learn one number.
+#[tokio::test]
+async fn a_cursor_attach_never_reads_the_spine_before_its_cursor() {
+    let spine = Arc::new(TestSpine::default());
+    let bus = EventBus::new(Arc::clone(&spine) as Arc<dyn Spine>, 8).expect("bus");
+    for number in 1..=50 {
+        bus.publish(event(number, "message"))
+            .await
+            .expect("publish");
+    }
+
+    let mut subscription = bus
+        .subscribe(Some(Seq(48)), EventFilter::all())
+        .await
+        .expect("subscribe");
+
+    let reads = spine.tail_reads.lock().expect("test spine mutex").clone();
+    assert_eq!(
+        reads,
+        vec![Seq(48)],
+        "only the replay after the cursor is read"
+    );
+    for expected in [49, 50] {
+        let item = timeout(Duration::from_secs(1), subscription.next())
+            .await
+            .expect("replay stalled")
+            .expect("stream ended");
+        assert_eq!(item.seq, Some(Seq(expected)));
+    }
+    let beyond = bus.subscribe(Some(Seq(51)), EventFilter::all()).await;
+    assert!(
+        matches!(
+            beyond,
+            Err(PijError::CursorBeyondSpine {
+                requested: 51,
+                newest: 50
+            })
+        ),
+        "the beyond-the-spine refusal still names the newest sequence"
     );
 }

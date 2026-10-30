@@ -1,11 +1,12 @@
 //! Real tmux adapter. Every Rust-workspace tmux syscall lives in this crate.
 
 mod control;
+mod ledger;
 
 pub use control::CONTROL_SESSION;
 mod parse;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions};
@@ -14,19 +15,74 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use pij_core::delivery::MAX_TYPED_FRAME_BYTES;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Harness, Pane, PaneProcess, ProcIdentity};
 use pij_core::ports::{
-    LaunchCommand, STAGED_SUBMIT_RECOVERY, StagedSubmit, TmuxPort, is_rendered_leftover,
+    LaunchCommand, STAGED_SUBMIT_RECOVERY, StagedSubmit, TapSweep, TmuxPort, is_rendered_leftover,
 };
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::{Instant, sleep};
 
+use crate::ledger::TapLedger;
 use crate::parse::{LIST_FORMAT, parse_one_pane, parse_panes};
+
+/// Empty a tap sink the reader has consumed to `consumed`, and say whether it did.
+///
+/// Called only after a drain found nothing new, so the pane has been quiet since
+/// the previous drain. The writer is `cat >>` (O_APPEND): after `set_len(0)` its
+/// next write lands at offset 0, where the reader restarts. The length is
+/// re-read on the open file first and a sink that grew is left alone. A write
+/// landing between that re-read and the truncation (one syscall apart, and only
+/// as the first write of a new burst) is lost; the burst's later writes still
+/// report the pane active.
+///
+/// # Errors
+/// The sink cannot be opened for writing, inspected or truncated.
+pub fn trim_consumed_tap(path: &Path, consumed: u64) -> io::Result<bool> {
+    let file = OpenOptions::new().write(true).open(path)?;
+    if file.metadata()?.len() != consumed {
+        return Ok(false);
+    }
+    file.set_len(0)?;
+    Ok(true)
+}
+
+fn sink_file_name(pane: &str) -> String {
+    tap_sink_path(Path::new(""), pane)
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// A plain sink file name: no separator can lead a ledger entry out of the root.
+fn is_sink_name(name: &str) -> bool {
+    name.ends_with(".raw") && !name.contains('/') && !name.starts_with('.')
+}
+
+/// Regular `*.raw` files directly in the tap root.
+fn unledgered_sinks(root: &Path) -> io::Result<Vec<String>> {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        if let Some(name) = entry.file_name().to_str()
+            && is_sink_name(name)
+        {
+            names.push(name.to_string());
+        }
+    }
+    Ok(names)
+}
 
 /// Deterministic sink identity shared by composition and the adapter authority.
 #[must_use]
@@ -45,6 +101,13 @@ pub fn tap_sink_path(root: &Path, pane: &str) -> PathBuf {
 }
 
 const TAP_SINK_OPTION: &str = "@pij-tap-sink";
+/// A live tap's sink is emptied at the first quiet drain after the daemon has
+/// consumed this many bytes of it, so one pane's file stays under this plus one
+/// burst of output (plan 185, D5).
+pub const TAP_TRIM_BYTES: u64 = 1024 * 1024;
+/// An orphaned sink written this recently is spared by the sweep. A brake only:
+/// removing it would make the sweep remove the same set or more, never another.
+pub const ORPHAN_TAP_GRACE: Duration = Duration::from_secs(5 * 60);
 const SUBMIT_CHUNK_BYTES: usize = 1_000;
 const SUBMIT_CHUNK_PAUSE: Duration = Duration::from_millis(10);
 /// Staging a body under owned input is bounded, but by LAUNCH latency, not by
@@ -100,6 +163,9 @@ pub struct TmuxAdapter {
     taps: Arc<Mutex<BTreeMap<String, TapState>>>,
     /// Plan 180: reads ride one persistent control-mode client, not a process each.
     control: Arc<control::ControlClient>,
+    /// Whether the orphan sweep may claim sinks written before tap ledgers
+    /// existed. Only the default server's adapter does (plan 185 ruling).
+    claims_legacy_sinks: bool,
 }
 
 #[derive(Debug)]
@@ -119,6 +185,7 @@ impl TmuxAdapter {
             legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
+            claims_legacy_sinks: true,
             control: Arc::new(control::ControlClient::new(
                 OsString::from("tmux"),
                 None,
@@ -146,6 +213,7 @@ impl TmuxAdapter {
             legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
+            claims_legacy_sinks: true,
             control: Arc::new(control::ControlClient::new(
                 OsString::from("tmux"),
                 None,
@@ -166,6 +234,7 @@ impl TmuxAdapter {
             legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
+            claims_legacy_sinks: true,
         }
     }
 
@@ -188,6 +257,7 @@ impl TmuxAdapter {
             tap_root: tap_root.into(),
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
+            claims_legacy_sinks: false,
         }
     }
 
@@ -202,6 +272,15 @@ impl TmuxAdapter {
         adapter
     }
 
+    /// Override whether the orphan sweep claims pre-ledger sinks once. On by
+    /// default for the default server and off for a named one; a private-server
+    /// fixture turns it on to exercise the default server's claim.
+    #[must_use]
+    pub fn with_legacy_sink_claim(mut self, claims: bool) -> Self {
+        self.claims_legacy_sinks = claims;
+        self
+    }
+
     /// Opt in or out of the persistent control-mode client for reads.
     ///
     /// On by default for the real constructors; off for [`Self::with_binary`],
@@ -210,6 +289,23 @@ impl TmuxAdapter {
     pub fn with_control_mode(mut self, enabled: bool) -> Self {
         self.control = Arc::new(self.control.with_enabled(enabled));
         self
+    }
+
+    /// Every pane on this adapter's server, whatever session it is scoped to:
+    /// the sweep's "pane absent" decision is only sound over the whole server.
+    fn server_list_args(&self) -> Vec<OsString> {
+        os_args([
+            "list-panes",
+            "-a",
+            "-f",
+            control::NOT_CONTROL_PANE,
+            "-F",
+            LIST_FORMAT,
+        ])
+    }
+
+    fn tap_ledger(&self) -> TapLedger {
+        TapLedger::for_server(&self.tap_root, self.server.as_deref())
     }
 
     fn list_args(&self) -> Vec<OsString> {
@@ -1119,6 +1215,18 @@ impl TmuxPort for TmuxAdapter {
                 ))
             })?;
         }
+        // Ownership before the resource: a crash after this line leaves a ledger
+        // entry with no file, which the sweep drops; the inverse order would
+        // leave a sink no server's sweep may ever remove.
+        let sink_name = sink
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("expected tap sinks are named by tap_sink_path");
+        self.tap_ledger().record(sink_name).map_err(|error| {
+            self.error(format!(
+                "could not record tap ownership for {sink:?}: {error}"
+            ))
+        })?;
         let sink_file = OpenOptions::new()
             .create(true)
             .truncate(!tracked)
@@ -1179,11 +1287,9 @@ impl TmuxPort for TmuxAdapter {
                 "pane {pane:?} has no attached tap — attach it before draining"
             ))
         })?;
-        let mut file = File::open(&tap.path).map_err(|error| {
-            self.error(format!("could not open tap sink {:?}: {error}", tap.path))
-        })?;
-        let length = file
-            .metadata()
+        // Stat before open: an unchanged tap costs no open(), which Defender
+        // inspects (plan 185, D4: two opens per pane per 600 ms tick).
+        let length = fs::metadata(&tap.path)
             .map_err(|error| {
                 self.error(format!(
                     "could not inspect tap sink {:?}: {error}",
@@ -1191,16 +1297,117 @@ impl TmuxPort for TmuxAdapter {
                 ))
             })?
             .len();
-        let offset = tap.offset.min(length);
-        file.seek(SeekFrom::Start(offset)).map_err(|error| {
+        if length < tap.offset {
+            // A sink that shrank under us is read from its new end.
+            tap.offset = length;
+            return Ok(Vec::new());
+        }
+        if length == tap.offset {
+            // Nothing new since the last drain. Trim here, while the pane is
+            // quiet, never mid-burst: see `trim_consumed_tap`.
+            if length >= TAP_TRIM_BYTES
+                && trim_consumed_tap(&tap.path, length).map_err(|error| {
+                    self.error(format!("could not trim tap sink {:?}: {error}", tap.path))
+                })?
+            {
+                tap.offset = 0;
+            }
+            return Ok(Vec::new());
+        }
+        let mut file = File::open(&tap.path).map_err(|error| {
+            self.error(format!("could not open tap sink {:?}: {error}", tap.path))
+        })?;
+        file.seek(SeekFrom::Start(tap.offset)).map_err(|error| {
             self.error(format!("could not seek tap sink {:?}: {error}", tap.path))
         })?;
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes).map_err(|error| {
             self.error(format!("could not drain tap sink {:?}: {error}", tap.path))
         })?;
-        tap.offset = offset + u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        tap.offset += u64::try_from(bytes.len()).unwrap_or(u64::MAX);
         Ok(bytes)
+    }
+
+    async fn sweep_orphan_taps(&self) -> Result<TapSweep> {
+        let ledger = self.tap_ledger();
+        let ledger_error =
+            |error: io::Error| self.error(format!("could not use the tap ledger: {error}"));
+        let mut owned = ledger.read().map_err(ledger_error)?;
+        let mut sweep = TapSweep::default();
+        if self.claims_legacy_sinks && !ledger.legacy_claimed() {
+            // One-time claim of the sinks written before ledgers existed (plan
+            // 185 ruling): only the default server's adapter claims, and the
+            // claim only adds ownership. The pane-absence test below still
+            // decides every removal.
+            // A sink another server's ledger names is that server's.
+            let others = ledger.others().map_err(ledger_error)?;
+            for name in unledgered_sinks(&self.tap_root).map_err(ledger_error)? {
+                if !others.contains(&name) && owned.insert(name) {
+                    sweep.claimed += 1;
+                }
+            }
+            ledger.rewrite(&owned).map_err(ledger_error)?;
+            ledger.mark_legacy_claimed().map_err(ledger_error)?;
+        }
+        if owned.is_empty() {
+            return Ok(sweep);
+        }
+        let live: BTreeSet<String> =
+            parse_panes(&self.stdout("list-panes", &self.server_list_args())?)?
+                .iter()
+                .map(|pane| sink_file_name(&pane.id))
+                .chain(
+                    self.taps
+                        .lock()
+                        .expect("tmux tap mutex")
+                        .keys()
+                        .map(|pane| sink_file_name(pane)),
+                )
+                .collect();
+        let now = SystemTime::now();
+        for name in owned.clone() {
+            if live.contains(&name) || !is_sink_name(&name) {
+                continue;
+            }
+            let path = self.tap_root.join(&name);
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    owned.remove(&name);
+                    continue;
+                }
+                Err(error) => {
+                    return Err(self.error(format!("could not inspect tap sink {path:?}: {error}")));
+                }
+            };
+            if !metadata.file_type().is_file() {
+                continue;
+            }
+            let recent = metadata
+                .modified()
+                .ok()
+                .and_then(|modified| now.duration_since(modified).ok())
+                .is_none_or(|age| age < ORPHAN_TAP_GRACE);
+            if recent {
+                sweep.spared_recent += 1;
+                continue;
+            }
+            match fs::remove_file(&path) {
+                Ok(()) => {
+                    sweep.removed += 1;
+                    sweep.removed_bytes += metadata.len();
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(self.error(format!(
+                        "could not remove orphaned tap sink {path:?}: {error}"
+                    )));
+                }
+            }
+            owned.remove(&name);
+        }
+        ledger.rewrite(&owned).map_err(ledger_error)?;
+        Ok(sweep)
     }
 
     async fn detach_pane_tap(&self, pane: &str) -> Result<()> {

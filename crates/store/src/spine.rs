@@ -176,6 +176,18 @@ impl Spine for SqliteSpine {
         rows.iter().map(decode_event).collect()
     }
 
+    async fn newest(&self) -> Result<Seq> {
+        require_current_schema(&self.pool).await?;
+        // MAX over the INTEGER PRIMARY KEY is a single b-tree seek.
+        let newest: Option<i64> = sqlx::query_scalar("SELECT MAX(seq) FROM spine_events")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        Ok(Seq(newest.map_or(0, |seq| {
+            u64::try_from(seq).expect("spine sequences are positive")
+        })))
+    }
+
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         if kinds.is_empty() {
             return Err(PijError::Adapter {

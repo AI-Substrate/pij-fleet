@@ -38,6 +38,8 @@ pub const EMIT_TEXT_MAX: usize = 16 * 1024;
 pub const EMIT_DATA_MAX: usize = 256 * 1024;
 /// Pending events per source; emits beyond this are dropped and counted.
 pub const PENDING_CAP: u64 = 10_000;
+/// Spine kind recording that a source's final turn was dropped, with its reason.
+pub const FINAL_TURN_DROPPED: &str = "bg.final-turn-dropped";
 /// Default `--min-interval` between two wakes from one source.
 pub const DEFAULT_MIN_INTERVAL_MS: u64 = 60_000;
 /// Default `--inline-max`: events listed in the turn itself.
@@ -1203,16 +1205,26 @@ impl BackgroundService {
             "msg_id": msg_id,
         }))
         .map_err(|error| fault(format!("completion event: {error}")))?;
-        self.event_bus
-            .publish(Event {
-                seq: None,
-                v: 1,
-                at: job.finished_at.unwrap_or(job.started_at),
-                kind: kind.to_string(),
-                seat: Some(job.owner.clone()),
-                payload,
-            })
-            .await?;
+        // Once per job: a notify that fails after this point is retried every
+        // tick, and re-publishing here put 2.4M `bg.lost` rows on the live spine
+        // at 10/s for one stranded source (plan 185, D2). One indexed seek.
+        if self
+            .event_bus
+            .latest_matching_message(&job.owner, kind, &msg_id)
+            .await?
+            .is_none()
+        {
+            self.event_bus
+                .publish(Event {
+                    seq: None,
+                    v: 1,
+                    at: job.finished_at.unwrap_or(job.started_at),
+                    kind: kind.to_string(),
+                    seat: Some(job.owner.clone()),
+                    payload,
+                })
+                .await?;
+        }
         if job.kind == BackgroundKind::Events {
             return self.finish_source(job, body, &msg_id).await;
         }
@@ -1240,17 +1252,18 @@ impl BackgroundService {
         mut body: String,
         msg_id: &str,
     ) -> Result<()> {
-        let owner = self
-            .registry
-            .get(&job.owner)
-            .await?
-            .filter(|owner| owner.tombstoned_at.is_none())
-            .ok_or_else(|| {
-                refusal(format!(
-                    "owner {} of source {} is gone; its final turn waits",
-                    job.owner, job.job_id
-                ))
-            })?;
+        let owner = self.registry.get(&job.owner).await?.ok_or_else(|| {
+            refusal(format!(
+                "owner {} of source {} is gone; its final turn waits",
+                job.owner, job.job_id
+            ))
+        })?;
+        if owner.tombstoned_at.is_some() {
+            // A tombstone is permanent, so this final turn can never be handed
+            // off. End the job's work once, with the reason on the spine, rather
+            // than retrying it every tick for ever (plan 185, D2).
+            return self.drop_final_turn(job, msg_id).await;
+        }
         let now = now_ms()?;
         // A batch cut before the end may already have been accepted (a crash
         // before it settled): finish it under its own msg_id, which makes the
@@ -1302,6 +1315,37 @@ impl BackgroundService {
         if let Some(batch) = last {
             self.store
                 .settle_batch(&job.job_id, batch.batch_no, state, now)
+                .await?;
+        }
+        self.store.mark_notified(&job.job_id).await
+    }
+
+    /// Record why a source's final turn will never be delivered, then stop
+    /// ticking it. The record is written before the row changes (P9) and only
+    /// once, so a crash between the two re-runs this without a second record.
+    async fn drop_final_turn(&self, job: &BackgroundJob, msg_id: &str) -> Result<()> {
+        if self
+            .event_bus
+            .latest_matching_message(&job.owner, FINAL_TURN_DROPPED, msg_id)
+            .await?
+            .is_none()
+        {
+            let payload = serde_json::to_string(&serde_json::json!({
+                "job_id": job.job_id,
+                "owner": job.owner,
+                "msg_id": msg_id,
+                "reason": format!("owner {} is tombstoned", job.owner),
+            }))
+            .map_err(|error| fault(format!("final-turn drop event: {error}")))?;
+            self.event_bus
+                .publish(Event {
+                    seq: None,
+                    v: 1,
+                    at: now_ms()?,
+                    kind: FINAL_TURN_DROPPED.to_string(),
+                    seat: Some(job.owner.clone()),
+                    payload,
+                })
                 .await?;
         }
         self.store.mark_notified(&job.job_id).await
@@ -2425,6 +2469,86 @@ mod tests {
         fixture.service.tick().await.unwrap();
         assert_eq!(fixture.held_fyis().await, 1, "the refused final turn waits");
         assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+    }
+
+    async fn spine_kinds(fixture: &Fixture, kind: &str) -> Vec<Event> {
+        fixture
+            .spine
+            .tail(None, Seq(0))
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == kind)
+            .collect()
+    }
+
+    /// Plan 185 D2: on main this tick failed for ever ("owner ... is gone; its
+    /// final turn waits") and re-published `bg.killed` every 100 ms.
+    #[tokio::test]
+    async fn a_tombstoned_owners_source_ends_once_with_its_reason() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        killed_source_with_two_events(&fixture, false).await;
+        fixture
+            .registry
+            .tombstone(&SeatId::from("owner"), "test")
+            .await
+            .unwrap();
+        for _ in 0..3 {
+            fixture.service.tick().await.unwrap();
+        }
+        assert!(
+            fixture.service.lookup("bg-src").await.unwrap().notified,
+            "the job stops being ticked"
+        );
+        assert_eq!(spine_kinds(&fixture, "bg.killed").await.len(), 1);
+        let dropped = spine_kinds(&fixture, FINAL_TURN_DROPPED).await;
+        assert_eq!(dropped.len(), 1, "the reason is recorded once");
+        let payload: serde_json::Value = serde_json::from_str(&dropped[0].payload).unwrap();
+        assert_eq!(payload["reason"], "owner owner is tombstoned");
+        assert_eq!(payload["msg_id"], "pij-bg:bg-src:finished");
+        assert!(fixture.to("owner").is_empty());
+    }
+
+    /// Plan 185 D2: a notify that fails after publishing is retried, and the
+    /// retry must not publish the completion a second time.
+    #[tokio::test]
+    async fn a_retried_completion_publishes_its_event_once() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        killed_source_with_two_events(&fixture, false).await;
+        arm(&fixture, "final-before-admission");
+        assert!(
+            fixture.service.tick().await.is_err(),
+            "the first notify fails"
+        );
+        fixture.service.tick().await.unwrap();
+        assert!(fixture.service.lookup("bg-src").await.unwrap().notified);
+        assert_eq!(spine_kinds(&fixture, "bg.killed").await.len(), 1);
+    }
+
+    /// The once-guard is per message: a second job's completion still publishes.
+    #[tokio::test]
+    async fn every_new_job_still_publishes_its_own_completion() {
+        let fixture = Fixture::new(FakeLiveness::new()).await;
+        for job_id in ["bg-one", "bg-two"] {
+            let job = fixture.source(job_id, "tok", false, 0, 5).await;
+            assert!(fixture.service.store.request_kill(job_id).await.unwrap());
+            std::fs::write(receipt_path(&job), "143 1700000009\n").unwrap();
+            fixture.service.tick().await.unwrap();
+        }
+        let killed = spine_kinds(&fixture, "bg.killed").await;
+        let ids: Vec<String> = killed
+            .iter()
+            .map(|event| {
+                serde_json::from_str::<serde_json::Value>(&event.payload).unwrap()["msg_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["pij-bg:bg-one:finished", "pij-bg:bg-two:finished"]
+        );
     }
 
     fn arm(fixture: &Fixture, name: &'static str) {

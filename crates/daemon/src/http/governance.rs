@@ -22,7 +22,7 @@ use pij_core::orchestration::{
     Fence, PlanAttestation, PrimeDesignation, PrimeState, Project, ProjectUpdate, StreamState,
     TaskAssignment, TaskCloseReason, plan_stream_creation, plan_stream_creation_at_ordinal,
 };
-use pij_core::ports::{SeatFilter, Spine};
+use pij_core::ports::{SeatFilter, Spine, SpineWindow};
 use pij_core::report::{ReportConfig, ReportService};
 use pij_store::{DispatchAck, GovernanceOutcome, SqliteOrchestration};
 use serde::{Deserialize, Serialize};
@@ -101,27 +101,48 @@ impl GovernanceService {
 
     async fn reconcile_deliveries(&self) -> Result<()> {
         let _guard = self.mutation.lock().await;
-        let history = self.event_bus.tail(None, Seq(0)).await?;
+        let dispatches = self.store.list_dispatches(None).await?;
+        // Only recipients' receipts can match a dispatch, so read those seats'
+        // `delivery.outcome` rows through the (seat, kind) index. Decoding the
+        // whole spine here cost 4.6 GB of RSS at every boot on a 3M-row spine,
+        // and macOS keeps that high-water (plan 185, D6).
+        let recipients: BTreeSet<&SeatId> = dispatches
+            .iter()
+            .filter(|dispatch| dispatch.msg_id.is_some())
+            .map(|dispatch| &dispatch.to)
+            .collect();
         let mut delivered = BTreeMap::new();
-        for event in &history {
-            if event.kind != "delivery.outcome" {
-                continue;
-            }
-            // User spine kinds are open strings. A same-named user event is
-            // not a transport receipt unless it decodes as one.
-            let Ok(outcome) = serde_json::from_str::<DeliveryEvent>(&event.payload) else {
-                continue;
-            };
-            if matches!(outcome.outcome, DeliveryOutcome::Delivered { .. }) {
-                delivered.entry(outcome.msg_id).or_insert(event);
+        for seat in recipients {
+            for event in self.seat_kind_events(seat, "delivery.outcome").await? {
+                // User spine kinds are open strings. A same-named user event is
+                // not a transport receipt unless it decodes as one.
+                let Ok(outcome) = serde_json::from_str::<DeliveryEvent>(&event.payload) else {
+                    continue;
+                };
+                if matches!(outcome.outcome, DeliveryOutcome::Delivered { .. }) {
+                    delivered.entry(outcome.msg_id).or_insert(event);
+                }
             }
         }
-        for dispatch in self.store.list_dispatches(None).await? {
+        for dispatch in dispatches {
             if let Some(event) = dispatch.msg_id.as_ref().and_then(|id| delivered.get(id)) {
                 self.observe_delivery(event).await?;
             }
         }
         Ok(())
+    }
+
+    /// One seat's events of one kind, oldest `(at, seq)` first, read in bounded
+    /// pages through the spine's `(seat, kind, at)` index.
+    async fn seat_kind_events(&self, seat: &SeatId, kind: &str) -> Result<Vec<Event>> {
+        let mut events = Vec::new();
+        let mut window = Some(SpineWindow::new(kind, 0, Seq(0), SpineWindow::MAX_LIMIT)?);
+        while let Some(current) = window.take() {
+            let page = self.event_bus.matching_since(seat, &current).await?;
+            window = current.next(&page);
+            events.extend(page);
+        }
+        Ok(events)
     }
 
     async fn observe_delivery(&self, event: &Event) -> Result<()> {
@@ -155,11 +176,8 @@ impl GovernanceService {
         // Recovery is not conditional on Changed: a previous attempt may have
         // committed the row and failed to publish. Match the durable transition
         // evidence, then repair the missing publication on startup/replay.
-        let history = self.event_bus.tail(Some(&dispatch.to), Seq(0)).await?;
+        let history = self.seat_kind_events(&dispatch.to, "dispatch").await?;
         let published = history.iter().any(|event| {
-            if event.kind != "dispatch" {
-                return false;
-            }
             let Ok(payload) = serde_json::from_str::<Value>(&event.payload) else {
                 return false;
             };
@@ -2175,6 +2193,7 @@ mod tests {
         inner: SqliteSpine,
         fail: AtomicBool,
         fail_tail: AtomicBool,
+        tail_calls: std::sync::atomic::AtomicUsize,
     }
 
     #[async_trait]
@@ -2186,12 +2205,17 @@ mod tests {
             self.inner.append(event).await
         }
         async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>> {
+            self.tail_calls.fetch_add(1, Ordering::SeqCst);
             if self.fail_tail.swap(false, Ordering::SeqCst) {
                 return Err(adapter(
                     "injected: pool timed out while waiting for an open connection",
                 ));
             }
             self.inner.tail(seat, since).await
+        }
+
+        async fn newest(&self) -> Result<Seq> {
+            self.inner.newest().await
         }
         async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
             self.inner.latest_matching(seat, kinds).await
@@ -2210,6 +2234,13 @@ mod tests {
             seat: &SeatId,
             window: &pij_core::ports::SpineWindow,
         ) -> Result<Vec<Event>> {
+            // The delivery observer's startup read pages here (plan 185, D6), so
+            // the injected store timeout applies to both read paths.
+            if self.fail_tail.swap(false, Ordering::SeqCst) {
+                return Err(adapter(
+                    "injected: pool timed out while waiting for an open connection",
+                ));
+            }
             self.inner.matching_since(seat, window).await
         }
     }
@@ -2221,6 +2252,7 @@ mod tests {
             inner: SqliteSpine::new(pool.clone()),
             fail: AtomicBool::new(false),
             fail_tail: AtomicBool::new(false),
+            tail_calls: std::sync::atomic::AtomicUsize::new(0),
         });
         let raw: Arc<dyn Spine> = spine.clone();
         let bus = Arc::new(EventBus::new(raw, 16).expect("bus"));
@@ -2349,6 +2381,61 @@ mod tests {
                 .filter(|event| event.kind == "dispatch")
                 .count(),
             1
+        );
+    }
+
+    /// Plan 185 D6: startup reconciliation read `tail(None, Seq(0))`, the whole
+    /// spine (4.6 GB of RSS on a 3M-row spine, kept as the process high-water),
+    /// and a seat-wide tail per dispatch. It now pages only recipients' rows of
+    /// the two kinds it matches, and projects the same delivery.
+    #[tokio::test]
+    async fn reconciliation_projects_deliveries_without_reading_whole_histories() {
+        let (_fresh, service, spine) = service().await;
+        let dispatch: Dispatch =
+            serde_json::from_value(event_record("dispatch-queued")).expect("dispatch");
+        assert!(
+            service
+                .store
+                .create_dispatch(&dispatch)
+                .await
+                .expect("dispatch")
+        );
+        for at in 0..50 {
+            service
+                .event_bus
+                .publish(Event {
+                    seq: None,
+                    v: 1,
+                    at,
+                    kind: "bg.lost".into(),
+                    seat: Some(SeatId::from("pij-noisy")),
+                    payload: "{}".into(),
+                })
+                .await
+                .expect("unrelated history");
+        }
+        service
+            .event_bus
+            .publish(delivered_event(&dispatch))
+            .await
+            .expect("receipt");
+
+        service.reconcile_deliveries().await.expect("reconcile");
+
+        assert_eq!(
+            service
+                .store
+                .dispatch(&dispatch.id)
+                .await
+                .expect("row")
+                .expect("present")
+                .state,
+            DispatchState::Delivered
+        );
+        assert_eq!(
+            spine.tail_calls.load(Ordering::SeqCst),
+            0,
+            "no whole-history read"
         );
     }
 

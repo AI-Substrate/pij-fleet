@@ -884,6 +884,9 @@ impl Spine for FailBindingSpine {
     async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<pij_core::model::Event>> {
         self.inner.tail(seat, since).await
     }
+    async fn newest(&self) -> Result<Seq> {
+        self.inner.newest().await
+    }
     async fn latest_matching(
         &self,
         seat: &SeatId,
@@ -1198,4 +1201,69 @@ async fn telegram_refuses_egress_outside_the_configured_operator_chat() {
         "refusal is terminal, not an immortal retry"
     );
     server.abort();
+}
+
+/// Backdate a directory's mtime so the bg worker trusts it as settled.
+fn settle_dir(dir: &std::path::Path) {
+    std::fs::File::open(dir)
+        .expect("open state dir")
+        .set_modified(std::time::SystemTime::now() - Duration::from_secs(60))
+        .expect("backdate state dir");
+}
+
+fn terminal_record(dir: &std::path::Path, id: &str) -> PathBuf {
+    let path = dir.join(format!("{id}.json"));
+    let record = serde_json::json!({
+        "id": id, "title": "t", "pgid": 1, "owner_id": "o", "target": "pij-test",
+        "output_path": dir.join(format!("{id}.log")), "status": "done",
+        "observed_pids": [], "finished_at": 1, "exit_code": 0,
+    });
+    std::fs::write(&path, record.to_string()).expect("write record");
+    path
+}
+
+/// Plan 185 D3: an idle worker re-opened every record, terminal ones included,
+/// twice per 100 ms tick. Proof by denial: once a record is known terminal it is
+/// made unreadable, and a worker that still opens it fails the pass.
+#[tokio::test]
+async fn bg_worker_never_reopens_a_terminal_record_and_still_reads_new_ones() {
+    use std::os::unix::fs::PermissionsExt;
+    let fresh = FreshStore::new();
+    let queue_port: Arc<dyn Queue> = sqlite_queue(&fresh).await;
+    let dir = temp_path(&fresh, "bg-index");
+    let worker = BgWorker::new(queue_port, dir.clone()).expect("worker");
+    let done = terminal_record(&dir, "done-a");
+    settle_dir(&dir);
+    worker
+        .run_once(0)
+        .await
+        .expect("first pass reads the record");
+
+    let deny = std::fs::Permissions::from_mode(0o000);
+    std::fs::set_permissions(&done, deny.clone()).expect("deny record");
+    worker
+        .run_once(0)
+        .await
+        .expect("an unchanged directory opens no terminal record");
+    // Search-only: paths still resolve, but listing fails. A settled, unchanged
+    // directory is not listed at all.
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o100)).expect("deny list");
+    let unlisted = worker.run_once(0).await;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("allow list");
+    unlisted.expect("an unchanged directory is not listed");
+
+    // A new record moves the directory's mtime: it is listed and read, while
+    // the known-terminal one is still skipped.
+    // Named to sort AFTER `done-a`: a pass that re-read the denied record would
+    // fail on it first, so the error below proves it was skipped.
+    std::fs::write(dir.join("zz-new.json"), "{not json").expect("write new record");
+    let error = worker
+        .run_once(0)
+        .await
+        .expect_err("a record written after the index settled is still read");
+    assert!(
+        error.to_string().contains("key must be a string"),
+        "the new record's own parse error, not the denied one: {error}"
+    );
+    std::fs::set_permissions(&done, std::fs::Permissions::from_mode(0o644)).expect("restore");
 }

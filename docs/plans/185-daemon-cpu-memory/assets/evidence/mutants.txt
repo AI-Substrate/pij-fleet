@@ -1,0 +1,60 @@
+M1 SqliteSpine::newest answers the oldest: KILLED (red)
+    thread 'the_sqlite_spine_honours_the_same_contract_the_fake_does' panicked at crates/testkit/src/contract.rs:264:5:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.05s
+    error: test failed, to rerun pass `-p pij-store --test store_integration`
+M2 subscribe scans the whole spine again: KILLED (red)
+    thread 'a_cursor_attach_never_reads_the_spine_before_its_cursor' panicked at crates/daemon/tests/events_bus.rs:267:5:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+    error: test failed, to rerun pass `-p pij-daemon --test events_bus`
+M5 completion guard keyed by kind only: KILLED (red)
+    thread 'background::tests::every_new_job_still_publishes_its_own_completion' panicked at crates/daemon/src/background.rs:2548:9:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.05s
+    error: test failed, to rerun pass `-p pij-daemon --lib`
+M6 failure log logs every repeat: KILLED (red)
+    thread 'lifecycle::tests::a_repeated_tick_failure_is_logged_once_until_it_changes_or_clears' panicked at crates/daemon/src/lifecycle.rs:263:9:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.00s
+    error: test failed, to rerun pass `-p pij-daemon --lib`
+M7 sidecar re-reads terminal records: KILLED (red)
+    thread 'bg_worker_never_reopens_a_terminal_record_and_still_reads_new_ones' panicked at crates/sidecars/tests/sidecars.rs:1264:5:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.08s
+    error: test failed, to rerun pass `-p pij-sidecars --test sidecars`
+M8 sidecar lists the directory every pass: KILLED (red)
+    thread 'bg_worker_never_reopens_a_terminal_record_and_still_reads_new_ones' panicked at crates/sidecars/tests/sidecars.rs:1253:14:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.06s
+    error: test failed, to rerun pass `-p pij-sidecars --test sidecars`
+M9 drain opens an unchanged tap: KILLED (red)
+    thread 'an_unchanged_tap_drains_without_opening_its_sink' panicked at crates/tmux/tests/adapter.rs:1312:15:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.17s
+    error: test failed, to rerun pass `-p pij-tmux --test adapter`
+M10 live tap never trimmed: KILLED (red)
+    thread 'a_consumed_tap_is_trimmed_and_offsets_survive_the_truncation' panicked at crates/tmux/tests/adapter.rs:1274:5:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.79s
+    error: test failed, to rerun pass `-p pij-tmux --test adapter`
+M11 every adapter claims pre-ledger sinks: KILLED (red)
+    thread 'a_named_server_adapter_never_claims_or_sweeps_a_pre_ledger_sink' panicked at crates/tmux/tests/adapter.rs:1346:5:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.06s
+    error: test failed, to rerun pass `-p pij-tmux --test adapter`
+M12 sweep ignores live panes: KILLED (red)
+    thread 'the_claiming_sweep_removes_only_old_sinks_of_absent_panes' panicked at crates/tmux/tests/adapter.rs:1381:5:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.31s
+    error: test failed, to rerun pass `-p pij-tmux --test adapter`
+M13 sweep without the mtime brake: KILLED (red)
+    thread 'the_claiming_sweep_removes_only_old_sinks_of_absent_panes' panicked at crates/tmux/tests/adapter.rs:1381:5:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.08s
+    error: test failed, to rerun pass `-p pij-tmux --test adapter`
+M14 claim ignores other servers' ledgers: KILLED (red)
+    thread 'the_claiming_sweep_removes_only_old_sinks_of_absent_panes' panicked at crates/tmux/tests/adapter.rs:1377:5:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.09s
+    error: test failed, to rerun pass `-p pij-tmux --test adapter`
+M15 observer sweeps every tick: KILLED (red)
+    thread 'pane_observer::tests::the_orphan_sweep_runs_once_per_boot_not_per_tick' panicked at crates/daemon/src/pane_observer.rs:560:9:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.00s
+    error: test failed, to rerun pass `-p pij-daemon --lib`
+M16 reconcile reads the whole spine: KILLED (red)
+    thread 'http::governance::tests::reconciliation_projects_deliveries_without_reading_whole_histories' panicked at crates/daemon/src/http/governance.rs:2429:9:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.70s
+    error: test failed, to rerun pass `-p pij-daemon --lib`
+M17 published-check reads the seat history: KILLED (red)
+    thread 'http::governance::tests::reconciliation_projects_deliveries_without_reading_whole_histories' panicked at crates/daemon/src/http/governance.rs:2429:9:
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.08s
+    error: test failed, to rerun pass `-p pij-daemon --lib`

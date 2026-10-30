@@ -222,6 +222,11 @@ pub async fn spine_contract(spine: &dyn Spine) {
             .is_empty(),
         "an empty spine tails as an empty list, not an error"
     );
+    assert_eq!(
+        spine.newest().await.expect("initial newest"),
+        Seq(0),
+        "an empty spine's newest sequence is Seq(0), not an error"
+    );
 
     let event = |kind: &str, seat: Option<SeatId>, payload: &str| Event {
         seq: None,
@@ -255,6 +260,11 @@ pub async fn spine_contract(spine: &dyn Spine) {
     assert!(
         first < second && second < third && third < fourth,
         "append must allocate a strictly increasing total order"
+    );
+    assert_eq!(
+        spine.newest().await.expect("newest"),
+        fourth,
+        "newest is the highest assigned sequence"
     );
 
     let after_first = spine.tail(None, first).await.expect("tail after first");

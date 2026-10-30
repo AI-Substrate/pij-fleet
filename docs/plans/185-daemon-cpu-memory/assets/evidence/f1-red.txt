@@ -1,0 +1,6 @@
+test a_cursor_attach_never_reads_the_spine_before_its_cursor ... FAILED
+thread 'a_cursor_attach_never_reads_the_spine_before_its_cursor' panicked at crates/daemon/tests/events_bus.rs:262:5:
+assertion `left == right` failed: only the replay after the cursor is read
+  left: [Seq(0), Seq(48)]
+ right: [Seq(48)]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
