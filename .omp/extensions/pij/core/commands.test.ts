@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	ALLOWED_COMMANDS,
 	CONTROL_COMMANDS,
+	COPILOT_COMMANDS,
 	COPILOT_CONTROL_REFUSAL,
 	isControlCommand,
 	validateCommand,
@@ -19,6 +20,7 @@ describe("validateCommand", () => {
 		);
 		expect(ALLOWED_COMMANDS).toEqual(contract.commands);
 		expect(COPILOT_CONTROL_REFUSAL).toBe(contract.copilot_refusal);
+		expect(COPILOT_COMMANDS).toEqual(contract.copilot_commands);
 	});
 	it("accepts compact", () => {
 		const r = validateCommand("compact");

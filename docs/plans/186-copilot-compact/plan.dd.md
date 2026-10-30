@@ -27,7 +27,7 @@
 
 ## Summary
 
-Plan 137 (2026-09-05, legacy repo) moved Copilot message delivery onto its native extension and, as part of that, banned every tmux path into a Copilot pane, controls included (impl-guide item 8). The tmux compact path went away and nothing replaced it. Today crates/core/src/control.rs:50 refuses every control for Copilot, and crates/daemon/src/pointer/worker.rs:209 and :118 keep Copilot out of the pointer/control drain. Jordan ruled on 2026-10-30 that pij may compact a Copilot seat by typing /compact into its pane, through the same gates Claude uses. Messages stay on the extension. Rulings: assets/rulings.md.
+Plan 137 (2026-09-05, legacy repo) moved Copilot message delivery onto its native extension and, as part of that, banned every tmux path into a Copilot pane, controls included (impl-guide item 8). The tmux compact path went away and nothing replaced it. Today crates/core/src/control.rs:50 refuses every control for Copilot, and crates/daemon/src/pointer/worker.rs:209 and :118 keep Copilot out of the pointer/control drain. Jordan ruled on 2026-10-30 that pij may compact a Copilot seat by typing /compact into its pane, through the same gates Claude uses. Messages stay on the extension. Rulings: assets/rulings.md. Implementation note (prime ruling 2026-10-30): Copilot controls queue on their own kind, delivery-control:<seat>, beside the native body kind delivery:<seat> on the same serial key, so the drain and the native extension never claim each other's rows and a typed compact never overlaps a claimed native body. Order across the two kinds is by row id among due rows, not strict FIFO: a compact queued behind pending bodies may run before the later ones.
 
 <a id="goals"></a>
 

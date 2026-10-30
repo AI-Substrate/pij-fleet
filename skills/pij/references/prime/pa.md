@@ -48,8 +48,8 @@ the handover files you check, you are read-only.
         <handover-dir>/<seat>-<date>.md: in-flight work, background PIDs/shells and what each waits for,
         pending items, rules you follow. Reply "handover ready". After compaction, re-read it and resume.'`
      b. "handover ready" arrives as a turn; don't poll. Check the file names the in-flight work.
-     c. `pij send <seat> --command compact`. Not for Copilot or paneless seats: they refuse it
-        (`E-RS-CONTROL-UNSUPPORTED`, `E-RS-CONTROL-PANELESS`), so don't try; report the size to the prime.
+     c. `pij send <seat> --command compact`. Copilot seats compact like Claude seats (plan 186).
+        Paneless seats refuse it (`E-RS-CONTROL-PANELESS`), so don't try; report the size to the prime.
      d. Verify **on the next nudge**: its context dropped and then grew, or a turn started. A "~0k"
         footer right after compaction is an artefact, not a reading. If it is idle with work in flight:
         `pij send <seat> '<prime-id> PA: post-compaction check: re-read <handover> and resume <item>.'`

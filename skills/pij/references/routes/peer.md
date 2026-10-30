@@ -85,8 +85,9 @@ Double-quoted backticks/`$(...)` execute in the sending shell before pij runs. U
 **Remote controls on rs** ([API contract](../../../../docs/how/pij-rs-api.md)):
 commands carry no body; OMP and Pi each handle claims in-process and acknowledge `executed` or
 `refused` + reason. Acceptance is NOT completion. Native extension delivery bypasses typing
-grace; Claude PTY keeps it (human drafts hold commands). Copilot refuses with
-`E-RS-CONTROL-UNSUPPORTED: use Copilot's native user controls`; paneless seats also refuse.
+grace; Claude PTY keeps it (human drafts hold commands). Copilot `compact` is typed into its
+pane like Claude's, and also waits while the seat is `working`; Copilot `new`/`reload` refuse with
+`E-RS-CONTROL-UNSUPPORTED: use Copilot's native user controls`; paneless seats refuse.
 Never replace refusal with literal `/compact` or send-keys. Mechanically any registered peer may compact,
 without arming; who should is [protocol rule 7](../prime/protocol.md#fleet-messaging-every-send-costs-the-recipients-context). Destructive `new`/`reload` require self or target-recorded parent, resolved
 from daemon caller evidence — prime flags/roles confer no authority (no rs target-prime relation).

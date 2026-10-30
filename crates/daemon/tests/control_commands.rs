@@ -116,9 +116,23 @@ async fn control_native_refuses_unsupported_targets_and_invalid_shapes_without_e
         (
             Harness::Copilot,
             Some("%target"),
-            "compact",
+            "new",
             "",
             "E-RS-CONTROL-UNSUPPORTED: use Copilot's native user controls",
+        ),
+        (
+            Harness::Copilot,
+            Some("%target"),
+            "reload",
+            "",
+            "E-RS-CONTROL-UNSUPPORTED: use Copilot's native user controls",
+        ),
+        (
+            Harness::Copilot,
+            None,
+            "compact",
+            "",
+            "E-RS-CONTROL-PANELESS",
         ),
         (Harness::Omp, None, "compact", "", "E-RS-CONTROL-PANELESS"),
         (
@@ -154,6 +168,32 @@ async fn control_native_refuses_unsupported_targets_and_invalid_shapes_without_e
         );
         server.abort();
     }
+}
+
+/// Plan 186: a Copilot compact is queued for the pane control path on its own
+/// kind, so the native extension, which claims `delivery:<seat>`, never sees it.
+#[tokio::test]
+async fn control_copilot_compact_queues_on_the_control_kind_not_the_native_body_kind() {
+    let (addr, server, _store, queue) = daemon(Harness::Copilot, Some("%target"), None).await;
+    let (status, envelope) = post(addr, "/v1/send", request("compact")).await;
+    assert_eq!(status, 200, "{envelope:?}");
+    assert!(
+        queue
+            .peek(&[pij_core::delivery::delivery_kind(&"target".into())])
+            .await
+            .expect("peek")
+            .is_none(),
+        "the native extension's kind must never carry a control"
+    );
+    let (_, job) = queue
+        .peek(&["delivery-control:target".to_string()])
+        .await
+        .expect("peek")
+        .expect("queued control");
+    assert_eq!(job.serial_key, "target");
+    let msg: Msg = serde_json::from_str(&job.payload).expect("command message");
+    assert_eq!(msg.command.as_deref(), Some("compact"));
+    server.abort();
 }
 
 #[tokio::test]

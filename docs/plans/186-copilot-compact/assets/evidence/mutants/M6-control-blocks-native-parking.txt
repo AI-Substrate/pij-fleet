@@ -1,0 +1,18 @@
+# M6-control-blocks-native-parking
+# file: crates/store/src/queue.rs
+# - AND earlier.kind != 'delivery-control:' || jobs.serial_key \
+# + (deleted)
+
+$ cargo test -p pij-store --test queue_copilot_control --no-fail-fast
+exit=101
+test copilot_control_and_body_kinds_never_overlap_on_the_fake ... ok
+test copilot_control_rows_are_delivery_rows_for_bookkeeping_on_the_fake ... ok
+test copilot_waiting_compact_never_blocks_native_parking_on_the_fake ... ok
+test copilot_compact_behind_bodies_never_runs_mid_claim_on_the_fake ... ok
+test copilot_waiting_compact_never_blocks_native_parking_on_sqlite ... FAILED
+test copilot_control_rows_are_delivery_rows_for_bookkeeping_on_sqlite ... ok
+test copilot_control_and_body_kinds_never_overlap_on_sqlite ... ok
+test copilot_compact_behind_bodies_never_runs_mid_claim_on_sqlite ... ok
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+error: test failed, to rerun pass `-p pij-store --test queue_copilot_control`
+error: 1 target failed:

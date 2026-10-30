@@ -1940,7 +1940,7 @@ pub(crate) async fn send_control(
     let target = if let Some(to) = request.to.as_ref() {
         match state.services.registry.get(to).await {
             Ok(Some(target)) => {
-                if let Err(reason) = validate_target(&target) {
+                if let Err(reason) = validate_target(&request.command, &target) {
                     return refused(name, reason);
                 }
                 Some(target)
@@ -2009,7 +2009,7 @@ pub(crate) async fn send_control(
         );
     }
     let target = target.as_ref().unwrap_or(&actor);
-    if let Err(reason) = validate_target(target)
+    if let Err(reason) = validate_target(&request.command, target)
         .and_then(|()| authorize_command(&request.command, &actor.id, target))
     {
         return refused(name, reason);

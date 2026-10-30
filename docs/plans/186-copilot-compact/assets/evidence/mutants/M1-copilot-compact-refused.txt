@@ -1,0 +1,33 @@
+# M1-copilot-compact-refused
+# file: crates/core/src/control.rs
+# - if target.harness == Harness::Copilot && !COPILOT_COMMANDS.contains(&command) {
+# + if target.harness == Harness::Copilot {
+
+$ cargo test -p pij-core --lib control:: --no-fail-fast
+exit=101
+test control::tests::control_ownership_never_infers_authority_from_role ... ok
+test control::tests::control_fixture_matches_the_authoritative_policy ... ok
+test control::tests::control_body_allows_only_empty_envelopes ... ok
+test control::tests::control_outcomes_use_the_runtime_wire_contract ... ok
+test control::tests::copilot_allows_compact_only_and_paneless_copilot_refuses_by_name ... FAILED
+error: test failed, to rerun pass `-p pij-core --lib`
+error: 1 target failed:
+
+$ cargo test -p pij-daemon --test control_commands --test copilot_compact --no-fail-fast
+exit=101
+test control_copilot_compact_queues_on_the_control_kind_not_the_native_body_kind ... FAILED
+test control_shim_refuses_every_nonempty_body_channel_and_spoofed_owner ... ok
+test control_native_refuses_unsupported_targets_and_invalid_shapes_without_enqueueing ... FAILED
+test control_native_send_preserves_command_and_derived_sender ... ok
+test control_shim_send_and_compact_self_use_the_command_path ... ok
+test control_destructive_ownership_requires_pane_proof_not_asserted_actor ... ok
+test control_native_strips_only_standard_empty_envelopes ... ok
+test control_recorded_parent_can_send_destructive_commands ... ok
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+test copilot_compact_waits_for_a_working_seat_and_runs_once_it_is_idle ... FAILED
+test copilot_compact_is_never_typed_over_a_composer_draft ... FAILED
+test copilot_compact_is_typed_through_the_pane_gate_and_bodies_stay_native ... FAILED
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+error: test failed, to rerun pass `-p pij-daemon --test control_commands`
+error: test failed, to rerun pass `-p pij-daemon --test copilot_compact`
+error: 2 targets failed:

@@ -5,10 +5,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use pij_core::control::{COPILOT_CONTROL_REFUSAL, ControlOutcome};
+use pij_core::control::{COPILOT_COMMANDS, COPILOT_CONTROL_REFUSAL, ControlOutcome};
 use pij_core::delivery::{
     DeliveryDeferralReason, DeliveryRoute, DeliveryRung, MAX_TYPED_FRAME_BYTES, QueueReason,
-    ReleasedEvent, delivery_kind, route, route_control, select_rung,
+    ReleasedEvent, control_kind, delivery_kind, route, route_control, select_rung,
 };
 use pij_core::error::{PijError, Result};
 use pij_core::events::EventFilter;
@@ -1030,7 +1030,10 @@ impl DeliveryService {
         };
         if recipient.harness == Harness::Copilot
             && recipient.tombstoned_at.is_none()
-            && msg.command.is_some()
+            && msg
+                .command
+                .as_deref()
+                .is_some_and(|command| !COPILOT_COMMANDS.contains(&command))
         {
             let receipt = Receipt {
                 msg_id: msg.msg_id,
@@ -1044,7 +1047,8 @@ impl DeliveryService {
             self.publish_outcome(&to, &receipt).await?;
             return Ok(receipt);
         }
-        let _native_guard = if recipient.native_extension_delivery
+        let _native_guard = if msg.command.is_none()
+            && recipient.native_extension_delivery
             && recipient.harness == Harness::Copilot
             && recipient.tombstoned_at.is_none()
             && !self.native_receiver_live(&recipient).await
@@ -1110,10 +1114,9 @@ impl DeliveryService {
             DeliveryRoute::Transport => {
                 // Extension consumers exclusively own these durable rows. Copilot
                 // additionally checks native incarnation and human consent at claim.
-                let extension_stream = matches!(
-                    recipient.harness,
-                    Harness::Omp | Harness::Pi | Harness::Copilot
-                );
+                // Copilot controls are typed into its pane, like Claude's (plan 186).
+                let extension_stream = matches!(recipient.harness, Harness::Omp | Harness::Pi)
+                    || (recipient.harness == Harness::Copilot && msg.command.is_none());
                 let rung = if extension_stream {
                     DeliveryRung::Observe
                 } else {
@@ -1814,7 +1817,7 @@ impl DeliveryService {
                         ))
                     }
                     Ok(message) if native && message.command.is_some() => Some(
-                        "Copilot remote control is unsupported; native claim held without ack"
+                        "a Copilot control on the native body kind is never the extension's; native claim held without ack"
                             .into(),
                     ),
                     _ => None,
@@ -2484,6 +2487,16 @@ fn native_target_mismatch(target: Option<&str>, identity: &NativeInboxIdentity) 
     ))
 }
 
+/// The queue kind `msg` belongs on: a Copilot control on [`control_kind`],
+/// everything else on the recipient's delivery kind.
+pub(crate) fn queue_kind(msg: &Msg, harness: Option<Harness>) -> String {
+    if harness == Some(Harness::Copilot) && msg.command.is_some() {
+        control_kind(&msg.to)
+    } else {
+        delivery_kind(&msg.to)
+    }
+}
+
 fn delivery_job(msg: &Msg, recipient: Option<&SeatDescriptor>) -> Result<Job> {
     let native_target_session = recipient
         .filter(|seat| {
@@ -2500,7 +2513,7 @@ fn delivery_job(msg: &Msg, recipient: Option<&SeatDescriptor>) -> Result<Job> {
         message: format!("could not encode message {}: {error}", msg.msg_id),
     })?;
     Ok(Job {
-        kind: delivery_kind(&msg.to),
+        kind: queue_kind(msg, recipient.map(|seat| seat.harness)),
         serial_key: msg.to.0.clone(),
         payload,
         dedupe_key: msg.msg_id.clone(),
@@ -2596,7 +2609,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use pij_core::delivery::{MAX_TYPED_FRAME_BYTES, delivery_kind};
+    use pij_core::delivery::{MAX_TYPED_FRAME_BYTES, control_kind, delivery_kind};
     use pij_core::error::PijError;
     use pij_core::events::EventFilter;
     use pij_core::framing::frame_message;
@@ -5964,10 +5977,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn copilot_programmatic_controls_refuse_without_enqueue_or_tmux() {
+    async fn copilot_compact_queues_for_the_pane_and_other_controls_refuse() {
         let fixture = fixture(FakeTransport::reachable());
         register(&fixture, native_seat(Some("%137"))).await;
-        for command in ["compact", "new", "reload"] {
+        let compact = fixture
+            .service
+            .accept(Msg {
+                from: "pij-from".into(),
+                to: "pij-native".into(),
+                body: String::new(),
+                msg_id: "native-compact".into(),
+                from_machine: None,
+                in_reply_to: None,
+                command: Some("compact".into()),
+            })
+            .await
+            .expect("compact receipt");
+        assert!(
+            matches!(&compact.outcome, DeliveryOutcome::Queued { reason, .. } if reason.as_deref() == Some("pty")),
+            "{:?}",
+            compact.outcome
+        );
+        assert!(
+            fixture
+                .queue
+                .peek(&[delivery_kind(&"pij-native".into())])
+                .await
+                .unwrap()
+                .is_none(),
+            "a control never lands on the native body kind"
+        );
+        assert!(
+            fixture
+                .queue
+                .peek(&[control_kind(&"pij-native".into())])
+                .await
+                .unwrap()
+                .is_some()
+        );
+        for command in ["new", "reload"] {
             let result = fixture
                 .service
                 .accept(Msg {
@@ -5983,8 +6031,8 @@ mod tests {
                 .expect("explicit refusal receipt");
             assert!(matches!(result.outcome, DeliveryOutcome::Refused { .. }));
         }
-        assert_eq!(fixture.queue.live_len(), 0);
-        assert!(fixture.tmux.calls().is_empty());
+        assert_eq!(fixture.queue.live_len(), 1, "only the compact is queued");
+        assert!(fixture.tmux.calls().is_empty(), "admission never types");
         assert!(fixture.transport.delivered().is_empty());
     }
 }

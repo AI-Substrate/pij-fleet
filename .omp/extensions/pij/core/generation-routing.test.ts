@@ -32,10 +32,16 @@ const pre = (over: Partial<Parameters<typeof decidePreCall>[0]> = {}) =>
 	decidePreCall({ verb: "adopt", force: undefined, addr: ADDR, rsLive: true, ...over });
 
 describe("Copilot native control boundary", () => {
-	it.each(["compact", "new", "reload"])("refuses programmatic %s only for Copilot", (command) => {
+	it.each(["new", "reload"])("refuses programmatic %s only for Copilot", (command) => {
 		expect(copilotControlRefusal("copilot", command)).toBe(COPILOT_CONTROL_REFUSAL);
 		for (const harness of ["pi", "omp", "claude", "codex", undefined]) {
 			expect(copilotControlRefusal(harness, command)).toBeUndefined();
+		}
+	});
+
+	it("lets compact through for every harness, Copilot included (plan 186)", () => {
+		for (const harness of ["copilot", "pi", "omp", "claude", "codex", undefined]) {
+			expect(copilotControlRefusal(harness, "compact")).toBeUndefined();
 		}
 	});
 

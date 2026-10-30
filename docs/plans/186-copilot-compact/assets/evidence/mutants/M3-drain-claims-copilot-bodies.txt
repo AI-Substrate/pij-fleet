@@ -1,0 +1,20 @@
+# M3-drain-claims-copilot-bodies
+# file: crates/daemon/src/pointer/worker.rs
+# - Harness::Copilot => control_kind(&seat.id),
+# + (deleted)
+
+$ cargo test -p pij-daemon --lib copilot_drain_never_claims --no-fail-fast
+exit=101
+test pointer::worker::tests::copilot_drain_never_claims_native_bodies_or_body_kind_controls ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 639 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+error: 1 target failed:
+
+$ cargo test -p pij-daemon --test copilot_compact --no-fail-fast
+exit=101
+test copilot_compact_is_never_typed_over_a_composer_draft ... FAILED
+test copilot_compact_waits_for_a_working_seat_and_runs_once_it_is_idle ... FAILED
+test copilot_compact_is_typed_through_the_pane_gate_and_bodies_stay_native ... FAILED
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+error: test failed, to rerun pass `-p pij-daemon --test copilot_compact`
+error: 1 target failed:

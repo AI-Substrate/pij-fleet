@@ -39,8 +39,19 @@ remains a deliberate per-session opt-out, not a reason to enable a fallback.
 
 After setup, start `copilot` manually or spawn a new Copilot seat through Pij.
 The native `pij_send({to, message})` tool returns a Pij receipt. Ordinary assistant
-turns are not forwarded automatically. Compact/new/reload remote controls are
-unsupported for Copilot; native user-driven session lifecycle remains separate.
+turns are not forwarded automatically.
+
+Remote `compact` works for Copilot (plan 186): `pij send <seat> --command compact`
+types `/compact` into the seat's pane through the same pane control path as
+Claude's compact (the typing gate and an empty composer), and it also waits
+while the seat's published state is `working`, because Copilot's busy footer
+reads as an empty composer. Copilot messages stay on this extension. `new` and
+`reload` still refuse with `E-RS-CONTROL-UNSUPPORTED`; native user-driven session
+lifecycle remains separate. The compact queues on `delivery-control:<seat>`, not
+on the extension's `delivery:<seat>` kind, so the extension never claims it. Both
+kinds share the seat's serial key, so a typed compact never overlaps a claimed
+native body. Order across the two kinds is by row id among the rows due now, not
+strict FIFO: a compact queued behind pending bodies may run before the later ones.
 
 New manual sessions receive an ordinary memorable Pij ID from the daemon, just
 like spawned seats. The native session ID remains the internal resume key.

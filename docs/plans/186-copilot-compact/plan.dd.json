@@ -18,7 +18,7 @@
     },
     {
       "name": "summary",
-      "value": "Plan 137 (2026-09-05, legacy repo) moved Copilot message delivery onto its native extension and, as part of that, banned every tmux path into a Copilot pane, controls included (impl-guide item 8). The tmux compact path went away and nothing replaced it. Today crates/core/src/control.rs:50 refuses every control for Copilot, and crates/daemon/src/pointer/worker.rs:209 and :118 keep Copilot out of the pointer/control drain. Jordan ruled on 2026-10-30 that pij may compact a Copilot seat by typing /compact into its pane, through the same gates Claude uses. Messages stay on the extension. Rulings: assets/rulings.md."
+      "value": "Plan 137 (2026-09-05, legacy repo) moved Copilot message delivery onto its native extension and, as part of that, banned every tmux path into a Copilot pane, controls included (impl-guide item 8). The tmux compact path went away and nothing replaced it. Today crates/core/src/control.rs:50 refuses every control for Copilot, and crates/daemon/src/pointer/worker.rs:209 and :118 keep Copilot out of the pointer/control drain. Jordan ruled on 2026-10-30 that pij may compact a Copilot seat by typing /compact into its pane, through the same gates Claude uses. Messages stay on the extension. Rulings: assets/rulings.md. Implementation note (prime ruling 2026-10-30): Copilot controls queue on their own kind, delivery-control:<seat>, beside the native body kind delivery:<seat> on the same serial key, so the drain and the native extension never claim each other's rows and a typed compact never overlaps a claimed native body. Order across the two kinds is by row id among due rows, not strict FIFO: a compact queued behind pending bodies may run before the later ones."
     },
     {
       "name": "goals",
@@ -60,13 +60,13 @@
         },
         {
           "id": "ac-0004",
-          "claim": "Cost (AGENTS.md \u00a7 Resource cost). No new loop, poll or launch site; a compact costs what Claude's compact costs. State it as a backpressure row and quote `pij-rs --json ping` spawns before and after the canary.",
+          "claim": "Cost (AGENTS.md § Resource cost). No new loop, poll or launch site; a compact costs what Claude's compact costs. State it as a backpressure row and quote `pij-rs --json ping` spawns before and after the canary.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0005",
-          "claim": "Docs and skills. docs/how/copilot-native-extension.md:42 and docs/how/pij-rs-api.md (\u00a7 Control and bg) describe Copilot compact; skills/pij text that says Copilot can't be compacted, including the PA rule from plan 178 (R5: the PA reports Copilot size instead of compacting), is updated so a PA or PM compacts Copilot seats like Claude seats.",
+          "claim": "Docs and skills. docs/how/copilot-native-extension.md:42 and docs/how/pij-rs-api.md (§ Control and bg) describe Copilot compact; skills/pij text that says Copilot can't be compacted, including the PA rule from plan 178 (R5: the PA reports Copilot size instead of compacting), is updated so a PA or PM compacts Copilot seats like Claude seats.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
