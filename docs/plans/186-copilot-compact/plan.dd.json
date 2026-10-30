@@ -9,7 +9,7 @@
         "title": "Remote compact for Copilot seats",
         "slug": "copilot-compact",
         "ordinal": 186,
-        "status": "ready",
+        "status": "shipped",
         "summary": "pij-fleet#94: `pij send <copilot-seat> --command compact` refuses with E-RS-CONTROL-UNSUPPORTED, so PMs and the PA cannot compact Copilot workers. Claude seats compact fine. Jordan 2026-10-30: it is just typing /compact in the tmux pane; a regression.",
         "backpressure": "assets/backpressure.dd.json#rows",
         "mode": "Full",
@@ -91,8 +91,9 @@
           "id": "ph-fa03",
           "title": "Let pij compact a Copilot seat the way it compacts Claude",
           "brief": "One phase: lift the Copilot compact refusal, route compact through the existing pane control path (idle, empty composer, typing gate), keep messages on the extension, canary it live, docs and skill text, mutants, PR. CS 2.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0009"
         }
       ]
     }

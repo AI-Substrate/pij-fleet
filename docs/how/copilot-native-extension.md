@@ -56,8 +56,11 @@ strict FIFO, in both directions. A compact queued behind pending bodies may run
 before the later ones. A compact sent just before a body usually runs *after*
 that body: the extension claims the body within milliseconds of its push, the
 drain only ticks every few seconds, and by then the seat is `working`, so the
-compact waits for that turn to end. Let a compact land (`pij state`) before
-dispatching the next packet to a Copilot seat.
+compact waits for that turn to end. Let a compact land before dispatching the
+next packet to a Copilot seat. The signal is the `delivery.outcome` event with
+`outcome: delivered` for the compact's msg_id (`pij-rs tail --json`; the msg_id
+is on the send receipt), or "Compaction completed" in the seat's pane. `pij
+state` lists the compact only while it is held.
 
 New manual sessions receive an ordinary memorable Pij ID from the daemon, just
 like spawned seats. The native session ID remains the internal resume key.
