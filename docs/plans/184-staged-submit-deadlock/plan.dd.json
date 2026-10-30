@@ -9,7 +9,7 @@
         "title": "Delivery deadlock: pij's own staged text holds a seat forever",
         "slug": "staged-submit-deadlock",
         "ordinal": 184,
-        "status": "ready",
+        "status": "shipped",
         "summary": "pij-fleet#86: a `/compact` control delivery staged into a Claude seat's composer never committed; pij then holds that job, and every later message to the seat, as composer-busy against its own leftover text, retrying every ~5 s with two tmux launches each, forever.",
         "backpressure": "assets/backpressure.dd.json#rows",
         "mode": "Full",
@@ -63,10 +63,10 @@
         {
           "id": "ac-0004",
           "claim": "Cost (AGENTS.md § Resource cost). While a delivery waits, the composer check costs no process launch: read the composer through the control-mode capture before reserving, and reserve (which launches) only when it looks submittable. Live before/after receipts with `pij-rs --json ping`; the prime takes the deployed reading. With the two stuck seats cleared, `tmux.atomically reserve staged submit` must not grow while nothing is deliverable.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0004",
-          "note": "Pre-deploy proof in lg-0004; awaits the prime's deployed pij-rs --json ping reading."
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0009",
+          "note": "Before about 0.8/s from two stuck seats; after 0.22/s total, no staged-submit reserves while nothing is deliverable (lg-0009)."
         },
         {
           "id": "ac-0005",
@@ -91,8 +91,9 @@
           "id": "ph-c094",
           "title": "Diagnose and fix the staged-submit deadlock",
           "brief": "One phase: reproduce with a canary, name why the staged /compact never committed, stop pij mistaking its own leftover for a human draft, bound and surface held deliveries, back off without launches, docs, mutants, PR. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/reviews/prime-verification.md"
         }
       ]
     }

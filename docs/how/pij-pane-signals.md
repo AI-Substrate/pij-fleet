@@ -138,21 +138,31 @@ proves it:
 
 - a row break stands where the leftover has a newline, or a space that a soft
   wrap consumed. A break counts as a wrap only if the next word could not have
-  fitted on the row, judged against the widest row shown;
+  fitted on the row, judged against the widest row **shown**. The composer's
+  real width is unknown here, so this is a lower bound: it rejects a break
+  well short of the widest row, not every typed newline (see below);
 - continuation rows lose up to two columns of indent;
 - line-end spaces, which a capture never shows, are ignored.
 
-A typed or deleted character, a doubled space, an early line break or another
-text's leftover is a human draft and is never touched.
+A typed or deleted character, a doubled space, a line break well short of the
+widest row, or another text's leftover is a human draft and is never touched.
 
-**What a capture cannot show.** Whitespace a person adds at the end of a line
-that is not the caret's own row is invisible, because tmux trims it and the
-caret check sees only the caret's row. The leftover then still matches. The
-BSpace count is exact for pij's text, so it stops short of the start of the
-composer and the re-read shows the rest: the delivery fails by name and the
+**What a capture cannot show.** Whitespace a person adds can still pass as
+pij's own in two ways:
+
+- spaces at the end of a line other than the caret's row, which tmux trims;
+- a newline typed in the second half of the widest line. The typed break also
+  shortens that row, so the width rule, measured against the widest row shown,
+  still takes it for a soft wrap (review recheck of #91).
+
+The BSpace count is exact for pij's text, so it stops short of the start of the
+composer. The re-read shows what is left, the delivery fails by name, and the
 composer is left for the operator. The person's added whitespace, which sits
-inside the deleted span, is deleted with pij's text. Non-whitespace is never
-deleted.
+inside the deleted span, is deleted with pij's text. Nothing else is deleted:
+every visible character before the caret must equal pij's leftover and the
+caret must sit at its end, so a typed or deleted non-whitespace character is
+never cleared. This needs a deliberate whitespace edit inside pij's own notice,
+then a full grace of stillness.
 
 **Holds back off.** Each job's holds are tracked in the worker for this daemon
 run, from its first counted hold. They are never counted from `attempt`, which

@@ -1027,11 +1027,21 @@ fn stale_watchdog_cannot_release_a_later_adapter_transaction() {
         .expect("isolated session pane");
     fs::create_dir_all(&session.tap_root).expect("create stale-watchdog fixture directory");
     let log = session.tap_root.join("watchdog-wrapper.log");
+    let first_token = session.tap_root.join("first-token");
+    let release = session.tap_root.join("release-other-watchdogs");
     let wrapper = session.tap_root.join("tmux-watchdog-wrapper");
+    // Deterministic order (plan 184 close-out): only the FIRST transaction's
+    // watchdog may move an owner to `-recovering`. Any other watchdog's owner
+    // transition (condition `#{==:owner,<token>}`, never the reservation's
+    // `#{&&:...}`) waits until the test has asserted, at most 60 s. Otherwise
+    // the later watchdog, 300 ms behind, could fire first under load and
+    // restore the later owner's input itself.
     let script = format!(
-        "#!/bin/sh\n[ \"$1\" = -u ] && shift\nprintf '%s|%s\\n' \"${{5-}}\" \"${{6-}}\" >> {}\nexec tmux -L {} \"$@\"\n",
-        shell_literal(&log.to_string_lossy()),
-        shell_literal(&session.server)
+        "#!/bin/sh\n[ \"$1\" = -u ] && shift\nprintf '%s|%s\\n' \"${{5-}}\" \"${{6-}}\" >> {log}\ncase \"${{5-}}|${{6-}}\" in '#{{==:#{{@pij-submit-owner}},'*'|'*-recovering*)\n  first=$(cat {first} 2>/dev/null)\n  case \"${{5-}}\" in *\"$first\"*) ;; *) n=0; while [ ! -e {release} ] && [ $n -lt 1200 ]; do sleep 0.05; n=$((n + 1)); done ;; esac ;;\nesac\nexec tmux -L {server} \"$@\"\n",
+        log = shell_literal(&log.to_string_lossy()),
+        first = shell_literal(&first_token.to_string_lossy()),
+        release = shell_literal(&release.to_string_lossy()),
+        server = shell_literal(&session.server)
     );
     fs::write(&wrapper, script).expect("write watchdog wrapper");
     let mut permissions = fs::metadata(&wrapper)
@@ -1042,20 +1052,25 @@ fn stale_watchdog_cannot_release_a_later_adapter_transaction() {
 
     let first_adapter = TmuxAdapter::with_binary(&wrapper, &session.tap_root);
     let first = block_on(first_adapter.acquire_submit(&pane.id)).expect("first transaction");
+    fs::write(&first_token, &first.token).expect("name the first transaction");
     block_on(first_adapter.abort_submit(&first)).expect("first transaction aborts");
     std::thread::sleep(Duration::from_millis(300));
     let second_adapter = TmuxAdapter::with_binary(&wrapper, &session.tap_root);
     let second = block_on(second_adapter.acquire_submit(&pane.id)).expect("later transaction");
     assert_ne!(first.token, second.token);
 
-    let first_watchdog = format!("#{{==:#{{@pij-submit-owner}},{}}}|", first.token);
-    let deadline = Instant::now() + EVENTUALLY;
+    let first_watchdog = |line: &str| {
+        line.split_once('|').is_some_and(|(condition, command)| {
+            condition.starts_with("#{==:#{@pij-submit-owner},")
+                && condition.contains(&first.token)
+                && command.contains("-recovering")
+        })
+    };
+    // The first watchdog sleeps its full limit before acting.
+    let deadline = Instant::now() + EVENTUALLY + Duration::from_secs(8);
     loop {
         let observed = fs::read_to_string(&log).unwrap_or_default();
-        if observed
-            .lines()
-            .any(|line| line.starts_with(&first_watchdog) && line.contains("-recovering"))
-        {
+        if observed.lines().any(first_watchdog) {
             break;
         }
         assert!(
@@ -1070,6 +1085,8 @@ fn stale_watchdog_cannot_release_a_later_adapter_transaction() {
         "stale watchdog must not restore the later owner's input"
     );
     block_on(second_adapter.abort_submit(&second)).expect("release later transaction");
+    // Released only now, so the parked watchdog finds no owner left to touch.
+    fs::write(&release, b"").expect("release the parked watchdogs");
 }
 
 #[test]

@@ -760,7 +760,10 @@ pub fn is_staged_leftover(observed: &str, text: &str) -> bool {
 /// - each row break stands where the leftover has a newline, or a space that a
 ///   soft wrap consumed. A break counts as a wrap only if the next word could
 ///   not have fitted on the row: the row, a space and that word must be wider
-///   than the widest row shown, which is at most the composer's width;
+///   than the widest row SHOWN. That is a lower bound on the composer's width,
+///   so the rule rejects a break well short of the widest row, not every typed
+///   newline: one typed in the second half of the widest line shortens that
+///   row and still passes as a wrap;
 /// - continuation rows lose up to [`CONTINUATION_INDENT`] leading spaces;
 /// - trailing spaces on a row, and on a line of `leftover`, are ignored,
 ///   because a capture cannot show them.
@@ -768,9 +771,11 @@ pub fn is_staged_leftover(observed: &str, text: &str) -> bool {
 /// Every other character must match, so a typed or deleted character, a
 /// doubled space or a line break that the row width says is not a wrap is a
 /// human draft. Rendering this cannot account for reads as a human draft too:
-/// the safe direction. What remains unseen is whitespace at a line end: the
-/// caller's caret check covers the last row, and its post-clear read stops a
-/// clear that did not leave the composer blank.
+/// the safe direction. What remains unseen is whitespace only: spaces at a line
+/// end, and such a late typed newline. The caller's caret check covers the last
+/// row, and its post-clear read stops a clear that did not leave the composer
+/// blank and fails the delivery by name. No non-whitespace character is
+/// deleted (see `docs/how/pij-pane-signals.md`).
 #[must_use]
 pub fn is_rendered_leftover(observed: &str, leftover: &str) -> bool {
     let mut lines = observed.split('\n');
@@ -1071,6 +1076,17 @@ mod tests {
         // so "staged" would have fitted. Only a typed newline puts it there.
         let early = WALRUS.replacen("delivery staged", "delivery\n  staged", 1);
         assert!(!is_staged_leftover(&early, "/compact"));
+    }
+
+    /// The documented residual (review recheck of #91): a newline typed late in
+    /// the widest row shortens that row, so the width rule, measured against
+    /// the rows SHOWN, still takes it for a wrap. Only whitespace can go this
+    /// way, and the caller's post-clear read then fails the delivery by name.
+    /// Pinned so closing it (a real composer width) is a deliberate change.
+    #[test]
+    fn a_newline_typed_late_in_the_widest_row_is_the_known_residual() {
+        let late = WALRUS.replacen("press Ctrl-C", "press\n  Ctrl-C", 1);
+        assert!(is_staged_leftover(&late, "/compact"));
     }
 
     #[test]

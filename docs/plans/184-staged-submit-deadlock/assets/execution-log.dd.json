@@ -87,6 +87,15 @@
             "backpressure.dd.json#rows/bp-0001",
             "backpressure.dd.json#rows/bp-0003"
           ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-30T07:29:56Z",
+          "text": "Prime verification (assets/reviews/prime-verification.md). PR #91 merged at 9edfee0 (CI 41018304298) as main 8b6fd3a; daemon redeployed, pid 39680 -> 72069. Canary compact committed on the first try: reserve 1, authorize 1, submit 1, restore 1. Steady 60 s: 0.22 launches/s total (ps.registration-native-process 12, git.pa-watchdog-common-dir 1), no staged-submit reserves while nothing is deliverable; before, about 0.8/s from the two stuck seats. Recheck (assets/reviews/review-pr91-recheck.md): merge, 0 blockers.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
         }
       ]
     }
