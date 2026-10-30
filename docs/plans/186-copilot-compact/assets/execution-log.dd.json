@@ -87,6 +87,17 @@
             "../plan.dd.json#acceptance_criteria/ac-0006",
             "backpressure.dd.json#rows/bp-0001"
           ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-10-30T06:20:04Z",
+          "text": "Prime post-merge (assets/reviews/prime-verification.md): PR #95 merged at c1f8314 (CI 41012090018) as main 30d92a9; daemon redeployed pid 39680. Live canary pij-c186-live on the real fleet: compact sent from pij-far-jackal 6s into a turn, receipt queued/pty, held while working, typed after idle, pane shows Compaction completed. Fleet spawn total 256 -> 316 over ~4 min including the canary's spawn and turn (upper bound; per-compact cost 13 launches in canary.md). Canary closed, window killed. Review recheck nit fixed in this close-out (C3/docs: delivery.outcome event or Compaction completed, not pij state).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#phases/ph-fa03",
+            "backpressure.dd.json#rows/bp-0002"
+          ]
         }
       ]
     }
