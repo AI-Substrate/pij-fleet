@@ -1,0 +1,251 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Event replay streams in pages, so a lagging client converges",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "Send as you read: a replay is a stream of bounded pages, never one collected vector, so the cost of an attach is bounded by a page and the first frame arrives quickly. The cursor contract, wire format and dedupe stay exactly as they are. A repeated failure is logged once per cause."
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One owner: the replay path and the refusal log are both in the daemon and small."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "chainglass-like client -> loop proven or refuted",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "attach -> first page fast, bounded memory, no gaps or repeats",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "lagging client -> converges",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "waiting source -> one log line",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Event replay streams in pages, so a lagging client converges",
+          "role": "pm",
+          "responsibility": "Diagnosis, red tests, paged replay, log once, private convergence and cost receipts, docs, mutants, PR.",
+          "paths": [
+            "crates/daemon/src/",
+            "crates/daemon/tests/",
+            "crates/store/src/",
+            "crates/store/tests/",
+            "crates/core/src/",
+            "docs/how/",
+            "docs/plans/187-events-replay-stream"
+          ],
+          "reads": [],
+          "notes": "Read first: plan 185 (diagnosis D1, F1, daemon-cost.md); crates/daemon/src/events/mod.rs subscribe; crates/daemon/src/http/mod.rs events handler (~3171); crates/store/src/spine.rs tail/newest; the chainglass client (read-only) at ~/substrate/chainglass/apps/web/src/features/089-first-class-pij/server/rs/rs-event-stream.ts and rs-client.ts; assets/evidence/sample-live.txt; AGENTS.md \u00a7 Resource cost.",
+          "interface": "Paged spine replay for subscribe",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/daemon/src/events/mod.rs",
+          "crates/store/src/spine.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-187-events-replay on perf/events-replay-stream."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "claude",
+          "model": "claude-opus-5-5 reviewer seat, then prime verification"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Store tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-store"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-daemon"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Diagnosis on a private daemon.",
+          "Red tests.",
+          "Paged replay; log once.",
+          "Convergence and cost receipts; docs; mutants; PR; CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: an independent reviewer seat, then the prime verifies receipts, merges, bounces the daemon and takes the live cost reading.",
+        "inputs": [
+          "PR head SHA",
+          "receipts"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "A page boundary drops or repeats an event.",
+          "check": "Keyset by seq; tests at boundaries and during concurrent appends; mutant."
+        },
+        {
+          "id": "rk-0002",
+          "text": "Replay\u2192live switch loses events appended mid-replay.",
+          "check": "Keep the live receiver created before the replay and the seq dedupe; test."
+        },
+        {
+          "id": "rk-0003",
+          "text": "Seeded replays fill the disk again.",
+          "check": "One seed, reused; delete run dirs; check df before each run."
+        }
+      ]
+    }
+  ]
+}

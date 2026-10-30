@@ -1,0 +1,94 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Event replay streams in pages, so a lagging client converges",
+        "slug": "events-replay-stream",
+        "ordinal": 187,
+        "status": "ready",
+        "summary": "After plan 185 deployed (pid 63433), the daemon still burns about 200% CPU with RSS swinging between 2.9 and 4.1 GB every few seconds. A sample attributes the busy time to /v1/events: EventBus::subscribe reads the whole spine tail from the client's cursor (sqlx workers plus SqliteRow decode and drop), and the replay is collected in full before the first frame is sent.",
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "mode": "Full",
+        "log": "assets/execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Hypothesis (to prove, ac-0001): chainglass (the UI consumer) recycles its /v1/events connection every 5 s, and its resume cursor advances only on seat.put/seat.tombstone/role-set/report.now/report.state frames it has applied. Its cursor sits behind the 2.4M stale bg.lost rows. Each attach makes the daemon decode everything from that cursor to the head (several seconds and about 1 GB) before sending the first frame, so chainglass recycles before receiving anything and its cursor never moves: a permanent loop. Plan 185 F1 removed the head lookup's full decode but not the replay's. Separately, the waiting-source refusal 'background reconciliation failed: ... owner pij-different-smelt ... its final turn waits' is logged about once a second live (439 lines in 8 minutes) although plan 185 meant it once. Live sample: assets/evidence/sample-live.txt. Chainglass client: ~/substrate/chainglass apps/web/src/features/089-first-class-pij/server/rs/rs-event-stream.ts (RECYCLE_MS, RESUME_EVENT_KINDS); read-only, never edit it."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A client attaching with any cursor gets its first frame quickly, whatever the backlog size.",
+        "Replay memory is bounded by a page, not by the backlog.",
+        "A lagging client that recycles every few seconds still converges to the head.",
+        "The waiting-source refusal is logged once per source per boot."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Changing chainglass (another repo; read-only).",
+        "Deleting or compacting spine rows.",
+        "Changing the event wire format or the cursor contract."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Diagnosis. Prove or refute the lagging-cursor loop before fixing: on a private daemon with a seeded spine like the live one (about 3M rows, mostly bg.lost behind the client's cursor), drive a client that behaves like chainglass (5 s recycle, cursor advances only on the five resume kinds) and record time-to-first-frame, whether the cursor ever advances, and daemon CPU/RSS. Read-only on the live daemon: you may read daemon.log and run read-only sqlite queries, nothing else. If the hypothesis is wrong, say so with evidence and find the real cause from the live sample before fixing. Write assets/evidence/diagnosis.md.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Streaming replay. subscribe/the /v1/events handler sends the replay in bounded keyset pages by seq (state the page size), writing each page before reading the next, then switches to live with the existing seq dedupe. A client gets its first frame within a stated bound regardless of backlog; daemon memory for one attach is bounded by a page. No event is missed or duplicated across pages or at the replay\u2192live switch, including events appended during the replay, a cursor at 0, at the head, and beyond it (the CursorBeyondSpine refusal stays). Client disconnect stops the replay promptly (no reading the rest of the backlog into a closed socket).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Convergence. With the chainglass-like client from ac-0001 on the 3M-row seed, the cursor reaches the head and then each recycle replays only new rows. Record the time to converge and steady-state CPU/RSS.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Log once. The waiting-source refusal (background reconciliation of a source whose owner is gone) logs once per source per boot, and again only if the reason changes or the source ends. Find why plan 185's RepeatedFailureLog didn't hold it live (439 lines in 8 minutes) and test that exact path.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md \u00a7 Resource cost). No new loop or launch site. State the replay cost per attach as a backpressure row (rows read per page, pages per attach, memory per attach). Private before/after receipts; the prime takes the deployed reading (CPU, RSS at +15 s, +60 s, +10 min).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and proof. docs/how/daemon-cost.md and docs/how/pij-rs-api.md describe paged replay and the first-frame bound. Each behaviour change has a test RED on main (quoted) and green on the branch. Mutants: collect the whole replay before sending; page boundary drops or repeats a row; no dedupe at the replay\u2192live switch; refusal logged every tick. Each turns its test red, then is restored. Scoped cargo tests, clippy -D warnings, fmt; CI green on the exact head. Anything not run is NOT RUN with its reason.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-90cf",
+          "title": "Stream the /v1/events replay and stop the per-tick refusal log",
+          "brief": "One phase: prove the lagging-cursor loop, stream the replay in bounded pages, log the waiting-source refusal once, measure on a private replay with a chainglass-like client, docs, mutants, PR. CS 3.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    }
+  ]
+}

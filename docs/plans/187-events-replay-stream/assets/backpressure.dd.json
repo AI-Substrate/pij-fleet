@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 187 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: diagnosis, streaming replay, convergence",
+          "phase": "ph-90cf",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: events/subscribe tests in crates/daemon and crates/store spine paging; private daemon replay with a chainglass-like client; cargo test -p pij-store -p pij-daemon <filters>",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/events/mod.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4-AC5: log once and cost",
+          "phase": "ph-90cf",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Log-count test; private CPU/RSS and per-attach rows/memory receipts; prime's deployed reading.",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC6: docs, mutants and CI",
+          "phase": "ph-90cf",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutant receipts; clippy; fmt; GitHub CI on the exact head.",
+          "state": "unchecked",
+          "probe": ".github/workflows"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
