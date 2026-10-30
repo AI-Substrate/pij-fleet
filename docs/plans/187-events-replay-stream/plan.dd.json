@@ -83,8 +83,10 @@
         {
           "id": "ac-0006",
           "claim": "Docs and proof. docs/how/daemon-cost.md and docs/how/pij-rs-api.md describe paged replay and the first-frame bound. Each behaviour change has a test RED on main (quoted) and green on the branch. Mutants: collect the whole replay before sending; page boundary drops or repeats a row; no dedupe at the replay→live switch; refusal logged every tick. Each turns its test red, then is restored. Scoped cargo tests, clippy -D warnings, fmt; CI green on the exact head. Anything not run is NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0008",
+          "note": "Red/green lg-0003, lg-0004; 5/5 mutants lg-0007; scoped tests, clippy -D warnings, fmt lg-0006; docs/how/daemon-cost.md + pij-rs-api.md; CI 41028866770 on 5f8a409 lg-0008. TS harness stages NOT RUN locally (no node_modules), run by CI."
         }
       ]
     },

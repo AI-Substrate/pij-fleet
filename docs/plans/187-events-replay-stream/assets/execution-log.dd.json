@@ -73,6 +73,14 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-10-30T09:05:00Z",
+          "text": "PR #102 on AI-Substrate/pij-fleet. GitHub CI run 41028866770 on 5f8a409: check (22) pass, check (24) pass, rust-lint pass, rust-test pass. Local harness checks: rust, smoke, copilot-native pass; local-paths, typecheck, lockfile, lint, test NOT RUN in effect (no node_modules in this worktree; the packet forbids installing; no TypeScript changed), covered by CI check (22)/(24). refs/notes/* absent on origin after push.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }

@@ -58,13 +58,14 @@
           "id": "tk-0004",
           "title": "Convergence, cost, docs, mutants, PR",
           "phase": "ph-90cf",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003",
             "../../../plan.dd.json#acceptance_criteria/ac-0005",
             "../../../plan.dd.json#acceptance_criteria/ac-0006"
           ],
-          "done": "tasks.dd.json#done_when/tk-0004"
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "receipt": "../../execution-log.dd.json#entries/lg-0008"
         }
       ]
     },
@@ -99,7 +100,7 @@
           {
             "id": "dw-0004",
             "assertion": "Converges on the seed; receipts; CI green on the exact head",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ]
