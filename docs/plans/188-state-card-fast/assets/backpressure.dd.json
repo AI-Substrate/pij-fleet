@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 188 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: diagnosis, fast single read, bulk read",
+          "phase": "ph-4cc4",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: http state tests and golden cards in crates/daemon; store query-plan tests; private daemon timings on a 4M-row seed; cargo test -p pij-store -p pij-daemon <filters>",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/http/mod.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4-AC5: note timestamp and cost",
+          "phase": "ph-4cc4",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Golden fixtures; private timings; prime's deployed reading.",
+          "state": "unchecked",
+          "probe": "pij-rs --json state"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC6: proof, mutants and CI",
+          "phase": "ph-4cc4",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutant receipts; clippy; fmt; GitHub CI on the exact head.",
+          "state": "unchecked",
+          "probe": ".github/workflows"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

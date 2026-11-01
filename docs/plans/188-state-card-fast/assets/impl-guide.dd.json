@@ -1,0 +1,253 @@
+{
+  "dd": {
+    "schema": "builder/impl-guide"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Fast seat cards: /v1/state in milliseconds, a bulk read, and the note's timestamp",
+        "plan": "../plan.dd.json#meta",
+        "version": 1
+      }
+    },
+    {
+      "name": "architecture",
+      "value": {
+        "principles": "A card read touches only the seat's own rows through an index; its cost never grows with the spine. Card content stays exactly as it is (a golden comparison proves it); new fields are additive. One bulk call replaces 84 calls."
+      }
+    },
+    {
+      "name": "fan_out",
+      "value": {
+        "decision": "solo-pm",
+        "rationale": "One owner: the card read path and its two additions are in one handler and its store reads."
+      }
+    },
+    {
+      "name": "capabilities",
+      "value": [
+        {
+          "id": "cp-0001",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0001",
+          "owner": "tk-0001",
+          "path": "profile -> named slow reads",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0002",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0002",
+          "owner": "tk-0001",
+          "path": "single card -> ms, identical content",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0003",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0003",
+          "owner": "tk-0001",
+          "path": "all cards -> one call",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        },
+        {
+          "id": "cp-0004",
+          "criterion": "../plan.dd.json#acceptance_criteria/ac-0004",
+          "owner": "tk-0001",
+          "path": "state note -> its time and cursor",
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "units",
+      "value": [
+        {
+          "id": "tk-0001",
+          "name": "Fast seat cards: /v1/state in milliseconds, a bulk read, and the note's timestamp",
+          "role": "pm",
+          "responsibility": "Diagnosis, red tests, fast reads, bulk read, note timestamp, private timings, docs, mutants, PR.",
+          "paths": [
+            "crates/daemon/src/",
+            "crates/daemon/tests/",
+            "crates/store/src/",
+            "crates/store/tests/",
+            "crates/core/src/",
+            "crates/cli/src/",
+            "crates/testkit/",
+            "docs/how/",
+            "docs/plans/188-state-card-fast"
+          ],
+          "reads": [],
+          "notes": "Read first: crates/daemon/src/http/mod.rs /v1/state handler and state_card (~2860) and the held-delivery projection above it; crates/core/src/report.rs; crates/store/src/spine.rs and its indexes; plan 185 and 187 (daemon-cost.md); chainglass's client (read-only): ~/substrate/chainglass/apps/web/src/features/089-first-class-pij/server/rs/start-pij-poller.ts and rs-client.ts; AGENTS.md \u00a7 Resource cost.",
+          "interface": "Card read path; bulk card read; stateNoteAt/stateNoteSeq",
+          "depends_on": [],
+          "wave": 0,
+          "acceptance": [
+            "../plan.dd.json#acceptance_criteria/ac-0001",
+            "../plan.dd.json#acceptance_criteria/ac-0002",
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0004",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "proof": [
+            "impl-guide.dd.json#checks/vd-0001",
+            "impl-guide.dd.json#checks/vd-0002",
+            "impl-guide.dd.json#checks/vd-0003",
+            "impl-guide.dd.json#checks/vd-0004"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "value": {
+        "files": [
+          "crates/daemon/src/http/mod.rs",
+          "crates/store/src/spine.rs"
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ],
+        "receipt": "team/baseline.dd.json"
+      }
+    },
+    {
+      "name": "isolation",
+      "value": {
+        "mode": "solo",
+        "allocation_owner": "pij",
+        "note": "Worktree /Users/jordanknight/pi-hacking/fleet-188-state-cards on perf/state-card-fast."
+      }
+    },
+    {
+      "name": "roles",
+      "value": [
+        {
+          "id": "rl-0001",
+          "role": "coder",
+          "harness": "claude",
+          "model": "claude-opus-5-5"
+        },
+        {
+          "id": "rl-0002",
+          "role": "reviewer",
+          "harness": "claude",
+          "model": "claude-opus-5-5 reviewer seat, then prime verification"
+        }
+      ]
+    },
+    {
+      "name": "checks",
+      "value": [
+        {
+          "id": "vd-0001",
+          "description": "Store tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-store"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0002",
+          "description": "Daemon tests",
+          "command": "cargo",
+          "args": [
+            "test",
+            "-p",
+            "pij-daemon"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0003",
+          "description": "Clippy",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        },
+        {
+          "id": "vd-0004",
+          "description": "Format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "cwd": ".",
+          "timeout_ms": 1800000
+        }
+      ]
+    },
+    {
+      "name": "composition",
+      "value": {
+        "owner": "tk-0001",
+        "order": [],
+        "steps": [
+          "Diagnosis on a private daemon.",
+          "Red tests.",
+          "Fast reads; bulk read; note timestamp.",
+          "Timings; docs; mutants; PR; CI."
+        ],
+        "proof": [
+          "impl-guide.dd.json#checks/vd-0001"
+        ]
+      }
+    },
+    {
+      "name": "review",
+      "value": {
+        "when": "After CI is green: an independent reviewer seat, then the prime verifies receipts, merges, bounces the daemon and takes the live cost reading.",
+        "inputs": [
+          "PR head SHA",
+          "receipts"
+        ],
+        "proof": [
+          "Prime verdict in assets/reviews/."
+        ]
+      }
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "id": "rk-0001",
+          "text": "A faster read changes card content.",
+          "check": "Golden comparison over every seat on the seed, main vs branch."
+        },
+        {
+          "id": "rk-0002",
+          "text": "A cache goes stale.",
+          "check": "Prefer indexed reads; if cached, explicit invalidation on every write that feeds the card, with a test."
+        },
+        {
+          "id": "rk-0003",
+          "text": "Seeds fill the disk.",
+          "check": "One seed, reused; delete run dirs; check df first."
+        }
+      ]
+    }
+  ]
+}

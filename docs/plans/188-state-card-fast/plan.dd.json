@@ -1,0 +1,94 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Fast seat cards: /v1/state in milliseconds, a bulk read, and the note's timestamp",
+        "slug": "state-card-fast",
+        "ordinal": 188,
+        "status": "ready",
+        "summary": "Chainglass (the UI) now seeds every seat's card from /v1/state on start instead of replaying the event log. One call takes 1.3 to 3.7 s, calls seem to run one at a time (4 in flight: about 6.5 s each), and seeding 84 seats took 136 s. The card also gives `stateNote` without when it was written.",
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "mode": "Full",
+        "log": "assets/execution-log.dd.json#entries"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Reported by the chainglass prime pij-lonely-antelope on 2026-11-02, measured against the live daemon; the prime re-measured `pij-rs --json state <seat>` at 1.32\u20131.33 s with the daemon otherwise idle (pid 67958, 10% CPU, 35 MB). The handler (crates/daemon/src/http/mod.rs, around state_card at :2860 and the held-delivery projection above it) reads registry, liveness, the latest card, the latest state record and held deliveries; at least one of those reads appears to scan the 4.16M-row spine per call. Asks: (1) one call fast, and concurrent calls not serialised; (2) a bulk read, all seats' cards in one call or the card fields on /v1/seats; (3) `stateNote`'s timestamp and cursor, like `statusAt`/`statusSeq`. Chainglass is another repo (read-only): ~/substrate/chainglass apps/web/src/features/089-first-class-pij/server/rs/start-pij-poller.ts and rs-client.ts. Rulings: assets/rulings.md."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "One /v1/state call takes milliseconds, not seconds, whatever the spine size.",
+        "Concurrent card reads don't queue behind each other.",
+        "A client can read every seat's card in one call.",
+        "The card says when its state note was written."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Deleting or compacting spine rows (that is a separate ruling).",
+        "Changing chainglass.",
+        "Changing the meaning of any existing card field."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Diagnosis. Profile one /v1/state call on a private daemon with a spine shaped like the live one (about 4M rows), and name which reads cost the time and why concurrent calls serialise (a single sqlite connection, a lock, a full scan). Record query plans (EXPLAIN QUERY PLAN) for each read. Write assets/evidence/diagnosis.md and send the prime a pointer before fixing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Fast single read. Each read behind /v1/state is an indexed lookup bounded by the seat's own rows (or a cached projection with an explicit invalidation rule), so one call on the 4M-row seed takes a stated bound in milliseconds. The card's content is byte-for-byte the same as main's for every seat on the seed (a golden comparison over all seats), including held deliveries. 4 concurrent calls each finish within a stated bound.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Bulk read. One call returns every local seat's card (a new endpoint or a `cards` option on an existing one; state which, with the reason), with the same per-seat content as /v1/state, in a stated bound on the seed. Document it in docs/how/pij-rs-api.md; additive, no existing field changes.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Note timestamp. The card gains `stateNoteAt` (epoch ms) and `stateNoteSeq` (spine cursor) for the report.state note, null when there is no note, matching how `statusAt`/`statusSeq` work. Additive; golden fixtures updated; docs.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md \u00a7 Resource cost). No new loop, poll or launch site. If you add a cache, state its lifetime and invalidation, and its memory per seat. Backpressure row: reads per card, rows touched per read. Private before/after timings; the prime takes the deployed reading.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Proof. Each behaviour change has a test RED on main (quoted) and green on the branch. Mutants: a read falls back to a spine scan; bulk and single cards diverge; note timestamp taken from the wrong record; stale cache after a new report. Each turns a test red, then is restored. Scoped cargo tests, clippy -D warnings, fmt; CI green on the exact head. Anything not run is NOT RUN with its reason.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-4cc4",
+          "title": "Make card reads fast, add a bulk card read and the state note's time",
+          "brief": "One phase: profile /v1/state, make one call fast and concurrent calls independent, add a bulk read for every seat's card, add stateNoteAt/stateNoteSeq, docs, cost, mutants, PR. CS 3.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    }
+  ]
+}
