@@ -50,3 +50,11 @@ found.
 fail if any future edit puts the `OR` back or drops the index hint. The
 counting-spine card tests fail if any card read calls `tail`. The state-card
 golden pins the wire shape.
+
+**Review learnings (PR #105 review, recheck and close-out):**
+- **I measured with the expensive term removed.** The seed nulled every seat's session for safety: rightly, so that no private daemon could reach a live seat. That also removed the session-status fold, which on the live fleet is now the *dominant* cost (1.31 s cold for 88 cards against 55 ms warm). The table said 49–64 ms with no label. A safety edit to a fixture is also an edit to what the measurement measures; label the receipt with what the fixture zeroed. The reviewer counted `harness_session is not null` on the live store (83 of 87) and caught it in one query.
+- **A bulk route widens a one-seat failure to the whole fleet.** On main, a corrupt row broke one `/v1/state`; my first `/v1/cards` turned it into a 500 for every seat. A fan-out answer needs a per-item error slot (`unavailable`) from the start, the same lesson `FederatedRoster` already encodes.
+- **Equality tests on a fleet too small to drift.** Bulk==single on two seats with no roles let "skip the role join" and "fill in completion order" survive. The fixture has to be able to show the failure: five seats, the first slowest, one with a role.
+- **Moving a guarantee moves its test obligation.** "Latest by sequence, not timestamp" rested on `tail`'s `ORDER BY seq`, which was pinned. I moved it onto `latest_matching`, where every contract event shared one `at`. When a refactor changes which code carries a documented guarantee, re-pin the guarantee at its new home.
+- **A bound on waits is not a bound on work** (recheck R2). Timing out the wait frees the permit while the fold carries on detached, so "four at a time" described the waits, not the folds. Say which one a limit bounds.
+- **Asymmetric rulings need a pin on both sides** (recheck R1). "Only the bulk path is bounded" had a test for the bulk side and none for `/v1/state`.

@@ -2776,6 +2776,8 @@ async fn seat_cards(State(state): State<AppState>) -> Response {
 
 /// Cards `/v1/cards` builds at once. The store pool has four connections; a
 /// few cards in flight keep them busy without queueing every seat on them.
+/// This bounds the WAITS: a session fold that overruns [`LIST_STATUS_WAIT`]
+/// finishes detached after its card frees the slot, so folds are not bounded.
 const CARD_READS_IN_FLIGHT: usize = 4;
 
 #[derive(Serialize)]

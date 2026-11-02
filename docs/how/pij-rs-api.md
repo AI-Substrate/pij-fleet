@@ -520,7 +520,12 @@ field to `/v1/seats`. It is a new route rather than a flag on the roster
 because the roster is polled by federation fan-in and extension rosters that
 need none of a card's reads, and a card is a different shape from a row. Cost:
 one roster read and one role read, then each seat's indexed card reads and its
-session-status fold, four seats at a time. No process launch beyond
+session-status fold. Cards are built four at a time, and each card waits at
+most 200 ms for its fold. A fold that runs over finishes detached and frees its
+slot, so on a cold first call up to every bound seat can be folding at once,
+and the response can take up to about ⌈bound seats ÷ 4⌉ × 200 ms (live,
+2026-11-02: 1.31 s cold for 88 cards, 4 timed out; 0.21 s and then 0.055 s
+warm). `/v1/seats?sizes=true` already folds every seat at once. No process launch beyond
 `/v1/state`'s own (an in-process liveness probe per bound seat). The fold reads
 the whole transcript cold and only what was appended warm, through the
 session source's existing per-seat cursor cache. One bulk call warms that
