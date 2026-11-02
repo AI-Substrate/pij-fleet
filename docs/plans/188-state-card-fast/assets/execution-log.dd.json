@@ -84,6 +84,15 @@
             "../plan.dd.json#acceptance_criteria/ac-0005",
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0009",
+          "at": "2026-11-02T02:30:00Z",
+          "text": "Prime verification (assets/reviews/prime-verification.md). PR #105 merged at 4d4e98e (CI 41371773550) as main cf4baa7; daemon redeployed pid 67958 -> 97258. Live: /v1/state 1.73-1.74 s before; after, first reads (cold session folds) 0.01 s / 0.87 s / 0.49 s (smelt, 15.3 s in the diagnosis), warm 0.00-0.03 s (antelope 0.57 s once, then 0.00 s x3); GET /v1/cards call 1 (cold) 1.31 s, 88 cards, 0 unavailable, 4 timed out, call 2 0.21 s, call 3 0.055 s; daemon 10.6% CPU, 197 MB. Recheck (assets/reviews/review-pr105-recheck.md): merge, 0 blockers; R1 pinned by card_tests only_the_bulk_read_bounds_the_session_read (mutant state-also-bounded red, evidence/mutants-recheck.txt), R2 docs wording fixed (waits bounded, overrunning folds finish detached).",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#phases/ph-4cc4"
+          ]
         }
       ]
     }

@@ -510,3 +510,36 @@ async fn one_unreadable_seat_is_named_and_the_fleet_is_still_served() {
 
     server.abort();
 }
+
+/// Recheck of #105 (R1): only the bulk read is bounded. A session that answers
+/// after 300 ms is a timeout in `/v1/cards` and the full answer in `/v1/state`,
+/// which waits for the read as it always has.
+#[tokio::test]
+async fn only_the_bulk_read_bounds_the_session_read() {
+    let (addr, server) = bulk_fleet(&[FleetSeat {
+        session: Session::After(Duration::from_millis(300)),
+        ..seat("pij-fleet-slow")
+    }])
+    .await;
+
+    let bulk = cards(addr).await;
+    assert_eq!(
+        bulk["cards"][0]["sessionStatus"],
+        serde_json::json!({"outcome": "failed", "error": "no answer within 200 ms"})
+    );
+
+    let started = std::time::Instant::now();
+    let single = state(addr, "pij-fleet-slow").await;
+    assert!(
+        started.elapsed() >= Duration::from_millis(300),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(single["sessionStatus"]["outcome"], "not-found", "{single}");
+    assert_eq!(
+        single["sessionStatus"]["detail"],
+        "scripted session-pij-fleet-slow"
+    );
+
+    server.abort();
+}

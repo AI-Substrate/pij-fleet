@@ -9,7 +9,7 @@
         "title": "Fast seat cards: /v1/state in milliseconds, a bulk read, and the note's timestamp",
         "slug": "state-card-fast",
         "ordinal": 188,
-        "status": "ready",
+        "status": "shipped",
         "summary": "Chainglass (the UI) now seeds every seat's card from /v1/state on start instead of replaying the event log. One call takes 1.3 to 3.7 s, calls seem to run one at a time (4 in flight: about 6.5 s each), and seeding 84 seats took 136 s. The card also gives `stateNote` without when it was written.",
         "backpressure": "assets/backpressure.dd.json#rows",
         "mode": "Full",
@@ -77,8 +77,8 @@
           "claim": "Cost (AGENTS.md \u00a7 Resource cost). No new loop, poll or launch site. If you add a cache, state its lifetime and invalidation, and its memory per seat. Backpressure row: reads per card, rows touched per read. Private before/after timings; the prime takes the deployed reading.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
-          "proven_by": "assets/execution-log.dd.json#entries/lg-0005",
-          "note": "Proven privately: no new loop/poll/launch, no cache; ~10 indexed reads per card, each touching the seat's rows of one kind; backpressure bp-0002. Deployed reading is the prime's."
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0009",
+          "note": "Live (prime, pid 97258): /v1/state 1.73-1.74 s -> 0.01-0.87 s cold (session fold), 0.00-0.03 s warm; /v1/cards 88 cards 1.31 s cold, 0.055 s warm, 0 unavailable; daemon 10.6% CPU, 197 MB. No new loop, timer or launch site; no new cache (the session source's existing per-seat cursor cache is warmed per bound seat). Cost row bp-0002; private before/after lg-0005."
         },
         {
           "id": "ac-0006",
@@ -97,8 +97,9 @@
           "id": "ph-4cc4",
           "title": "Make card reads fast, add a bulk card read and the state note's time",
           "brief": "One phase: profile /v1/state, make one call fast and concurrent calls independent, add a bulk read for every seat's card, add stateNoteAt/stateNoteSeq, docs, cost, mutants, PR. CS 3.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "assets/execution-log.dd.json#entries/lg-0009"
         }
       ]
     }
