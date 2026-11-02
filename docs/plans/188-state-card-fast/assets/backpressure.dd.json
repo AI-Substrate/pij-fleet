@@ -21,8 +21,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: http state tests and golden cards in crates/daemon; store query-plan tests; private daemon timings on a 4M-row seed; cargo test -p pij-store -p pij-daemon <filters>",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/http/mod.rs"
+          "state": "checked",
+          "probe": "crates/daemon/src/http/mod.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,10 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Golden fixtures; private timings; prime's deployed reading.",
-          "state": "unchecked",
-          "probe": "pij-rs --json state"
+          "state": "checked",
+          "probe": "pij-rs --json state",
+          "receipt": "execution-log.dd.json#entries/lg-0005",
+          "note": "Cost per card: ~10 indexed reads (seat row, role, card, note, holds, deferrals, FYIs, receiver lease, schema guard), each touching only the seat's rows of one kind; 0 launches added; 0 bytes cached per seat; /v1/cards = 1 roster + 1 role read + per-seat reads, 4 in flight. No loop, poll or timer."
         },
         {
           "id": "bp-0003",
@@ -41,8 +44,9 @@
           "mode": "EXISTS",
           "tier": "computational",
           "proof": "Mutant receipts; clippy; fmt; GitHub CI on the exact head.",
-          "state": "unchecked",
-          "probe": ".github/workflows"
+          "state": "checked",
+          "probe": ".github/workflows",
+          "receipt": "execution-log.dd.json#entries/lg-0006"
         }
       ]
     },

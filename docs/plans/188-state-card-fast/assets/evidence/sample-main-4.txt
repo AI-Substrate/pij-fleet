@@ -1,0 +1,430 @@
+Analysis of sampling pij-rs-main (pid 43589) every 1 millisecond
+Process:         pij-rs-main [43589]
+Path:            /private/tmp/*/pij-rs-main
+Load Address:    0x104e7c000
+Identifier:      pij-rs-main
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  launchd [1]
+Target Type:     live task
+
+Date/Time:       2026-11-02 09:50:54.150 +1000
+Launch Time:     2026-11-02 09:50:13.672 +1000
+OS Version:      macOS 27.0.1 (26A434)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         1.7G
+Physical footprint (peak):  5.5G
+Idle exit:                  untracked
+----
+
+Call graph:
+
+# Trimmed to the four sqlx-sqlite-worker threads (plan 188); addresses removed.
+
+    1857 Thread_270632758: sqlx-sqlite-worker-0
+    + 1857 thread_start  (in libsystem_pthread.dylib) + 8
+    +   1857 _pthread_start  (in libsystem_pthread.dylib) + 136
+    +     1857 _RNvNvMs0_NtNtNtCs7mRY9FNn263_3std3sys6thread4unixNtB7_6Thread3new12thread_start + 392
+    +       1857 _RNSNvYNCINvNtNtCs7mRY9FNn263_3std6thread9lifecycle15spawn_uncheckedNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1c_16ConnectionWorker9establish00uEs_0INtNtNtCslWxY2MhVcag_4core3ops8function6FnOnceuE9call_once6vtableB1g_ + 224
+    +         1357 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 620
+    +         ! 1357 _RNvXsJ_Cs9b0afBrpjZz_5flumeINtB5_8IntoIterTNtNtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6worker7CommandNtNtCs3qI0Hdg8AJ_7tracing4span4SpanEENtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4nextBL_ + 760
+    +         !   1357 _RNvNtNtCs7mRY9FNn263_3std6thread9functions4park + 96
+    +         !     1357 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132
+    +         !       1357 _dispatch_sema4_wait  (in libdispatch.dylib) + 28
+    +         !         1357 semaphore_wait_trap  (in libsystem_kernel.dylib) + 8
+    +         492 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3724
+    +         ! 490 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 396
+    +         ! : 490 _RNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite9statement6handleNtB4_15StatementHandle4step + 32
+    +         ! :   490 sqlite3_step + 536
+    +         ! :     447 sqlite3VdbeExec + 3068
+    +         ! :     | 355 sqlite3BtreeNext + 160
+    +         ! :     | + 355 moveToChild + 184
+    +         ! :     | +   353 getAndInitPage + 136
+    +         ! :     | +   ! 331 getPageNormal + 568
+    +         ! :     | +   ! : 328 readDbPage + 192
+    +         ! :     | +   ! : | 327 unixRead + 136
+    +         ! :     | +   ! : | + 327 pread  (in libsystem_kernel.dylib) + 8,4  [0x182f8e648,0x182f8e644]
+    +         ! :     | +   ! : | 1 unixRead + 116
+    +         ! :     | +   ! : 2 readDbPage + 8,28  [0x105ca21dc,0x105ca21f0]
+    +         ! :     | +   ! : 1 readDbPage + 48
+    +         ! :     | +   ! :   1 walFindFrame + 164
+    +         ! :     | +   ! 19 getPageNormal + 76
+    +         ! :     | +   ! : 12 pcache1Fetch + 312
+    +         ! :     | +   ! : | 10 _pthread_mutex_firstfit_unlock_slow  (in libsystem_pthread.dylib) + 220
+    +         ! :     | +   ! : | + 10 _pthread_mutex_firstfit_wake  (in libsystem_pthread.dylib) + 28
+    +         ! :     | +   ! : | +   10 __psynch_mutexdrop  (in libsystem_kernel.dylib) + 8
+    +         ! :     | +   ! : | 2 pthread_mutex_unlock  (in libsystem_pthread.dylib) + 72,104  [0x182fcca64,0x182fcca84]
+    +         ! :     | +   ! : 7 pcache1Fetch + 52
+    +         ! :     | +   ! :   7 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         ! :     | +   ! :     7 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         ! :     | +   ! :       7 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         ! :     | +   ! 3 getPageNormal + 92
+    +         ! :     | +   2 getAndInitPage + 260
+    +         ! :     | +     2 btreeInitPage + 12,140  [0x105ca5568,0x105ca55e8]
+    +         ! :     | 82 btreeNext + 640
+    +         ! :     | + 70 pcache1Unpin + 52
+    +         ! :     | + ! 70 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         ! :     | + !   70 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         ! :     | + !     70 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         ! :     | + 10 _pthread_mutex_firstfit_unlock_slow  (in libsystem_pthread.dylib) + 220
+    +         ! :     | + ! 10 _pthread_mutex_firstfit_wake  (in libsystem_pthread.dylib) + 28
+    +         ! :     | + !   10 __psynch_mutexdrop  (in libsystem_kernel.dylib) + 8
+    +         ! :     | + 2 pthread_mutex_unlock  (in libsystem_pthread.dylib) + 104
+    +         ! :     | 9 sqlite3BtreeNext + 32,72,...  [0x105cc2a0c,0x105cc2a34,...]
+    +         ! :     | 1 btreeNext + 640
+    +         ! :     29 sqlite3VdbeExec + 29156,38032,...  [0x105cbba98,0x105cbdd44,...]
+    +         ! :     6 sqlite3VdbeExec + 38536
+    +         ! :     | 6 _platform_memmove  (in libsystem_platform.dylib) + 428,0  [0x182fdbf0c,0x182fdbd60]
+    +         ! :     4 sqlite3VdbeExec + 30632
+    +         ! :     | 2 btreeParseCellPtr + 32,360  [0x105ca5b10,0x105ca5c58]
+    +         ! :     | 2 getCellInfo + 0
+    +         ! :     3 sqlite3VdbeExec + 15092
+    +         ! :     | 2 sqlite3MemCompare + 88,172  [0x105cc0044,0x105cc0098]
+    +         ! :     | 1 binCollFunc + 36
+    +         ! :     |   1 DYLD-STUB$$memcmp + 4
+    +         ! :     1 binCollFunc + 48
+    +         ! 1 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 448
+    +         ! : 1 _RNvMs0_NtCs6FVqshmMIFs_11sqlx_sqlite3rowNtB5_9SqliteRow7current + 200
+    +         ! :   1 sqlite3_value_dup + 52
+    +         ! :     1 sqlite3Malloc + 548
+    +         ! :       1 DYLD-STUB$$pthread_mutex_unlock + 4
+    +         ! 1 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 408
+    +         6 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3972
+    +         ! 6 _RINvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6handleNtB5_16ConnectionHandle4execINtNtCs6KVRSXc8uZF_5alloc6borrow3CoweEEB9_ + 292
+    +         !   6 sqlite3_exec + 1540
+    +         !     6 sqlite3_step + 536
+    +         !       6 sqlite3VdbeExec + 14412
+    +         !         6 btreeBeginTrans + 628
+    +         !           6 sqliteDefaultBusyCallback + 116
+    +         !             6 unixSleep + 84
+    +         !               6 nanosleep  (in libsystem_c.dylib) + 220
+    +         !                 6 __semwait_signal  (in libsystem_kernel.dylib) + 8
+    +         1 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 1692
+    +         ! 1 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 596
+    +         !   1 _RNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite9statement6handleNtB4_15StatementHandle4step + 32
+    +         !     1 sqlite3_step + 536
+    +         !       1 sqlite3VdbeExec + 14412
+    +         !         1 btreeBeginTrans + 832
+    +         !           1 getPageNormal + 76
+    +         !             1 pcache1Fetch + 52
+    +         !               1 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 156
+    +         1 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3772
+    +           1 _RNvMsp_Cs9b0afBrpjZz_5flumeINtB5_6SenderINtNtCslWxY2MhVcag_4core6result6ResultINtCs9Hwgg9RRLAx_6either6EitherNtNtCs6FVqshmMIFs_11sqlx_sqlite12query_result17SqliteQueryResultNtNtB1N_3row9SqliteRowENtNtCsd1xILFLpNNA_9sqlx_core5error5ErrorEE4sendB1N_ + 232
+    1857 Thread_270632761: sqlx-sqlite-worker-1
+    + 1857 thread_start  (in libsystem_pthread.dylib) + 8
+    +   1857 _pthread_start  (in libsystem_pthread.dylib) + 136
+    +     1857 _RNvNvMs0_NtNtNtCs7mRY9FNn263_3std3sys6thread4unixNtB7_6Thread3new12thread_start + 392
+    +       1857 _RNSNvYNCINvNtNtCs7mRY9FNn263_3std6thread9lifecycle15spawn_uncheckedNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1c_16ConnectionWorker9establish00uEs_0INtNtNtCslWxY2MhVcag_4core3ops8function6FnOnceuE9call_once6vtableB1g_ + 224
+    +         1498 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 620
+    +         ! 1498 _RNvXsJ_Cs9b0afBrpjZz_5flumeINtB5_8IntoIterTNtNtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6worker7CommandNtNtCs3qI0Hdg8AJ_7tracing4span4SpanEENtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4nextBL_ + 760
+    +         !   1498 _RNvNtNtCs7mRY9FNn263_3std6thread9functions4park + 96
+    +         !     1498 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132
+    +         !       1498 _dispatch_sema4_wait  (in libdispatch.dylib) + 28
+    +         !         1498 semaphore_wait_trap  (in libsystem_kernel.dylib) + 8
+    +         350 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3724
+    +         ! 345 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 396
+    +         ! : 345 _RNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite9statement6handleNtB4_15StatementHandle4step + 32
+    +         ! :   345 sqlite3_step + 536
+    +         ! :     317 sqlite3VdbeExec + 3068
+    +         ! :     | 241 sqlite3BtreeNext + 160
+    +         ! :     | + 241 moveToChild + 184
+    +         ! :     | +   239 getAndInitPage + 136
+    +         ! :     | +   ! 227 getPageNormal + 568
+    +         ! :     | +   ! : 227 readDbPage + 192
+    +         ! :     | +   ! :   227 unixRead + 136
+    +         ! :     | +   ! :     227 pread  (in libsystem_kernel.dylib) + 8,4  [0x182f8e648,0x182f8e644]
+    +         ! :     | +   ! 8 getPageNormal + 76
+    +         ! :     | +   ! : 6 pcache1Fetch + 312
+    +         ! :     | +   ! : | 6 _pthread_mutex_firstfit_unlock_slow  (in libsystem_pthread.dylib) + 220
+    +         ! :     | +   ! : |   6 _pthread_mutex_firstfit_wake  (in libsystem_pthread.dylib) + 28
+    +         ! :     | +   ! : |     6 __psynch_mutexdrop  (in libsystem_kernel.dylib) + 8
+    +         ! :     | +   ! : 1 pcache1Fetch + 52
+    +         ! :     | +   ! : | 1 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         ! :     | +   ! : |   1 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         ! :     | +   ! : |     1 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         ! :     | +   ! : 1 pcache1Fetch + 116
+    +         ! :     | +   ! :   1 pcache1FetchStage2 + 464
+    +         ! :     | +   ! 4 getPageNormal + 92,400  [0x105ca1e08,0x105ca1f3c]
+    +         ! :     | +   2 getAndInitPage + 260
+    +         ! :     | +     1 btreeInitPage + 28
+    +         ! :     | +     1 decodeFlags + 252
+    +         ! :     | 70 btreeNext + 640
+    +         ! :     | + 61 pcache1Unpin + 52
+    +         ! :     | + ! 58 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         ! :     | + ! : 58 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         ! :     | + ! :   58 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         ! :     | + ! 1 DYLD-STUB$$pthread_mutex_lock + 4
+    +         ! :     | + ! 1 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 144
+    +         ! :     | + ! 1 pthread_mutex_lock  (in libsystem_pthread.dylib) + 112
+    +         ! :     | + 8 _pthread_mutex_firstfit_unlock_slow  (in libsystem_pthread.dylib) + 220
+    +         ! :     | + ! 8 _pthread_mutex_firstfit_wake  (in libsystem_pthread.dylib) + 28
+    +         ! :     | + !   8 __psynch_mutexdrop  (in libsystem_kernel.dylib) + 8
+    +         ! :     | + 1 pthread_mutex_unlock  (in libsystem_pthread.dylib) + 104
+    +         ! :     | 3 sqlite3BtreeNext + 32,84  [0x105cc2a0c,0x105cc2a40]
+    +         ! :     | 2 btreeNext + 24,640  [0x105ccbe9c,0x105ccc104]
+    +         ! :     | 1 btreeNext + 880
+    +         ! :     |   1 moveToChild + 184
+    +         ! :     |     1 getAndInitPage + 136
+    +         ! :     |       1 getPageNormal + 568
+    +         ! :     |         1 readDbPage + 192
+    +         ! :     |           1 unixRead + 136
+    +         ! :     |             1 pread  (in libsystem_kernel.dylib) + 4
+    +         ! :     15 sqlite3VdbeExec + 532,37580,...  [0x105cb4ac8,0x105cbdb80,...]
+    +         ! :     4 sqlite3VdbeExec + 15092
+    +         ! :     | 3 sqlite3MemCompare + 132,172  [0x105cc0070,0x105cc0098]
+    +         ! :     | 1 binCollFunc + 36
+    +         ! :     |   1 _platform_memcmp  (in libsystem_platform.dylib) + 0
+    +         ! :     4 sqlite3VdbeExec + 30632
+    +         ! :     | 3 btreeParseCellPtr + 360,320  [0x105ca5c58,0x105ca5c30]
+    +         ! :     | 1 getCellInfo + 52
+    +         ! :     3 sqlite3VdbeExec + 38536
+    +         ! :     | 2 _platform_memmove  (in libsystem_platform.dylib) + 4,460  [0x182fdbd64,0x182fdbf2c]
+    +         ! :     | 1 DYLD-STUB$$memcpy + 4
+    +         ! :     1 binCollFunc + 48
+    +         ! :     1 sqlite3BtreeNext + 100
+    +         ! 4 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 448
+    +         ! : 4 _RNvMs0_NtCs6FVqshmMIFs_11sqlx_sqlite3rowNtB5_9SqliteRow7current + 200
+    +         ! :   2 sqlite3_value_dup + 132
+    +         ! :   | 2 sqlite3VdbeMemMakeWriteable + 188
+    +         ! :   |   2 vdbeMemAddTerminator + 32
+    +         ! :   |     1 sqlite3VdbeMemGrow + 244
+    +         ! :   |     + 1 sqlite3MemSize + 32
+    +         ! :   |     1 sqlite3VdbeMemGrow + 340
+    +         ! :   |       1 sqlite3Malloc + 340
+    +         ! :   |         1 sqlite3MemMalloc + 36
+    +         ! :   |           1 _xzm_malloc_tc  (in libsystem_malloc.dylib) + 576
+    +         ! :   1 sqlite3_value_dup + 52
+    +         ! :   | 1 sqlite3Malloc + 340
+    +         ! :   |   1 sqlite3MemMalloc + 36
+    +         ! :   |     1 _malloc_zone_malloc  (in libsystem_malloc.dylib) + 56
+    +         ! :   1 sqlite3_value_dup + 112
+    +         ! 1 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 596
+    +         !   1 _RNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite9statement6handleNtB4_15StatementHandle4step + 32
+    +         !     1 sqlite3_step + 536
+    +         !       1 sqlite3VdbeExec + 14412
+    +         !         1 btreeBeginTrans + 804
+    +         !           1 sqlite3PagerSharedLock + 192
+    +         !             1 walTryBeginRead + 2220
+    +         !               1 unixShmLock + 684
+    +         !                 1 fcntl  (in libsystem_kernel.dylib) + 88
+    +         !                   1 __fcntl  (in libsystem_kernel.dylib) + 4
+    +         8 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3972
+    +         ! 8 _RINvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6handleNtB5_16ConnectionHandle4execINtNtCs6KVRSXc8uZF_5alloc6borrow3CoweEEB9_ + 292
+    +         !   8 sqlite3_exec + 1540
+    +         !     8 sqlite3_step + 536
+    +         !       8 sqlite3VdbeExec + 14412
+    +         !         8 btreeBeginTrans + 628
+    +         !           8 sqliteDefaultBusyCallback + 116
+    +         !             8 unixSleep + 84
+    +         !               8 nanosleep  (in libsystem_c.dylib) + 220
+    +         !                 8 __semwait_signal  (in libsystem_kernel.dylib) + 8
+    +         1 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 4060
+    +           1 _RINvNtCskePTaaGdUeu_16futures_executor10local_pool8block_onNCNvMNtNtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6worker18rendezvous_oneshotINtB10_6SenderINtNtCslWxY2MhVcag_4core6result6ResultuNtNtCsd1xILFLpNNA_9sqlx_core5error5ErrorEE4send0EB16_ + 80
+    +             1 _RINvMs2_NtNtCs7mRY9FNn263_3std6thread5localINtB6_8LocalKeyINtNtCs6KVRSXc8uZF_5alloc4sync3ArcNtNtCskePTaaGdUeu_16futures_executor10local_pool12ThreadNotifyEE4withNCINvB1u_12run_executorINtNtCslWxY2MhVcag_4core6result6ResultuNtNtCsaBnofMOM6SJ_15futures_channel7oneshot8CanceledENCINvB1u_8block_onNCNvMNtNtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6worker18rendezvous_oneshotINtB4N_6SenderIB2X_uNtNtCsd1xILFLpNNA_9sqlx_core5error5ErrorEE4send0E0E0B2W_EB4T_ + 488
+    +               1 _RNvNtNtCs7mRY9FNn263_3std6thread9functions4park + 96
+    +                 1 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132
+    +                   1 _dispatch_sema4_wait  (in libdispatch.dylib) + 28
+    +                     1 semaphore_wait_trap  (in libsystem_kernel.dylib) + 8
+    1857 Thread_270632762: sqlx-sqlite-worker-2
+    + 1857 thread_start  (in libsystem_pthread.dylib) + 8
+    +   1857 _pthread_start  (in libsystem_pthread.dylib) + 136
+    +     1857 _RNvNvMs0_NtNtNtCs7mRY9FNn263_3std3sys6thread4unixNtB7_6Thread3new12thread_start + 392
+    +       1857 _RNSNvYNCINvNtNtCs7mRY9FNn263_3std6thread9lifecycle15spawn_uncheckedNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1c_16ConnectionWorker9establish00uEs_0INtNtNtCslWxY2MhVcag_4core3ops8function6FnOnceuE9call_once6vtableB1g_ + 224
+    +         1830 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 620
+    +         ! 1829 _RNvXsJ_Cs9b0afBrpjZz_5flumeINtB5_8IntoIterTNtNtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6worker7CommandNtNtCs3qI0Hdg8AJ_7tracing4span4SpanEENtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4nextBL_ + 760
+    +         ! : 1829 _RNvNtNtCs7mRY9FNn263_3std6thread9functions4park + 96
+    +         ! :   1828 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132
+    +         ! :   | 1828 _dispatch_sema4_wait  (in libdispatch.dylib) + 28
+    +         ! :   |   1828 semaphore_wait_trap  (in libsystem_kernel.dylib) + 8
+    +         ! :   1 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132
+    +         ! 1 _RNvXsJ_Cs9b0afBrpjZz_5flumeINtB5_8IntoIterTNtNtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6worker7CommandNtNtCs3qI0Hdg8AJ_7tracing4span4SpanEENtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4nextBL_ + 380
+    +         !   1 _xzm_malloc_tc  (in libsystem_malloc.dylib) + 576
+    +         17 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3724
+    +         ! 11 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 396
+    +         ! : 11 _RNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite9statement6handleNtB4_15StatementHandle4step + 32
+    +         ! :   11 sqlite3_step + 536
+    +         ! :     11 sqlite3VdbeExec + 36448
+    +         ! :       11 sqlite3VdbeFinishMoveto + 40
+    +         ! :         6 sqlite3BtreeTableMoveto + 520
+    +         ! :         | 6 moveToChild + 184
+    +         ! :         |   6 getAndInitPage + 136
+    +         ! :         |     4 getPageNormal + 568
+    +         ! :         |     + 4 readDbPage + 192
+    +         ! :         |     +   4 unixRead + 136
+    +         ! :         |     +     4 pread  (in libsystem_kernel.dylib) + 8
+    +         ! :         |     2 getPageNormal + 76
+    +         ! :         |       1 pcache1Fetch + 52
+    +         ! :         |       ! 1 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         ! :         |       !   1 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         ! :         |       !     1 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         ! :         |       1 pcache1Fetch + 312
+    +         ! :         |         1 pthread_mutex_unlock  (in libsystem_pthread.dylib) + 104
+    +         ! :         4 sqlite3BtreeTableMoveto + 72
+    +         ! :         | 4 moveToRoot + 56
+    +         ! :         |   3 pcache1Unpin + 52
+    +         ! :         |   + 3 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         ! :         |   +   3 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         ! :         |   +     3 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         ! :         |   1 _pthread_mutex_firstfit_unlock_slow  (in libsystem_pthread.dylib) + 220
+    +         ! :         |     1 _pthread_mutex_firstfit_wake  (in libsystem_pthread.dylib) + 28
+    +         ! :         |       1 __psynch_mutexdrop  (in libsystem_kernel.dylib) + 8
+    +         ! :         1 sqlite3BtreeTableMoveto + 328
+    +         ! 3 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 448
+    +         ! : 2 _RNvMs0_NtCs6FVqshmMIFs_11sqlx_sqlite3rowNtB5_9SqliteRow7current + 200
+    +         ! : | 2 sqlite3_value_dup + 52
+    +         ! : |   1 sqlite3Malloc + 340
+    +         ! : |   + 1 sqlite3MemMalloc + 36
+    +         ! : |   +   1 _xzm_malloc_tc  (in libsystem_malloc.dylib) + 260
+    +         ! : |   1 sqlite3Malloc + 436
+    +         ! : |     1 sqlite3MemSize + 32
+    +         ! : |       1 xzm_malloc_zone_size  (in libsystem_malloc.dylib) + 40
+    +         ! : 1 _RNvMs0_NtCs6FVqshmMIFs_11sqlx_sqlite3rowNtB5_9SqliteRow7current + 148
+    +         ! 3 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 596
+    +         !   3 _RNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite9statement6handleNtB4_15StatementHandle4step + 32
+    +         !     3 sqlite3_step + 536
+    +         !       2 sqlite3VdbeExec + 42156
+    +         !       | 1 sqlite3VdbeHalt + 144
+    +         !       | + 1 sqlite3VdbeFreeCursorNN + 880
+    +         !       | +   1 sqlite3BtreeClose + 368
+    +         !       | +     1 sqlite3PagerClose + 388
+    +         !       | +       1 pcache1Truncate + 68
+    +         !       | +         1 pcache1TruncateUnsafe + 668
+    +         !       | 1 sqlite3VdbeHalt + 2276
+    +         !       |   1 vdbeCommit + 1236
+    +         !       |     1 sqlite3BtreeCommitPhaseTwo + 172
+    +         !       |       1 btreeEndTransaction + 480
+    +         !       |         1 pcache1Unpin + 52
+    +         !       |           1 pthread_mutex_lock  (in libsystem_pthread.dylib) + 140
+    +         !       1 sqlite3VdbeExec + 2824
+    +         !         1 sqlite3BtreeIndexMoveto + 516
+    +         !           1 moveToRoot + 736
+    +         !             1 getAndInitPage + 136
+    +         !               1 getPageNormal + 568
+    +         !                 1 readDbPage + 192
+    +         !                   1 unixRead + 136
+    +         !                     1 pread  (in libsystem_kernel.dylib) + 8
+    +         6 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3972
+    +         ! 6 _RINvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6handleNtB5_16ConnectionHandle4execINtNtCs6KVRSXc8uZF_5alloc6borrow3CoweEEB9_ + 292
+    +         !   6 sqlite3_exec + 1540
+    +         !     6 sqlite3_step + 536
+    +         !       6 sqlite3VdbeExec + 14412
+    +         !         6 btreeBeginTrans + 628
+    +         !           6 sqliteDefaultBusyCallback + 116
+    +         !             6 unixSleep + 84
+    +         !               6 nanosleep  (in libsystem_c.dylib) + 220
+    +         !                 6 __semwait_signal  (in libsystem_kernel.dylib) + 8
+    +         2 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3772
+    +         ! 1 _RNvMsp_Cs9b0afBrpjZz_5flumeINtB5_6SenderINtNtCslWxY2MhVcag_4core6result6ResultINtCs9Hwgg9RRLAx_6either6EitherNtNtCs6FVqshmMIFs_11sqlx_sqlite12query_result17SqliteQueryResultNtNtB1N_3row9SqliteRowENtNtCsd1xILFLpNNA_9sqlx_core5error5ErrorEE4sendB1N_ + 64
+    +         ! : 1 _RNvMNtNtNtNtNtCs7mRY9FNn263_3std3sys3pal4unix4sync5mutexNtB2_5Mutex4lock + 12
+    +         ! :   1 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         ! :     1 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         ! :       1 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         ! 1 _RNvMsp_Cs9b0afBrpjZz_5flumeINtB5_6SenderINtNtCslWxY2MhVcag_4core6result6ResultINtCs9Hwgg9RRLAx_6either6EitherNtNtCs6FVqshmMIFs_11sqlx_sqlite12query_result17SqliteQueryResultNtNtB1N_3row9SqliteRowENtNtCsd1xILFLpNNA_9sqlx_core5error5ErrorEE4sendB1N_ + 548
+    +         1 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 2396
+    +         ! 1 _RNvMs1_NtCsaBnofMOM6SJ_15futures_channel7oneshotINtB5_6SenderuE4sendCs6FVqshmMIFs_11sqlx_sqlite + 100
+    +         !   1 _RNvNtNtNtCsehHeNffY6br_5tokio7runtime4task5waker11wake_by_val + 52
+    +         !     1 _RNvXs_NtNtNtNtCsehHeNffY6br_5tokio7runtime9scheduler12multi_thread6handleINtNtCs6KVRSXc8uZF_5alloc4sync3ArcNtB4_6HandleENtNtBa_4task8Schedule8schedule + 52
+    +         !       1 _RINvNtNtCsehHeNffY6br_5tokio7runtime7context14with_scheduleruNCINvNtNtNtB4_9scheduler12multi_thread6worker12with_currentuNCNvMs2_B12_NtNtB14_6handle6Handle13schedule_task0E0EB6_ + 148
+    +         !         1 pthread_cond_signal  (in libsystem_pthread.dylib) + 712
+    +         !           1 __psynch_cvsignal  (in libsystem_kernel.dylib) + 8
+    +         1 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 2476
+    +           1 _RNvNtNtNtCsehHeNffY6br_5tokio7runtime4task5waker11wake_by_val + 52
+    +             1 _RNvXs_NtNtNtNtCsehHeNffY6br_5tokio7runtime9scheduler12multi_thread6handleINtNtCs6KVRSXc8uZF_5alloc4sync3ArcNtB4_6HandleENtNtBa_4task8Schedule8schedule + 52
+    +               1 _RINvNtNtCsehHeNffY6br_5tokio7runtime7context14with_scheduleruNCINvNtNtNtB4_9scheduler12multi_thread6worker12with_currentuNCNvMs2_B12_NtNtB14_6handle6Handle13schedule_task0E0EB6_ + 148
+    +                 1 pthread_cond_signal  (in libsystem_pthread.dylib) + 712
+    +                   1 __psynch_cvsignal  (in libsystem_kernel.dylib) + 8
+    1857 Thread_270632763: sqlx-sqlite-worker-3
+    + 1857 thread_start  (in libsystem_pthread.dylib) + 8
+    +   1857 _pthread_start  (in libsystem_pthread.dylib) + 136
+    +     1857 _RNvNvMs0_NtNtNtCs7mRY9FNn263_3std3sys6thread4unixNtB7_6Thread3new12thread_start + 392
+    +       1857 _RNSNvYNCINvNtNtCs7mRY9FNn263_3std6thread9lifecycle15spawn_uncheckedNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1c_16ConnectionWorker9establish00uEs_0INtNtNtCslWxY2MhVcag_4core3ops8function6FnOnceuE9call_once6vtableB1g_ + 224
+    +         1360 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 620
+    +         ! 1360 _RNvXsJ_Cs9b0afBrpjZz_5flumeINtB5_8IntoIterTNtNtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6worker7CommandNtNtCs3qI0Hdg8AJ_7tracing4span4SpanEENtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4nextBL_ + 760
+    +         !   1360 _RNvNtNtCs7mRY9FNn263_3std6thread9functions4park + 96
+    +         !     1360 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132
+    +         !       1360 _dispatch_sema4_wait  (in libdispatch.dylib) + 28
+    +         !         1360 semaphore_wait_trap  (in libsystem_kernel.dylib) + 8
+    +         491 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3724
+    +         ! 491 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 396
+    +         !   491 _RNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite9statement6handleNtB4_15StatementHandle4step + 32
+    +         !     491 sqlite3_step + 536
+    +         !       454 sqlite3VdbeExec + 3068
+    +         !       : 384 sqlite3BtreeNext + 160
+    +         !       : | 383 moveToChild + 184
+    +         !       : | + 383 getAndInitPage + 136
+    +         !       : | +   365 getPageNormal + 568
+    +         !       : | +   ! 361 readDbPage + 192
+    +         !       : | +   ! : 360 unixRead + 136
+    +         !       : | +   ! : | 360 pread  (in libsystem_kernel.dylib) + 8,4  [0x182f8e648,0x182f8e644]
+    +         !       : | +   ! : 1 unixRead + 44
+    +         !       : | +   ! 4 readDbPage + 20,36,...  [0x105ca21e8,0x105ca21f8,...]
+    +         !       : | +   13 getPageNormal + 76
+    +         !       : | +   ! 9 pcache1Fetch + 312
+    +         !       : | +   ! : 9 _pthread_mutex_firstfit_unlock_slow  (in libsystem_pthread.dylib) + 220
+    +         !       : | +   ! :   9 _pthread_mutex_firstfit_wake  (in libsystem_pthread.dylib) + 28
+    +         !       : | +   ! :     9 __psynch_mutexdrop  (in libsystem_kernel.dylib) + 8
+    +         !       : | +   ! 2 pcache1Fetch + 116
+    +         !       : | +   ! : 2 pcache1FetchStage2 + 464,744  [0x105d73994,0x105d73aac]
+    +         !       : | +   ! 1 pcache1Fetch + 52
+    +         !       : | +   ! : 1 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         !       : | +   ! :   1 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         !       : | +   ! :     1 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         !       : | +   ! 1 pcache1Fetch + 32
+    +         !       : | +   4 getPageNormal + 92,0,...  [0x105ca1e08,0x105ca1dac,...]
+    +         !       : | +   1 getPageNormal + 360
+    +         !       : | +     1 pcacheFetchFinishWithInit + 28
+    +         !       : | 1 moveToChild + 192
+    +         !       : 66 btreeNext + 640
+    +         !       : | 60 pcache1Unpin + 52
+    +         !       : | + 60 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +         !       : | +   60 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +         !       : | +     60 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8
+    +         !       : | 6 _pthread_mutex_firstfit_unlock_slow  (in libsystem_pthread.dylib) + 220
+    +         !       : |   6 _pthread_mutex_firstfit_wake  (in libsystem_pthread.dylib) + 28
+    +         !       : |     6 __psynch_mutexdrop  (in libsystem_kernel.dylib) + 8
+    +         !       : 4 sqlite3BtreeNext + 192,32,...  [0x105cc2aac,0x105cc2a0c,...]
+    +         !       26 sqlite3VdbeExec + 37580,464,...  [0x105cbdb80,0x105cb4a84,...]
+    +         !       7 sqlite3VdbeExec + 30632
+    +         !       : 6 btreeParseCellPtr + 104,0,...  [0x105ca5b58,0x105ca5af0,...]
+    +         !       : 1 getCellInfo + 0
+    +         !       3 sqlite3VdbeExec + 38536
+    +         !       : 3 _platform_memmove  (in libsystem_platform.dylib) + 0,12,...  [0x182fdbd60,0x182fdbd6c,...]
+    +         !       1 sqlite3VdbeExec + 15092
+    +         !         1 sqlite3MemCompare + 4
+    +         4 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 3972
+    +         ! 4 _RINvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6handleNtB5_16ConnectionHandle4execINtNtCs6KVRSXc8uZF_5alloc6borrow3CoweEEB9_ + 292
+    +         !   4 sqlite3_exec + 1540
+    +         !     4 sqlite3_step + 536
+    +         !       4 sqlite3VdbeExec + 14412
+    +         !         4 btreeBeginTrans + 628
+    +         !           4 sqliteDefaultBusyCallback + 116
+    +         !             4 unixSleep + 84
+    +         !               4 nanosleep  (in libsystem_c.dylib) + 220
+    +         !                 4 __semwait_signal  (in libsystem_kernel.dylib) + 8
+    +         2 _RINvNtNtCs7mRY9FNn263_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection6workerNtB1g_16ConnectionWorker9establish00uEB1k_ + 1692
+    +           1 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 448
+    +           : 1 _RNvMs0_NtCs6FVqshmMIFs_11sqlx_sqlite3rowNtB5_9SqliteRow7current + 200
+    +           :   1 sqlite3_value_dup + 52
+    +           :     1 sqlite3Malloc + 436
+    +           :       1 sqlite3MemSize + 32
+    +           :         1 xzm_malloc_zone_size  (in libsystem_malloc.dylib) + 0
+    +           1 _RNvXs_NtNtCs6FVqshmMIFs_11sqlx_sqlite10connection7executeNtB4_11ExecuteIterNtNtNtNtCslWxY2MhVcag_4core4iter6traits8iterator8Iterator4next + 596
+    +             1 _RNvMs_NtNtCs6FVqshmMIFs_11sqlx_sqlite9statement6handleNtB4_15StatementHandle4step + 32
+    +               1 sqlite3_step + 4252
+    +                 1 sqlite3Reprepare + 84
+    +                   1 sqlite3LockAndPrepare + 228
+    +                     1 sqlite3Prepare + 520
+    +                       1 sqlite3RunParser + 768
+    +                         1 yy_reduce + 5248
+    +                           1 sqlite3Select + 14696
+    +                             1 sqlite3WhereBegin + 5224
+    +                               1 sqlite3WhereCodeOneLoopStart + 8928
+    +                                 1 codeAllEqualityTerms + 148
+    +                                   1 dbMallocRawFinish + 24
+    +                                     1 sqlite3Malloc + 108
+    +                                       1 _pthread_mutex_firstfit_lock_slow  (in libsystem_pthread.dylib) + 216
+    +                                         1 _pthread_mutex_firstfit_lock_wait  (in libsystem_pthread.dylib) + 84
+    +                                           1 __psynch_mutexwait  (in libsystem_kernel.dylib) + 8

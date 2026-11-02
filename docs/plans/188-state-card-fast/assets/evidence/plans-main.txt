@@ -1,0 +1,72 @@
+### 1 status.read (seat row + last_event_at + assignment states)
+    SELECT seats.*, (SELECT at FROM spine_events WHERE seat=seats.id ORDER BY seq DESC LIMIT 1) AS last_event_at, (SELECT json_extract(payload,'$.assignment_id') FROM spine_events  WHERE seat=seats.id AND kind='report.state' ORDER BY seq DESC LIMIT 1) AS latest_assignment_id, (SELECT json_group_array(json_extract(event.payload,'$.state'))  FROM task_assignments AS assignment JOIN spine_events AS event ON event.seq=( SELECT seq FROM spine_events WHERE seat=seats.id AND kind='report.state'  AND json_extract(payload,'$.assignment_id')=assignment.id ORDER BY seq DESC LIMIT 1) WHERE assignment.node_id=seats.id AND assignment.closed_at IS NULL  AND json_extract(event.payload,'$.state') IS NOT NULL) AS assignment_states FROM (SELECT *, NULL AS descriptor FROM seats) AS seats WHERE (?2 IS NULL OR seats.id=?2) ORDER BY seats.id
+    QUERY PLAN
+    |--SCAN seats USING INDEX sqlite_autoindex_seats_1
+    |--CORRELATED SCALAR SUBQUERY 1
+    |  `--SEARCH spine_events USING INDEX spine_by_seat (seat=?)
+    |--CORRELATED SCALAR SUBQUERY 2
+    |  `--SEARCH spine_events USING INDEX spine_by_seat_kind (seat=? AND kind=?)
+    `--CORRELATED SCALAR SUBQUERY 4
+       |--SEARCH assignment USING INDEX task_assignments_by_node (node_id=?)
+       |--SEARCH event USING INTEGER PRIMARY KEY (rowid=?)
+       `--CORRELATED SCALAR SUBQUERY 3
+          `--SEARCH spine_events USING INDEX spine_by_seat_kind (seat=? AND kind=?)
+    time: 0.01 s
+
+### 2 role (seat_roles)
+    SELECT role FROM seat_roles WHERE seat = ?1
+    QUERY PLAN
+    `--SEARCH seat_roles USING INDEX sqlite_autoindex_seat_roles_1 (seat=?)
+    time: 0.00 s
+
+### 3 card: ReportService::card -> Spine::tail(Some(seat), 0) then newest report.now in Rust
+    SELECT seq, v, at, kind, seat, payload FROM spine_events WHERE seq > ?1 AND (?2 IS NULL OR seat = ?2) ORDER BY seq
+    QUERY PLAN
+    `--SEARCH spine_events USING INTEGER PRIMARY KEY (rowid>?)
+    time: 0.62 s
+
+### 4 state note: latest_state_record -> the same tail as 3 (second full scan)
+
+### 5 held: active_holds -> the same tail as 3 (third full scan)
+
+### 6 delivery_deferrals (jobs)
+    SELECT id, dedupe_key, deferral_reason, deferral_count, deferral_since_ms FROM jobs WHERE serial_key = ?1 AND kind IN ('delivery:' || serial_key, 'delivery-control:' || serial_key) AND state IN ('pending', 'running') AND deferral_reason IS NOT NULL ORDER BY id
+    QUERY PLAN
+    |--SEARCH jobs USING INDEX jobs_serial (serial_key=? AND state=?)
+    `--USE TEMP B-TREE FOR ORDER BY
+    time: 0.00 s
+
+### 7 pending_fyi_count (fyis)
+    SELECT COUNT(*) FROM fyis WHERE recipient = ?1 AND state = 'pending'
+    QUERY PLAN
+    `--SEARCH fyis USING COVERING INDEX fyis_pending_by_recipient (recipient=?)
+    time: 0.01 s
+
+### 8 native_receiver_reason -> registry.get (seats by id)
+    SELECT * FROM seats WHERE id = ?1
+    QUERY PLAN
+    `--SEARCH seats USING INDEX sqlite_autoindex_seats_1 (id=?)
+    time: 0.01 s
+
+### 9 schema guard per store call
+    PRAGMA user_version
+    time: 0.01 s
+
+### fix: newest of one kind (Spine::latest_matching)
+    SELECT seq, v, at, kind, seat, payload FROM spine_events WHERE seat = ?1 AND kind IN (?2) ORDER BY seq DESC LIMIT 1
+    QUERY PLAN
+    `--SEARCH spine_events USING INDEX spine_by_seat_kind (seat=? AND kind=?)
+    time: 0.01 s
+
+### fix: held kinds only, by seat and kind
+    SELECT seq, v, at, kind, seat, payload FROM spine_events WHERE seat = ?1 AND kind IN ('delivery.held','delivery.released','delivery.outcome') ORDER BY seq
+    QUERY PLAN
+    `--SEARCH spine_events USING INDEX spine_by_seat (seat=?)
+    time: 0.92 s
+
+### fix: seat tail without the OR
+    SELECT seq, v, at, kind, seat, payload FROM spine_events WHERE seat = ?2 AND seq > ?1 ORDER BY seq
+    QUERY PLAN
+    `--SEARCH spine_events USING INDEX spine_by_seat (seat=? AND seq>?)
+    time: 0.02 s
+

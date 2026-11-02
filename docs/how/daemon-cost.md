@@ -78,3 +78,19 @@ Private daemon on one seed copying the live spine's layout (4,157,703 rows: `seq
 The bar that matters for convergence is the longest stretch of the spine with none of the client's resume kinds: 291,544 rows live. The client must receive it within one 5 s connection, about 60,000 rows a second.
 
 Per seat, steady state: no launches; two `stat` calls and three control-client reads per tracked pane per 600 ms; at most `TAP_TRIM_BYTES` plus one burst of disk per pane; no spine growth unless something happens.
+
+## Measured (plan 188)
+
+Private daemons on one seed copying the live spine (4,158,818 rows: `seq`, `kind`, `seat` and `at` from the live store; real payloads only for the five kinds a card decodes) and the live `seats` (1,893 rows, 86 untombstoned) with process, pane and session nulled. Release builds of main `2d9ea28` and this branch, 2026-11-02, each daemon alone on the machine. Receipts and scripts: [`docs/plans/188-state-card-fast/assets/evidence/`](../plans/188-state-card-fast/assets/evidence/).
+
+| | main | branch |
+|---|---:|---:|
+| `/v1/state`, ordinary seat (7 to 104k rows of its own) | 1.54–1.99 s | 1.7–5.2 ms |
+| `/v1/state`, seat with 3.59 M rows of its own | 12.3–13.6 s | 4.4–5.0 ms |
+| 4 concurrent calls, same seat | 4.4–5.3 s each | 2.6–7.2 ms each |
+| 4 concurrent calls, 4 seats incl. the 3.59 M one | 4.1–16.5 s | 1.9–5.8 ms |
+| Every untombstoned seat's card (86) | 86 calls (no bulk route); derived, not measured: about 2.5 min at 1.7 s each. Chainglass measured 136 s for 84 seats live | one `GET /v1/cards`: 49–64 ms |
+| All 1,893 cards, sequentially | 46 min | 40 s (mostly curl and jq start-up) |
+| Card content, all 1,893 seats | | identical to main except the two new keys |
+
+Branch RSS after all of that: 68 MB. No cache, so no memory per seat; no new loop, timer or launch site.

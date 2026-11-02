@@ -35,10 +35,10 @@ One coder implements impl-guide tk-0001: diagnosis, red tests, fast reads, bulk 
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Diagnosis on a private daemon | — | ph-4cc4 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Red tests | — | ph-4cc4 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Fast reads, bulk read, note timestamp | — | ph-4cc4 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | Timings, docs, mutants, PR | — | ph-4cc4 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Diagnosis on a private daemon | — | ph-4cc4 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0001 | [tk-0001](tasks.dd.md#done-when) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Red tests | — | ph-4cc4 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0002 | [tk-0002](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Fast reads, bulk read, note timestamp | — | ph-4cc4 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0004 | [tk-0003](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Timings, docs, mutants, PR | — | ph-4cc4 | [x] checked | — | ../../execution-log.dd.json#entries/lg-0006 | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -48,22 +48,22 @@ One coder implements impl-guide tk-0001: diagnosis, red tests, fast reads, bulk 
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | diagnosis.md names the slow reads with query plans | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0001 | diagnosis.md names the slow reads with query plans | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | Each new test fails on main for the right reason (quoted) | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0002 | Each new test fails on main for the right reason (quoted) | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | ms reads, identical content, one bulk call, stateNoteAt/Seq | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | ms reads, identical content, one bulk call, stateNoteAt/Seq | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0004 | Receipts; CI green on the exact head | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0004 | Receipts; CI green on the exact head | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |

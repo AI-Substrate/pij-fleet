@@ -1,0 +1,12 @@
+## branch (port 17883) 2026-11-02T00:44:18Z load: 6.48 7.19 9.67
+single pij-state-cards: 0.001805  0.002113  0.001918  s
+single pij-far-jackal: 0.004659  0.005232  0.002887  s
+single pij-causal-skeram: 0.001670  0.001737  0.001921  s
+single pij-different-smelt: 0.004953  0.004568  0.004434  s
+4 concurrent far-jackal (round 1): 0.003287 0.002805 0.002871 0.004259 
+4 concurrent far-jackal (round 2): 0.004821 0.004225 0.003234 0.003423 
+4 concurrent far-jackal (round 3): 0.004922 0.007226 0.002867 0.002628 
+4 concurrent, 4 different seats incl. smelt: 0.001876 0.002978 0.005761 0.002436 
+GET /v1/cards: 200 0.058587 s, cards=86
+GET /v1/cards x5: 0.051115 0.050301 0.064075 0.061587 0.048736  s
+branch daemon rss_kb=68032 after golden(1893 cards)+timings

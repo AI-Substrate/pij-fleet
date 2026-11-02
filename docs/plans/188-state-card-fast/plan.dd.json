@@ -43,38 +43,50 @@
         {
           "id": "ac-0001",
           "claim": "Diagnosis. Profile one /v1/state call on a private daemon with a spine shaped like the live one (about 4M rows), and name which reads cost the time and why concurrent calls serialise (a single sqlite connection, a lock, a full scan). Record query plans (EXPLAIN QUERY PLAN) for each read. Write assets/evidence/diagnosis.md and send the prime a pointer before fixing.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0001",
+          "note": "Proven: three full spine scans per card via tail's OR; concurrency = competing full scans, not a lock. assets/evidence/diagnosis.md."
         },
         {
           "id": "ac-0002",
           "claim": "Fast single read. Each read behind /v1/state is an indexed lookup bounded by the seat's own rows (or a cached projection with an explicit invalidation rule), so one call on the 4M-row seed takes a stated bound in milliseconds. The card's content is byte-for-byte the same as main's for every seat on the seed (a golden comparison over all seats), including held deliveries. 4 concurrent calls each finish within a stated bound.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005",
+          "note": "Proven: indexed reads bounded by the seat's rows (store/src/spine.rs:48,60; core/src/report.rs:311); single 1.7-5.2 ms, 3.59M-row seat <=5 ms, 4 concurrent <=7.2 ms each; 1,893/1,893 cards identical to main incl. held (lg-0004)."
         },
         {
           "id": "ac-0003",
           "claim": "Bulk read. One call returns every local seat's card (a new endpoint or a `cards` option on an existing one; state which, with the reason), with the same per-seat content as /v1/state, in a stated bound on the seed. Document it in docs/how/pij-rs-api.md; additive, no existing field changes.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005",
+          "note": "Proven: new GET /v1/cards (daemon/src/http/mod.rs:2715), same seat_card builder as /v1/state; a new route because /v1/seats is polled by federation and rosters that need no card reads; 86 cards in 49-64 ms; bulk==single tests; docs/how/pij-rs-api.md."
         },
         {
           "id": "ac-0004",
           "claim": "Note timestamp. The card gains `stateNoteAt` (epoch ms) and `stateNoteSeq` (spine cursor) for the report.state note, null when there is no note, matching how `statusAt`/`statusSeq` work. Additive; golden fixtures updated; docs.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0004",
+          "note": "Proven: stateNoteAt/stateNoteSeq from the report.state record (daemon/src/http/mod.rs:2946, types.rs:591), null with no note; golden golden/api/state-card.json; docs."
         },
         {
           "id": "ac-0005",
           "claim": "Cost (AGENTS.md \u00a7 Resource cost). No new loop, poll or launch site. If you add a cache, state its lifetime and invalidation, and its memory per seat. Backpressure row: reads per card, rows touched per read. Private before/after timings; the prime takes the deployed reading.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0005",
+          "note": "Proven privately: no new loop/poll/launch, no cache; ~10 indexed reads per card, each touching the seat's rows of one kind; backpressure bp-0002. Deployed reading is the prime's."
         },
         {
           "id": "ac-0006",
           "claim": "Proof. Each behaviour change has a test RED on main (quoted) and green on the branch. Mutants: a read falls back to a spine scan; bulk and single cards diverge; note timestamp taken from the wrong record; stale cache after a new report. Each turns a test red, then is restored. Scoped cargo tests, clippy -D warnings, fmt; CI green on the exact head. Anything not run is NOT RUN with its reason.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "proven_by": "assets/execution-log.dd.json#entries/lg-0006",
+          "note": "Proven: 5 tests red on main (lg-0002), 8/8 mutants killed (lg-0006), scoped tests/clippy/fmt (lg-0003), CI green (lg-0007)."
         }
       ]
     },
