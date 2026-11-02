@@ -1,0 +1,36 @@
+# Red on main 2d9ea28 (git archive + only the new test files), 2026-11-02
+# cargo test -p pij-daemon --lib card_tests
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... FAILED
+test http::card_tests::the_state_note_cites_its_own_record ... FAILED
+test http::card_tests::a_card_read_never_tails_the_spine ... FAILED
+failures:
+thread 'http::card_tests::the_bulk_read_is_the_single_read_for_every_seat' (270852628) panicked at crates/daemon/src/http/card_tests.rs:218:5:
+assertion `left == right` failed: 
+  left: 404
+ right: 200
+thread 'http::card_tests::the_state_note_cites_its_own_record' (270852629) panicked at crates/daemon/src/http/card_tests.rs:152:5:
+assertion `left == right` failed: pij-card-busy: {"ok":false,"command":"pij state","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+---- http::card_tests::a_card_read_never_tails_the_spine stdout ----
+thread 'http::card_tests::a_card_read_never_tails_the_spine' (270852627) panicked at crates/daemon/src/http/card_tests.rs:152:5:
+assertion `left == right` failed: pij-card-busy: {"ok":false,"command":"pij state","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 663 filtered out; finished in 0.27s
+error: test failed, to rerun pass `-p pij-daemon --lib`
+
+# cargo test -p pij-daemon --test report_http -- state_note bulk_card
+test the_bulk_card_read_matches_the_single_read_on_the_real_store ... FAILED
+test the_state_note_carries_its_own_time_and_cursor ... FAILED
+failures:
+thread 'the_bulk_card_read_matches_the_single_read_on_the_real_store' (270855543) panicked at crates/daemon/tests/report_http.rs:1076:5:
+assertion `left == right` failed
+  left: 404
+ right: 200
+thread 'the_state_note_carries_its_own_time_and_cursor' (270855544) panicked at crates/daemon/tests/report_http.rs:1026:5:
+assertion `left == right` failed
+  left: Null
+ right: 1793577995412
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 30 filtered out; finished in 1.09s
+error: test failed, to rerun pass `-p pij-daemon --test report_http`

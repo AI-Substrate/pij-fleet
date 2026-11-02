@@ -1,0 +1,130 @@
+== baseline
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 0
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 663 filtered out; finished in 0.43s
+$ cargo test -p pij-daemon --test report_http -- state_note bulk_card -> exit 0
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.11s
+$ cargo test -p pij-store --test store_integration -- a_seat_tail_seeks all_matching_seeks -> exit 0
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.62s
+== mutant scan-card-and-note-via-tail (crates/core/src/report.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... FAILED
+test http::card_tests::a_card_read_never_tails_the_spine ... FAILED
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... FAILED
+test http::card_tests::the_state_note_cites_its_own_record ... FAILED
+thread 'http::card_tests::the_card_wire_shape_matches_the_committed_golden' (270956118) panicked at crates/daemon/src/http/card_tests.rs:152:5:
+assertion `left == right` failed: pij-card-busy: {"ok":false,"command":"pij state","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+thread 'http::card_tests::a_card_read_never_tails_the_spine' (270956116) panicked at crates/daemon/src/http/card_tests.rs:152:5:
+assertion `left == right` failed: pij-card-busy: {"ok":false,"command":"pij state","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+thread 'http::card_tests::the_bulk_read_is_the_single_read_for_every_seat' (270956117) panicked at crates/daemon/src/http/card_tests.rs:218:5:
+assertion `left == right` failed: {"ok":false,"command":"pij cards","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+thread 'http::card_tests::the_state_note_cites_its_own_record' (270956119) panicked at crates/daemon/src/http/card_tests.rs:152:5:
+assertion `left == right` failed: pij-card-busy: {"ok":false,"command":"pij state","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 663 filtered out; finished in 0.46s
+== mutant scan-holds-via-tail (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... FAILED
+test http::card_tests::a_card_read_never_tails_the_spine ... FAILED
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... FAILED
+test http::card_tests::the_state_note_cites_its_own_record ... FAILED
+thread 'http::card_tests::the_card_wire_shape_matches_the_committed_golden' (270958898) panicked at crates/daemon/src/http/card_tests.rs:152:5:
+assertion `left == right` failed: pij-card-busy: {"ok":false,"command":"pij state","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+thread 'http::card_tests::a_card_read_never_tails_the_spine' (270958896) panicked at crates/daemon/src/http/card_tests.rs:152:5:
+assertion `left == right` failed: pij-card-busy: {"ok":false,"command":"pij state","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+thread 'http::card_tests::the_bulk_read_is_the_single_read_for_every_seat' (270958897) panicked at crates/daemon/src/http/card_tests.rs:218:5:
+assertion `left == right` failed: {"ok":false,"command":"pij cards","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+thread 'http::card_tests::the_state_note_cites_its_own_record' (270958899) panicked at crates/daemon/src/http/card_tests.rs:152:5:
+assertion `left == right` failed: pij-card-busy: {"ok":false,"command":"pij state","v":2,"meta":"testkit/counting-spine: unpark hot path performed unbounded Spine::tail","error":"adapter"}
+  left: 500
+ right: 200
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 663 filtered out; finished in 0.46s
+== mutant seat-tail-or-defeats-index (crates/store/src/spine.rs)
+$ cargo test -p pij-store --test store_integration -- a_seat_tail_seeks all_matching_seeks -> exit 101
+test a_seat_tail_seeks_its_own_rows_not_the_spine ... FAILED
+test all_matching_seeks_seat_and_kind_whatever_else_the_seat_has ... ok
+thread 'a_seat_tail_seeks_its_own_rows_not_the_spine' (270960040) panicked at crates/store/tests/store_integration.rs:768:9:
+assertion `left == right` failed: analyzed=false
+  left: ["SEARCH spine_events USING INTEGER PRIMARY KEY (rowid>?)"]
+ right: ["SEARCH spine_events USING INDEX spine_by_seat (seat=? AND seq>?)"]
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.57s
+== mutant holds-without-indexed-by (crates/store/src/spine.rs)
+$ cargo test -p pij-store --test store_integration -- a_seat_tail_seeks all_matching_seeks -> exit 101
+test all_matching_seeks_seat_and_kind_whatever_else_the_seat_has ... FAILED
+test a_seat_tail_seeks_its_own_rows_not_the_spine ... ok
+thread 'all_matching_seeks_seat_and_kind_whatever_else_the_seat_has' (270960714) panicked at crates/store/tests/store_integration.rs:795:9:
+assertion `left == right` failed: analyzed=false: ["SEARCH spine_events USING INDEX spine_by_seat (seat=?)"]
+  left: Some("SEARCH spine_events USING INDEX spine_by_seat (seat=?)")
+ right: Some("SEARCH spine_events USING INDEX spine_by_seat_kind (seat=? AND kind=?)")
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.56s
+== mutant bulk-drops-held (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::a_card_read_never_tails_the_spine ... ok
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... ok
+test http::card_tests::the_state_note_cites_its_own_record ... ok
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... FAILED
+thread 'http::card_tests::the_bulk_read_is_the_single_read_for_every_seat' (270961999) panicked at crates/daemon/src/http/card_tests.rs:237:9:
+assertion `left == right` failed: pij-card-busy: bulk != single
+  left: Object {"assignment_id": Null, "badge": String("idle"), "boundModel": Null, "coldWake": Object {"wouldRefuse": Bool(false)}, "cwd": String("/abs/busy"), "deliveryDeferrals": Array [], "effort": Null, "extension_build": Null, "extension_path": Null, "generation": String("rs"), "harness": String("claude"), "held": Array [], "id": String("pij-card-busy"), "last_event_at": Null, "liveness": String("unbound"), "machine": String("workstation"), "pane": Null, "parent": Null, "pendingFyis": Number(0), "pid": Null, "procStart": Null, "provider": Null, "refs": Array [String("docs/x.md")], "role": Null, "semanticState": Null, "session": Null, "sessionStatus": Object {"outcome": String("unbound")}, "state": String("idle"), "stateNote": String("waiting on the seam"), "stateNoteAt": Number(130), "stateNoteSeq": Number(4), "statusAt": Number(150), "statusNext": String("review"), "statusPrev": String("landed the seam"), "statusSeq": Number(6), "statusStale": Bool(true), "tombstoneReason": Null, "tombstonedAt": Null, "unsupported": Array [Object {"field": String("lifecycle"), "why": String("rs seats have no pending/bound/dissolved lifecycle field; binding evidence lives in `proc` and is reported through `liveness`")}, Object {"field": String("activity"), "why": String("the TS activity object has no rs counterpart; `state` carries working/idle published at OMP, Pi and Copilot turn boundaries (plan 158) and by Claude's turn hooks (plan 157); a seat that has not published reads idle by default, not as evidence of inactivity")}, Object {"field": String("ageMs"), "why": String("not emitted; consumers may subtract last_event_at from their epoch-ms clock")}, Object {"field": String("liveness:stale"), "why": String("the card reports a live process-identity probe, not activity staleness; activity staleness is not tracked")}, Object {"field": String("daemonLastTickAt"), "why": String("no per-seat daemon tick is recorded in the rs store")}, Object {"field": String("daemonTickAgeMs"), "why": String("derived from the tick rs does not record")}, Object {"field": String("daemonTickStale"), "why": String("derived from the tick rs does not record")}, Object {"field": String("failureReason"), "why": String("rs records no per-seat failure reason on the descriptor")}, Object {"field": String("bindHealth"), "why": String("the TS pre-bind health classifier has no rs counterpart")}, Object {"field": String("degraded"), "why": String("derived from `bindHealth`")}, Object {"field": String("degradedReason"), "why": String("derived from `bindHealth`")}, Object {"field": String("terminal"), "why": String("rs records termination as `tombstonedAt` + `tombstoneReason`, which this card DOES carry — a different shape, not a missing fact")}, Object {"field": String("watchdog"), "why": String("rs has no watchdog block on the seat row")}]}
+ right: Object {"assignment_id": Null, "badge": String("idle"), "boundModel": Null, "coldWake": Object {"wouldRefuse": Bool(false)}, "cwd": String("/abs/busy"), "deliveryDeferrals": Array [], "effort": Null, "extension_build": Null, "extension_path": Null, "generation": String("rs"), "harness": String("claude"), "held": Array [Object {"msg_id": String("m-still-held"), "reason": String("human-typing"), "seat": String("pij-card-busy"), "since_ms": Number(5)}], "id": String("pij-card-busy"), "last_event_at": Null, "liveness": String("unbound"), "machine": String("workstation"), "pane": Null, "parent": Null, "pendingFyis": Number(0), "pid": Null, "procStart": Null, "provider": Null, "refs": Array [String("docs/x.md")], "role": Null, "semanticState": Null, "session": Null, "sessionStatus": Object {"outcome": String("unbound")}, "state": String("idle"), "stateNote": String("waiting on the seam"), "stateNoteAt": Number(130), "stateNoteSeq": Number(4), "statusAt": Number(150), "statusNext": String("review"), "statusPrev": String("landed the seam"), "statusSeq": Number(6), "statusStale": Bool(true), "tombstoneReason": Null, "tombstonedAt": Null, "unsupported": Array [Object {"field": String("lifecycle"), "why": String("rs seats have no pending/bound/dissolved lifecycle field; binding evidence lives in `proc` and is reported through `liveness`")}, Object {"field": String("activity"), "why": String("the TS activity object has no rs counterpart; `state` carries working/idle published at OMP, Pi and Copilot turn boundaries (plan 158) and by Claude's turn hooks (plan 157); a seat that has not published reads idle by default, not as evidence of inactivity")}, Object {"field": String("ageMs"), "why": String("not emitted; consumers may subtract last_event_at from their epoch-ms clock")}, Object {"field": String("liveness:stale"), "why": String("the card reports a live process-identity probe, not activity staleness; activity staleness is not tracked")}, Object {"field": String("daemonLastTickAt"), "why": String("no per-seat daemon tick is recorded in the rs store")}, Object {"field": String("daemonTickAgeMs"), "why": String("derived from the tick rs does not record")}, Object {"field": String("daemonTickStale"), "why": String("derived from the tick rs does not record")}, Object {"field": String("failureReason"), "why": String("rs records no per-seat failure reason on the descriptor")}, Object {"field": String("bindHealth"), "why": String("the TS pre-bind health classifier has no rs counterpart")}, Object {"field": String("degraded"), "why": String("derived from `bindHealth`")}, Object {"field": String("degradedReason"), "why": String("derived from `bindHealth`")}, Object {"field": String("terminal"), "why": String("rs records termination as `tombstonedAt` + `tombstoneReason`, which this card DOES carry — a different shape, not a missing fact")}, Object {"field": String("watchdog"), "why": String("rs has no watchdog block on the seat row")}]}
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 663 filtered out; finished in 0.46s
+$ cargo test -p pij-daemon --test report_http -- state_note bulk_card -> exit 0
+test the_bulk_card_read_matches_the_single_read_on_the_real_store ... ok
+test the_state_note_carries_its_own_time_and_cursor ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.15s
+== mutant bulk-includes-tombstoned (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::a_card_read_never_tails_the_spine ... ok
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... ok
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... FAILED
+test http::card_tests::the_state_note_cites_its_own_record ... ok
+thread 'http::card_tests::the_bulk_read_is_the_single_read_for_every_seat' (270964491) panicked at crates/daemon/src/http/card_tests.rs:230:5:
+assertion `left == right` failed: every untombstoned seat, in roster order
+  left: ["pij-card-busy", "pij-card-gone", "pij-card-quiet"]
+ right: ["pij-card-busy", "pij-card-quiet"]
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 663 filtered out; finished in 0.45s
+== mutant note-time-from-card (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::a_card_read_never_tails_the_spine ... ok
+test http::card_tests::the_state_note_cites_its_own_record ... FAILED
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... FAILED
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... ok
+thread 'http::card_tests::the_state_note_cites_its_own_record' (270965671) panicked at crates/daemon/src/http/card_tests.rs:189:5:
+assertion `left == right` failed
+  left: Number(150)
+ right: 130
+thread 'http::card_tests::the_card_wire_shape_matches_the_committed_golden' (270965670) panicked at crates/testkit/src/golden.rs:64:5:
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 663 filtered out; finished in 0.46s
+$ cargo test -p pij-daemon --test report_http -- state_note bulk_card -> exit 101
+test the_bulk_card_read_matches_the_single_read_on_the_real_store ... ok
+test the_state_note_carries_its_own_time_and_cursor ... FAILED
+thread 'the_state_note_carries_its_own_time_and_cursor' (270966948) panicked at crates/daemon/tests/report_http.rs:1034:5:
+assertion `left == right` failed
+  left: Null
+ right: 1793578577237
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.12s
+== mutant note-time-kept-after-clear (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --test report_http -- state_note bulk_card -> exit 101
+test the_bulk_card_read_matches_the_single_read_on_the_real_store ... ok
+test the_state_note_carries_its_own_time_and_cursor ... FAILED
+thread 'the_state_note_carries_its_own_time_and_cursor' (270968005) panicked at crates/daemon/tests/report_http.rs:1059:9:
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.13s
+== restored
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 0
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 663 filtered out; finished in 0.45s
+$ cargo test -p pij-daemon --test report_http -- state_note bulk_card -> exit 0
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.15s
+$ cargo test -p pij-store --test store_integration -- a_seat_tail_seeks all_matching_seeks -> exit 0
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.65s

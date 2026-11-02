@@ -431,6 +431,13 @@ note = "DESIGNED merged governance route contract promoted from plan 139 at e228
 answer = "Permanent readers consume stable complete v2 envelopes, daemon-owned attribution and role joins, observed lease-id requirements, and terminal-only answer supersede. Preserve E-RS-ANSWER-AUTHORITY-SPLIT for mixed persistence. Reports retain assignment_id and refs; the selected node exposes its latest state record, null before any declaration. Unsupported commands point to the stable ledger."
 
 [[fixture]]
+path = "golden/api/state-card.json"
+sha256 = "b9aa0bdc727beb7d7b2069459b52a471f19736792b61aa32dc0e178c8c439b50"
+bytes = 2865
+note = "RECORDED by crates/daemon/src/http/card_tests.rs (the_card_wire_shape_matches_the_committed_golden) from a deterministic in-process daemon: fixed event times, no session, no process. Plan 188 added stateNoteAt and stateNoteSeq; every other key is main's card unchanged. Re-record with UPDATE_GOLDENS=1 and review the diff."
+answer = "One seat's POST /v1/state card (and its GET /v1/cards entry, the same function). stateNoteAt/stateNoteSeq are the report.state record's own time and cursor, present exactly when stateNote is; statusAt/statusSeq cite the newer card. A released hold is not in held."
+
+[[fixture]]
 path = "golden/api/governance-events.json"
 sha256 = "1cb609af6822e9d6a0a112be347f5e05106e87042808cda7382497ee3a548bc3"
 bytes = 34210

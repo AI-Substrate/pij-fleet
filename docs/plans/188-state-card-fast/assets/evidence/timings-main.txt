@@ -1,0 +1,10 @@
+## main (port 17882) 2026-11-02T00:42:40Z load: 7.66 7.51 10.08
+single pij-state-cards: 1.543596  1.597806  1.672223  s
+single pij-far-jackal: 1.640673  1.680324  1.672639  s
+single pij-causal-skeram: 1.993638  1.613718  1.614913  s
+single pij-different-smelt: 12.612050  12.334573  13.581462  s
+4 concurrent far-jackal (round 1): 4.411792 4.938768 4.951820 4.961270 
+4 concurrent far-jackal (round 2): 4.639842 5.079405 5.074295 5.106468 
+4 concurrent far-jackal (round 3): 5.025580 5.338673 5.332120 5.337082 
+4 concurrent, 4 different seats incl. smelt: 4.133214 5.127580 6.385720 16.486218 
+GET /v1/cards: 404 0.000555 s, cards=

@@ -168,6 +168,17 @@ pub trait Spine: Send + Sync {
     /// empty kind set rather than silently broadening it.
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>>;
 
+    /// Every event for one mandatory seat matching any non-empty `kinds`,
+    /// oldest first by sequence.
+    ///
+    /// The seat's rows of those kinds, read through the `(seat, kind)` index:
+    /// the cost follows the rows returned, never the spine and never the seat's
+    /// other kinds. Required, not defaulted to `tail(Some(seat), ..)` filtered:
+    /// that default walked the whole spine three times per `/v1/state` card
+    /// (plan 188), and a wrapper that forgot to delegate would bring it back.
+    /// Refuses an empty kind set rather than silently broadening it.
+    async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>>;
+
     /// Latest event for one seat and kind whose JSON payload names `msg_id`.
     ///
     /// The spine performs the predicate in its bounded query; callers must not

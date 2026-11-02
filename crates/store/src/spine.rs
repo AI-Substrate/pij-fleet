@@ -39,6 +39,35 @@ pub const MATCHING_AFTER_SQL: &str = "SELECT seq, v, at, kind, seat, payload FRO
      INDEXED BY spine_by_seat_kind_at \
      WHERE seat = ?1 AND kind = ?2 AND at > ?3 ORDER BY at, seq LIMIT ?4";
 
+/// One seat's events after a cursor: a seek on `spine_by_seat (seat, seq)`.
+///
+/// Its own statement, never `seat = ?2 OR ?2 IS NULL` folded into the unscoped
+/// one: SQLite cannot use an index through that `OR`, so the seat form walked
+/// the rowid from the cursor, which from `Seq(0)` is the whole spine (plan 188:
+/// 0.4 s per call on 4.16M rows, three calls per `/v1/state` card).
+pub const SEAT_TAIL_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     INDEXED BY spine_by_seat WHERE seat = ?1 AND seq > ?2 ORDER BY seq";
+
+/// Every spine event after a cursor, from every seat.
+pub const TAIL_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     WHERE seq > ?1 ORDER BY seq";
+
+/// [`Spine::all_matching`]'s statement for `kinds` kinds: `?1` is the seat,
+/// `?2..` the kinds. It names `spine_by_seat_kind` because, without it, the
+/// planner prefers `spine_by_seat` to save sorting by `seq` and reads every row
+/// the seat has: 0.92 s for a seat with 3.59M `bg.lost` rows and a handful of
+/// deliveries, against 10 ms on the index (plan 188).
+pub fn all_matching_sql(kinds: usize) -> String {
+    let placeholders = (2..kinds + 2)
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+         INDEXED BY spine_by_seat_kind WHERE seat = ?1 AND kind IN ({placeholders}) ORDER BY seq"
+    )
+}
+
 /// One replay page: a keyset seek on the rowid (`seq` is the rowid), so a page
 /// costs the rows it returns wherever its cursor sits in a large backlog.
 pub const TAIL_PAGE_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
@@ -174,17 +203,46 @@ impl Spine for SqliteSpine {
 
     async fn tail(&self, seat: Option<&SeatId>, since: Seq) -> Result<Vec<Event>> {
         require_current_schema(&self.pool).await?;
-        let rows = sqlx::query(
-            "SELECT seq, v, at, kind, seat, payload FROM spine_events \
-             WHERE seq > ?1 AND (?2 IS NULL OR seat = ?2) ORDER BY seq",
-        )
-        .bind(since.0 as i64)
-        .bind(seat.map(SeatId::as_str))
-        .fetch_all(&self.pool)
-        .await
+        let rows = match seat {
+            Some(seat) => {
+                sqlx::query(SEAT_TAIL_SQL)
+                    .bind(seat.as_str())
+                    .bind(since.0 as i64)
+                    .fetch_all(&self.pool)
+                    .await
+            }
+            None => {
+                sqlx::query(TAIL_SQL)
+                    .bind(since.0 as i64)
+                    .fetch_all(&self.pool)
+                    .await
+            }
+        }
         .map_err(adapter_error)?;
 
         rows.iter().map(decode_event).collect()
+    }
+
+    async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
+        if kinds.is_empty() {
+            return Err(PijError::Adapter {
+                adapter: "store/spine".to_string(),
+                message: "all_matching requires at least one event kind".to_string(),
+            });
+        }
+        require_current_schema(&self.pool).await?;
+        let sql = all_matching_sql(kinds.len());
+        let mut query = sqlx::query(&sql).bind(seat.as_str());
+        for kind in kinds {
+            query = query.bind(*kind);
+        }
+        query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .iter()
+            .map(decode_event)
+            .collect()
     }
 
     async fn tail_page(&self, since: Seq, limit: usize) -> Result<Vec<Event>> {

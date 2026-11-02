@@ -161,6 +161,11 @@ enum Endpoint {
     /// would reach this daemon as a bare URL with the `<id>` — this verb's only
     /// argument — dropped at the seam. Ruled POST-canonical by the plan-114 PM.
     State,
+    /// `GET /v1/cards` — every local untombstoned seat's `state` card in one
+    /// call (plan 188). A new route rather than a flag on `/v1/seats`: the
+    /// roster is polled by federation fan-in and extension rosters that need
+    /// none of a card's reads, and a card is a different shape from a row.
+    Cards,
     /// Atomic claim of held FYIs by a typed-turn hook (plan 158).
     FyiClaim,
     /// Read one delivered FYI batch in full, as a digest names it (plan 159).
@@ -193,7 +198,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 51] = [
+    const ALL: [Self; 52] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -217,6 +222,7 @@ impl Endpoint {
         Self::Whoami,
         Self::Phonehome,
         Self::State,
+        Self::Cards,
         Self::FyiClaim,
         Self::FyiRead,
         Self::Activity,
@@ -272,6 +278,7 @@ impl Endpoint {
             Self::Whoami => "/v1/whoami",
             Self::Phonehome => "/v1/phonehome",
             Self::State => "/v1/state",
+            Self::Cards => "/v1/cards",
             Self::FyiClaim => "/v1/fyi/claim",
             Self::FyiRead => "/v1/fyi/read",
             Self::Activity => "/v1/activity",
@@ -353,6 +360,7 @@ impl Endpoint {
             | Self::BackgroundTail
             | Self::InboxTyping
             | Self::Seats
+            | Self::Cards
             | Self::Events
             | Self::ShimSessions => Method::GET,
         }
@@ -619,6 +627,7 @@ fn router_with_optional_federation(
             ),
             Endpoint::Phonehome => router.route(endpoint.path(), post(identity::phonehome)),
             Endpoint::State => router.route(endpoint.path(), post(seat_state)),
+            Endpoint::Cards => router.route(endpoint.path(), get(seat_cards)),
             Endpoint::FyiClaim => router.route(endpoint.path(), post(fyi::claim)),
             Endpoint::FyiRead => router.route(endpoint.path(), post(fyi::read)),
             Endpoint::Activity => router.route(endpoint.path(), post(fyi::activity)),
@@ -2689,7 +2698,117 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
         Ok(seat) => seat,
         Err(error) => return internal("pij state", error),
     };
+    match seat_card(&state, seat, None).await {
+        Ok(projection) => envelope(StatusCode::OK, &Envelope::ok("pij state", projection)),
+        Err(error) => internal("pij state", error),
+    }
+}
 
+/// `GET /v1/cards` — every local, untombstoned seat's `pij state` card in one
+/// call (plan 188).
+///
+/// The same seats `/v1/seats` lists by default, each projected by
+/// [`seat_card`], the function `/v1/state` uses, so the two cannot drift. One
+/// roster read and one role read serve every seat; each card's own reads are
+/// indexed lookups bounded by that seat's rows, and the cards are built a few
+/// at a time. Two things differ from `/v1/state`, so that one seat cannot cost
+/// every seat's card: each session-status read is bounded at
+/// [`LIST_STATUS_WAIT`], and a seat whose card fails is named in `unavailable`
+/// rather than failing the call (review of #105, S1 and S2).
+async fn seat_cards(State(state): State<AppState>) -> Response {
+    let listed = state
+        .services
+        .status
+        .read(state.services.registry.as_ref(), None)
+        .await;
+    let mut seats = match listed {
+        Ok(rows) => rows
+            .into_iter()
+            .map(pij_store::status::SeatStatus::into_projection)
+            .filter(|seat| seat.tombstoned_at.is_none())
+            .collect::<Vec<_>>(),
+        Err(error) => return internal("pij cards", error),
+    };
+    if let Err(error) = state.services.roles.join_roles(&mut seats).await {
+        return internal("pij cards", error);
+    }
+    let permits = Arc::new(tokio::sync::Semaphore::new(CARD_READS_IN_FLIGHT));
+    let mut reads = tokio::task::JoinSet::new();
+    let mut tasks = BTreeMap::new();
+    for (index, seat) in seats.into_iter().enumerate() {
+        let (state, permits, id) = (state.clone(), Arc::clone(&permits), seat.id.clone());
+        let task = reads.spawn(async move {
+            let _permit = permits.acquire_owned().await;
+            seat_card(&state, seat, Some(LIST_STATUS_WAIT)).await
+        });
+        tasks.insert(task.id(), (index, id));
+    }
+    // Indexed by roster position, so the answer keeps seat-id order whatever
+    // order the cards finish in. A seat whose card cannot be read is named in
+    // `unavailable` with its error: one bad row never costs every seat's card.
+    let mut slots: BTreeMap<usize, std::result::Result<StateProjection, UnavailableCard>> =
+        BTreeMap::new();
+    while let Some(read) = reads.join_next_with_id().await {
+        let (task, outcome) = match read {
+            Ok((task, card)) => (task, card.map_err(|error| error.to_string())),
+            Err(error) => (error.id(), Err(format!("card read failed: {error}"))),
+        };
+        let Some((index, id)) = tasks.remove(&task) else {
+            continue;
+        };
+        slots.insert(
+            index,
+            outcome.map_err(|error| UnavailableCard { id, error }),
+        );
+    }
+    let mut projection = CardsProjection {
+        cards: Vec::new(),
+        unavailable: Vec::new(),
+    };
+    for slot in slots.into_values() {
+        match slot {
+            Ok(card) => projection.cards.push(card),
+            Err(unavailable) => projection.unavailable.push(unavailable),
+        }
+    }
+    envelope(StatusCode::OK, &Envelope::ok("pij cards", projection))
+}
+
+/// Cards `/v1/cards` builds at once. The store pool has four connections; a
+/// few cards in flight keep them busy without queueing every seat on them.
+const CARD_READS_IN_FLIGHT: usize = 4;
+
+#[derive(Serialize)]
+struct CardsProjection {
+    cards: Vec<StateProjection>,
+    /// Seats whose card could not be read, each with why. Always present: an
+    /// empty list and a missing key are different answers.
+    unavailable: Vec<UnavailableCard>,
+}
+
+/// One seat `/v1/cards` could not read, shaped like a roster's unavailable peer.
+#[derive(Serialize)]
+struct UnavailableCard {
+    id: SeatId,
+    error: String,
+}
+
+/// One seat's `pij state` card, from its role-projected roster row.
+///
+/// Shared by `/v1/state` and `/v1/cards`. Every store read here is bounded by
+/// the seat's own rows (plan 188): the card and the state note are each one
+/// newest-of-a-kind lookup on `(seat, kind)`, and the held deliveries read only
+/// the seat's delivery events. None of them reads the spine end to end.
+///
+/// `session_wait` bounds the seat's session-status read: `None` waits as
+/// `/v1/state` always has; the bulk read passes [`LIST_STATUS_WAIT`] so one
+/// slow transcript cannot hold every seat's card.
+async fn seat_card(
+    state: &AppState,
+    seat: SeatDescriptor,
+    session_wait: Option<Duration>,
+) -> Result<StateProjection> {
+    let id = seat.id.clone();
     // Liveness is OBSERVED, never inferred from the row. `pij_core::liveness`
     // owns the three-way verdict (active / dead / recycled); re-deriving it here
     // from `proc_start` would be a second implementation of the one rule that
@@ -2698,7 +2817,7 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
         Some(proc) => match pij_core::liveness::alive(proc, state.services.liveness.as_ref()).await
         {
             Ok(verdict) => Some(verdict),
-            Err(error) => return internal("pij state", error),
+            Err(error) => return Err(error),
         },
         None => None,
     };
@@ -2710,36 +2829,36 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
     // "latest" — a second implementation here would drift from the first
     // silently, and the drift would only ever show up as an operator reading a
     // card that the writer thinks says something else.
-    let clock = match system_time_ms() {
-        Ok(now) => now,
-        Err(error) => return internal("pij state", error),
-    };
+    let clock = system_time_ms()?;
     let reports = pij_core::report::ReportService::new(
         state.services.registry.as_ref(),
         state.services.spine.as_ref(),
         move || clock,
         pij_core::report::ReportConfig::default(),
     );
-    let card = match reports.card(&id).await {
-        Ok(card) => card,
-        Err(error) => return internal("pij state", error),
-    };
+    let card = reports.card(&id).await?;
     // The NOTE lives on the state history record, not the descriptor: the
     // descriptor carries the declared state, the record carries why. Reading
     // only the descriptor would report a blocked seat with no reason, which is
     // the half of the answer nobody needs.
-    let state_record = match reports.latest_state_record(&id).await {
-        Ok(record) => record,
-        Err(error) => return internal("pij state", error),
-    };
-    let session_status = session_status_block(
+    let state_record = reports.latest_state(&id).await?;
+    let read = session_status_block(
         state.services.session_status.as_ref(),
         &seat.id,
         seat.harness,
         seat.harness_session.clone(),
         clock,
-    )
-    .await;
+    );
+    let session_status = match session_wait {
+        None => read.await,
+        // The source detaches a read that runs over and keeps its cursor, so
+        // the next call finds it warm; this card names the timeout.
+        Some(wait) => tokio::time::timeout(wait, read).await.unwrap_or_else(|_| {
+            pij_core::session_status::SessionStatusBlock::Failed {
+                error: format!("no answer within {} ms", wait.as_millis()),
+            }
+        }),
+    };
     let size =
         pij_core::cold_wake::seat_size(seat.state, &session_status, clock, seat.model.as_deref());
     let size_lines = pij_core::cold_wake::size_lines(&session_status, &size);
@@ -2747,25 +2866,16 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
     projection.card.session_status = Some(session_status);
     projection.card.size = size;
     projection.card.size_lines = size_lines;
-    projection.card.held = match active_holds(&state, &id).await {
-        Ok(holds) => holds,
-        Err(error) => return internal("pij state", error),
-    };
-    projection.card.delivery_deferrals = match state.services.queue.delivery_deferrals(&id).await {
-        Ok(deferrals) => deferrals,
-        Err(error) => return internal("pij state", error),
-    };
-    projection.card.pending_fyis = match state.services.delivery.pending_fyi_count(&id).await {
-        Ok(count) => count,
-        Err(error) => return internal("pij state", error),
-    };
-    projection.card.native_receiver_reason =
-        match state.services.delivery.native_receiver_reason(&id).await {
-            Ok(reason) => reason.map(str::to_string),
-            Err(error) => return internal("pij state", error),
-        };
-
-    envelope(StatusCode::OK, &Envelope::ok("pij state", projection))
+    projection.card.held = active_holds(state, &id).await?;
+    projection.card.delivery_deferrals = state.services.queue.delivery_deferrals(&id).await?;
+    projection.card.pending_fyis = state.services.delivery.pending_fyi_count(&id).await?;
+    projection.card.native_receiver_reason = state
+        .services
+        .delivery
+        .native_receiver_reason(&id)
+        .await?
+        .map(str::to_string);
+    Ok(projection)
 }
 
 /// Read one seat's session facts into the `sessionStatus` block.
@@ -2805,6 +2915,9 @@ pub(crate) async fn session_status_block(
     }
 }
 
+/// The spine kinds that decide whether a delivery is held right now.
+const HOLD_EVENT_KINDS: [&str; 3] = ["delivery.held", "delivery.released", "delivery.outcome"];
+
 async fn active_holds(state: &AppState, seat: &SeatId) -> Result<Vec<HeldEvent>> {
     #[derive(Deserialize)]
     struct ProjectedHold {
@@ -2813,7 +2926,16 @@ async fn active_holds(state: &AppState, seat: &SeatId) -> Result<Vec<HeldEvent>>
         job_id: Option<pij_core::model::JobId>,
     }
     let mut holds = BTreeMap::new();
-    for event in state.services.spine.tail(Some(seat), Seq(0)).await? {
+    // Only this seat's delivery events, on the `(seat, kind)` index. It read
+    // `tail(Some(seat), Seq(0))`, every row the seat had: on SQLite the whole
+    // spine, and for a seat with millions of `bg.lost` rows, all of them
+    // decoded to find a handful of deliveries (plan 188).
+    for event in state
+        .services
+        .spine
+        .all_matching(seat, &HOLD_EVENT_KINDS)
+        .await?
+    {
         match event.kind.as_str() {
             "delivery.held" => {
                 // Job diagnostics are projected from live rows, not sampled history.
@@ -2861,14 +2983,29 @@ fn state_card(
     liveness: Option<pij_core::model::Liveness>,
     machine_alias: &str,
     card: Option<pij_core::report::CardStatus>,
-    state_record: Option<pij_core::report::StateRecord>,
+    state_record: Option<pij_core::report::StateStatus>,
 ) -> StateProjection {
     use pij_core::model::Liveness;
     let badge = seat.badge.unwrap_or_else(|| {
         pij_core::status::badge_of(Some(seat.state), seat.semantic_state.as_slice()).to_string()
     });
-    let (state_note, assignment_id, refs) = state_record
-        .map(|record| (record.note, record.assignment_id, record.refs))
+    let (state_note, assignment_id, refs, state_note_at, state_note_seq) = state_record
+        .map(|state| {
+            // The note's time and cursor are the record's, and only when there
+            // IS a note: a declaration without one (`done`, a clear) leaves
+            // all three null together, as an absent card leaves `statusAt`.
+            let (at, seq) = match state.record.note {
+                Some(_) => (Some(state.at), Some(state.seq.0)),
+                None => (None, None),
+            };
+            (
+                state.record.note,
+                state.record.assignment_id,
+                state.record.refs,
+                at,
+                seq,
+            )
+        })
         .unwrap_or_default();
     StateProjection {
         session: seat.harness_session,
@@ -2917,6 +3054,8 @@ fn state_card(
                 .map(|seq| seq.0),
             status_stale: card.as_ref().map(|status| status.stale),
             state_note,
+            state_note_at,
+            state_note_seq,
             assignment_id,
             refs,
             held: Vec::new(),
@@ -3742,6 +3881,8 @@ pub(crate) fn envelope<T: serde::Serialize>(status: StatusCode, body: &Envelope<
     }
 }
 
+#[cfg(test)]
+mod card_tests;
 #[cfg(test)]
 mod codex_caller_tests;
 #[cfg(test)]

@@ -1,0 +1,58 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 188 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC3: diagnosis, fast single read, bulk read",
+          "phase": "ph-4cc4",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: http state tests and golden cards in crates/daemon; store query-plan tests; private daemon timings on a 4M-row seed; cargo test -p pij-store -p pij-daemon <filters>",
+          "state": "checked",
+          "probe": "crates/daemon/src/http/mod.rs",
+          "receipt": "execution-log.dd.json#entries/lg-0005"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4-AC5: note timestamp and cost",
+          "phase": "ph-4cc4",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Golden fixtures; private timings; prime's deployed reading.",
+          "state": "checked",
+          "probe": "pij-rs --json state",
+          "receipt": "execution-log.dd.json#entries/lg-0005",
+          "note": "Cost per card: ~10 indexed reads (seat row, role, card, note, holds, deferrals, FYIs, receiver lease, schema guard), each touching only the seat's rows of one kind; 0 launches added; 0 bytes cached per seat; /v1/cards = 1 roster + 1 role read + per-seat reads, 4 in flight. No loop, poll or timer."
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC6: proof, mutants and CI",
+          "phase": "ph-4cc4",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Mutant receipts; clippy; fmt; GitHub CI on the exact head.",
+          "state": "checked",
+          "probe": ".github/workflows",
+          "receipt": "execution-log.dd.json#entries/lg-0006"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
