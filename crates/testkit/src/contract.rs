@@ -315,6 +315,34 @@ pub async fn spine_contract(spine: &dyn Spine) {
         "empty kinds must refuse rather than broaden the bounded query"
     );
     assert_eq!(
+        spine
+            .all_matching(&seat_a, &["future-kind", "report"])
+            .await
+            .expect("all matching"),
+        just_a,
+        "all matching is seat-scoped, kind-filtered and oldest first by sequence, \
+         whatever order the kinds are named in"
+    );
+    assert_eq!(
+        spine
+            .all_matching(&seat_a, &["report", "message", "receipt"])
+            .await
+            .expect("all matching one kind"),
+        just_a[..1].to_vec(),
+        "another seat's and a seatless event of a named kind never match"
+    );
+    assert!(
+        spine
+            .all_matching(&seat_b, &["future-kind"])
+            .await
+            .expect("no matching kind")
+            .is_empty()
+    );
+    assert!(
+        spine.all_matching(&seat_a, &[]).await.is_err(),
+        "empty kinds must refuse rather than broaden the bounded query"
+    );
+    assert_eq!(
         spine.tail(None, third).await.expect("tail after third"),
         vec![expected_fourth],
         "an event with no seat remains visible in an unfiltered tail"

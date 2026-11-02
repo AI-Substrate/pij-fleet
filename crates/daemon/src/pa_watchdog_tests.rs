@@ -1537,6 +1537,13 @@ impl pij_core::ports::Spine for CountingSpine {
             .fetch_add(usize::from(row.is_some()), Ordering::Relaxed);
         Ok(row)
     }
+    async fn all_matching(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.all_matching(seat, kinds).await
+    }
     async fn latest_matching_message(
         &self,
         seat: &SeatId,

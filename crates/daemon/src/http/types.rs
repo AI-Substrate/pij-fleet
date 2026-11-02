@@ -584,6 +584,15 @@ pub struct StateCard {
     /// The explanation supplied with `report blocked` / `report question`,
     /// which TS renders beside the declared state (cli.ts:5794).
     pub state_note: Option<String>,
+    /// When the `report.state` record carrying [`Self::state_note`] was written,
+    /// epoch ms (plan 188). Like `statusAt` beside its card: present exactly
+    /// when the note is, `null` when there is no note.
+    #[serde(default)]
+    pub state_note_at: Option<u64>,
+    /// The spine sequence of that same record, which makes the note citable.
+    /// Present exactly when the note is, like `statusSeq`.
+    #[serde(default)]
+    pub state_note_seq: Option<u64>,
     /// Task associated with the latest declaration; canonical report wire spelling.
     #[serde(default, rename = "assignment_id")]
     pub assignment_id: Option<String>,

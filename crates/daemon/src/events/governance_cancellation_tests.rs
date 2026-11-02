@@ -148,6 +148,9 @@ impl Spine for PauseAfterAppend {
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         self.raw.latest_matching(seat, kinds).await
     }
+    async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
+        self.raw.all_matching(seat, kinds).await
+    }
 
     async fn latest_matching_message(
         &self,

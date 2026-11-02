@@ -386,6 +386,28 @@ impl Spine for FakeSpine {
             }))
     }
 
+    async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
+        if kinds.is_empty() {
+            return Err(PijError::Adapter {
+                adapter: "fake/spine".to_string(),
+                message: "all_matching requires at least one event kind".to_string(),
+            });
+        }
+        let state = self.state.lock().expect("fake spine mutex");
+        Ok(state
+            .events
+            .iter()
+            .filter(|(_, event)| {
+                event.seat.as_ref() == Some(seat) && kinds.iter().any(|kind| *kind == event.kind)
+            })
+            .map(|(seq, event)| {
+                let mut event = event.clone();
+                event.seq = Some(*seq);
+                event
+            })
+            .collect())
+    }
+
     async fn latest_matching_message(
         &self,
         seat: &SeatId,
@@ -523,6 +545,11 @@ impl Spine for CountingSpine {
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         self.latest_calls.fetch_add(1, Ordering::Relaxed);
         self.inner.latest_matching(seat, kinds).await
+    }
+
+    async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
+        self.latest_calls.fetch_add(1, Ordering::Relaxed);
+        self.inner.all_matching(seat, kinds).await
     }
 
     async fn latest_matching_message(

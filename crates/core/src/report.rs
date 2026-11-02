@@ -58,6 +58,17 @@ pub struct StateRecord {
     pub registry_seq: Seq,
 }
 
+/// A state-history record with when it was written and where it sits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateStatus {
+    /// The durable record.
+    pub record: StateRecord,
+    /// When the record was appended, epoch ms.
+    pub at: u64,
+    /// The spine sequence carrying it.
+    pub seq: Seq,
+}
+
 /// A card together with freshness computed at read time.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CardStatus {
@@ -225,10 +236,24 @@ where
 
     /// Read the latest state-history record, independently of the registry row.
     pub async fn latest_state_record(&self, seat: &SeatId) -> Result<Option<StateRecord>> {
+        Ok(self.latest_state(seat).await?.map(|state| state.record))
+    }
+
+    /// Read the latest state-history record with when it was written and the
+    /// spine sequence carrying it, the way [`Self::card`] carries a card's.
+    pub async fn latest_state(&self, seat: &SeatId) -> Result<Option<StateStatus>> {
         let Some(event) = self.latest_event(seat, STATE_EVENT_KIND).await? else {
             return Ok(None);
         };
-        decode(&event.payload, STATE_EVENT_KIND).map(Some)
+        let seq = event.seq.ok_or_else(|| PijError::Adapter {
+            adapter: "report".to_string(),
+            message: format!("{STATE_EVENT_KIND} read from Spine had no sequence"),
+        })?;
+        Ok(Some(StateStatus {
+            record: decode(&event.payload, STATE_EVENT_KIND)?,
+            at: event.at,
+            seq,
+        }))
     }
 
     async fn set_state(
@@ -279,14 +304,12 @@ where
         })
     }
 
+    /// The seat's newest event of `kind`, by sequence: one bounded read on the
+    /// `(seat, kind)` index. It was `tail(Some(seat), Seq(0))` filtered here,
+    /// which read every row the seat had, and on SQLite walked the whole spine
+    /// (plan 188).
     async fn latest_event(&self, seat: &SeatId, kind: &str) -> Result<Option<Event>> {
-        Ok(self
-            .spine
-            .tail(Some(seat), Seq(0))
-            .await?
-            .into_iter()
-            .rev()
-            .find(|event| event.kind == kind))
+        self.spine.latest_matching(seat, &[kind]).await
     }
 }
 

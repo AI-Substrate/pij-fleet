@@ -656,6 +656,13 @@ impl Spine for Gate {
     ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
         self.inner.latest_matching(seat, kinds).await
     }
+    async fn all_matching(
+        &self,
+        seat: &SeatId,
+        kinds: &[&str],
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.all_matching(seat, kinds).await
+    }
     async fn latest_matching_message(
         &self,
         seat: &SeatId,

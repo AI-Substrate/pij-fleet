@@ -299,6 +299,10 @@ impl Spine for EventBus {
         self.spine.latest_matching(seat, kinds).await
     }
 
+    async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
+        self.spine.all_matching(seat, kinds).await
+    }
+
     async fn latest_matching_message(
         &self,
         seat: &SeatId,

@@ -1,0 +1,107 @@
+{
+  "assignment_id": null,
+  "badge": "idle",
+  "boundModel": null,
+  "coldWake": {
+    "wouldRefuse": false
+  },
+  "cwd": "/abs/busy",
+  "deliveryDeferrals": [],
+  "effort": null,
+  "extension_build": null,
+  "extension_path": null,
+  "generation": "rs",
+  "harness": "claude",
+  "held": [
+    {
+      "msg_id": "m-still-held",
+      "reason": "human-typing",
+      "seat": "pij-card-busy",
+      "since_ms": 5
+    }
+  ],
+  "id": "pij-card-busy",
+  "last_event_at": null,
+  "liveness": "unbound",
+  "machine": "workstation",
+  "pane": null,
+  "parent": null,
+  "pendingFyis": 0,
+  "pid": null,
+  "procStart": null,
+  "provider": null,
+  "refs": [
+    "docs/x.md"
+  ],
+  "role": null,
+  "semanticState": null,
+  "session": null,
+  "sessionStatus": {
+    "outcome": "unbound"
+  },
+  "state": "idle",
+  "stateNote": "waiting on the seam",
+  "stateNoteAt": 130,
+  "stateNoteSeq": 4,
+  "statusAt": 150,
+  "statusNext": "review",
+  "statusPrev": "landed the seam",
+  "statusSeq": 6,
+  "statusStale": true,
+  "tombstoneReason": null,
+  "tombstonedAt": null,
+  "unsupported": [
+    {
+      "field": "lifecycle",
+      "why": "rs seats have no pending/bound/dissolved lifecycle field; binding evidence lives in `proc` and is reported through `liveness`"
+    },
+    {
+      "field": "activity",
+      "why": "the TS activity object has no rs counterpart; `state` carries working/idle published at OMP, Pi and Copilot turn boundaries (plan 158) and by Claude's turn hooks (plan 157); a seat that has not published reads idle by default, not as evidence of inactivity"
+    },
+    {
+      "field": "ageMs",
+      "why": "not emitted; consumers may subtract last_event_at from their epoch-ms clock"
+    },
+    {
+      "field": "liveness:stale",
+      "why": "the card reports a live process-identity probe, not activity staleness; activity staleness is not tracked"
+    },
+    {
+      "field": "daemonLastTickAt",
+      "why": "no per-seat daemon tick is recorded in the rs store"
+    },
+    {
+      "field": "daemonTickAgeMs",
+      "why": "derived from the tick rs does not record"
+    },
+    {
+      "field": "daemonTickStale",
+      "why": "derived from the tick rs does not record"
+    },
+    {
+      "field": "failureReason",
+      "why": "rs records no per-seat failure reason on the descriptor"
+    },
+    {
+      "field": "bindHealth",
+      "why": "the TS pre-bind health classifier has no rs counterpart"
+    },
+    {
+      "field": "degraded",
+      "why": "derived from `bindHealth`"
+    },
+    {
+      "field": "degradedReason",
+      "why": "derived from `bindHealth`"
+    },
+    {
+      "field": "terminal",
+      "why": "rs records termination as `tombstonedAt` + `tombstoneReason`, which this card DOES carry — a different shape, not a missing fact"
+    },
+    {
+      "field": "watchdog",
+      "why": "rs has no watchdog block on the seat row"
+    }
+  ]
+}

@@ -119,6 +119,19 @@ impl Spine for TestSpine {
             })
             .cloned())
     }
+    async fn all_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Vec<Event>> {
+        assert!(!kinds.is_empty(), "test spine kinds must be non-empty");
+        Ok(self
+            .events
+            .lock()
+            .expect("test spine mutex")
+            .iter()
+            .filter(|event| {
+                event.seat.as_ref() == Some(seat) && kinds.iter().any(|kind| *kind == event.kind)
+            })
+            .cloned()
+            .collect())
+    }
 
     async fn latest_matching_message(
         &self,

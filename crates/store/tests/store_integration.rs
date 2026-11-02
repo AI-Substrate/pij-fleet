@@ -698,6 +698,127 @@ async fn matching_since_stays_on_its_index_on_analyzed_skewed_history() {
     }
 }
 
+/// Plan 188: a history shaped like the live spine's worst seat. 20,000
+/// `bg.lost` rows for `pij-history`, 20,000 rows for another seat and four
+/// delivery events for `pij-history`; with and without fresh statistics.
+async fn skewed_seat_history(analyze: bool) -> (FreshStore, pij_store::StorePool) {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    sqlx::raw_sql(
+        "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<40000) \
+         INSERT INTO spine_events (v, at, kind, seat, payload) \
+         SELECT 1, x, 'bg.lost', CASE WHEN x % 2 = 0 THEN 'pij-history' ELSE 'pij-other' END, '{}' \
+         FROM n; \
+         INSERT INTO spine_events (v, at, kind, seat, payload) VALUES \
+         (1, 1, 'delivery.held', 'pij-history', '{}'), \
+         (1, 2, 'delivery.released', 'pij-history', '{}'), \
+         (1, 3, 'delivery.outcome', 'pij-history', '{}'), \
+         (1, 4, 'delivery.held', 'pij-history', '{}');",
+    )
+    .execute(&pool)
+    .await
+    .expect("skewed history");
+    if analyze {
+        sqlx::query("ANALYZE")
+            .execute(&pool)
+            .await
+            .expect("analyze");
+    }
+    // Statistics load when a connection opens (see issue #35 above).
+    pool.close().await;
+    let pool = pij_store::open(&fresh.path()).await.expect("reopen");
+    (fresh, pool)
+}
+
+async fn plan_of(pool: &pij_store::StorePool, sql: &str, binds: &[&str]) -> Vec<String> {
+    let explain = format!("EXPLAIN QUERY PLAN {sql}");
+    let mut query = sqlx::query(&explain);
+    for value in binds {
+        query = query.bind(*value);
+    }
+    query
+        .fetch_all(pool)
+        .await
+        .expect("plan")
+        .iter()
+        .map(|row| row.get::<String, _>("detail"))
+        .collect()
+}
+
+/// Plan 188: a seat's tail seeks that seat's rows from its cursor. It was one
+/// statement with `(?2 IS NULL OR seat = ?2)`, which SQLite cannot index, so
+/// the seat form walked the rowid from the cursor: from `Seq(0)`, the whole
+/// spine (0.4 s on the live 4.16M rows, three times per `/v1/state` card).
+#[tokio::test]
+async fn a_seat_tail_seeks_its_own_rows_not_the_spine() {
+    for analyze in [false, true] {
+        let (_fresh, pool) = skewed_seat_history(analyze).await;
+        let plan = sqlx::query(&format!(
+            "EXPLAIN QUERY PLAN {}",
+            pij_store::spine::SEAT_TAIL_SQL
+        ))
+        .bind("pij-history")
+        .bind(0_i64)
+        .fetch_all(&pool)
+        .await
+        .expect("plan")
+        .iter()
+        .map(|row| row.get::<String, _>("detail"))
+        .collect::<Vec<_>>();
+        assert_eq!(
+            plan,
+            vec!["SEARCH spine_events USING INDEX spine_by_seat (seat=? AND seq>?)".to_string()],
+            "analyzed={analyze}"
+        );
+    }
+}
+
+/// Plan 188: the held-delivery read seeks `(seat, kind)` for each kind. Without
+/// naming the index the planner reads every row the seat has, in `seq` order,
+/// to skip a sort: here 20,000 `bg.lost` rows for four deliveries; on the live
+/// spine 3.59M rows for one seat.
+#[tokio::test]
+async fn all_matching_seeks_seat_and_kind_whatever_else_the_seat_has() {
+    for analyze in [false, true] {
+        let (_fresh, pool) = skewed_seat_history(analyze).await;
+        let plan = plan_of(
+            &pool,
+            &pij_store::spine::all_matching_sql(3),
+            &[
+                "pij-history",
+                "delivery.held",
+                "delivery.released",
+                "delivery.outcome",
+            ],
+        )
+        .await;
+        assert_eq!(
+            plan.first().map(String::as_str),
+            Some("SEARCH spine_events USING INDEX spine_by_seat_kind (seat=? AND kind=?)"),
+            "analyzed={analyze}: {plan:?}"
+        );
+        let held = SqliteSpine::new(pool)
+            .all_matching(
+                &SeatId::from("pij-history"),
+                &["delivery.held", "delivery.released", "delivery.outcome"],
+            )
+            .await
+            .expect("all matching");
+        assert_eq!(
+            held.iter()
+                .map(|event| event.kind.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "delivery.held",
+                "delivery.released",
+                "delivery.outcome",
+                "delivery.held"
+            ],
+            "oldest first by sequence"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_seat_round_trips_with_every_optional_fact_intact() {
     let fresh = FreshStore::new();

@@ -986,6 +986,119 @@ async fn state_reads_back_the_declared_state_and_its_note() {
     server.abort();
 }
 
+/// The spine's newest `kind` event for the witness seat, read from the store
+/// the daemon wrote to.
+async fn newest_event(config: &Config, kind: &str) -> pij_core::model::Event {
+    let services = pij_daemon::build_services(
+        config,
+        std::path::Path::new("/tmp/pij-test-pane-signals-report"),
+    )
+    .await
+    .expect("reopen services");
+    services
+        .spine
+        .tail(Some(&SeatId::from(SEAT)), Seq(0))
+        .await
+        .expect("seat events")
+        .into_iter()
+        .rev()
+        .find(|event| event.kind == kind)
+        .expect("an event of that kind")
+}
+
+/// Plan 188: the state note says when it was written and where it sits, from
+/// its own `report.state` record, the way `statusAt`/`statusSeq` cite the card.
+/// A later card does not move it; a newer note does; a clear nulls all three.
+#[tokio::test]
+async fn the_state_note_carries_its_own_time_and_cursor() {
+    let (addr, server, _store, config) = daemon().await;
+    let read = || async {
+        let envelope: Envelope<serde_json::Value> = post_state(addr, SEAT)
+            .await
+            .json()
+            .await
+            .expect("state envelope");
+        envelope.data.expect("state data")
+    };
+
+    let blocked = post_report(
+        addr,
+        Some(SEAT),
+        &["report", "blocked", "waiting on review"],
+    )
+    .await;
+    assert_eq!(blocked.status(), reqwest::StatusCode::OK);
+    let record = newest_event(&config, "report.state").await;
+    let card = read().await;
+    assert_eq!(card["stateNote"], "waiting on review");
+    assert_eq!(card["stateNoteAt"], record.at);
+    assert_eq!(card["stateNoteSeq"], record.seq.expect("seq").0);
+
+    let now = post_report(addr, Some(SEAT), &["report", "now", "kept going", "next"]).await;
+    assert_eq!(now.status(), reqwest::StatusCode::OK);
+    let card = read().await;
+    assert_eq!(
+        card["stateNoteSeq"],
+        record.seq.expect("seq").0,
+        "a newer card is not a newer note"
+    );
+    assert_ne!(card["stateNoteSeq"], card["statusSeq"]);
+
+    let question = post_report(addr, Some(SEAT), &["report", "question", "which seam?"]).await;
+    assert_eq!(question.status(), reqwest::StatusCode::OK);
+    let newer = newest_event(&config, "report.state").await;
+    let card = read().await;
+    assert_eq!(card["stateNote"], "which seam?");
+    assert_eq!(card["stateNoteAt"], newer.at);
+    assert_eq!(card["stateNoteSeq"], newer.seq.expect("seq").0);
+
+    let clear = post_report(addr, Some(SEAT), &["report", "clear"]).await;
+    assert_eq!(clear.status(), reqwest::StatusCode::OK);
+    let card = read().await;
+    for key in ["stateNote", "stateNoteAt", "stateNoteSeq"] {
+        assert!(
+            card.get(key).is_some_and(serde_json::Value::is_null),
+            "{key} is present and null once the note is cleared: {card}"
+        );
+    }
+
+    server.abort();
+}
+
+/// Plan 188, on the real store: `GET /v1/cards` returns each untombstoned
+/// seat's `/v1/state` card, unchanged.
+#[tokio::test]
+async fn the_bulk_card_read_matches_the_single_read_on_the_real_store() {
+    let (addr, server, _store, _config) = daemon().await;
+    let blocked = post_report(
+        addr,
+        Some(SEAT),
+        &["report", "blocked", "on the real store"],
+    )
+    .await;
+    assert_eq!(blocked.status(), reqwest::StatusCode::OK);
+    let now = post_report(addr, Some(SEAT), &["report", "now", "did", "next"]).await;
+    assert_eq!(now.status(), reqwest::StatusCode::OK);
+
+    let response = reqwest::Client::new()
+        .get(format!("http://{addr}/v1/cards"))
+        .bearer_auth(KEY)
+        .send()
+        .await
+        .expect("get /v1/cards");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let envelope: Envelope<serde_json::Value> = response.json().await.expect("cards envelope");
+    let cards = envelope.data.expect("cards data")["cards"].clone();
+    let single: Envelope<serde_json::Value> = post_state(addr, SEAT)
+        .await
+        .json()
+        .await
+        .expect("state envelope");
+    assert_eq!(cards, serde_json::json!([single.data.expect("state data")]));
+
+    server.abort();
+}
+
 // ─── THE PANE-DERIVED SUBJECT (plan 117) ────────────────────────────────────
 
 /// A hand-started seat forwards a PANE and no session id. `report` must name it.

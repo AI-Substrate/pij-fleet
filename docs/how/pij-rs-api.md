@@ -480,6 +480,35 @@ literal, including the underscore in `last_event_at`; the existing card's other
 camelCase fields are unchanged. Freshness follows event **sequence**, not the
 greatest timestamp: a later committed event can have an earlier supplied clock.
 
+`stateNoteAt` (epoch ms) and `stateNoteSeq` (spine cursor) say when the
+`report.state` record carrying `stateNote` was written and where it sits, the
+way `statusAt`/`statusSeq` cite the card. They come from that record, never from
+the card, and are present exactly when `stateNote` is: a declaration without a
+note (`done`, `clear`) and a seat that never declared leave all three `null`.
+Both keys are always present (plan 188). Pinned shape:
+[`state-card.json`](../../crates/testkit/fixtures/golden/api/state-card.json).
+
+**Every card read is bounded by the seat's own rows** (plan 188): the card and
+the state note are each one newest-of-a-kind lookup on `spine_by_seat_kind`,
+and held deliveries read only the seat's `delivery.held`/`released`/`outcome`
+rows. None reads the spine end to end, so a card costs the same on a 4M-row
+spine as on an empty one.
+
+### Every seat's card in one call
+
+`GET /v1/cards` returns `data: {cards: [...]}` in a `pij cards` envelope: one
+card per **local, untombstoned** seat (the seats `/v1/seats?scope=local`
+lists), in seat-id order. Each card is exactly the card `POST /v1/state`
+returns for that seat, built by the same function, so a client can seed every
+card from one call and then follow `/v1/events`. It takes no filters, is local
+only (a paired machine's key is refused with `E-RS-PEER-SCOPE`) and adds no
+field to `/v1/seats`. It is a new route rather than a flag on the roster
+because the roster is polled by federation fan-in and extension rosters that
+need none of a card's reads, and a card is a different shape from a row. Cost:
+one roster read and one role read, then each seat's indexed card reads, four
+seats at a time; no process launch beyond `/v1/state`'s own (an in-process
+liveness probe per bound seat).
+
 Status reports (`hold`, `waiting`, `blocked`, and the other semantic words) are
 first-person declarations, **never delivery or inbox-claim gates**, for every
 harness. No separate operator mailbox-hold field exists. Per-job typing holds,
