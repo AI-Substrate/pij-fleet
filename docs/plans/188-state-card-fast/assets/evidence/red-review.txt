@@ -1,0 +1,18 @@
+# Review fixes (#105 S1, S2, N2): new card_tests on the PR head 96421ee code + the new tests, 2026-11-02
+# cargo test -p pij-daemon --lib http::card_tests
+test http::card_tests::one_unreadable_seat_is_named_and_the_fleet_is_still_served ... FAILED
+test http::card_tests::a_card_read_never_tails_the_spine ... ok
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... ok
+test http::card_tests::the_state_note_cites_its_own_record ... ok
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... ok
+test http::card_tests::the_bulk_read_keeps_roster_order_and_roles_on_a_wider_fleet ... FAILED
+test http::card_tests::a_session_read_that_never_returns_does_not_hold_the_bulk_read ... FAILED
+thread 'http::card_tests::one_unreadable_seat_is_named_and_the_fleet_is_still_served' (271453967) panicked at crates/daemon/src/http/card_tests.rs:393:5:
+  left: 500
+ right: 200
+thread 'http::card_tests::the_bulk_read_keeps_roster_order_and_roles_on_a_wider_fleet' (271453969) panicked at crates/daemon/src/http/card_tests.rs:437:5:
+  left: Null
+ right: Array []
+thread 'http::card_tests::a_session_read_that_never_returns_does_not_hold_the_bulk_read' (271453966) panicked at crates/daemon/src/http/card_tests.rs:462:10:
+the bulk read waited on a session read that never returns: Elapsed(())
+test result: FAILED. 4 passed; 3 failed; 0 ignored; 0 measured; 663 filtered out; finished in 5.84s

@@ -74,6 +74,16 @@
           "links": [
             "../plan.dd.json#acceptance_criteria/ac-0006"
           ]
+        },
+        {
+          "id": "lg-0008",
+          "at": "2026-11-02T01:40:00Z",
+          "text": "Review of #105 (review-105-pij-review-pr105.md) fixes. S1: the bulk read bounds each seat's session read at LIST_STATUS_WAIT (200 ms) and names an overrun 'no answer within 200 ms' in that card's sessionStatus; /v1/state unchanged. S2: per-seat failures go to unavailable: [{id, error}] instead of a 500. S3/N1: spine_contract pins latest-by-seq with an earlier `at`, and seat-tail exclusivity. N2: a 5-seat fleet, first seat slowest, one with a role. N3: every note path already refuses an empty note (report.rs:348), now pinned by an_empty_note_is_refused_so_no_note_time_cites_one. N4: filed as issue #106. Red on the PR head 96421ee (evidence/red-review.txt): S2 500, S1 'waited on a session read that never returns: Elapsed', N2 unavailable Null. Mutants (evidence/mutants-review.txt) 6/6 killed: latest-by-at-not-seq (Seq(1) vs Seq(7)), seat-tail-inclusive-since, bulk-skips-roles (Null vs prime), bulk-completion-order (a last), bulk-unbounded-session (timeout), bulk-one-error-fails-all (500). Docs: /v1/cards row labelled 'sessions nulled; session-status folds excluded', fold cost (cold whole transcript, warm incremental, cursor cache warmed per bound seat) in daemon-cost.md and pij-rs-api.md.",
+          "links": [
+            "../plan.dd.json#acceptance_criteria/ac-0003",
+            "../plan.dd.json#acceptance_criteria/ac-0005",
+            "../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
         }
       ]
     }

@@ -1,0 +1,83 @@
+== baseline
+$ cargo test -p pij-store --test store_integration -- the_sqlite_spine_honours_the_same_contract_the_fake_does -> exit 0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.05s
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 0
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 663 filtered out; finished in 1.41s
+== mutant latest-by-at-not-seq (crates/store/src/spine.rs)
+$ cargo test -p pij-store --test store_integration -- the_sqlite_spine_honours_the_same_contract_the_fake_does -> exit 101
+test the_sqlite_spine_honours_the_same_contract_the_fake_does ... FAILED
+thread 'the_sqlite_spine_honours_the_same_contract_the_fake_does' (271522122) panicked at crates/testkit/src/contract.rs:405:5:
+assertion `left == right` failed: latest is the highest sequence even when its `at` is older
+  left: Some(Seq(1))
+ right: Some(Seq(7))
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.55s
+== mutant seat-tail-inclusive-since (crates/store/src/spine.rs)
+$ cargo test -p pij-store --test store_integration -- the_sqlite_spine_honours_the_same_contract_the_fake_does -> exit 101
+test the_sqlite_spine_honours_the_same_contract_the_fake_does ... FAILED
+thread 'the_sqlite_spine_honours_the_same_contract_the_fake_does' (271523684) panicked at crates/testkit/src/contract.rs:298:5:
+assertion `left == right` failed: the seat form of tail is exclusive of its cursor, like the unscoped form
+  left: [Event { seq: Some(Seq(1)), v: 1, at: 1724800000000, kind: "report", seat: Some(SeatId("pij-spine-a")), payload: "{\"n\":1}" }, Event { seq: Some(Seq(3)), v: 1, at: 1724800000000, kind: "future-kind", seat: Some(SeatId("pij-spine-a")), payload: "opaque" }]
+ right: [Event { seq: Some(Seq(3)), v: 1, at: 1724800000000, kind: "future-kind", seat: Some(SeatId("pij-spine-a")), payload: "opaque" }]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.05s
+== mutant bulk-skips-roles (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::a_card_read_never_tails_the_spine ... ok
+test http::card_tests::one_unreadable_seat_is_named_and_the_fleet_is_still_served ... ok
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... ok
+test http::card_tests::the_state_note_cites_its_own_record ... ok
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... ok
+test http::card_tests::the_bulk_read_keeps_roster_order_and_roles_on_a_wider_fleet ... FAILED
+test http::card_tests::a_session_read_that_never_returns_does_not_hold_the_bulk_read ... ok
+thread 'http::card_tests::the_bulk_read_keeps_roster_order_and_roles_on_a_wider_fleet' (271526529) panicked at crates/daemon/src/http/card_tests.rs:442:5:
+assertion `left == right` failed: the role join reached the bulk read
+  left: Null
+ right: "prime"
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 663 filtered out; finished in 1.05s
+== mutant bulk-completion-order (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::one_unreadable_seat_is_named_and_the_fleet_is_still_served ... ok
+test http::card_tests::a_card_read_never_tails_the_spine ... ok
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... ok
+test http::card_tests::the_state_note_cites_its_own_record ... ok
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... ok
+test http::card_tests::the_bulk_read_keeps_roster_order_and_roles_on_a_wider_fleet ... FAILED
+test http::card_tests::a_session_read_that_never_returns_does_not_hold_the_bulk_read ... FAILED
+thread 'http::card_tests::the_bulk_read_keeps_roster_order_and_roles_on_a_wider_fleet' (271528446) panicked at crates/daemon/src/http/card_tests.rs:431:5:
+assertion `left == right` failed: seat-id order, not the order the cards finished in
+  left: ["pij-fleet-b", "pij-fleet-c", "pij-fleet-d", "pij-fleet-e", "pij-fleet-a"]
+ right: ["pij-fleet-a", "pij-fleet-b", "pij-fleet-c", "pij-fleet-d", "pij-fleet-e"]
+thread 'http::card_tests::a_session_read_that_never_returns_does_not_hold_the_bulk_read' (271528443) panicked at crates/daemon/src/http/card_tests.rs:478:5:
+assertion `left == right` failed
+  left: ["pij-fleet-ok", "pij-fleet-hung"]
+ right: ["pij-fleet-hung", "pij-fleet-ok"]
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 663 filtered out; finished in 1.89s
+== mutant bulk-unbounded-session (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::a_card_read_never_tails_the_spine ... ok
+test http::card_tests::one_unreadable_seat_is_named_and_the_fleet_is_still_served ... ok
+test http::card_tests::the_state_note_cites_its_own_record ... ok
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... ok
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... ok
+test http::card_tests::the_bulk_read_keeps_roster_order_and_roles_on_a_wider_fleet ... ok
+test http::card_tests::a_session_read_that_never_returns_does_not_hold_the_bulk_read ... FAILED
+thread 'http::card_tests::a_session_read_that_never_returns_does_not_hold_the_bulk_read' (271530487) panicked at crates/daemon/src/http/card_tests.rs:471:10:
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 663 filtered out; finished in 5.86s
+== mutant bulk-one-error-fails-all (crates/daemon/src/http/mod.rs)
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 101
+test http::card_tests::a_card_read_never_tails_the_spine ... ok
+test http::card_tests::the_card_wire_shape_matches_the_committed_golden ... ok
+test http::card_tests::one_unreadable_seat_is_named_and_the_fleet_is_still_served ... FAILED
+test http::card_tests::the_state_note_cites_its_own_record ... ok
+test http::card_tests::the_bulk_read_is_the_single_read_for_every_seat ... ok
+test http::card_tests::the_bulk_read_keeps_roster_order_and_roles_on_a_wider_fleet ... ok
+test http::card_tests::a_session_read_that_never_returns_does_not_hold_the_bulk_read ... ok
+thread 'http::card_tests::one_unreadable_seat_is_named_and_the_fleet_is_still_served' (271533796) panicked at crates/daemon/src/http/card_tests.rs:393:5:
+assertion `left == right` failed: {"ok":false,"command":"pij cards","v":2,"meta":"report: could not decode report.now payload: expected ident at line 1 column 2","error":"adapter"}
+  left: 500
+ right: 200
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 663 filtered out; finished in 1.63s
+== restored
+$ cargo test -p pij-store --test store_integration -- the_sqlite_spine_honours_the_same_contract_the_fake_does -> exit 0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.07s
+$ cargo test -p pij-daemon --lib http::card_tests -> exit 0
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 663 filtered out; finished in 1.26s

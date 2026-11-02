@@ -485,7 +485,8 @@ greatest timestamp: a later committed event can have an earlier supplied clock.
 way `statusAt`/`statusSeq` cite the card. They come from that record, never from
 the card, and are present exactly when `stateNote` is: a declaration without a
 note (`done`, `clear`) and a seat that never declared leave all three `null`.
-Both keys are always present (plan 188). Pinned shape:
+Both keys are always present (plan 188). An empty note cannot occur: every
+note path refuses one (`report note must not be empty`). Pinned shape:
 [`state-card.json`](../../crates/testkit/fixtures/golden/api/state-card.json).
 
 **Every card read is bounded by the seat's own rows** (plan 188): the card and
@@ -496,18 +497,34 @@ spine as on an empty one.
 
 ### Every seat's card in one call
 
-`GET /v1/cards` returns `data: {cards: [...]}` in a `pij cards` envelope: one
-card per **local, untombstoned** seat (the seats `/v1/seats?scope=local`
-lists), in seat-id order. Each card is exactly the card `POST /v1/state`
-returns for that seat, built by the same function, so a client can seed every
-card from one call and then follow `/v1/events`. It takes no filters, is local
+`GET /v1/cards` returns `data: {cards: [...], unavailable: [...]}` in a
+`pij cards` envelope: one card per **local, untombstoned** seat (the seats
+`/v1/seats?scope=local` lists), in seat-id order. Each card is built by the same
+function as `POST /v1/state`, so a client can seed every card from one call and
+then follow `/v1/events`. Two differences, both so one seat cannot spoil the
+fleet's answer:
+
+- **Session status is bounded at 200 ms per seat** (`LIST_STATUS_WAIT`, the
+  same bound as `/v1/seats?sizes=true`). A seat whose transcript read runs over
+  gets `sessionStatus: {"outcome":"failed","error":"no answer within 200 ms"}`,
+  and its size fields follow from that. The read keeps going in the
+  background and keeps its cursor, so the next call is warm and complete.
+  `/v1/state` still waits for the read.
+- **A seat whose card cannot be read is listed in `unavailable`** as
+  `{id, error}` (the shape of `/v1/seats`' unavailable peers) instead of
+  failing the call. Every other seat's card is still served. Both lists are
+  always present; an empty `unavailable` means every seat was read.
+ It takes no filters, is local
 only (a paired machine's key is refused with `E-RS-PEER-SCOPE`) and adds no
 field to `/v1/seats`. It is a new route rather than a flag on the roster
 because the roster is polled by federation fan-in and extension rosters that
 need none of a card's reads, and a card is a different shape from a row. Cost:
-one roster read and one role read, then each seat's indexed card reads, four
-seats at a time; no process launch beyond `/v1/state`'s own (an in-process
-liveness probe per bound seat).
+one roster read and one role read, then each seat's indexed card reads and its
+session-status fold, four seats at a time. No process launch beyond
+`/v1/state`'s own (an in-process liveness probe per bound seat). The fold reads
+the whole transcript cold and only what was appended warm, through the
+session source's existing per-seat cursor cache. One bulk call warms that
+cache for every bound seat.
 
 Status reports (`hold`, `waiting`, `blocked`, and the other semantic words) are
 first-person declarations, **never delivery or inbox-claim gates**, for every

@@ -297,6 +297,14 @@ pub async fn spine_contract(spine: &dyn Spine) {
     );
     assert_eq!(
         spine
+            .tail(Some(&seat_a), first)
+            .await
+            .expect("seat-filtered tail after first"),
+        just_a[1..].to_vec(),
+        "the seat form of tail is exclusive of its cursor, like the unscoped form"
+    );
+    assert_eq!(
+        spine
             .latest_matching(&seat_a, &["report", "future-kind"])
             .await
             .expect("latest matching"),
@@ -379,6 +387,27 @@ pub async fn spine_contract(spine: &dyn Spine) {
         .expect("older message fact remains addressable");
     assert_eq!(found.kind, "control-pointer");
     assert_eq!(found.payload, older_message.payload);
+
+    // Latest means highest SEQUENCE, never greatest timestamp: a later commit
+    // can carry an earlier supplied clock (NTP step, a slow writer). The card
+    // and the state note rest on this (plan 188).
+    let mut clock_stepped_back = event("report", Some(seat_a.clone()), "{\"n\":2}");
+    clock_stepped_back.at -= 60_000;
+    let later_seq = spine
+        .append(clock_stepped_back.clone())
+        .await
+        .expect("a later event with an earlier clock");
+    let latest = spine
+        .latest_matching(&seat_a, &["report"])
+        .await
+        .expect("latest by sequence")
+        .expect("a report exists");
+    assert_eq!(
+        latest.seq,
+        Some(later_seq),
+        "latest is the highest sequence even when its `at` is older"
+    );
+    assert_eq!(latest.at, clock_stepped_back.at);
 }
 
 /// Every promise [`Spine::tail_page`] makes: every seat, `seq` order, at most

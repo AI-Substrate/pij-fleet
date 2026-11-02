@@ -1065,6 +1065,38 @@ async fn the_state_note_carries_its_own_time_and_cursor() {
     server.abort();
 }
 
+/// Review of #105 (N3): an empty note is refused at the report boundary, so
+/// `stateNoteAt` never cites an empty `stateNote`.
+#[tokio::test]
+async fn an_empty_note_is_refused_so_no_note_time_cites_one() {
+    let (addr, server, _store, _config) = daemon().await;
+    for argv in [["report", "blocked", ""], ["report", "question", "   "]] {
+        let refusal = post_report(addr, Some(SEAT), &argv).await;
+        assert_eq!(
+            refusal.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "{argv:?}"
+        );
+        let envelope: Envelope<serde_json::Value> = refusal.json().await.expect("envelope");
+        assert!(
+            envelope
+                .meta
+                .unwrap_or_default()
+                .contains("report note must not be empty"),
+            "{argv:?}"
+        );
+    }
+    let envelope: Envelope<serde_json::Value> = post_state(addr, SEAT)
+        .await
+        .json()
+        .await
+        .expect("state envelope");
+    let card = envelope.data.expect("state data");
+    assert!(card["stateNoteAt"].is_null(), "{card}");
+
+    server.abort();
+}
+
 /// Plan 188, on the real store: `GET /v1/cards` returns each untombstoned
 /// seat's `/v1/state` card, unchanged.
 #[tokio::test]

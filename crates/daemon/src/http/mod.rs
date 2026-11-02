@@ -2698,7 +2698,7 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
         Ok(seat) => seat,
         Err(error) => return internal("pij state", error),
     };
-    match seat_card(&state, seat).await {
+    match seat_card(&state, seat, None).await {
         Ok(projection) => envelope(StatusCode::OK, &Envelope::ok("pij state", projection)),
         Err(error) => internal("pij state", error),
     }
@@ -2708,10 +2708,13 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
 /// call (plan 188).
 ///
 /// The same seats `/v1/seats` lists by default, each projected by
-/// [`seat_card`], the function `/v1/state` uses, so the two cannot drift: a
-/// card here is the card `/v1/state` gives for that seat. One roster read and
-/// one role read serve every seat; each card's own reads are indexed lookups
-/// bounded by that seat's rows, and the cards are built a few at a time.
+/// [`seat_card`], the function `/v1/state` uses, so the two cannot drift. One
+/// roster read and one role read serve every seat; each card's own reads are
+/// indexed lookups bounded by that seat's rows, and the cards are built a few
+/// at a time. Two things differ from `/v1/state`, so that one seat cannot cost
+/// every seat's card: each session-status read is bounded at
+/// [`LIST_STATUS_WAIT`], and a seat whose card fails is named in `unavailable`
+/// rather than failing the call (review of #105, S1 and S2).
 async fn seat_cards(State(state): State<AppState>) -> Response {
     let listed = state
         .services
@@ -2729,30 +2732,46 @@ async fn seat_cards(State(state): State<AppState>) -> Response {
     if let Err(error) = state.services.roles.join_roles(&mut seats).await {
         return internal("pij cards", error);
     }
-    let count = seats.len();
     let permits = Arc::new(tokio::sync::Semaphore::new(CARD_READS_IN_FLIGHT));
     let mut reads = tokio::task::JoinSet::new();
+    let mut tasks = BTreeMap::new();
     for (index, seat) in seats.into_iter().enumerate() {
-        let (state, permits) = (state.clone(), Arc::clone(&permits));
-        reads.spawn(async move {
+        let (state, permits, id) = (state.clone(), Arc::clone(&permits), seat.id.clone());
+        let task = reads.spawn(async move {
             let _permit = permits.acquire_owned().await;
-            (index, seat_card(&state, seat).await)
+            seat_card(&state, seat, Some(LIST_STATUS_WAIT)).await
         });
+        tasks.insert(task.id(), (index, id));
     }
-    let mut cards: Vec<Option<StateProjection>> =
-        std::iter::repeat_with(|| None).take(count).collect();
-    while let Some(read) = reads.join_next().await {
-        match read {
-            Ok((index, Ok(card))) => cards[index] = Some(card),
-            Ok((_, Err(error))) => return internal("pij cards", error),
-            Err(error) => return internal("pij cards", error),
+    // Indexed by roster position, so the answer keeps seat-id order whatever
+    // order the cards finish in. A seat whose card cannot be read is named in
+    // `unavailable` with its error: one bad row never costs every seat's card.
+    let mut slots: BTreeMap<usize, std::result::Result<StateProjection, UnavailableCard>> =
+        BTreeMap::new();
+    while let Some(read) = reads.join_next_with_id().await {
+        let (task, outcome) = match read {
+            Ok((task, card)) => (task, card.map_err(|error| error.to_string())),
+            Err(error) => (error.id(), Err(format!("card read failed: {error}"))),
+        };
+        let Some((index, id)) = tasks.remove(&task) else {
+            continue;
+        };
+        slots.insert(
+            index,
+            outcome.map_err(|error| UnavailableCard { id, error }),
+        );
+    }
+    let mut projection = CardsProjection {
+        cards: Vec::new(),
+        unavailable: Vec::new(),
+    };
+    for slot in slots.into_values() {
+        match slot {
+            Ok(card) => projection.cards.push(card),
+            Err(unavailable) => projection.unavailable.push(unavailable),
         }
     }
-    let cards = cards.into_iter().flatten().collect();
-    envelope(
-        StatusCode::OK,
-        &Envelope::ok("pij cards", CardsProjection { cards }),
-    )
+    envelope(StatusCode::OK, &Envelope::ok("pij cards", projection))
 }
 
 /// Cards `/v1/cards` builds at once. The store pool has four connections; a
@@ -2762,6 +2781,16 @@ const CARD_READS_IN_FLIGHT: usize = 4;
 #[derive(Serialize)]
 struct CardsProjection {
     cards: Vec<StateProjection>,
+    /// Seats whose card could not be read, each with why. Always present: an
+    /// empty list and a missing key are different answers.
+    unavailable: Vec<UnavailableCard>,
+}
+
+/// One seat `/v1/cards` could not read, shaped like a roster's unavailable peer.
+#[derive(Serialize)]
+struct UnavailableCard {
+    id: SeatId,
+    error: String,
 }
 
 /// One seat's `pij state` card, from its role-projected roster row.
@@ -2770,7 +2799,15 @@ struct CardsProjection {
 /// the seat's own rows (plan 188): the card and the state note are each one
 /// newest-of-a-kind lookup on `(seat, kind)`, and the held deliveries read only
 /// the seat's delivery events. None of them reads the spine end to end.
-async fn seat_card(state: &AppState, seat: SeatDescriptor) -> Result<StateProjection> {
+///
+/// `session_wait` bounds the seat's session-status read: `None` waits as
+/// `/v1/state` always has; the bulk read passes [`LIST_STATUS_WAIT`] so one
+/// slow transcript cannot hold every seat's card.
+async fn seat_card(
+    state: &AppState,
+    seat: SeatDescriptor,
+    session_wait: Option<Duration>,
+) -> Result<StateProjection> {
     let id = seat.id.clone();
     // Liveness is OBSERVED, never inferred from the row. `pij_core::liveness`
     // owns the three-way verdict (active / dead / recycled); re-deriving it here
@@ -2805,14 +2842,23 @@ async fn seat_card(state: &AppState, seat: SeatDescriptor) -> Result<StateProjec
     // only the descriptor would report a blocked seat with no reason, which is
     // the half of the answer nobody needs.
     let state_record = reports.latest_state(&id).await?;
-    let session_status = session_status_block(
+    let read = session_status_block(
         state.services.session_status.as_ref(),
         &seat.id,
         seat.harness,
         seat.harness_session.clone(),
         clock,
-    )
-    .await;
+    );
+    let session_status = match session_wait {
+        None => read.await,
+        // The source detaches a read that runs over and keeps its cursor, so
+        // the next call finds it warm; this card names the timeout.
+        Some(wait) => tokio::time::timeout(wait, read).await.unwrap_or_else(|_| {
+            pij_core::session_status::SessionStatusBlock::Failed {
+                error: format!("no answer within {} ms", wait.as_millis()),
+            }
+        }),
+    };
     let size =
         pij_core::cold_wake::seat_size(seat.state, &session_status, clock, seat.model.as_deref());
     let size_lines = pij_core::cold_wake::size_lines(&session_status, &size);
