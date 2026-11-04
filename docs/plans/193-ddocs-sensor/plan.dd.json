@@ -73,6 +73,13 @@
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
           "receipt": "dd package.json publishConfig npmjs but npmjs serves no @ai-substrate/dd; its package-lock resolves 160 packages to private feed hosts only; CI step comment records the decision"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Ruling C18. PRD 001 gains req-27: communities are discovered from their needs, and role templates are examples, not a checklist; the /pij community route and the prime prompts say so and prompt the prime to create roles for needs nothing covers. State planned (s03, s09 and s10 deliver it), source ruling C18, one changelog row, biome-formatted. Numbered 27 because the s02 PR takes req-26.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006",
+          "receipt": "PRD 001 req-27 added; ddocs validate ok 0/0"
         }
       ]
     },
@@ -82,7 +89,7 @@
         {
           "id": "ph-d8b9",
           "title": "ddocs sensor, CI install and proof",
-          "brief": "AC1 to AC5. docs-system. harness/scripts/ddocs-check.ts with tests, the recipe, the checks sensor, self-check, CI step, and the fires proof. CS-2.",
+          "brief": "AC1 to AC6. docs-system. harness/scripts/ddocs-check.ts with tests, the recipe, the checks sensor, self-check, CI step and the fires proof; plus PRD 001 req-27 (C18). CS-2.",
           "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
           "receipt": "AC1-AC5 checked; evidence assets/evidence/fires.txt and CI run 41766023159"

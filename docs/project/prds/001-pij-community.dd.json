@@ -354,6 +354,17 @@
 					"state": "planned",
 					"done_when": "Merging a PR that names req-07 records the PR on req-07 and shows on the PM's card within one event.",
 					"source": "workshops/001-directory-concept.md"
+				},
+				{
+					"id": "req-27",
+					"title": "Communities grow from their needs, not from templates",
+					"statement": "A community's roles are discovered from what its work needs. Role templates are examples, not a checklist: the `/pij community` route and the prime's prompts say so, and the prime is prompted to notice a need no role covers and create a role for it, which may look nothing like any template.",
+					"actor": "prime",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "The `/pij community` route and the prime's prompts state that templates are examples; with a roadmap need that no role or template covers, the prime is prompted to create a role for it, and the new role validates without coming from a template.",
+					"note": "Delivered across s03 (templates), s09 (prime prompts) and s10 (the route).",
+					"source": "ruling C18"
 				}
 			]
 		},
@@ -419,6 +430,11 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "Plan 191: req-18 and req-23 shipped (procedures and examples in skills/pij/references/community/, fresh-PM canary passed)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "req-27 per ruling C18 (Jordan): communities are self-discovered from their needs; templates are examples, not a checklist. Numbered 27 because req-26 is taken by the s02 PR."
 				}
 			]
 		}

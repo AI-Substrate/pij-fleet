@@ -55,6 +55,7 @@ Nothing checks that the project docs stay valid: #110 and the s02 work edit PRD 
 | ac-0003 | Wiring. The `ddocs` sensor is added to .harness/extensions/checks/ (extension and instructions) and to `just self-check` together, as AGENTS.md requires; AGENTS.md's inventory names it. CI runs `just ddocs-check --unavailable=warn`. | [x] checked | — | CI run 41766023159 on 220fa2c: all jobs success; check (22) and check (24) print UNAVAILABLE and a 'ddocs-check UNAVAILABLE' warning annotation | [bp-0002](assets/backpressure.dd.md#rows) | — |
 | ac-0004 | It fires. Breaking an example (a link to a missing requirement; a hand-edited .dd.md) makes the sensor fail; restoring it passes; no ddocs gives UNAVAILABLE. Transcript in assets/evidence/fires.txt. | [x] checked | — | assets/evidence/fires.txt | [bp-0003](assets/backpressure.dd.md#rows) | — |
 | ac-0005 | CI decision. ddocs (@ai-substrate/dd) is not published to npmjs and its lockfile resolves only to private feeds, so installing it on the runner would bypass the lockfile allowlist and the seven-day quarantine. CI therefore does not install it and reports UNAVAILABLE as a warning on every run. When ddocs is published to an allowed registry it becomes a locked devDependency and the CI step drops `--unavailable=warn`. | [x] checked | — | dd package.json publishConfig npmjs but npmjs serves no @ai-substrate/dd; its package-lock resolves 160 packages to private feed hosts only; CI step comment records the decision | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0006 | Ruling C18. PRD 001 gains req-27: communities are discovered from their needs, and role templates are examples, not a checklist; the /pij community route and the prime prompts say so and prompt the prime to create roles for needs nothing covers. State planned (s03, s09 and s10 deliver it), source ruling C18, one changelog row, biome-formatted. Numbered 27 because the s02 PR takes req-26. | [x] checked | — | PRD 001 req-27 added; ddocs validate ok 0/0 | [bp-0006](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -62,7 +63,7 @@ Nothing checks that the project docs stay valid: #110 and the s02 work edit PRD 
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-d8b9 | ddocs sensor, CI install and proof | AC1 to AC5. docs-system. harness/scripts/ddocs-check.ts with tests, the recipe, the checks sensor, self-check, CI step, and the fires proof. CS-2. | [x] checked | — | AC1-AC5 checked; evidence assets/evidence/fires.txt and CI run 41766023159 | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-d8b9 | ddocs sensor, CI install and proof | AC1 to AC6. docs-system. harness/scripts/ddocs-check.ts with tests, the recipe, the checks sensor, self-check, CI step and the fires proof; plus PRD 001 req-27 (C18). CS-2. | [x] checked | — | AC1-AC5 checked; evidence assets/evidence/fires.txt and CI run 41766023159 | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 
