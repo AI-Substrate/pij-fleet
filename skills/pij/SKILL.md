@@ -51,6 +51,7 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 | `orchestration` (`baton`/`prime`/`role`) | prime route — rs; destructive baton return/reclaim require observed `--lease-id` |
 | `role` | node route — rs explicit assertion/unset, joined through RoleService |
 | `project` `stream` `fence` `dispatch` `ack` `canary` `attest` `spine` `task` (`set/close`) `report` (`now/question/blocked/state/clear/verify`) `node` (`show`) `anomalies` | node route — rs governance records, receipts and projections |
+| `directory` (`add`) | node route; rs community writer (plan 190): `directory add <id> --why <text>` writes `<government-root>/community/roles/<id>/role.dd.json`, validated by ddocs, and commits only its own paths on the governance branch; `--batch <dir>` imports many in one commit, all or nothing |
 | `decisions` `answer` | node route — rs durable questions/current-parent authority; terminal-only supersede |
 | `agent` (`list/run/spawn/show/new/check/eject/report`) `path` `models` `tree` `watch` `unwatch` `chore` `focus` | named `E-RS-UNPORTED` refusals, no native verb, no legacy escape. agent → agent route; models → § C4; tree → read `pij node show <seat>` |
 

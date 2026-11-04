@@ -59,6 +59,11 @@ impl GovernanceService {
         }
     }
 
+    /// The governance store, shared with the directory writer's pointer.
+    pub(super) fn store(&self) -> &SqliteOrchestration {
+        &self.store
+    }
+
     #[cfg(test)]
     pub(super) fn fixture_store(&self) -> SqliteOrchestration {
         self.store.clone()

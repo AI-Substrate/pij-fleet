@@ -222,7 +222,10 @@ fn a_document_ddocs_rejects_commits_nothing_and_leaves_no_trace() {
         .write(&scratch.main, role("qa", "INVALID"), "add")
         .unwrap_err();
     assert_eq!(refusal.code, E_DDOCS_INVALID);
-    assert_eq!(refusal.message, "missing required field \"scope\"");
+    assert_eq!(
+        refusal.message,
+        ".harness/government/community/roles/qa/role.dd.json: missing required field \"scope\""
+    );
     assert_eq!(head(&scratch), start);
     assert_eq!(status(&scratch), "");
     assert!(

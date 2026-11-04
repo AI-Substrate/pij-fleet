@@ -171,7 +171,9 @@ impl CommunityWriter {
             std::fs::write(&target, &file.bytes).map_err(|error| io_refusal(&target, &error))?;
         }
         for file in files.iter().filter(|file| file.document) {
-            self.validator.validate(&top, &top.join(&file.path))?;
+            self.validator
+                .validate(&top, &top.join(&file.path))
+                .map_err(|refusal| naming(refusal, &file.path))?;
         }
         for file in files.iter().filter(|file| file.document) {
             self.validator.build(&top, &top.join(&file.path))?;
@@ -272,6 +274,14 @@ fn run<S: AsRef<str>>(top: &Path, args: &[S], locks: Locks) -> Result<String, Re
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// ddocs' refusal of one document in a write of several, naming which.
+fn naming(mut refusal: Refusal, path: &Path) -> Refusal {
+    if refusal.code == super::E_DDOCS_INVALID {
+        refusal.message = format!("{}: {}", path.display(), refusal.message);
+    }
+    refusal
 }
 
 fn io_refusal(path: &Path, error: &std::io::Error) -> Refusal {

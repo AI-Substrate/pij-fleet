@@ -10,6 +10,7 @@ mod client;
 mod codex_caller;
 pub(crate) mod cold_wake;
 pub mod decisions;
+mod directory;
 mod double_seat;
 mod exposure;
 mod fyi;
@@ -192,13 +193,15 @@ enum Endpoint {
     Node,
     Orchestration,
     Spine,
+    /// `pij directory add` (plan 190): the community directory's writer.
+    Directory,
     /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
     /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
     BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 52] = [
+    const ALL: [Self; 53] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -250,6 +253,7 @@ impl Endpoint {
         Self::Node,
         Self::Orchestration,
         Self::Spine,
+        Self::Directory,
         Self::BackgroundEmit,
     ];
 
@@ -301,6 +305,7 @@ impl Endpoint {
             Self::Node => "/v1/node",
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
+            Self::Directory => "/v1/directory",
             Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
@@ -351,6 +356,7 @@ impl Endpoint {
             | Self::Node
             | Self::Orchestration
             | Self::Spine
+            | Self::Directory
             | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
@@ -585,6 +591,7 @@ fn router_with_optional_federation(
                     | Endpoint::Node
                     | Endpoint::Orchestration
                     | Endpoint::Spine
+                    | Endpoint::Directory
                     | Endpoint::BackgroundEmit
             ) {
                 Method::POST
@@ -656,6 +663,7 @@ fn router_with_optional_federation(
             Endpoint::Node => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Orchestration => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Spine => router.route(endpoint.path(), post(governance::handle)),
+            Endpoint::Directory => router.route(endpoint.path(), post(directory::handle)),
             Endpoint::ShimSend => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimCompactSelf => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),
