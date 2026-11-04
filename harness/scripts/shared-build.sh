@@ -95,8 +95,22 @@ esac
 # Two spellings of one directory (a symlink and its destination) must take one
 # lock, so the lock and CARGO_TARGET_DIR derive from the physical path. A
 # target that does not exist yet resolves through its nearest existing parent.
+# One spelling of a path: no doubled and no trailing separators, so `target/`
+# and `target` name one lock whether or not the directory exists yet.
+normal_path() {
+	local path=$1
+	while [ "${path#*//}" != "$path" ]; do
+		path=${path%%//*}/${path#*//}
+	done
+	while [ "$path" != "/" ] && [ "${path%/}" != "$path" ]; do
+		path=${path%/}
+	done
+	printf '%s' "$path"
+}
+
 physical_target() {
-	local path=$1 rest="" resolved
+	local path rest="" resolved
+	path=$(normal_path "$1")
 	if [ -L "$path" ] && [ ! -e "$path" ]; then
 		refuse 2 "PIJ_SHARED_TARGET '$1' is a dangling symlink"
 	fi
@@ -110,7 +124,7 @@ physical_target() {
 	*/. | */./* | */.. | */../*) refuse 2 "PIJ_SHARED_TARGET '$1' has a . or .. below its existing part" ;;
 	esac
 	resolved=$(cd -P "$path" && pwd -P) || refuse 2 "could not resolve PIJ_SHARED_TARGET '$1'"
-	printf '%s' "${resolved%/}$rest"
+	normal_path "$resolved$rest"
 }
 
 target=$(physical_target "$target") || exit $?

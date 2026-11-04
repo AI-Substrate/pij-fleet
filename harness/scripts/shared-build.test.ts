@@ -297,6 +297,24 @@ describe("just shared-build", () => {
 		expect(existsSync(`${later}.lock`)).toBe(false);
 	});
 
+	it("takes one lock for `target/` and `target` while the target does not exist yet", async () => {
+		const f = fixture();
+		expect(existsSync(f.target)).toBe(false);
+		const first = start(f, ["--", "first"], { PIJ_SHARED_TARGET: `${f.target}/`, NAP: "2" });
+		await until(() => log(f).some((line) => line.startsWith("start first")));
+		const second = await run(f, ["--", "second"], { PIJ_SHARED_TARGET: f.target, NAP: "0.2" });
+		expect((await first.done).code).toBe(0);
+		expect(second.code).toBe(0);
+		expect(second.stderr).toContain(`waiting for ${f.lock}`);
+		expect(log(f).filter((line) => /^(start|end) /.test(line))).toEqual([
+			`start first target=${f.target} incremental=0`,
+			"end first",
+			`start second target=${f.target} incremental=0`,
+			"end second",
+		]);
+		expect(existsSync(join(f.target, ".lock"))).toBe(false);
+	});
+
 	it("reports a dead owner's lock as stale with the clear command, and never clears it", async () => {
 		const f = fixture();
 		const gone = spawnSync("sh", ["-c", "echo $$"]).stdout.toString().trim();
