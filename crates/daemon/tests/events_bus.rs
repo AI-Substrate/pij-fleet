@@ -126,7 +126,6 @@ impl Spine for TestSpine {
             .collect())
     }
 
-
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         assert!(
             !kinds.is_empty(),

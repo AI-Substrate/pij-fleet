@@ -3388,7 +3388,10 @@ mod tests {
         async fn newest(&self) -> pij_core::error::Result<Seq> {
             self.inner.newest().await
         }
-        async fn latest(&self, seat: &pij_core::model::SeatId) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        async fn latest(
+            &self,
+            seat: &pij_core::model::SeatId,
+        ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
             self.inner.latest(seat).await
         }
 
@@ -3400,7 +3403,6 @@ mod tests {
         ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
             self.inner.seat_page(seat, since, limit).await
         }
-
 
         async fn latest_matching(
             &self,

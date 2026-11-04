@@ -386,7 +386,6 @@ impl Spine for FakeSpine {
             .collect())
     }
 
-
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         if kinds.is_empty() {
             return Err(PijError::Adapter {
@@ -570,7 +569,10 @@ impl Spine for CountingSpine {
     async fn newest(&self) -> Result<Seq> {
         self.inner.newest().await
     }
-    async fn latest(&self, seat: &pij_core::model::SeatId) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+    async fn latest(
+        &self,
+        seat: &pij_core::model::SeatId,
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
         self.inner.latest(seat).await
     }
 
@@ -582,7 +584,6 @@ impl Spine for CountingSpine {
     ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
         self.inner.seat_page(seat, since, limit).await
     }
-
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         self.latest_calls.fetch_add(1, Ordering::Relaxed);

@@ -1571,7 +1571,10 @@ async fn spine_command(
             Ok(row)
         })
         .collect::<GovResult<_>>()?;
-    Ok(page_envelope(json!({"events": events, "cursor": cursor}), more))
+    Ok(page_envelope(
+        json!({"events": events, "cursor": cursor}),
+        more,
+    ))
 }
 
 /// Rows one `pij spine events` call returns when `--limit` is not given.
@@ -2261,7 +2264,10 @@ mod tests {
             self.inner.newest().await
         }
 
-        async fn latest(&self, seat: &pij_core::model::SeatId) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        async fn latest(
+            &self,
+            seat: &pij_core::model::SeatId,
+        ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
             self.inner.latest(seat).await
         }
 
@@ -2558,26 +2564,51 @@ mod tests {
             }
             assert_eq!(page["more"], true);
             assert_eq!(seqs(&page).len(), 5, "only a full page says more");
-            assert_eq!(Some(&cursor), seen.last(), "a full page resumes after its last row");
+            assert_eq!(
+                Some(&cursor),
+                seen.last(),
+                "a full page resumes after its last row"
+            );
         }
         assert_eq!(seen, appended, "pages cover every row once, in order");
         assert_eq!((pages, cursor), (3, head), "the last page leaves the head");
 
-        let whole = spine_events(&service, &["spine", "events"]).await.expect("default");
-        assert_eq!(seqs(&whole), appended, "the default limit covers a small spine");
-        assert!(whole.get("more").is_none(), "a complete read keeps its old shape");
+        let whole = spine_events(&service, &["spine", "events"])
+            .await
+            .expect("default");
+        assert_eq!(
+            seqs(&whole),
+            appended,
+            "the default limit covers a small spine"
+        );
+        assert!(
+            whole.get("more").is_none(),
+            "a complete read keeps its old shape"
+        );
         assert_eq!(whole["cursor"], head);
 
-        let first = spine_events(&service, &["spine", "events", "--peer", "pij-odd", "--limit", "4"])
-            .await
-            .expect("peer page");
+        let first = spine_events(
+            &service,
+            &["spine", "events", "--peer", "pij-odd", "--limit", "4"],
+        )
+        .await
+        .expect("peer page");
         let odd: Vec<u64> = appended.iter().copied().skip(1).step_by(2).collect();
-        assert_eq!(seqs(&first), odd[..4].to_vec(), "--peer pages that seat's rows only");
-        assert_eq!((first["more"].clone(), first["cursor"].clone()), (json!(true), json!(odd[3])));
+        assert_eq!(
+            seqs(&first),
+            odd[..4].to_vec(),
+            "--peer pages that seat's rows only"
+        );
+        assert_eq!(
+            (first["more"].clone(), first["cursor"].clone()),
+            (json!(true), json!(odd[3]))
+        );
         let since = odd[3].to_string();
         let rest = spine_events(
             &service,
-            &["spine", "events", "--peer", "pij-odd", "--since", &since, "--limit", "4"],
+            &[
+                "spine", "events", "--peer", "pij-odd", "--since", &since, "--limit", "4",
+            ],
         )
         .await
         .expect("peer rest");
@@ -2588,20 +2619,33 @@ mod tests {
         let render = spine_events(&service, &["spine", "render", "--limit", "2"])
             .await
             .expect("render page");
-        assert_eq!((render["more"].clone(), render["cursor"].clone()), (json!(true), json!(appended[1])));
+        assert_eq!(
+            (render["more"].clone(), render["cursor"].clone()),
+            (json!(true), json!(appended[1]))
+        );
 
         for bad in ["0", "5001", "many"] {
             let refused = spine_events(&service, &["spine", "events", "--limit", bad])
                 .await
                 .expect_err("out of range");
             assert_eq!(refused.code, "E-RS-ARG", "--limit {bad}");
-            assert!(refused.message.contains("5000"), "names the maximum: {}", refused.message);
+            assert!(
+                refused.message.contains("5000"),
+                "names the maximum: {}",
+                refused.message
+            );
         }
         assert!(
-            spine_events(&service, &["spine", "events", "--limit", "5000"]).await.is_ok(),
+            spine_events(&service, &["spine", "events", "--limit", "5000"])
+                .await
+                .is_ok(),
             "the maximum itself is allowed"
         );
-        assert_eq!(spine.tail_calls.load(Ordering::SeqCst), 0, "no whole-spine read");
+        assert_eq!(
+            spine.tail_calls.load(Ordering::SeqCst),
+            0,
+            "no whole-spine read"
+        );
     }
 
     #[tokio::test]

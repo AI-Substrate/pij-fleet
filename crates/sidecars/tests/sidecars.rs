@@ -896,7 +896,10 @@ impl Spine for FailBindingSpine {
         self.inner.newest().await
     }
 
-    async fn latest(&self, seat: &pij_core::model::SeatId) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+    async fn latest(
+        &self,
+        seat: &pij_core::model::SeatId,
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
         self.inner.latest(seat).await
     }
 

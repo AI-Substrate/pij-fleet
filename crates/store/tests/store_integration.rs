@@ -832,10 +832,7 @@ async fn seat_latest_page_and_latest_matching_seek_their_index() {
             vec!["SEARCH spine_events USING INDEX spine_by_seat (seat=?)".to_string()],
             "analyzed={analyze}"
         );
-        let page = format!(
-            "EXPLAIN QUERY PLAN {}",
-            pij_store::spine::SEAT_PAGE_SQL
-        );
+        let page = format!("EXPLAIN QUERY PLAN {}", pij_store::spine::SEAT_PAGE_SQL);
         let page_plan = sqlx::query(&page)
             .bind("pij-history")
             .bind(0_i64)
@@ -885,7 +882,11 @@ async fn seat_latest_page_and_latest_matching_seek_their_index() {
             "kinds the seat never wrote match nothing"
         );
         assert_eq!(
-            spine.latest(&seat).await.expect("latest").map(|event| event.at),
+            spine
+                .latest(&seat)
+                .await
+                .expect("latest")
+                .map(|event| event.at),
             Some(4),
             "the seat's newest row is its last append"
         );
