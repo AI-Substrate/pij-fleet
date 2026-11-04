@@ -7,12 +7,11 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use pij_core::model::{Envelope, ErrorKind};
+use pij_core::model::{Envelope, ErrorKind, SeatId};
 use serde_json::{Value, json};
 
 use super::governance::GovernanceRequest;
@@ -58,6 +57,7 @@ const CONTROL: [&str; 5] = ["why", "project", "file", "batch", "actor"];
 
 #[derive(Debug, Default)]
 struct Arguments {
+    leaf: String,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -66,11 +66,13 @@ struct Arguments {
 impl Arguments {
     fn parse(argv: &[String]) -> Result<Self, Refusal> {
         match argv {
-            [family, leaf, ..] if family == "directory" && leaf == "add" => {}
+            [family, leaf, ..]
+                if family == "directory"
+                    && matches!(leaf.as_str(), "add" | "assign" | "release") => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
                     "E-RS-UNPORTED",
-                    format!("directory {leaf}: unknown command; s02 ships `directory add`"),
+                    format!("directory {leaf}: unknown command; run `pij directory --help`"),
                 ));
             }
             _ => {
@@ -80,7 +82,10 @@ impl Arguments {
                 ));
             }
         }
-        let mut call = Self::default();
+        let mut call = Self {
+            leaf: argv[1].clone(),
+            ..Self::default()
+        };
         let mut tokens = argv[2..].iter();
         while let Some(token) = tokens.next() {
             let Some(flag) = token.strip_prefix("--") else {
@@ -111,6 +116,19 @@ impl Arguments {
                     format!("directory add: unsupported --{name}"),
                 ));
             }
+        }
+        if call.leaf != "add"
+            && (call.describes_a_role()
+                || call.get("file").is_some()
+                || call.get("batch").is_some())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: takes <role>[/<instance>] <seat> --why <text> [--project <slug>]",
+                    call.leaf
+                ),
+            ));
         }
         Ok(call)
     }
@@ -204,7 +222,11 @@ pub(crate) async fn handle(
             "--actor does not match the daemon-resolved caller",
         ));
     }
-    match add(&state, actor.id.as_str(), &request.caller, &call).await {
+    let result = match call.leaf.as_str() {
+        "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
+        _ => add(&state, actor.id.as_str(), &request.caller, &call).await,
+    };
+    match result {
         Ok(data) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, data)),
         Err(refusal) => refused(&refusal),
     }
@@ -298,16 +320,11 @@ async fn add(
         ),
     };
     let message = format!("{subject}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}");
-    let writer = Arc::clone(&state.services.community);
-    let written: Written =
-        tokio::task::spawn_blocking(move || writer.write(&repo, files, &message))
-            .await
-            .map_err(|error| {
-                Refusal::new(
-                    crate::community::E_GOV_GIT,
-                    format!("the writer stopped: {error}"),
-                )
-            })??;
+    let written: Written = state
+        .services
+        .directory
+        .write(&project, repo, files, message)
+        .await?;
 
     let pointers = pointer::for_write(&project, &written.paths, &written.commit);
     state
@@ -343,6 +360,66 @@ async fn add(
         data["id"] = only["id"].clone();
         data["path"] = only["path"].clone();
     }
+    Ok(data)
+}
+
+/// `directory assign|release <role>[/<instance>] <seat> --why <text>` (plan 195).
+async fn hold(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let [target, seat] = call.positions.as_slice() else {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("directory {} takes <role>[/<instance>] <seat>", call.leaf),
+        ));
+    };
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let (role, instance) = target.split_once('/').unwrap_or((target.as_str(), ""));
+    RolePaths::new(role)?;
+    if instance.contains('/') || instance.trim() != instance {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("bad instance key {instance:?}"),
+        ));
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let seat_id = SeatId::from(seat.as_str());
+    let directory = &state.services.directory;
+    let receipt = if call.leaf == "assign" {
+        let descriptor = state
+            .services
+            .registry
+            .get(&seat_id)
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+            .ok_or_else(|| Refusal::new("E-RS-NOT-FOUND", format!("seat {seat} does not exist")))?;
+        directory
+            .assign(crate::community::directory::AssignRequest {
+                project: project.clone(),
+                repo,
+                role: role.to_string(),
+                instance: instance.to_string(),
+                seat: descriptor,
+                actor: actor.clone(),
+                why,
+                machine: state.machine_alias.clone(),
+            })
+            .await?
+    } else {
+        directory
+            .release(&project, repo, role, instance, &seat_id, actor, &why)
+            .await?
+    };
+    let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+    data["project"] = json!(project);
+    data["role"] = json!(role);
+    data["seat"] = json!(seat);
     Ok(data)
 }
 
@@ -539,7 +616,7 @@ mod tests {
             "E-RS-ARG"
         );
         assert_eq!(
-            Arguments::parse(&argv(&["directory", "assign", "qa"]))
+            Arguments::parse(&argv(&["directory", "evict", "qa"]))
                 .unwrap_err()
                 .code,
             "E-RS-UNPORTED"

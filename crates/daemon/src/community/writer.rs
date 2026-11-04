@@ -101,6 +101,22 @@ impl CommunityWriter {
         files: Vec<NewFile>,
         message: &str,
     ) -> Result<Written, Refusal> {
+        self.write_with(repo, |_| Ok(files), message)
+    }
+
+    /// [`Self::write`], with the files built from the resolved governance root
+    /// while this worktree's lock is held, so a read-modify-write (a holders
+    /// document gaining a row) cannot interleave with another write. No extra
+    /// launch: the root is resolved once, here.
+    ///
+    /// # Errors
+    /// Whatever `build` refuses with, or any [`Self::write`] refusal.
+    pub fn write_with(
+        &self,
+        repo: &Path,
+        build: impl FnOnce(&GovernanceRoot) -> Result<Vec<NewFile>, Refusal>,
+        message: &str,
+    ) -> Result<Written, Refusal> {
         let root = root::resolve(repo)?;
         let lock = {
             let mut worktrees = self
@@ -110,6 +126,7 @@ impl CommunityWriter {
             Arc::clone(worktrees.entry(root.worktree.clone()).or_default())
         };
         let _serial = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let files = build(&root)?;
         self.write_serialised(root, files, message)
     }
 

@@ -50,6 +50,8 @@ const SCHEMAS: [(&str, &[u8]); 3] = [
 pub struct RolePaths {
     /// `roles/<id>/role.dd.json`.
     pub document: PathBuf,
+    /// `roles/<id>/holders.dd.json`: who has held the role (plan 195).
+    pub holders: PathBuf,
     /// `roles/<id>/memory/INDEX.md`: memory notes go beside it, one per file.
     pub memory_index: PathBuf,
     /// `roles/<id>/outputs/.gitkeep`: outputs go under `outputs/<yyyy-mm>/`.
@@ -80,6 +82,7 @@ impl RolePaths {
         let dir = PathBuf::from(COMMUNITY).join("roles").join(id);
         Ok(Self {
             document: dir.join("role.dd.json"),
+            holders: dir.join("holders.dd.json"),
             memory_index: dir.join("memory/INDEX.md"),
             outputs_keep: dir.join("outputs/.gitkeep"),
         })

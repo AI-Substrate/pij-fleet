@@ -171,6 +171,8 @@ pub struct Services {
     pub ddocs: Arc<community::ddocs::Ddocs>,
     /// The community directory's single writer (plan 190).
     pub community: Arc<community::writer::CommunityWriter>,
+    /// Role holding: assign, release and close-ends (plan 195).
+    pub directory: Arc<community::directory::DirectoryService>,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -538,6 +540,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         pij_store::SqliteOrchestration::new(spine_pool.clone()),
         Arc::clone(&queue),
     ));
+    let directory_store = pij_store::SqliteOrchestration::new(spine_pool.clone());
     let governance = Arc::new(http::governance::GovernanceService::new(
         pij_store::SqliteOrchestration::new(spine_pool),
         Arc::clone(&event_bus),
@@ -564,6 +567,12 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         Arc::clone(&ddocs) as Arc<dyn community::ddocs::Validator>,
         community::layout::schema_copies(),
         &community::writer::LOCK_RETRY,
+    ));
+    let directory = Arc::new(community::directory::DirectoryService::new(
+        Arc::clone(&community_writer),
+        directory_store,
+        Arc::clone(&event_bus),
+        Arc::new(community::directory::NoHook),
     ));
     Ok(Services {
         registry,
@@ -597,6 +606,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         codex_threads,
         ddocs,
         community: community_writer,
+        directory,
         offline: config.is_fully_offline(),
     })
 }

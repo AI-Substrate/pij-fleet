@@ -8,9 +8,10 @@ use std::process::Command;
 use std::sync::Arc;
 
 use pij_core::config::{AdapterChoice, Adapters, Config};
-use pij_core::model::{Harness, SeatDescriptor};
+use pij_core::model::{Harness, SeatDescriptor, SeatId};
 use pij_daemon::community::Refusal;
 use pij_daemon::community::ddocs::Validator;
+use pij_daemon::community::directory::{AfterAssign, DirectoryService, NoHook};
 use pij_daemon::community::layout::rendered;
 use pij_daemon::community::writer::{CommunityWriter, LOCK_RETRY};
 use pij_daemon::http::{HttpConfig, router_with_config};
@@ -113,7 +114,33 @@ fn repo(name: &str) -> Repo {
     Repo { root, main, gov }
 }
 
+struct Rig {
+    addr: SocketAddr,
+    server: tokio::task::JoinHandle<()>,
+    _fresh: FreshStore,
+    store: pij_store::SqliteOrchestration,
+    roles: Arc<pij_daemon::http::role::RoleService>,
+}
+
+/// Counts after-assign calls (ruling C6).
+#[derive(Default)]
+struct CountingHook(std::sync::Mutex<Vec<String>>);
+
+impl AfterAssign for CountingHook {
+    fn assigned(&self, project: &str, role: &str, instance: &str, seat: &SeatId) {
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("{project}:{role}/{instance}:{seat}"));
+    }
+}
+
 async fn daemon() -> (SocketAddr, tokio::task::JoinHandle<()>, FreshStore) {
+    let rig = rig(Arc::new(NoHook)).await;
+    (rig.addr, rig.server, rig._fresh)
+}
+
+async fn rig(hook: Arc<dyn AfterAssign>) -> Rig {
     let fresh = FreshStore::new();
     let config = Config {
         adapters: Adapters {
@@ -129,19 +156,41 @@ async fn daemon() -> (SocketAddr, tokio::task::JoinHandle<()>, FreshStore) {
     let mut services = pij_daemon::build_services(&config, &signals)
         .await
         .expect("services");
-    services.community = Arc::new(CommunityWriter::new(
+    let writer = Arc::new(CommunityWriter::new(
         Arc::new(FakeDdocs),
         vec![],
         &LOCK_RETRY,
     ));
-    let mut seat = SeatDescriptor::new(SEAT, Harness::Omp, "/tmp");
-    seat.pane = Some(PANE.to_string());
-    services.registry.put(seat).await.expect("seed seat");
+    let store = services.directory.store().clone();
+    services.community = Arc::clone(&writer);
+    services.directory = Arc::new(DirectoryService::new(
+        writer,
+        store.clone(),
+        Arc::clone(&services.event_bus),
+        hook,
+    ));
+    for (id, pane, parent) in [
+        (SEAT, Some(PANE), None),
+        ("pij-holder", None, Some(SEAT)),
+        ("pij-second", None, Some(SEAT)),
+    ] {
+        let mut seat = SeatDescriptor::new(id, Harness::Omp, "/tmp");
+        seat.pane = pane.map(str::to_string);
+        seat.parent = parent.map(SeatId::from);
+        services.registry.put(seat).await.expect("seed seat");
+    }
+    let roles = Arc::clone(&services.roles);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = router_with_config(services, HttpConfig::local(KEY.to_string()));
     let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-    (addr, server, fresh)
+    Rig {
+        addr,
+        server,
+        _fresh: fresh,
+        store,
+        roles,
+    }
 }
 
 async fn call(addr: SocketAddr, path: &str, argv: &[&str], cwd: &Path) -> Value {
@@ -423,4 +472,340 @@ async fn help_is_answered_not_refused() {
     .await;
     assert_eq!(unknown["details"]["code"], "E-RS-UNPORTED", "{unknown}");
     server.abort();
+}
+
+// Plan 195: holding roles.
+
+async fn with_roles(addr: SocketAddr, repo: &Repo) {
+    let main = repo.main.to_str().unwrap();
+    let created = call(
+        addr,
+        "/v1/project",
+        &["project", "create", "fleet", "--repo", main],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    for (id, holders) in [("pm-001", "one"), ("reviewer", "many")] {
+        let added = call(
+            addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--title",
+                id,
+                "--kind",
+                "general",
+                "--lifecycle",
+                "long-lived",
+                "--holders",
+                holders,
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+}
+
+fn holders_at_head(repo: &Repo, role: &str) -> Vec<Value> {
+    let text = git(
+        &repo.gov,
+        &[
+            "show",
+            &format!("HEAD:.harness/government/community/roles/{role}/holders.dd.json"),
+        ],
+    );
+    let document: Value = serde_json::from_str(&text).unwrap();
+    document["sections"][1]["value"].as_array().unwrap().clone()
+}
+
+/// AC2, AC3 (C1), AC5 (C6) and release.
+#[tokio::test]
+async fn assign_and_release_write_holders_set_seat_roles_and_call_the_hook_once_each() {
+    let repo = repo("pij-directory-assign");
+    let hook = Arc::new(CountingHook::default());
+    let rig = rig(hook.clone()).await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: &'static [&'static str]| call(rig.addr, "/v1/directory", argv, &repo.main);
+
+    let first = dir(&[
+        "directory",
+        "assign",
+        "pm-001",
+        "pij-holder",
+        "--why",
+        "lead",
+    ])
+    .await;
+    assert_eq!(first["ok"], true, "{first}");
+    assert_eq!(first["data"]["seat_role"], "pm");
+    assert_eq!(first["data"]["commit"], head(&repo));
+    assert_eq!(
+        first["data"]["path"],
+        ".harness/government/community/roles/pm-001/holders.dd.json"
+    );
+    assert!(first["data"].get("warning").is_none());
+    let rows = holders_at_head(&repo, "pm-001");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (
+            rows[0]["seat"].as_str(),
+            rows[0]["assigned_by"].as_str(),
+            rows[0]["why"].as_str()
+        ),
+        (Some("pij-holder"), Some(SEAT), Some("lead"))
+    );
+    assert_eq!(
+        rig.roles
+            .read_role(&SeatId::from("pij-holder"))
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("pm"),
+        "the directory and seat_roles agree (C1)"
+    );
+
+    let second = dir(&[
+        "directory",
+        "assign",
+        "pm-001",
+        "pij-second",
+        "--why",
+        "cover",
+    ])
+    .await;
+    assert_eq!(second["ok"], true, "{second}");
+    assert!(
+        second["data"]["warning"]
+            .as_str()
+            .unwrap()
+            .starts_with("W-ONE-HOLDER"),
+        "{second}"
+    );
+
+    let before = head(&repo);
+    for (argv, code) in [
+        (
+            &[
+                "directory",
+                "assign",
+                "pm-001",
+                "pij-holder",
+                "--why",
+                "again",
+            ][..],
+            "E-RS-DIRECTORY-HELD",
+        ),
+        (
+            &["directory", "assign", "qa", "pij-holder", "--why", "x"][..],
+            "E-RS-DIRECTORY-ROLE-MISSING",
+        ),
+        (
+            &["directory", "assign", "pm-001", "pij-nobody", "--why", "x"][..],
+            "E-RS-NOT-FOUND",
+        ),
+        (
+            &["directory", "assign", "pm-001", "pij-holder"][..],
+            "E-RS-ARG",
+        ),
+    ] {
+        let refused = call(rig.addr, "/v1/directory", argv, &repo.main).await;
+        assert_eq!(refused["details"]["code"], code, "{argv:?}: {refused}");
+    }
+    assert_eq!(head(&repo), before, "a refused assign writes nothing");
+
+    let review = dir(&[
+        "directory",
+        "assign",
+        "reviewer/114",
+        "pij-holder",
+        "--why",
+        "review",
+    ])
+    .await;
+    assert_eq!(review["ok"], true, "{review}");
+    assert_eq!(review["data"]["seat_role"], "worker");
+    assert_eq!(holders_at_head(&repo, "reviewer")[0]["instance_key"], "114");
+    assert_eq!(
+        *hook.0.lock().unwrap(),
+        [
+            "fleet:pm-001/:pij-holder",
+            "fleet:pm-001/:pij-second",
+            "fleet:reviewer/114:pij-holder",
+        ],
+        "one hook call per successful assign, none for a refused one"
+    );
+
+    let released = dir(&[
+        "directory",
+        "release",
+        "pm-001",
+        "pij-holder",
+        "--why",
+        "done",
+    ])
+    .await;
+    assert_eq!(released["ok"], true, "{released}");
+    let row = &holders_at_head(&repo, "pm-001")[0];
+    assert_eq!(
+        (row["released_by"].as_str(), row["release_why"].as_str()),
+        (Some(SEAT), Some("done"))
+    );
+    assert!(row["to"].is_string());
+    let open: Vec<_> = rig
+        .store
+        .open_assignments("pij-holder")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.role)
+        .collect();
+    assert_eq!(open, ["reviewer"]);
+    assert_eq!(
+        rig.roles
+            .read_role(&SeatId::from("pij-holder"))
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("worker"),
+        "release leaves seat_roles alone"
+    );
+    let again = dir(&[
+        "directory",
+        "release",
+        "pm-001",
+        "pij-holder",
+        "--why",
+        "done",
+    ])
+    .await;
+    assert_eq!(
+        again["details"]["code"], "E-RS-DIRECTORY-NOT-HELD",
+        "{again}"
+    );
+    rig.server.abort();
+}
+
+/// AC4: close ends holdings; a refused end stays pending and the next write
+/// for the project carries it.
+#[tokio::test]
+async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_write() {
+    let repo = repo("pij-directory-close");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    for argv in [
+        &[
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "lead",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "reviewer/114",
+            "pij-second",
+            "--why",
+            "review",
+        ][..],
+    ] {
+        let assigned = call(rig.addr, "/v1/directory", argv, &repo.main).await;
+        assert_eq!(assigned["ok"], true, "{assigned}");
+    }
+    let close = |seat: &str| {
+        reqwest::Client::new()
+            .post(format!("http://{}/v1/close", rig.addr))
+            .bearer_auth(KEY)
+            .json(&json!({"seat": seat, "reason": "done", "caller": {"TMUX_PANE": PANE, "cwd": repo.main}}))
+            .send()
+    };
+
+    let closed: Value = close("pij-holder").await.unwrap().json().await.unwrap();
+    assert_eq!(closed["ok"], true, "{closed}");
+    assert_eq!(
+        closed["data"]["directory"]["committed"][0]["project"], "fleet",
+        "{closed}"
+    );
+    let row = &holders_at_head(&repo, "pm-001")[0];
+    assert_eq!(
+        (row["release_why"].as_str(), row["released_by"].as_str()),
+        (Some("close"), Some(SEAT))
+    );
+
+    git(
+        &repo.main,
+        &["worktree", "remove", "--force", repo.gov.to_str().unwrap()],
+    );
+    let pending: Value = close("pij-second").await.unwrap().json().await.unwrap();
+    assert_eq!(
+        pending["ok"], true,
+        "the close never fails on the directory: {pending}"
+    );
+    assert!(pending["data"]["tombstoned_at"].is_number(), "{pending}");
+    assert_eq!(
+        pending["data"]["directory"]["pending"][0]["code"], "E-RS-GOV-ABSENT",
+        "{pending}"
+    );
+    let stored = rig.store.assignments("fleet").await.unwrap();
+    assert!(stored.iter().any(|row| row.seat == "pij-second"
+        && row.end_pending
+        && row.release_why.as_deref() == Some("close")));
+
+    git(
+        &repo.main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            repo.gov.to_str().unwrap(),
+            "prime-governance",
+        ],
+    );
+    assert!(
+        holders_at_head(&repo, "reviewer")[0]["to"].is_null(),
+        "not on the branch yet"
+    );
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "qa",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "next write",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    let row = &holders_at_head(&repo, "reviewer")[0];
+    assert_eq!(
+        row["release_why"], "close",
+        "the next write flushed the pending end"
+    );
+    assert!(
+        rig.store
+            .assignments("fleet")
+            .await
+            .unwrap()
+            .iter()
+            .all(|row| !row.end_pending)
+    );
+    rig.server.abort();
 }

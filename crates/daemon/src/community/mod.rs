@@ -7,7 +7,9 @@
 //! named, with the step that fixes it.
 
 pub mod ddocs;
+pub mod directory;
 mod git;
+pub mod holders;
 pub mod layout;
 pub mod pointer;
 pub mod role;
