@@ -115,3 +115,4 @@
 2026-11-04 note plan-197-after 60418 confirmed — anomalies 13.8s->1.03s CPU, 6.6GB->29MB footprint; node show 10.6s->0.06s; PA restriction lifted (badger told); #119 done
 2026-11-04 deliverable review-121 e13a834 sent — reviewer pij-preferred-salamander, security, perf; lock path stays $PIJ_SHARED_TARGET.lock, switch all seats at merge; node_modules symlink flagged to prime
 2026-11-04 deliverable review-122 94592ad sent — s04 PR: reviewer pij-substantial-mammal (window pij:review-122, worktree fleet-review-122), security + perf; heron import re-run after deploy
+2026-11-04 note c25 - folded — no symlinked node_modules anywhere; TS proof CI-only; told kestrel
