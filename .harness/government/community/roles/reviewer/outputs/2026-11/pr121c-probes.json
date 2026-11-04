@@ -1,0 +1,108 @@
+{
+  "head": "2ecbd26a8437593f03e27b1b7e412862d7900baf",
+  "results": [
+    {
+      "name": "original-missing-target-trailing-slash-reproducer",
+      "status": "pass",
+      "details": {
+        "order": [
+          "start first",
+          "end first",
+          "start second",
+          "end second"
+        ],
+        "targets_match": true,
+        "canonical_lock_held": true,
+        "interior_lock_held": false,
+        "second_waited": true,
+        "released": true
+      }
+    },
+    {
+      "name": "missing-target-doubled-and-trailing-separators",
+      "status": "pass",
+      "details": {
+        "order": [
+          "start first",
+          "end first",
+          "start second",
+          "end second"
+        ],
+        "targets_match": true,
+        "canonical_lock_held": true,
+        "interior_lock_held": false,
+        "second_waited": true,
+        "released": true
+      }
+    },
+    {
+      "name": "existing-target-doubled-and-trailing-separators",
+      "status": "pass",
+      "details": {
+        "order": [
+          "start first",
+          "end first",
+          "start second",
+          "end second"
+        ],
+        "targets_match": true,
+        "canonical_lock_held": true,
+        "interior_lock_held": false,
+        "second_waited": true,
+        "released": true
+      }
+    },
+    {
+      "name": "missing-target-under-symlink-repeated-separators",
+      "status": "pass",
+      "details": {
+        "order": [
+          "start first",
+          "end first",
+          "start second",
+          "end second"
+        ],
+        "targets_match": true,
+        "canonical_lock_held": true,
+        "interior_lock_held": false,
+        "second_waited": true,
+        "released": true
+      }
+    },
+    {
+      "name": "existing-target-symlink-trailing-separators",
+      "status": "pass",
+      "details": {
+        "order": [
+          "start first",
+          "end first",
+          "start second",
+          "end second"
+        ],
+        "targets_match": true,
+        "canonical_lock_held": true,
+        "interior_lock_held": false,
+        "second_waited": true,
+        "released": true
+      }
+    },
+    {
+      "name": "normalization-regression-mutation",
+      "status": "pass",
+      "details": {
+        "order": [
+          "start first",
+          "start second",
+          "end second",
+          "end first"
+        ],
+        "targets_match": false,
+        "canonical_lock_held": false,
+        "interior_lock_held": true,
+        "second_waited": false,
+        "released": true,
+        "mutation_detected": true
+      }
+    }
+  ]
+}
