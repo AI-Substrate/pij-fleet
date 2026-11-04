@@ -10,3 +10,5 @@ For rounds use instead:
 - The nudge's own "Needs a look" list already carries quiet, parked and stale-card seats.
 
 The gap: anomaly kinds other than stale cards (they appear only in `pij anomalies`). Told the prime. Lift this rule when #119 closes.
+
+**LIFTED 2026-11-04 16:28** (pm-001, on the prime's instruction): #119 fixed by #120 (merged b24cb58). One unscoped `pij anomalies --json` now costs about 1.0 s daemon CPU and 29 MB. Run it unscoped each round again (skill invariant 12).

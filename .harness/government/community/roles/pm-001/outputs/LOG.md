@@ -112,3 +112,5 @@
 2026-11-04 note pr-120-merged b24cb58 merged — bounced pid 60418; AFTER asked of wombat; PA rule lift pending the reading
 2026-11-04 note claim:plan-198 b24cb58 claimed — just shared-build wrapper (lock, disk floor, source refresh), coder kestrel
 2026-11-04 deliverable plan-198 0c0e858 done — just shared-build plan; coder kestrel
+2026-11-04 note plan-197-after 60418 confirmed — anomalies 13.8s->1.03s CPU, 6.6GB->29MB footprint; node show 10.6s->0.06s; PA restriction lifted (badger told); #119 done
+2026-11-04 deliverable review-121 e13a834 sent — reviewer pij-preferred-salamander, security, perf; lock path stays $PIJ_SHARED_TARGET.lock, switch all seats at merge; node_modules symlink flagged to prime
