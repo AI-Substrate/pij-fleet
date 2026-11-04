@@ -14,15 +14,85 @@
     },
     {
       "name": "summary",
-      "value": ""
+      "value": "Three tasks: the script and recipe, its fake-cargo tests, and the docs. Lock at $PIJ_SHARED_TARGET.lock as the plan says; the manual /tmp lock and the wrapper do not exclude each other, so seats switch together."
     },
     {
       "name": "tasks",
-      "value": []
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "harness/scripts/shared-build.sh and the just shared-build recipe",
+          "phase": "ph-98a1",
+          "state": "unchecked",
+          "success": "just shared-build [--timeout <min>] -- <cargo args> [--then <cargo args>]... refuses without an absolute PIJ_SHARED_TARGET; checks the disk floor (PIJ_DISK_FLOOR_GB, default 25) before the lock and before each cargo command; takes $PIJ_SHARED_TARGET.lock by atomic mkdir with an owner line (seat from PIJ_ID else USER, pid, worktree, start); touches the caller worktree's crates/*/src/{lib,main}.rs; runs each command with CARGO_TARGET_DIR and CARGO_INCREMENTAL=0; releases in a trap on exit, INT and TERM (cargo runs in the background under wait so a signal releases at once). Waits every 20 s printing the owner once; reports a dead owner pid as stale with the rm command and exits, never clearing it.",
+          "notes": "Repeated-path launches by absolute path (/bin/mkdir, /bin/df, /bin/sleep) per the cost rule; PIJ_SHARED_BUILD_DF is the test seam for df. Cost: nothing at rest; one mkdir + one df per 20 s per waiting caller; one df per cargo command.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "harness/scripts/shared-build.test.ts with a fake cargo",
+          "phase": "ph-98a1",
+          "state": "unchecked",
+          "success": "vitest drives the script with a temp target, a fake cargo that logs start/end times and its env, and a fake df: owner line and env (CARGO_TARGET_DIR, CARGO_INCREMENTAL=0), source touch, --then batching under one hold, release on success, failure and SIGTERM, refusal under the floor before and during the hold, two concurrent runs that never overlap, --timeout giving up by name, and a dead-owner lock reported stale with the clear command and left in place.",
+          "notes": "Temp dirs only; never the real shared target. No node_modules here: TS proof is CI on the exact head; the script is also exercised by hand with bash.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Docs: difficulty row and AGENTS.md",
+          "phase": "ph-98a1",
+          "state": "unchecked",
+          "success": "docs/difficulties.md row for the shared-target hazard (2026-11-04, resolved by just shared-build); AGENTS.md harness tooling names just shared-build for any seat building into a shared target; the PR states the cost.",
+          "notes": "Name the lock path change from the manual /tmp/pij-shared-target.lock in the PR so seats on the manual rule switch together.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        }
+      ]
     },
     {
       "name": "done_when",
-      "value": {}
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "just --list shows shared-build; the script refuses by name without PIJ_SHARED_TARGET or with a relative one, and under the floor (before and while holding the lock) runs no cargo and leaves no lock.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "CI vitest on the exact PR head runs harness/scripts/shared-build.test.ts green, covering no-overlap, release on failure and SIGTERM, the floor, timeout and stale-lock cases.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "The difficulty row and AGENTS.md line are in the diff; CI green on the exact head; reviewer and security verdicts posted.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ]
+      }
     },
     {
       "name": "goals",
@@ -96,6 +166,5 @@
       "name": "execution_guardrails",
       "value": []
     }
-  ],
-  "references": []
+  ]
 }
