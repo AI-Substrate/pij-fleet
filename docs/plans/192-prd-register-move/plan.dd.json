@@ -1,0 +1,188 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Move pij's PRD register into docs/project as PRD 002",
+        "slug": "prd-register-move",
+        "ordinal": 192,
+        "status": "draft",
+        "complexity": "CS-3",
+        "mode": "Simple",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "summary": "Roadmap 001 step s14, req-25. pij's requirements register becomes docs/project/prds/002-pij-base.dd.json under the pij/prd schema, and the old location gets a pointer. Draft: blocked on the rulings in open questions 1 to 3, because the register is not where AGENTS.md says and its source is private."
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Planning found (2026-11-04): pij-fleet's government root has no prd/ folder; AGENTS.md line 18 points at <government-root>/prd/base-prd.dd.json, which does not exist here. The register is in the legacy repo AI-Substrate/pij (PRIVATE), branch prime-governance, path .harness/government/prd/base-prd.dd.json: schema prd/requirements, 54 rows (36 unchecked, 10 checked, 4 shipped, 4 open), 113 KB, last changed 2026-09-07 (e05661c8). pij-fleet is PUBLIC. Rows cite private PR numbers, machine-local paths (/Users/...), scratch files and other projects (chainglass). pij/prd requires priority and done_when on every row; the source has neither. PRD number 002 is claimed for this plan by pm-001."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "pij's requirements live in docs/project/prds/ beside PRD 001, under the same schema.",
+        "No requirement, state or receipt is lost in the move.",
+        "Nothing private reaches the public repo.",
+        "Everything that pointed at the old path points at the new one."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Re-deciding any requirement. Rows move as they are; amendments come later, through the PRD procedure (s13).",
+        "Editing the legacy repo. Its prime commits the retirement pointer there."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Frozen source. The source commit sha is recorded, and the legacy register's writer is told it is frozen before conversion starts.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Faithful conversion. Every source row becomes a pij/prd requirement with the same id and title; statement comes from the source requirement; state follows the mapping ruled in open question 2; done_when and priority follow open question 3; receipts (completed_evidence) move to delivered_by and note. The source meta's rules (single writer, receipt rule, register discipline) become the why and a changelog row. Row count in equals row count out, checked by script. PRD 002 validates clean.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Publication. PRD 002 holds no machine paths, credentials, private transcript text or other projects' names, and private PR references follow open question 1. The security verdict passes on the exact head.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Pointers. AGENTS.md's Governance section and skills/pij/references/prime/rituals/bootstrap.md point at docs/project/prds/002-pij-base.dd.json. The legacy register gets a one-line pointer, committed by its prime.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "States. In this PR: roadmap s14 goes to shipped with its plan cell set to docs/plans/192-prd-register-move; req-25 goes to shipped. PRD 001 and roadmap 001 validate clean.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-a951",
+          "title": "Convert, scrub and publish the register",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "brief": "AC1 to AC5. docs-system seat, after s13 and after the rulings. CS-3: 54 rows, and done_when has to be written for most of them."
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "question": "Ruling: may the register, scrubbed, be published in public pij-fleet? Options: (a) move all 54 rows, scrubbed; private PR numbers become 'AI-Substrate/pij#N (private)' or are dropped to the sha; (b) move only rows still open (40), with a note that shipped history stays in the private repo; (c) do not move it; amend req-25 to drop. Recommended: (a). Needs Jordan.",
+          "state": "unchecked"
+        },
+        {
+          "question": "State mapping into planned, in-progress, shipped, dropped. Recommended: checked and shipped to shipped; unchecked and open to planned, or in-progress where the row's note names live work.",
+          "state": "unchecked"
+        },
+        {
+          "question": "done_when and priority for rows that lack them. Recommended: shipped rows use their receipt rule as done_when; other rows get the requirement's own testable clause, or 'to be written' in note; priority 'should' unless the row says must.",
+          "state": "unchecked"
+        }
+      ]
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Private content published in a public repo.",
+          "likelihood": "High",
+          "impact": "Critical",
+          "mitigation": "Ruling first (open question 1), scrub script, security verdict on the exact head."
+        },
+        {
+          "risk": "Writing done_when for 50 rows turns the move into a rewrite.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "Open question 3: derive from receipts for shipped rows; a placeholder rule for the rest, flagged in note."
+        },
+        {
+          "risk": "The legacy register keeps being edited during the move.",
+          "likelihood": "Low",
+          "impact": "Medium",
+          "mitigation": "AC1 freezes it by sha."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Read the source only from git by sha; never copy scratch/ or .harness/temp/ files it cites.",
+        "No `git add -A`, no `--no-verify`.",
+        "Do not start until the rulings in open questions 1 to 3 are recorded in assets/rulings.md."
+      ]
+    }
+  ]
+}
