@@ -1,0 +1,209 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Role templates: core roles, security, and versioned diffs",
+        "slug": "role-templates",
+        "ordinal": 194,
+        "complexity": "CS-3",
+        "summary": "Roadmap 001 step s03. pij ships versioned role templates (prime, pm, pa, coder, reviewer, and security), `pij directory add <id> --from template:<name>` copies one onto the governance branch, and when a template moves ahead `pij directory` shows the difference without applying it. Per ruling C22 the core roles are prompted, not created; per C18 the prompts say templates are examples, not a checklist.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Today every role is written by hand (the eight in community/roles/ were). This plan gives pij a small set of fresh, public templates and a way to start a role from one, while keeping C18's point that a community's roles come from its needs. Templates ship inside the daemon binary, as the pij/* schemas already do (crates/daemon/src/community/layout.rs:26-45), so a template needs no extra install and no launch. Every shipped version is kept, so the drift between the version a role came from and the current one can be shown exactly."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A prime can start any of the six common roles from a template in one command and edit it freely afterwards.",
+        "A role made from an older template version shows what changed upstream, and nothing is applied without a person doing it.",
+        "A new directory prompts for the core roles and for security without creating them, and says templates are examples (C18, C22)."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Auto-creating roles (ruled out by C22).",
+        "The optional templates (devcontainer, researcher and so on): s10.",
+        "The prime's wider prompts to spot uncovered needs (req-27 in full): s09 and s10. This plan only puts the 'templates are examples' wording into the s03 prompts.",
+        "Assign and the view itself (s04, plan 195). The prompts here show inside s04's `pij directory`."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Templates. docs-system writes six templates under `templates/roles/<name>/v1/role.dd.json`: prime, pm, pa, coder and reviewer (core) and security (recommended). Each validates against pij/role, carries `template` and `template_version`, has a standing packet written fresh for a public repo (no private references, no machine-local paths), and leaves project-specific fields (scope paths, instance key) as clearly marked placeholders. A `templates/roles/README.md` says they are examples to adapt, not a checklist (C18).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "From a template. `pij directory add <id> --from template:<name>[@v<n>]` copies the named version (latest by default) through the plan 190 writer, with the role id set to <id> and `template`/`template_version` recorded, then lets flags override fields as `add` already does. `--from file:<brief>` is accepted as the spelling of today's `--brief` (the brief is referenced, not copied; req-13). An unknown template or version refuses by name and lists what exists. `pij directory templates` lists the templates with their versions.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Shipped in the binary. Every version of every template is embedded in the daemon at build time (include_bytes!, as for the schema copies); a test fails if a file under templates/roles/ is not embedded. No template read launches anything.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Drift. For a role made from template T at version n when T's latest is m > n, `pij directory` marks it and `pij directory template-diff <id>` prints the diff between T@vn and T@vm (what changed upstream), computed in-process. Nothing is applied; the role's local edits are untouched. A role whose template is current, or that came from no template, shows no drift.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Prompts (C22, C18). `pij directory` for a project lists each missing core role (prime, pm, pa, coder, reviewer) with its runnable `pij directory add <id> --from template:<id>` line, and shows a security prompt until a role whose template is security, or whose id is security, exists. The prompt text says the templates are examples and that roles should come from what the project's work needs. Nothing is created automatically. Adding security clears its prompt.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "req-14 reworded (C22). In this PR, req-14's statement and done_when change from 'creating a directory creates the core roles' to 'a new directory prompts for the core roles and for security until each exists; nothing is created automatically'. A changelog row cites C22.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Cost. Templates are embedded bytes: listing, copying (beyond the one writer commit an add already costs) and diffing launch nothing; nothing runs on a timer.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Docs and states. docs/how/pij-rs-api.md documents --from, templates and template-diff; the skill's verb coverage carries them; the community procedures mention templates as examples. In this PR: roadmap s03 goes to complete with its plan cell set to docs/plans/194-role-templates; req-13 and req-14 go to shipped; req-27 goes to in-progress (the s03 wording only); c-templates goes to in-progress (the optional templates come in s10). All project docs validate clean.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-94a1",
+          "title": "The six templates",
+          "state": "unchecked",
+          "brief": "AC1. docs-system writes templates/roles/ (six v1 templates and the README) on branch plan/194-templates, which the coder merges. No build. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        },
+        {
+          "id": "ph-94b2",
+          "title": "--from template, embedding, drift and prompts",
+          "state": "unchecked",
+          "depends_on": [
+            "ph-94a1"
+          ],
+          "brief": "AC2 to AC8. Coder. Embedding, --from template and file, templates listing, template-diff, the prompts inside s04's `pij directory` view (so it starts after plan 195 merges, or adds the prompts to the view there), req-14 rewording, docs and flips. CS-3.",
+          "tasks": "assets/tasks/phase-2/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code facts (2026-11-04, main 6ccd4d8): no templates/ directory exists; no role briefs in the repo. pij/role schema (.dd/schemas/pij/role/schema.json:43-208): meta has optional template, template_version and default_limit (:72-80); default_seat has harness, model, effort (:126-144); standing_packet is required, inline text or brief link (:162-182); changelog rows (date, by, why) are required (:184-208), and the writer stamps one (crates/daemon/src/community/role.rs:133-177). `directory add` maps flags to RoleFields (crates/daemon/src/http/directory.rs:31-55, 128-150), builds via role::from_fields, which already writes template and template_version (role.rs:55-77), or reads --file; brief input today is --brief (role.rs:48-52, 115-123). Schemas are embedded with include_bytes! in crates/daemon/src/community/layout.rs:26-45. Rulings: C18 (templates are examples, not a checklist), C22 (core roles prompted, not created; security prompted until it exists; req-14 reworded). The wave B dogfood found the hand-written roles' 'instance of pm' has no pm template to point at yet; this plan supplies it."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "question": "Ruled C22: core roles are prompted, not created; security is prompted until it exists; req-14 is reworded.",
+          "state": "checked",
+          "answer": "C22, folded into AC5 and AC6."
+        },
+        {
+          "question": "Is `prime` a role template at all, given the prime is designated, not assigned (seat roles C1 never re-role a prime)? Recommended: yes, as a description of the prime's duties for the directory, with a note that assign never applies to it.",
+          "state": "unchecked"
+        }
+      ]
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Templates read like a checklist and communities copy them wholesale, against C18.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "README and prompt wording (AC1, AC5); prompts list commands, never create; s09 adds needs-based prompts."
+        },
+        {
+          "risk": "Template text leaks private or machine-local details from the hand-written roles it is modelled on.",
+          "likelihood": "Medium",
+          "impact": "High",
+          "mitigation": "Written fresh (req-13); security verdict on the exact head checks it."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Templates are written fresh; never copy the hand-written roles' text, which mentions machine paths and this fleet's seats.",
+        "Builds scoped with -p; check `df -h /System/Volumes/Data` first; stop and tell pm-001 under 25 GB.",
+        "No `git add -A`, no `--no-verify`. No node_modules: TS proof is CI on the exact head.",
+        "One push per review round; no pushes after a PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
