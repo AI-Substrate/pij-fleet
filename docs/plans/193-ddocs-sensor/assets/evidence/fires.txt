@@ -35,3 +35,19 @@ exit=0
 ## 7. PIJ_DDOCS set but not absolute (refuses, no PATH fallback)
 ddocs-check: UNAVAILABLE: PIJ_DDOCS must be an absolute path, got "ddocs". Nothing was validated. Set PIJ_DDOCS to the ddocs executable or put ddocs on PATH.
 exit=2
+
+## 8. docs/project unreadable (chmod 000) while a project roadmap inside it is broken (review F001)
+ddocs-check: could not read 1 directory, so nothing below it was checked:
+  docs/project: EACCES: permission denied, scandir 'docs/project'
+exit=1
+
+## 9. permissions restored, same broken roadmap: now caught
+ddocs-check: 2 failure(s) in 6 document(s):
+  docs/project/roadmaps/001-pij-community.dd.json: validate: value "finished" is not in planned, in-progress, complete, abandoned
+  docs/project/roadmaps/001-pij-community.dd.json: build --check: docs/project/roadmaps/001-pij-community.dd.md drifted from the render of docs/project/roadmaps/001-pij-community.dd.json
+Fix with ddocs (set/add), then `ddocs validate <file>` and `ddocs build <file>`; see skills/pij/references/community/README.md.
+exit=1
+
+## 10. restored
+ddocs-check: 6 document(s) validate clean and their .dd.md are current (ddocs via PATH).
+exit=0

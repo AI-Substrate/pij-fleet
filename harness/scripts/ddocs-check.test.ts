@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { findDocuments, judgeBuildCheck, judgeValidate, resolveDdocs } from "./ddocs-check.js";
+import {
+	type DirListing,
+	findDocuments,
+	judgeBuildCheck,
+	judgeValidate,
+	resolveDdocs,
+} from "./ddocs-check.js";
 
 describe("ddocs-check", () => {
 	describe("resolveDdocs (ruling C10: PIJ_DDOCS, else PATH)", () => {
@@ -31,9 +37,19 @@ describe("ddocs-check", () => {
 			});
 			expect(resolveDdocs({ PATH: "/bin" }, isExecutable).ok).toBe(false);
 		});
+
+		it("skips relative PATH entries, which would resolve against the cwd", () => {
+			const anywhere = () => true;
+			expect(resolveDdocs({ PATH: "node_modules/.bin:/usr/local/bin" }, anywhere)).toEqual({
+				ok: true,
+				path: "/usr/local/bin/ddocs",
+				via: "PATH",
+			});
+			expect(resolveDdocs({ PATH: "bin:." }, anywhere).ok).toBe(false);
+		});
 	});
 
-	it("collects .dd.json files under the roots, sorted, skipping node_modules", () => {
+	describe("findDocuments", () => {
 		const tree: Record<string, Array<{ name: string; isDir: boolean }>> = {
 			"docs/project": [
 				{ name: "roadmaps", isDir: true },
@@ -49,11 +65,29 @@ describe("ddocs-check", () => {
 				{ name: "node_modules", isDir: true },
 			],
 			"docs/project/roadmaps/node_modules": [{ name: "junk.dd.json", isDir: false }],
+			skills: [{ name: "a.dd.json", isDir: false }],
 		};
-		expect(findDocuments(["docs/project", "absent"], (dir) => tree[dir] ?? [])).toEqual([
-			"docs/project/prds/001-x.dd.json",
-			"docs/project/roadmaps/001-x.dd.json",
-		]);
+		const listDir = (dir: string): DirListing => {
+			const entries = tree[dir];
+			return entries
+				? { ok: true, entries }
+				: { ok: false, error: `EACCES: permission denied, scandir '${dir}'` };
+		};
+
+		it("collects .dd.json files under the roots, sorted, skipping node_modules", () => {
+			expect(findDocuments(["docs/project"], listDir)).toEqual({
+				documents: ["docs/project/prds/001-x.dd.json", "docs/project/roadmaps/001-x.dd.json"],
+				errors: [],
+			});
+		});
+
+		it("reports an unreadable root as an error, never as an empty tree", () => {
+			const found = findDocuments(["skills", "docs/locked"], listDir);
+			expect(found.documents).toEqual(["skills/a.dd.json"]);
+			expect(found.errors).toEqual([
+				{ path: "docs/locked", error: expect.stringContaining("permission denied") },
+			]);
+		});
 	});
 
 	describe("judgeValidate", () => {

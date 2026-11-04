@@ -23,7 +23,7 @@
           "proof": "BUILD: harness/scripts/ddocs-check.test.ts (vitest) on resolveDdocs, findDocuments, judgeValidate and judgeBuildCheck with injected ports.",
           "state": "checked",
           "probe": "harness/scripts/ddocs-check.test.ts",
-          "receipt": "vitest harness/scripts/ddocs-check.test.ts: 7 passed (main checkout's vitest, --root this tree)"
+          "receipt": "vitest harness/scripts/ddocs-check.test.ts: 9 passed (main checkout's vitest, --root this tree); the unreadable-root test fails when the error branch is removed"
         },
         {
           "id": "bp-0002",
@@ -45,7 +45,7 @@
           "proof": "BUILD: live transcript in assets/evidence/fires.txt: clean pass, missing-link failure, hand-edited .dd.md failure, restored pass, UNAVAILABLE (exit 2), CI warn mode (exit 0 with annotation), bad PIJ_DDOCS refusal.",
           "state": "checked",
           "probe": "assets/evidence/fires.txt",
-          "receipt": "assets/evidence/fires.txt"
+          "receipt": "assets/evidence/fires.txt, 10 cases including chmod 000 docs/project"
         },
         {
           "id": "bp-0004",

@@ -34,21 +34,44 @@ export function resolveDdocs(
 			: { ok: false, reason: `PIJ_DDOCS=${pinned} is not an executable file` };
 	}
 	for (const dir of (env.PATH ?? "").split(delimiter)) {
-		if (dir === "") continue;
+		// A relative PATH entry would resolve against the caller's cwd; skip it.
+		if (!isAbsolute(dir)) continue;
 		const candidate = join(dir, "ddocs");
 		if (isExecutable(candidate)) return { ok: true, path: candidate, via: "PATH" };
 	}
 	return { ok: false, reason: "ddocs is not on PATH and PIJ_DDOCS is unset" };
 }
 
-/** Every `*.dd.json` under the roots, repo-relative and sorted. */
+export type DirListing =
+	| {
+			readonly ok: true;
+			readonly entries: ReadonlyArray<{ readonly name: string; readonly isDir: boolean }>;
+	  }
+	| { readonly ok: false; readonly error: string };
+
+export interface Discovery {
+	readonly documents: string[];
+	readonly errors: ReadonlyArray<{ readonly path: string; readonly error: string }>;
+}
+
+/**
+ * Every `*.dd.json` under the roots, repo-relative and sorted. A directory that
+ * can't be read, including a root that doesn't exist, is an error, never an
+ * empty listing: an unreadable tree must not pass as a clean one.
+ */
 export function findDocuments(
 	roots: readonly string[],
-	listDir: (dir: string) => ReadonlyArray<{ readonly name: string; readonly isDir: boolean }>,
-): string[] {
+	listDir: (dir: string) => DirListing,
+): Discovery {
 	const found: string[] = [];
+	const errors: Array<{ path: string; error: string }> = [];
 	const walk = (dir: string): void => {
-		for (const entry of listDir(dir)) {
+		const listing = listDir(dir);
+		if (!listing.ok) {
+			errors.push({ path: dir, error: listing.error });
+			return;
+		}
+		for (const entry of listing.entries) {
 			const path = `${dir}/${entry.name}`;
 			if (entry.isDir) {
 				if (!SKIPPED_DIRS.has(entry.name)) walk(path);
@@ -58,7 +81,7 @@ export function findDocuments(
 		}
 	};
 	for (const root of roots) walk(root);
-	return found.sort();
+	return { documents: found.sort(), errors };
 }
 
 interface Envelope {
@@ -117,14 +140,15 @@ function isExecutableFile(path: string): boolean {
 }
 
 function listDirectory(root: string) {
-	return (dir: string) => {
+	return (dir: string): DirListing => {
 		try {
-			return readdirSync(resolve(root, dir), { withFileTypes: true }).map((entry) => ({
+			const entries = readdirSync(resolve(root, dir), { withFileTypes: true }).map((entry) => ({
 				name: entry.name,
 				isDir: entry.isDirectory(),
 			}));
-		} catch {
-			return [];
+			return { ok: true, entries };
+		} catch (error) {
+			return { ok: false, error: error instanceof Error ? error.message : String(error) };
 		}
 	};
 }
@@ -149,7 +173,17 @@ function main(): void {
 		return;
 	}
 
-	const documents = findDocuments(DDOCS_ROOTS, listDirectory(root));
+	const { documents, errors } = findDocuments(DDOCS_ROOTS, listDirectory(root));
+	if (errors.length > 0) {
+		process.stderr.write(
+			`ddocs-check: could not read ${errors.length === 1 ? "1 directory" : `${errors.length} directories`}, so nothing below ${errors.length === 1 ? "it" : "them"} was checked:\n`,
+		);
+		for (const failure of errors) {
+			process.stderr.write(`  ${failure.path}: ${failure.error.replaceAll(`${root}/`, "")}\n`);
+		}
+		process.exitCode = 1;
+		return;
+	}
 	if (documents.length === 0) {
 		process.stderr.write(
 			`ddocs-check: found no .dd.json under ${DDOCS_ROOTS.join(", ")}; refusing to pass on nothing.\n`,
