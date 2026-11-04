@@ -44,7 +44,7 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 | tk-0007 | Batch import, all or nothing | — | ph-ebe5 | [x] checked | — | — | [tk-0007](tasks.dd.md#done-when) | `pij directory add --batch &lt;dir&gt;` validates every role, then writes them in one commit; one invalid document commits none. | Blocked on the add task. Eight fixtures shaped like the hand-written roles. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0008 | Docs: API, skill table, ping pid | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents the verb and its refusal codes and data.pid; skills/pij/SKILL.md CLI-verb table and the shim route table carry `directory`; docs/how/macos-defender.md (Measure launches) shows the pid. | Shared docs; keep edits to the named sections. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria), [ac-0010](../../../plan.dd.md#acceptance-criteria) |
 | tk-0009 | Cost receipts on a private daemon | — | ph-ebe5 | [x] checked | — | — | [tk-0009](tasks.dd.md#done-when) | Before and after spawn readings with data.pid, the per-write launch count for one add and one eight-role batch, and spawn_sites.rs covering every new launch site; recorded in the backpressure cost row. | Private daemon only, never the prod daemon. | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-000a | Doc state flips and req-03 rewording | — | ph-ebe5 | [ ] unchecked | — | — | [tk-000a](tasks.dd.md#done-when) | Roadmap s02 to shipped with plan cell set; req-03 reworded to C8; req-02, req-03 shipped; req-04, req-05, req-17, req-19 in-progress; c-role-schema, c-layout, c-writer shipped. Rebase after the s13 PR (191) merges. | Biome-format any docs/project JSON after ddocs writes it. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-000a | Doc state flips and req-03 rewording | — | ph-ebe5 | [x] checked | — | — | [tk-000a](tasks.dd.md#done-when) | Roadmap s02 to shipped with plan cell set; req-03 reworded to C8; req-02, req-03 shipped; req-04, req-05, req-17, req-19 in-progress; c-role-schema, c-layout, c-writer shipped. Rebase after the s13 PR (191) merges. | Biome-format any docs/project JSON after ddocs writes it. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-000b | Gates, PR and report to pm-001 | — | ph-ebe5 | [ ] unchecked | — | — | [tk-000b](tasks.dd.md#done-when) | `just rust-check` (scoped where possible), `harness checks`, open the PR against main, send pm-001 the PR number, head sha, checks result and bp-0005 readings. | The job is not finished until the send has gone. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
 | tk-000c | Writer enforces the standing_packet pairing (pm-001, from docs-system) | — | ph-ebe5 | [x] checked | — | — | [tk-000c](tasks.dd.md#done-when) | ddocs has no union type, so the writer refuses an inline packet without text or with a brief, and a brief packet without a brief or with text. | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) |
 | tk-000d | Biome-format PRD 001 after the phase 1 merge (pm-001) | — | ph-ebe5 | [x] checked | — | — | [tk-000d](tasks.dd.md#done-when) | PRD 001's JSON is Biome-formatted and still validates. | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
@@ -115,9 +115,9 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 
 ### tk-000a
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0010 | `ddocs validate` is clean on PRD, blueprint and roadmap 001 with the flips applied after rebasing on 191. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0010 | `ddocs validate` is clean on PRD, blueprint and roadmap 001 with the flips applied after rebasing on 191. | [x] checked | [bp-0006](../../backpressure.dd.md#rows) | 11db435: ddocs validate ok (0 error, 0 warn) on PRD, blueprint and roadmap 001 after merging main (191) at 23ba757 |
 
 ### tk-000b
 

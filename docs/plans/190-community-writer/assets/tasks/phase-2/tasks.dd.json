@@ -138,7 +138,7 @@
           "id": "tk-000a",
           "title": "Doc state flips and req-03 rewording",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Roadmap s02 to shipped with plan cell set; req-03 reworded to C8; req-02, req-03 shipped; req-04, req-05, req-17, req-19 in-progress; c-role-schema, c-layout, c-writer shipped. Rebase after the s13 PR (191) merges.",
           "notes": "Biome-format any docs/project JSON after ddocs writes it.",
           "satisfies": [
@@ -310,8 +310,9 @@
           {
             "id": "dw-0010",
             "assertion": "`ddocs validate` is clean on PRD, blueprint and roadmap 001 with the flips applied after rebasing on 191.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006",
+            "receipt": "11db435: ddocs validate ok (0 error, 0 warn) on PRD, blueprint and roadmap 001 after merging main (191) at 23ba757"
           }
         ],
         "tk-000b": [
