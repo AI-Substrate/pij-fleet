@@ -85,7 +85,7 @@
           "id": "tk-0006",
           "title": "pij directory add, after merging phase 1",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Merge origin/plan/190-schemas, then wire `pij directory add <id>` (fields as flags, or --file JSON) through /v1/directory to the writer. Appends one changelog row with the caller seat and --why; returns the commit sha and repo-relative path. Native pij-rs verb plus shim route.",
           "notes": "Blocked on phase 1 landing (pm-001 signals). Any schema change after that needs a docs-system verdict (C7).",
           "satisfies": [
@@ -113,7 +113,7 @@
           "id": "tk-0008",
           "title": "Docs: API, skill table, ping pid",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "docs/how/pij-rs-api.md documents the verb and its refusal codes and data.pid; skills/pij/SKILL.md CLI-verb table and the shim route table carry `directory`; docs/how/macos-defender.md (Measure launches) shows the pid.",
           "notes": "Shared docs; keep edits to the named sections.",
           "satisfies_toward": [
@@ -150,7 +150,7 @@
           "id": "tk-000b",
           "title": "Gates, PR and report to pm-001",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "`just rust-check` (scoped where possible), `harness checks`, open the PR against main, send pm-001 the PR number, head sha, checks result and bp-0005 readings.",
           "notes": "The job is not finished until the send has gone.",
           "satisfies_toward": [
@@ -276,8 +276,9 @@
           {
             "id": "dw-000c",
             "assertion": "skill_verb_coverage.rs and generation-skill-coverage.test.ts pass with `directory` added.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003",
+            "receipt": "skill_verb_coverage.rs local pass; generation-skill-coverage.test.ts CI on ce95a06 (check (22), check (24) pass, run 41768186657)"
           }
         ],
         "tk-0007": [
@@ -293,8 +294,9 @@
           {
             "id": "dw-000e",
             "assertion": "pij-rs-api.md and macos-defender.md show the verb, its refusals and data.pid; the skill coverage gates pass.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006",
+            "receipt": "eee273b docs; skill coverage gates: Rust local, TS CI on ce95a06"
           }
         ],
         "tk-0009": [
@@ -319,8 +321,9 @@
           {
             "id": "dw-0011",
             "assertion": "`just rust-check` and `harness checks` pass on the PR head; pm-001 has the PR number, head sha, checks and cost readings.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006",
+            "receipt": "just rust-check local pass (1840/0); TS half of harness checks CI on ce95a06 (check (22), check (24), rust-lint, rust-test pass); PR #114; pm-001 sent the PR, head, checks and cost readings"
           }
         ],
         "tk-000c": [

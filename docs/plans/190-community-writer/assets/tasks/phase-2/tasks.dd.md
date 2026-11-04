@@ -40,12 +40,12 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 | tk-0003 | Community layout and checkout-safe writer (C8, C9) | — | ph-ebe5 | [x] checked | — | — | [tk-0003](tasks.dd.md#done-when) | One layout module owns every community path (community/roles/&lt;id&gt;/role.dd.json, role.dd.md, memory/, outputs/; .dd/schemas/pij/* copies at the worktree root). The writer serialises per project, refuses foreign edits on its own paths, writes, validates, builds, then `git add -- &lt;paths&gt;` and `git commit --only -- &lt;paths&gt;` with seat trailers. Refreshes schema copies in the same commit when pij's version moves. | Built against a placeholder document until phase 1 lands; the role parse is wired in the add task. Tests run against real temporary git repos, git never mocked. | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | Store pointer: migration 0031 and rebuild | — | ph-ebe5 | [x] checked | — | — | [tk-0004](tasks.dd.md#done-when) | Migration 0031 adds a community pointer table (project, repo-relative path, commit). Each write records its rows; a rebuild walks the governance branch head and restores the same rows. | Migration number 0031 is claimed by pm-001 for this plan. | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Ping reports the daemon pid | — | ph-ebe5 | [x] checked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij-rs --json ping` carries data.pid from std::process::id(); no launch. | Independent of everything else in the phase. | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | pij directory add, after merging phase 1 | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | Merge origin/plan/190-schemas, then wire `pij directory add &lt;id&gt;` (fields as flags, or --file JSON) through /v1/directory to the writer. Appends one changelog row with the caller seat and --why; returns the commit sha and repo-relative path. Native pij-rs verb plus shim route. | Blocked on phase 1 landing (pm-001 signals). Any schema change after that needs a docs-system verdict (C7). | [ac-0003](../../../plan.dd.md#acceptance-criteria) | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0006 | pij directory add, after merging phase 1 | — | ph-ebe5 | [x] checked | — | — | [tk-0006](tasks.dd.md#done-when) | Merge origin/plan/190-schemas, then wire `pij directory add &lt;id&gt;` (fields as flags, or --file JSON) through /v1/directory to the writer. Appends one changelog row with the caller seat and --why; returns the commit sha and repo-relative path. Native pij-rs verb plus shim route. | Blocked on phase 1 landing (pm-001 signals). Any schema change after that needs a docs-system verdict (C7). | [ac-0003](../../../plan.dd.md#acceptance-criteria) | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
 | tk-0007 | Batch import, all or nothing | — | ph-ebe5 | [x] checked | — | — | [tk-0007](tasks.dd.md#done-when) | `pij directory add --batch &lt;dir&gt;` validates every role, then writes them in one commit; one invalid document commits none. | Blocked on the add task. Eight fixtures shaped like the hand-written roles. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0008 | Docs: API, skill table, ping pid | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents the verb and its refusal codes and data.pid; skills/pij/SKILL.md CLI-verb table and the shim route table carry `directory`; docs/how/macos-defender.md (Measure launches) shows the pid. | Shared docs; keep edits to the named sections. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria), [ac-0010](../../../plan.dd.md#acceptance-criteria) |
+| tk-0008 | Docs: API, skill table, ping pid | — | ph-ebe5 | [x] checked | — | — | [tk-0008](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents the verb and its refusal codes and data.pid; skills/pij/SKILL.md CLI-verb table and the shim route table carry `directory`; docs/how/macos-defender.md (Measure launches) shows the pid. | Shared docs; keep edits to the named sections. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria), [ac-0010](../../../plan.dd.md#acceptance-criteria) |
 | tk-0009 | Cost receipts on a private daemon | — | ph-ebe5 | [x] checked | — | — | [tk-0009](tasks.dd.md#done-when) | Before and after spawn readings with data.pid, the per-write launch count for one add and one eight-role batch, and spawn_sites.rs covering every new launch site; recorded in the backpressure cost row. | Private daemon only, never the prod daemon. | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-000a | Doc state flips and req-03 rewording | — | ph-ebe5 | [x] checked | — | — | [tk-000a](tasks.dd.md#done-when) | Roadmap s02 to shipped with plan cell set; req-03 reworded to C8; req-02, req-03 shipped; req-04, req-05, req-17, req-19 in-progress; c-role-schema, c-layout, c-writer shipped. Rebase after the s13 PR (191) merges. | Biome-format any docs/project JSON after ddocs writes it. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-000b | Gates, PR and report to pm-001 | — | ph-ebe5 | [ ] unchecked | — | — | [tk-000b](tasks.dd.md#done-when) | `just rust-check` (scoped where possible), `harness checks`, open the PR against main, send pm-001 the PR number, head sha, checks result and bp-0005 readings. | The job is not finished until the send has gone. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
+| tk-000b | Gates, PR and report to pm-001 | — | ph-ebe5 | [x] checked | — | — | [tk-000b](tasks.dd.md#done-when) | `just rust-check` (scoped where possible), `harness checks`, open the PR against main, send pm-001 the PR number, head sha, checks result and bp-0005 readings. | The job is not finished until the send has gone. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
 | tk-000c | Writer enforces the standing_packet pairing (pm-001, from docs-system) | — | ph-ebe5 | [x] checked | — | — | [tk-000c](tasks.dd.md#done-when) | ddocs has no union type, so the writer refuses an inline packet without text or with a brief, and a brief packet without a brief or with text. | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) |
 | tk-000d | Biome-format PRD 001 after the phase 1 merge (pm-001) | — | ph-ebe5 | [x] checked | — | — | [tk-000d](tasks.dd.md#done-when) | PRD 001's JSON is Biome-formatted and still validates. | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
 
@@ -93,7 +93,7 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 | --- | --- | --- | --- | --- |
 | dw-000a | A private-daemon run of `pij-rs directory add` against a scratch repo writes, validates, builds and commits the role; the envelope carries sha and path; the changelog row names the caller and --why. Transcript in assets/evidence/. | [x] checked | [bp-0003](../../backpressure.dd.md#rows) | evidence/private-run.txt: directory add auditor on a private daemon with real ddocs; envelope sha and path; changelog by the caller with --why |
 | dw-000b | Adding an id that already exists refuses by name and leaves the branch and worktree unchanged. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | d13abd3: tests/directory_http.rs add_writes_commits_and_points_at_a_role_then_refuses_it_twice |
-| dw-000c | skill_verb_coverage.rs and generation-skill-coverage.test.ts pass with `directory` added. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) | — |
+| dw-000c | skill_verb_coverage.rs and generation-skill-coverage.test.ts pass with `directory` added. | [x] checked | [bp-0003](../../backpressure.dd.md#rows) | skill_verb_coverage.rs local pass; generation-skill-coverage.test.ts CI on ce95a06 (check (22), check (24) pass, run 41768186657) |
 
 ### tk-0007
 
@@ -103,9 +103,9 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 
 ### tk-0008
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-000e | pij-rs-api.md and macos-defender.md show the verb, its refusals and data.pid; the skill coverage gates pass. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-000e | pij-rs-api.md and macos-defender.md show the verb, its refusals and data.pid; the skill coverage gates pass. | [x] checked | [bp-0006](../../backpressure.dd.md#rows) | eee273b docs; skill coverage gates: Rust local, TS CI on ce95a06 |
 
 ### tk-0009
 
@@ -121,9 +121,9 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 
 ### tk-000b
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0011 | `just rust-check` and `harness checks` pass on the PR head; pm-001 has the PR number, head sha, checks and cost readings. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0011 | `just rust-check` and `harness checks` pass on the PR head; pm-001 has the PR number, head sha, checks and cost readings. | [x] checked | [bp-0006](../../backpressure.dd.md#rows) | just rust-check local pass (1840/0); TS half of harness checks CI on ce95a06 (check (22), check (24), rust-lint, rust-test pass); PR #114; pm-001 sent the PR, head, checks and cost readings |
 
 ### tk-000c
 
