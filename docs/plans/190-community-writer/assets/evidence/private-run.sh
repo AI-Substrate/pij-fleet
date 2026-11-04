@@ -58,18 +58,31 @@ echo "prime's unstaged" >>"$G/a.md"; echo "prime's staged" >>"$G/b.md"; git -C "
 say "git -C gov status --short (before)"; git -C "$G" status --short
 
 run "$BIN" project create fleet --repo "$M"
+sleep 10  # let the pane observer finish attaching to the new seat's pane
 reading rest-1; sleep 60; reading rest-2
 
-run "$BIN" directory add security --title Security --kind specialist --lifecycle long-lived --holders one \
+run "$BIN" directory add auditor --title Auditor --kind specialist --lifecycle long-lived --holders one \
   --default-limit 45m --rule "A verdict on every PR at its exact head." --harness copilot --effort high \
   --output-kind verdict --packet "You hold the security role." --why "first role through the writer"
 reading after-add
+
+# All or nothing: the same eight with one document missing its scope.
+SPOILED="$S/spoiled" && mkdir -p "$SPOILED" && cp "$FIX"/*.dd.json "$SPOILED"/
+python3 - "$SPOILED/reviewer.dd.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["sections"] = [x for x in d["sections"] if x["name"] != "scope"]
+json.dump(d, open(sys.argv[1], "w"), indent="\t")
+PY
+run "$BIN" directory add --batch "$SPOILED" --why "one bad document"
+reading after-spoiled-batch
+say "git -C gov status --short (after the refused batch)"; git -C "$G" status --short
 
 run "$BIN" directory add --batch "$FIX" --why "import eight roles shaped like the hand-written ones"
 reading after-batch
 
 say "refusals"
-run "$BIN" directory add security --rule x --packet y --why again
+run "$BIN" directory add auditor --rule x --packet y --why again
 run "$BIN" directory add qa --title QA --kind general --lifecycle per-task --holders many --packet p --why "no scope"
 mkdir -p "$G/.harness/government/community/roles/pm-002"
 echo foreign >"$G/.harness/government/community/roles/pm-002/role.dd.json"
@@ -81,7 +94,11 @@ reading after-refusals
 
 say "git -C gov status --short (after)"; git -C "$G" status --short
 say "git -C gov log --stat"; git -C "$G" log --format='%h %s%n%b' --stat -n 3
-say "the security role as committed"; git -C "$G" show HEAD~1:.harness/government/community/roles/security/role.dd.json
+say "the auditor role as committed"; git -C "$G" show HEAD~1:.harness/government/community/roles/auditor/role.dd.json
+say "ddocs validate on every committed role"
+for f in $(git -C "$G" ls-files '*/role.dd.json'); do
+  printf '%s ' "$f"; (cd "$G" && ddocs --json validate "$f" --depth 0 | python3 -c "import json,sys;print(json.load(sys.stdin)['status'])")
+done
 
 kill -TERM "$PID"; for _ in $(seq 1 150); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
 tmux -L "$SERVER" kill-server 2>/dev/null

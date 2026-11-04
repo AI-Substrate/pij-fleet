@@ -32,8 +32,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: cargo tests in pij-daemon against a real temporary git repo that has a prime-governance worktree checked out with an uncommitted edit; a fake validator injected through the constructor (P3) for unit cases, plus one test that runs the real ddocs and names its skip when ddocs is absent. `cargo test -p pij-daemon community`.",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/"
+          "state": "checked",
+          "probe": "crates/daemon/src/",
+          "receipt": "cargo test -p pij-daemon --lib community (25 passed, real ddocs ran)"
         },
         {
           "id": "bp-0003",
@@ -43,7 +44,8 @@
           "tier": "computational",
           "proof": "EXTEND: crates/cli/tests/skill_verb_coverage.rs and .omp/extensions/pij/core/generation-skill-coverage.test.ts for the new verb; a private daemon run of `pij-rs directory add` and `--batch` against a scratch repo, transcript in assets/evidence/.",
           "state": "unchecked",
-          "probe": "crates/cli/tests/skill_verb_coverage.rs"
+          "probe": "crates/cli/tests/skill_verb_coverage.rs",
+          "receipt": "tests/directory_http.rs (3 passed); assets/evidence/private-run.txt with real ddocs; skill_verb_coverage.rs passes; generation-skill-coverage.test.ts not yet run (no node_modules here)"
         },
         {
           "id": "bp-0004",
@@ -52,8 +54,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: migration 0031 with a pij-store test; drop the pointer rows, rebuild from the governance branch head, compare row for row. `cargo test -p pij-store`.",
-          "state": "unchecked",
-          "probe": "crates/store/migrations/"
+          "state": "checked",
+          "probe": "crates/store/migrations/",
+          "receipt": "abf07d2: pij-store community_pointers test; pij-daemon community::pointer rebuild test"
         },
         {
           "id": "bp-0005",
@@ -62,9 +65,10 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: crates/testkit/tests/spawn_sites.rs covers every new launch site. Live fleet before and after deploy: `pij-rs --json ping | jq .data.spawns` read twice 60 s apart, and `just spawn-rate --seconds 20`; expected no change at rest. Per write on a private daemon: spawn counter delta around one `pij directory add` and one 8-role batch.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
-          "note": "Expected cost. Loop, poll, timer, sweep: none. Launches per `directory add`: about 6 (ddocs validate, ddocs build, and about 4 git calls: a status check on the writer's paths, add, commit --only, rev-parse), each by an absolute path resolved once through pij_core::program::launch; ddocs is a node script, so count the node it starts too. A batch costs the same launches once per batch, not per role. Readings record `data.pid` (AC10)."
+          "note": "Expected cost. Loop, poll, timer, sweep: none. Launches per `directory add`: about 6 (ddocs validate, ddocs build, and about 4 git calls: a status check on the writer's paths, add, commit --only, rev-parse), each by an absolute path resolved once through pij_core::program::launch; ddocs is a node script, so count the node it starts too. A batch costs the same launches once per batch, not per role. Readings record `data.pid` (AC10).",
+          "receipt": "assets/evidence/phase-2.md (private daemon pid 29514): at rest 0 launches/60 s; one add 9 (git 7, ddocs 2); eight-role batch 23 (git 7, ddocs 16: ddocs is per document); spawn_sites.rs passes and fails without the git.community record"
         },
         {
           "id": "bp-0006",
@@ -83,9 +87,10 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: a pij-daemon ping test asserts `data.pid` equals the daemon's own process id; the bp-0005 receipts show the same pid on the before and after readings of each pair.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
-          "note": "Cost: none. The pid comes from std::process::id(), no launch."
+          "note": "Cost: none. The pid comes from std::process::id(), no launch.",
+          "receipt": "c1c82d6 http::tests::ping_reports_the_daemon_pid; every bp-0005 reading carries pid 29514"
         },
         {
           "id": "bp-0008",

@@ -36,7 +36,7 @@
           "id": "tk-0002",
           "title": "ddocs resolution, validator port and doctor (C10)",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Resolve ddocs once at daemon start from PIJ_DDOCS, else PATH, to an absolute path. A validator port (validate, build) is injected through the writer's constructor; the real one launches the resolved path via pij_core::program::launch and records itself.",
           "notes": "No schema dependency. Unit tests use a fake validator; one test runs the real ddocs and names its skip when absent.",
           "satisfies_toward": [
@@ -101,7 +101,7 @@
           "id": "tk-0007",
           "title": "Batch import, all or nothing",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "`pij directory add --batch <dir>` validates every role, then writes them in one commit; one invalid document commits none.",
           "notes": "Blocked on the add task. Eight fixtures shaped like the hand-written roles.",
           "satisfies": [
@@ -126,7 +126,7 @@
           "id": "tk-0009",
           "title": "Cost receipts on a private daemon",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Before and after spawn readings with data.pid, the per-write launch count for one add and one eight-role batch, and spawn_sites.rs covering every new launch site; recorded in the backpressure cost row.",
           "notes": "Private daemon only, never the prod daemon.",
           "satisfies": [
@@ -157,6 +157,28 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
           "done": "tasks.dd.json#done_when/tk-000b"
+        },
+        {
+          "id": "tk-000c",
+          "title": "Writer enforces the standing_packet pairing (pm-001, from docs-system)",
+          "phase": "ph-ebe5",
+          "state": "checked",
+          "success": "ddocs has no union type, so the writer refuses an inline packet without text or with a brief, and a brief packet without a brief or with text.",
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-000c"
+        },
+        {
+          "id": "tk-000d",
+          "title": "Biome-format PRD 001 after the phase 1 merge (pm-001)",
+          "phase": "ph-ebe5",
+          "state": "checked",
+          "success": "PRD 001's JSON is Biome-formatted and still validates.",
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ],
+          "done": "tasks.dd.json#done_when/tk-000d"
         }
       ]
     },
@@ -183,8 +205,9 @@
           {
             "id": "dw-0003",
             "assertion": "`just doctor` prints the ddocs path the daemon resolved, or names it missing.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "private daemon ping data.ddocs = the resolved path (evidence/phase-2.md); the doctor line's node parse checked on path, null, absent field and no daemon"
           }
         ],
         "tk-0003": [
@@ -239,8 +262,9 @@
           {
             "id": "dw-000a",
             "assertion": "A private-daemon run of `pij-rs directory add` against a scratch repo writes, validates, builds and commits the role; the envelope carries sha and path; the changelog row names the caller and --why. Transcript in assets/evidence/.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003",
+            "receipt": "evidence/private-run.txt: directory add auditor on a private daemon with real ddocs; envelope sha and path; changelog by the caller with --why"
           },
           {
             "id": "dw-000b",
@@ -260,8 +284,9 @@
           {
             "id": "dw-000d",
             "assertion": "Importing eight role fixtures lands as one commit; the same batch with one invalid document commits nothing and leaves the worktree as it was.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003",
+            "receipt": "evidence/private-run.txt: import 8 roles in one commit; the spoiled batch refuses E-RS-DDOCS-INVALID and commits nothing; tests/directory_http.rs a_batch_is_one_commit_all_or_nothing"
           }
         ],
         "tk-0008": [
@@ -276,8 +301,9 @@
           {
             "id": "dw-000f",
             "assertion": "bp-0005 carries before/after readings from one pid per pair, the per-write and per-batch launch counts, and spawn_sites.rs passes with the new sites.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005",
+            "receipt": "evidence/phase-2.md#cost-bp-0005"
           }
         ],
         "tk-000a": [
@@ -293,6 +319,24 @@
             "id": "dw-0011",
             "assertion": "`just rust-check` and `harness checks` pass on the PR head; pm-001 has the PR number, head sha, checks and cost readings.",
             "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          }
+        ],
+        "tk-000c": [
+          {
+            "id": "dw-0012",
+            "assertion": "A role whose standing_packet source does not match its text or brief field refuses E-RS-ARG before anything is written.",
+            "state": "checked",
+            "receipt": "community::role::tests::a_packet_must_pair_its_source_with_text_or_brief",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-000d": [
+          {
+            "id": "dw-0013",
+            "assertion": "`biome format --write docs/project/prds/001-pij-community.dd.json` changes nothing and `ddocs validate` is ok.",
+            "state": "checked",
+            "receipt": "Already formatted upstream by e26e96e; after merge b8196da biome reported no fixes and ddocs validate is ok, so there was nothing to commit.",
             "pressure": "../../backpressure.dd.json#rows/bp-0006"
           }
         ]
