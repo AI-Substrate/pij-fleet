@@ -1110,8 +1110,19 @@ async fn add_adopts_a_hand_written_role_folder_and_writes_only_the_document() {
     )
     .await;
     let meta = refused["meta"].as_str().unwrap();
+    for id in ["coder", "pa"] {
+        assert!(
+            meta.contains(&format!(
+                "role \"{id}\" already has .harness/government/community/roles/{id}/role.dd.json"
+            )),
+            "F11: every conflicting role with the file that triggered it: {refused}"
+        );
+    }
     assert!(
-        meta.contains("\"coder\"") && meta.contains("\"pa\""),
+        refused["details"]["next"]
+            .as_str()
+            .unwrap()
+            .contains("adopted"),
         "{refused}"
     );
     let _ = std::fs::remove_dir_all(batch);

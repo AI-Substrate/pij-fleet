@@ -164,7 +164,7 @@ impl Arguments {
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "usage: pij directory external add <seat-or-note> --from-project <slug> --why <text> [--role <id>]",
+                "usage: pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]",
             ));
         }
         if matches!(call.leaf.as_str(), "view" | "rebuild")
@@ -500,7 +500,7 @@ async fn hold(
     Ok(data)
 }
 
-/// `directory external add <seat-or-note> --from-project <slug> --why <text>`.
+/// `directory external add <seat> --from-project <slug> --why <note>`.
 async fn external(
     state: &AppState,
     actor: &SeatId,

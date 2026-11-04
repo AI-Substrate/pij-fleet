@@ -776,7 +776,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}` | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>]` | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory rebuild`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -916,6 +916,16 @@ byte-identical (pending ends that never reached the branch are dropped: the
 branch is the truth). `pij directory [<verb>] --help` prints the verbs and
 flags, with no daemon needed.
 
+`pij directory external add <seat> --from-project <slug> --why <note> [--role
+<id>]` appends a dated entry (date, seat, from_project, role, note, by the
+calling seat) to `community/external.dd.json`, created with `meta.project` on
+first use (req-16). Loans are not otherwise tracked.
+
+Holders rows are written so `to` and `released_by` always come together (ddocs
+cannot pair them; the writer refuses otherwise with `E-RS-DIRECTORY-ROW`).
+Release and close keep the assign's `why` and write their reason to
+`release_why`.
+
 | Refusal | When |
 |---|---|
 | `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json`; the next step is `pij directory add` |
@@ -926,8 +936,10 @@ flags, with no daemon needed.
 
 On assign the holder's tmux window is renamed `<project>:<role>`, or
 `<project>:<role>-<instance>` for a many-holder role (req-26, C16), with one tmux
-launch (`tmux.rename-window`), never through the control client, whose
-allow-list stays reads only. A seat with no pane, or a failed rename, still
+launch (`tmux.rename-window`) that targets the holder's pane id, never through
+the control client, whose allow-list stays reads only. pij never targets a
+window by that name: tmux reads `-t a:b` as session `a`, window `b`, so a name
+like `pij:security` is ambiguous as a target. A seat with no pane, or a failed rename, still
 assigns; `data.window` says what happened.
 
 Cost: assign costs one writer commit plus the rename (about 10 launches: git 7,

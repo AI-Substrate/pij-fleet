@@ -363,7 +363,7 @@
 					"priority": "must",
 					"state": "in-progress",
 					"done_when": "A spawn without `--id` gets a `pij-<adjective>-<animal>` id; a spawn with an `--id` that names a role or project is refused by name; two projects can each add a `security` role; a role holder's tmux window reads `<project>:<role>`.",
-					"note": "Part done today: the daemon already allocates `pij-<adjective>-<animal>` when `--id` is omitted (crates/core/src/names.rs; the noun corpus is animals and SHIP_NAMES is empty). Not done: an explicit `--id` is accepted as given (pij-community-docs was), `--name` defaults the window to the seat id, and per-project role ids wait on the directory (s02, s04).",
+					"note": "Part done today: the daemon already allocates `pij-<adjective>-<animal>` when `--id` is omitted (crates/core/src/names.rs; the noun corpus is animals and SHIP_NAMES is empty). Not done: an explicit `--id` is accepted as given (pij-community-docs was), `--name` defaults the window to the seat id, and per-project role ids wait on the directory (s02, s04). Plan 195 ships the window naming: assign renames the holder's window `<project>:<role>` (pij targets panes by id, never by that name). Still open: refusing an explicit `--id` that names a role or project.",
 					"source": "community RULINGS.md C13 (Jordan, 2026-11-04)"
 				},
 				{
@@ -476,6 +476,11 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 195: req-01 (the per-project directory view), req-06 (assign, release and lineage), req-16 (external entries) and req-17 (lineage on the branch; the store rebuilds from it) shipped."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 195: req-26's note records the window naming shipped on assign; the --id refusal is still open, so it stays in-progress."
 				}
 			]
 		}

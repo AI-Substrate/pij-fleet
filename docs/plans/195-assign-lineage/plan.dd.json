@@ -79,7 +79,7 @@
         },
         {
           "id": "ac-0006",
-          "claim": "Window name (req-26, C16). On assign, the holder's tmux window is renamed `<project>:<role>`, or `<project>:<role>-<instance>` for a many-holder role, with one tmux launch per assign by absolute path through pij_core::program::launch, recorded by the spawn counter, not the control client (its read allow-list stays as S2 pinned it). A seat with no pane, or a rename failure, does not fail the assign; the receipt says so.",
+          "claim": "Window name (req-26, C16). On assign, the holder's tmux window is renamed `<project>:<role>`, or `<project>:<role>-<instance>` for a many-holder role, with one tmux launch per assign by absolute path through pij_core::program::launch, recorded by the spawn counter, not the control client (its read allow-list stays as S2 pinned it). The rename targets the holder's pane id, and pij never targets a window by its new name: tmux reads `-t a:b` as session a, window b, so a name like `pij:security` is ambiguous as a target. A seat with no pane, or a rename failure, does not fail the assign; the receipt says so.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004",
           "receipt": "87ad0d4: real-tmux rename test (counter +1) and directory_http window receipt, paneless note"
@@ -100,7 +100,7 @@
         },
         {
           "id": "ac-0009",
-          "claim": "External entries (req-16). `pij directory external add <seat-or-note> --from-project <slug> --why <text>` appends a dated entry to `community/external.dd.json` through the writer. Loans are not otherwise tracked.",
+          "claim": "External entries (req-16). `pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]` appends a dated entry (date, seat, from_project, role, note from --why, by the calling seat) to `community/external.dd.json` through the writer, creating it with meta.project on first use. The seat is a required positional; an entry is never note-only. Loans are not otherwise tracked.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
           "receipt": "5738f7d directory_http external_add_creates_then_appends_dated_entries plus the real-ddocs test"
@@ -121,7 +121,7 @@
         },
         {
           "id": "ac-0012",
-          "claim": "Docs and states. docs/how/pij-rs-api.md documents the verbs and refusals; the pij skill's verb coverage and shim route tables carry them. In this PR: roadmap s04 goes to complete with its plan cell set to docs/plans/195-assign-lineage; req-01, req-06 and req-16 go to shipped; req-17 goes to shipped; c-store and c-verbs go to in-progress (later steps add verbs); c-orient goes to in-progress. All project docs validate clean.",
+          "claim": "Docs and states. docs/how/pij-rs-api.md documents the verbs and refusals; the pij skill's verb coverage and shim route tables carry them. In this PR: roadmap s04 goes to complete with its plan cell set to docs/plans/195-assign-lineage; req-01, req-06 and req-16 go to shipped; req-17 goes to shipped; c-store and c-verbs go to in-progress (later steps add verbs); c-orient goes to in-progress. All project docs validate clean. req-26's note records that window naming shipped here (the --id refusal is still open), and req-26 stays in-progress.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006",
           "receipt": "s04 complete with plan cell; req-01, req-06, req-16, req-17 shipped; c-store, c-verbs, c-orient in-progress; PRD, blueprint, roadmap 001 validate 0/0; ddocs-check 7 clean; API doc and skill table carry the verbs"
@@ -257,6 +257,12 @@
           "likelihood": "Low",
           "impact": "Low",
           "mitigation": "Only on assign, once; the name says what the seat does."
+        },
+        {
+          "risk": "A renamed window such as `pij:security` is ambiguous as a tmux target, since `-t a:b` reads as session a, window b.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "AC6: pij targets windows by pane or window id internally, never by the new name; the rename itself targets the holder's pane id."
         }
       ]
     },

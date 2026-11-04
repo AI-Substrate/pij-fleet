@@ -37,7 +37,7 @@ Usage:
   pij directory add --batch <dir> --why <text> [--project <slug>]
   pij directory assign <role>[/<instance>] <seat> --why <text>
   pij directory release <role>[/<instance>] <seat> --why <text>
-  pij directory external add <seat-or-note> --from-project <slug> --why <text> [--role <id>]
+  pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]
   pij directory rebuild                               the store from the branch head
 
 Every write is validated by ddocs and committed by the daemon's single writer,
@@ -91,7 +91,7 @@ const EXTERNAL: &str = "\
 pij directory external add: note a seat borrowed from another project.
 
 Usage:
-  pij directory external add <seat-or-note> --from-project <slug> --why <text> [--role <id>]
+  pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]
 
 Appends a dated entry to community/external.dd.json. Loans are not otherwise
 tracked.";
