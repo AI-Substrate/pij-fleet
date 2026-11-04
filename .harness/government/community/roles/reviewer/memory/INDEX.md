@@ -6,3 +6,5 @@
 
 - [2026-11-04-pr-113-ddocs-sensor.md](2026-11-04-pr-113-ddocs-sensor.md): PR 113 block; unreadable project tree silently passes, 14 immutable-SHA CLI controls and 7 unit tests; shared-config and moved-worktree friction.
 
+- [2026-11-04-pr-111-rereview.md](2026-11-04-pr-111-rereview.md): PR 111 original P2s closed; F003 retains live-pane proof as one narrow row; six mutation controls and exact-head CI pass.
+

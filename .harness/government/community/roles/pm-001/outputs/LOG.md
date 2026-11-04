@@ -38,3 +38,6 @@
 2026-11-04 note pr-111 ac293a2 held — review fixes in (14 kept/13 rows, 21 met, 5 obsolete), but security scrub missing (3 hits); asked heron for it before re-review
 2026-11-04 note pr-113-security 75cf1a1 pass-with-notes — pij-wary-lynx: no vulns; C20 warn is not validation proof; delta check needed on F001 fix head
 2026-11-04 note pr-111 75102c5 sent — review + security fixes in; re-review by pij-ambitious-anteater and delta security by pij-wary-lynx (C19) in new worktree fleet-review-111b
+2026-11-04 note s02 cc457ea ready-for-pr — marten: phase 1 merged, AC9 flips in, rust-check 1840/0; cost per add 9, batch-of-8 23; told (b) TS via CI per prime
+2026-11-04 note pr-113-security 2b328dc pass-with-notes — pij-wary-lynx delta; F001 still open (reviewer)
+2026-11-04 note pr-113 224512d sent — F001 fixed + relative PATH skip; re-review/security/perf deltas in new worktree fleet-review-113b
