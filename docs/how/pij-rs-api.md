@@ -827,7 +827,9 @@ Flags: `--title`, `--kind specialist|general`, `--lifecycle long-lived|per-task`
 `--holders one|many`, `--instance-key`, `--default-limit` (like `45m`),
 `--summary`, `--template`, `--template-version`, `--harness`, `--model`,
 `--effort`, and the standing packet as `--packet <text>` or `--brief <path>` (a
-link relative to the role document). These repeat: `--rule`, `--scope-path`,
+repo-relative link to an existing file). ddocs has no union type, so the writer
+checks the pairing itself: an inline packet carries `text` and no `brief`, a
+brief packet `brief` and no `text`, else `E-RS-ARG`. These repeat: `--rule`, `--scope-path`,
 `--out-of-scope`, `--forbidden`, `--input`, `--output-kind`. A field you leave
 out is left out, so ddocs names it (a role without scope or a standing packet
 refuses). `--file <json>` gives the whole document instead of flags. `--batch

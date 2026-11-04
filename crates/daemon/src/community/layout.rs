@@ -29,7 +29,21 @@ pub fn schema_copies() -> Vec<(PathBuf, &'static [u8])> {
         .collect()
 }
 
-const SCHEMAS: [(&str, &[u8]); 0] = [];
+/// pij's own schemas, compiled in so the copies always match this build.
+const SCHEMAS: [(&str, &[u8]); 3] = [
+    (
+        "role",
+        include_bytes!("../../../../.dd/schemas/pij/role/schema.json"),
+    ),
+    (
+        "output",
+        include_bytes!("../../../../.dd/schemas/pij/output/schema.json"),
+    ),
+    (
+        "memory",
+        include_bytes!("../../../../.dd/schemas/pij/memory/schema.json"),
+    ),
+];
 
 /// One role's files under `community/roles/<id>/`.
 #[derive(Clone, Debug, PartialEq, Eq)]

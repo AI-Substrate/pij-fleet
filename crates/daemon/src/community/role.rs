@@ -46,7 +46,7 @@ pub struct RoleFields {
     pub output_kinds: Vec<String>,
     /// `standing_packet` inline text.
     pub packet: Option<String>,
-    /// `standing_packet` brief file, linked from the role document.
+    /// `standing_packet` brief file: a repo-relative link to an existing file.
     pub brief: Option<String>,
 }
 
@@ -155,6 +155,7 @@ pub fn stamp(
             ));
         }
     }
+    check_packet(&document, id)?;
     let row = json!({"date": date, "by": by, "why": why});
     let Some(sections) = document["sections"].as_array_mut() else {
         return Err(Refusal::new(
@@ -173,6 +174,35 @@ pub fn stamp(
         None => sections.push(json!({"name": "changelog", "value": [row]})),
     }
     Ok(document)
+}
+
+/// The pairing the schema cannot express (ddocs has no union type): an inline
+/// packet carries `text` and no `brief`; a brief packet carries `brief` and no
+/// `text`. A missing `standing_packet` is left for ddocs to name.
+fn check_packet(document: &Value, id: &str) -> Result<(), Refusal> {
+    let Some(packet) = section(document, "standing_packet") else {
+        return Ok(());
+    };
+    let filled = |field: &str| {
+        packet[field]
+            .as_str()
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    let (needs, forbids) = match packet["source"].as_str() {
+        Some("inline") => ("text", "brief"),
+        Some("brief") => ("brief", "text"),
+        _ => return Ok(()),
+    };
+    if !filled(needs) || !packet[forbids].is_null() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!(
+                "role {id:?}: a standing_packet with source {:?} carries `{needs}` and no `{forbids}`",
+                packet["source"].as_str().unwrap_or_default()
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// The bytes the writer commits: tab-indented, with a trailing newline, like
@@ -301,6 +331,29 @@ mod tests {
             stamp(other, "pm", "s", "w", "d").unwrap_err().code,
             "E-RS-ARG"
         );
+    }
+
+    #[test]
+    fn a_packet_must_pair_its_source_with_text_or_brief() {
+        let with = |packet: Value| {
+            let mut document = from_fields("pm", &RoleFields::default()).unwrap();
+            document["sections"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"name": "standing_packet", "value": packet}));
+            stamp(document, "pm", "s", "w", "d")
+        };
+        assert!(with(json!({"source": "inline", "text": "t"})).is_ok());
+        assert!(with(json!({"source": "brief", "brief": "briefs/pm.md"})).is_ok());
+        for bad in [
+            json!({"source": "inline"}),
+            json!({"source": "inline", "text": " "}),
+            json!({"source": "inline", "text": "t", "brief": "b.md"}),
+            json!({"source": "brief", "text": "t"}),
+            json!({"source": "brief", "brief": "b.md", "text": "t"}),
+        ] {
+            assert_eq!(with(bad.clone()).unwrap_err().code, "E-RS-ARG", "{bad}");
+        }
     }
 
     #[test]
