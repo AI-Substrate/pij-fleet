@@ -4,3 +4,4 @@
 
 2026-11-04 verdict pr:113 75cf1a150d32e2f1b2ecf3ef3f1aab4f979001eb pass-with-notes - check-only 2N direct ddocs invocations (12 for 6 docs), 0 added idle launches/s and no daemon site; relative PATH candidates are not normalized absolute; unchanged sensor run on later shared head 2b328dc6b71788fee466a0a8c1e0b7fc9720df1d passed 6 docs, exit 0, 4.337s; no new live-fleet before/after; requested-head verdict only; https://github.com/AI-Substrate/pij-fleet/pull/113#issuecomment-6621674664
 
+2026-11-04 verdict pr:113 2b328dc6b71788fee466a0a8c1e0b7fc9720df1d pass-with-notes - verified docs-only delta (6 files, +41/-2), launch wiring unchanged; 2N direct ddocs invocations/check, 0 added idle launches/s; reused exact-head run (6 docs, exit 0, 4.337s); relative PATH normalization is follow-up only, no head change requested; no new live-fleet before/after; https://github.com/AI-Substrate/pij-fleet/pull/113#issuecomment-6621692229

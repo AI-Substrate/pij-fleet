@@ -32,3 +32,5 @@
 2026-11-04 deliverable review-113-packet 75cf1a1 sent — reviewer pij-varied-fly (window pij:review-113, worktree fleet-review-113); security + performance asked; CI-no-ddocs decision to prime; req-27 moved to job 5
 2026-11-04 note pr-113-head 2b328dc moved — req-27 (C18) added by heron; review worktree and verdict seats re-pinned
 2026-11-04 note c20 - folded — CI stays without ddocs and warns UNAVAILABLE (supply-chain rules win); #113 decision confirmed
+2026-11-04 note pr-113-perf 75cf1a1 pass-with-notes — pij-frugal-wombat: 2N launches check-only; note relative PATH candidates not normalised; delta verdict for 2b328dc requested
+2026-11-04 note pr-113-perf 2b328dc pass-with-notes — pij-frugal-wombat delta verdict; no head change
