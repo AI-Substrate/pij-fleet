@@ -128,7 +128,7 @@
         },
         {
           "id": "ac-0013",
-          "claim": "Adopt (wave B dogfood F3). `pij directory add` for a role whose folder already exists without role.dd.json (a hand-written role with memory/INDEX.md, outputs/ and role.md) adopts the folder: it writes role.dd.json and its .dd.md, writes neither memory nor outputs files when those exist, and leaves role.md alone. E-RS-DIRECTORY-EXISTS fires only when role.dd.json exists, names that file and gives the next step; a batch names every role that already exists.",
+          "claim": "Adopt (wave B dogfood F3). `pij directory add` for a role whose folder already exists without role.dd.json (a hand-written role with memory/INDEX.md, outputs/ and role.md) adopts the folder: it writes role.dd.json and its .dd.md, writes neither memory nor outputs files when those exist, and leaves role.md alone. E-RS-DIRECTORY-EXISTS fires only when role.dd.json exists, names that file and gives the next step; a batch refusal (F11) lists every conflicting role, not just the first, each with the file that triggered it (its role.dd.json), plus the next step.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0008",
           "receipt": "87ad0d4 directory_http: adopt writes only role.dd.json and .dd.md; EXISTS names the file; batch names every role"
