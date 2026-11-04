@@ -1,0 +1,78 @@
+{
+  "dd_schema": 1,
+  "description": "Who has held one pij community role, in order (req-06, req-17). Lives at <government-root>/community/roles/<id>/holders.dd.json, written only by pij (assign, release, close). Each row is one holding: an open row has no `to`; release and close set `to`, `released_by` and `release_why` (\"close\" when the seat was closed). `instance_key` names the instance of a many-holder role. `machine` is where the seat ran, so a store on another machine can rebuild the same view from the branch.",
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "fields": {
+          "role": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rows": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "seat",
+            "harness",
+            "machine",
+            "from",
+            "assigned_by",
+            "why"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "seat": {
+              "type": "string"
+            },
+            "harness": {
+              "type": "string"
+            },
+            "harness_session": {
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "instance_key": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            },
+            "assigned_by": {
+              "type": "string"
+            },
+            "released_by": {
+              "type": "string"
+            },
+            "why": {
+              "type": "text"
+            },
+            "release_why": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}

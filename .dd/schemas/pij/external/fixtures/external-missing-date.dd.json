@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/external"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"project": "pij"
+			}
+		},
+		{
+			"name": "entries",
+			"value": [
+				{
+					"seat": "pij-example-heron",
+					"from_project": "example-project",
+					"role": "reviewer",
+					"note": "Borrowed for one review of the community PRD.",
+					"by": "pij-far-jackal"
+				}
+			]
+		}
+	],
+	"references": []
+}

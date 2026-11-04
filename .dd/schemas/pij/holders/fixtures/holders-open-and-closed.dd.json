@@ -1,0 +1,40 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "docs-system"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"seat": "pij-community-docs",
+					"harness": "copilot",
+					"harness_session": "0b1c2d3e-0000-4000-8000-000000000001",
+					"machine": "studio",
+					"from": "2026-11-04T01:40:00Z",
+					"to": "2026-11-04T02:10:00Z",
+					"assigned_by": "pij-far-jackal",
+					"released_by": "pij-far-jackal",
+					"why": "First holder of docs-system.",
+					"release_why": "renamed: seat names are machine-wide"
+				},
+				{
+					"seat": "pij-careful-heron",
+					"harness": "copilot",
+					"harness_session": "0b1c2d3e-0000-4000-8000-000000000002",
+					"machine": "studio",
+					"from": "2026-11-04T02:12:17Z",
+					"assigned_by": "pij-far-jackal",
+					"why": "Took over from a renamed seat (seat names are machine-wide, C13)."
+				}
+			]
+		}
+	],
+	"references": []
+}

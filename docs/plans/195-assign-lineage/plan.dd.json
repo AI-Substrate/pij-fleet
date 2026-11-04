@@ -45,8 +45,9 @@
         {
           "id": "ac-0001",
           "claim": "Schemas. docs-system adds `pij/holders` (per role: rows of seat id, harness, harness session id, machine, instance key, from, to, assigned by, released by and why) and `pij/external` (req-16: dated entries for a seat borrowed from another project) under `.dd/schemas/pij/`, with pass and fail fixtures, and the writer's embedded schema copies (C9) include them.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/phase-1.md: 5 fixtures as expected (3 pass, 2 refuse). The layout.rs SCHEMAS embedding is phase 2 (coder): add holders and external."
         },
         {
           "id": "ac-0002",
@@ -122,9 +123,10 @@
         {
           "id": "ph-95a1",
           "title": "Holders and external schemas",
-          "state": "unchecked",
+          "state": "checked",
           "brief": "AC1. docs-system writes pij/holders and pij/external with fixtures on branch plan/195-schemas, which the coder merges. CS-1.",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "pij/holders and pij/external with fixtures under .dd/schemas/pij/; evidence assets/evidence/phase-1.md"
         },
         {
           "id": "ph-95b2",

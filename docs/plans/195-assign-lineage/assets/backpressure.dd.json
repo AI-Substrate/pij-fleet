@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: fixtures (a holders doc with an open and a closed row, one missing `from`, an external entry) with `ddocs validate --depth 0` pass and fail as expected, recorded in assets/evidence/phase-1.md.",
-          "state": "unchecked",
-          "probe": ".dd/schemas/pij/"
+          "state": "checked",
+          "probe": ".dd/schemas/pij/",
+          "receipt": "docs/plans/195-assign-lineage/assets/evidence/phase-1.md"
         },
         {
           "id": "bp-0002",
