@@ -45,3 +45,7 @@ Example: `"delivers": ["../prds/001-daily-digest.dd.json#requirements/req-01"]`.
 - Rows are amended, never deleted. To drop one, set its state to `dropped` (steps: `abandoned`) and say why in its `note`.
 - Ids are never reused. A new requirement takes the next free `req-NN`, even after a drop.
 - Every change of meaning adds a `changelog` row: date, who, what changed.
+
+## Role documents
+
+Roles under `<government-root>/community/roles/` are written only by `pij directory add`, which adds the changelog row and runs `ddocs validate` and `ddocs build` itself. Don't pre-validate a role document with ddocs: `pij/role` requires a `changelog` section that only the writer adds, so a hand check always fails on it.
