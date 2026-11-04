@@ -27,7 +27,7 @@ Definitions, memory and outputs are ddocs on the governance branch, written by o
 
 | id | name | kind | where | responsibility | realises | state | note |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| c-doc-schemas | Project docs schemas | schema | .dd/schemas/pij/{prd,blueprint,roadmap} | The three schemas behind docs/project, joined by typed link cells. | [req-18](../prds/001-pij-community.dd.md#requirements) | [ ] in-progress | — |
+| c-doc-schemas | Project docs schemas | schema | .dd/schemas/pij/{prd,blueprint,roadmap} | The three schemas behind docs/project, joined by typed link cells. | [req-18](../prds/001-pij-community.dd.md#requirements) | [x] shipped | — |
 | c-role-schema | Role schema | schema | .dd/schemas/pij/role | The `pij/role` schema for role definitions, plus `pij/output` and `pij/memory` for outputs and memory notes. | [req-04](../prds/001-pij-community.dd.md#requirements), [req-10](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
 | c-layout | Community layout | file | &lt;government-root&gt;/community/ | `roles/&lt;id&gt;/role.dd.json`, `roles/&lt;id&gt;/memory/` (one note per file and a generated `INDEX.md`), `roles/&lt;id&gt;/outputs/&lt;yyyy-mm&gt;/`, `ROUTES.md`, `external.dd.json`. Rulings stay outside it. | [req-02](../prds/001-pij-community.dd.md#requirements), [req-09](../prds/001-pij-community.dd.md#requirements), [req-16](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
 | c-writer | Governance writer | module | crates/daemon | Writes a ddoc, runs `ddocs validate` and `ddocs build` by absolute path, commits on the governance branch from pij's own worktree or with git plumbing, never from a seat's checkout, and records the pointer. One writer per project, serialised by the daemon; a batch mode for imports. Named refusals for missing governance or ddocs. | [req-02](../prds/001-pij-community.dd.md#requirements), [req-03](../prds/001-pij-community.dd.md#requirements), [req-05](../prds/001-pij-community.dd.md#requirements), [req-09](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
@@ -42,7 +42,7 @@ Definitions, memory and outputs are ddocs on the governance branch, written by o
 | c-claims | Number claims | verb | crates/cli + crates/store | `pij claim &lt;kind&gt;` hands out the next NNN per project and kind, and releases it on merge or close. | [req-20](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
 | c-merge-delivery | Delivery at merge | module | crates/daemon | On a PR merge, reads the PR's links to requirement rows and steps, records the delivery and fills `delivered_by` through a docs PR, and updates the owning PM's card. | [req-21](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
 | c-limits | Time-limit check-ins | module | crates/daemon watchdog | Stores a limit on each request; in the existing watchdog round, sends one check-in when the limit passes without an output or card update, and tells the PA (else the prime) when it goes unanswered. | [req-22](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
-| c-skill | Community skill route | skill | skills/pij/references/routes/community.md | `/pij community`: teaches the prime, PM and PA their duties, and ships the doc procedures and examples; workers are told what to do by their packets. | [req-15](../prds/001-pij-community.dd.md#requirements), [req-23](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
+| c-skill | Community skill route | skill | skills/pij/references/routes/community.md | `/pij community`: teaches the prime, PM and PA their duties, and ships the doc procedures and examples; workers are told what to do by their packets. | [req-15](../prds/001-pij-community.dd.md#requirements), [req-23](../prds/001-pij-community.dd.md#requirements) | [ ] in-progress | — |
 
 <a id="decisions"></a>
 
@@ -77,3 +77,4 @@ Definitions, memory and outputs are ddocs on the governance branch, written by o
 | --- | --- | --- |
 | 2026-11-04 | pij-far-jackal with Jordan | First draft from workshop 001. |
 | 2026-11-04 | pij-far-jackal with Jordan | Review fixes and Jordan's rulings: queue, memory notes and index, safe verdicts, own-worktree writer, claims and delivery at merge, standard layout. |
+| 2026-11-04 | pij-careful-heron | Plan 191: c-doc-schemas shipped; c-skill in-progress (doc procedures shipped, the /pij community route is s10). |

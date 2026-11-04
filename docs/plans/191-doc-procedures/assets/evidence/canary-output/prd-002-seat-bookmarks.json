@@ -1,0 +1,165 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 002: seat bookmarks",
+				"status": "draft",
+				"updated": "2026-11-04",
+				"owner": "pij-glorious-mole",
+				"summary": "A seat can save a named bookmark to a file and line with a one-line note, list its bookmarks, and delete one. Bookmarks outlive a daemon restart, and listing them costs no process launches."
+			}
+		},
+		{
+			"name": "why",
+			"value": "Seats keep losing track of places in the code they meant to come back to. A seat notices something worth revisiting mid-task, carries on, and by the time it is free the location is gone from its context, often after a compaction or a daemon restart. Today the only record is whatever the seat happens to write in its own transcript."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-seat",
+					"name": "seat",
+					"need": "Mark a file and line to come back to, and find it again later in the same session or after a restart."
+				},
+				{
+					"id": "a-operator",
+					"name": "operator",
+					"need": "Bookmarks that cost nothing to read, so seats can list them as often as they like without loading the machine."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "A seat can get back to a place it marked earlier without re-searching the code."
+				},
+				{
+					"id": "g-2",
+					"goal": "Bookmarks survive a daemon restart."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "Following code as it moves. A bookmark records a path and line at save time; it does not track edits that shift the line."
+				},
+				{
+					"id": "n-2",
+					"text": "Sharing bookmarks between seats. Each seat sees only its own."
+				},
+				{
+					"id": "n-3",
+					"text": "Editor or UI integration. Bookmarks are read and written through pij only."
+				},
+				{
+					"id": "n-4",
+					"text": "Editing a bookmark in place. To change one, delete it and save it again."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "Save a bookmark",
+					"statement": "A seat saves a bookmark with a name, a file path, a line number and a one-line note, and pij confirms it was saved.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A seat saves bookmark `retry-loop` at `src/net.rs:120` with a note, and the next list shows that name, path, line and note.",
+					"source": "brief from pij-careful-heron"
+				},
+				{
+					"id": "req-02",
+					"title": "List own bookmarks",
+					"statement": "A seat lists its bookmarks and sees each one's name, file path, line and note, and none belonging to other seats.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Two seats each save one bookmark; each seat's list shows exactly its own one.",
+					"source": "brief from pij-careful-heron"
+				},
+				{
+					"id": "req-03",
+					"title": "Delete a bookmark",
+					"statement": "A seat deletes one of its bookmarks by name, and it no longer appears in that seat's list.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A seat with bookmarks `a` and `b` deletes `a`; its list then shows only `b`, and deleting `a` again reports that no such bookmark exists.",
+					"source": "brief from pij-careful-heron"
+				},
+				{
+					"id": "req-04",
+					"title": "Survive a daemon restart",
+					"statement": "Bookmarks saved before the daemon restarts are still listed for the same seat after it comes back.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A seat saves a bookmark, the daemon is restarted, and the seat's list still shows that bookmark unchanged.",
+					"source": "brief from pij-careful-heron"
+				},
+				{
+					"id": "req-05",
+					"title": "Listing launches nothing",
+					"statement": "Listing bookmarks launches no process; it is answered from in-process state or a file read.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A seat lists its bookmarks ten times in a row and the daemon's spawn counter does not move.",
+					"source": "brief from pij-careful-heron"
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "What is the command shape?",
+					"default": "`pij bookmark add <name> <path>:<line> --note <text>`, `pij bookmark list`, `pij bookmark rm <name>`.",
+					"status": "open"
+				},
+				{
+					"id": "q-02",
+					"question": "What happens when a seat saves a name it already has?",
+					"default": "Refuse with a message naming the existing bookmark; the seat deletes it first if it means to replace it.",
+					"status": "open"
+				},
+				{
+					"id": "q-03",
+					"question": "What happens to a seat's bookmarks when the seat closes?",
+					"default": "Kept, keyed by seat id, until deleted; no automatic expiry in this PRD.",
+					"status": "open"
+				},
+				{
+					"id": "q-04",
+					"question": "Does save check that the file and line exist?",
+					"default": "No. The path and line are stored as given, so a bookmark can point at a file another seat is about to create.",
+					"status": "open"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-04",
+					"by": "pij-glorious-mole",
+					"change": "First draft."
+				}
+			]
+		}
+	],
+	"references": []
+}

@@ -1,0 +1,84 @@
+{
+	"dd": {
+		"schema": "pij/blueprint"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Blueprint 001: daily digest",
+				"status": "draft",
+				"updated": "2026-11-04",
+				"owner": "pm-001",
+				"summary": "How the digest is built."
+			}
+		},
+		{
+			"name": "overview",
+			"value": "A daemon job reads the store once a day and writes one markdown file. It reads facts the store already holds, so it launches nothing."
+		},
+		{
+			"name": "components",
+			"value": [
+				{
+					"id": "c-digest-job",
+					"name": "Digest job",
+					"kind": "module",
+					"where": "crates/daemon/src/digest.rs",
+					"responsibility": "Runs once a day, reads the store, writes the digest file.",
+					"realises": [
+						"../prds/001-daily-digest.dd.json#requirements/req-01",
+						"../prds/001-daily-digest.dd.json#requirements/req-03"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-digest-verb",
+					"name": "pij digest",
+					"kind": "verb",
+					"where": "crates/cli/src/digest.rs",
+					"responsibility": "Prints the latest digest, or writes one now with `--now`.",
+					"realises": [
+						"../prds/001-daily-digest.dd.json#requirements/req-01",
+						"../prds/001-daily-digest.dd.json#requirements/req-02"
+					],
+					"state": "planned"
+				}
+			]
+		},
+		{
+			"name": "decisions",
+			"value": [
+				{
+					"id": "d-1",
+					"decision": "Read the store; do not call git or gh.",
+					"why": "The store already records merges and closes, and reading it costs no launches.",
+					"realises": ["../prds/001-daily-digest.dd.json#requirements/req-03"]
+				}
+			]
+		},
+		{
+			"name": "costs",
+			"value": [
+				{
+					"id": "k-1",
+					"what": "The daily digest job.",
+					"rate": "once a day; 0 launches",
+					"scaling": "with the day's events, not with seats or time",
+					"component": ["#components/c-digest-job"]
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-04",
+					"by": "pm-001",
+					"change": "First draft."
+				}
+			]
+		}
+	],
+	"references": []
+}

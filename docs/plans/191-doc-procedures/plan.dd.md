@@ -52,10 +52,10 @@ Delivers PRD 001 req-23 and starts c-skill (the `/pij community` route itself is
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | Procedures. Files under skills/pij/references/community/ (one per doc type, plus folding a ruling) say, in plain steps: where the file goes and how to get its NNN (ask pm/001 until `pij claim` exists, s11); the ddocs commands to create, edit, validate and build it; how the link cells join roadmap steps to requirement rows and components; the state rules (a builder flips a row in the PR that delivers it; rows are amended, never deleted; drop with state dropped and a note); and `needs` on roadmap steps. Each file stays short enough to read in one pass. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | Worked examples. A small linked example PRD, blueprint and roadmap ship beside the procedures and validate clean; the procedures point to them and to PRD 001 as the full-size example. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Fresh-PM canary. A seat with no prior context, given only the procedure and a short intent, writes a PRD and a roadmap in a scratch copy that validate clean and link to each other. Where it hesitated is fixed in the procedure, or recorded. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | States. Before flipping, s01's done-when is checked and recorded. In this PR: roadmap s01 and s13 go to shipped (s13's plan cell set to docs/plans/191-doc-procedures); req-18 and req-23 go to shipped; c-doc-schemas goes to shipped; c-skill goes to in-progress. docs/project/README.md points at the procedures. All three project docs validate clean. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | Procedures. Files under skills/pij/references/community/ (one per doc type, plus folding a ruling) say, in plain steps: where the file goes and how to get its NNN (ask pm/001 until `pij claim` exists, s11); the ddocs commands to create, edit, validate and build it; how the link cells join roadmap steps to requirement rows and components; the state rules (a builder flips a row in the PR that delivers it; rows are amended, never deleted; drop with state dropped and a note); and `needs` on roadmap steps. Each file stays short enough to read in one pass. | [x] checked | — | skills/pij/references/community/{README,prd,blueprint,roadmap,fold-a-ruling}.md, 20-47 lines each | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | Worked examples. A small linked example PRD, blueprint and roadmap ship beside the procedures and validate clean; the procedures point to them and to PRD 001 as the full-size example. | [x] checked | — | skills/pij/references/community/examples/{prds,blueprints,roadmaps}/001-daily-digest.dd.json: ddocs validate ok 0/0 each; a link to a missing row errors | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Fresh-PM canary. A seat with no prior context, given only the procedure and a short intent, writes a PRD and a roadmap in a scratch copy that validate clean and link to each other. Where it hesitated is fixed in the procedure, or recorded. | [x] checked | — | assets/evidence/canary.md: OMP canary pij-glorious-mole wrote PRD 002 and roadmap 002, both ok 0/0 and linked; 9 hesitations fixed in the procedure | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | States. Before flipping, s01's done-when is checked and recorded. In this PR: roadmap s01 and s13 go to shipped (s13's plan cell set to docs/plans/191-doc-procedures); req-18 and req-23 go to shipped; c-doc-schemas goes to shipped; c-skill goes to in-progress. docs/project/README.md points at the procedures. All three project docs validate clean. | [x] checked | — | assets/evidence/s01-check.md recorded before the flip; s01, s13 complete (roadmap enum has no shipped); req-18, req-23, c-doc-schemas shipped; c-skill in-progress; README pointer; all three validate 0/0 | [bp-0003](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -63,7 +63,7 @@ Delivers PRD 001 req-23 and starts c-skill (the `/pij community` route itself is
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-af3e | Procedures, examples and a fresh-PM canary | AC1 to AC4. docs-system seat (pij-community-docs). CS-2. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-af3e | Procedures, examples and a fresh-PM canary | AC1 to AC4. docs-system seat (pij-community-docs). CS-2. | [x] checked | — | AC1-AC4 done; evidence in assets/evidence/ | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 
@@ -114,9 +114,9 @@ _Empty._
 
 ## Open Questions
 
-| question | state | note |
-| --- | --- | --- |
-| Canary harness: OMP by default (AGENTS.md); docs-system may pick another if OMP is unavailable, and says which. | [ ] unchecked | — |
+| question | state | note | answer |
+| --- | --- | --- | --- |
+| Canary harness: OMP by default (AGENTS.md); docs-system may pick another if OMP is unavailable, and says which. | [x] checked | — | OMP (seat pij-glorious-mole, github-copilot/claude-opus-5.5). Spawned from a plain clone with .omp/ and .copilot/ removed, because OMP refuses a linked worktree. See assets/evidence/canary.md. |
 
 <a id="workshop-opportunities"></a>
 
