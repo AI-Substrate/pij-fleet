@@ -33,3 +33,14 @@ At the end of each job: `pij report now "<did>" "<next>"`, then send me the resu
 ## Never
 
 Restart, bounce or deploy the prod daemon; type into a pane; read credential files; `git add -A`; `--no-verify`; push `refs/notes/*`; `just worktree-deps` or `npm install`. Check `df -h /System/Volumes/Data` before a large build and stop under 25 GB.
+
+## Job 3 (queued 12:30): s14, PRD 002 triage (plan 192)
+
+Ruling C15: the earlier register stays in the private repo and is never copied here. Do this after job 2.
+
+- Branch: `git switch plan/192-prd-register-move` (origin 2f7d59f). Plan: `docs/plans/192-prd-register-move/plan.dd.json`, AC1 to AC6, proofs in its backpressure. req-25 and roadmap s14 already carry C15's wording on this branch.
+- Source, read-only: in `~/pi-hacking/pij-legacy`, `git show e05661c8:.harness/government/prd/base-prd.dd.json`. Never write there; never copy its files or wording into pij-fleet.
+- The 40 open rows (36 unchecked, 4 open) each get one verdict in `assets/evidence/triage.md`; the kept ones are written fresh into `docs/project/prds/002-pij-base.dd.json` (C11, C12 for state, priority, done_when). Unclear verdicts: ask me, don't guess.
+- The copy check prints counts only, never source text.
+- This branch touches PRD 001 and roadmap 001, so rebase after 191 and 190 merge and re-run `ddocs validate`.
+- PR to main; **send me** the PR number, head sha, the triage counts and the checks result.
