@@ -13,6 +13,7 @@ pub mod background;
 pub mod bg_routing;
 mod claude_bind;
 pub mod codex_bind;
+pub mod community;
 pub mod death_sweep;
 pub mod delivery;
 pub mod events;
@@ -166,6 +167,10 @@ pub struct Services {
     /// Which Codex thread each pane runs, read from the pane's own Codex
     /// process (plan 181): the binder's evidence and a Codex caller's check.
     pub codex_threads: Arc<dyn codex_bind::CodexThreads>,
+    /// ddocs as resolved once at daemon start (plan 190, ruling C10).
+    pub ddocs: Arc<community::ddocs::Ddocs>,
+    /// The community directory's single writer (plan 190).
+    pub community: Arc<community::writer::CommunityWriter>,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -554,6 +559,12 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         config.bind_addr.clone(),
     ));
 
+    let ddocs = Arc::new(community::ddocs::Ddocs::from_env());
+    let community_writer = Arc::new(community::writer::CommunityWriter::new(
+        Arc::clone(&ddocs) as Arc<dyn community::ddocs::Validator>,
+        community::layout::schema_copies(),
+        &community::writer::LOCK_RETRY,
+    ));
     Ok(Services {
         registry,
         spine,
@@ -584,6 +595,8 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             .join("sidecars")
             .join(pij_sidecars::telegram::ATTACHMENTS_DIR),
         codex_threads,
+        ddocs,
+        community: community_writer,
         offline: config.is_fully_offline(),
     })
 }

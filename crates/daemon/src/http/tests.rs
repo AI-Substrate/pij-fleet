@@ -3240,6 +3240,10 @@ async fn ping_reports_the_daemon_pid() {
         .await
         .expect("health envelope");
     assert_eq!(health["data"]["pid"], serde_json::json!(std::process::id()));
+    assert!(
+        health["data"].get("ddocs").is_some(),
+        "ping names the ddocs it resolved, or null"
+    );
     server.abort();
 }
 

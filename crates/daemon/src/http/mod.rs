@@ -725,6 +725,8 @@ struct Health<'a> {
     /// This daemon's process id (plan 190, AC10). The spawn counter resets on
     /// restart, so two readings compare only when their pids match.
     pid: u32,
+    /// The ddocs this daemon resolved at start, or null (plan 190, C10).
+    ddocs: Option<String>,
     /// The processes this daemon has launched, by call site (plan 180).
     spawns: pij_core::spawns::SpawnCounts,
 }
@@ -749,6 +751,11 @@ async fn health(State(state): State<AppState>) -> Response {
             timeout_ms: pij_store::migrate::STORE_WAIT_TIMEOUT.as_millis() as u64,
         },
         pid: std::process::id(),
+        ddocs: state
+            .services
+            .ddocs
+            .path()
+            .map(|path| path.display().to_string()),
         spawns: pij_core::spawns::snapshot(),
     };
     match checked {
