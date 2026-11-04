@@ -73,10 +73,10 @@ makes the operation do *more* (delete more, send more, kill more), it was a
 
 **A one-directional safety interlock is not a policy.**
 
-Worked example (pij#183, s101). The orphaned-tap sweep reads each file's mtime
+Worked example (a change in the earlier private repo, session s101). The orphaned-tap sweep reads each file's mtime
 for a 5-minute grace, so "does it consult a timestamp?" is honestly **yes** — and
 answering "no" would have been false while answering "yes, therefore it is
-retention" would have blocked it behind an unrelated ruling (pij#204). The
+retention" would have blocked it behind an unrelated, still-open ruling on retention. The
 resolving question was directional:
 
 | input | decides deletion | can only spare |
