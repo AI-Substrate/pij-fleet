@@ -10,6 +10,7 @@
 | coder (s02 phase 2, plan 190) | pij-brisk-marten | 2026-11-04 |
 | reviewer | (per PR, assigned by pm-001) | — |
 | reviewer (PR #111) | pij-ambitious-anteater | 2026-11-04 |
+| reviewer (PR #113) | pij-varied-fly | 2026-11-04 |
 | security | pij-wary-lynx | 2026-11-04 |
 | performance | pij-frugal-wombat | 2026-11-04 |
 

@@ -54,3 +54,7 @@ Ruling C15: the earlier register stays in the private repo and is never copied h
 ## Job 4 (queued 13:08): ddocs-validate sensor (after s14)
 
 From the #110 reviewer, approved by the prime. Add a back-pressure sensor that runs `ddocs validate` over `docs/project/**` and the skill examples (`skills/pij/references/community/`), in `.harness/extensions/checks/` and `just self-check` together (AGENTS.md: new sensors go in both). It must work in CI, where ddocs is not installed today (ruling C10: `PIJ_DDOCS`, else PATH). You decide how ddocs gets there in CI, or the sensor reports UNAVAILABLE honestly. It must never pass silently. Prove it fires: break an example, see it fail, restore it. Own plan and branch: claim a plan number from me first. Cost: none at rest (runs only inside checks); say so in the backpressure.
+
+## Job 5 (queued 13:17): scrub the plan 175 files (ruling C19)
+
+After #111 merges. A small PR from origin/main: remove the private repository's name (and the `$HOME` path beside it) from `docs/plans/175-pij-skill-realign/assets/findings.md:135` and `assets/survey/prime-rituals.md:11,27`, replacing them with neutral wording ("the earlier private repo"). Then scan all of main for the name: 0 hits outside this PR's own diff. No plan needed; reviewer and security verdicts as usual. Send me the PR number and head.

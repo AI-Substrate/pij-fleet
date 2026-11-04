@@ -27,3 +27,6 @@
 2026-11-04 note claim:req-27 b19c84b claimed — C18 (communities self-discovered), heron adds it in the plan 193 PR; C18 noted for s03/s09/s10 packets
 2026-11-04 note claim:prd-003 - claimed by prime — seat messaging permissions (draft PR); next free PRD is 004
 2026-11-04 note pr-111-review b13f5b3 block — pij-ambitious-anteater: 2 P2 (req-03 typing-gate features exist; req-05/q-01 Claude inbound already default-on); routed to heron plus a code-receipt sweep of all 20 kept rows; reviewer kept up for re-review
+2026-11-04 note pr-111-security ed41a25 block — pij-wary-lynx: private repo named in plan 192 OQ text (pm-001's kept text) and check.py regex; routed to heron; asked prime to squash-merge (3 branch commits name it) and to rule on plan 175 files on main that already name it
+2026-11-04 note c19 - folded — prime squash-merges #111; heron job 5 = plan 175 scrub PR after #111; security grades head + forward scrub (to lynx with new head)
+2026-11-04 deliverable review-113-packet 75cf1a1 sent — reviewer pij-varied-fly (window pij:review-113, worktree fleet-review-113); security + performance asked; CI-no-ddocs decision to prime; req-27 moved to job 5
