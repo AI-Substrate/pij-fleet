@@ -12,3 +12,5 @@
 
 - [2026-11-04-pr-111-final.md](2026-11-04-pr-111-final.md): PR 111 a83c73b pass-with-notes; F003 closed, all counts agree, exact-head CI green; no correctness changes owed.
 
+- [2026-11-04-pr-114-community-writer.md](2026-11-04-pr-114-community-writer.md): PR 114 block, repinned to b28d815 after complete docs-only delta; missing brief commits a batch, relative PATH breaks ddocs after chdir; 33 targeted tests pass, both guard mutations detected.
+

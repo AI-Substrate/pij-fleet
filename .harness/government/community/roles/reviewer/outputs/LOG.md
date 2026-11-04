@@ -14,3 +14,9 @@
 
 2026-11-04 verdict pr-111 a83c73b9fcaf4a1688e8139f60e420f403ca55cd pass-with-notes - F003 closed by req-14; final counts 16 kept as 14 rows, 19 met, 5 obsolete; checker/docs/render/lint and four exact-head CI jobs pass; local composite gate dependency-limited, no correctness changes owed.
 
+2026-11-04 verdict pr-114 d5fd8cf48b4ffbe636818e996798f4bac3a4d9ed block - P2 missing-brief packet commits entire batch; P2 relative-PATH ddocs fails after chdir; 33 existing targeted tests pass, two guard mutations detected, real-ddocs/runtime controls reproduce both blockers; frozen-head CI green, local quick gate tooling-limited.
+
+2026-11-04 verdict pr-114 0c6ea8886e6f4dec9cc09d61cdcd654157be28ae block - supersedes d5fd8cf after complete two-file docs-only delta review; F001/F002 unchanged, production code/schemas/tests identical; exact 0c6ea88 CI four jobs green, no rebuild or checkout movement; GitHub already reports later e735b84.
+
+2026-11-04 verdict pr-114 b28d815be55ee4698d308eea1b67d91c3e4d0fd2 block - supersedes 0c6ea88 after complete d5fd8cf..b28d815 docs-only review; cost note matches receipts, backpressure validates and renders without drift, exact-head CI four jobs green; unchanged F001/F002, no rebuild or checkout movement.
+

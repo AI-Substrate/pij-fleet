@@ -10,6 +10,7 @@
 | coder (s02 phase 2, plan 190) | pij-brisk-marten | 2026-11-04 |
 | reviewer | (per PR, assigned by pm-001) | — |
 | reviewer (PR #114) | pij-still-termite | 2026-11-04 |
+| reviewer (PR #116) | pij-estimated-chinchilla | 2026-11-04 |
 | security | pij-wary-lynx | 2026-11-04 |
 | performance | pij-frugal-wombat | 2026-11-04 |
 

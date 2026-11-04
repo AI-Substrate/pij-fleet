@@ -55,3 +55,7 @@
 2026-11-04 note merge-order - set — #113 merged (3875247); #111 and #114 conflict in PRD 001; heron rebases #111 now, lynx checks rebased head; #114 rebases once after #111 merges
 2026-11-04 note pr-114-perf b28d815 pass-with-notes — wombat; estimate note resolved; PATH/deploy notes stand
 2026-11-04 note pr-111 cb7a0cb rebased — conflict-only (per-file line sets identical to a83c73b); security asked on cb7a0cb in fleet-review-111d; reviewer pass carries
+2026-11-04 note pr-111-ready cb7a0cb ready — verdicts at a83c73b (reviewer + security pass-with-notes); rebase content-identical; prime to choose merge now or wait for lynx cb7a0cb line
+2026-11-04 note pr-111-merged 795c9b7 merged — prime squash-merged; heron starts job 5
+2026-11-04 note pr-114-review d5fd8cf block — termite F001 missing brief committed; F002 relative PATH ddocs; routed to marten with merge of 795c9b7; disk 27 GB flagged
+2026-11-04 note pr-116 99d8bf4 sent — C19 scrub (3 files, 5 lines); reviewer pij-estimated-chinchilla (window pij:review-116), security queued; name#N x34 follow-up asked of prime
