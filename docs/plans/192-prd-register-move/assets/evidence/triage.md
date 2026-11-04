@@ -23,7 +23,7 @@ Verdicts: `kept` (written fresh into `docs/project/prds/002-pij-base.dd.json`), 
 | req-0016 | kept | req-11 | `pij tail` is refused because peer transcript tail differs from `pij-rs tail`; the naming is not settled. Merged with req-0010. |
 | req-0017 | kept | req-12 | Only `pij generation` exists; nothing names another daemon on a miss or lists running daemons. |
 | req-0018 | kept | req-09 | `pij-rs reap` reconciles stale bindings when run by hand; there is no automatic tombstone. |
-| req-0020 | kept | req-20 | There is no proven/unproven grade; registration admits verified hosts only. Kept as `could` on pm-001's call; whether it is wanted at all is open for the prime (PRD 002 q-02). |
+| req-0020 | kept | req-20 | There is no proven/unproven grade; registration admits verified hosts only. Kept as `could`, planned, by ruling C17. |
 | req-0022 | kept | req-04 | Pane typing exists; a live first-attempt proof for long bodies per harness does not. Merged with req-0005. |
 | req-0026 | kept | req-10 | Spawned seats get PIJ_SESSION_ID and PIJ_SPAWN_ID but not the daemon's address or state directory. |
 | req-0027 | dropped-met | | `pij-rs send` and the shim both take `--body-file` (see `pij-rs send --help`). |
