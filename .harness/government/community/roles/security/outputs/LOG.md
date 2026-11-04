@@ -4,3 +4,5 @@
 
 2026-11-04 verdict pr:111 ed41a254612d47432349656831e7804baed302c0 block - Private-repository identity in three plan/evidence locations; newer head b13f5b3a433e3b410a8e376ca0252cb67358bbab not covered; 2026-11-04-pr-111-ed41a25-security.md.
 
+2026-11-04 verdict pr:111 b13f5b3a433e3b410a8e376ca0252cb67358bbab block - D-192-3 delta safe; all three private-repository-identity blobs unchanged; 2026-11-04-pr-111-b13f5b3-security.md.
+
