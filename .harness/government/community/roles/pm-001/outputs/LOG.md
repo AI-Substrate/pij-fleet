@@ -50,3 +50,5 @@
 2026-11-04 deliverable review-114-packet d5fd8cf sent — reviewer pij-still-termite (window pij:review-114, worktree fleet-review-114, shared target dir); security + performance asked; disk 31 GB flagged to prime
 2026-11-04 note pr-111-security 75102c5 pass-with-notes — lynx; AGENTS.md:76,79 added to job 5 scrub; a83c73b delta still owed
 2026-11-04 note pr-114-head 0c6ea88 moved — marten added D-190-1 (docs only) after review start; verdict seats told to review d5fd8cf + delta, pin to 0c6ea88; head frozen
+2026-11-04 note pr-114-head b28d815 moved — docs only (bp-0005 measured cost, local check results), from pm-001's late pre-PR request; frozen; perf pass-with-notes at d5fd8cf, delta asked
+2026-11-04 note pr-113-ready 224512d ready — reviewer pass-with-notes, security pass-with-notes, perf pass; sent to prime
