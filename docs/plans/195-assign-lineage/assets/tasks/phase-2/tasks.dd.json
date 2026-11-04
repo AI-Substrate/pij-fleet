@@ -171,6 +171,31 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0012"
           ],
           "done": "tasks.dd.json#done_when/tk-000c"
+        },
+        {
+          "id": "tk-000d",
+          "title": "Adopt hand-written role folders (AC13, AC14)",
+          "phase": "ph-95b2",
+          "state": "unchecked",
+          "success": "add writes role.dd.json and its .dd.md into an existing role folder, skipping memory and outputs files that exist and never touching role.md; the foreign-edit check sees only written paths; E-RS-DIRECTORY-EXISTS only for an existing role.dd.json, naming it with a next step, and a batch names every existing role.",
+          "notes": "From docs-system's wave B dogfood (F3, F4, F11). A new NewFile mode skips a file when a guard path exists.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0013",
+            "../../../plan.dd.json#acceptance_criteria/ac-0014"
+          ],
+          "done": "tasks.dd.json#done_when/tk-000d"
+        },
+        {
+          "id": "tk-000e",
+          "title": "Linked worktrees find their project (AC15)",
+          "phase": "ph-95b2",
+          "state": "unchecked",
+          "success": "Match the caller's common git dir to each project repo's common git dir, read in-process; refuse with the register step when none matches.",
+          "notes": "F2 from the dogfood; the prime registered pij-fleet (F1).",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0015"
+          ],
+          "done": "tasks.dd.json#done_when/tk-000e"
         }
       ]
     },
@@ -271,6 +296,22 @@
             "assertion": "Local gates pass, CI is green on the PR head, and pm-001 has the PR number, head, checks and bp-0007 readings.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          }
+        ],
+        "tk-000d": [
+          {
+            "id": "dw-000d",
+            "assertion": "Adding a role into a hand-written folder (memory/INDEX.md with an unstaged edit, outputs/, role.md) commits only role.dd.json and role.dd.md and leaves the others byte-identical; an existing role.dd.json refuses naming it; a batch refusal names every existing role.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0008"
+          }
+        ],
+        "tk-000e": [
+          {
+            "id": "dw-000e",
+            "assertion": "A caller in a linked worktree resolves the project without --project; with none, the refusal names `pij project create`.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0009"
           }
         ]
       }

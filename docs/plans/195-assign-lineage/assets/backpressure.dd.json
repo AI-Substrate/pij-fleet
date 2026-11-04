@@ -50,9 +50,9 @@
           "phase": "ph-95b2",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "BUILD: a private tmux server test sees the window renamed on assign and an unchanged spawn counter; a paneless seat assigns with a receipt note.",
+          "proof": "BUILD: a private tmux server test renames the window through the adapter and the spawn counter moves by exactly one (tmux.rename-window); the daemon test sees the rename on assign; a paneless seat assigns with a receipt note.",
           "state": "unchecked",
-          "probe": "crates/tmux/src/control.rs"
+          "probe": "crates/tmux/src/lib.rs"
         },
         {
           "id": "bp-0005",
@@ -80,10 +80,32 @@
           "phase": "ph-95b2",
           "mode": "EXTEND",
           "tier": "computational",
-          "proof": "EXTEND: spawn_sites.rs covers any new launch site. Private daemon: spawn counter delta around one assign, one release, one close of an assigned seat and one `pij directory` (expected 9, 9, 9, 0), with data.pid on each reading. Live fleet before and after deploy: `pij-rs --json ping | jq .data.spawns` twice 60 s apart and `just spawn-rate --seconds 20`; expected no change at rest.",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site. Private daemon: spawn counter delta around one assign, one release, one close of an assigned seat and one `pij directory` (expected about 10, 9, 9, 0), with data.pid on each reading. Live fleet before and after deploy: `pij-rs --json ping | jq .data.spawns` twice 60 s apart and `just spawn-rate --seconds 20`; expected no change at rest.",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "Expected cost. Loop, poll, timer, sweep: none. Per assign, release, external add or close-with-assignment: one writer commit, about 9 launches. View and window rename: 0 launches (in-process reads; persistent control client). Scales with verb calls, never with seats or ticks."
+          "note": "Expected cost. Loop, poll, timer, sweep: none. Assign: one writer commit plus one tmux rename, about 10 launches. Release, external add or close-with-assignment: one writer commit, about 9. View: 0 (in-process reads). Scales with verb calls, never with seats or ticks."
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC13, AC14: adopt a hand-written role folder; foreign-edit check only on written paths",
+          "phase": "ph-95b2",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: writer and HTTP tests on a scratch governance repo whose role folder holds memory/INDEX.md (with an unstaged edit), outputs/ and role.md but no role.dd.json: add writes only role.dd.json and its .dd.md and leaves the rest byte-identical; with role.dd.json present it refuses E-RS-DIRECTORY-EXISTS naming that file and the next step; a batch names every existing role.",
+          "state": "unchecked",
+          "note": "Cost: unchanged, one writer commit.",
+          "probe": "crates/daemon/src/community/"
+        },
+        {
+          "id": "bp-0009",
+          "criterion": "AC15: a linked worktree finds its project",
+          "phase": "ph-95b2",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: an HTTP test whose caller cwd is a linked worktree of a project's repo resolves the project without --project; with no project for the repo the refusal names the register step.",
+          "state": "unchecked",
+          "note": "Cost: none. The common git dir is read from files in-process, no launch.",
+          "probe": "crates/daemon/src/community/"
         }
       ]
     },

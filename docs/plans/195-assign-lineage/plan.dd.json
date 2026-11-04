@@ -74,7 +74,7 @@
         },
         {
           "id": "ac-0006",
-          "claim": "Window name (req-26, C16). On assign, the holder's tmux window is renamed `<project>:<role>`, or `<project>:<role>-<instance>` for a many-holder role, through the daemon's persistent tmux control client (no new process launch). A seat with no pane, or a rename failure, does not fail the assign; the receipt says so.",
+          "claim": "Window name (req-26, C16). On assign, the holder's tmux window is renamed `<project>:<role>`, or `<project>:<role>-<instance>` for a many-holder role, with one tmux launch per assign by absolute path through pij_core::program::launch, recorded by the spawn counter, not the control client (its read allow-list stays as S2 pinned it). A seat with no pane, or a rename failure, does not fail the assign; the receipt says so.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
@@ -104,7 +104,7 @@
         },
         {
           "id": "ac-0011",
-          "claim": "Cost. Assign, release, external add and a close that ends an assignment each cost one writer commit (about 9 launches: git 7, ddocs 2) by absolute path, recorded by the spawn counter and covered by spawn_sites.rs; the view and the window rename launch nothing; nothing runs on a timer. The backpressure cost row carries before and after readings.",
+          "claim": "Cost. Assign costs one writer commit plus the window rename (about 10 launches: git 7, ddocs 2, tmux 1); release, external add and a close that ends an assignment each cost one writer commit (about 9); every launch is by absolute path, recorded by the spawn counter and covered by spawn_sites.rs; the view launches nothing; nothing runs on a timer. The backpressure cost row carries before and after readings.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007"
         },
@@ -113,6 +113,24 @@
           "claim": "Docs and states. docs/how/pij-rs-api.md documents the verbs and refusals; the pij skill's verb coverage and shim route tables carry them. In this PR: roadmap s04 goes to complete with its plan cell set to docs/plans/195-assign-lineage; req-01, req-06 and req-16 go to shipped; req-17 goes to shipped; c-store and c-verbs go to in-progress (later steps add verbs); c-orient goes to in-progress. All project docs validate clean.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0013",
+          "claim": "Adopt (wave B dogfood F3). `pij directory add` for a role whose folder already exists without role.dd.json (a hand-written role with memory/INDEX.md, outputs/ and role.md) adopts the folder: it writes role.dd.json and its .dd.md, writes neither memory nor outputs files when those exist, and leaves role.md alone. E-RS-DIRECTORY-EXISTS fires only when role.dd.json exists, names that file and gives the next step; a batch names every role that already exists.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
+          "id": "ac-0014",
+          "claim": "Foreign edits on written paths only (F4). The foreign-edit check covers only the paths the write will actually write, so adopting a role does not refuse over an edited memory/INDEX.md it leaves alone.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
+          "id": "ac-0015",
+          "claim": "Linked worktrees (F2). Project resolution matches a caller in a linked worktree to the project whose repo shares its common git dir, so a fleet-* worktree finds its project without --project. With no project for the repo, the refusal names the fix: `pij project create <name> --repo <path> --prime <seat>`.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0009"
         }
       ]
     },

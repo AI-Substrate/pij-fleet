@@ -776,7 +776,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}` | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>]` | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory rebuild`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -811,7 +811,8 @@ the standing governance worktree's `.harness/government`, found as
 1. It refuses before writing if any path it is about to write carries an edit it
    did not make (modified, staged or untracked), if that path or a directory
    above it inside the worktree is a symlink (checked with lstat, before anything
-   is written and again just before each write), or if the role already exists.
+   is written and again just before each write), or if the role's `role.dd.json`
+   already exists. The check covers only paths the write will actually write.
 2. It writes the document and has ddocs validate (`--depth 0`) and build it, by
    the absolute path resolved at daemon start.
 3. It commits in the standing governance worktree with `git add -- <its paths>`
@@ -842,7 +843,14 @@ refuses). `--file <json>` gives the whole document instead of flags. `--batch
 <dir>` imports every `*.dd.json` directly in `<dir>` in one commit, each naming
 its own `meta.id`; one invalid document commits none. `--why` is required and
 becomes the changelog row (`date`, `by` the calling seat, `why`). The project is
-`--project`, else the project whose recorded repo holds the caller's directory.
+`--project`, else the project whose recorded repo holds the caller's directory,
+else the one whose repo shares the caller's common git directory, so a linked
+worktree finds its project (read from git's files, no launch).
+
+A role folder that exists without `role.dd.json` (a hand-written role with its
+own `memory/`, `outputs/` and `role.md`) is adopted: the write adds
+`role.dd.json` and its `.dd.md` and touches nothing else there. A new role
+also gets `memory/INDEX.md` and `outputs/`; an existing folder keeps its own.
 
 The commit message is `community: add role <id>` (or `community: import <n>
 roles`), then the `--why`, then `Pij-Seat` and `Pij-Project` trailers. The
@@ -857,7 +865,8 @@ envelope returns `data.commit`, `data.paths` (repo-relative), `data.roles` as
 | `E-RS-GOV-FOREIGN-EDIT` | a path the write needs carries an edit pij did not make | commit or remove those edits |
 | `E-RS-GOV-LOCKED` | the worktree's `index.lock` stayed held through about 1.5 s of retries; pij never removes it | let that git command finish |
 | `E-RS-GOV-SYMLINK` | a path the write needs (the role, its `.dd.md`, a schema copy) is, or sits under, a symlink inside the governance worktree; a clean tracked link is no foreign edit to git, but writing through it could land outside the worktree | replace the link with a real file or directory |
-| `E-RS-DIRECTORY-EXISTS` | `directory add` named a role that already exists | — |
+| `E-RS-DIRECTORY-EXISTS` | the role's `role.dd.json` already exists; names that file, and a batch names every such role | choose another id |
+| `E-RS-NOT-FOUND` | no project records the caller's repository (or a named project or seat does not exist) | `pij project create <name> --repo <main checkout> --prime <seat>`, or `--project <slug>` |
 | `E-RS-ROLE-BRIEF-MISSING` | a standing packet's `brief` is not a readable file inside the governance worktree; names the role and the brief | commit the brief first, or use `--packet` |
 | `E-RS-GOV-GIT` | another git failure | — |
 | `E-RS-ARG` | a bad id (1-48 lowercase letters, digits or hyphens), a missing `--why`, or mixed `--file`, `--batch` and flags | — |
@@ -870,6 +879,61 @@ document (each a node process). Launches are counted as `git.community` and
 `ddocs.community`. Nothing runs on a timer.
 
 Source: [`community/`](../../crates/daemon/src/community/), [`http/directory.rs`](../../crates/daemon/src/http/directory.rs).
+
+### Holding roles (plan 195)
+
+`pij directory assign <role>[/<instance>] <seat> --why <text>` binds a live seat
+to an existing role. It appends a row to
+`community/roles/<id>/holders.dd.json` (`pij/holders`: seat, harness, harness
+session, machine, instance key, from, to, assigned by, released by, why, release
+why) through the same writer, then indexes it in the store (migration 0032) and,
+in that same store transaction, sets the seat's role (ruling C1): `pa` for the
+role `pa`, `pm` for `pm` or `pm-<n>`, `worker` otherwise; a prime is never
+re-roled. Then it calls the after-assign hook (ruling C6), which s05 uses to
+drain the role queue. A second live holder of a one-holder role succeeds with
+`data.warning` `W-ONE-HOLDER`. The envelope carries `commit`, `path`, the `row`
+as written, `seat_role` and `flushed` (pending close-ends this write carried).
+
+`pij directory release <role>[/<instance>] <seat> --why <text>` closes the row
+(`to`, `released_by`, `release_why`); seat roles are left as they are.
+
+`pij close <seat>` ends every open holding of the seat with `release_why`
+`close`, and never fails because of the directory. The ends are stored as
+pending first; each project's commit clears them. If the writer refuses (no
+governance worktree, a foreign edit), the close still tombstones, its receipt
+names the pending ends under `data.directory.pending` with the refusal, and the
+next directory write for that project (any verb) carries them to the branch.
+Committed ends are under `data.directory.committed`. A seat with no holdings
+adds nothing to the receipt.
+
+`pij directory` (no verb) shows this project's roles (id, title, kind, holders
+mode), their live holders (seat, instance, since, machine) and the full lineage,
+plus pending close-ends; `--json` gives the data. It reads role documents from
+the governance worktree and holders from the store, in-process, and launches
+nothing. `pij directory rebuild` replaces the project's pointer and holder rows
+from the governance branch head, so the view after a store loss is
+byte-identical (pending ends that never reached the branch are dropped: the
+branch is the truth). `pij directory [<verb>] --help` prints the verbs and
+flags, with no daemon needed.
+
+| Refusal | When |
+|---|---|
+| `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json`; the next step is `pij directory add` |
+| `E-RS-DIRECTORY-HELD` | the seat already holds that role and instance |
+| `E-RS-DIRECTORY-NOT-HELD` | release of a role the seat does not hold |
+| `E-RS-NOT-FOUND` | the seat does not exist |
+| `E-RS-ARG` | a closed seat, a missing `--why`, or role flags on assign or release |
+
+On assign the holder's tmux window is renamed `<project>:<role>`, or
+`<project>:<role>-<instance>` for a many-holder role (req-26, C16), with one tmux
+launch (`tmux.rename-window`), never through the control client, whose
+allow-list stays reads only. A seat with no pane, or a failed rename, still
+assigns; `data.window` says what happened.
+
+Cost: assign costs one writer commit plus the rename (about 10 launches: git 7,
+ddocs 2, tmux 1); release and a close that ends holdings cost one writer commit
+(about 9). The view and help launch nothing. A rebuild
+costs three git launches plus one per holders document, on demand only.
 
 ## Canonical wire examples
 

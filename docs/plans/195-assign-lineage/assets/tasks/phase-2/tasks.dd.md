@@ -47,6 +47,8 @@ Context brief. Purpose: holding roles (assign, release, close, lineage, view, re
 | tk-000a | Docs, skill tables and state flips (AC12) | — | ph-95b2 | [ ] unchecked | — | — | [tk-000a](tasks.dd.md#done-when) | pij-rs-api.md documents the verbs and refusals; skill CLI-verb and shim route tables carry them; roadmap s04 complete with plan cell; req-01, req-06, req-16, req-17 shipped; c-store, c-verbs, c-orient in-progress; all project docs validate. | Biome-format docs/project JSON after ddocs writes. | [ac-0012](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-000b | Cost receipts on a private daemon (AC11) | — | ph-95b2 | [ ] unchecked | — | — | [tk-000b](tasks.dd.md#done-when) | Spawn counter deltas around one assign, one release, one close of an assigned seat and one `pij directory` (expected 9, 9, 9, 0), each with data.pid; spawn_sites.rs covers any new site. | Private daemon only. | [ac-0011](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-000c | Gates, PR and report to pm-001 | — | ph-95b2 | [ ] unchecked | — | — | [tk-000c](tasks.dd.md#done-when) | `just rust-check` (scoped), the main-checkout biome, local-path-check, lockfile-allowlist and `just ddocs-check`; open the PR; send pm-001 the number, head, checks and bp-0007 readings. | TS proof is CI on the exact head. | — | [ac-0012](../../../plan.dd.md#acceptance-criteria) |
+| tk-000d | Adopt hand-written role folders (AC13, AC14) | — | ph-95b2 | [ ] unchecked | — | — | [tk-000d](tasks.dd.md#done-when) | add writes role.dd.json and its .dd.md into an existing role folder, skipping memory and outputs files that exist and never touching role.md; the foreign-edit check sees only written paths; E-RS-DIRECTORY-EXISTS only for an existing role.dd.json, naming it with a next step, and a batch names every existing role. | From docs-system's wave B dogfood (F3, F4, F11). A new NewFile mode skips a file when a guard path exists. | [ac-0013](../../../plan.dd.md#acceptance-criteria), [ac-0014](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-000e | Linked worktrees find their project (AC15) | — | ph-95b2 | [ ] unchecked | — | — | [tk-000e](tasks.dd.md#done-when) | Match the caller's common git dir to each project repo's common git dir, read in-process; refuse with the register step when none matches. | F2 from the dogfood; the prime registered pij-fleet (F1). | [ac-0015](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -123,6 +125,18 @@ Context brief. Purpose: holding roles (assign, release, close, lineage, view, re
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-000c | Local gates pass, CI is green on the PR head, and pm-001 has the PR number, head, checks and bp-0007 readings. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-000d
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000d | Adding a role into a hand-written folder (memory/INDEX.md with an unstaged edit, outputs/, role.md) commits only role.dd.json and role.dd.md and leaves the others byte-identical; an existing role.dd.json refuses naming it; a batch refusal names every existing role. | [ ] unchecked | [bp-0008](../../backpressure.dd.md#rows) |
+
+### tk-000e
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000e | A caller in a linked worktree resolves the project without --project; with none, the refusal names `pij project create`. | [ ] unchecked | [bp-0009](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
