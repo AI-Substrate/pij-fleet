@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "Governance-root resolver in Rust",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Port harness/scripts/government-root.sh to the daemon: from a repo, find the one standing prime-governance worktree and return its root and <root>/.harness/government. Every git call goes through pij_core::program::launch and records itself.",
           "notes": "No schema dependency. New module under crates/daemon/src/community/. Refusal code E-RS-GOV-ABSENT carries the script's bootstrap step.",
           "satisfies_toward": [
@@ -48,7 +48,7 @@
           "id": "tk-0003",
           "title": "Community layout and checkout-safe writer (C8, C9)",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "One layout module owns every community path (community/roles/<id>/role.dd.json, role.dd.md, memory/, outputs/; .dd/schemas/pij/* copies at the worktree root). The writer serialises per project, refuses foreign edits on its own paths, writes, validates, builds, then `git add -- <paths>` and `git commit --only -- <paths>` with seat trailers. Refreshes schema copies in the same commit when pij's version moves.",
           "notes": "Built against a placeholder document until phase 1 lands; the role parse is wired in the add task. Tests run against real temporary git repos, git never mocked.",
           "satisfies": [
@@ -61,7 +61,7 @@
           "id": "tk-0004",
           "title": "Store pointer: migration 0031 and rebuild",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Migration 0031 adds a community pointer table (project, repo-relative path, commit). Each write records its rows; a rebuild walks the governance branch head and restores the same rows.",
           "notes": "Migration number 0031 is claimed by pm-001 for this plan.",
           "satisfies": [
@@ -73,7 +73,7 @@
           "id": "tk-0005",
           "title": "Ping reports the daemon pid",
           "phase": "ph-ebe5",
-          "state": "unchecked",
+          "state": "checked",
           "success": "`pij-rs --json ping` carries data.pid from std::process::id(); no launch.",
           "notes": "Independent of everything else in the phase.",
           "satisfies": [
@@ -167,16 +167,18 @@
           {
             "id": "dw-0001",
             "assertion": "In a scratch repo, the resolver returns the standing prime-governance worktree; with none, two, a detached one, a missing directory or no .harness/government it refuses E-RS-GOV-ABSENT with the bootstrap step government-root.sh prints, and writes nothing.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "bc1fa86: cargo test -p pij-daemon --lib community::root (5 passed)"
           }
         ],
         "tk-0002": [
           {
             "id": "dw-0002",
             "assertion": "With PIJ_DDOCS unset and ddocs off PATH, or PIJ_DDOCS naming a non-executable file, a write refuses E-RS-DDOCS-MISSING with the install step and writes nothing; a document ddocs rejects refuses with ddocs' own message and commits nothing.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "bc1fa86/d13abd3: community::ddocs tests (4 passed, real ddocs ran, no skip) and writer_tests a_document_ddocs_rejects... "
           },
           {
             "id": "dw-0003",
@@ -189,42 +191,48 @@
           {
             "id": "dw-0004",
             "assertion": "In a governance worktree holding an unstaged edit to one tracked file, a staged edit to another and an untracked file, a write commits only its own paths; all three edits stay exactly as they were, and the checkout's next ordinary commit neither deletes nor reverts what pij wrote.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "bc1fa86: community::writer::tests::a_write_commits_only_its_own_paths_and_leaves_every_other_edit_as_it_was"
           },
           {
             "id": "dw-0005",
             "assertion": "A path the writer is about to write that already carries a foreign edit (modified, staged or untracked) refuses by name and writes nothing.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "bc1fa86: community::writer::tests::a_path_carrying_a_foreign_edit_refuses_and_writes_nothing (untracked, staged, modified)"
           },
           {
             "id": "dw-0006",
             "assertion": "Two concurrent writes for one project both land, one after the other; a held index.lock is retried briefly then refused by name, never forced.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "bc1fa86: two_concurrent_writes_both_land_one_after_the_other; a_held_index_lock_is_waited_for_then_refused_by_name_never_forced"
           },
           {
             "id": "dw-0007",
             "assertion": "When the schema copies under .dd/schemas/pij/ differ from pij's, the same commit refreshes them; when equal, they are not rewritten.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "bc1fa86: schema_copies_ride_in_the_same_commit_only_when_they_differ"
           }
         ],
         "tk-0004": [
           {
             "id": "dw-0008",
             "assertion": "`cargo test -p pij-store` proves: deleting the pointer rows and rebuilding from the governance branch head gives the same rows, row for row.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004",
+            "receipt": "abf07d2: pij-store community_pointers_upsert_by_path_and_a_rebuild_restores_them_row_for_row; pij-daemon community::pointer deleting_the_pointer_rows_and_rebuilding_from_the_branch_head_gives_the_same_rows"
           }
         ],
         "tk-0005": [
           {
             "id": "dw-0009",
             "assertion": "A pij-daemon test asserts the health envelope's data.pid equals the daemon's own process id.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0007"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007",
+            "receipt": "c1c82d6: http::tests::ping_reports_the_daemon_pid"
           }
         ],
         "tk-0006": [
@@ -237,8 +245,9 @@
           {
             "id": "dw-000b",
             "assertion": "Adding an id that already exists refuses by name and leaves the branch and worktree unchanged.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "d13abd3: tests/directory_http.rs add_writes_commits_and_points_at_a_role_then_refuses_it_twice"
           },
           {
             "id": "dw-000c",

@@ -35,11 +35,11 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Governance-root resolver in Rust | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | Port harness/scripts/government-root.sh to the daemon: from a repo, find the one standing prime-governance worktree and return its root and &lt;root&gt;/.harness/government. Every git call goes through pij_core::program::launch and records itself. | No schema dependency. New module under crates/daemon/src/community/. Refusal code E-RS-GOV-ABSENT carries the script's bootstrap step. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0001 | Governance-root resolver in Rust | — | ph-ebe5 | [x] checked | — | — | [tk-0001](tasks.dd.md#done-when) | Port harness/scripts/government-root.sh to the daemon: from a repo, find the one standing prime-governance worktree and return its root and &lt;root&gt;/.harness/government. Every git call goes through pij_core::program::launch and records itself. | No schema dependency. New module under crates/daemon/src/community/. Refusal code E-RS-GOV-ABSENT carries the script's bootstrap step. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
 | tk-0002 | ddocs resolution, validator port and doctor (C10) | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | Resolve ddocs once at daemon start from PIJ_DDOCS, else PATH, to an absolute path. A validator port (validate, build) is injected through the writer's constructor; the real one launches the resolved path via pij_core::program::launch and records itself. | No schema dependency. Unit tests use a fake validator; one test runs the real ddocs and names its skip when absent. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
-| tk-0003 | Community layout and checkout-safe writer (C8, C9) | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | One layout module owns every community path (community/roles/&lt;id&gt;/role.dd.json, role.dd.md, memory/, outputs/; .dd/schemas/pij/* copies at the worktree root). The writer serialises per project, refuses foreign edits on its own paths, writes, validates, builds, then `git add -- &lt;paths&gt;` and `git commit --only -- &lt;paths&gt;` with seat trailers. Refreshes schema copies in the same commit when pij's version moves. | Built against a placeholder document until phase 1 lands; the role parse is wired in the add task. Tests run against real temporary git repos, git never mocked. | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | Store pointer: migration 0031 and rebuild | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | Migration 0031 adds a community pointer table (project, repo-relative path, commit). Each write records its rows; a rebuild walks the governance branch head and restores the same rows. | Migration number 0031 is claimed by pm-001 for this plan. | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | Ping reports the daemon pid | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij-rs --json ping` carries data.pid from std::process::id(); no launch. | Independent of everything else in the phase. | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Community layout and checkout-safe writer (C8, C9) | — | ph-ebe5 | [x] checked | — | — | [tk-0003](tasks.dd.md#done-when) | One layout module owns every community path (community/roles/&lt;id&gt;/role.dd.json, role.dd.md, memory/, outputs/; .dd/schemas/pij/* copies at the worktree root). The writer serialises per project, refuses foreign edits on its own paths, writes, validates, builds, then `git add -- &lt;paths&gt;` and `git commit --only -- &lt;paths&gt;` with seat trailers. Refreshes schema copies in the same commit when pij's version moves. | Built against a placeholder document until phase 1 lands; the role parse is wired in the add task. Tests run against real temporary git repos, git never mocked. | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Store pointer: migration 0031 and rebuild | — | ph-ebe5 | [x] checked | — | — | [tk-0004](tasks.dd.md#done-when) | Migration 0031 adds a community pointer table (project, repo-relative path, commit). Each write records its rows; a rebuild walks the governance branch head and restores the same rows. | Migration number 0031 is claimed by pm-001 for this plan. | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Ping reports the daemon pid | — | ph-ebe5 | [x] checked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij-rs --json ping` carries data.pid from std::process::id(); no launch. | Independent of everything else in the phase. | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0006 | pij directory add, after merging phase 1 | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | Merge origin/plan/190-schemas, then wire `pij directory add &lt;id&gt;` (fields as flags, or --file JSON) through /v1/directory to the writer. Appends one changelog row with the caller seat and --why; returns the commit sha and repo-relative path. Native pij-rs verb plus shim route. | Blocked on phase 1 landing (pm-001 signals). Any schema change after that needs a docs-system verdict (C7). | [ac-0003](../../../plan.dd.md#acceptance-criteria) | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
 | tk-0007 | Batch import, all or nothing | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | `pij directory add --batch &lt;dir&gt;` validates every role, then writes them in one commit; one invalid document commits none. | Blocked on the add task. Eight fixtures shaped like the hand-written roles. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0008 | Docs: API, skill table, ping pid | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents the verb and its refusal codes and data.pid; skills/pij/SKILL.md CLI-verb table and the shim route table carry `directory`; docs/how/macos-defender.md (Measure launches) shows the pid. | Shared docs; keep edits to the named sections. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria), [ac-0010](../../../plan.dd.md#acceptance-criteria) |
@@ -53,45 +53,45 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 
 ### tk-0001
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0001 | In a scratch repo, the resolver returns the standing prime-governance worktree; with none, two, a detached one, a missing directory or no .harness/government it refuses E-RS-GOV-ABSENT with the bootstrap step government-root.sh prints, and writes nothing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0001 | In a scratch repo, the resolver returns the standing prime-governance worktree; with none, two, a detached one, a missing directory or no .harness/government it refuses E-RS-GOV-ABSENT with the bootstrap step government-root.sh prints, and writes nothing. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | bc1fa86: cargo test -p pij-daemon --lib community::root (5 passed) |
 
 ### tk-0002
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0002 | With PIJ_DDOCS unset and ddocs off PATH, or PIJ_DDOCS naming a non-executable file, a write refuses E-RS-DDOCS-MISSING with the install step and writes nothing; a document ddocs rejects refuses with ddocs' own message and commits nothing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
-| dw-0003 | `just doctor` prints the ddocs path the daemon resolved, or names it missing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0002 | With PIJ_DDOCS unset and ddocs off PATH, or PIJ_DDOCS naming a non-executable file, a write refuses E-RS-DDOCS-MISSING with the install step and writes nothing; a document ddocs rejects refuses with ddocs' own message and commits nothing. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | bc1fa86/d13abd3: community::ddocs tests (4 passed, real ddocs ran, no skip) and writer_tests a_document_ddocs_rejects...  |
+| dw-0003 | `just doctor` prints the ddocs path the daemon resolved, or names it missing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) | — |
 
 ### tk-0003
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0004 | In a governance worktree holding an unstaged edit to one tracked file, a staged edit to another and an untracked file, a write commits only its own paths; all three edits stay exactly as they were, and the checkout's next ordinary commit neither deletes nor reverts what pij wrote. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
-| dw-0005 | A path the writer is about to write that already carries a foreign edit (modified, staged or untracked) refuses by name and writes nothing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
-| dw-0006 | Two concurrent writes for one project both land, one after the other; a held index.lock is retried briefly then refused by name, never forced. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
-| dw-0007 | When the schema copies under .dd/schemas/pij/ differ from pij's, the same commit refreshes them; when equal, they are not rewritten. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0004 | In a governance worktree holding an unstaged edit to one tracked file, a staged edit to another and an untracked file, a write commits only its own paths; all three edits stay exactly as they were, and the checkout's next ordinary commit neither deletes nor reverts what pij wrote. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | bc1fa86: community::writer::tests::a_write_commits_only_its_own_paths_and_leaves_every_other_edit_as_it_was |
+| dw-0005 | A path the writer is about to write that already carries a foreign edit (modified, staged or untracked) refuses by name and writes nothing. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | bc1fa86: community::writer::tests::a_path_carrying_a_foreign_edit_refuses_and_writes_nothing (untracked, staged, modified) |
+| dw-0006 | Two concurrent writes for one project both land, one after the other; a held index.lock is retried briefly then refused by name, never forced. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | bc1fa86: two_concurrent_writes_both_land_one_after_the_other; a_held_index_lock_is_waited_for_then_refused_by_name_never_forced |
+| dw-0007 | When the schema copies under .dd/schemas/pij/ differ from pij's, the same commit refreshes them; when equal, they are not rewritten. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | bc1fa86: schema_copies_ride_in_the_same_commit_only_when_they_differ |
 
 ### tk-0004
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0008 | `cargo test -p pij-store` proves: deleting the pointer rows and rebuilding from the governance branch head gives the same rows, row for row. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0008 | `cargo test -p pij-store` proves: deleting the pointer rows and rebuilding from the governance branch head gives the same rows, row for row. | [x] checked | [bp-0004](../../backpressure.dd.md#rows) | abf07d2: pij-store community_pointers_upsert_by_path_and_a_rebuild_restores_them_row_for_row; pij-daemon community::pointer deleting_the_pointer_rows_and_rebuilding_from_the_branch_head_gives_the_same_rows |
 
 ### tk-0005
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0009 | A pij-daemon test asserts the health envelope's data.pid equals the daemon's own process id. | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0009 | A pij-daemon test asserts the health envelope's data.pid equals the daemon's own process id. | [x] checked | [bp-0007](../../backpressure.dd.md#rows) | c1c82d6: http::tests::ping_reports_the_daemon_pid |
 
 ### tk-0006
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-000a | A private-daemon run of `pij-rs directory add` against a scratch repo writes, validates, builds and commits the role; the envelope carries sha and path; the changelog row names the caller and --why. Transcript in assets/evidence/. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
-| dw-000b | Adding an id that already exists refuses by name and leaves the branch and worktree unchanged. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
-| dw-000c | skill_verb_coverage.rs and generation-skill-coverage.test.ts pass with `directory` added. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-000a | A private-daemon run of `pij-rs directory add` against a scratch repo writes, validates, builds and commits the role; the envelope carries sha and path; the changelog row names the caller and --why. Transcript in assets/evidence/. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) | — |
+| dw-000b | Adding an id that already exists refuses by name and leaves the branch and worktree unchanged. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | d13abd3: tests/directory_http.rs add_writes_commits_and_points_at_a_role_then_refuses_it_twice |
+| dw-000c | skill_verb_coverage.rs and generation-skill-coverage.test.ts pass with `directory` added. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) | — |
 
 ### tk-0007
 
