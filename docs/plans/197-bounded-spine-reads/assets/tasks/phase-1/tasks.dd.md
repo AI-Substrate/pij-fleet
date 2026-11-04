@@ -27,19 +27,60 @@
 
 ## Summary
 
-_Empty._
+Six tasks for issue #119: the two new Spine seeks first, then the three handlers on them, the equivalence oracle and the 1M-row bound test, docs, and the live measurement performance takes. Open question 1 taken as recommended: --limit default 500, maximum 5000.
 
 <a id="tasks"></a>
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Spine port: latest(seat) and seat_page(seat, since, limit) | — | ph-97a1 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | Two required Spine methods: the seat's highest-seq event, and a keyset page of one seat's events; SqliteSpine seeks spine_by_seat by name; every implementor (EventBus, FakeSpine, test wrappers) delegates or implements, none defaults to tail. | crates/core/src/ports.rs, crates/store/src/spine.rs, crates/daemon/src/events/mod.rs, crates/testkit/src/fakes.rs and the test Spine wrappers. Required, not defaulted, for the reason the trait already gives for newest(). |  | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | node show and spine events: newest() and a paged, limited read | — | ph-97a1 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | node show and the spine-events refusal check read Spine::newest(); spine events reads one tail_page (or seat_page for --peer) of --limit rows (default 500, max 5000, refused by name above it or at 0); the envelope cursor is the last row read and more says whether rows remain; a short page leaves the cursor at the head, so existing --since loops keep working. | crates/daemon/src/http/governance.rs node_show and spine_command; flag allowlist at the spine events/render arm; golden fixtures under crates/testkit/fixtures/golden/api if the envelope shape changes. | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) |  |
+| tk-0003 | anomalies: build the view from per-seat indexed reads | — | ph-97a1 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | AnomalyService::list never calls tail. Cursor from newest() read first; cards and done/verify facts from all_matching on spine_by_seat_kind; seat.put from latest_matching with a decode fallback; activity from latest(seat); delivered dispatch seqs from the recipient's dispatch rows; ack/clear dispositions from the seats of candidate rows. Output identical to the fold. | crates/daemon/src/http/anomalies.rs. Exactness argument: registry rows are never deleted; dispatch delivered events are published under dispatch.to; dispositions are only producible under the anomaly's own seat (disposition_event; spine append payloads carry no occurrence); activity feeds only observable, which wire() drops. | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Bounded by construction: 1M-row scratch store, query plans, guard | — | ph-97a1 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | A test seeds a scratch store with at least 1M spine rows (most under one junk seat), asserts EXPLAIN QUERY PLAN for every statement the three verbs now use names an index and never SCAN spine_events, runs each verb under a stated wall-time bound, and runs all three through a Spine guard that refuses tail(). | Scratch store only; never the prod daemon. Lean payloads to keep the temp file small (disk is near the 25 GB line). | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Docs and difficulty ledger | — | ph-97a1 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents spine events --limit (default, maximum, refusal), the cursor and more; the pij skill route lines show --limit; docs/difficulties.md gets a resolved row; the PR body closes #119 and names the bg.lost junk rows as an open operator decision. | skills/pij/references/routes/node.md and references/prime/rituals/store-native.md carry the spine events usage line. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | [ac-0002](../../../plan.dd.md#acceptance-criteria) |
+| tk-0006 | Live before and after (performance seat) | — | ph-97a1 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | pm-001 asks performance (pij-frugal-wombat) once the PR is open; it records CPU, peak RSS, physical footprint and disk read for one unscoped pij anomalies --json and one pij node show, before and after deploy, with spawn readings carrying data.pid. | Owned by performance, wired by pm-001. Expected: no new launch site, loop or timer; reads scale with seats x kinds. | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | cargo test -p pij-store spine: latest(seat) returns the highest-seq row of that seat only (None for an unknown seat); seat_page returns at most limit rows after the cursor, oldest first, and pages to the end. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | cargo test -p pij-daemon governance: node show cursor equals the spine head; spine events pages through a spine larger than one limit with the returned cursor and sees every row once; --limit 5001 and --limit 0 refuse E-RS-ARG naming the maximum; --peer returns only that seat with a paging cursor. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | An equivalence test keeps the old fold as a test oracle and asserts identical pij anomalies JSON, unscoped and with --seat, --here and --project, over fixture spines with stale and fresh cards, parked seats, tombstones, a revived seat with two seat.put rows, done/verify pairs, delivered and acked dispatches, open decisions, ack and clear dispositions, an undecodable latest row, and a seat holding thousands of junk rows. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | cargo test -p pij-daemon bounded_spine: on a &gt;=1M-row scratch spine, every statement plan uses an index with no full scan, each verb completes inside its stated bound, and the guard spine (tail refused) serves all three verbs. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | The API doc, skill route lines and difficulty row are in the diff; CI is green on the exact PR head; reviewer, security and performance verdicts are posted. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0006 | The performance verdict on the PR records the before and after for both calls and unchanged spawn counters. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
