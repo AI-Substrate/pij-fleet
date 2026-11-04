@@ -16,3 +16,5 @@
 
 - [2026-11-04-pr-116-scrub.md](2026-11-04-pr-116-scrub.md): PR 116 block; findings.md:78 retains the scrubbed worktree path, four occurrences to one; eight positive controls and exact-head CI pass, meaning preserved.
 
+- [2026-11-04-pr-116-fix-review.md](2026-11-04-pr-116-fix-review.md): PR 116 fix head 279b0ec passes; F001 closed, generic install roots allowed after PM clarification; corrected probe's 20 controls, docs and exact-head CI pass.
+

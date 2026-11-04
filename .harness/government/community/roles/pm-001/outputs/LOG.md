@@ -64,3 +64,5 @@
 2026-11-04 note pr-114-security d5fd8cf block — lynx S1 medium symlink write escape + rollback; F002 confirmed; routed to marten (F001+F002+S1 one push); governance LOW machine path in reviewer verdict to termite
 2026-11-04 note pr-116-review 99d8bf4 block — chinchilla: findings.md:78 still has the $HOME path; routed to heron; lynx told to wait for new head
 2026-11-04 note pr-116 279b0ec sent — fix head; reviewer delta + security full in fleet-review-116b
+2026-11-04 note pr-114 d90e464 partial — F001+F002 fixed (CI green), S1 missing; marten told to write S1, no build until disk ok; disk 23 GB to prime; re-review held for S1 head
+2026-11-04 note pr-116-review 279b0ec pass — chinchilla (F002 withdrawn, generic install roots not findings); reviewer retired; awaiting security

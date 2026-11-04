@@ -22,3 +22,5 @@
 
 2026-11-04 verdict pr-116 99d8bf42102a8d642a520fbc27008369de63f8e5 block - F001: findings.md:78 retains the exact worktree path scrubbed elsewhere (four occurrences to one); meaning preserved, private owner/name hits zero, eight positive controls pass, exact-head CI four jobs green; local quick gate tooling-limited, no Cargo or product edits.
 
+2026-11-04 verdict pr-116 279b0ec430edcb0b64ed39f76afbbb6ac111be20 pass - corrects the provisional same-head block after PM clarification: generic documented install roots are allowed; F001 closed, no outstanding findings; tracked-tree identity/path scrub zero, 20 controls pass, plan validates 0/0 and render has no drift, four CI jobs green; local quick gate tooling-limited, original worktree unchanged.
+

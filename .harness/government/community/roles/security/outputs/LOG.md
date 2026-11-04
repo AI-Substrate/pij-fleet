@@ -20,3 +20,5 @@
 
 2026-11-04 verdict pr:114 d5fd8cf48b4ffbe636818e996798f4bac3a4d9ed block - Static tracked-symlink confinement bypass, confidence 8/10; PATH/cwd defect confirmed; 9 pure tests pass; governance through d8588bb has separate personal build-path note; C21 applied; later fix not covered; 2026-11-04-pr-114-d5fd8cf-security.md.
 
+2026-11-04 verdict pr:116 279b0ec430edcb0b64ed39f76afbbb6ac111be20 pass-with-notes - Full six-file scrub clear; calibrated controls 4 identity/5 private path, whole-tree target hits 0; 34 bare refs allowed by C21; no further scrub owed; governance through 9e4a5c9b and scrub3cf verified; 2026-11-04-pr-116-279b0ec-security.md.
+
