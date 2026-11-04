@@ -9,6 +9,7 @@
 pub mod ddocs;
 mod git;
 pub mod layout;
+pub mod pointer;
 pub mod root;
 pub mod writer;
 

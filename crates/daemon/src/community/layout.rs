@@ -85,6 +85,13 @@ pub fn exists(id: &str, path: &std::path::Path) -> Refusal {
     )
 }
 
+/// Whether a worktree-relative path is a community document the store points at.
+pub fn is_document(path: &str) -> bool {
+    path.starts_with(COMMUNITY)
+        && path[COMMUNITY.len()..].starts_with('/')
+        && path.ends_with(".dd.json")
+}
+
 /// The `.dd.md` sibling ddocs renders next to a `.dd.json`.
 pub fn rendered(document: &std::path::Path) -> PathBuf {
     let name = document

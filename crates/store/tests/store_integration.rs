@@ -1448,3 +1448,56 @@ async fn watchdog_migrations_move_a_schema_28_store_to_current_losing_nothing() 
     assert!(!store.claim_limit_wake(&again).await.unwrap());
     assert_eq!(store.limit_wakes().await.unwrap(), vec![wake]);
 }
+
+/// Plan 190, AC7: the community pointer is a cache of the governance branch.
+/// Writes upsert by (project, path); a rebuild replaces one project's rows in a
+/// single transaction and leaves other projects alone.
+#[tokio::test]
+async fn community_pointers_upsert_by_path_and_a_rebuild_restores_them_row_for_row() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let pointer = |project: &str, path: &str, commit: &str| pij_store::CommunityPointer {
+        project: project.into(),
+        path: path.into(),
+        commit: commit.into(),
+    };
+    let pm = ".harness/government/community/roles/pm/role.dd.json";
+    let qa = ".harness/government/community/roles/qa/role.dd.json";
+    store
+        .record_community_pointers(&[pointer("pij", pm, "c1"), pointer("other", pm, "o1")])
+        .await
+        .unwrap();
+    store
+        .record_community_pointers(&[pointer("pij", qa, "c2")])
+        .await
+        .unwrap();
+    store
+        .record_community_pointers(&[pointer("pij", pm, "c3")])
+        .await
+        .unwrap();
+    let recorded = store.community_pointers("pij").await.unwrap();
+    assert_eq!(
+        recorded,
+        vec![pointer("pij", pm, "c3"), pointer("pij", qa, "c2")]
+    );
+
+    sqlx::query("DELETE FROM community_pointers WHERE project = 'pij'")
+        .execute(&store_pool(&fresh).await)
+        .await
+        .unwrap();
+    assert!(store.community_pointers("pij").await.unwrap().is_empty());
+    store
+        .replace_community_pointers("pij", &[pointer("pij", qa, "c2"), pointer("pij", pm, "c3")])
+        .await
+        .unwrap();
+    assert_eq!(store.community_pointers("pij").await.unwrap(), recorded);
+    assert_eq!(
+        store.community_pointers("other").await.unwrap(),
+        vec![pointer("other", pm, "o1")]
+    );
+}
+
+async fn store_pool(fresh: &FreshStore) -> pij_store::StorePool {
+    pij_store::open(&fresh.path()).await.expect("second pool")
+}
