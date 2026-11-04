@@ -147,7 +147,8 @@
         },
         {
           "question": "Is `prime` a role template at all, given the prime is designated, not assigned (seat roles C1 never re-role a prime)? Recommended: yes, as a description of the prime's duties for the directory, with a note that assign never applies to it.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Ruled C24: yes, prime is a template describing its duties; assign never applies to it."
         }
       ]
     },

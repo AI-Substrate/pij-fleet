@@ -122,7 +122,7 @@ _Empty._
 | question | state | note | answer |
 | --- | --- | --- | --- |
 | Ruled C22: core roles are prompted, not created; security is prompted until it exists; req-14 is reworded. | [x] checked | — | C22, folded into AC5 and AC6. |
-| Is `prime` a role template at all, given the prime is designated, not assigned (seat roles C1 never re-role a prime)? Recommended: yes, as a description of the prime's duties for the directory, with a note that assign never applies to it. | [ ] unchecked | — | — |
+| Is `prime` a role template at all, given the prime is designated, not assigned (seat roles C1 never re-role a prime)? Recommended: yes, as a description of the prime's duties for the directory, with a note that assign never applies to it. | [x] checked | — | Ruled C24: yes, prime is a template describing its duties; assign never applies to it. |
 
 <a id="workshop-opportunities"></a>
 
