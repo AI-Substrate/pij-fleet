@@ -14,7 +14,7 @@
 | ordinal | — |
 | status | draft |
 | complexity | — |
-| summary | — |
+| summary | Writer, resolver, refusals, pointer, ping pid, add and batch, docs, cost receipts, state flips. |
 | backpressure | — |
 | log | — |
 | mode | — |
@@ -27,19 +27,101 @@
 
 ## Summary
 
-_Empty._
+Context brief. Purpose: the daemon-side community writer and `pij directory add` (AC2-AC10). Entrypoints: crates/daemon/src/http/governance.rs (argv family parser and handler, /v1/<family> routes in http/mod.rs Endpoint), crates/cli/src/governance.rs (native forwarding), orchestration/repo.rs (the git launch pattern via pij_core::program::launch plus spawns::record), crates/store/migrations (next is 0031), harness/scripts/government-root.sh (resolver to port). Order: tk-0001, tk-0002, tk-0005 and tk-0004 need no schemas; tk-0003 builds on 0001 and 0002; tk-0006 and tk-0007 wait for phase 1 (merge origin/plan/190-schemas); docs, cost, flips and gates close. Tests: real temporary git repos, git never mocked; ddocs injected through the constructor, one real-ddocs test with a named skip. Hazards: macOS git is an xcrun shim (count real launches); never the live governance branch or the prod daemon; ddocs resolves schemas from <worktree>/.dd, so copies live at the governance worktree root, not under .harness/government. Proof: bp-0002 to bp-0007.
 
 <a id="tasks"></a>
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Governance-root resolver in Rust | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | Port harness/scripts/government-root.sh to the daemon: from a repo, find the one standing prime-governance worktree and return its root and &lt;root&gt;/.harness/government. Every git call goes through pij_core::program::launch and records itself. | No schema dependency. New module under crates/daemon/src/community/. Refusal code E-RS-GOV-ABSENT carries the script's bootstrap step. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | ddocs resolution, validator port and doctor (C10) | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | Resolve ddocs once at daemon start from PIJ_DDOCS, else PATH, to an absolute path. A validator port (validate, build) is injected through the writer's constructor; the real one launches the resolved path via pij_core::program::launch and records itself. | No schema dependency. Unit tests use a fake validator; one test runs the real ddocs and names its skip when absent. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0003 | Community layout and checkout-safe writer (C8, C9) | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | One layout module owns every community path (community/roles/&lt;id&gt;/role.dd.json, role.dd.md, memory/, outputs/; .dd/schemas/pij/* copies at the worktree root). The writer serialises per project, refuses foreign edits on its own paths, writes, validates, builds, then `git add -- &lt;paths&gt;` and `git commit --only -- &lt;paths&gt;` with seat trailers. Refreshes schema copies in the same commit when pij's version moves. | Built against a placeholder document until phase 1 lands; the role parse is wired in the add task. Tests run against real temporary git repos, git never mocked. | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Store pointer: migration 0031 and rebuild | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | Migration 0031 adds a community pointer table (project, repo-relative path, commit). Each write records its rows; a rebuild walks the governance branch head and restores the same rows. | Migration number 0031 is claimed by pm-001 for this plan. | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Ping reports the daemon pid | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij-rs --json ping` carries data.pid from std::process::id(); no launch. | Independent of everything else in the phase. | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | pij directory add, after merging phase 1 | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | Merge origin/plan/190-schemas, then wire `pij directory add &lt;id&gt;` (fields as flags, or --file JSON) through /v1/directory to the writer. Appends one changelog row with the caller seat and --why; returns the commit sha and repo-relative path. Native pij-rs verb plus shim route. | Blocked on phase 1 landing (pm-001 signals). Any schema change after that needs a docs-system verdict (C7). | [ac-0003](../../../plan.dd.md#acceptance-criteria) | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0007 | Batch import, all or nothing | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | `pij directory add --batch &lt;dir&gt;` validates every role, then writes them in one commit; one invalid document commits none. | Blocked on the add task. Eight fixtures shaped like the hand-written roles. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0008 | Docs: API, skill table, ping pid | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents the verb and its refusal codes and data.pid; skills/pij/SKILL.md CLI-verb table and the shim route table carry `directory`; docs/how/macos-defender.md (Measure launches) shows the pid. | Shared docs; keep edits to the named sections. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria), [ac-0010](../../../plan.dd.md#acceptance-criteria) |
+| tk-0009 | Cost receipts on a private daemon | — | ph-ebe5 | [ ] unchecked | — | — | [tk-0009](tasks.dd.md#done-when) | Before and after spawn readings with data.pid, the per-write launch count for one add and one eight-role batch, and spawn_sites.rs covering every new launch site; recorded in the backpressure cost row. | Private daemon only, never the prod daemon. | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-000a | Doc state flips and req-03 rewording | — | ph-ebe5 | [ ] unchecked | — | — | [tk-000a](tasks.dd.md#done-when) | Roadmap s02 to shipped with plan cell set; req-03 reworded to C8; req-02, req-03 shipped; req-04, req-05, req-17, req-19 in-progress; c-role-schema, c-layout, c-writer shipped. Rebase after the s13 PR (191) merges. | Biome-format any docs/project JSON after ddocs writes it. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-000b | Gates, PR and report to pm-001 | — | ph-ebe5 | [ ] unchecked | — | — | [tk-000b](tasks.dd.md#done-when) | `just rust-check` (scoped where possible), `harness checks`, open the PR against main, send pm-001 the PR number, head sha, checks result and bp-0005 readings. | The job is not finished until the send has gone. | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | In a scratch repo, the resolver returns the standing prime-governance worktree; with none, two, a detached one, a missing directory or no .harness/government it refuses E-RS-GOV-ABSENT with the bootstrap step government-root.sh prints, and writes nothing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | With PIJ_DDOCS unset and ddocs off PATH, or PIJ_DDOCS naming a non-executable file, a write refuses E-RS-DDOCS-MISSING with the install step and writes nothing; a document ddocs rejects refuses with ddocs' own message and commits nothing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0003 | `just doctor` prints the ddocs path the daemon resolved, or names it missing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | In a governance worktree holding an unstaged edit to one tracked file, a staged edit to another and an untracked file, a write commits only its own paths; all three edits stay exactly as they were, and the checkout's next ordinary commit neither deletes nor reverts what pij wrote. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0005 | A path the writer is about to write that already carries a foreign edit (modified, staged or untracked) refuses by name and writes nothing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0006 | Two concurrent writes for one project both land, one after the other; a held index.lock is retried briefly then refused by name, never forced. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0007 | When the schema copies under .dd/schemas/pij/ differ from pij's, the same commit refreshes them; when equal, they are not rewritten. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0008 | `cargo test -p pij-store` proves: deleting the pointer rows and rebuilding from the governance branch head gives the same rows, row for row. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0009 | A pij-daemon test asserts the health envelope's data.pid equals the daemon's own process id. | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000a | A private-daemon run of `pij-rs directory add` against a scratch repo writes, validates, builds and commits the role; the envelope carries sha and path; the changelog row names the caller and --why. Transcript in assets/evidence/. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-000b | Adding an id that already exists refuses by name and leaves the branch and worktree unchanged. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-000c | skill_verb_coverage.rs and generation-skill-coverage.test.ts pass with `directory` added. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0007
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000d | Importing eight role fixtures lands as one commit; the same batch with one invalid document commits nothing and leaves the worktree as it was. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0008
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000e | pij-rs-api.md and macos-defender.md show the verb, its refusals and data.pid; the skill coverage gates pass. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-0009
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000f | bp-0005 carries before/after readings from one pid per pair, the per-write and per-batch launch counts, and spawn_sites.rs passes with the new sites. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-000a
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0010 | `ddocs validate` is clean on PRD, blueprint and roadmap 001 with the flips applied after rebasing on 191. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-000b
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0011 | `just rust-check` and `harness checks` pass on the PR head; pm-001 has the PR number, head sha, checks and cost readings. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
