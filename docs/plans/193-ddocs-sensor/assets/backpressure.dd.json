@@ -32,8 +32,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: the sensor in .harness/extensions/checks/extension.ts and `just self-check`; CI step `just ddocs-check --unavailable=warn` shows its UNAVAILABLE annotation on the PR run.",
-          "state": "unchecked",
-          "probe": "just ddocs-check"
+          "state": "checked",
+          "probe": "just ddocs-check",
+          "receipt": "CI run 41766023159: warning annotation 'ddocs-check UNAVAILABLE' on check (22) and check (24)"
         },
         {
           "id": "bp-0003",

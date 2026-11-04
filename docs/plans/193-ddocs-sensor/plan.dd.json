@@ -56,8 +56,9 @@
         {
           "id": "ac-0003",
           "claim": "Wiring. The `ddocs` sensor is added to .harness/extensions/checks/ (extension and instructions) and to `just self-check` together, as AGENTS.md requires; AGENTS.md's inventory names it. CI runs `just ddocs-check --unavailable=warn`.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "CI run 41766023159 on 220fa2c: all jobs success; check (22) and check (24) print UNAVAILABLE and a 'ddocs-check UNAVAILABLE' warning annotation"
         },
         {
           "id": "ac-0004",
@@ -82,8 +83,9 @@
           "id": "ph-d8b9",
           "title": "ddocs sensor, CI install and proof",
           "brief": "AC1 to AC5. docs-system. harness/scripts/ddocs-check.ts with tests, the recipe, the checks sensor, self-check, CI step, and the fires proof. CS-2.",
-          "state": "unchecked",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "AC1-AC5 checked; evidence assets/evidence/fires.txt and CI run 41766023159"
         }
       ]
     },
