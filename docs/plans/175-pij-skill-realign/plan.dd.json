@@ -92,7 +92,7 @@
         },
         {
           "id": "ac-0008",
-          "claim": "Governance pointers resolve or say honestly that they don't (ruling R2): the dead pij-worktrees/pij-governance example is gone; the files say what a prime does when harness/scripts/government-root.sh finds no governance worktree (pij-fleet today); pending decisions use `pij report question` / `pij decisions` / `pij answer`; allocation, batons and canaries name `pij stream create`, `pij orchestration baton …` and `pij canary` (legs a and b automated, leg c closes on `pij ack`); no PA spine-append refusal is claimed; store-native.md's `--project` claim matches governance.rs and its mapping table renders; issue references (#89, #96, #102, #103, #446) point to issues that exist on AI-Substrate/pij-fleet or are removed.",
+          "claim": "Governance pointers resolve or say honestly that they don't (ruling R2): the dead governance-worktree path example is gone; the files say what a prime does when harness/scripts/government-root.sh finds no governance worktree (pij-fleet today); pending decisions use `pij report question` / `pij decisions` / `pij answer`; allocation, batons and canaries name `pij stream create`, `pij orchestration baton …` and `pij canary` (legs a and b automated, leg c closes on `pij ack`); no PA spine-append refusal is claimed; store-native.md's `--project` claim matches governance.rs and its mapping table renders; issue references (#89, #96, #102, #103, #446) point to issues that exist on AI-Substrate/pij-fleet or are removed.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
           "proven_by": "assets/execution-log.dd.json#entries/lg-0003"
