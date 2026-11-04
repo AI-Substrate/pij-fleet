@@ -1,0 +1,104 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 190 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1: pij/role, pij/output and pij/memory validate the right documents and refuse the wrong ones",
+          "phase": "ph-c762",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: fixture documents beside the schemas (a role with an inline packet, a role whose packet references a brief file, a role missing scope, a role missing its standing packet, one output of each kind, one memory note); `ddocs validate --depth 0` on each, with the expected pass or fail recorded in the execution log.",
+          "state": "unchecked",
+          "probe": ".dd/schemas/pij/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2-AC5: the writer's layout, add, refusals and checkout safety",
+          "phase": "ph-ebe5",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: cargo tests in pij-daemon against a real temporary git repo that has a prime-governance worktree checked out with an uncommitted edit; a fake validator injected through the constructor (P3) for unit cases, plus one test that runs the real ddocs and names its skip when ddocs is absent. `cargo test -p pij-daemon community`.",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3, AC6: `pij directory add` and batch import end to end",
+          "phase": "ph-ebe5",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: crates/cli/tests/skill_verb_coverage.rs and .omp/extensions/pij/core/generation-skill-coverage.test.ts for the new verb; a private daemon run of `pij-rs directory add` and `--batch` against a scratch repo, transcript in assets/evidence/.",
+          "state": "unchecked",
+          "probe": "crates/cli/tests/skill_verb_coverage.rs"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC7: the store pointer and its rebuild",
+          "phase": "ph-ebe5",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: migration 0031 with a pij-store test; drop the pointer rows, rebuild from the governance branch head, compare row for row. `cargo test -p pij-store`.",
+          "state": "unchecked",
+          "probe": "crates/store/migrations/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC8: cost (AGENTS.md, resource cost is a correctness property)",
+          "phase": "ph-ebe5",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: crates/testkit/tests/spawn_sites.rs covers every new launch site. Live fleet before and after deploy: `pij-rs --json ping | jq .data.spawns` read twice 60 s apart, and `just spawn-rate --seconds 20`; expected no change at rest. Per write on a private daemon: spawn counter delta around one `pij directory add` and one 8-role batch.",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "Expected cost. Loop, poll, timer, sweep: none. Launches per `directory add`: about 7 (ddocs validate, ddocs build, and about 5 git plumbing calls), each by an absolute path resolved once through pij_core::program::launch; ddocs is a node script, so count the node it starts too. A batch costs the same launches once per batch, not per role. Scaling: with requests only; zero per seat and zero per tick; zero launches when nobody writes."
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC9 and the merge gate",
+          "phase": "ph-ebe5",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`ddocs validate` on PRD, blueprint and roadmap 001 after the state flips; `just rust-check`; `harness checks`; GitHub CI on the exact head; reviewer, security and performance verdicts on that head.",
+          "state": "unchecked",
+          "probe": "harness checks"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}
