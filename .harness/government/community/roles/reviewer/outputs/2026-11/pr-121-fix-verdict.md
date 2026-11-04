@@ -1,5 +1,7 @@
 # PR 121 fix-head correctness review
 
+**Superseded:** [final verdict](pr-121-final-verdict.md) passes with notes at `2ecbd26a8437593f03e27b1b7e412862d7900baf`; F001 and F002 are closed. This file records the earlier repair-head review.
+
 **reviewer: block (head 30b3a371067450e2275d3e3926736a8479a70d0c)**
 
 Supersedes the original e13a834 verdict. F001 is closed. F002's existing-symlink case is closed, but target-identity exclusion still fails for an initially missing target ending in `/`.

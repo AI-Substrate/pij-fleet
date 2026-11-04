@@ -36,7 +36,11 @@
 
 2026-11-04 verdict pr-122 94592ad6a0ba14a97c8ae1ad2d930c4ba7185ff3 block - F001 P1 same-role writes clear pending close-ends without committing them; F002 P2 same-second release/reassign collides with holding PK and rebuild silently drops the new holding; 51 baseline tests pass, three regressions fail, close guard mutation detected and restored control passes; exact-head CI green, local quick gate tooling-limited.
 
+2026-11-04 verdict pr-122 e4527770a69db16cf5b3a85df528d4e08c21672a pass-with-notes - F001/F002 closed; 56 exact-head targeted tests pass, both repair mutations detected, missing-holding and duplicate-index boundary controls pass; F003 P3 test-clock false failure observed after restore, eight targeted repeats pass; all four exact-head CI jobs green, local quick gate tooling-limited; new checkout frozen, no product edits.
+
 2026-11-04 verdict pr-121 e13a834de99fe8e41e0373bc3ee0e2edb4956c8e block - P1 TERM/INT unlock while cargo descendants remain active; P2 target symlink selects a different lock for the same directory; both overlap defects reproduced with fake cargo on Bash 3.2, normal controls and non-exclusive-lock mutation pass; exact-head CI four jobs green, local quick gate tooling-limited; no real cargo or product edits.
 
 2026-11-04 verdict pr-121 30b3a371067450e2275d3e3926736a8479a70d0c block - F001 closed by group drain (TERM, INT, normal leftovers and resistant-worker KILL pass); F002 existing-symlink case closed but initially missing target/ selects target/.lock while target selects target.lock, reproducing overlap; 13 repair groups and three guard mutations pass, focused residual reproduces, CI four jobs/10 tests green; no real cargo or product edits.
+
+2026-11-04 verdict pr-121 2ecbd26a8437593f03e27b1b7e412862d7900baf pass-with-notes - F001/F002 closed; exact trailing-slash reproducer and four separator/symlink variants serialize, normalization mutation detected; final two-file delta clean, exact-head CI four jobs/11 tests green; local quick gate tooling-limited, no real cargo or product edits, no correctness changes owed.
 

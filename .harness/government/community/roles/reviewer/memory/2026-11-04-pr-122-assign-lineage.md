@@ -17,3 +17,15 @@ Five DD documents validate 0/0 and render without drift. Schema fixtures give 3 
 magicWand: encode a next-write matrix for pending close-ends, especially same-role assign/release, and assert branch content before allowing the retry marker to clear.
 
 difficulties: constructing immutable snapshots, outer lock ownership and post-wait disk-floor checks remain a hand-written wrapper. Add a scoped engineering-harness review command rather than requiring every reviewer to reconstruct it. These observations were also captured through harness observe; read-only review leaves encoding to the owner.
+
+## Repair review at e452777
+
+Pass-with-notes at `e4527770a69db16cf5b3a85df528d4e08c21672a`, in new frozen fleet-review-122b. Full eight-file one-commit delta reviewed. Report: `../outputs/2026-11/pr-122-fix-verdict.md`.
+
+F001/F002 closed: pending ends apply under the writer lock and only landed ends clear; from allocation is unique under that lock; duplicate rows refuse before index replacement and store replacement rolls back. All 14 HTTP, 41 community and 1 store tests pass. Both repair mutations fail expected controls. Restored source matches the frozen crate tree except the added scratch tests. Missing-branch holding remains pending with flushed:0; duplicate branch rebuild refuses and preserves both assignments and pointers.
+
+F003 P3 is test-only: waiting for holders::now to change now waits for a millisecond, not a second. The unchanged same-second HTTP test falsely failed in a restored-source scratch run after 440 ms, with from times 06:59:21.819Z and 06:59:22.079Z; both assigns succeeded and held distinct keys. Eight subsequent targeted repeats pass, not a repair. Recommend clock injection or remove the wall-second requirement from the lifecycle test and keep collision pressure deterministic at the allocator.
+
+CI run 41788564917 is all green at the exact repair head. Local quick gate remains six tooling failures, native Copilot passes. Cargo locked/scoped throughout, incremental disabled, post-wait and between-command disk checks at 34-36 GiB. No product edits or commits; old and new worktree HEADs preserved.
+
+magicWand: a controlled-clock fixture for collision tests. The original same-role regression lesson is now encoded in the product suite.

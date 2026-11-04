@@ -124,3 +124,5 @@
 2026-11-04 note pr-122 e452777 sent — F001 apply pending ends under lock + F002 ms from + row check; re-verdicts in fleet-review-122b; CI running
 2026-11-04 note pr-121-review 30b3a37 block — F001 closed; F002 residual trailing slash on missing target -> different lock; routed to kestrel (last round)
 2026-11-04 note pr-121-perf 30b3a37 pass-with-notes — wombat: drain adds /bin/sleep 0.1 per iteration (~10/s per draining holder, transient); KILL repeats until group gone
+2026-11-04 note pr-121 2ecbd26a8437593f03e27b1b7e412862d7900baf sent — trailing-slash fix; re-verdicts in fleet-review-121c
+2026-11-04 note pr-122-review e452777 pass-with-notes — mammal: F001/F002 closed; F003 P3 test-only latent flake (same-second precondition) -> follow-up, not blocking
