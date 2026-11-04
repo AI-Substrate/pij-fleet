@@ -113,7 +113,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "`pij directory` run inside a project shows that project's roles and nothing from another project.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-02",
@@ -123,7 +123,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "With no government root, `pij directory add x` exits with the named refusal and a runnable next step; with one, the file appears under `community/roles/x/`.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-03",
@@ -133,7 +133,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "With an uncommitted edit in the governance checkout, a directory write commits and leaves that edit untouched and unstaged; each `.dd.json` validates clean; with `ddocs` off PATH the verb refuses by name.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-04",
@@ -143,7 +143,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "`ddocs validate` passes on a role created from each shipped template and on one whose standing packet references a brief file, and fails on one missing scope or standing packet.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-05",
@@ -153,7 +153,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "A worker seat can assign itself to a role, and the role's changelog shows its seat id and reason.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-06",
@@ -163,7 +163,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "After assign, release, assign of another seat and a close, lineage shows both seats with their session ids, machine and times.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-07",
@@ -173,7 +173,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "Three tests: 0 live holders queue the request and wake the PA with both commands and the old seat's context size; 1 delivers; 2 refuse listing both seats. `role:pm/021` reaches only that PM.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-08",
@@ -183,7 +183,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "An idle requester that sent with the default is woken by the output; one that sent `--reply fyi` is not woken; a block verdict wakes a `fyi` requester.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-09",
@@ -193,7 +193,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "A compact of a role holder shows the memory turn first, then the compact; the new note appears with an INDEX.md line; a seat holding no role is compacted directly.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-10",
@@ -203,7 +203,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "A pass on head A answers none for head B; a verdict by a non-holder is flagged; two seats writing at once produce two files with no conflict.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-11",
@@ -213,7 +213,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "Adding a role regenerates ROUTES.md and sends one FYI to the prime; two roles claiming one path give an overlap warning; reassigning a holder sends nothing.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-12",
@@ -223,7 +223,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "Each of the four conditions, set up in a test project, produces its prompt with a runnable command.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-13",
@@ -233,7 +233,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "A role taken from template v1 shows a diff after the template moves to v2, and its local edits are untouched.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-14",
@@ -243,7 +243,7 @@
 					"priority": "should",
 					"state": "planned",
 					"done_when": "A new directory lists the five core roles and a security prompt; adding `security` clears the prompt.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-15",
@@ -253,7 +253,7 @@
 					"priority": "should",
 					"state": "planned",
 					"done_when": "The route exists, is token-lean, and a fresh prime following it sets up a directory with core roles and a security role.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-16",
@@ -263,7 +263,7 @@
 					"priority": "could",
 					"state": "planned",
 					"done_when": "`pij directory external add` writes a dated note under `community/external.dd.json`.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-17",
@@ -273,7 +273,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "Deleting the store's directory index and rebuilding from the branch gives the same `pij directory` output.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-18",
@@ -283,7 +283,7 @@
 					"priority": "must",
 					"state": "shipped",
 					"done_when": "`ddocs validate` is clean at default depth on PRD 001, blueprint 001 and roadmap 001; `ddocs graph` draws roadmap to PRD to blueprint.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-19",
@@ -293,7 +293,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "The plan's backpressure carries a cost row with before and after readings from `pij-rs --json ping` and `just spawn-rate`.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-20",
@@ -303,7 +303,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "Two seats claiming at once get different numbers; a claim held by a closed seat is released.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-22",
@@ -313,7 +313,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "A seat busy past its limit with no card update gets one check-in; a seat that updates its card is never checked in; a seat that ignores the check-in raises a PA notice.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
 				},
 				{
 					"id": "req-23",
@@ -323,7 +323,7 @@
 					"priority": "must",
 					"state": "shipped",
 					"done_when": "A fresh PM following the procedure writes a PRD and roadmap that validate clean and link to each other.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
 				},
 				{
 					"id": "req-24",
@@ -333,7 +333,7 @@
 					"priority": "should",
 					"state": "planned",
 					"done_when": "A step needing a missing role shows a prompt in `pij directory`; creating the role clears it.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
 				},
 				{
 					"id": "req-25",
@@ -343,7 +343,7 @@
 					"priority": "should",
 					"state": "shipped",
 					"done_when": "PRD 002 validates clean; every open row of the earlier register has a recorded verdict (kept as a PRD 002 id, or dropped with a reason); the security verdict passes on the exact head; AGENTS.md and the pij skill point at PRD 002.",
-					"source": "workshops/001-directory-concept.md; ruling C15"
+					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md; ruling C15"
 				},
 				{
 					"id": "req-21",
@@ -353,7 +353,7 @@
 					"priority": "must",
 					"state": "planned",
 					"done_when": "Merging a PR that names req-07 records the PR on req-07 and shows on the PM's card within one event.",
-					"source": "workshops/001-directory-concept.md"
+					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-27",
@@ -445,6 +445,11 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "Plan 192: req-25 shipped; PRD 002 holds the triaged base requirements."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "Source paths fixed: req-01 to req-21 cite workshops/001-pij-community/001-community-directory.md, req-22 to req-25 cite workshops/001-pij-community/002-limits-and-doc-prompting.md (the old path did not exist)."
 				}
 			]
 		}
