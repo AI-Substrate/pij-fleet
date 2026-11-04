@@ -4,9 +4,9 @@ Command: python3 docs/plans/192-prd-register-move/assets/evidence/check.py <priv
 
 ```
 source sha e05661c8: 54 rows, 40 open
-verdicts: 40 (dropped-met 21, dropped-unwanted 5, kept 14)
+verdicts: 40 (dropped-met 19, dropped-unwanted 5, kept 16)
 open rows without a verdict: 0; verdicts for non-open ids: 0
-PRD 002 requirement rows: 13; rows no kept verdict points at: 0
+PRD 002 requirement rows: 14; rows no kept verdict points at: 0
 problems: 0
 scrub PRD 002: machine path: 0
 scrub PRD 002: PR or issue number: 0

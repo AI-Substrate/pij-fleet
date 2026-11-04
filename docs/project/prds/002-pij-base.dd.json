@@ -216,6 +216,17 @@
 					"done_when": "Registering without proof gives an unproven seat with no process binding and a printed next step, and proving it upgrades the same seat.",
 					"source": "triage of the earlier register, 2026-11-04",
 					"note": "Ruling C17: kept as could, planned, and revisited when someone needs it; an admitted but unproven seat must still never hold a binding it has not earned. Paneless registration refuses unproven callers today (crates/daemon/src/registration.rs:183-251)."
+				},
+				{
+					"id": "req-14",
+					"title": "Pane delivery is proven live, per harness and for large bodies",
+					"statement": "For each harness that receives messages by typed pane input (Codex, Copilot, and Claude without its socket), a live run shows the receiving harness gets the whole body, including bodies of several kilobytes, as one submitted turn.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "For each of those harnesses, a live run sends a body over 4 KB into a real session and the receiving side's own transcript holds the exact body once, on the first attempt.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "The sending side exists: chunked bracketed paste and refusal of lossy control bytes (crates/tmux/src/lib.rs:413-443, 972-977). Nothing yet proves receipt on a real harness: those are sender-side tests only."
 				}
 			]
 		},
@@ -237,7 +248,7 @@
 				{
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
-					"change": "First draft from the triage of the earlier register's 40 open rows (ruling C15): 14 kept as 13 rows, 26 dropped. Every row's note names the current code that leaves it open."
+					"change": "First draft from the triage of the earlier register's 40 open rows (ruling C15): 16 kept as 14 rows, 24 dropped. Every row's note names the current code that leaves it open."
 				}
 			]
 		}

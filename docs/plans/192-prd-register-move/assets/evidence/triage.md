@@ -4,7 +4,7 @@ Source: the earlier register at commit `e05661c8`, read with `git show` in a rea
 
 Verdicts: `kept` (written fresh into `docs/project/prds/002-pij-base.dd.json`), `dropped-met` (today's code already does it; the reason names the file or test), `dropped-unwanted` (the premise is gone, mostly because the TypeScript daemon generation is retired: `pij` is an rs-only shim, and `docs/how/pij-rs-api.md:3` says it never runs the TypeScript daemon).
 
-Revised after review (reviewer verdict on b13f5b3): every kept row was re-checked against the code and its tests, and seven rows first kept were found already met and moved to `dropped-met`.
+Revised after two reviews. On b13f5b3, every kept row was re-checked against the code and its tests: nine old rows first kept were found already met and moved to `dropped-met`, which removed seven draft PRD 002 rows. On 75102c5, the reviewer showed that two of those nine (req-0005, req-0022) still need a live, receiver-side proof, so they are kept again as one narrow row, PRD 002 req-14.
 
 | old id | verdict | PRD 002 | reason |
 |---|---|---|---|
@@ -12,7 +12,7 @@ Revised after review (reviewer verdict on b13f5b3): every kept row was re-checke
 | req-0002 | kept | req-01 | Spawns accept inbound by default (crates/cli/src/main.rs:2858-2864, tests claude_spawn_accepts_inbound_by_default and no_accept_inbound_withdraws_the_claude_default), and the reply address and control-shaped status are handled (crates/transport/src/uds.rs:249-256, 665-697). Only live proof of hold and deny is left: uds.rs:51-54 marks that decoder unproven on the daemon's connection, and its tests (1459-1593) use a stand-in socket. |
 | req-0003 | dropped-met | | The reaper needs two witnesses (process gone and pane absent) and keeps a live process (crates/daemon/src/reaper.rs:2, tests reap_recheck_unknown_or_matching_live_process_cancels_candidate and reap_matching_live_process_is_retained_without_any_pane_probe_or_event in reaper_tests.rs:293, 314); the death sweep uses it (death_sweep.rs:2). A seat whose first registration failed re-registers with `pij-rs adopt <pane>`. |
 | req-0004 | dropped-met | | The typing gate tracks and exempts pij's own injections, captures fresh before each send and expires a parked draft (crates/harnesses/src/interaction.rs:348-445, 486-609, 573-589; tests parked_draft_holds_at_most_the_idle_window_then_sends, self_echo_never_acquires_a_hold, self_echo_never_destroys_an_active_human_hold, fresh_boundary_replaces_a_stale_clear_composer_observation at 827, 877, 913, 979). |
-| req-0005 | dropped-met | | Pane delivery stages the body in chunks as a bracketed paste and refuses lossy control bytes (crates/tmux/src/lib.rs:413-443, 972-977), the path every non-socket harness uses. |
+| req-0005 | kept | req-14 | The sending side exists (chunked bracketed paste and refusal of lossy controls, crates/tmux/src/lib.rs:413-443, 972-977), but those are sender-side checks; nothing proves a real harness receives the whole body. Merged with req-0022. |
 | req-0006 | kept | req-02 | `pij-rs revive --help` has no preview option. Recycled-pid checks exist (docs/how/pij-rs-api.md:1018-1038), and re-binding a live seat is `pij-rs adopt <pane>`. |
 | req-0008 | dropped-met | | Re-registration starts from the existing descriptor and sets Claude consent only when absent (crates/daemon/src/registration.rs:850-884; test ordinary_registration_preserves_unchanged_attested_native_owner_and_binding at 3467). |
 | req-0009 | dropped-met | | Claude seats adopt themselves through the SessionStart hook the daemon installs (harness/scripts/claude-session-start-pij.sh, docs/how/claude-auto-seat.md). |
@@ -26,7 +26,7 @@ Revised after review (reviewer verdict on b13f5b3): every kept row was re-checke
 | req-0017 | kept | req-07 | `pij generation` is only a routing check (.omp/extensions/pij/cli.ts:71-75); the daemon's routes (crates/daemon/src/http/mod.rs:596-660) include no daemon listing. |
 | req-0018 | dropped-met | | A periodic death sweep tombstones seats observed dead by both witnesses (crates/daemon/src/death_sweep.rs:81-95, started from crates/daemon/src/lib.rs; test death_sweep_matches_manual_candidates_and_commits_observation_once), and a send to a tombstoned seat is refused (crates/daemon/src/delivery/mod.rs:4306-4326). |
 | req-0020 | kept | req-13 | Paneless registration refuses unproven callers (crates/daemon/src/registration.rs:183-251); there is no grade. Kept as `could`, planned, by ruling C17. |
-| req-0022 | dropped-met | | Same as req-0005: chunked bracketed paste (crates/tmux/src/lib.rs:413-443). |
+| req-0022 | kept | req-14 | Same gap for large bodies: no live run shows a multi-kilobyte body arriving intact on a real harness. Merged with req-0005. |
 | req-0026 | kept | req-05 | crates/harnesses/src/spawn.rs:142-146 passes PIJ_SESSION_ID and PIJ_SPAWN_ID to the child, not PIJ_RS_ADDR or PIJ_RS_STATE_DIR. |
 | req-0027 | dropped-met | | `pij-rs send` and the shim both take `--body-file` (crates/cli/src/main.rs:354-358, 2173-2199). |
 | req-0028 | dropped-met | | No test binds a fixed port; fixtures across crates/, harness/ and the extensions bind port 0. |
@@ -64,3 +64,4 @@ Revised after review (reviewer verdict on b13f5b3): every kept row was re-checke
 - req-11: crates/store/src/queue.rs:792-799 (internal peek only); crates/daemon/src/http/mod.rs:596-660 (no queue route).
 - req-12: crates/daemon/src/delivery/mod.rs:854 (outcome published to the recipient's key).
 - req-13: crates/daemon/src/registration.rs:183-251 (unproven callers refused; no grade). Ruling C17.
+- req-14: crates/tmux/src/lib.rs:413-443, 972-977 are sender-side only; no test or witness reads a real harness's own transcript after a pane delivery.

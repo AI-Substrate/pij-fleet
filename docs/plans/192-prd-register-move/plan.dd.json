@@ -53,14 +53,14 @@
           "claim": "Triage. Each of the 40 open rows gets exactly one verdict in assets/evidence/triage.md: its old id, kept (with its PRD 002 id) or dropped, and a one-line reason in new words that names today's code (a file or a verb) where the code decides it. A row today's code already meets is dropped as met. A row whose verdict is unclear goes to pm-001 as a question, not a guess.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "receipt": "assets/evidence/triage.md: 40/40 verdicts (14 kept, 21 dropped-met, 5 dropped-unwanted), each reason naming code or tests; revised after the b13f5b3 review; req-0020 kept as could by ruling C17"
+          "receipt": "assets/evidence/triage.md: 40/40 verdicts (16 kept, 19 dropped-met, 5 dropped-unwanted), each reason naming code or tests; revised after the b13f5b3 and 75102c5 reviews; req-0020 kept as could by ruling C17"
         },
         {
           "id": "ac-0003",
           "claim": "PRD 002. Kept rows are written fresh as pij/prd requirements with new ids, a statement in new words, a testable done_when, priority `should` unless the need is a must (C12), and state planned, or in-progress where live work is named (C11). Its why, actors and goals describe pij as it is today. No statement or note reuses the source's wording. `ddocs validate docs/project/prds/002-pij-base.dd.json` is clean.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "receipt": "docs/project/prds/002-pij-base.dd.json: 13 rows, each note naming the code that leaves it open; ddocs validate ok 0/0; copy check 0 shared 8-word runs"
+          "receipt": "docs/project/prds/002-pij-base.dd.json: 14 rows, each note naming the code that leaves it open; ddocs validate ok 0/0; copy check 0 shared 8-word runs"
         },
         {
           "id": "ac-0004",
