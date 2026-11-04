@@ -11,3 +11,6 @@
 2026-11-04 deliverable plan-192-c15 2f7d59f done — plan/192 rewritten as a triage into fresh PRD 002 (C15); req-25 and roadmap s14 reworded on the branch; pushed; queued for docs-system as job 3
 2026-11-04 deliverable plan-190-parallel 022be91 done — phase 1 on plan/190-schemas, phase 2 in parallel; AC11/bp-0008 req-26 seat naming (C13) for docs-system
 2026-11-04 deliverable coder-190-packet 022be91 sent — outputs/2026-11/001-wave-a-coder-190-packet.md to pij-brisk-marten (spawned, window pij:coder, worktree fleet-190-community-writer)
+2026-11-04 note s02-phase-1 c900f85 landed — heron, plan/190-schemas; fixtures re-checked by pm-001 (2 pass, 2 fail as expected); handed to pij-brisk-marten to merge (ff) and biome-format PRD 001
+2026-11-04 deliverable review-110-packet 4c5a792 sent — reviewer pij-sharp-boa (copilot gpt-6.1-sol high, window pij:review-110, worktree fleet-review-110); security asked of pij-wary-lynx; performance not needed (docs only)
+2026-11-04 note s14-go 2f7d59f sent — heron starts job 3; roadmap steps use complete (no schema change); heron fixes PRD 001 source paths in s14
