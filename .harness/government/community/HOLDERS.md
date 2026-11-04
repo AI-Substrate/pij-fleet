@@ -9,6 +9,7 @@
 | coder | (per task, assigned by pm-001) | — |
 | coder (s04, plan 195) | pij-brisk-marten | 2026-11-04 |
 | coder (#119, plan 197) | pij-swift-kestrel | 2026-11-04 (lent from delivery) |
+| coder (s11, plan 196) | pij-exuberant-wildcat | 2026-11-04 |
 | reviewer | (per PR, assigned by pm-001) | — |
 | reviewer (PR #114) | pij-still-termite | 2026-11-04 |
 | reviewer (PR #116) | pij-estimated-chinchilla | 2026-11-04 |

@@ -105,3 +105,6 @@
 2026-11-04 note pr-120-perf 43821d5 pass-with-notes — wombat: no new launch/loop; all SEARCH on 1M rows; note: all_matching scales with selected report/dispatch history, not seats x kinds alone; AFTER pending deploy
 2026-11-04 note shared-target - breach 2 — marten just rust-check (pid 37794) unlocked again (lock message not yet read mid-turn); reviewer 120 waits; mutation proof done (STATE_VERIFIED removal fails oracle)
 2026-11-04 note pr-120-security 43821d5 pass-with-notes — lynx; C21 path finding in kestrel's delivery memory note -> kestrel to scrub, prime commits
+2026-11-04 note brake 37794 stopped — pm-001 killed marten's unlocked cargo test --workspace at 21 GB (under floor), blocking reviewer 120; source untouched; prime told
+2026-11-04 note s04 b6f2cc2 complete — all ACs checked; open PR now with partial local rust gate + CI; disk 21 GB
+2026-11-04 deliverable coder-196 7cec57b sent — s11 coder pij-exuberant-wildcat (window pij:coder-196, worktree fleet-196-claims-delivery, shared target + lock)

@@ -39,7 +39,9 @@ The same clean batch passed an additional scratch-only boundary test covering de
 
 Receipts: `<reviewer-session-files>/pr120-mutation.txt`, `pr120-boundary.txt`, `pr120-boundary.diff`, `pr120-sqlite-contract.txt`.
 
-The first mutation attempt was stopped before cargo when disk crossed to 24 GiB while waiting; disk later recovered to 26 GiB. After the successful mutation batch, the clean baseline rerun refused before cargo because PID 37794 was running `cargo test --locked --workspace` despite the free outer lock. PM was notified. A bounded waiting script now waits for no cargo process, acquires the outer lock, rechecks disk above 25 GiB before every command, refreshes source roots and will rerun the seven original controls. No restored-success claim yet.
+The first mutation attempt was stopped before cargo when disk crossed to 24 GiB while waiting; disk later recovered to 26 GiB. After the successful mutation batch, the clean baseline rerun refused before cargo because PID 37794 was running `cargo test --locked --workspace` despite the free outer lock. PM was notified.
+
+At 16:10 PM narrowed the remaining build to one daemon test target. Stopped the waiting multi-command wrapper before it launched cargo. The fresh probe then showed **21 GiB** free and PID 37794 still running with no outer-lock owner; reported that to PM. Only a minimal uncontended restored-daemon oracle run remains. PM separately confirmed Kestrel's locked full-suite rerun passed and matches CI. No independent restored-success claim yet.
 
 The original review worktree remains clean at the frozen SHA. No product edits, commits, pushes, installs, production-daemon changes or process teardown.
 
