@@ -573,6 +573,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         directory_store,
         Arc::clone(&event_bus),
         Arc::new(community::directory::NoHook),
+        Arc::clone(&tmux),
     ));
     Ok(Services {
         registry,

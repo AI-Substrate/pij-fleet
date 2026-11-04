@@ -2490,6 +2490,14 @@ impl TmuxPort for FakeTmux {
         Ok(())
     }
 
+    async fn rename_window(&self, pane: &str, name: &str) -> Result<()> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        state
+            .recorder
+            .record(format!("rename-window:{pane}:{name}"));
+        Ok(())
+    }
+
     async fn new_window(
         &self,
         session: &str,

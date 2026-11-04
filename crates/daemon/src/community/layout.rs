@@ -98,7 +98,10 @@ impl RolePaths {
 pub fn exists(id: &str, path: &std::path::Path) -> Refusal {
     Refusal::new(
         E_DIRECTORY_EXISTS,
-        format!("role {id:?} already exists at {}", path.display()),
+        format!("role {id:?} already has {}", path.display()),
+    )
+    .with_next(
+        "Choose another id. A role folder without role.dd.json is adopted, so only an existing role.dd.json refuses.",
     )
 }
 

@@ -1661,11 +1661,16 @@ async fn run(cli: Cli) -> ExitCode {
         }
         Command::Directory { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
-            emit(
-                &pij_cli::governance::governance(&client, "directory", &args, &caller_context())
-                    .await,
-                as_json,
-            )
+            let response =
+                pij_cli::governance::governance(&client, "directory", &args, &caller_context())
+                    .await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                Some(view) if view.get("roles").is_some_and(Value::is_array) => {
+                    println!("{}", render_directory(view));
+                    ExitCode::SUCCESS
+                }
+                _ => emit(&response, as_json),
+            }
         }
         Command::Project { args }
         | Command::Stream { args }
@@ -2626,6 +2631,53 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
         println!("{}", render(envelope, json));
     }
     ExitCode::from(exit_code(envelope))
+}
+
+/// `pij directory` for a human: each role, its mode and its live holders.
+fn render_directory(view: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    let roles = view["roles"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut out = format!("{}: {} role(s)", text(&view["project"]), roles.len());
+    for role in roles {
+        let live = role["live"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let holders: Vec<String> = live
+            .iter()
+            .map(|holder| {
+                let instance = holder["instance"].as_str().filter(|key| !key.is_empty());
+                format!(
+                    "{}{} since {} on {}{}",
+                    text(&holder["seat"]),
+                    instance.map(|key| format!(" ({key})")).unwrap_or_default(),
+                    text(&holder["since"]),
+                    text(&holder["machine"]),
+                    if holder["end_pending"] == true {
+                        ", end pending"
+                    } else {
+                        ""
+                    }
+                )
+            })
+            .collect();
+        let _ = write!(
+            out,
+            "\n  {} ({}, {}): {}",
+            text(&role["id"]),
+            text(&role["kind"]),
+            text(&role["holders"]),
+            if holders.is_empty() {
+                "no holder".to_string()
+            } else {
+                holders.join("; ")
+            }
+        );
+    }
+    out
 }
 
 fn directory_help(args: &[String]) -> ExitCode {

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pij_core::model::{SeatDescriptor, SeatId};
+use pij_core::ports::TmuxPort;
 use pij_store::{Assignment, SqliteOrchestration};
 use serde::Serialize;
 use serde_json::Value;
@@ -80,6 +81,11 @@ pub struct HoldingReceipt {
     pub seat_role: Option<String>,
     /// Pending close-ends this write carried to the branch.
     pub flushed: usize,
+    /// The holder's tmux window rename on assign (C16): `{name, renamed}`,
+    /// with `reason` when it did not happen. A failed rename never fails the
+    /// assign.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<Value>,
 }
 
 /// What a close did to the closed seat's holdings, per project.
@@ -97,28 +103,134 @@ pub struct DirectoryService {
     store: SqliteOrchestration,
     event_bus: Arc<EventBus>,
     hook: Arc<dyn AfterAssign>,
+    tmux: Arc<dyn TmuxPort>,
 }
 
 impl DirectoryService {
-    /// Compose from the single writer, the spine-pool store, the bus and the
-    /// after-assign hook (ruling C6; [`NoHook`] by default).
+    /// Compose from the single writer, the spine-pool store, the bus, the
+    /// after-assign hook (ruling C6; [`NoHook`] by default) and tmux, for the
+    /// window rename on assign.
     pub fn new(
         writer: Arc<CommunityWriter>,
         store: SqliteOrchestration,
         event_bus: Arc<EventBus>,
         hook: Arc<dyn AfterAssign>,
+        tmux: Arc<dyn TmuxPort>,
     ) -> Self {
         Self {
             writer,
             store,
             event_bus,
             hook,
+            tmux,
         }
     }
 
     /// The store, for the view and the rebuild.
     pub fn store(&self) -> &SqliteOrchestration {
         &self.store
+    }
+
+    /// `pij directory` (AC7): this project's roles, read in-process from the
+    /// governance worktree, and their holders from the store. Launches
+    /// nothing. Holders come from the store so a rebuild is a real round trip.
+    ///
+    /// # Errors
+    /// [`super::E_GOV_ABSENT`] without a governance worktree; `E-RS-STORE`.
+    pub async fn view(&self, project: &str, repo: &std::path::Path) -> Result<Value, Refusal> {
+        let root = super::root::find(repo)?;
+        let rows = self
+            .store
+            .assignments(project)
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+        let roles_dir = root.worktree.join(super::layout::COMMUNITY).join("roles");
+        let mut ids: Vec<String> = std::fs::read_dir(&roles_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|entry| entry.path().join("role.dd.json").is_file())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect();
+        ids.sort();
+        let mut roles = Vec::new();
+        for id in &ids {
+            let document: Value = std::fs::read(roles_dir.join(id).join("role.dd.json"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                .unwrap_or(Value::Null);
+            let meta = document["sections"]
+                .as_array()
+                .and_then(|sections| sections.iter().find(|section| section["name"] == "meta"))
+                .map_or(Value::Null, |meta| meta["value"].clone());
+            let mine: Vec<&Assignment> = rows.iter().filter(|row| &row.role == id).collect();
+            let live: Vec<Value> = mine
+                .iter()
+                .filter(|row| row.to.is_none() || row.end_pending)
+                .map(|row| {
+                    serde_json::json!({
+                        "seat": row.seat, "instance": row.instance, "since": row.from,
+                        "machine": row.machine, "end_pending": row.end_pending,
+                    })
+                })
+                .collect();
+            let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
+            roles.push(serde_json::json!({
+                "id": id,
+                "title": meta["title"],
+                "kind": meta["kind"],
+                "holders": meta["holders"],
+                "live": live,
+                "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
+            }));
+        }
+        let pending: Vec<Value> = rows
+            .iter()
+            .filter(|row| row.end_pending)
+            .map(|row| serde_json::json!({"role": row.role, "seat": row.seat, "instance": row.instance, "to": row.to}))
+            .collect();
+        Ok(serde_json::json!({"project": project, "roles": roles, "pending": pending}))
+    }
+
+    /// Rebuild this project's pointer and holder rows from the governance
+    /// branch head (AC8). The branch is the truth: pending close-ends that never
+    /// reached it are dropped. One git launch per holders document, plus two.
+    ///
+    /// # Errors
+    /// [`super::E_GOV_ABSENT`], `E-RS-GOV-GIT` or `E-RS-STORE`.
+    pub async fn rebuild(&self, project: &str, repo: PathBuf) -> Result<Value, Refusal> {
+        let project_id = project.to_string();
+        let (pointers, rows) = tokio::task::spawn_blocking(move || {
+            let root = super::root::resolve(&repo)?;
+            let pointers = super::pointer::from_branch_head(&root, &project_id)?;
+            let mut rows = Vec::new();
+            for pointer in pointers
+                .iter()
+                .filter(|p| p.path.ends_with("/holders.dd.json"))
+            {
+                let text = super::pointer::read_at_head(&root, &pointer.path)?;
+                let document: Value = serde_json::from_str(&text).map_err(|error| {
+                    Refusal::new(E_GOV_GIT, format!("{} is not JSON: {error}", pointer.path))
+                })?;
+                rows.extend(holders::from_document(&project_id, &document)?);
+            }
+            Ok::<_, Refusal>((pointers, rows))
+        })
+        .await
+        .map_err(|error| Refusal::new(E_GOV_GIT, format!("the rebuild stopped: {error}")))??;
+        let store_error =
+            |error: pij_core::error::PijError| Refusal::new("E-RS-STORE", error.to_string());
+        self.store
+            .replace_community_pointers(project, &pointers)
+            .await
+            .map_err(store_error)?;
+        self.store
+            .replace_assignments(project, &rows)
+            .await
+            .map_err(store_error)?;
+        Ok(
+            serde_json::json!({"project": project, "pointers": pointers.len(), "holdings": rows.len()}),
+        )
     }
 
     /// Any other directory write (`directory add`): `files` plus the project's
@@ -239,6 +351,7 @@ impl DirectoryService {
         self.flushed(&pending, &written).await?;
         self.hook
             .assigned(&row.project, &row.role, &row.instance, &request.seat.id);
+        let window = self.rename(&request.seat, &row).await;
         Ok(HoldingReceipt {
             commit: written.commit.clone(),
             path: holders_path(&row.role)?,
@@ -249,7 +362,28 @@ impl DirectoryService {
             warning,
             seat_role: commit.seat_role,
             flushed: pending.len(),
+            window: Some(window),
         })
+    }
+
+    /// Name the holder's window `<project>:<role>`, or `<project>:<role>-<instance>`
+    /// (req-26, C16). One tmux launch, through the adapter's recorded site;
+    /// never the control client, whose allow-list stays reads only (S2).
+    async fn rename(&self, seat: &SeatDescriptor, row: &Assignment) -> Value {
+        let name = if row.instance.is_empty() {
+            format!("{}:{}", row.project, row.role)
+        } else {
+            format!("{}:{}-{}", row.project, row.role, row.instance)
+        };
+        let Some(pane) = seat.pane.as_deref() else {
+            return serde_json::json!({"name": name, "renamed": false, "reason": "the seat has no pane"});
+        };
+        match self.tmux.rename_window(pane, &name).await {
+            Ok(()) => serde_json::json!({"name": name, "renamed": true}),
+            Err(error) => {
+                serde_json::json!({"name": name, "renamed": false, "reason": error.to_string()})
+            }
+        }
     }
 
     /// End a seat's holding of a role: `to`, `released_by` and `release_why`.
@@ -322,6 +456,7 @@ impl DirectoryService {
             warning: None,
             seat_role: None,
             flushed: pending.len(),
+            window: None,
         })
     }
 

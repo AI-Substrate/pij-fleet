@@ -15,6 +15,7 @@ use pij_daemon::community::directory::{AfterAssign, DirectoryService, NoHook};
 use pij_daemon::community::layout::rendered;
 use pij_daemon::community::writer::{CommunityWriter, LOCK_RETRY};
 use pij_daemon::http::{HttpConfig, router_with_config};
+use pij_testkit::fakes::FakeTmux;
 use pij_testkit::{FreshStore, fresh_dir};
 use serde_json::{Value, json};
 
@@ -120,6 +121,7 @@ struct Rig {
     _fresh: FreshStore,
     store: pij_store::SqliteOrchestration,
     roles: Arc<pij_daemon::http::role::RoleService>,
+    tmux: Arc<FakeTmux>,
 }
 
 /// Counts after-assign calls (ruling C6).
@@ -163,15 +165,18 @@ async fn rig(hook: Arc<dyn AfterAssign>) -> Rig {
     ));
     let store = services.directory.store().clone();
     services.community = Arc::clone(&writer);
+    let tmux = Arc::new(FakeTmux::new());
+    services.tmux = tmux.clone();
     services.directory = Arc::new(DirectoryService::new(
         writer,
         store.clone(),
         Arc::clone(&services.event_bus),
         hook,
+        tmux.clone(),
     ));
     for (id, pane, parent) in [
         (SEAT, Some(PANE), None),
-        ("pij-holder", None, Some(SEAT)),
+        ("pij-holder", Some("%51"), Some(SEAT)),
         ("pij-second", None, Some(SEAT)),
     ] {
         let mut seat = SeatDescriptor::new(id, Harness::Omp, "/tmp");
@@ -190,6 +195,7 @@ async fn rig(hook: Arc<dyn AfterAssign>) -> Rig {
         _fresh: fresh,
         store,
         roles,
+        tmux,
     }
 }
 
@@ -554,6 +560,15 @@ async fn assign_and_release_write_holders_set_seat_roles_and_call_the_hook_once_
         ".harness/government/community/roles/pm-001/holders.dd.json"
     );
     assert!(first["data"].get("warning").is_none());
+    assert_eq!(
+        first["data"]["window"],
+        json!({"name": "fleet:pm-001", "renamed": true})
+    );
+    assert!(
+        rig.tmux
+            .calls()
+            .contains(&"rename-window:%51:fleet:pm-001".to_string())
+    );
     let rows = holders_at_head(&repo, "pm-001");
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -591,6 +606,11 @@ async fn assign_and_release_write_holders_set_seat_roles_and_call_the_hook_once_
             .starts_with("W-ONE-HOLDER"),
         "{second}"
     );
+    assert_eq!(
+        second["data"]["window"]["renamed"], false,
+        "a paneless seat still assigns"
+    );
+    assert_eq!(second["data"]["window"]["reason"], "the seat has no pane");
 
     let before = head(&repo);
     for (argv, code) in [
@@ -634,6 +654,7 @@ async fn assign_and_release_write_holders_set_seat_roles_and_call_the_hook_once_
     .await;
     assert_eq!(review["ok"], true, "{review}");
     assert_eq!(review["data"]["seat_role"], "worker");
+    assert_eq!(review["data"]["window"]["name"], "fleet:reviewer-114");
     assert_eq!(holders_at_head(&repo, "reviewer")[0]["instance_key"], "114");
     assert_eq!(
         *hook.0.lock().unwrap(),
@@ -807,5 +828,368 @@ async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_writ
             .iter()
             .all(|row| !row.end_pending)
     );
+    rig.server.abort();
+}
+
+async fn view(addr: SocketAddr, repo: &Repo) -> Value {
+    call(addr, "/v1/directory", &["directory", "--json"], &repo.main).await
+}
+
+/// AC7 and AC8: each project sees only its own roles; dropping the store's
+/// directory rows and rebuilding from the branch head gives byte-identical JSON,
+/// closed lineage included.
+#[tokio::test]
+async fn the_view_is_per_project_and_a_rebuild_gives_byte_identical_json() {
+    let (one, two) = (repo("pij-directory-view-a"), repo("pij-directory-view-b"));
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &one).await;
+    let other = call(
+        rig.addr,
+        "/v1/project",
+        &[
+            "project",
+            "create",
+            "other",
+            "--repo",
+            two.main.to_str().unwrap(),
+        ],
+        &two.main,
+    )
+    .await;
+    assert_eq!(other["ok"], true, "{other}");
+    let security = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "security",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &two.main,
+    )
+    .await;
+    assert_eq!(security["ok"], true, "{security}");
+    for argv in [
+        &[
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "lead",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "reviewer/114",
+            "pij-second",
+            "--why",
+            "review",
+        ][..],
+        &[
+            "directory",
+            "release",
+            "reviewer/114",
+            "pij-second",
+            "--why",
+            "merged",
+        ][..],
+    ] {
+        let done = call(rig.addr, "/v1/directory", argv, &one.main).await;
+        assert_eq!(done["ok"], true, "{argv:?}: {done}");
+    }
+
+    let before = view(rig.addr, &one).await;
+    assert_eq!(before["ok"], true, "{before}");
+    let data = &before["data"];
+    let ids: Vec<_> = data["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|role| role["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        ["pm-001", "reviewer"],
+        "nothing from the other project"
+    );
+    assert_eq!(data["roles"][0]["live"][0]["seat"], "pij-holder");
+    assert_eq!(data["roles"][0]["holders"], "one");
+    assert!(data["roles"][1]["live"].as_array().unwrap().is_empty());
+    assert_eq!(
+        data["roles"][1]["lineage"][0]["release_why"], "merged",
+        "closed lineage is kept"
+    );
+    let theirs = view(rig.addr, &two).await;
+    assert_eq!(theirs["data"]["roles"][0]["id"], "security");
+    assert_eq!(theirs["data"]["roles"].as_array().unwrap().len(), 1);
+
+    rig.store.replace_assignments("fleet", &[]).await.unwrap();
+    rig.store
+        .replace_community_pointers("fleet", &[])
+        .await
+        .unwrap();
+    let dropped = view(rig.addr, &one).await;
+    assert_ne!(
+        dropped["data"], before["data"],
+        "the view reads holders from the store"
+    );
+    let rebuilt = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "rebuild"],
+        &one.main,
+    )
+    .await;
+    assert_eq!(rebuilt["ok"], true, "{rebuilt}");
+    assert_eq!(rebuilt["data"]["holdings"], 2);
+    let after = view(rig.addr, &one).await;
+    assert_eq!(
+        serde_json::to_string(&after["data"]).unwrap(),
+        serde_json::to_string(&before["data"]).unwrap(),
+        "byte-identical after the rebuild"
+    );
+    assert!(
+        !rig.store
+            .community_pointers("fleet")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    rig.server.abort();
+}
+
+/// AC13, AC14 (dogfood F3, F4, F11): a hand-written role folder is adopted.
+/// Only role.dd.json and its .dd.md are written; its memory, outputs and
+/// role.md stay exactly as they were, even with an uncommitted memory edit.
+#[tokio::test]
+async fn add_adopts_a_hand_written_role_folder_and_writes_only_the_document() {
+    let repo = repo("pij-directory-adopt");
+    let rig = rig(Arc::new(NoHook)).await;
+    let main = repo.main.to_str().unwrap();
+    call(
+        rig.addr,
+        "/v1/project",
+        &["project", "create", "fleet", "--repo", main],
+        &repo.main,
+    )
+    .await;
+    let roles = repo.gov.join(".harness/government/community/roles");
+    for id in ["coder", "pa"] {
+        std::fs::create_dir_all(roles.join(id).join("memory")).unwrap();
+        std::fs::create_dir_all(roles.join(id).join("outputs")).unwrap();
+        std::fs::write(roles.join(id).join("memory/INDEX.md"), "# memory\n").unwrap();
+        std::fs::write(roles.join(id).join("outputs/LOG.md"), "log\n").unwrap();
+        std::fs::write(roles.join(id).join("role.md"), "# Role\n").unwrap();
+    }
+    git(&repo.gov, &["add", ".harness/government/community"]);
+    git(&repo.gov, &["commit", "-q", "-m", "hand-written roles"]);
+    std::fs::write(
+        roles.join("coder/memory/INDEX.md"),
+        "# memory\n- an uncommitted note\n",
+    )
+    .unwrap();
+    let before = git(&repo.gov, &["status", "--porcelain"]);
+
+    let adopted = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "coder",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "adopt",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(adopted["ok"], true, "{adopted}");
+    let committed = git(&repo.gov, &["show", "--name-only", "--format=", "HEAD"]);
+    assert_eq!(
+        committed.lines().collect::<Vec<_>>(),
+        [
+            ".harness/government/community/roles/coder/role.dd.json",
+            ".harness/government/community/roles/coder/role.dd.md",
+        ]
+    );
+    assert_eq!(
+        git(&repo.gov, &["status", "--porcelain"]),
+        before,
+        "the memory edit stays as it was"
+    );
+    assert_eq!(
+        std::fs::read_to_string(roles.join("coder/role.md")).unwrap(),
+        "# Role\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(roles.join("coder/outputs/LOG.md")).unwrap(),
+        "log\n"
+    );
+
+    let again = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "coder",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "again",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(again["details"]["code"], "E-RS-DIRECTORY-EXISTS", "{again}");
+    assert!(
+        again["meta"]
+            .as_str()
+            .unwrap()
+            .contains("roles/coder/role.dd.json"),
+        "{again}"
+    );
+    assert!(
+        again["details"]["next"]
+            .as_str()
+            .unwrap()
+            .contains("adopted"),
+        "{again}"
+    );
+
+    // A batch names every role that already has its document (F11).
+    let adopted_pa = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "pa",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "adopt",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(adopted_pa["ok"], true, "{adopted_pa}");
+    let batch = fresh_dir("pij-directory-adopt-batch");
+    for id in ["coder", "pa"] {
+        let document = json!({"dd": {"schema": "pij/role"}, "sections": [{"name": "meta", "value": {"id": id}}], "references": []});
+        std::fs::write(batch.join(format!("{id}.dd.json")), document.to_string()).unwrap();
+    }
+    let refused = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "--batch",
+            batch.to_str().unwrap(),
+            "--why",
+            "batch",
+        ],
+        &repo.main,
+    )
+    .await;
+    let meta = refused["meta"].as_str().unwrap();
+    assert!(
+        meta.contains("\"coder\"") && meta.contains("\"pa\""),
+        "{refused}"
+    );
+    let _ = std::fs::remove_dir_all(batch);
+    rig.server.abort();
+}
+
+/// AC15 (dogfood F2): a linked worktree finds its project through the shared
+/// common git dir; a repository with no project names the register step.
+#[tokio::test]
+async fn a_linked_worktree_finds_its_project_and_an_unknown_repo_names_the_register_step() {
+    let repo = repo("pij-directory-linked");
+    let rig = rig(Arc::new(NoHook)).await;
+    let main = repo.main.to_str().unwrap();
+    call(
+        rig.addr,
+        "/v1/project",
+        &["project", "create", "fleet", "--repo", main],
+        &repo.main,
+    )
+    .await;
+    let linked = repo.root.join("fleet-feature");
+    git(
+        &repo.main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            linked.to_str().unwrap(),
+        ],
+    );
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "qa",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "from a linked worktree",
+        ],
+        &linked,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    assert_eq!(added["data"]["project"], "fleet");
+
+    let stranger = fresh_dir("pij-directory-stranger").canonicalize().unwrap();
+    git(&stranger, &["init", "-q", "-b", "main"]);
+    let refused = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "qa",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &stranger,
+    )
+    .await;
+    assert_eq!(refused["details"]["code"], "E-RS-NOT-FOUND", "{refused}");
+    assert!(
+        refused["details"]["next"]
+            .as_str()
+            .unwrap()
+            .contains("pij project create"),
+        "{refused}"
+    );
+    let _ = std::fs::remove_dir_all(stranger);
     rig.server.abort();
 }

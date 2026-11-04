@@ -983,6 +983,16 @@ pub trait TmuxPort: Send + Sync {
     /// Kill a pane.
     async fn kill(&self, pane: &str) -> Result<()>;
 
+    /// Rename the window holding `pane` (plan 195: `<project>:<role>` on
+    /// assign). One tmux launch. Adapters without it say so; callers treat a
+    /// failed rename as a note, never a failure.
+    async fn rename_window(&self, pane: &str, name: &str) -> Result<()> {
+        Err(crate::error::PijError::Adapter {
+            adapter: "tmux".to_string(),
+            message: format!("rename-window is not supported here (pane {pane}, name {name})"),
+        })
+    }
+
     /// Open a new window in `session`, optionally launching one exact command.
     /// `None` preserves the empty-window behaviour used by existing callers.
     async fn new_window(
