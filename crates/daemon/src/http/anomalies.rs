@@ -104,9 +104,11 @@ impl AnomalyService {
         }
         let bus = Arc::clone(&self.bus);
         self.project(
-            records,
-            fold,
-            cursor,
+            Snapshot {
+                records,
+                fold,
+                cursor,
+            },
             now,
             filters,
             here,
@@ -163,9 +165,7 @@ impl AnomalyService {
     /// events for the seats the undisposed rows name.
     async fn project<F, Fut>(
         &self,
-        records: Records,
-        fold: Fold,
-        cursor: Seq,
+        snapshot: Snapshot,
         now: u64,
         filters: &BTreeMap<String, String>,
         here: Option<&str>,
@@ -175,12 +175,17 @@ impl AnomalyService {
         F: FnOnce(BTreeSet<SeatId>) -> Fut,
         Fut: std::future::Future<Output = Result<Vec<Event>>>,
     {
-        let Records {
-            seats,
-            tasks,
-            dispatches,
-            decisions,
-        } = records;
+        let Snapshot {
+            records:
+                Records {
+                    seats,
+                    tasks,
+                    dispatches,
+                    decisions,
+                },
+            fold,
+            cursor,
+        } = snapshot;
         let Fold {
             cards,
             activity,
@@ -290,6 +295,13 @@ struct Records {
     tasks: Vec<TaskAssignment>,
     dispatches: Vec<Dispatch>,
     decisions: Vec<Decision>,
+}
+
+/// Everything one anomaly answer is computed from.
+struct Snapshot {
+    records: Records,
+    fold: Fold,
+    cursor: Seq,
 }
 
 /// The spine facts the detectors consume, decoded one event at a time.

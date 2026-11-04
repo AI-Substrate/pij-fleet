@@ -36,18 +36,26 @@ impl AnomalyService {
             fold.activity(event);
             fold.absorb(event);
         }
-        self.project(records, fold, cursor, now, filters, here, |_| async move {
-            Ok(events)
-        })
+        self.project(
+            Snapshot {
+                records,
+                fold,
+                cursor,
+            },
+            now,
+            filters,
+            here,
+            |_| async move { Ok(events) },
+        )
         .await
     }
 }
 
 /// A spine that counts, and can refuse, the unbounded read.
-pub(super) struct GuardSpine {
-    pub(super) inner: SqliteSpine,
-    pub(super) refuse_tail: AtomicBool,
-    pub(super) tail_calls: AtomicUsize,
+struct GuardSpine {
+    inner: SqliteSpine,
+    refuse_tail: AtomicBool,
+    tail_calls: AtomicUsize,
 }
 
 #[async_trait]
@@ -96,16 +104,15 @@ impl Spine for GuardSpine {
     }
 }
 
-pub(super) struct World {
-    pub(super) pool: pij_store::StorePool,
-    pub(super) store: SqliteOrchestration,
-    pub(super) bus: Arc<EventBus>,
-    pub(super) registry: Arc<SqliteRegistry>,
-    pub(super) spine: Arc<GuardSpine>,
+struct World {
+    store: SqliteOrchestration,
+    bus: Arc<EventBus>,
+    registry: Arc<SqliteRegistry>,
+    spine: Arc<GuardSpine>,
 }
 
 impl World {
-    pub(super) async fn new(path: &str) -> Self {
+    async fn new(path: &str) -> Self {
         let pool = pij_store::open(path).await.expect("store");
         let spine = Arc::new(GuardSpine {
             inner: SqliteSpine::new(pool.clone()),
@@ -117,14 +124,13 @@ impl World {
         let registry = Arc::new(SqliteRegistry::new(pool.clone(), bus.clone()));
         Self {
             store: SqliteOrchestration::new(pool.clone()),
-            pool,
             bus,
             registry,
             spine,
         }
     }
 
-    pub(super) fn service(&self, liveness: FakeLiveness) -> AnomalyService {
+    fn service(&self, liveness: FakeLiveness) -> AnomalyService {
         AnomalyService::new(
             self.store.clone(),
             self.registry.clone(),
@@ -464,150 +470,10 @@ async fn indexed_reads_answer_exactly_as_the_whole_spine_fold() {
     );
 }
 
-async fn query_plan(pool: &pij_store::StorePool, sql: &str, binds: &[&str]) -> Vec<String> {
-    let explain = format!("EXPLAIN QUERY PLAN {sql}");
-    let mut query = sqlx::query(&explain);
-    for value in binds {
-        query = query.bind(*value);
-    }
-    query
-        .fetch_all(pool)
-        .await
-        .expect("plan")
-        .iter()
-        .map(|row| sqlx::Row::get::<String, _>(row, "detail"))
-        .collect()
-}
-
-/// Issue #119, AC4: over a million spine rows, most of them one seat's junk,
-/// every statement the three verbs now issue seeks an index, never scans
-/// `spine_events`, and each verb's reads finish inside a stated bound. The
-/// spine refuses `tail` throughout, so none of them can fall back to it.
-#[tokio::test]
-async fn bounded_spine_reads_over_a_million_rows() {
-    // In memory: the scratch spine costs no disk on a shared machine.
-    let world = World::new("").await;
-    for n in 0..24 {
-        let seat = format!("pij-seat-{n}");
-        world
-            .seat(&seat, "/work", |seat| {
-                seat.proc = Some(ProcIdentity {
-                    pid: 100 + n,
-                    proc_start: 1,
-                })
-            })
-            .await;
-        world.card(&seat, NOW - 45 * MINUTE).await;
-        world
-            .event(
-                &seat,
-                "report.state",
-                NOW - 40 * MINUTE,
-                json!({"state": "done"}),
-            )
-            .await;
-    }
-    world.seat("pij-junk", "/work", |_| {}).await;
-    sqlx::raw_sql(
-        "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 1000000) \
-         INSERT INTO spine_events (v, at, kind, seat, payload) \
-         SELECT 1, x, 'bg.lost', 'pij-junk', '{}' FROM n",
-    )
-    .execute(&world.pool)
-    .await
-    .expect("a million junk rows");
-    let rows_seeded: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM spine_events")
-        .fetch_one(&world.pool)
-        .await
-        .expect("count");
-    assert!(rows_seeded >= 1_000_000, "{rows_seeded} rows");
-
-    let statements: Vec<(String, Vec<&str>)> = vec![
-        (pij_store::spine::SEAT_LATEST_SQL.into(), vec!["pij-junk"]),
-        (
-            pij_store::spine::SEAT_PAGE_SQL.into(),
-            vec!["pij-junk", "0", "5001"],
-        ),
-        (
-            pij_store::spine::LATEST_MATCHING_SQL.into(),
-            vec!["pij-junk", "seat.put"],
-        ),
-        (
-            pij_store::spine::all_matching_sql(1),
-            vec!["pij-junk", "dispatch"],
-        ),
-        (
-            pij_store::spine::all_matching_sql(2),
-            vec!["pij-junk", "anomaly.ack", "anomaly.clear"],
-        ),
-        (
-            pij_store::spine::all_matching_sql(3),
-            vec!["pij-junk", "report.now", "report.state", "state-verified"],
-        ),
-        (pij_store::spine::TAIL_PAGE_SQL.into(), vec!["0", "5001"]),
-        (
-            "SELECT COALESCE(MAX(seq), 0) FROM spine_events".into(),
-            vec![],
-        ),
-    ];
-    for (sql, binds) in &statements {
-        let plan = query_plan(&world.pool, sql, binds).await;
-        assert!(
-            plan.iter()
-                .all(|step| !step.starts_with("SCAN spine_events")),
-            "{sql}: {plan:?}"
-        );
-        assert!(
-            plan.first()
-                .is_some_and(|step| step.starts_with("SEARCH spine_events")),
-            "{sql}: {plan:?}"
-        );
-    }
-
-    world.spine.refuse_tail.store(true, Ordering::SeqCst);
-    let junk = SeatId::from("pij-junk");
-    let bound = std::time::Duration::from_secs(2);
-    let timed = std::time::Instant::now();
-    let rows = world
-        .service(FakeLiveness::new())
-        .list_at(&BTreeMap::new(), None, NOW)
-        .await
-        .expect("anomalies");
-    let anomalies = timed.elapsed();
-    assert_eq!(
-        rows["anomalies"].as_array().expect("rows").len(),
-        72,
-        "24 stale cards, 24 unverified dones, 24 dead seats"
-    );
-    let timed = std::time::Instant::now();
-    let head = world.bus.newest().await.expect("node show head");
-    let page = world
-        .bus
-        .tail_page(Seq(0), 5_001)
-        .await
-        .expect("events page");
-    let peer = world
-        .bus
-        .seat_page(&junk, Seq(0), 5_001)
-        .await
-        .expect("peer page");
-    let events = timed.elapsed();
-    assert_eq!((page.len(), peer.len()), (5_001, 5_001));
-    assert!(head.0 >= 1_000_000);
-    eprintln!(
-        "#119 bound over {rows_seeded} rows: anomalies {anomalies:?}, head + two 5001-row pages {events:?}"
-    );
-    assert!(anomalies < bound, "pij anomalies took {anomalies:?}");
-    assert!(
-        events < bound,
-        "node show and spine events reads took {events:?}"
-    );
-    assert_eq!(world.spine.tail_calls.load(Ordering::SeqCst), 0);
-}
-
 /// Issue #119, AC4: the three handlers' source never calls `Spine::tail`, the
 /// unbounded read. A behavioural guard covers the paths a test reaches; this
-/// one covers the paths it does not.
+/// one covers the paths it does not. The 1M-row bound lives in
+/// `tests/spine_attach_cost.rs`, outside the direct-insert guard's `src` scan.
 #[test]
 fn the_three_handlers_never_call_the_unbounded_tail() {
     fn body<'a>(source: &'a str, start: &str) -> &'a str {
