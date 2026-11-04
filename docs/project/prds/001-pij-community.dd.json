@@ -118,7 +118,7 @@
         {
           "id": "req-02",
           "title": "Directory files live on the governance branch",
-          "statement": "Role definitions, role memory, outputs, the routing table and external entries live under `<government-root>/community/`. When governance is not set up, every directory verb refuses by name and points at the setup step; it never falls back to another location.",
+          "statement": "Role definitions, role memory, outputs, the routing table and external entries live under `<government-root>/community/`. The project's rulings stay where they are, outside the community directory: they are the project's law, not any role's memory. When governance is not set up, every directory verb refuses by name and points at the setup step; it never falls back to another location.",
           "actor": "prime",
           "priority": "must",
           "state": "planned",
@@ -127,22 +127,22 @@
         },
         {
           "id": "req-03",
-          "title": "pij is the only writer",
-          "statement": "Directory files are written only through pij verbs. pij writes the JSON, runs `ddocs validate` and `ddocs build` by absolute path, and commits on the governance branch. The store keeps a pointer (project id, repo-relative path, commit). pij never pushes. A missing `ddocs` gives a named refusal, and `just doctor` checks for it.",
+          "title": "pij is the only writer, and never touches anyone's working tree",
+          "statement": "Directory files are written only through pij verbs. pij writes the JSON, runs `ddocs validate` and `ddocs build` by absolute path, and commits on the governance branch from its own worktree or with git plumbing, so uncommitted edits in the prime's governance checkout are never swept up or collided with. The store keeps a pointer (project id, repo-relative path, commit). pij never pushes. A missing `ddocs` gives a named refusal, and `just doctor` checks for it. A batch mode imports many records in one commit.",
           "actor": "any seat",
           "priority": "must",
           "state": "planned",
-          "done_when": "Each verb produces one governance commit whose `.dd.json` validates clean and whose `.dd.md` is regenerated; with `ddocs` off PATH the verb refuses by name.",
+          "done_when": "With an uncommitted edit in the governance checkout, a directory write commits and leaves that edit untouched and unstaged; each `.dd.json` validates clean; with `ddocs` off PATH the verb refuses by name.",
           "source": "workshops/001-directory-concept.md"
         },
         {
           "id": "req-04",
           "title": "Role definitions are pij/role ddocs",
-          "statement": "A role definition holds: id, title, kind (specialist or general), lifecycle (long-lived or per-task), holders (one or many), scope, out of scope, forbidden paths, default seat (harness, model, effort), inputs, output kinds, standing packet, template and version it came from, and a changelog.",
+          "statement": "A role definition holds: id, title, kind (specialist or general), lifecycle (long-lived or per-task), holders (one or many), instance key for many-holder roles (for example a roadmap number), scope (paths and rules, such as 'reviews every PR'), out of scope, forbidden paths, default seat (harness, model, effort), inputs, output kinds, standing packet (inline or by reference to an existing brief file), template and version it came from, and a changelog.",
           "actor": "prime",
           "priority": "must",
           "state": "planned",
-          "done_when": "`ddocs validate` passes on a role created from each shipped template, and fails on one missing scope or standing packet.",
+          "done_when": "`ddocs validate` passes on a role created from each shipped template and on one whose standing packet references a brief file, and fails on one missing scope or standing packet.",
           "source": "workshops/001-directory-concept.md"
         },
         {
@@ -167,18 +167,18 @@
         },
         {
           "id": "req-07",
-          "title": "Send to a role",
-          "statement": "`pij send role:<id>` delivers only when exactly one live seat holds the role. With none, it refuses with runnable commands: revive the last holder, or start a fresh seat assigned to the role. With two or more, it refuses and lists the live seats. pij never starts a seat on its own.",
+          "title": "Send to a role, and the role queue",
+          "statement": "`pij send role:<id>` (or `role:<id>/<instance>` for a many-holder role, such as `role:pm/021`) delivers when exactly one live seat holds it. With none, the request waits on the role's queue, and pij wakes the PA (or the prime when no PA is live) with runnable next steps: revive the last holder, showing its context size, or assign a fresh seat. The queue shows in the PA's watchdog feed until it is cleared; no new timer. With two or more live holders it refuses and lists them. pij never starts a seat on its own.",
           "actor": "requester",
           "priority": "must",
           "state": "planned",
-          "done_when": "Three tests (0, 1 and 2 live holders) give a named refusal with commands, a delivery, and a named refusal listing both seats.",
+          "done_when": "Three tests: 0 live holders queue the request and wake the PA with both commands and the old seat's context size; 1 delivers; 2 refuse listing both seats. `role:pm/021` reaches only that PM.",
           "source": "workshops/001-directory-concept.md"
         },
         {
           "id": "req-08",
           "title": "The requester chooses how it hears back",
-          "statement": "`--reply wake|fyi|none` on a send to a role, default `wake`, is stored on the request. The output that answers it notifies with that mode. A `block` verdict or a `failed` result always wakes. An output nobody requested goes as an FYI to the nearest seat above (its PM, else the prime). There is only ever one recipient.",
+          "statement": "`--reply wake|fyi|none` on a send to a role, default `wake`, is stored on the request. The output that answers it notifies the requester with that mode. A `block` verdict or a `failed` result always wakes. An output nobody requested goes as an FYI to the nearest seat above (its PM, else the prime). One seat is notified; everyone else reads the record (req-10).",
           "actor": "requester",
           "priority": "must",
           "state": "planned",
@@ -187,32 +187,32 @@
         },
         {
           "id": "req-09",
-          "title": "Role memory is prompted before compact and close",
-          "statement": "Before pij compacts or closes a seat that holds a role, it first asks the seat to add what it learned to `community/roles/<id>/memory/`, and runs the compact or close after that turn. A seat with nothing new replies that it has nothing to add.",
+          "title": "Role memory: kept forever, readable in pieces",
+          "statement": "Memory is never capped or pruned. Each note is its own small ddoc under `community/roles/<id>/memory/` (date, title, tags, one-line hook, body), and pij generates `memory/INDEX.md` with one line per note, so a seat reads the index and opens only the notes it needs. Notes are written one at a time. Before pij compacts or closes a seat that holds a role, it first asks the seat to add what it learned, and runs the compact or close after that turn.",
           "actor": "pa",
           "priority": "must",
           "state": "planned",
-          "done_when": "A compact of a role holder shows the memory prompt turn first, then the compact; a seat holding no role is compacted directly.",
+          "done_when": "A compact of a role holder shows the memory turn first, then the compact; the new note appears with an INDEX.md line; a seat holding no role is compacted directly.",
           "source": "workshops/001-directory-concept.md"
         },
         {
           "id": "req-10",
-          "title": "Outputs are records",
-          "statement": "`pij output verdict|deliverable|note --subject <address> ...` writes one ddoc per output under `community/roles/<id>/outputs/<yyyy-mm>/`, and records a store fact. A subject naming a docs path is checked against main when written. The daemon writes outputs one at a time. `pij outputs --role --subject` reads from the store.",
+          "title": "Outputs are records a merge gate can trust",
+          "statement": "`pij output verdict|deliverable|note|handover --subject <address> ...` writes one ddoc per output under `community/roles/<id>/outputs/<yyyy-mm>/` and records a store fact. A verdict carries the exact head commit, the result, notes owed, the evidence of what ran (command, exit code, log path) and an optional external link (the PR comment). Every output records its writer and flags one who does not hold the role. `pij outputs --subject pr:N --head <sha>` answers for that exact head, and answers none when the head has moved. A handover output holds what is in flight right now. The daemon writes outputs one at a time.",
           "actor": "worker seat",
           "priority": "must",
           "state": "planned",
-          "done_when": "Two seats writing outputs at once produce two commits and two files with no conflict; `pij outputs --subject pr:N` returns the latest verdict with its head sha.",
+          "done_when": "A pass on head A answers none for head B; a verdict by a non-holder is flagged; two seats writing at once produce two files with no conflict.",
           "source": "workshops/001-directory-concept.md"
         },
         {
           "id": "req-11",
           "title": "Routing table",
-          "statement": "pij builds a routing table from every role's scope, writes it to `community/ROUTES.md`, and sends it to a seat when it is assigned to a role, after a compact, when a revived seat returns, and on demand (`pij directory routes`). When routes change, only the changed rows go as an FYI to the project's live seats. A change of holder sends nothing.",
+          "statement": "pij builds a routing table from every role's scope (paths and rules), warns on overlapping scopes, writes it to `community/ROUTES.md`, and sends it to a seat when it is assigned to a role, after a compact, when a revived seat returns, and on demand (`pij directory routes`). When routes change, the changed rows go as an FYI to the prime only. A change of holder sends nothing.",
           "actor": "worker seat",
           "priority": "must",
           "state": "planned",
-          "done_when": "Adding a role with a scope regenerates ROUTES.md and sends one FYI with the new row to each live seat in the project; reassigning a holder sends nothing.",
+          "done_when": "Adding a role regenerates ROUTES.md and sends one FYI to the prime; two roles claiming one path give an overlap warning; reassigning a holder sends nothing.",
           "source": "workshops/001-directory-concept.md"
         },
         {
@@ -228,7 +228,7 @@
         {
           "id": "req-13",
           "title": "Versioned role templates",
-          "statement": "pij ships role templates, each with a version. `pij directory add <id> --from template:<name>` copies one onto the governance branch, where it is edited freely. When a template moves ahead, `pij directory` shows the difference and never applies it automatically. Templates are written fresh for the public repo.",
+          "statement": "pij ships role templates, each with a version. `pij directory add <id> --from template:<name>` copies one onto the governance branch, where it is edited freely; `--from file:<brief>` makes a role from a project's own brief, referenced rather than copied. When a template moves ahead, `pij directory` shows the difference and never applies it automatically. Templates are written fresh for the public repo.",
           "actor": "prime",
           "priority": "must",
           "state": "planned",
@@ -277,12 +277,12 @@
         },
         {
           "id": "req-18",
-          "title": "Project docs system",
-          "statement": "PRDs and blueprints live in `docs/project/NNN-<slug>/`; roadmaps in `docs/project/roadmaps/`. They use the `pij/prd`, `pij/blueprint` and `pij/roadmap` schemas and are joined by ddocs link cells: roadmap steps deliver requirement rows and build components, and components realise rows.",
+          "title": "Project docs system, one standard layout",
+          "statement": "Every project uses `docs/project/{prds,blueprints,roadmaps,workshops}/`, and every file or folder there is numbered `NNN-<slug>`. PRDs, blueprints and roadmaps are separate files using the `pij/prd`, `pij/blueprint` and `pij/roadmap` schemas, joined by ddocs link cells: roadmap steps deliver requirement rows and build components, and components realise rows. A blueprint may serve many PRDs.",
           "actor": "prime",
           "priority": "must",
           "state": "in-progress",
-          "done_when": "`ddocs validate` is clean at default depth on this PRD, its blueprint and roadmap 001; `ddocs graph` draws roadmap to PRD to blueprint.",
+          "done_when": "`ddocs validate` is clean at default depth on PRD 001, blueprint 001 and roadmap 001; `ddocs graph` draws roadmap to PRD to blueprint.",
           "source": "workshops/001-directory-concept.md"
         },
         {
@@ -293,6 +293,26 @@
           "priority": "must",
           "state": "planned",
           "done_when": "The plan's backpressure carries a cost row with before and after readings from `pij-rs --json ping` and `just spawn-rate`.",
+          "source": "workshops/001-directory-concept.md"
+        },
+        {
+          "id": "req-20",
+          "title": "Number claims",
+          "statement": "`pij claim prd|roadmap|blueprint|migration|<kind>` hands out the next NNN for a project, recorded with the claiming seat, and releases it when the work merges or the seat closes. Parallel PMs never collide on a number.",
+          "actor": "pm",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Two seats claiming at once get different numbers; a claim held by a closed seat is released.",
+          "source": "workshops/001-directory-concept.md"
+        },
+        {
+          "id": "req-21",
+          "title": "Delivery recorded at merge",
+          "statement": "When a PR merges, pij records which requirement rows and roadmap steps it delivered (from the PR's links), fills `delivered_by`, and puts it on the owning PM's card, so states stop lagging the code.",
+          "actor": "pm",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "Merging a PR that names req-07 records the PR on req-07 and shows on the PM's card within one event.",
           "source": "workshops/001-directory-concept.md"
         }
       ]
@@ -316,7 +336,8 @@
           "id": "q-03",
           "question": "Do route changes go to every live seat in the project, or only to the prime?",
           "default": "Every live seat, as an FYI.",
-          "status": "open"
+          "answer": "The prime only (review by the osk-central prime, agreed by Jordan 2026-11-04).",
+          "status": "answered"
         },
         {
           "id": "q-04",
@@ -339,6 +360,11 @@
           "date": "2026-11-04",
           "by": "pij-far-jackal with Jordan",
           "change": "First draft from workshop 001."
+        },
+        {
+          "date": "2026-11-04",
+          "by": "pij-far-jackal with Jordan",
+          "change": "After the osk-central prime's review and Jordan's rulings: role instances and the role queue with PA wake (req-07); memory kept forever as one note per file with a generated index (req-09); verdicts for an exact head with writer, evidence and notes owed, plus handover outputs (req-10); route FYIs to the prime only (req-11, q-03); briefs by reference (req-13); one standard layout by type, all NNN (req-18); pij never touches a working tree (req-03); number claims (req-20) and delivery recorded at merge (req-21)."
         }
       ]
     }

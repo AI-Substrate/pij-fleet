@@ -27,7 +27,7 @@
           "where": ".dd/schemas/pij/{prd,blueprint,roadmap}",
           "responsibility": "The three schemas behind docs/project, joined by typed link cells.",
           "realises": [
-            "prd.dd.json#requirements/req-18"
+            "../prds/001-pij-community.dd.json#requirements/req-18"
           ],
           "state": "in-progress"
         },
@@ -38,8 +38,8 @@
           "where": ".dd/schemas/pij/role",
           "responsibility": "The `pij/role` schema for role definitions, plus `pij/output` and `pij/memory` for outputs and memory notes.",
           "realises": [
-            "prd.dd.json#requirements/req-04",
-            "prd.dd.json#requirements/req-10"
+            "../prds/001-pij-community.dd.json#requirements/req-04",
+            "../prds/001-pij-community.dd.json#requirements/req-10"
           ],
           "state": "planned"
         },
@@ -48,10 +48,11 @@
           "name": "Community layout",
           "kind": "file",
           "where": "<government-root>/community/",
-          "responsibility": "`roles/<id>/role.dd.json`, `roles/<id>/memory/`, `roles/<id>/outputs/<yyyy-mm>/`, `ROUTES.md`, `external.dd.json`.",
+          "responsibility": "`roles/<id>/role.dd.json`, `roles/<id>/memory/` (one note per file and a generated `INDEX.md`), `roles/<id>/outputs/<yyyy-mm>/`, `ROUTES.md`, `external.dd.json`. Rulings stay outside it.",
           "realises": [
-            "prd.dd.json#requirements/req-02",
-            "prd.dd.json#requirements/req-16"
+            "../prds/001-pij-community.dd.json#requirements/req-02",
+            "../prds/001-pij-community.dd.json#requirements/req-09",
+            "../prds/001-pij-community.dd.json#requirements/req-16"
           ],
           "state": "planned"
         },
@@ -60,11 +61,12 @@
           "name": "Governance writer",
           "kind": "module",
           "where": "crates/daemon",
-          "responsibility": "Writes a ddoc, runs `ddocs validate` and `ddocs build` by absolute path, commits on the governance branch, and records the pointer. One writer per project, serialised by the daemon. Named refusals for missing governance or ddocs.",
+          "responsibility": "Writes a ddoc, runs `ddocs validate` and `ddocs build` by absolute path, commits on the governance branch from pij's own worktree or with git plumbing, never from a seat's checkout, and records the pointer. One writer per project, serialised by the daemon; a batch mode for imports. Named refusals for missing governance or ddocs.",
           "realises": [
-            "prd.dd.json#requirements/req-02",
-            "prd.dd.json#requirements/req-03",
-            "prd.dd.json#requirements/req-05"
+            "../prds/001-pij-community.dd.json#requirements/req-02",
+            "../prds/001-pij-community.dd.json#requirements/req-03",
+            "../prds/001-pij-community.dd.json#requirements/req-05",
+            "../prds/001-pij-community.dd.json#requirements/req-09"
           ],
           "state": "planned"
         },
@@ -75,10 +77,10 @@
           "where": "crates/store",
           "responsibility": "Tables for roles (pointer and summary), assignments and lineage (seat, session, machine, from, to), requests (reply mode, requester) and outputs (pointer, subject, result). Rebuildable from the governance branch.",
           "realises": [
-            "prd.dd.json#requirements/req-06",
-            "prd.dd.json#requirements/req-08",
-            "prd.dd.json#requirements/req-10",
-            "prd.dd.json#requirements/req-17"
+            "../prds/001-pij-community.dd.json#requirements/req-06",
+            "../prds/001-pij-community.dd.json#requirements/req-08",
+            "../prds/001-pij-community.dd.json#requirements/req-10",
+            "../prds/001-pij-community.dd.json#requirements/req-17"
           ],
           "state": "planned"
         },
@@ -89,23 +91,23 @@
           "where": "crates/cli",
           "responsibility": "`pij directory [add|scope|assign|release|memory|external|routes]`, `pij output`, `pij outputs`.",
           "realises": [
-            "prd.dd.json#requirements/req-01",
-            "prd.dd.json#requirements/req-05",
-            "prd.dd.json#requirements/req-06",
-            "prd.dd.json#requirements/req-10",
-            "prd.dd.json#requirements/req-16"
+            "../prds/001-pij-community.dd.json#requirements/req-01",
+            "../prds/001-pij-community.dd.json#requirements/req-05",
+            "../prds/001-pij-community.dd.json#requirements/req-06",
+            "../prds/001-pij-community.dd.json#requirements/req-10",
+            "../prds/001-pij-community.dd.json#requirements/req-16"
           ],
           "state": "planned"
         },
         {
           "id": "c-send-role",
-          "name": "Role addressing",
+          "name": "Role addressing and queue",
           "kind": "module",
           "where": "crates/daemon delivery",
-          "responsibility": "Resolves `role:<id>` to exactly one live holder, or returns the actionable refusal. Stores the reply mode on the request.",
+          "responsibility": "Resolves `role:<id>` and `role:<id>/<instance>` to exactly one live holder. With none, queues the request on the role and wakes the PA (else the prime) with runnable next steps; with several, refuses with the list. Stores the reply mode on the request.",
           "realises": [
-            "prd.dd.json#requirements/req-07",
-            "prd.dd.json#requirements/req-08"
+            "../prds/001-pij-community.dd.json#requirements/req-07",
+            "../prds/001-pij-community.dd.json#requirements/req-08"
           ],
           "state": "planned"
         },
@@ -116,7 +118,7 @@
           "where": "crates/daemon delivery",
           "responsibility": "Routes an output's notice to the requester with its reply mode, or to the nearest seat above as an FYI; block and failed always wake.",
           "realises": [
-            "prd.dd.json#requirements/req-08"
+            "../prds/001-pij-community.dd.json#requirements/req-08"
           ],
           "state": "planned"
         },
@@ -127,7 +129,7 @@
           "where": "crates/daemon control",
           "responsibility": "Before a compact or close of a role holder, delivers the memory prompt and holds the control until that turn ends.",
           "realises": [
-            "prd.dd.json#requirements/req-09"
+            "../prds/001-pij-community.dd.json#requirements/req-09"
           ],
           "state": "planned"
         },
@@ -138,7 +140,7 @@
           "where": "crates/daemon",
           "responsibility": "Builds the table from role scopes, writes ROUTES.md, and delivers it on assign, after compact, on revive and on demand; sends changed rows as FYIs.",
           "realises": [
-            "prd.dd.json#requirements/req-11"
+            "../prds/001-pij-community.dd.json#requirements/req-11"
           ],
           "state": "planned"
         },
@@ -149,8 +151,8 @@
           "where": "crates/cli",
           "responsibility": "The prime's view: holders, waiting requests, latest outputs, memory freshness, and next-action prompts with runnable commands.",
           "realises": [
-            "prd.dd.json#requirements/req-12",
-            "prd.dd.json#requirements/req-14"
+            "../prds/001-pij-community.dd.json#requirements/req-12",
+            "../prds/001-pij-community.dd.json#requirements/req-14"
           ],
           "state": "planned"
         },
@@ -161,8 +163,30 @@
           "where": "templates/roles/",
           "responsibility": "Versioned templates: core (prime, pm, pa, coder, reviewer), recommended (security), optional (devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer, transcriber).",
           "realises": [
-            "prd.dd.json#requirements/req-13",
-            "prd.dd.json#requirements/req-14"
+            "../prds/001-pij-community.dd.json#requirements/req-13",
+            "../prds/001-pij-community.dd.json#requirements/req-14"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-claims",
+          "name": "Number claims",
+          "kind": "verb",
+          "where": "crates/cli + crates/store",
+          "responsibility": "`pij claim <kind>` hands out the next NNN per project and kind, and releases it on merge or close.",
+          "realises": [
+            "../prds/001-pij-community.dd.json#requirements/req-20"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-merge-delivery",
+          "name": "Delivery at merge",
+          "kind": "module",
+          "where": "crates/daemon",
+          "responsibility": "On a PR merge, reads the PR's links to requirement rows and steps, records the delivery and fills `delivered_by` through a docs PR, and updates the owning PM's card.",
+          "realises": [
+            "../prds/001-pij-community.dd.json#requirements/req-21"
           ],
           "state": "planned"
         },
@@ -173,7 +197,7 @@
           "where": "skills/pij/references/routes/community.md",
           "responsibility": "Teaches the prime, PM and PA their duties; workers are told what to do by their packets.",
           "realises": [
-            "prd.dd.json#requirements/req-15"
+            "../prds/001-pij-community.dd.json#requirements/req-15"
           ],
           "state": "planned"
         }
@@ -183,12 +207,28 @@
       "name": "decisions",
       "value": [
         {
+          "id": "d-6",
+          "decision": "Memory is kept forever, one note per file, with a generated index.",
+          "why": "Memory is the community's knowledge and storage is cheap; small files and an index let a seat read only what it needs and never conflict.",
+          "realises": [
+            "../prds/001-pij-community.dd.json#requirements/req-09"
+          ]
+        },
+        {
+          "id": "d-7",
+          "decision": "One standard docs layout by type, every file NNN.",
+          "why": "Blueprints are shared across many PRDs, so they cannot live in one PRD's folder; one layout everywhere is easier for agents than a per-project setting.",
+          "realises": [
+            "../prds/001-pij-community.dd.json#requirements/req-18"
+          ]
+        },
+        {
           "id": "d-1",
           "decision": "Directory files on the governance branch; product docs on main.",
           "why": "Running the fleet is governance; what the product needs ships with its code, so a builder flips a requirement in the PR that delivers it.",
           "realises": [
-            "prd.dd.json#requirements/req-02",
-            "prd.dd.json#requirements/req-18"
+            "../prds/001-pij-community.dd.json#requirements/req-02",
+            "../prds/001-pij-community.dd.json#requirements/req-18"
           ]
         },
         {
@@ -196,7 +236,7 @@
           "decision": "Use the ddocs CLI from pij-rs; no Rust port.",
           "why": "ddocs is TypeScript only. Writes are rare, so two launches per write are cheap. flowspace3's Rust parser is read-only and stays an option.",
           "realises": [
-            "prd.dd.json#requirements/req-03"
+            "../prds/001-pij-community.dd.json#requirements/req-03"
           ]
         },
         {
@@ -204,7 +244,7 @@
           "decision": "One file per output.",
           "why": "Shared files conflict under parallel writers; one file each never does.",
           "realises": [
-            "prd.dd.json#requirements/req-10"
+            "../prds/001-pij-community.dd.json#requirements/req-10"
           ]
         },
         {
@@ -212,7 +252,7 @@
           "decision": "pij never starts a seat on its own.",
           "why": "Starting a seat costs money and context; the refusal names the command instead.",
           "realises": [
-            "prd.dd.json#requirements/req-07"
+            "../prds/001-pij-community.dd.json#requirements/req-07"
           ]
         },
         {
@@ -220,7 +260,7 @@
           "decision": "Reply mode defaults to wake.",
           "why": "An extra wake costs a turn; a missed one strands an idle requester.",
           "realises": [
-            "prd.dd.json#requirements/req-08"
+            "../prds/001-pij-community.dd.json#requirements/req-08"
           ]
         }
       ]
@@ -234,7 +274,7 @@
           "rate": "per request; about 5 launches, by absolute path",
           "scaling": "with requests, not with seats or time",
           "component": [
-            "blueprint.dd.json#components/c-writer"
+            "#components/c-writer"
           ]
         },
         {
@@ -243,7 +283,7 @@
           "rate": "per change",
           "scaling": "one message per live seat in the project; no launches",
           "component": [
-            "blueprint.dd.json#components/c-routes"
+            "#components/c-routes"
           ]
         },
         {
@@ -252,7 +292,7 @@
           "rate": "per compact or close of a role holder",
           "scaling": "one extra turn; no launches",
           "component": [
-            "blueprint.dd.json#components/c-memory-hook"
+            "#components/c-memory-hook"
           ]
         }
       ]
@@ -264,6 +304,11 @@
           "date": "2026-11-04",
           "by": "pij-far-jackal with Jordan",
           "change": "First draft from workshop 001."
+        },
+        {
+          "date": "2026-11-04",
+          "by": "pij-far-jackal with Jordan",
+          "change": "Review fixes and Jordan's rulings: queue, memory notes and index, safe verdicts, own-worktree writer, claims and delivery at merge, standard layout."
         }
       ]
     }

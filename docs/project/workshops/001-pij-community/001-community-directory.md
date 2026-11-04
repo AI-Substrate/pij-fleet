@@ -4,7 +4,7 @@ Status: agreed concept, 2026-11-04. Jordan and the pij prime (`pij-far-jackal`),
 
 ## Why
 
-A **pij community** is a project's agents operating as one cohesive fleet across many concurrent tasks. Its **directory** is what this workshop designs. The PRD, blueprint and roadmap that follow from it are `../prd.dd.json`, `../blueprint.dd.json` and `../../roadmaps/001-pij-community.dd.json`.
+A **pij community** is a project's agents operating as one cohesive fleet across many concurrent tasks. Its **directory** is what this workshop designs. The PRD, blueprint and roadmap that follow from it are `docs/project/prds/001-pij-community.dd.json`, `docs/project/blueprints/001-pij-community.dd.json` and `docs/project/roadmaps/001-pij-community.dd.json`.
 
 Split the work so each agent's context stays small and focused. Small contexts make agents sharper and faster, and they cost less, because cost grows roughly with the square of the context. A role that outlives its seats lets the fleet build knowledge over time: a project gets better at its own work the way a mining town gets good at mining. The village is the analogy; the vocabulary below is fleet language.
 
@@ -88,6 +88,21 @@ pij output verdict --subject pr:231 --head 8b07e4d --result pass-with-notes \
 ```
 
 An output answers "what did you do for this request?". Memory answers "what should anyone doing this job know?".
+
+## Revisions after review
+
+The osk-central prime, which runs specialists today without pij support, reviewed the draft. Jordan ruled on its points the same day:
+
+- **Role instances.** Many-holder roles are addressed by instance, such as `role:pm/021`.
+- **The role queue replaces the refusal for zero holders.** A send to a role with no live seat waits on the role's queue. pij wakes the PA (or the prime when no PA is live) with the next steps, and the revive option shows the old seat's context size. The queue stays in the PA's watchdog feed until cleared. Two or more live holders still refuse.
+- **Memory is gold.** No cap and no pruning. Each note is its own file with a generated `INDEX.md`, so a seat reads only what it needs.
+- **Verdicts a merge gate can trust.** Verdicts are answered for an exact head ("none" when the head has moved), and record the writer (flagging a non-holder), the evidence of what ran, notes owed and the PR comment link. A new `handover` output holds in-flight state.
+- **pij never touches a seat's working tree.** It commits from its own worktree or with git plumbing.
+- **Route-change FYIs go to the prime only.** Scopes can be rules as well as paths, and overlapping scopes warn.
+- **Briefs by reference.** `--from file:<brief>` builds a role from a project's own brief without forking it.
+- **The project's rulings stay outside the community directory.**
+- **One standard docs layout:** `docs/project/{prds,blueprints,roadmaps,workshops}/`, and every file is `NNN-<slug>`. Blueprints are shared across PRDs, so they cannot live in one PRD's folder.
+- **Two additions:** number claims (`pij claim`) and delivery recorded at merge (roadmap step s11).
 
 ## Open, for the next workshop
 

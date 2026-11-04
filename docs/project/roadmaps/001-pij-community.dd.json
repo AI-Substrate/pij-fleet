@@ -24,10 +24,10 @@
           "title": "Docs system and the community PRD",
           "state": "in-progress",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-18"
+            "../prds/001-pij-community.dd.json#requirements/req-18"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-doc-schemas"
+            "../blueprints/001-pij-community.dd.json#components/c-doc-schemas"
           ],
           "depends_on": [],
           "done_when": "Schemas resolve; this PRD, its blueprint and this roadmap validate clean; `ddocs graph` draws the joins."
@@ -37,17 +37,17 @@
           "title": "Role schema, layout and the governance writer",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-02",
-            "../001-pij-community/prd.dd.json#requirements/req-03",
-            "../001-pij-community/prd.dd.json#requirements/req-04",
-            "../001-pij-community/prd.dd.json#requirements/req-05",
-            "../001-pij-community/prd.dd.json#requirements/req-17",
-            "../001-pij-community/prd.dd.json#requirements/req-19"
+            "../prds/001-pij-community.dd.json#requirements/req-02",
+            "../prds/001-pij-community.dd.json#requirements/req-03",
+            "../prds/001-pij-community.dd.json#requirements/req-04",
+            "../prds/001-pij-community.dd.json#requirements/req-05",
+            "../prds/001-pij-community.dd.json#requirements/req-17",
+            "../prds/001-pij-community.dd.json#requirements/req-19"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-role-schema",
-            "../001-pij-community/blueprint.dd.json#components/c-layout",
-            "../001-pij-community/blueprint.dd.json#components/c-writer"
+            "../blueprints/001-pij-community.dd.json#components/c-role-schema",
+            "../blueprints/001-pij-community.dd.json#components/c-layout",
+            "../blueprints/001-pij-community.dd.json#components/c-writer"
           ],
           "depends_on": [
             "#steps/s01"
@@ -59,11 +59,11 @@
           "title": "Core and security templates",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-13",
-            "../001-pij-community/prd.dd.json#requirements/req-14"
+            "../prds/001-pij-community.dd.json#requirements/req-13",
+            "../prds/001-pij-community.dd.json#requirements/req-14"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-templates"
+            "../blueprints/001-pij-community.dd.json#components/c-templates"
           ],
           "depends_on": [
             "#steps/s02"
@@ -75,15 +75,15 @@
           "title": "Assign, release, lineage and the directory view",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-01",
-            "../001-pij-community/prd.dd.json#requirements/req-06",
-            "../001-pij-community/prd.dd.json#requirements/req-16",
-            "../001-pij-community/prd.dd.json#requirements/req-17"
+            "../prds/001-pij-community.dd.json#requirements/req-01",
+            "../prds/001-pij-community.dd.json#requirements/req-06",
+            "../prds/001-pij-community.dd.json#requirements/req-16",
+            "../prds/001-pij-community.dd.json#requirements/req-17"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-store",
-            "../001-pij-community/blueprint.dd.json#components/c-verbs",
-            "../001-pij-community/blueprint.dd.json#components/c-orient"
+            "../blueprints/001-pij-community.dd.json#components/c-store",
+            "../blueprints/001-pij-community.dd.json#components/c-verbs",
+            "../blueprints/001-pij-community.dd.json#components/c-orient"
           ],
           "depends_on": [
             "#steps/s02"
@@ -92,31 +92,31 @@
         },
         {
           "id": "s05",
-          "title": "Send to a role and reply modes",
+          "title": "Send to a role, the role queue and reply modes",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-07",
-            "../001-pij-community/prd.dd.json#requirements/req-08"
+            "../prds/001-pij-community.dd.json#requirements/req-07",
+            "../prds/001-pij-community.dd.json#requirements/req-08"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-send-role"
+            "../blueprints/001-pij-community.dd.json#components/c-send-role"
           ],
           "depends_on": [
             "#steps/s04"
           ],
-          "done_when": "The 0, 1 and 2 holder cases and the three reply modes behave as the PRD says."
+          "done_when": "The 0, 1 and 2 holder cases, instances, the PA wake and the three reply modes behave as the PRD says."
         },
         {
           "id": "s06",
           "title": "Outputs and notification",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-08",
-            "../001-pij-community/prd.dd.json#requirements/req-10"
+            "../prds/001-pij-community.dd.json#requirements/req-08",
+            "../prds/001-pij-community.dd.json#requirements/req-10"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-notify",
-            "../001-pij-community/blueprint.dd.json#components/c-verbs"
+            "../blueprints/001-pij-community.dd.json#components/c-notify",
+            "../blueprints/001-pij-community.dd.json#components/c-verbs"
           ],
           "depends_on": [
             "#steps/s04",
@@ -126,28 +126,29 @@
         },
         {
           "id": "s07",
-          "title": "Role memory prompts",
+          "title": "Role memory and its prompts",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-09"
+            "../prds/001-pij-community.dd.json#requirements/req-09"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-memory-hook"
+            "../blueprints/001-pij-community.dd.json#components/c-memory-hook",
+            "../blueprints/001-pij-community.dd.json#components/c-layout"
           ],
           "depends_on": [
             "#steps/s04"
           ],
-          "done_when": "A role holder's compact and close are each preceded by the memory turn."
+          "done_when": "Notes are one file each with a generated INDEX.md, and a role holder's compact and close are each preceded by the memory turn."
         },
         {
           "id": "s08",
           "title": "Routing table",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-11"
+            "../prds/001-pij-community.dd.json#requirements/req-11"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-routes"
+            "../blueprints/001-pij-community.dd.json#components/c-routes"
           ],
           "depends_on": [
             "#steps/s04"
@@ -159,11 +160,11 @@
           "title": "Prime prompts",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-12",
-            "../001-pij-community/prd.dd.json#requirements/req-14"
+            "../prds/001-pij-community.dd.json#requirements/req-12",
+            "../prds/001-pij-community.dd.json#requirements/req-14"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-orient"
+            "../blueprints/001-pij-community.dd.json#components/c-orient"
           ],
           "depends_on": [
             "#steps/s05",
@@ -173,16 +174,33 @@
           "done_when": "Each prompt condition shows with its runnable command."
         },
         {
+          "id": "s11",
+          "title": "Number claims and delivery at merge",
+          "state": "planned",
+          "delivers": [
+            "../prds/001-pij-community.dd.json#requirements/req-20",
+            "../prds/001-pij-community.dd.json#requirements/req-21"
+          ],
+          "builds": [
+            "../blueprints/001-pij-community.dd.json#components/c-claims",
+            "../blueprints/001-pij-community.dd.json#components/c-merge-delivery"
+          ],
+          "depends_on": [
+            "#steps/s02"
+          ],
+          "done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card."
+        },
+        {
           "id": "s10",
           "title": "Community skill route and optional templates",
           "state": "planned",
           "delivers": [
-            "../001-pij-community/prd.dd.json#requirements/req-13",
-            "../001-pij-community/prd.dd.json#requirements/req-15"
+            "../prds/001-pij-community.dd.json#requirements/req-13",
+            "../prds/001-pij-community.dd.json#requirements/req-15"
           ],
           "builds": [
-            "../001-pij-community/blueprint.dd.json#components/c-skill",
-            "../001-pij-community/blueprint.dd.json#components/c-templates"
+            "../blueprints/001-pij-community.dd.json#components/c-skill",
+            "../blueprints/001-pij-community.dd.json#components/c-templates"
           ],
           "depends_on": [
             "#steps/s03",
@@ -199,6 +217,11 @@
           "date": "2026-11-04",
           "by": "pij-far-jackal with Jordan",
           "change": "First draft from workshop 001."
+        },
+        {
+          "date": "2026-11-04",
+          "by": "pij-far-jackal with Jordan",
+          "change": "Added s11 (claims, delivery at merge); widened s05 and s07."
         }
       ]
     }
