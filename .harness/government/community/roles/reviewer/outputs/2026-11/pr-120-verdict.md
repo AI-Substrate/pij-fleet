@@ -14,7 +14,9 @@ Status: **incomplete, verification paused** at head `43821d5ba66ad7e6f46a976785d
 - AC6: issue closure, D-197-1, API/skill documentation and the separate junk-row operator decision are present.
 - Exact-head CI run `41782033159`: all four jobs pass; API confirms its head SHA is the reviewed SHA.
 
-Commands run with the shared target, CARGO_INCREMENTAL=0 and the outer mkdir lock:
+The first local baseline below is **withdrawn as review proof**: PM confirmed an unlocked builder overlapped it despite this review holding the outer lock. A source-refreshed, uncontended rerun is pending. The exact-head CI evidence is unaffected.
+
+Initial commands run with the shared target, CARGO_INCREMENTAL=0 and the outer mkdir lock:
 
 | Command | Result |
 |---|---|
@@ -29,16 +31,20 @@ Commands run with the shared target, CARGO_INCREMENTAL=0 and the outer mkdir loc
 
 No full local gate is claimed. Exact-head CI covers the full workspace, Rust lint and JS checks.
 
-## Pending proof and blocker
+## Mutation evidence and pending restored proof
 
-The packet requires an indexed-read mutation followed by restored success. An immutable-head scratch archive is prepared with STATE_VERIFIED removed only from the indexed live-seat kind list. The expected failure is the existing oracle emitting an extra previously verified done claim. Additional scratch-only boundary controls cover default 500 over 501 rows, exactly 500 remaining rows, an empty project-filtered page followed by its match, an absent peer and a cursor beyond the head.
+On an immutable-head scratch archive, removed STATE_VERIFIED only from the indexed live-seat kind list. Under an uncontended outer lock, the oracle failed exactly at anomalies_tests.rs:443 (exit 101, one failed test): the indexed answer had assignment a1 and three unverified-done rows; the old fold had no a1 and two such rows. This detects a real missing indexed kind rather than a compilation failure. Restored anomalies.rs is byte-identical to the frozen checkout.
 
-**None of those scratch controls has run.** The mutation batch was stopped while waiting for the outer lock, before any cargo command. Free disk fell from 26 GiB to 24 GiB, below the packet's 25 GiB floor. At that observation the lock belonged to pij-swift-kestrel. PM was notified. Resume only above the floor, recheck disk after acquiring the lock, force-refresh source roots, prove the mutation fails for the expected assertion, restore source bytes and rerun successfully.
+The same clean batch passed an additional scratch-only boundary test covering default 500 over 501 rows, exactly 500 remaining rows, an empty project-filtered page followed by its match, an absent peer and a cursor beyond the head. It also passed the real SQLite spine page contract, whose name the initial baseline selector missed.
+
+Receipts: `<reviewer-session-files>/pr120-mutation.txt`, `pr120-boundary.txt`, `pr120-boundary.diff`, `pr120-sqlite-contract.txt`.
+
+The first mutation attempt was stopped before cargo when disk crossed to 24 GiB while waiting; disk later recovered to 26 GiB. After the successful mutation batch, the clean baseline rerun refused before cargo because PID 37794 was running `cargo test --locked --workspace` despite the free outer lock. PM was notified. A bounded waiting script now waits for no cargo process, acquires the outer lock, rechecks disk above 25 GiB before every command, refreshes source roots and will rerun the seven original controls. No restored-success claim yet.
 
 The original review worktree remains clean at the frozen SHA. No product edits, commits, pushes, installs, production-daemon changes or process teardown.
 
 ## Harness feedback
 
-magicWand: one shared-target build wrapper should own serialization, the in-lock disk check, source refresh and whole command batch. During the baseline batch cargo reported internal build-lock waits despite this review owning the outer lock; that is evidence of contention, not proof of another seat's identity or of result corruption. The disk-floor recheck must happen after waiting as well as before it.
+magicWand: one shared-target build wrapper should own serialization, the in-lock disk check, source refresh and whole command batch. During the baseline batch cargo reported internal build-lock waits despite this review owning the outer lock; PM later confirmed an unlocked builder, so the first baseline was withdrawn. The disk-floor recheck must happen after waiting as well as before it. This review encoded those checks in a session-local verification wrapper; promoting that wrapper belongs in the engineering harness, not this frozen product review.
 
 difficulties: shared-target contention; disk crossing the floor while waiting; missing JS dependencies intentionally left untouched. Observations are captured for PM curation.

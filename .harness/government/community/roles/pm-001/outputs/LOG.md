@@ -104,3 +104,4 @@
 2026-11-04 note shared-target - breach — marten built without lock (wait-for-no-cargo loop) while kestrel held it; told marten to use mkdir lock and re-run; reviewer 120 warned
 2026-11-04 note pr-120-perf 43821d5 pass-with-notes — wombat: no new launch/loop; all SEARCH on 1M rows; note: all_matching scales with selected report/dispatch history, not seats x kinds alone; AFTER pending deploy
 2026-11-04 note shared-target - breach 2 — marten just rust-check (pid 37794) unlocked again (lock message not yet read mid-turn); reviewer 120 waits; mutation proof done (STATE_VERIFIED removal fails oracle)
+2026-11-04 note pr-120-security 43821d5 pass-with-notes — lynx; C21 path finding in kestrel's delivery memory note -> kestrel to scrub, prime commits
