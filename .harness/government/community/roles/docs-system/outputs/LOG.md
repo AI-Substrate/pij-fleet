@@ -6,3 +6,4 @@
 2026-11-04 deliverable pr:113 75cf1a150d32e2f1b2ecf3ef3f1aab4f979001eb opened — job 4 / plan 193: ddocs-check sensor in harness checks, self-check and CI (warn-UNAVAILABLE in CI until ddocs is on an allowed registry)
 2026-11-04 deliverable pr:116 99d8bf42102a8d642a520fbc27008369de63f8e5 opened — job 5: scrub private-repo name from plan 175 evidence and AGENTS.md (C19)
 2026-11-04 note wave-b-dogfood - refused — job 6: batch import refused on project resolution (no pij project); 'role exists' on memory/INDEX.md confirmed from code; 10 frictions; outputs/2026-11/wave-b-dogfood.md
+2026-11-04 deliverable plan/195-schemas bf78bff4fbba0e23eb07b1bbcaa54bb75c8bc028 done — job 7 / plan 195 phase 1: pij/holders and pij/external schemas + fixtures

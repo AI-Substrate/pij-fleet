@@ -17,3 +17,7 @@ Add D-190-5 to `docs/difficulties.md`: CI flake in crates/tmux, `staged_submit_e
 ## Job 7 (queued 15:10): plan 195 phase 1, schemas
 
 After job 6. Branch `plan/195-schemas` from `origin/plan/195-assign-lineage` (df591de). Plan 195 AC1 and bp-0001: `pij/holders` (per role rows: seat id, harness, harness session id, machine, instance key, from, to, assigned by, released by, why) and `pij/external` (req-16, dated entries) under `.dd/schemas/pij/`, with pass and fail fixtures beside them and results in `docs/plans/195-assign-lineage/assets/evidence/phase-1.md`. Mark ac-0001, bp-0001 and ph-95a1 checked, biome-format, push, and send me the head. The coder (pij-brisk-marten) merges it.
+
+## Job 8 (queued 15:20): plan 194 phase 1, the six role templates
+
+After job 7. Branch `plan/194-templates` from `origin/plan/194-role-templates`. Plan 194 AC1 and bp-0001: `templates/roles/<name>/v1/role.dd.json` for prime, pm, pa, coder, reviewer and security, plus `templates/roles/README.md` saying they are examples to adapt, not a checklist (C18). Write them fresh for a public repo: don't copy the hand-written community roles (they name machine paths and this fleet's seats); mark project-specific fields as placeholders. Validate each (0/0), scan for machine paths, private repos and seat ids (0), record results in `docs/plans/194-role-templates/assets/evidence/phase-1.md`, mark ac-0001, bp-0001 and ph-94a1 checked, push, and send me the head. Open question 2 (is `prime` a template?): write it, with a note that assign never applies to a prime.

@@ -121,9 +121,16 @@ A supplementary `/usr/bin/vmmap -summary 97253` at 15:03:25.797, outside the tim
 ```text
 Physical footprint:         95.4M
 Physical footprint (peak):  6.5G
+                                VIRTUAL RESIDENT    DIRTY  SWAPPED VOLATILE   NONVOL    EMPTY   REGION
+REGION TYPE                        SIZE     SIZE     SIZE     SIZE     SIZE     SIZE     SIZE    COUNT (non-coalesced)
 Malloc Small                     652.0M   467.9M    64.1M     400K       0K       0K       0K      165
 Malloc Small (empty)               5.3G     3.8G    10.3M      96K       0K       0K       0K     1365
 TOTAL                            393.2G     4.6G   111.8M    1600K       0K      16K       0K     3607
+```
+
+```text
+                                 VIRTUAL   RESIDENT      DIRTY    SWAPPED ALLOCATION      BYTES DIRTY+SWAP          REGION
+MALLOC ZONE                         SIZE       SIZE       SIZE       SIZE      COUNT  ALLOCATED  FRAG SIZE  % FRAG   COUNT
 DefaultMallocZone_0x1066ec000       6.0G       4.3G      98.9M       656K      71117      13.7M      85.9M     87%    1582
 ```
 
