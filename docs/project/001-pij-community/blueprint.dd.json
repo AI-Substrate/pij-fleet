@@ -1,0 +1,272 @@
+{
+  "dd": {
+    "schema": "pij/blueprint"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Blueprint 001: pij community",
+        "status": "draft",
+        "updated": "2026-11-04",
+        "owner": "pij-far-jackal",
+        "summary": "How the community directory is built: governance-branch ddocs written only by pij, a rebuildable store index, role addressing in delivery, and prompts for the prime."
+      }
+    },
+    {
+      "name": "overview",
+      "value": "Definitions, memory and outputs are ddocs on the governance branch, written by one daemon-side writer through the ddocs CLI. The store holds pointers and live state (assignments, lineage, requests), and can be rebuilt from the branch. Delivery learns one new address form, `role:<id>`, and one new request field, the reply mode. Product docs (PRDs, blueprints, roadmaps) live on main under docs/project and are joined by ddocs links."
+    },
+    {
+      "name": "components",
+      "value": [
+        {
+          "id": "c-doc-schemas",
+          "name": "Project docs schemas",
+          "kind": "schema",
+          "where": ".dd/schemas/pij/{prd,blueprint,roadmap}",
+          "responsibility": "The three schemas behind docs/project, joined by typed link cells.",
+          "realises": [
+            "prd.dd.json#requirements/req-18"
+          ],
+          "state": "in-progress"
+        },
+        {
+          "id": "c-role-schema",
+          "name": "Role schema",
+          "kind": "schema",
+          "where": ".dd/schemas/pij/role",
+          "responsibility": "The `pij/role` schema for role definitions, plus `pij/output` and `pij/memory` for outputs and memory notes.",
+          "realises": [
+            "prd.dd.json#requirements/req-04",
+            "prd.dd.json#requirements/req-10"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-layout",
+          "name": "Community layout",
+          "kind": "file",
+          "where": "<government-root>/community/",
+          "responsibility": "`roles/<id>/role.dd.json`, `roles/<id>/memory/`, `roles/<id>/outputs/<yyyy-mm>/`, `ROUTES.md`, `external.dd.json`.",
+          "realises": [
+            "prd.dd.json#requirements/req-02",
+            "prd.dd.json#requirements/req-16"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-writer",
+          "name": "Governance writer",
+          "kind": "module",
+          "where": "crates/daemon",
+          "responsibility": "Writes a ddoc, runs `ddocs validate` and `ddocs build` by absolute path, commits on the governance branch, and records the pointer. One writer per project, serialised by the daemon. Named refusals for missing governance or ddocs.",
+          "realises": [
+            "prd.dd.json#requirements/req-02",
+            "prd.dd.json#requirements/req-03",
+            "prd.dd.json#requirements/req-05"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-store",
+          "name": "Directory index",
+          "kind": "store",
+          "where": "crates/store",
+          "responsibility": "Tables for roles (pointer and summary), assignments and lineage (seat, session, machine, from, to), requests (reply mode, requester) and outputs (pointer, subject, result). Rebuildable from the governance branch.",
+          "realises": [
+            "prd.dd.json#requirements/req-06",
+            "prd.dd.json#requirements/req-08",
+            "prd.dd.json#requirements/req-10",
+            "prd.dd.json#requirements/req-17"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-verbs",
+          "name": "Directory verbs",
+          "kind": "verb",
+          "where": "crates/cli",
+          "responsibility": "`pij directory [add|scope|assign|release|memory|external|routes]`, `pij output`, `pij outputs`.",
+          "realises": [
+            "prd.dd.json#requirements/req-01",
+            "prd.dd.json#requirements/req-05",
+            "prd.dd.json#requirements/req-06",
+            "prd.dd.json#requirements/req-10",
+            "prd.dd.json#requirements/req-16"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-send-role",
+          "name": "Role addressing",
+          "kind": "module",
+          "where": "crates/daemon delivery",
+          "responsibility": "Resolves `role:<id>` to exactly one live holder, or returns the actionable refusal. Stores the reply mode on the request.",
+          "realises": [
+            "prd.dd.json#requirements/req-07",
+            "prd.dd.json#requirements/req-08"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-notify",
+          "name": "Output notification",
+          "kind": "module",
+          "where": "crates/daemon delivery",
+          "responsibility": "Routes an output's notice to the requester with its reply mode, or to the nearest seat above as an FYI; block and failed always wake.",
+          "realises": [
+            "prd.dd.json#requirements/req-08"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-memory-hook",
+          "name": "Memory prompt",
+          "kind": "hook",
+          "where": "crates/daemon control",
+          "responsibility": "Before a compact or close of a role holder, delivers the memory prompt and holds the control until that turn ends.",
+          "realises": [
+            "prd.dd.json#requirements/req-09"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-routes",
+          "name": "Routing table",
+          "kind": "module",
+          "where": "crates/daemon",
+          "responsibility": "Builds the table from role scopes, writes ROUTES.md, and delivers it on assign, after compact, on revive and on demand; sends changed rows as FYIs.",
+          "realises": [
+            "prd.dd.json#requirements/req-11"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-orient",
+          "name": "Directory view and prompts",
+          "kind": "verb",
+          "where": "crates/cli",
+          "responsibility": "The prime's view: holders, waiting requests, latest outputs, memory freshness, and next-action prompts with runnable commands.",
+          "realises": [
+            "prd.dd.json#requirements/req-12",
+            "prd.dd.json#requirements/req-14"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-templates",
+          "name": "Role templates",
+          "kind": "template",
+          "where": "templates/roles/",
+          "responsibility": "Versioned templates: core (prime, pm, pa, coder, reviewer), recommended (security), optional (devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer, transcriber).",
+          "realises": [
+            "prd.dd.json#requirements/req-13",
+            "prd.dd.json#requirements/req-14"
+          ],
+          "state": "planned"
+        },
+        {
+          "id": "c-skill",
+          "name": "Community skill route",
+          "kind": "skill",
+          "where": "skills/pij/references/routes/community.md",
+          "responsibility": "Teaches the prime, PM and PA their duties; workers are told what to do by their packets.",
+          "realises": [
+            "prd.dd.json#requirements/req-15"
+          ],
+          "state": "planned"
+        }
+      ]
+    },
+    {
+      "name": "decisions",
+      "value": [
+        {
+          "id": "d-1",
+          "decision": "Directory files on the governance branch; product docs on main.",
+          "why": "Running the fleet is governance; what the product needs ships with its code, so a builder flips a requirement in the PR that delivers it.",
+          "realises": [
+            "prd.dd.json#requirements/req-02",
+            "prd.dd.json#requirements/req-18"
+          ]
+        },
+        {
+          "id": "d-2",
+          "decision": "Use the ddocs CLI from pij-rs; no Rust port.",
+          "why": "ddocs is TypeScript only. Writes are rare, so two launches per write are cheap. flowspace3's Rust parser is read-only and stays an option.",
+          "realises": [
+            "prd.dd.json#requirements/req-03"
+          ]
+        },
+        {
+          "id": "d-3",
+          "decision": "One file per output.",
+          "why": "Shared files conflict under parallel writers; one file each never does.",
+          "realises": [
+            "prd.dd.json#requirements/req-10"
+          ]
+        },
+        {
+          "id": "d-4",
+          "decision": "pij never starts a seat on its own.",
+          "why": "Starting a seat costs money and context; the refusal names the command instead.",
+          "realises": [
+            "prd.dd.json#requirements/req-07"
+          ]
+        },
+        {
+          "id": "d-5",
+          "decision": "Reply mode defaults to wake.",
+          "why": "An extra wake costs a turn; a missed one strands an idle requester.",
+          "realises": [
+            "prd.dd.json#requirements/req-08"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "costs",
+      "value": [
+        {
+          "id": "k-1",
+          "what": "Directory write or output: ddocs validate, ddocs build, git add and commit.",
+          "rate": "per request; about 5 launches, by absolute path",
+          "scaling": "with requests, not with seats or time",
+          "component": [
+            "blueprint.dd.json#components/c-writer"
+          ]
+        },
+        {
+          "id": "k-2",
+          "what": "Routes FYI after a scope change.",
+          "rate": "per change",
+          "scaling": "one message per live seat in the project; no launches",
+          "component": [
+            "blueprint.dd.json#components/c-routes"
+          ]
+        },
+        {
+          "id": "k-3",
+          "what": "Memory prompt before compact or close.",
+          "rate": "per compact or close of a role holder",
+          "scaling": "one extra turn; no launches",
+          "component": [
+            "blueprint.dd.json#components/c-memory-hook"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "changelog",
+      "value": [
+        {
+          "date": "2026-11-04",
+          "by": "pij-far-jackal with Jordan",
+          "change": "First draft from workshop 001."
+        }
+      ]
+    }
+  ],
+  "references": []
+}

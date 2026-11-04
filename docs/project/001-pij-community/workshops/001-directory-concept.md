@@ -1,8 +1,10 @@
-# Workshop 001: the project directory
+# Workshop 001: the community directory
 
 Status: agreed concept, 2026-11-04. Jordan and the pij prime (`pij-far-jackal`), after interviews with two seats that already run specialists: an o-prime governing a product repo, and a Copilot seat that ran a live design session.
 
 ## Why
+
+A **pij community** is a project's agents operating as one cohesive fleet across many concurrent tasks. Its **directory** is what this workshop designs. The PRD, blueprint and roadmap that follow from it are `../prd.dd.json`, `../blueprint.dd.json` and `../../roadmaps/001-pij-community.dd.json`.
 
 Split the work so each agent's context stays small and focused. Small contexts make agents sharper and faster, and they cost less, because cost grows roughly with the square of the context. A role that outlives its seats lets the fleet build knowledge over time: a project gets better at its own work the way a mining town gets good at mining. The village is the analogy; the vocabulary below is fleet language.
 
@@ -10,7 +12,8 @@ Split the work so each agent's context stays small and focused. Small contexts m
 
 | Term | Meaning |
 |---|---|
-| **directory** | one per project: every role, its scope, its holders, memory and outputs |
+| **community** | a project's agents working as one fleet across many concurrent tasks |
+| **directory** | one per community: every role, its scope, its holders, memory and outputs |
 | **role** | a job in the project, with its own short id (`docker`, `security`, `coder`) |
 | **specialist role** | a trade: devcontainer, security, researcher, note-taker, a topic expert |
 | **general role** | prime, pm, pa, coder, reviewer |
@@ -27,21 +30,21 @@ Split the work so each agent's context stays small and focused. Small contexts m
 ## Decisions
 
 1. **One directory per project, tied to the project path, like a prime.** Lending a seat to another project is not tracked. The prime may add an `external` entry as a plain note.
-2. **It lives on the governance branch** under `<government-root>/roles/`. If governance is not set up, pij refuses by name and points at the setup step.
+2. **It lives on the governance branch** under `<government-root>/community/`. If governance is not set up, pij refuses by name and points at the setup step.
 3. **pij is the only writer, through its own verbs.** `pij directory add|scope|assign|release|memory`, `pij output`. pij writes the JSON, runs `ddocs validate` and `ddocs build` by absolute path, and commits on the governance branch. Nobody edits these files by hand. The database keeps a pointer (project id, repo-relative path, commit).
 4. **ddocs is the format.** pij-rs reads `.dd.json` as plain JSON and uses the `ddocs` CLI to validate and build. A missing `ddocs` gives a named refusal, and `just doctor` checks for it. No Rust port of ddocs for now; flowspace3 has a read-only Rust parser if one is ever needed.
 5. **Cross-machine work is out of scope, but nothing here may block it.** Git is the shared copy; each machine's database is a local index that can be rebuilt from the branch. Lineage records the machine. Transcripts never move between machines, because flowspace already holds conversation history.
 6. **Anyone can change the directory; nobody polices it.** Every change records who made it and why, in the role's changelog. The skill gives the prime, the PM and the PA the duty to keep it tidy.
 7. **Sending to a role:** `pij send role:<id>` delivers only when exactly one live seat holds the role. With 0 or 2+ live seats it refuses, and the refusal gives the next steps as runnable commands (revive the last holder, start a fresh seat assigned to the role, or pick one of the listed seats).
-8. **Role memory is prompted automatically.** Before every compact and every close of a seat that holds a role, pij asks it to add what it learned to `roles/<id>/memory/`. That costs one turn at each of those moments, with no timer.
-9. **Outputs are ddocs in git as well as store facts.** Path: `roles/<id>/outputs/<yyyy-mm>/<seq>-<kind>-<subject>.dd.json`, one file per output so nothing conflicts. The daemon writes them one at a time. flowspace indexes them. `pij outputs --role security --subject pr:204` is a database read. pij commits but never pushes; a project pushes its governance branch the way it already does.
+8. **Role memory is prompted automatically.** Before every compact and every close of a seat that holds a role, pij asks it to add what it learned to `community/roles/<id>/memory/`. That costs one turn at each of those moments, with no timer.
+9. **Outputs are ddocs in git as well as store facts.** Path: `community/roles/<id>/outputs/<yyyy-mm>/<seq>-<kind>-<subject>.dd.json`, one file per output so nothing conflicts. The daemon writes them one at a time. flowspace indexes them. `pij outputs --role security --subject pr:204` is a database read. pij commits but never pushes; a project pushes its governance branch the way it already does.
 10. **The requester chooses how it hears back.** `pij send role:x --reply wake|fyi|none`, default `wake`. The mode is stored on the request, and the output that answers it uses that mode. A `block` verdict or a `failed` result always wakes. An output nobody asked for goes as an FYI to the nearest seat above (its PM, else the prime). There is only ever one recipient.
 11. **Mostly the prime's tool.** `pij directory` is the prime's operating picture: roles, holders, waiting requests, latest outputs, memory freshness. It also gives prompts, in the style of `harness flow orient`: "security has no live holder and 3 requests waiting", "docker has 2 live holders", "coder memory not updated in the last 5 closes". Worker seats just get told what to do: a standing packet, the role memory, and a task packet that says how to report with `pij output`.
 12. **Role templates ship with pij.** `pij directory add security --from template:security` copies a versioned template onto the governance branch. The copy belongs to the project and is edited freely. `pij directory` shows when the template has moved ahead, with the diff, and never applies it automatically. Good local edits come back as template PRs on pij-fleet. Templates are written fresh, because pij-fleet is public.
     - **Core**, created with the directory: prime, pm, pa, coder, reviewer.
     - **Recommended**, and pij prompts until it exists: security.
     - **Optional:** devcontainer, researcher, note-taker, topic expert (blank), docs-keeper, infra, release, test and QA, designer, transcriber (per task, writes partial output as it goes).
-13. **A routing table gets work to the owner.** Each role's scope names what it owns. pij builds a table ("send it, don't do it") from every scope, writes it to `roles/ROUTES.md`, and puts it in front of seats:
+13. **A routing table gets work to the owner.** Each role's scope names what it owns. pij builds a table ("send it, don't do it") from every scope, writes it to `community/ROUTES.md`, and puts it in front of seats:
 
     | Trigger | What is sent |
     |---|---|

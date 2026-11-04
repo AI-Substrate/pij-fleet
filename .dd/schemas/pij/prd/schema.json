@@ -1,0 +1,244 @@
+{
+  "dd_schema": 1,
+  "description": "A pij project PRD: what is needed and why. Requirement rows carry a lifecycle state and a done-when check; a builder flips the state in the PR that delivers it. Rows are amended, never deleted; drop one with state dropped and a note.",
+  "enums": {
+    "doc_status": {
+      "values": [
+        "draft",
+        "review",
+        "accepted",
+        "retired"
+      ]
+    },
+    "lifecycle": {
+      "values": [
+        "planned",
+        "in-progress",
+        "shipped",
+        "dropped"
+      ],
+      "gate_terminal": [
+        "shipped",
+        "dropped"
+      ]
+    },
+    "priority": {
+      "values": [
+        "must",
+        "should",
+        "could"
+      ]
+    },
+    "question_status": {
+      "values": [
+        "open",
+        "answered"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "enum",
+            "enum": "doc_status"
+          },
+          "updated": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "why": {
+      "required": true,
+      "shape": {
+        "type": "text"
+      }
+    },
+    "actors": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "name"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "need": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "goals": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "goal"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "goal": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "non_goals": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "text"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "requirements": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "statement",
+            "priority",
+            "state",
+            "done_when"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "statement": {
+              "type": "text"
+            },
+            "actor": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "enum",
+              "enum": "priority"
+            },
+            "state": {
+              "type": "state",
+              "enum": "lifecycle"
+            },
+            "done_when": {
+              "type": "text"
+            },
+            "source": {
+              "type": "string"
+            },
+            "delivered_by": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "open_questions": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "question",
+            "status"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "question": {
+              "type": "text"
+            },
+            "default": {
+              "type": "text"
+            },
+            "answer": {
+              "type": "text"
+            },
+            "status": {
+              "type": "enum",
+              "enum": "question_status"
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "by",
+            "change"
+          ],
+          "fields": {
+            "date": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "change": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}
