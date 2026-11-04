@@ -395,3 +395,32 @@ async fn missing_governance_refuses_with_the_bootstrap_step() {
     let _ = std::fs::remove_dir_all(root);
     server.abort();
 }
+
+/// Plan 195, AC10: the shim forwards `--help` to the daemon, which answers it
+/// rather than refusing `--help requires a value`.
+#[tokio::test]
+async fn help_is_answered_not_refused() {
+    let (addr, server, _fresh) = daemon().await;
+    let cwd = std::env::temp_dir();
+    for (argv, needle) in [
+        (vec!["directory", "--help"], "pij directory <verb> --help"),
+        (vec!["directory", "add", "--help"], "--batch <dir>"),
+        (vec!["directory", "add", "qa", "-h"], "--why <text>"),
+    ] {
+        let answer = call(addr, "/v1/directory", &argv, &cwd).await;
+        assert_eq!(answer["ok"], true, "{argv:?}: {answer}");
+        assert!(
+            answer["data"]["help"].as_str().unwrap().contains(needle),
+            "{argv:?}"
+        );
+    }
+    let unknown = call(
+        addr,
+        "/v1/directory",
+        &["directory", "nope", "--help"],
+        &cwd,
+    )
+    .await;
+    assert_eq!(unknown["details"]["code"], "E-RS-UNPORTED", "{unknown}");
+    server.abort();
+}

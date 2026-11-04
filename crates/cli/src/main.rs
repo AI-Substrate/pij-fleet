@@ -576,7 +576,8 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Write a role into the community directory (`directory add`, plan 190).
+    /// The community directory: `directory add` (plan 190), `--help` (plan 195).
+    #[command(disable_help_flag = true)]
     Directory {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -1175,6 +1176,13 @@ async fn run(cli: Cli) -> ExitCode {
     {
         return bg_emit(&addr, text, data.as_deref(), data_file.as_deref(), cli.json).await;
     }
+    // Directory help needs no daemon or key; the shim path gets the same text
+    // from the daemon (plan 195, AC10).
+    if let Command::Directory { args } = &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        return directory_help(args);
+    }
     let client = match DaemonClient::new(&state_dir, &addr) {
         Ok(client) => client,
         Err(error) => {
@@ -1651,6 +1659,14 @@ async fn run(cli: Cli) -> ExitCode {
                 as_json,
             )
         }
+        Command::Directory { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            emit(
+                &pij_cli::governance::governance(&client, "directory", &args, &caller_context())
+                    .await,
+                as_json,
+            )
+        }
         Command::Project { args }
         | Command::Stream { args }
         | Command::Fence { args }
@@ -1661,8 +1677,7 @@ async fn run(cli: Cli) -> ExitCode {
         | Command::Task { args }
         | Command::Node { args }
         | Command::Orchestration { args }
-        | Command::Spine { args }
-        | Command::Directory { args } => {
+        | Command::Spine { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             let family = command_name
                 .strip_prefix("pij ")
@@ -2611,6 +2626,23 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
         println!("{}", render(envelope, json));
     }
     ExitCode::from(exit_code(envelope))
+}
+
+fn directory_help(args: &[String]) -> ExitCode {
+    let verb = pij_core::directory::verb(args);
+    match pij_core::directory::help(verb) {
+        Some(text) => {
+            println!("{text}");
+            ExitCode::SUCCESS
+        }
+        None => {
+            eprintln!(
+                "pij directory: unknown verb {:?}; run `pij directory --help`",
+                verb.unwrap_or_default()
+            );
+            ExitCode::from(2)
+        }
+    }
 }
 
 /// The human summary of a written fleet report.

@@ -162,6 +162,24 @@ pub(crate) async fn handle(
     State(state): State<AppState>,
     Json(request): Json<GovernanceRequest>,
 ) -> Response {
+    if request
+        .argv
+        .first()
+        .is_some_and(|family| family == "directory")
+        && pij_core::directory::wants_help(&request.argv[1..])
+    {
+        let verb = pij_core::directory::verb(&request.argv[1..]);
+        return match pij_core::directory::help(verb) {
+            Some(text) => envelope(
+                StatusCode::OK,
+                &Envelope::ok(COMMAND, json!({"help": text})),
+            ),
+            None => refused(&Refusal::new(
+                "E-RS-UNPORTED",
+                format!("directory {}: unknown command", verb.unwrap_or_default()),
+            )),
+        };
+    }
     let call = match Arguments::parse(&request.argv) {
         Ok(call) => call,
         Err(refusal) => return refused(&refusal),
