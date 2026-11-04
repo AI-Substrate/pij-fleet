@@ -1,0 +1,129 @@
+[
+  {
+    "name": "recipe-forwarding-env-refresh-failure",
+    "status": "pass",
+    "details": {
+      "recipe_args": [
+        "build",
+        "two words",
+        "a'b",
+        "$literal",
+        "semi;colon",
+        "",
+        "(group)"
+      ],
+      "source_refreshed": true,
+      "failure": 7
+    }
+  },
+  {
+    "name": "disk-floor-before-lock-and-before-command",
+    "status": "pass",
+    "details": "no cargo before lock or after acquisition when the second floor check refuses"
+  },
+  {
+    "name": "timeout-and-stale-lock-preservation",
+    "status": "pass",
+    "details": "timeout preserves live lock; dead-owner refusal preserves stale lock"
+  },
+  {
+    "name": "ordinary-serialization",
+    "status": "pass",
+    "details": [
+      "start first",
+      "end first",
+      "start second",
+      "end second"
+    ]
+  },
+  {
+    "name": "nonexclusive-lock-mutation",
+    "status": "pass",
+    "details": {
+      "mutation_detected": true,
+      "order": [
+        "start first",
+        "start second",
+        "end second",
+        "end first"
+      ]
+    }
+  },
+  {
+    "name": "SIGTERM-descendant-overlap",
+    "status": "pass",
+    "details": {
+      "defect_closed": true,
+      "wrapper_exit": 143,
+      "worker_dead_before_next_batch": true,
+      "order": [
+        "worker-start first",
+        "start first",
+        "start second",
+        "end second"
+      ]
+    }
+  },
+  {
+    "name": "SIGINT-descendant-overlap",
+    "status": "pass",
+    "details": {
+      "defect_closed": true,
+      "wrapper_exit": 130,
+      "worker_dead_before_next_batch": true,
+      "order": [
+        "worker-start first",
+        "start first",
+        "start second",
+        "end second"
+      ]
+    }
+  },
+  {
+    "name": "symlink-target-overlap",
+    "status": "pass",
+    "details": {
+      "defect_closed": true,
+      "same_physical_target_one_lock": true,
+      "order": [
+        "start first",
+        "end first",
+        "start second",
+        "end second"
+      ]
+    }
+  },
+  {
+    "name": "path-resolution-and-lock-errors",
+    "status": "pass",
+    "details": "nonexistent target through symlink works; dangling target, non-directory target and blocked lock refuse"
+  },
+  {
+    "name": "normal-exit-descendant-drain",
+    "status": "pass",
+    "details": "successful cargo parent cannot leave a target-writing descendant after unlock"
+  },
+  {
+    "name": "TERM-resistant-descendant-KILL-escalation",
+    "status": "pass",
+    "details": {
+      "term_resistant_worker_killed": true,
+      "elapsed_seconds": 12.76,
+      "lock_held_during_grace": true
+    }
+  },
+  {
+    "name": "process-group-regression-mutation",
+    "status": "pass",
+    "details": {
+      "mutation_detected": "process-group"
+    }
+  },
+  {
+    "name": "canonical-target-regression-mutation",
+    "status": "pass",
+    "details": {
+      "mutation_detected": "canonical-target"
+    }
+  }
+]

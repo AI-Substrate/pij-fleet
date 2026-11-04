@@ -38,3 +38,5 @@
 
 2026-11-04 verdict pr-121 e13a834de99fe8e41e0373bc3ee0e2edb4956c8e block - P1 TERM/INT unlock while cargo descendants remain active; P2 target symlink selects a different lock for the same directory; both overlap defects reproduced with fake cargo on Bash 3.2, normal controls and non-exclusive-lock mutation pass; exact-head CI four jobs green, local quick gate tooling-limited; no real cargo or product edits.
 
+2026-11-04 verdict pr-121 30b3a371067450e2275d3e3926736a8479a70d0c block - F001 closed by group drain (TERM, INT, normal leftovers and resistant-worker KILL pass); F002 existing-symlink case closed but initially missing target/ selects target/.lock while target selects target.lock, reproducing overlap; 13 repair groups and three guard mutations pass, focused residual reproduces, CI four jobs/10 tests green; no real cargo or product edits.
+

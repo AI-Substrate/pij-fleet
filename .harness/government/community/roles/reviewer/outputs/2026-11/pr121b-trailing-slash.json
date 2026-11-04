@@ -1,0 +1,17 @@
+{
+  "head": "30b3a371067450e2275d3e3926736a8479a70d0c",
+  "bug_reproduced": true,
+  "case": "initially missing target with trailing slash versus same directory without slash",
+  "first_lock": "<temp>/target space/.lock",
+  "second_lock": "<temp>/target space.lock",
+  "order": [
+    "start first",
+    "start second",
+    "end second",
+    "end first"
+  ],
+  "exported_targets": [
+    "/private/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pr121-review-3yxphbne/target space/",
+    "/private/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pr121-review-3yxphbne/target space"
+  ]
+}

@@ -119,3 +119,8 @@
 2026-11-04 note pr-121-perf e13a834 pass-with-notes — wombat: wait loop = 3 launches (df, mkdir, sleep) per 20 s per waiter; note bp-0003 says 2
 2026-11-04 note pr-121-review e13a834 block — salamander F001 P1 unlock before cargo descendants exit; F002 P2 symlink vs real path different locks; routed to kestrel
 2026-11-04 note pr-122-perf 94592ad pass-with-notes — wombat: rest 0, assign 10, release 9, view 0, close 11; no tick work; live comparison after deploy
+2026-11-04 note pr-122-review 94592ad block — mammal F001 P1 pending close-ends not committed but cleared; F002 P2 second-precision from_at PK collision; routed to marten
+2026-11-04 note pr-121 30b3a37 sent — F001 process group + F002 physical path + missing-parent hang fix; re-verdicts asked (reviewer delta, security full, perf delta) in fleet-review-121b
+2026-11-04 note pr-122 e452777 sent — F001 apply pending ends under lock + F002 ms from + row check; re-verdicts in fleet-review-122b; CI running
+2026-11-04 note pr-121-review 30b3a37 block — F001 closed; F002 residual trailing slash on missing target -> different lock; routed to kestrel (last round)
+2026-11-04 note pr-121-perf 30b3a37 pass-with-notes — wombat: drain adds /bin/sleep 0.1 per iteration (~10/s per draining holder, transient); KILL repeats until group gone

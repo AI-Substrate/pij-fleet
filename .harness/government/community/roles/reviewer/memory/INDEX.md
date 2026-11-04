@@ -28,3 +28,5 @@
 
 - [2026-11-04-pr-121-shared-build.md](2026-11-04-pr-121-shared-build.md): PR 121 block; TERM/INT unlock before build descendants stop, and target symlinks bypass exclusion; eight fake-cargo probe groups and non-exclusive-lock mutation, exact-head CI green.
 
+- [2026-11-04-pr-121-fix-review.md](2026-11-04-pr-121-fix-review.md): PR 121 30b3a37 block; process-group drain and existing symlinks fixed, but missing target/ chooses an interior lock and overlaps with target; 13 repair groups pass, focused residual reproduces, exact-head CI 10/10.
+

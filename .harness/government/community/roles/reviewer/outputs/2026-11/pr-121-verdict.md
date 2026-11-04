@@ -1,5 +1,7 @@
 # PR 121 correctness review
 
+**Latest:** block at `30b3a371067450e2275d3e3926736a8479a70d0c`; see [fix-head verdict](pr-121-fix-verdict.md). F001 is closed; F002 remains for an initially missing slash-suffixed target. The text below is the historical initial-head review.
+
 ## A. Verdict
 
 **reviewer: block (head e13a834de99fe8e41e0373bc3ee0e2edb4956c8e)**
