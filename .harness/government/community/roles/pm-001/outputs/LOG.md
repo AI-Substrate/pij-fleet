@@ -74,3 +74,10 @@
 2026-11-04 note pr-114-review 4ec59a8 pass-with-notes — termite; F001/F002/S1 closed, 39 tests + 6 mutations; awaiting security
 2026-11-04 note pr-114-ready 4ec59a8 ready — reviewer, security, perf all pass-with-notes; TOCTOU residual noted; deploy cost receipt owed by prime; sent to prime
 2026-11-04 note reviewer-retired - done — pij-still-termite (pid 16316) closed + killed; worktrees 114, 114b removed
+2026-11-04 note pr-114-merged 6ccd4d8 merged — prime merged + bounced (pid 97253); wave A complete; issue #117 holds the TOCTOU residual
+2026-11-04 deliverable docs-system-job6 6ccd4d8 sent — dogfood import of hand-written roles via directory add --batch (expected refusal: existing memory/INDEX.md) + D-190-5
+2026-11-04 note claim:plan-194 6ccd4d8 claimed — s03 role templates
+2026-11-04 note claim:plan-195 6ccd4d8 claimed — s04 assign, release, lineage, directory view
+2026-11-04 note claim:plan-196 6ccd4d8 claimed — s11 number claims and delivery at merge
+2026-11-04 note claim:migration-0032 6ccd4d8 claimed — s04 assignments and lineage
+2026-11-04 note claim:migration-0033 6ccd4d8 claimed — s11 claims

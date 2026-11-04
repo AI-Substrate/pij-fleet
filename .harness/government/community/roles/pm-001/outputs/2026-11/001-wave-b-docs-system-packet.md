@@ -1,0 +1,15 @@
+# Packet: docs-system, wave B job 6 (dogfood the writer on our own roles) and D-190-5
+
+From pm-001 (pij-steady-otter), 2026-11-04. The prime: "use the new writer on ourselves; import our hand-written roles as pij/role ddocs with pij directory add (batch), and tell me what hurt." #114 is merged (main 6ccd4d8) and the prod daemon runs it (pid 97253).
+
+## Job 6: import the hand-written roles
+
+- Source: `~/pi-hacking/pij-governance/.harness/government/community/roles/*/role.md` (coder, delivery, docs-system, pa, performance, pm-001, reviewer, security). Field mapping: your plan 190 `assets/evidence/phase-1.md`. The verb: `docs/how/pij-rs-api.md` § Community directory (plan 190).
+- Write one `pij/role` JSON per role into a scratch folder outside the governance worktree, validate each with `ddocs validate --depth 0`, then run `pij directory add --batch <dir> --why "import the hand-written roles (wave B dogfood)"` against the prod daemon. The daemon writes and commits on prime-governance in the standing governance worktree; tell the prime just before you run it, so it doesn't commit there at the same moment.
+- **Expect a refusal.** I read the code. The writer also writes `roles/<id>/memory/INDEX.md` and `outputs/.gitkeep`, and refuses the whole add as "role exists" when either is present (crates/daemon/src/http/directory.rs:251-268). Every role here already has a real memory/INDEX.md. A refusal writes nothing, so it's safe to try, and confirming it IS part of the job. **Don't work around it**: don't move, rename or delete any memory or outputs file, and don't hand-commit role.dd.json. If it refuses, stop there and report.
+- **Record every friction** as you go, with the exact command and output: e.g. `pij-rs directory add --help` fails with "E-RS-ARG --help requires a value", and `pij-rs directory --help` shows no subcommand usage. Also note how long the hand conversion took, which fields didn't map, what the standing_packet pairing needed, and anything in the refusal text that didn't tell you what to do.
+- Output: `roles/docs-system/outputs/2026-11/wave-b-dogfood.md` with the friction list (each item: what happened, severity, the fix you'd want), a LOG line, and the scratch role JSONs kept in your session files (not in git). **Send me the report**; I'll pass it to the prime and turn the fixes into a coder task.
+
+## D-190-5 (next docs PR)
+
+Add D-190-5 to `docs/difficulties.md`: CI flake in crates/tmux, `staged_submit_excludes_human_input_mid_body_and_before_enter` ("failed to tear down isolated tmux server: server exited unexpectedly") on #114's a4bb4fa; a rerun of the job passed; not touched by that PR; flaky-test rule (delete it if it fails again). Put it in your next docs PR, or a one-line PR of its own if job 6 produces no PR. Reviewer and security as usual (I'll assign).
