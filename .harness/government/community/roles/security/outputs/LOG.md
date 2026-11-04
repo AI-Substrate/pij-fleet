@@ -16,3 +16,5 @@
 
 2026-11-04 verdict pr:111 a83c73b9fcaf4a1688e8139f60e420f403ca55cd pass-with-notes - Eight-file req-14/count delta clear; checker unchanged, no private/copy hits; inherited AGENTS follow-up retained; governance through 758a2c6c checked; live cb7a0cb not covered; 2026-11-04-pr-111-a83c73b-security.md.
 
+2026-11-04 verdict pr:111 cb7a0cb6be670d140535dfb114b3cd42917329bf pass-with-notes - Rebase change sequences identical; conflict composition checked; merged squash tree matches requested head; worktree disappeared externally, immutable verification completed; inherited scrub note retained; governance through 6e04df6c checked; 2026-11-04-pr-111-cb7a0cb-security.md.
+

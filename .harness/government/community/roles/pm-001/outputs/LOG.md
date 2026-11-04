@@ -59,3 +59,4 @@
 2026-11-04 note pr-111-merged 795c9b7 merged — prime squash-merged; heron starts job 5
 2026-11-04 note pr-114-review d5fd8cf block — termite F001 missing brief committed; F002 relative PATH ddocs; routed to marten with merge of 795c9b7; disk 27 GB flagged
 2026-11-04 note pr-116 99d8bf4 sent — C19 scrub (3 files, 5 lines); reviewer pij-estimated-chinchilla (window pij:review-116), security queued; name#N x34 follow-up asked of prime
+2026-11-04 note c21 - folded — no name#N scrub; told heron + lynx. pr-114 8eb245b = main merges only; F001/F002 fix still owed by marten
