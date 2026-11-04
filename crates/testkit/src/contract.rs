@@ -486,6 +486,54 @@ pub async fn spine_page_contract(spine: &dyn Spine) {
         vec![appended[6]],
         "a short page is the rest of the spine"
     );
+
+    // Issue #119: one seat's newest row, and its pages. `pij-page-1` holds
+    // appends 1 and 5; the spine's own head is append 6, another seat's.
+    let seat = SeatId::from("pij-page-1");
+    assert_eq!(
+        spine
+            .latest(&seat)
+            .await
+            .expect("latest")
+            .and_then(|event| event.seq),
+        Some(appended[5]),
+        "latest is the seat's highest sequence, not the spine's"
+    );
+    assert!(
+        spine
+            .latest(&SeatId::from("pij-page-absent"))
+            .await
+            .expect("absent seat")
+            .is_none(),
+        "a seat with no rows has no latest event"
+    );
+    let mut cursor = Seq(0);
+    let mut own = Vec::new();
+    loop {
+        let page = spine.seat_page(&seat, cursor, 1).await.expect("seat page");
+        assert!(page.len() <= 1, "a seat page never exceeds its limit");
+        assert!(
+            page.iter().all(|event| event.seat.as_ref() == Some(&seat)),
+            "a seat page holds only that seat's rows"
+        );
+        let Some(last) = page.last() else { break };
+        cursor = last.seq.expect("a paged event carries its sequence");
+        own.push(cursor);
+    }
+    assert_eq!(
+        own,
+        vec![appended[1], appended[5]],
+        "seat pages chained by their last seq cover the seat's rows in order, once"
+    );
+    assert_eq!(
+        spine
+            .seat_page(&seat, Seq(0), 5)
+            .await
+            .expect("whole seat")
+            .len(),
+        2,
+        "a seat page is short once the seat's rows run out"
+    );
 }
 
 /// Every promise [`Spine::matching_since`] makes, in one place: one seat, one
