@@ -44,3 +44,9 @@ Ruling C15: the earlier register stays in the private repo and is never copied h
 - The copy check prints counts only, never source text.
 - This branch touches PRD 001 and roadmap 001, so rebase after 191 and 190 merge and re-run `ddocs validate`.
 - PR to main; **send me** the PR number, head sha, the triage counts and the checks result.
+
+## Change to job 1 (12:35): branch and req-26
+
+- A coder now runs s02 phase 2 in parallel and owns `plan/190-community-writer`, so **do not switch to that branch**. Commit phase 1 on a new branch `plan/190-schemas`, made from `origin/plan/190-community-writer` (now 022be91, which carries this change), and push that. The coder merges it.
+- Phase 1 now also covers AC11 (bp-0008): add **req-26** to PRD 001 for seat naming per ruling C13. Seat ids are machine-wide animal names (`pij-<adjective>-<animal>`), never a role or project name; role ids are unique only within one project's directory; tmux windows are named `<project>:<role>`, e.g. `pij:security`. State planned unless today's code already does a part (say which in the note; the daemon already allocates `pij-<adjective>-<noun>` when `--id` is omitted). Add a PRD changelog row. Biome-format the PRD JSON after ddocs writes it (`../pij/node_modules/.bin/biome format --write <file>`), or the diff balloons.
+- Mark ac-0011 and bp-0008 checked with ac-0001.

@@ -7,6 +7,7 @@
 | delivery | pij-swift-kestrel | 2026-11-04 |
 | docs-system | pij-careful-heron | 2026-11-04 |
 | coder | (per task, assigned by pm-001) | — |
+| coder (s02 phase 2, plan 190) | pij-brisk-marten | 2026-11-04 |
 | reviewer | (per PR, assigned by pm-001) | — |
 | security | pij-wary-lynx | 2026-11-04 |
 | performance | pij-frugal-wombat | 2026-11-04 |
