@@ -52,3 +52,5 @@
 2026-11-04 note pr-114-head 0c6ea88 moved — marten added D-190-1 (docs only) after review start; verdict seats told to review d5fd8cf + delta, pin to 0c6ea88; head frozen
 2026-11-04 note pr-114-head b28d815 moved — docs only (bp-0005 measured cost, local check results), from pm-001's late pre-PR request; frozen; perf pass-with-notes at d5fd8cf, delta asked
 2026-11-04 note pr-113-ready 224512d ready — reviewer pass-with-notes, security pass-with-notes, perf pass; sent to prime
+2026-11-04 note merge-order - set — #113 merged (3875247); #111 and #114 conflict in PRD 001; heron rebases #111 now, lynx checks rebased head; #114 rebases once after #111 merges
+2026-11-04 note pr-114-perf b28d815 pass-with-notes — wombat; estimate note resolved; PATH/deploy notes stand
