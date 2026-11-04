@@ -1,0 +1,32 @@
+# Plan 192 scrub and copy check (bp-0001, bp-0002)
+
+Command: python3 docs/plans/192-prd-register-move/assets/evidence/check.py <private-repo-checkout> (sha e05661c8). Counts only; no source text.
+
+```
+source sha e05661c8: 54 rows, 40 open
+verdicts: 40 (dropped-met 19, dropped-unwanted 5, kept 16)
+open rows without a verdict: 0; verdicts for non-open ids: 0
+PRD 002 requirement rows: 14; rows no kept verdict points at: 0
+problems: 0
+scrub PRD 002: machine path: 0
+scrub PRD 002: PR or issue number: 0
+scrub PRD 002: other repository: 0
+scrub PRD 002: credential-shaped: 0
+scrub PRD 002: old plan number: 0
+scrub PRD 002: source repository identity: 0
+scrub PRD 002: other project names: 0
+scrub triage.md: machine path: 0
+scrub triage.md: PR or issue number: 0
+scrub triage.md: other repository: 0
+scrub triage.md: credential-shaped: 0
+scrub triage.md: old plan number: 0
+scrub triage.md: source repository identity: 0
+scrub triage.md: other project names: 0
+copy check PRD 002: shared runs of 8+ words with the source: 0
+copy check triage.md: shared runs of 8+ words with the source: 0
+RESULT: ok
+```
+
+Instrument checks: an earlier run on a draft found 2 shared 8-word runs and 1 plan-number hit, and a later one found 1 shared run (a file citation); all were reworded. A planted sentence with two other-project names counts 2. The source repository's own identity is learned at run time from the source checkout's origin (never stored here): `check.py --self-test` passes on a synthetic name, and a scratch copy with the real identity planted counted 1 and failed, then was discarded. So each detector can fire.
+
+Scope: this script proves accounting (one verdict per open row, every kept row lands in PRD 002) and the lexical checks. It does not prove a verdict is right; that rests on the file and test citations in triage.md.

@@ -15,7 +15,7 @@
 
 Follow the skill's canonical [Governance branch — the rules](skills/pij/references/prime/rituals/bootstrap.md#governance-branch--the-rules), including PRD reconciliation and store/document authority.
 Resolve `<government-root>` with `harness/scripts/government-root.sh [REPO]` (REPO defaults to cwd); the linked bootstrap covers absent/unavailable worktrees.
-The live register is `<government-root>/prd/base-prd.dd.json` (edit via `ddocs`, then `ddocs validate` and `ddocs build`); the TypeScript-era register is closed at `<government-root>/prd/archive/`.
+pij's live requirements are on main in `docs/project/prds/`: PRD 001 (the community) and PRD 002 (`docs/project/prds/002-pij-base.dd.json`, the base register). Edit them with `ddocs`, then `ddocs validate` and `ddocs build`; `docs/project/README.md` has the rules.
 
 ## Inherited from pi-mono (do not violate without explicit user approval)
 
