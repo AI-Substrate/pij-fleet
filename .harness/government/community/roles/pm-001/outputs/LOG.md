@@ -97,3 +97,4 @@
 2026-11-04 deliverable plan-197 97b3cb8 done — plan pushed; coder pij-swift-kestrel (lent from delivery), shared target; performance asked for live before
 2026-11-04 note pr-118-review 868e830 pass-with-notes — butterfly: 2 P3 wording notes (not owed); reviewer retired; awaiting security
 2026-11-04 note pr-118-ready 868e830 ready — reviewer + security pass-with-notes; sent to prime
+2026-11-04 note plan-197-before 97253 measured — wombat: anomalies CPU 13.8s, wall 9.7s, footprint 6.49 GiB; node show CPU 10.6s, wall 6.9s, RSS 7.2 GiB
