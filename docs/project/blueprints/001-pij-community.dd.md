@@ -41,7 +41,8 @@ Definitions, memory and outputs are ddocs on the governance branch, written by o
 | c-templates | Role templates | template | templates/roles/ | Versioned templates: core (prime, pm, pa, coder, reviewer), recommended (security), optional (devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer, transcriber). | [req-13](../prds/001-pij-community.dd.md#requirements), [req-14](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
 | c-claims | Number claims | verb | crates/cli + crates/store | `pij claim &lt;kind&gt;` hands out the next NNN per project and kind, and releases it on merge or close. | [req-20](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
 | c-merge-delivery | Delivery at merge | module | crates/daemon | On a PR merge, reads the PR's links to requirement rows and steps, records the delivery and fills `delivered_by` through a docs PR, and updates the owning PM's card. | [req-21](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
-| c-skill | Community skill route | skill | skills/pij/references/routes/community.md | Teaches the prime, PM and PA their duties; workers are told what to do by their packets. | [req-15](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
+| c-limits | Time-limit check-ins | module | crates/daemon watchdog | Stores a limit on each request; in the existing watchdog round, sends one check-in when the limit passes without an output or card update, and tells the PA (else the prime) when it goes unanswered. | [req-22](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
+| c-skill | Community skill route | skill | skills/pij/references/routes/community.md | `/pij community`: teaches the prime, PM and PA their duties, and ships the doc procedures and examples; workers are told what to do by their packets. | [req-15](../prds/001-pij-community.dd.md#requirements), [req-23](../prds/001-pij-community.dd.md#requirements) | [ ] planned | — |
 
 <a id="decisions"></a>
 
@@ -65,6 +66,7 @@ Definitions, memory and outputs are ddocs on the governance branch, written by o
 | --- | --- | --- | --- | --- |
 | k-1 | Directory write or output: ddocs validate, ddocs build, git add and commit. | per request; about 5 launches, by absolute path | with requests, not with seats or time | [c-writer](#components) |
 | k-2 | Routes FYI after a scope change. | per change | one message per live seat in the project; no launches | [c-routes](#components) |
+| k-4 | Time-limit check. | inside the existing 60 s watchdog round | one store read per open request with a limit; no launches | [c-limits](#components) |
 | k-3 | Memory prompt before compact or close. | per compact or close of a role holder | one extra turn; no launches | [c-memory-hook](#components) |
 
 <a id="changelog"></a>

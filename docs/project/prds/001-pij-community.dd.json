@@ -306,6 +306,46 @@
           "source": "workshops/001-directory-concept.md"
         },
         {
+          "id": "req-22",
+          "title": "Time limits are stall checks",
+          "statement": "A send can carry `--limit <duration>`; without one, the role's default limit applies. When the limit passes with no output and no card update since the request (each card update restarts it), pij sends the seat one check-in, delivered as to any busy seat: write what you have, update your card, and say why it needs longer. Nothing is stopped. If the seat does not answer, pij tells the PA (else the prime). The check runs in the watchdog round the daemon already has; the opt-in quiet-seat watchdog is unchanged.",
+          "actor": "requester",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A seat busy past its limit with no card update gets one check-in; a seat that updates its card is never checked in; a seat that ignores the check-in raises a PA notice.",
+          "source": "workshops/001-directory-concept.md"
+        },
+        {
+          "id": "req-23",
+          "title": "Procedures and examples for project docs",
+          "statement": "The pij skill ships a short procedure and a worked example for writing a PRD, a blueprint and a roadmap, and for folding a ruling into them. By default the PM that owns the work writes them and the prime helps; the prime writes them itself when the operator asks, especially early in a project.",
+          "actor": "pm",
+          "priority": "must",
+          "state": "planned",
+          "done_when": "A fresh PM following the procedure writes a PRD and roadmap that validate clean and link to each other.",
+          "source": "workshops/001-directory-concept.md"
+        },
+        {
+          "id": "req-24",
+          "title": "Roadmap steps name the roles they need",
+          "statement": "A roadmap step lists the roles it needs (`needs: role:devcontainer`). The prime's view flags a needed role that does not exist, and the prime offers to create it from a template or as a new definition with the operator.",
+          "actor": "prime",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "A step needing a missing role shows a prompt in `pij directory`; creating the role clears it.",
+          "source": "workshops/001-directory-concept.md"
+        },
+        {
+          "id": "req-25",
+          "title": "pij's own PRD register moves into docs",
+          "statement": "pij's existing register at `<government-root>/prd/base-prd.dd.json` moves into `docs/project/prds/`, as a separate step after this PRD's first PR merges.",
+          "actor": "prime",
+          "priority": "should",
+          "state": "planned",
+          "done_when": "The register validates at its new path and the governance copy is retired with a pointer.",
+          "source": "workshops/001-directory-concept.md"
+        },
+        {
           "id": "req-21",
           "title": "Delivery recorded at merge",
           "statement": "When a PR merges, pij records which requirement rows and roadmap steps it delivered (from the PR's links), fills `delivered_by`, and puts it on the owning PM's card, so states stop lagging the code.",
@@ -324,13 +364,15 @@
           "id": "q-01",
           "question": "Budgets, checkpoints and heartbeats for per-task specialists: a time or turn limit, forced partial writes, and visible progress.",
           "default": "Next workshop.",
-          "status": "open"
+          "answer": "Time limits as stall checks that use the card for progress (req-22).",
+          "status": "answered"
         },
         {
           "id": "q-02",
           "question": "How roles link to roadmap steps, so the directory can say which steps need a role that does not exist.",
           "default": "Next workshop, with PRD and roadmap prompting.",
-          "status": "open"
+          "answer": "Steps list `needs` (req-24).",
+          "status": "answered"
         },
         {
           "id": "q-03",
@@ -343,13 +385,15 @@
           "id": "q-04",
           "question": "When does pij's existing PRD register move from the governance folder into docs/project?",
           "default": "A separate step after this PRD is accepted.",
-          "status": "open"
+          "answer": "Yes, a separate step after this PR merges (req-25).",
+          "status": "answered"
         },
         {
           "id": "q-05",
           "question": "Skill route name: `/pij community`?",
           "default": "`/pij community`; the verbs stay `pij directory`.",
-          "status": "open"
+          "answer": "Yes.",
+          "status": "answered"
         }
       ]
     },
@@ -365,6 +409,11 @@
           "date": "2026-11-04",
           "by": "pij-far-jackal with Jordan",
           "change": "After the osk-central prime's review and Jordan's rulings: role instances and the role queue with PA wake (req-07); memory kept forever as one note per file with a generated index (req-09); verdicts for an exact head with writer, evidence and notes owed, plus handover outputs (req-10); route FYIs to the prime only (req-11, q-03); briefs by reference (req-13); one standard layout by type, all NNN (req-18); pij never touches a working tree (req-03); number claims (req-20) and delivery recorded at merge (req-21)."
+        },
+        {
+          "date": "2026-11-04",
+          "by": "pij-far-jackal with Jordan",
+          "change": "Workshop 002: time limits as stall checks (req-22), doc procedures and examples (req-23), steps name needed roles (req-24), register move (req-25); all open questions answered."
         }
       ]
     }

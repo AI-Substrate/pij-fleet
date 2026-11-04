@@ -113,6 +113,12 @@
             },
             "note": {
               "type": "string"
+            },
+            "needs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         }

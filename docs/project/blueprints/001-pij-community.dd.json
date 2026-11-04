@@ -191,13 +191,25 @@
           "state": "planned"
         },
         {
+          "id": "c-limits",
+          "name": "Time-limit check-ins",
+          "kind": "module",
+          "where": "crates/daemon watchdog",
+          "responsibility": "Stores a limit on each request; in the existing watchdog round, sends one check-in when the limit passes without an output or card update, and tells the PA (else the prime) when it goes unanswered.",
+          "realises": [
+            "../prds/001-pij-community.dd.json#requirements/req-22"
+          ],
+          "state": "planned"
+        },
+        {
           "id": "c-skill",
           "name": "Community skill route",
           "kind": "skill",
           "where": "skills/pij/references/routes/community.md",
-          "responsibility": "Teaches the prime, PM and PA their duties; workers are told what to do by their packets.",
+          "responsibility": "`/pij community`: teaches the prime, PM and PA their duties, and ships the doc procedures and examples; workers are told what to do by their packets.",
           "realises": [
-            "../prds/001-pij-community.dd.json#requirements/req-15"
+            "../prds/001-pij-community.dd.json#requirements/req-15",
+            "../prds/001-pij-community.dd.json#requirements/req-23"
           ],
           "state": "planned"
         }
@@ -284,6 +296,15 @@
           "scaling": "one message per live seat in the project; no launches",
           "component": [
             "#components/c-routes"
+          ]
+        },
+        {
+          "id": "k-4",
+          "what": "Time-limit check.",
+          "rate": "inside the existing 60 s watchdog round",
+          "scaling": "one store read per open request with a limit; no launches",
+          "component": [
+            "#components/c-limits"
           ]
         },
         {

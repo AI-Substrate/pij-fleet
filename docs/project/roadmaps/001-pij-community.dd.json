@@ -161,7 +161,8 @@
           "state": "planned",
           "delivers": [
             "../prds/001-pij-community.dd.json#requirements/req-12",
-            "../prds/001-pij-community.dd.json#requirements/req-14"
+            "../prds/001-pij-community.dd.json#requirements/req-14",
+            "../prds/001-pij-community.dd.json#requirements/req-24"
           ],
           "builds": [
             "../blueprints/001-pij-community.dd.json#components/c-orient"
@@ -189,6 +190,51 @@
             "#steps/s02"
           ],
           "done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card."
+        },
+        {
+          "id": "s12",
+          "title": "Time limits and check-ins",
+          "state": "planned",
+          "delivers": [
+            "../prds/001-pij-community.dd.json#requirements/req-22"
+          ],
+          "builds": [
+            "../blueprints/001-pij-community.dd.json#components/c-limits"
+          ],
+          "depends_on": [
+            "#steps/s05"
+          ],
+          "done_when": "The three req-22 cases behave as written, with no new timer or launch."
+        },
+        {
+          "id": "s13",
+          "title": "Doc procedures and examples in the skill",
+          "state": "planned",
+          "delivers": [
+            "../prds/001-pij-community.dd.json#requirements/req-23"
+          ],
+          "builds": [
+            "../blueprints/001-pij-community.dd.json#components/c-skill"
+          ],
+          "depends_on": [
+            "#steps/s01"
+          ],
+          "done_when": "A fresh PM writes a valid, linked PRD and roadmap from the procedure."
+        },
+        {
+          "id": "s14",
+          "title": "Move pij's PRD register into docs",
+          "state": "planned",
+          "delivers": [
+            "../prds/001-pij-community.dd.json#requirements/req-25"
+          ],
+          "builds": [
+            "../blueprints/001-pij-community.dd.json#components/c-doc-schemas"
+          ],
+          "depends_on": [
+            "#steps/s01"
+          ],
+          "done_when": "The register validates under docs/project/prds/."
         },
         {
           "id": "s10",
