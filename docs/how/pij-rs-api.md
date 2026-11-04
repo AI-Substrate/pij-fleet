@@ -810,8 +810,8 @@ the standing governance worktree's `.harness/government`, found as
 
 1. It refuses before writing if any path it is about to write carries an edit it
    did not make (modified, staged or untracked), if that path or a directory
-   above it inside the worktree is a symlink (checked with lstat; files are then
-   opened with `O_NOFOLLOW`), or if the role already exists.
+   above it inside the worktree is a symlink (checked with lstat, before anything
+   is written and again just before each write), or if the role already exists.
 2. It writes the document and has ddocs validate (`--depth 0`) and build it, by
    the absolute path resolved at daemon start.
 3. It commits in the standing governance worktree with `git add -- <its paths>`

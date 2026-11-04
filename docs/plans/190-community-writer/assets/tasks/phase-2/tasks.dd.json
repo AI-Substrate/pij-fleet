@@ -199,7 +199,7 @@
           "title": "Security fix S1: no writes through symlinks (#114, pij-wary-lynx)",
           "phase": "ph-ebe5",
           "state": "checked",
-          "success": "Every destination and its ancestors inside the governance worktree are checked with lstat; files open with O_NOFOLLOW; rollback restores only regular files.",
+          "success": "Every destination and its ancestors inside the governance worktree are checked with lstat, before anything is written and again just before each write; rollback restores only regular files.",
           "notes": "Report: pij-governance community/roles/security/outputs/2026-11-04-pr-114-d5fd8cf-security.md. F002 was confirmed by security too and is fixed in tk-000e.",
           "satisfies_toward": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"

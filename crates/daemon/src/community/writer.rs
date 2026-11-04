@@ -11,8 +11,6 @@
 //! Nothing runs on a timer.
 
 use std::collections::BTreeMap;
-use std::io::Write as _;
-use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -177,9 +175,9 @@ impl CommunityWriter {
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| io_refusal(&target, &error))?;
             }
-            // Again, now the directories exist, then a no-follow open.
+            // Again now the directories exist, immediately before the write.
             confined(&top, &file.path)?;
-            write_no_follow(&target, &file.bytes).map_err(|error| io_refusal(&target, &error))?;
+            std::fs::write(&target, &file.bytes).map_err(|error| io_refusal(&target, &error))?;
         }
         for file in files.iter().filter(|file| file.document) {
             self.validator
@@ -329,17 +327,6 @@ fn confined(top: &Path, path: &Path) -> Result<(), Refusal> {
     Ok(())
 }
 
-/// Write a whole file without following a symlink at its final component.
-fn write_no_follow(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(target)?
-        .write_all(bytes)
-}
-
 /// ddocs' refusal of one document in a write of several, naming which.
 fn naming(mut refusal: Refusal, path: &Path) -> Refusal {
     if refusal.code == super::E_DDOCS_INVALID {
@@ -404,8 +391,9 @@ impl Drop for Undo {
         for (path, bytes) in &self.before {
             let target = self.top.join(path);
             match bytes {
+                // Checked a regular file, never a link, when the write began.
                 Some(bytes) => {
-                    let _ = write_no_follow(&target, bytes);
+                    let _ = std::fs::write(&target, bytes);
                 }
                 None => {
                     let _ = std::fs::remove_file(&target);
