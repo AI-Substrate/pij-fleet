@@ -7,6 +7,8 @@ prints COUNTS ONLY. No source text is printed or written.
     python3 docs/plans/192-prd-register-move/assets/evidence/check.py <legacy-repo> [sha]
 
 <legacy-repo> is the private repo's checkout (it is not named here). sha defaults to e05661c8.
+The private repo's owner/name is read from that checkout's origin at run time, never stored here.
+`check.py --self-test` proves the identity detector on a synthetic name.
 """
 
 import hashlib
@@ -37,10 +39,35 @@ DENY_WORD_HASHES = {
 SCRUB_PATTERNS = {
     "machine path": re.compile(r"(/Users/|/home/|~/|/private/tmp|/tmp/)"),
     "PR or issue number": re.compile(r"(#\d{2,}|\bPR ?\d+|/pull/\d+|/issues/\d+)"),
-    "other repository": re.compile(r"(github\.com/|AI-Substrate/pij(?!-fleet)|[A-Za-z0-9-]+/[A-Za-z0-9-]+#\d+)"),
+    "other repository": re.compile(r"(github\.com/|[A-Za-z0-9-]+/[A-Za-z0-9-]+#\d+)"),
     "credential-shaped": re.compile(r"(ghp_[A-Za-z0-9]{10,}|github_pat_|sk-[A-Za-z0-9]{16,}|AKIA[A-Z0-9]{12}|-----BEGIN)"),
     "old plan number": re.compile(r"\bplan \d{2,3}\b", re.I),
 }
+
+
+def source_identities(legacy):
+    """owner/name of the source checkout's origin, learned at run time so this file names nothing real."""
+    url = subprocess.run(
+        ["git", "-C", legacy, "remote", "get-url", "origin"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    match = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", url)
+    if not match:
+        sys.exit("could not read owner/name from the source checkout's origin")
+    owner, name = match.groups()
+    return {f"{owner}/{name}".lower(), f"{name}#".lower()}
+
+
+def identity_hits(text, identities):
+    lower = text.lower()
+    return sum(lower.count(i) for i in identities)
+
+
+def self_test():
+    """The detector fires on a planted synthetic identity and stays quiet without it."""
+    identities = {"example-org/example-private", "example-private#"}
+    assert identity_hits("see example-org/example-private#12 for it", identities) == 2
+    assert identity_hits("nothing private here", identities) == 0
+    print("self-test ok")
 
 
 def words(text):
@@ -64,6 +91,9 @@ def strings(value):
 
 
 def main():
+    if sys.argv[1:] == ["--self-test"]:
+        self_test()
+        return
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     legacy, sha = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "e05661c8")
@@ -73,6 +103,7 @@ def main():
     rows = next(s["value"] for s in json.loads(raw)["sections"] if s["name"] == "requirements")
     open_ids = {r["id"] for r in rows if r.get("state") in OPEN_STATES}
     source_text = "\n".join(strings(rows))
+    identities = source_identities(legacy)
 
     prd = json.loads(PRD.read_text())
     prd_ids = {r["id"] for s in prd["sections"] if s["name"] == "requirements" for r in s["value"]}
@@ -114,6 +145,9 @@ def main():
             n = len(pattern.findall(text))
             scrub_hits += n
             print(f"scrub {name}: {label}: {n}")
+        n = identity_hits(text, identities)
+        scrub_hits += n
+        print(f"scrub {name}: source repository identity: {n}")
         n = sum(1 for w in set(words(text)) if hashlib.sha256(w.encode()).hexdigest()[:16] in DENY_WORD_HASHES)
         scrub_hits += n
         print(f"scrub {name}: other project names: {n}")

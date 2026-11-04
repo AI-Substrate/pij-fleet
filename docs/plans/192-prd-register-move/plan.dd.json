@@ -125,7 +125,7 @@
       "name": "open_questions",
       "value": [
         {
-          "question": "Ruling: may the register, scrubbed, be published in public pij-fleet? Options: (a) move all 54 rows, scrubbed; private PR numbers become 'AI-Substrate/pij#N (private)' or are dropped to the sha; (b) move only rows still open (40), with a note that shipped history stays in the private repo; (c) do not move it; amend req-25 to drop. Recommended: (a). Needs Jordan.",
+          "question": "Ruling: may the earlier, private register be published, scrubbed, in public pij-fleet? Options: (a) move all 54 rows, scrubbed, with private references reduced to commit shas; (b) move only the 40 rows still open, with a note that shipped history stays private; (c) do not move it, and amend req-25. Recommended: (a). Needs Jordan.",
           "state": "checked",
           "answer": "Ruled C15 (Jordan: leave it): none of (a) to (c). The register stays archived in the private repo; its open rows are triaged into a fresh PRD 002 in new words. The plan was rewritten to match."
         },
