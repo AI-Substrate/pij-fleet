@@ -33,3 +33,9 @@ All readings are from one daemon process (pid 29514), so each pair compares.
 - Launches go through `pij_core::program::launch` and record as `git.community` or `ddocs.community`. `crates/testkit/tests/spawn_sites.rs` passes and fails when either record is removed (checked by deleting the `git.community` record: the scan names `crates/daemon/src/community/git.rs::git`).
 
 The other operations in the readings (`ps.*`, `tmux.*`) are the daemon's existing seat machinery, reacting once to the scratch seat's registration, and do not move at rest.
+
+## Gates
+
+- `just rust-check` locally: pass, 1840 tests in 117 binaries, 0 failed, 0 warnings (fmt, clippy `-D warnings`, workspace tests).
+- The TS half of `harness checks` (local-paths, typecheck, lockfile, lint, vitest including `generation-skill-coverage.test.ts`) and smoke: not run locally. This worktree has no `node_modules`, and linking or installing them is out of bounds here (pm-001). They run in CI, in the check (22) and check (24) jobs, on the PR head; the PR records them as "CI on <head>". `copilot-native` passed locally. `~/pi-hacking/pij/node_modules/.bin/biome check` is clean on the changed files its config includes.
+- Flake, not caused by this change: `pij-daemon --test lifecycle_http` `lifecycle_unknown_flags_and_forged_actor_are_not_silently_accepted` failed once under full-suite load (1 failure in the first `cargo test -p pij-daemon` run), then passed 3 of 3 alone, and passed in the full `just rust-check`. Left for the prime (pm-001).
