@@ -1,0 +1,152 @@
+{
+  "dd_schema": 1,
+  "description": "A pij project roadmap: the order of work across one or more PRDs. Each step names the requirement rows it delivers, the blueprint components it builds, what it depends on, and the builder plan that does the work.",
+  "enums": {
+    "doc_status": {
+      "values": [
+        "draft",
+        "review",
+        "accepted",
+        "retired"
+      ]
+    },
+    "step_state": {
+      "values": [
+        "planned",
+        "in-progress",
+        "complete",
+        "abandoned"
+      ],
+      "gate_terminal": [
+        "complete",
+        "abandoned"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "enum",
+            "enum": "doc_status"
+          },
+          "updated": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "goal": {
+      "required": true,
+      "shape": {
+        "type": "text"
+      }
+    },
+    "steps": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "state",
+            "done_when"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "state": {
+              "type": "state",
+              "enum": "step_state"
+            },
+            "delivers": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "pij/prd/section/requirements",
+                "rel": "delivers"
+              }
+            },
+            "builds": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "pij/blueprint/section/components",
+                "rel": "builds"
+              }
+            },
+            "depends_on": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "pij/roadmap/section/steps",
+                "rel": "depends_on"
+              }
+            },
+            "done_when": {
+              "type": "text"
+            },
+            "plan": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            },
+            "needs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "by",
+            "change"
+          ],
+          "fields": {
+            "date": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "change": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}
