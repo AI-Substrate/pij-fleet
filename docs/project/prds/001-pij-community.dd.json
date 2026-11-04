@@ -354,6 +354,17 @@
 					"state": "planned",
 					"done_when": "Merging a PR that names req-07 records the PR on req-07 and shows on the PM's card within one event.",
 					"source": "workshops/001-directory-concept.md"
+				},
+				{
+					"id": "req-26",
+					"title": "Seat names are machine-wide animal names",
+					"statement": "Seat ids are machine-wide, so a seat is named `pij-<adjective>-<animal>` and never after a role or a project; the role a seat holds lives in the directory (HOLDERS until s04). Role ids are unique only within one project's directory, so two projects may each have a `security` role. A role holder's tmux window is named `<project>:<role>` (for example `pij:security`), so the window says what the seat does while the seat id stays unique.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "A spawn without `--id` gets a `pij-<adjective>-<animal>` id; a spawn with an `--id` that names a role or project is refused by name; two projects can each add a `security` role; a role holder's tmux window reads `<project>:<role>`.",
+					"note": "Part done today: the daemon already allocates `pij-<adjective>-<animal>` when `--id` is omitted (crates/core/src/names.rs; the noun corpus is animals and SHIP_NAMES is empty). Not done: an explicit `--id` is accepted as given (pij-community-docs was), `--name` defaults the window to the seat id, and per-project role ids wait on the directory (s02, s04).",
+					"source": "community RULINGS.md C13 (Jordan, 2026-11-04)"
 				}
 			]
 		},
@@ -414,9 +425,13 @@
 					"date": "2026-11-04",
 					"by": "pij-far-jackal with Jordan",
 					"change": "Workshop 002: time limits as stall checks (req-22), doc procedures and examples (req-23), steps name needed roles (req-24), register move (req-25); all open questions answered."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "req-26: seat names are machine-wide animal names, role ids unique per project, windows named <project>:<role> (ruling C13; plan 190 AC11)."
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }

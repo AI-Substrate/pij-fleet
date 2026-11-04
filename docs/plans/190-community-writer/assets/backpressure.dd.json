@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: fixture documents beside the schemas (a role with an inline packet, a role whose packet references a brief file, a role missing scope, a role missing its standing packet, one output of each kind, one memory note); `ddocs validate --depth 0` on each, with the expected pass or fail recorded in the execution log.",
-          "state": "unchecked",
-          "probe": ".dd/schemas/pij/"
+          "state": "checked",
+          "probe": ".dd/schemas/pij/",
+          "receipt": "docs/plans/190-community-writer/assets/evidence/phase-1.md"
         },
         {
           "id": "bp-0002",
@@ -93,9 +94,10 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: `ddocs validate docs/project/prds/001-pij-community.dd.json` clean with req-26 present.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "docs/project/prds/001-pij-community.dd.json",
-          "note": "Cost: none."
+          "note": "Cost: none.",
+          "receipt": "docs/plans/190-community-writer/assets/evidence/phase-1.md#ac11"
         }
       ]
     },

@@ -1,0 +1,41 @@
+{
+  "dd_schema": 1,
+  "description": "A pij community memory note (req-09): one small note under <government-root>/community/roles/<id>/memory/. Notes are never capped or pruned; pij generates memory/INDEX.md with one line per note from the title and hook.",
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "date",
+          "title",
+          "tags",
+          "hook"
+        ],
+        "fields": {
+          "date": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hook": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "body": {
+      "required": true,
+      "shape": {
+        "type": "text"
+      }
+    }
+  }
+}
