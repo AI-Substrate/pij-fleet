@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"kind": "verdict",
+				"role": "security",
+				"subject": "pr:108",
+				"head": "0123456789abcdef0123456789abcdef01234567",
+				"result": "pass-with-notes",
+				"writer": "pij-wary-lynx",
+				"writer_holds_role": true,
+				"requester": "pij-steady-otter",
+				"answers": "17d8911e340d910b-00000000000007aa",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/108#issuecomment-1",
+				"date": "2026-11-04"
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Name the registry host in the lockfile check's refusal."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just lockfile-allowlist",
+					"exit_code": 0,
+					"log": "/tmp/pij-108-lockfile.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "No secrets in the diff; lockfile sources all on the allowed host."
+		}
+	],
+	"references": []
+}

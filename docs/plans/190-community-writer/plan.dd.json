@@ -47,8 +47,9 @@
         {
           "id": "ac-0001",
           "claim": "Schemas. `.dd/schemas/pij/role` holds every req-04 field: id, title, kind (specialist or general), lifecycle (long-lived or per-task), holders (one or many), instance key, scope (paths and rules), out of scope, forbidden paths, default seat (harness, model, effort), inputs, output kinds, standing packet (inline text, or a reference to a brief file), template and version, a default time limit (`default_limit`, a duration that req-22's check uses when a send carries no `--limit`; ruling C5), and a changelog (date, by, why). `pij/output` holds the req-10 fields (kind: verdict, deliverable, note or handover; subject; head; result; notes owed; evidence as command, exit code and log path; external link; writer; requester). `pij/memory` holds the req-09 fields (date, title, tags, one-line hook, body). `ddocs validate` passes on a role with an inline packet and on one that references a brief, and fails on a role missing scope or missing its standing packet.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/phase-1.md: 9 fixtures validated at --depth 0 as expected (7 pass, 2 refuse: missing scope, missing standing_packet)"
         },
         {
           "id": "ac-0002",
@@ -107,8 +108,9 @@
         {
           "id": "ac-0011",
           "claim": "Seat naming (ruling C13). PRD 001 gains req-26: seat ids are machine-wide animal names (`pij-<adjective>-<animal>`), never a role or project name; role ids are unique only within one project's directory; tmux windows are named `<project>:<role>` (for example `pij:security`). State planned unless today's code already does a part, which the note then names. PRD 001 validates clean. Written by docs-system in phase 1.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008",
+          "receipt": "assets/evidence/phase-1.md: req-26 added to PRD 001 (in-progress, note names the existing allocator); ddocs validate clean (0 error, 0 warn)"
         }
       ]
     },
@@ -118,9 +120,10 @@
         {
           "id": "ph-c762",
           "title": "Role, output and memory schemas",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
-          "brief": "AC1 and AC11. Three schemas under .dd/schemas/pij/ with pass and fail fixtures, including `default_limit` on pij/role (C5), and req-26 (seat naming, C13) in PRD 001. Owned by docs-system (ruling C7). Committed on branch plan/190-schemas, which the phase 2 coder merges into plan/190-community-writer. CS-2."
+          "brief": "AC1 and AC11. Three schemas under .dd/schemas/pij/ with pass and fail fixtures, including `default_limit` on pij/role (C5), and req-26 (seat naming, C13) in PRD 001. Owned by docs-system (ruling C7). Committed on branch plan/190-schemas, which the phase 2 coder merges into plan/190-community-writer. CS-2.",
+          "receipt": "Schemas and fixtures under .dd/schemas/pij/{role,output,memory}; req-26 in PRD 001; evidence assets/evidence/phase-1.md"
         },
         {
           "id": "ph-ebe5",
