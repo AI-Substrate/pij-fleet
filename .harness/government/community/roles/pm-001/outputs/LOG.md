@@ -88,3 +88,4 @@
 2026-11-04 deliverable plan-194 HEAD done — s03 plan pushed (plan/194-role-templates); phase 1 templates queued as heron job 8; phase 2 coder after plan 195 merges
 2026-11-04 note s04-window-rename e20020c decided — option (b): one recorded tmux launch per assign; control-client allowlist (S2) untouched; marten rewords AC6/AC11/bp-0004/bp-0007
 2026-11-04 note f1-c24 - folded — prime registered project pij-fleet (F1); refusal must name project create (marten AC15); C24 prime is a template (plan 194 OQ2, heron job 8)
+2026-11-04 note plan-195-schemas bf78bff landed — heron job 7; to marten with layout.rs SCHEMAS array note; heron next: docs PR then job 8

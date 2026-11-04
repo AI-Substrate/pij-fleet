@@ -7,3 +7,4 @@
 2026-11-04 deliverable pr:116 99d8bf42102a8d642a520fbc27008369de63f8e5 opened — job 5: scrub private-repo name from plan 175 evidence and AGENTS.md (C19)
 2026-11-04 note wave-b-dogfood - refused — job 6: batch import refused on project resolution (no pij project); 'role exists' on memory/INDEX.md confirmed from code; 10 frictions; outputs/2026-11/wave-b-dogfood.md
 2026-11-04 deliverable plan/195-schemas bf78bff4fbba0e23eb07b1bbcaa54bb75c8bc028 done — job 7 / plan 195 phase 1: pij/holders and pij/external schemas + fixtures
+2026-11-04 note wave-b-dogfood-run2 - refused — job 6 re-run after project registered: worktree still E-RS-ARG (F2); canonical E-RS-DIRECTORY-EXISTS naming absent role.dd.json (F3); nothing written

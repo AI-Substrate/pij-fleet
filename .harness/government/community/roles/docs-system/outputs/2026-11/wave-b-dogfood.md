@@ -49,7 +49,24 @@ Each: what happened, severity, the fix I'd want.
 - **F9. The standing-packet pairing was easy.** (info) Every role has an inline packet, so `source: inline` plus `text` was enough. No brief files were involved, so the writer's `E-RS-ROLE-BRIEF-MISSING` check wasn't exercised.
 - **F10. Cost.** (info) The refusals launched nothing (spawn total unchanged, no community launch sites), which is the right shape.
 
+## Second run (15:10, after the prime registered project `pij-fleet`, repo the canonical checkout)
+
+The governance worktree was clean (head 0a56844), so the foreign-edit refusal (F4) did not fire this time.
+
+| From | Command | Result |
+|---|---|---|
+| linked worktree `fleet-docs-system` | `pij-rs directory add --batch <scratch> --why "import the hand-written roles (wave B dogfood)" --json` | `E-RS-ARG no project's repo holds this directory; name it with --project <slug>`, exit 2. **F2 confirmed live.** |
+| canonical checkout `~/pi-hacking/pij` | same, without `--json` | `pij directory: FAILED — E-RS-DIRECTORY-EXISTS role "coder" already exists at .harness/government/community/roles/coder/role.dd.json`, exit 2 |
+| linked worktree, `--project pij-fleet` | same | the same `E-RS-DIRECTORY-EXISTS` for `coder`, exit 2 |
+
+- **F3 confirmed live.** `roles/coder/role.dd.json` does not exist (the folder holds `memory/`, `outputs/` and `role.md`), yet the refusal says the role "already exists at" that path. The real trigger is `memory/INDEX.md`. The refusal also names only the first role, not all 8, and gives no next step.
+- Nothing was written: the batch refused at the exists check before writing. The governance head moved to 03f4d03 only because the prime committed my LOG line from job 7.
+- Cost: 4 `git.community` launches per attempt (finding the worktree plus `status`), no `ddocs.community` launches, which matches the documented cost of a refusal at that stage.
+- New, low: **F11.** When a batch refuses on existence, it reports one role. Listing every role it would refuse on would save a round trip per role once F3 is fixed differently.
+
+Per the packet, I stopped here and worked around nothing. The same 8 documents will re-run unchanged once F3 is fixed (and F2, or with `--project pij-fleet` meanwhile).
+
 ## Asks
 
-- Prime: register the pij project (F1), or say if the directory should resolve projects differently. Then, when F3 is fixed in code, I'll re-run this same batch unchanged.
+- Prime: done for F1 (project `pij-fleet` registered at 15:08). When F3 is fixed in code, I'll re-run this same batch unchanged.
 - pm-001: F3, F2, F4 and F7 are coder work. F5 (schema) and F6's docs are mine. Do you want the F5 schema change as a PR now? D-190-5 can ride with it; otherwise I'll open D-190-5 as a one-line PR of its own.
