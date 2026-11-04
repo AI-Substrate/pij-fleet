@@ -103,6 +103,12 @@
           "claim": "Ping pid. `pij-rs --json ping` returns the daemon's process id as `data.pid` (from the process itself, no launch). The AC8 cost receipts record the pid with each spawn reading, so a before and after pair is shown to come from one daemon process (the spawn counter resets on restart). `docs/how/pij-rs-api.md` and `docs/how/macos-defender.md` (Measure launches) show the field.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0011",
+          "claim": "Seat naming (ruling C13). PRD 001 gains req-26: seat ids are machine-wide animal names (`pij-<adjective>-<animal>`), never a role or project name; role ids are unique only within one project's directory; tmux windows are named `<project>:<role>` (for example `pij:security`). State planned unless today's code already does a part, which the note then names. PRD 001 validates clean. Written by docs-system in phase 1.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
         }
       ]
     },
@@ -114,7 +120,7 @@
           "title": "Role, output and memory schemas",
           "state": "unchecked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
-          "brief": "AC1. Three schemas under .dd/schemas/pij/ with pass and fail fixtures, including `default_limit` on pij/role (C5). Owned by docs-system (ruling C7), committed on this branch before phase 2 starts. CS-2."
+          "brief": "AC1 and AC11. Three schemas under .dd/schemas/pij/ with pass and fail fixtures, including `default_limit` on pij/role (C5), and req-26 (seat naming, C13) in PRD 001. Owned by docs-system (ruling C7). Committed on branch plan/190-schemas, which the phase 2 coder merges into plan/190-community-writer. CS-2."
         },
         {
           "id": "ph-ebe5",
@@ -124,7 +130,7 @@
             "ph-c762"
           ],
           "tasks": "assets/tasks/phase-2/tasks.dd.json#tasks",
-          "brief": "AC2 to AC10. A Rust governance-root resolver, the writer (validate, build, `git add` plus `git commit --only` of its own paths in the governance worktree per C8, refusing on foreign edits to those paths, one writer per project, schema copies per C9), `pij directory add` and `--batch`, the store pointer (migration 0031), refusals, ddocs resolution and doctor (C10), the daemon pid on ping, docs, cost receipts and the doc state flips. Coder. CS-4."
+          "brief": "AC2 to AC10. Runs in parallel with phase 1 on plan/190-community-writer and merges origin/plan/190-schemas when docs-system reports it; the schema paths are fixed now: .dd/schemas/pij/{role,output,memory}/schema.json. A Rust governance-root resolver, the writer (validate, build, `git add` plus `git commit --only` of its own paths in the governance worktree per C8, refusing on foreign edits to those paths, one writer per project, schema copies per C9), `pij directory add` and `--batch`, the store pointer (migration 0031), refusals, ddocs resolution and doctor (C10), the daemon pid on ping, docs, cost receipts and the doc state flips. Coder. CS-4."
         }
       ]
     },
@@ -249,7 +255,7 @@
         "Never write to the live governance branch or the prod daemon; scratch repos and a private daemon only.",
         "Builds scoped with -p. Check `df -h /System/Volumes/Data` before a large build; stop and tell pm-001 under 25 GB.",
         "No `git add -A`, no `--no-verify`, never push refs/notes/*.",
-        "Phase 2 starts only after phase 1 (the schemas) is committed on this branch."
+        "Phase 2 may start before phase 1 lands, but nothing that parses a role, output or memory document is merged as done until phase 1's schemas are merged in and AC1's fixtures pass through the writer."
       ]
     }
   ]

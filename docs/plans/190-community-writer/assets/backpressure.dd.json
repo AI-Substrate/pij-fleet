@@ -85,6 +85,17 @@
           "state": "unchecked",
           "probe": "pij-rs --json ping",
           "note": "Cost: none. The pid comes from std::process::id(), no launch."
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC11: req-26 seat naming in PRD 001",
+          "phase": "ph-c762",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: `ddocs validate docs/project/prds/001-pij-community.dd.json` clean with req-26 present.",
+          "state": "unchecked",
+          "probe": "docs/project/prds/001-pij-community.dd.json",
+          "note": "Cost: none."
         }
       ]
     },
