@@ -14,7 +14,7 @@
 | ordinal | — |
 | status | draft |
 | complexity | — |
-| summary | — |
+| summary | Assign, release, close hook, seat roles, C6 hook, window rename, help, view, rebuild, docs, cost. |
 | backpressure | — |
 | log | — |
 | mode | — |
@@ -27,19 +27,102 @@
 
 ## Summary
 
-_Empty._
+Context brief. Purpose: holding roles (assign, release, close, lineage, view, rebuild) on top of plan 190's writer and pointer. Entrypoints: crates/daemon/src/community/{writer,pointer,role,layout}.rs and http/directory.rs (plan 190); crates/daemon/src/http/lifecycle.rs close (tombstone_if_unchanged); crates/store/src/role_assertion.rs (seat_roles); crates/tmux/src/control.rs (the persistent control client and its read allow-list); migrations, next 0032. Order: tk-0001 to tk-0006 need no holder schema; tk-0007 to tk-0009 wait for phase 1 (origin/plan/195-schemas); docs, cost and gates close. Tests: scratch governance repos with a fake validator plus one real-ddocs test with a named skip; a private tmux server for the rename; a private daemon for cost. Hazards from plan 190: check briefs and symlinks as the writer does; a new crate dependency trips arch_drift; disk sits near the 25 GB floor.
 
 <a id="tasks"></a>
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Migration 0032: assignments and lineage index | — | ph-95b2 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | Store tables for open and closed holder rows (project, role, instance, seat, harness session, machine, from, to, assigned by, released by, why, pending-end flag) with upsert, list and replace-for-rebuild, beside migration 0031's pointers. | No schema dependency. Number 0032 is claimed for this plan. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | Seat roles on assign (ruling C1) | — | ph-95b2 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | Assign sets seat_roles in the same store transaction as the assignment row: pa for pa, pm for pm or pm-&lt;n&gt;, worker otherwise; a prime is never re-roled; release leaves seat_roles alone. | Store side first; wired into the verb in the assign task. | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | After-assign hook (ruling C6) | — | ph-95b2 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | A hook (project, role, instance, seat) injected through the directory service's constructor, no-op by default, called once after an assign's commit lands. | s05 drains the role queue through it. | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Close ends assignments without failing (AC4) | — | ph-95b2 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | `pij close` ends every open assignment of the seat with reason close. If the writer refuses, the tombstone still lands, the end is kept as pending in the store, the close receipt names it, and the next directory write for that project flushes it. | crates/daemon/src/http/lifecycle.rs. The store and pending parts need no schema; the holders write needs phase 1. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) |
+| tk-0005 | Window rename on assign (C16, req-26) | — | ph-95b2 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | Rename the holder's window to &lt;project&gt;:&lt;role&gt; (or &lt;project&gt;:&lt;role&gt;-&lt;instance&gt;) through the persistent control client; a paneless seat or a rename failure leaves the assign successful with a receipt note. | Open question for pm-001: the control client allow-lists four reads and runs every other command in a new client, so a no-launch rename means allowing rename-window on the control pipe. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | directory --help (AC10) | — | ph-95b2 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | `pij directory --help` and `pij directory &lt;verb&gt; --help` print verbs and flags and exit 0. | No schema dependency. Today argv goes straight to the daemon parser, which refuses --help. | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0007 | assign and release through the writer (after phase 1) | — | ph-95b2 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | `pij directory assign &lt;role&gt;[/&lt;instance&gt;] &lt;seat&gt; --why` appends a holder row to roles/&lt;id&gt;/holders.dd.json through the plan 190 writer and the store; a second live holder of a one-holder role warns by name; a missing role or seat or a tombstoned seat refuses. `release` closes the row. | Needs pij/holders (phase 1). Open question 2 may add a writer change for adopting existing role folders. | [ac-0002](../../../plan.dd.md#acceptance-criteria) | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) |
+| tk-0008 | external add (after phase 1) | — | ph-95b2 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | `pij directory external add &lt;seat-or-note&gt; --from-project &lt;slug&gt; --why` appends a dated entry to community/external.dd.json through the writer. | Needs pij/external (phase 1). | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0009 | The view and the rebuild (AC7, AC8) | — | ph-95b2 | [ ] unchecked | — | — | [tk-0009](tasks.dd.md#done-when) | `pij directory` lists this project's roles and live holders and pending ends, in-process, launching nothing; --json gives the same data. Deleting the directory rows and rebuilding from the branch head gives byte-identical --json. | Reads holder documents, so after phase 1. | [ac-0007](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-000a | Docs, skill tables and state flips (AC12) | — | ph-95b2 | [ ] unchecked | — | — | [tk-000a](tasks.dd.md#done-when) | pij-rs-api.md documents the verbs and refusals; skill CLI-verb and shim route tables carry them; roadmap s04 complete with plan cell; req-01, req-06, req-16, req-17 shipped; c-store, c-verbs, c-orient in-progress; all project docs validate. | Biome-format docs/project JSON after ddocs writes. | [ac-0012](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-000b | Cost receipts on a private daemon (AC11) | — | ph-95b2 | [ ] unchecked | — | — | [tk-000b](tasks.dd.md#done-when) | Spawn counter deltas around one assign, one release, one close of an assigned seat and one `pij directory` (expected 9, 9, 9, 0), each with data.pid; spawn_sites.rs covers any new site. | Private daemon only. | [ac-0011](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-000c | Gates, PR and report to pm-001 | — | ph-95b2 | [ ] unchecked | — | — | [tk-000c](tasks.dd.md#done-when) | `just rust-check` (scoped), the main-checkout biome, local-path-check, lockfile-allowlist and `just ddocs-check`; open the PR; send pm-001 the number, head, checks and bp-0007 readings. | TS proof is CI on the exact head. | — | [ac-0012](../../../plan.dd.md#acceptance-criteria) |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | `cargo test -p pij-store` proves the assignment rows upsert by (project, role, instance, seat, from), list per project only, and a replace restores them row for row. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | A test assigns pa, pm-001 and reviewer and sees seat_roles pa, pm and worker set in the same transaction; a prime keeps prime; release changes nothing. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | A registered hook sees exactly one call per successful assign and none for a refused one. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | Close of an assigned seat ends its rows; with the governance worktree missing the close still tombstones and reports a named pending end; the next directory write flushes it. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | A private tmux server test sees the window renamed on assign with an unchanged spawn counter; a paneless seat assigns with a receipt note. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0006 | `pij-rs directory --help`, `directory add --help`, `assign --help` and `release --help` exit 0 and list the flags. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-0007
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0007 | A private-daemon run assigns and releases against a scratch governance repo; the envelope carries the commit and row; refusals name the role or seat. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0008
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0008 | An external entry lands in one commit and validates. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0009
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0009 | Two projects in one store each see only their roles; drop the rows, rebuild, and `pij directory --json` is byte-identical; the spawn counter does not move for the view. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-000a
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000a | `ddocs validate` is clean on PRD, blueprint and roadmap 001 and `just ddocs-check` passes with the flips applied. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-000b
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000b | bp-0007 carries the four deltas from one pid and spawn_sites.rs passes. | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
+
+### tk-000c
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-000c | Local gates pass, CI is green on the PR head, and pm-001 has the PR number, head, checks and bp-0007 readings. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
