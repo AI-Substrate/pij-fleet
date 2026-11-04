@@ -53,7 +53,7 @@
           "claim": "Triage. Each of the 40 open rows gets exactly one verdict in assets/evidence/triage.md: its old id, kept (with its PRD 002 id) or dropped, and a one-line reason in new words that names today's code (a file or a verb) where the code decides it. A row today's code already meets is dropped as met. A row whose verdict is unclear goes to pm-001 as a question, not a guess.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001",
-          "receipt": "assets/evidence/triage.md: 40/40 verdicts (23 kept, 12 dropped-met, 5 dropped-unwanted); req-0020 asked of pm-001, kept as could pending"
+          "receipt": "assets/evidence/triage.md: 40/40 verdicts (23 kept, 12 dropped-met, 5 dropped-unwanted); req-0020 answered by pm-001: kept as could, wanted-at-all open for the prime (PRD 002 q-02)"
         },
         {
           "id": "ac-0003",

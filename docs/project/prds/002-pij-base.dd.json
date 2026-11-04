@@ -289,7 +289,7 @@
 					"state": "planned",
 					"done_when": "Registering without proof gives an unproven seat with no process binding and a printed next step, and proving it upgrades the same seat.",
 					"source": "triage of the earlier register, 2026-11-04",
-					"note": "`pij inbox register` admits verified external hosts only; there is no grade today. Kept pending pm-001's answer on whether it is still wanted."
+					"note": "Whether an unproven grade is wanted at all is an open question for the prime (q-02); do not plan this row before that ruling. Today `pij inbox register` admits verified external hosts only, and there is no grade."
 				}
 			]
 		},
@@ -304,8 +304,8 @@
 				},
 				{
 					"id": "q-02",
-					"question": "Is graded admission (req-20) still wanted, or is refusing an unproven seat the better default?",
-					"default": "Kept as could, planned.",
+					"question": "For the prime: is graded admission (req-20) wanted at all, or is refusing an unproven seat the better default? Nobody plans req-20 before this is ruled.",
+					"default": "Kept as could, planned, and not scheduled (pm-001, 2026-11-04).",
 					"status": "open"
 				}
 			]
@@ -320,6 +320,5 @@
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }
