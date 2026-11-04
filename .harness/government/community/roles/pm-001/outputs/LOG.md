@@ -96,3 +96,4 @@
 2026-11-04 note claim:plan-197 6ccd4d8 claimed — issue #119 bounded spine reads
 2026-11-04 deliverable plan-197 97b3cb8 done — plan pushed; coder pij-swift-kestrel (lent from delivery), shared target; performance asked for live before
 2026-11-04 note pr-118-review 868e830 pass-with-notes — butterfly: 2 P3 wording notes (not owed); reviewer retired; awaiting security
+2026-11-04 note pr-118-ready 868e830 ready — reviewer + security pass-with-notes; sent to prime
