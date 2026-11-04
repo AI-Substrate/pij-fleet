@@ -11,15 +11,19 @@ failure), so one invocation surfaces every problem:
 
 1. `local-paths` — `just local-path-check` (operational source/config contains
    no user-specific absolute home paths)
-2. `typecheck` — `just typecheck` (the TS surface compiles)
-3. `lockfile` — `just lockfile-allowlist` (every lockfile source is an allowed host)
-4. `lint` — `just lint` (Biome errors + warnings clean)
-5. `test` — `just test` (vitest suite passes)
-6. `copilot-native` — `just copilot-native-test` (see below)
-7. `rust` — `just rust-check` (Cargo.lock current, fmt, clippy `-D warnings`,
+2. `ddocs` — `just ddocs-check` (every `.dd.json` under `docs/project/` and
+   `skills/pij/references/community/` validates with 0 errors and 0 warnings,
+   and its `.dd.md` is current). ddocs comes from `PIJ_DDOCS`, else PATH; when
+   it is missing the stage fails as UNAVAILABLE, never passes.
+3. `typecheck` — `just typecheck` (the TS surface compiles)
+4. `lockfile` — `just lockfile-allowlist` (every lockfile source is an allowed host)
+5. `lint` — `just lint` (Biome errors + warnings clean)
+6. `test` — `just test` (vitest suite passes)
+7. `copilot-native` — `just copilot-native-test` (see below)
+8. `rust` — `just rust-check` (Cargo.lock current, fmt, clippy `-D warnings`,
    workspace tests) — **heavy**
-8. `smoke` — `just smoke` (tmux-driven driver scenarios) — **heavy**
-9. `pij-commit-trailers` — `just pij-commit-trailers --json` (advisory attribution
+9. `smoke` — `just smoke` (tmux-driven driver scenarios) — **heavy**
+10. `pij-commit-trailers` — `just pij-commit-trailers --json` (advisory attribution
    scan of harness-authored/co-authored commits after merge-base with `main`;
    old history is excluded, missing identity is reported rather than guessed).
 

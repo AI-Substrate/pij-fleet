@@ -365,6 +365,17 @@
 					"done_when": "A spawn without `--id` gets a `pij-<adjective>-<animal>` id; a spawn with an `--id` that names a role or project is refused by name; two projects can each add a `security` role; a role holder's tmux window reads `<project>:<role>`.",
 					"note": "Part done today: the daemon already allocates `pij-<adjective>-<animal>` when `--id` is omitted (crates/core/src/names.rs; the noun corpus is animals and SHIP_NAMES is empty). Not done: an explicit `--id` is accepted as given (pij-community-docs was), `--name` defaults the window to the seat id, and per-project role ids wait on the directory (s02, s04).",
 					"source": "community RULINGS.md C13 (Jordan, 2026-11-04)"
+				},
+				{
+					"id": "req-27",
+					"title": "Communities grow from their needs, not from templates",
+					"statement": "A community's roles are discovered from what its work needs. Role templates are examples, not a checklist: the `/pij community` route and the prime's prompts say so, and the prime is prompted to notice a need no role covers and create a role for it, which may look nothing like any template.",
+					"actor": "prime",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "The `/pij community` route and the prime's prompts state that templates are examples; with a roadmap need that no role or template covers, the prime is prompted to create a role for it, and the new role validates without coming from a template.",
+					"note": "Delivered across s03 (templates), s09 (prime prompts) and s10 (the route).",
+					"source": "ruling C18"
 				}
 			]
 		},
@@ -440,6 +451,11 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 190: req-03 reworded per ruling C8 (pij commits only its own paths in the governance worktree with `git commit --only`, no plumbing, and never touches anyone else's edits); req-02 and req-03 shipped; req-04, req-05, req-17 and req-19 in-progress (templates, assign, the view and later steps finish them)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "req-27 per ruling C18 (Jordan): communities are self-discovered from their needs; templates are examples, not a checklist. Numbered 27 because req-26 is taken by the s02 PR."
 				}
 			]
 		}
