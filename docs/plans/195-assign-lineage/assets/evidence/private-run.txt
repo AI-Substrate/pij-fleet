@@ -1,0 +1,89 @@
+private daemon pid=6787 port=17902 state=/tmp/pij-190-pV7rAI/state tmux=-L pij-190-6723
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-marten","harness":"omp","session":null,"extension_build":null,"extension_path":null,"pane":"
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-holder","harness":"omp","session":null,"extension_bu
+
+$ ~/pi-hacking/fleet-190-community-writer/target/debug/pij-rs project create fleet --repo /tmp/pij-190-pV7rAI/main --prime pij-scratch-marten
+pij project: ok — {"project":{"created_at":1793772106286,"created_by":"pij-scratch-marten","description":"fleet","plan_path":null,"prime_id":"pij-scratch-marten","repo":"/tmp/pij-190-pV7rAI/main","slug":"fleet"},"seq":9}
+exit=0
+
+$ ~/pi-hacking/fleet-190-community-writer/target/debug/pij-rs directory add reviewer --title reviewer --kind general --lifecycle long-lived --holders many --rule r --packet p --why setup
+fleet: 1 role(s)
+  reviewer (-, -): no holder
+exit=0
+
+$ ~/pi-hacking/fleet-190-community-writer/target/debug/pij-rs directory add pm-001 --title pm-001 --kind general --lifecycle long-lived --holders many --rule r --packet p --why setup
+fleet: 1 role(s)
+  pm-001 (-, -): no holder
+exit=0
+reading rest-1: pid=6787 ddocs=~/.npm-global/bin/ddocs total=28 by_op={"ddocs.community": 4, "git.community": 14, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+reading rest-2: pid=6787 ddocs=~/.npm-global/bin/ddocs total=28 by_op={"ddocs.community": 4, "git.community": 14, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+
+$ ~/pi-hacking/fleet-190-community-writer/target/debug/pij-rs directory assign reviewer/114 pij-scratch-holder --why review #114
+pij directory: ok — {"commit":"80f4c7a3a3b372c04ecbb128007836f3b82dd890","flushed":0,"path":".harness/government/community/roles/reviewer/holders.dd.json","project":"fleet","role":"reviewer","row":{"assigned_by":"pij-scratch-marten","from":"2026-11-04T06:03:00Z","harness":"omp","instance_key":"114","machine":"ops.osk.lan","seat":"pij-scratch-holder","why":"review #114"},"seat":"pij-scratch-holder","seat_role":"worker","window":{"name":"fleet:reviewer-114","renamed":true}}
+exit=0
+reading after-assign: pid=6787 ddocs=~/.npm-global/bin/ddocs total=38 by_op={"ddocs.community": 6, "git.community": 21, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.rename-window": 1, "tmux.set-options tap owner": 2}
+
+$ tmux window name
+fleet:reviewer-114
+
+$ ~/pi-hacking/fleet-190-community-writer/target/debug/pij-rs directory release reviewer/114 pij-scratch-holder --why merged
+pij directory: ok — {"commit":"81c5d9faf398774d201870f5d4483849625c628c","flushed":0,"path":".harness/government/community/roles/reviewer/holders.dd.json","project":"fleet","role":"reviewer","row":{"assigned_by":"pij-scratch-marten","from":"2026-11-04T06:03:00Z","harness":"omp","instance_key":"114","machine":"ops.osk.lan","release_why":"merged","released_by":"pij-scratch-marten","seat":"pij-scratch-holder","to":"2026-11-04T06:03:01Z","why":"review #114"},"seat":"pij-scratch-holder"}
+exit=0
+reading after-release: pid=6787 ddocs=~/.npm-global/bin/ddocs total=47 by_op={"ddocs.community": 8, "git.community": 28, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.rename-window": 1, "tmux.set-options tap owner": 2}
+
+$ ~/pi-hacking/fleet-190-community-writer/target/debug/pij-rs directory
+fleet: 2 role(s)
+  pm-001 (general, many): no holder
+  reviewer (general, many): no holder
+exit=0
+reading after-view: pid=6787 ddocs=~/.npm-global/bin/ddocs total=47 by_op={"ddocs.community": 8, "git.community": 28, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.rename-window": 1, "tmux.set-options tap owner": 2}
+
+$ ~/pi-hacking/fleet-190-community-writer/target/debug/pij-rs directory assign pm-001 pij-scratch-marten --why lead
+pij directory: ok — {"commit":"6f22d54a18b5fdd71f205fa2d8318abd30e5a793","flushed":0,"path":".harness/government/community/roles/pm-001/holders.dd.json","project":"fleet","role":"pm-001","row":{"assigned_by":"pij-scratch-marten","from":"2026-11-04T06:03:01Z","harness":"omp","machine":"ops.osk.lan","seat":"pij-scratch-marten","why":"lead"},"seat":"pij-scratch-marten","seat_role":"pm","window":{"name":"fleet:pm-001","renamed":true}}
+exit=0
+reading before-close: pid=6787 ddocs=~/.npm-global/bin/ddocs total=57 by_op={"ddocs.community": 10, "git.community": 35, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.rename-window": 2, "tmux.set-options tap owner": 2}
+
+$ ~/pi-hacking/fleet-190-community-writer/target/debug/pij-rs close pij-scratch-marten --reason done
+pij close: ok — {"directory":{"committed":[{"commit":"77dfe5e5f2b033bf9fbfdd8efcaaa752bccbdf15","project":"fleet","roles":["pm-001"]}],"pending":[]},"reason":"done","seat":"pij-scratch-marten","seq":12,"tombstoned_at":1793772182688}
+exit=0
+reading after-close: pid=6787 ddocs=~/.npm-global/bin/ddocs total=68 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.clear-options tap owner": 1, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.pipe-pane detach": 1, "tmux.rename-window": 2, "tmux.set-options tap owner": 2}
+
+$ git -C gov log
+77dfe5e community: end pij-scratch-marten's holdings (close)
+6f22d54 community: assign pm-001 to pij-scratch-marten
+81c5d9f community: release reviewer/114 from pij-scratch-holder
+80f4c7a community: assign reviewer/114 to pij-scratch-holder
+9ce6984 community: add role pm-001
+506933c community: add role reviewer
+
+$ pm-001 holders at HEAD
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "pm-001"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"assigned_by": "pij-scratch-marten",
+					"from": "2026-11-04T06:03:01Z",
+					"harness": "omp",
+					"machine": "ops.osk.lan",
+					"release_why": "close",
+					"released_by": "pij-scratch-marten",
+					"seat": "pij-scratch-marten",
+					"to": "2026-11-04T06:03:02Z",
+					"why": "lead"
+				}
+			]
+		}
+	]
+}

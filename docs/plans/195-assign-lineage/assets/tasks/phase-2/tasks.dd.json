@@ -97,7 +97,7 @@
           "id": "tk-0007",
           "title": "assign and release through the writer (after phase 1)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "`pij directory assign <role>[/<instance>] <seat> --why` appends a holder row to roles/<id>/holders.dd.json through the plan 190 writer and the store; a second live holder of a one-holder role warns by name; a missing role or seat or a tombstoned seat refuses. `release` closes the row.",
           "notes": "Needs pij/holders (phase 1). Open question 2 may add a writer change for adopting existing role folders.",
           "satisfies": [
@@ -115,7 +115,7 @@
           "id": "tk-0008",
           "title": "external add (after phase 1)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "`pij directory external add <seat-or-note> --from-project <slug> --why` appends a dated entry to community/external.dd.json through the writer.",
           "notes": "Needs pij/external (phase 1).",
           "satisfies": [
@@ -152,7 +152,7 @@
           "id": "tk-000b",
           "title": "Cost receipts on a private daemon (AC11)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Spawn counter deltas around one assign, one release, one close of an assigned seat and one `pij directory` (expected 9, 9, 9, 0), each with data.pid; spawn_sites.rs covers any new site.",
           "notes": "Private daemon only.",
           "satisfies": [
@@ -260,16 +260,18 @@
           {
             "id": "dw-0007",
             "assertion": "A private-daemon run assigns and releases against a scratch governance repo; the envelope carries the commit and row; refusals name the role or seat.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "evidence/private-run.txt: assign and release on a private daemon with real ddocs; refusals in directory_http"
           }
         ],
         "tk-0008": [
           {
             "id": "dw-0008",
             "assertion": "An external entry lands in one commit and validates.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "5738f7d: external entries land and validate with real ddocs"
           }
         ],
         "tk-0009": [
@@ -293,8 +295,9 @@
           {
             "id": "dw-000b",
             "assertion": "bp-0007 carries the four deltas from one pid and spawn_sites.rs passes.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0007"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007",
+            "receipt": "evidence/phase-2.md cost table from one pid; spawn_sites.rs passes"
           }
         ],
         "tk-000c": [

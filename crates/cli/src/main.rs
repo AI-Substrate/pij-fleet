@@ -1665,7 +1665,11 @@ async fn run(cli: Cli) -> ExitCode {
                 pij_cli::governance::governance(&client, "directory", &args, &caller_context())
                     .await;
             match response.data.as_ref().filter(|_| response.ok && !as_json) {
-                Some(view) if view.get("roles").is_some_and(Value::is_array) => {
+                // Only the view carries `pending`; `add` also returns `roles`.
+                Some(view)
+                    if view.get("roles").is_some_and(Value::is_array)
+                        && view.get("pending").is_some() =>
+                {
                     println!("{}", render_directory(view));
                     ExitCode::SUCCESS
                 }
