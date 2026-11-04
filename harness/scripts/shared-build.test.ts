@@ -8,6 +8,7 @@ import {
 	realpathSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	utimesSync,
 	writeFileSync,
 } from "node:fs";
@@ -66,8 +67,12 @@ function fixture(): Fixture {
 			'echo "start $1 target=$CARGO_TARGET_DIR incremental=$CARGO_INCREMENTAL" >> "$LOG"',
 			'cat "$CARGO_TARGET_DIR.lock/owner" >> "$LOG"',
 			'[ "$1" = drop ] && echo 1024 > "$FREE"',
+			// A build child (rustc, a build script) that ticks into the log
+			// while alive; cargo waits for it, as cargo waits for rustc.
+			'[ -n "$WORKER" ] && ( i=0; while [ $i -lt 25 ]; do echo "tick $1" >> "$LOG"; sleep 0.2; i=$((i+1)); done ) </dev/null >/dev/null 2>&1 &',
 			// An orphaned sleep must not hold the test's stderr pipe open.
 			'[ -n "$NAP" ] && sleep "$NAP" </dev/null >/dev/null 2>&1',
+			"wait",
 			'echo "end $1" >> "$LOG"',
 			'[ "$1" = fail ] && exit 7',
 			"exit 0",
@@ -99,6 +104,7 @@ function fixture(): Fixture {
 			LOG: log,
 			FREE: free,
 			NAP: "",
+			WORKER: "",
 		},
 	};
 }
@@ -191,16 +197,29 @@ describe("just shared-build", () => {
 		expect(existsSync(f.lock)).toBe(false);
 	});
 
-	it("releases the lock on SIGTERM while cargo runs", async () => {
-		const f = fixture();
-		const { child, done } = start(f, ["--", "build"], { NAP: "30" });
-		await until(() => log(f).some((line) => line.startsWith("start build")));
-		expect(existsSync(f.lock)).toBe(true);
-		child.kill("SIGTERM");
-		const result = await done;
-		expect(result.code).toBe(143);
-		expect(existsSync(f.lock)).toBe(false);
-	});
+	for (const [signal, code] of [
+		["SIGTERM", 143],
+		["SIGINT", 130],
+	] as const) {
+		it(`on ${signal}, stops cargo's whole process tree before another batch can enter`, async () => {
+			const f = fixture();
+			const first = start(f, ["--", "first"], { WORKER: "1" });
+			await until(() => log(f).some((line) => line === "tick first"));
+			expect(existsSync(f.lock)).toBe(true);
+			first.child.kill(signal);
+			const stopped = await first.done;
+			expect(stopped.code).toBe(code);
+			expect(existsSync(f.lock)).toBe(false);
+			// The worker would tick for 5 s more if it had survived its cargo.
+			const second = await run(f, ["--", "second"], { NAP: "1.5" });
+			expect(second.code).toBe(0);
+			const lines = log(f);
+			const entered = lines.indexOf(`start second target=${f.target} incremental=0`);
+			expect(entered).toBeGreaterThan(0);
+			expect(lines.slice(entered).filter((line) => line.includes("first"))).toEqual([]);
+			expect(lines).not.toContain("end first");
+		});
+	}
 
 	it("refuses under the disk floor before the lock, and releases if the floor is crossed while holding", async () => {
 		const f = fixture();
@@ -250,6 +269,32 @@ describe("just shared-build", () => {
 		expect(result.stderr).toContain("gave up after --timeout 2s");
 		expect(log(f)).toEqual([]);
 		expect(existsSync(join(f.lock, "owner"))).toBe(true);
+	});
+
+	it("takes one lock for a symlink and its real directory, and builds into the physical path", async () => {
+		const f = fixture();
+		mkdirSync(f.target);
+		const alias = join(f.root, "alias");
+		symlinkSync(f.target, alias);
+		const first = start(f, ["--", "first"], { NAP: "2" });
+		await until(() => log(f).some((line) => line.startsWith("start first")));
+		const second = await run(f, ["--", "second"], { PIJ_SHARED_TARGET: alias, NAP: "0.2" });
+		expect((await first.done).code).toBe(0);
+		expect(second.code).toBe(0);
+		expect(second.stderr).toContain(`waiting for ${f.lock}`);
+		expect(log(f).filter((line) => /^(start|end) /.test(line))).toEqual([
+			`start first target=${f.target} incremental=0`,
+			"end first",
+			`start second target=${f.target} incremental=0`,
+			"end second",
+		]);
+		const later = join(f.target, "not-yet", "built");
+		const missing = await run(f, ["--", "third"], {
+			PIJ_SHARED_TARGET: join(alias, "not-yet", "built"),
+		});
+		expect(missing.code).toBe(0);
+		expect(log(f)).toContain(`start third target=${later} incremental=0`);
+		expect(existsSync(`${later}.lock`)).toBe(false);
 	});
 
 	it("reports a dead owner's lock as stale with the clear command, and never clears it", async () => {

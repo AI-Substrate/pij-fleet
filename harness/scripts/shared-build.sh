@@ -92,7 +92,28 @@ case "$target" in
 /*) ;;
 *) refuse 2 "PIJ_SHARED_TARGET must be absolute, not '$target'" ;;
 esac
-target="${target%/}"
+# Two spellings of one directory (a symlink and its destination) must take one
+# lock, so the lock and CARGO_TARGET_DIR derive from the physical path. A
+# target that does not exist yet resolves through its nearest existing parent.
+physical_target() {
+	local path=$1 rest="" resolved
+	if [ -L "$path" ] && [ ! -e "$path" ]; then
+		refuse 2 "PIJ_SHARED_TARGET '$1' is a dangling symlink"
+	fi
+	while [ ! -d "$path" ]; do
+		[ ! -e "$path" ] || refuse 2 "PIJ_SHARED_TARGET '$1' is not a directory"
+		rest="/${path##*/}$rest"
+		path=${path%/*}
+		[ -n "$path" ] || path=/
+	done
+	case "$rest" in
+	*/. | */./* | */.. | */../*) refuse 2 "PIJ_SHARED_TARGET '$1' has a . or .. below its existing part" ;;
+	esac
+	resolved=$(cd -P "$path" && pwd -P) || refuse 2 "could not resolve PIJ_SHARED_TARGET '$1'"
+	printf '%s' "${resolved%/}$rest"
+}
+
+target=$(physical_target "$target") || exit $?
 lock="$target.lock"
 
 # One cargo command per element boundary: `--then` separates commands.
@@ -123,9 +144,27 @@ release() {
 	fi
 }
 
+# Cargo runs in its own process group (job control below), so stopping it
+# reaches rustc, build scripts and linkers, not just cargo's own pid. The lock
+# is released only once that whole group is gone: a descendant that outlived
+# its cargo could otherwise write into the next tree's build.
+DRAIN_TICKS=100 # 0.1 s each: TERM, then KILL after 10 s
+drain() {
+	local group=$1 tick=0
+	kill -0 -- "-$group" 2>/dev/null || return 0
+	kill -TERM -- "-$group" 2>/dev/null
+	while kill -0 -- "-$group" 2>/dev/null; do
+		tick=$((tick + 1))
+		if [ "$tick" -ge "$DRAIN_TICKS" ]; then
+			kill -KILL -- "-$group" 2>/dev/null
+		fi
+		/bin/sleep 0.1
+	done
+}
+
 on_signal() {
 	if [ -n "$child" ]; then
-		kill -TERM "$child" 2>/dev/null
+		drain "$child"
 		wait "$child" 2>/dev/null
 	fi
 	release
@@ -164,12 +203,24 @@ check_floor() {
 	fi
 }
 
+# A target that does not exist yet may not have a parent either.
+/bin/mkdir -p "${lock%/*}" || refuse 2 "could not create the directory for $lock"
+
 announced=0
 while :; do
 	check_floor
 	if /bin/mkdir "$lock" 2>/dev/null; then
 		held=1
 		break
+	fi
+	# A failed mkdir that left no lock is not a holder. The holder may have
+	# released between the two calls, so try once more before refusing.
+	if [ ! -d "$lock" ]; then
+		if /bin/mkdir "$lock" 2>/dev/null; then
+			held=1
+			break
+		fi
+		[ -d "$lock" ] || refuse 2 "could not create the lock $lock"
 	fi
 	owner=""
 	[ -r "$lock/owner" ] && read -r owner <"$lock/owner"
@@ -201,12 +252,16 @@ export CARGO_INCREMENTAL=0
 for command in "${commands[@]}"; do
 	check_floor
 	eval "set -- $command"
-	# In the background under `wait`, so a signal releases the lock at once
-	# rather than after cargo finishes.
+	# In the background under `wait`, so a signal is handled at once rather
+	# than after cargo finishes; `set -m` gives the job its own process group.
+	set -m
 	cargo "$@" &
 	child=$!
+	set +m
 	wait "$child"
 	status=$?
+	# Whatever cargo left running in its group must not outlive the hold.
+	drain "$child"
 	child=""
 	[ "$status" -eq 0 ] || exit "$status"
 done
