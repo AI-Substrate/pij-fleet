@@ -66,3 +66,7 @@
 2026-11-04 note pr-116 279b0ec sent — fix head; reviewer delta + security full in fleet-review-116b
 2026-11-04 note pr-114 d90e464 partial — F001+F002 fixed (CI green), S1 missing; marten told to write S1, no build until disk ok; disk 23 GB to prime; re-review held for S1 head
 2026-11-04 note pr-116-review 279b0ec pass — chinchilla (F002 withdrawn, generic install roots not findings); reviewer retired; awaiting security
+2026-11-04 note pr-116-ready 279b0ec ready — reviewer pass, security pass-with-notes; sent to prime
+2026-11-04 note pr-116-merged 4b14b21 merged — prime squash-merged
+2026-11-04 note pr-114 a4bb4fa sent — F001+F002+S1 fixed (CI green, clean with main); re-verdicts from termite, lynx, wombat in fleet-review-114b; two flakes deferred to ledger
+2026-11-04 note pr-114-head 4ec59a8 moved — +1 docs line D-190-4 (from pm-001's late instruction); accepted as final; seats pin to 4ec59a8
