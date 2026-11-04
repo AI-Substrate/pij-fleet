@@ -2,7 +2,7 @@
 
 | Role | Holder | Since |
 |---|---|---|
-| pm-001 | pij-community-pm-001 | 2026-11-04 |
+| pm-001 | pij-steady-otter | 2026-11-04 |
 | pa | pij-watchful-badger | 2026-11-04 |
 | delivery | pij-swift-kestrel | 2026-11-04 |
 | docs-system | pij-careful-heron | 2026-11-04 |
@@ -20,3 +20,4 @@
 | docs-system | pij-community-docs | 2026-11-04 | 2026-11-04 | renamed |
 | security | pij-community-security | 2026-11-04 | 2026-11-04 | renamed |
 | performance | pij-community-perf | 2026-11-04 | 2026-11-04 | renamed |
+| pm-001 | pij-community-pm-001 | 2026-11-04 | 2026-11-04 | renamed; wrote the wave A plan |
