@@ -86,3 +86,5 @@
 2026-11-04 note dogfood-job6 - reported — import blocked at project resolution (no pij project, F1 to prime); F2/F3/F4/F7 to plan 195 (marten AC13-15); F5 no schema change; heron docs PR: D-190-5 + D-WB frictions
 2026-11-04 deliverable plan-196 a8f0210 done — s11 plan pushed; coder spawn held on disk (25 GB)
 2026-11-04 deliverable plan-194 HEAD done — s03 plan pushed (plan/194-role-templates); phase 1 templates queued as heron job 8; phase 2 coder after plan 195 merges
+2026-11-04 note s04-window-rename e20020c decided — option (b): one recorded tmux launch per assign; control-client allowlist (S2) untouched; marten rewords AC6/AC11/bp-0004/bp-0007
+2026-11-04 note f1-c24 - folded — prime registered project pij-fleet (F1); refusal must name project create (marten AC15); C24 prime is a template (plan 194 OQ2, heron job 8)
