@@ -41,3 +41,9 @@
 2026-11-04 note s02 cc457ea ready-for-pr — marten: phase 1 merged, AC9 flips in, rust-check 1840/0; cost per add 9, batch-of-8 23; told (b) TS via CI per prime
 2026-11-04 note pr-113-security 2b328dc pass-with-notes — pij-wary-lynx delta; F001 still open (reviewer)
 2026-11-04 note pr-113 224512d sent — F001 fixed + relative PATH skip; re-review/security/perf deltas in new worktree fleet-review-113b
+2026-11-04 note pr-113-perf 224512d pass — pij-frugal-wombat: 12 launches/6 docs, absolute paths, PATH note resolved
+2026-11-04 note pr-111-review 75102c5 block — anteater: P2s closed; F003 old req-0005/0022 need live-proof row req-14 (16 kept/14 rows, 19 met, 5 obsolete); routed to heron; last round
+2026-11-04 note pr-111 a83c73b sent — F003 fixed (req-14); delta verdicts asked of anteater + lynx in fleet-review-111c
+2026-11-04 note pr-113-review 224512d pass-with-notes — pij-varied-fly: F001 closed; CI green; awaiting security delta
+2026-11-04 note pr-111-review a83c73b pass-with-notes — anteater: F003 closed; CI green; awaiting security
+2026-11-04 note reviewers-retired - done — pij-ambitious-anteater (pid 54425) and pij-varied-fly (pid 14710) closed then killed; worktrees 111, 111b, 113 removed; 111c and 113b kept for security

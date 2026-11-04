@@ -10,3 +10,7 @@
 
 2026-11-04 verdict pr-111 75102c5a16060632d4fe325dd519ab54f5e06cfb block - original two P2s closed; F003 retains missing live pane/large-body proof from old req-0005/0022 as one narrow row; six mutation controls, revised docs and exact-head CI pass; no product edits.
 
+2026-11-04 verdict pr-113 224512db39caf3d549b50b25190e13aa6884e97a pass-with-notes - F001 closed by named traversal failures; 9 unit tests and 17 exact-head CLI controls pass, including chmod/missing/nested roots and warn mode; all four CI jobs pass; local composite gate dependency-limited, no correctness changes owed.
+
+2026-11-04 verdict pr-111 a83c73b9fcaf4a1688e8139f60e420f403ca55cd pass-with-notes - F003 closed by req-14; final counts 16 kept as 14 rows, 19 met, 5 obsolete; checker/docs/render/lint and four exact-head CI jobs pass; local composite gate dependency-limited, no correctness changes owed.
+

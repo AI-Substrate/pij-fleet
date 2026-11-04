@@ -1,59 +1,58 @@
-reviewer: block (head 2b328dc6b71788fee466a0a8c1e0b7fc9720df1d)
+reviewer: pass-with-notes (head 224512db39caf3d549b50b25190e13aa6884e97a)
 
 ## A) Verdict
 
-**Block: P2 silent success after a document-tree read failure.**
+**F001 closed. No remaining correctness blocker or source change owed.**
+
+The note is the deliberately dependency-free local worktree: its composite gate is not green. Focused shared-tool validation and all four exact-head CI jobs pass; this is a correctness verdict, not a claim that the full local ship gate ran successfully.
 
 ## B) Summary
 
-The normal validation, render-drift and unavailable-tool paths work. However, the filesystem adapter turns every directory-read error into an empty directory, so the gate can report success without checking an entire required tree. This contradicts AC1's every-document guarantee.
+This supersedes the block at `2b328dc6b71788fee466a0a8c1e0b7fc9720df1d`. Reviewed the complete repair delta in the new frozen worktree. Directory reads now return a tagged success/error result; discovery retains named errors and the CLI exits 1 before any success verdict when a root or nested directory cannot be read. The new unit regression combines a healthy nonempty root with an unreadable root.
 
-This supersedes the earlier verdict for `75cf1a150d32e2f1b2ecf3ef3f1aab4f979001eb`. PM-001 confirmed the checkout move and reassigned this frozen head. The complete delta is six documentation files, +41/-2: PRD 001 req-27 for C18, plus plan AC6/bp-0006 and generated faces. It introduces no new correctness finding and does not repair F001.
-
-The sensor blob is `3047b271cd26b79ad84835465f833f4105445a9e` at both heads; source, tests, config, CI and wiring are unchanged. The earlier 14 CLI mutation probes were extracted from the literal earlier SHA, not an ambient `HEAD`, and remain valid evidence for this identical implementation. Current-head verification freshly passed all six project/example documents, both changed plan/pressure documents and their generated faces. Exact-head CI is green.
+Replayed the original chmod probe against an archive extracted from the literal full repair SHA, not ambient `HEAD`. The previously silent pass now fails with the repo-relative path and EACCES. Relative PATH entries are also skipped with a behavior test; the security and performance reviewers own their separate verdicts.
 
 ## C) Checklist
 
-- Seven focused unit tests pass; they test decisions and injected ports, not constants.
-- Clean six-document validation passes; broken links and rendered drift fail; restoration passes.
-- Missing ddocs exits 2 with UNAVAILABLE. Relative and invalid absolute overrides refuse without PATH fallback.
-- CI warn mode prints its warning annotation when ddocs is missing, but still exits 1 on a real validation failure when ddocs is present.
-- The new stage is in both checks and self-check, and AGENTS.md names it.
-- The CI diff adds only the documented sensor step and comments; it adds no install or permissions. C20 explicitly accepts unavailable-tool warnings in CI.
-- Discovery errors do not fail closed: F001 below.
+- Nine focused unit tests pass, including the mixed healthy/unreadable-root regression.
+- Seventeen exact-head CLI cases pass their expected outcomes, including the original chmod failure, a missing root, an unreadable nested directory and the preserved clean/invalid/unavailable paths.
+- `--unavailable=warn` cannot hide either validation errors or traversal errors when ddocs is present.
+- Changed plan and backpressure documents validate with 0 errors/0 warnings; their rendered faces are current.
+- Existing checks/self-check/AGENTS.md/CI wiring is unchanged from the reviewed head. C20 remains the accepted CI availability decision.
+- Exact-head CI run `41768184948`: all four jobs passed.
 - No source edits, installs, dependency links, commits, pushes or daemon operations were performed by this reviewer.
 
 ## D) Findings
 
-| ID | Priority | Location | Finding |
+| ID | Status | Location | Evidence |
 |---|---|---|---|
-| F001 | P2, blocking | `harness/scripts/ddocs-check.ts:126-127` | The blanket `catch { return []; }` silently drops unreadable directories; remaining documents let the overall gate pass. |
+| F001 | Closed | `harness/scripts/ddocs-check.ts`, directory adapter/discovery/CLI error branch | Real unreadable root now exits 1 with `docs/project: EACCES`; healthy examples cannot make it pass |
 
-## E) Reproduction and fix
+No new correctness finding.
 
-In an isolated archive of earlier head `75cf1a150d32e2f1b2ecf3ef3f1aab4f979001eb`, using real ddocs 0.1.0 and the byte-identical sensor still present at this head:
+## E) Independent repair proof
 
-1. Remove required section `why` from `docs/project/prds/001-pij-community.dd.json`. The sensor exits **1**, reporting the missing section and render drift. This is the positive control.
-2. Make scratch `docs/project` unreadable with `chmod 000`. Run the same sensor with the same invalid PRD still present. It exits **0**, printing `ddocs-check: 3 document(s) validate clean and their .dd.md are current (ddocs via PATH).` It reports no inaccessible-tree warning.
-3. Restore permissions without fixing the PRD. The sensor exits **1** again.
-4. Restore the original document bytes. All **6** documents pass, exit **0**.
+1. Clean exact-head corpus: six documents pass, exit 0.
+2. Remove required `why` from the project PRD: exit 1, missing-section and render-drift diagnostics.
+3. Keep that broken PRD, chmod scratch `docs/project` to 000, leaving the examples healthy: exit 1, `docs/project: EACCES: permission denied`. No success-shaped output.
+4. Repeat while passing CI's `--unavailable=warn`: still exit 1 with the same path/error.
+5. Restore permissions only: the still-broken document fails validation again.
+6. Restore original bytes: six documents pass, exit 0.
 
-`listDirectory` catches EACCES as though the tree were genuinely empty. Since the healthy community examples still provide three documents, the global zero-document guard cannot detect the loss. The same suppression applies to other read failures and nested directories.
-
-**Required fix:** propagate discovery failures as a named nonzero sensor result, with the repo-relative directory and filesystem error. Do not silently substitute an empty list. Add a regression that combines one failing directory read with another nonempty healthy root; the current tests model absence as an empty list and never exercise this adapter failure. Keep the existing clean/invalid/unavailable behavior.
+Additional traversal controls: chmod an existing nested `docs/project/prds` directory to 000 gives a named exit-1 EACCES; temporarily remove the project root while examples remain healthy gives a named exit-1 ENOENT. Two existing but empty roots fail the zero-document guard. All scratch permissions and bytes were restored before fixture cleanup.
 
 ## F) Acceptance coverage
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| AC1, every document and no silent pass | **Fail** | F001; unreadable project root passes despite a known-invalid PRD |
-| AC2, executable resolution | Pass | Unit tests plus real exit-2 probes for absent, relative and bad absolute ddocs |
-| AC3, integration | Pass by source inspection | checks stage, self-check recipe, AGENTS.md inventory and CI step |
-| AC4, mutation proof | Pass for specified cases | Broken link and hand-edited Markdown fail; restored corpus passes |
-| AC5, CI availability decision | Accepted ruling, not validation proof | C20; warn-mode missing-tool annotation, real failure still exit 1 |
-| AC6, C18 recorded as req-27 | Pass | Planned requirement matches C18, names s03/s09/s10, has the source and one changelog row; PRD validates/renders clean, plan AC6 and bp-0006 validate/renders clean |
+| AC1 | Pass | Named root/nested/missing-directory failures, empty-root failure and clean/invalid/render controls |
+| AC2 | Pass | Nine unit tests plus real missing-tool/bad-override controls; relative PATH test passes |
+| AC3 | Carried forward, unchanged | Both local gates, inventory and CI wiring reviewed previously |
+| AC4 | Pass | Fresh exact-head mutation replay, 17 asserted cases |
+| AC5 | Accepted C20 ruling, not CI doc-validation proof | Missing-tool annotation remains visible; real errors still fail in warn mode |
+| AC6 | Carried forward, unchanged | Planned req-27 matches C18; current corpus validates/renders clean |
 
-No separate guide or execution log is declared by this Simple plan. Its live evidence is `assets/evidence/fires.txt`; independent probe script and full JSON receipts are retained as `pr113-probes.mjs` and `pr113-probes.json` in the review session artifacts.
+Independent script and full JSON receipts: `pr113-fix-probes.mjs` and `pr113-fix-probes.json`, retained with `pr113-delta-224512d.diff` in the review session artifacts. The author's `fires.txt` cases 8-10 agree with the independent result.
 
 ## G) Validation and limitations
 
@@ -61,27 +60,20 @@ Commands used main-checkout binaries without installing or linking packages:
 
 | Command | Result |
 |---|---|
-| `vitest run --root "$PWD" harness/scripts/ddocs-check.test.ts` | Initial startup blocked: local config cannot resolve `vitest/config` |
-| `vitest run --config <main-checkout>/vitest.config.ts --root "$PWD" harness/scripts/ddocs-check.test.ts` | **7 tests passed**; relevant source/config unchanged from assigned head |
-| `node <session-artifacts>/pr113-probes.mjs` | **14 asserted CLI cases completed**, including the reproduced silent-pass defect; script archives the literal assigned SHA |
-| `biome check .` with shared binary | Passed, 219 files; one schema-version informational diagnostic, no errors or warnings |
-| `tsx harness/scripts/local-path-check.ts` | Passed |
-| `tsx harness/scripts/lockfile-allowlist.ts` | Passed, 223 sources allowlisted |
-| `tsx harness/scripts/ddocs-check.ts` at `2b328dc` | Fresh pass, all six current project/example documents validate and render clean |
-| `ddocs validate --json` and `ddocs build --check --json` on changed `plan.dd.json` and `assets/backpressure.dd.json` | Fresh pass, both documents 0 errors/0 warnings and both rendered faces current |
-| `biome check docs/project/prds/001-pij-community.dd.json` | Fresh pass |
-| `just --dry-run ddocs-check --unavailable=warn` | Correct recipe expansion |
-| `harness boot --json` | Not ready: missing worktree node_modules, as expected from the packet |
-| `harness checks --quick --json` | **Failed six tooling stages**; copilot-native passed; Rust/smoke skipped |
-| Earlier-head CI run `41766405307` | Cancelled after supersession; rust-lint passed, other three jobs cancelled |
-| Exact-head CI run `41766527358` | **All four jobs passed:** check (22), check (24), rust-lint, rust-test |
+| `vitest run --config <main-checkout>/vitest.config.ts --root "$PWD" harness/scripts/ddocs-check.test.ts` from the repair worktree | **9 tests passed** |
+| `node <session-artifacts>/pr113-fix-probes.mjs` | **17 asserted exact-head CLI cases passed** |
+| `biome check harness/scripts/ddocs-check.ts harness/scripts/ddocs-check.test.ts` with shared binary | Passed, 2 files |
+| `ddocs validate --json` and `ddocs build --check --json` on changed plan and backpressure | Both 0 errors/0 warnings; both faces current |
+| `harness boot --json` in the new worktree | Not ready: no local node_modules, as expected from the packet |
+| `harness checks --quick --json` in the new worktree | Failed six tooling stages; copilot-native passed; Rust/smoke skipped |
+| Exact-head CI run `41768184948` | **All four jobs passed:** check (22), check (24), rust-lint, rust-test |
 
-The earlier local quick gate remains tooling-limited and no full local green gate is claimed. Unchanged code tests were not repeated for this documentation-only delta. No Rust build or live smoke was run by this reviewer. Security and cost verdicts belong to the separately assigned reviewers.
+No full local green gate is claimed; dependencies were not installed or linked to make it green. No Rust build or live smoke was run by this reviewer. The shared repair worktree remained clean at the frozen SHA. Security and cost remain separately assigned lanes.
 
 ## H) Handover and harness feedback
 
-Send F001 to the implementation owner, repair the adapter and regression, then obtain a verdict for the resulting exact head. No other correctness blocker was found.
+No correctness changes owed. F001 is closed for this exact head, not merely acknowledged.
 
-**magicWand:** a permanent CLI regression for partial discovery failure, proving that another healthy tree cannot turn inaccessible documents into success.
+**Harness gift:** the requested mixed healthy/unreadable-root regression is now encoded in the committed test suite, and the original CLI probe independently proves the error adapter/wiring. Captured as GFT-001 in the repair review worktree.
 
-**Difficulties:** DL-001, dependency-free review tooling needs shared config as well as a shared binary; DL-002, traversal failure is success-shaped; DL-003, an externally moved review checkout invalidates implicit HEAD provenance. All were captured through `harness observe`. The reusable probe now extracts the full packet SHA explicitly, so the evidence does not depend on checkout position.
+**magicWand fulfilled:** directory-read failures can no longer become an empty-list success. Existing review-tooling limitations remain documented rather than worked around with installations.

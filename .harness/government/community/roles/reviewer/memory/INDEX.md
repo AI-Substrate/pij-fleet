@@ -8,3 +8,7 @@
 
 - [2026-11-04-pr-111-rereview.md](2026-11-04-pr-111-rereview.md): PR 111 original P2s closed; F003 retains live-pane proof as one narrow row; six mutation controls and exact-head CI pass.
 
+- [2026-11-04-pr-113-fix-review.md](2026-11-04-pr-113-fix-review.md): PR 113 repair 224512d pass-with-notes; F001 closed, 9 tests and 17 CLI controls pass, four CI jobs pass; local gate dependency-limited.
+
+- [2026-11-04-pr-111-final.md](2026-11-04-pr-111-final.md): PR 111 a83c73b pass-with-notes; F003 closed, all counts agree, exact-head CI green; no correctness changes owed.
+
