@@ -41,7 +41,7 @@ s02 (plan 190, open questions):
 - **R4.** ddocs is not a repo dependency (the global `ddocs` links to `~/substrate/dd`; CI lacks it). Recommended: `PIJ_DDOCS` or PATH, resolved once at daemon start; doctor reports it; tests inject a fake.
 
 s14 (plan 192, open questions):
-- **R5 (blocks s14, needs Jordan).** The register is not in pij-fleet. AGENTS.md line 18 points at `<government-root>/prd/base-prd.dd.json`, which does not exist here. It lives in **private** `AI-Substrate/pij`, branch `prime-governance` (54 rows, 113 KB, last changed 2026-09-07 at e05661c8), and cites private PRs, `/Users/...` paths and chainglass. pij-fleet is **public**. Options: (a) move all 54 rows, scrubbed; (b) only the 40 open rows; (c) don't move, amend req-25. Recommended: (a).
+- **R5 (blocks s14, needs Jordan).** The register is not in pij-fleet. AGENTS.md line 18 points at `<government-root>/prd/base-prd.dd.json`, which does not exist here. It lives in **private** the private predecessor repo, branch `prime-governance` (54 rows, 113 KB, last changed 2026-09-07 at e05661c8), and cites private PRs, `/Users/...` paths and chainglass. pij-fleet is **public**. Options: (a) move all 54 rows, scrubbed; (b) only the 40 open rows; (c) don't move, amend req-25. Recommended: (a).
 - **R6.** State mapping: checked and shipped to shipped; unchecked and open to planned (in-progress where the note names live work).
 - **R7.** pij/prd requires `priority` and `done_when`, which no source row has. Recommended: shipped rows take their receipt rule; others their own testable clause or "to be written" in note; priority `should` unless the row says must.
 

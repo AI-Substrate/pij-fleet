@@ -24,3 +24,6 @@
 2026-11-04 deliverable review-111-packet ed41a25 sent — reviewer pij-ambitious-anteater (copilot gpt-6.1-sol high, window pij:review-111, worktree fleet-review-111); security asked of pij-wary-lynx
 2026-11-04 note pr-111-head b13f5b3 moved — one line in difficulties.md; reviewer and security re-pinned to b13f5b3
 2026-11-04 note claim:plan-193 b19c84b claimed — heron job 4, ddocs-validate sensor
+2026-11-04 note claim:req-27 b19c84b claimed — C18 (communities self-discovered), heron adds it in the plan 193 PR; C18 noted for s03/s09/s10 packets
+2026-11-04 note claim:prd-003 - claimed by prime — seat messaging permissions (draft PR); next free PRD is 004
+2026-11-04 note pr-111-review b13f5b3 block — pij-ambitious-anteater: 2 P2 (req-03 typing-gate features exist; req-05/q-01 Claude inbound already default-on); routed to heron plus a code-receipt sweep of all 20 kept rows; reviewer kept up for re-review
