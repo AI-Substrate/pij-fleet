@@ -1,0 +1,239 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Assign, release, lineage and the directory view",
+        "slug": "assign-lineage",
+        "ordinal": 195,
+        "complexity": "CS-4",
+        "summary": "Roadmap 001 step s04. Seats take and leave roles with `pij directory assign` and `release`; every holder is recorded in lineage (seat, harness session, machine, from, to) on the governance branch, so it survives a store rebuild and other machines can read it; `pij close` ends a seat's assignment; and `pij directory` shows this project's roles and holders.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Plan 190 shipped the writer and `pij directory add`. Roles exist but nobody holds them except in the hand-kept HOLDERS.md. This plan adds holding: assign and release, lineage, the close hook, the directory view, and the rulings that touch assignment (C1 seat roles, C6 queue-drain hook, C13/req-26 window names). Lineage lives on the governance branch, written through the plan 190 writer, and the store indexes it (migration 0031 pointers plus migration 0032), so `pij directory` gives the same answer after a store rebuild (req-17)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A seat can take and leave a role with one verb each, and every holder is on record with its session and machine.",
+        "Lineage is on the governance branch, so a store rebuild or another machine sees the same holders.",
+        "Closing a seat ends its assignment without making close fail.",
+        "`pij directory` shows this project's roles and their holders and nothing from another project."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Sending to a role and the role queue (s05). This plan only exposes the hook s05 uses (C6).",
+        "Role templates and the core-role prompts (s03).",
+        "Outputs, memory verbs and routing (s06 to s08).",
+        "Starting seats: assign binds an existing live seat and never spawns one."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Schemas. docs-system adds `pij/holders` (per role: rows of seat id, harness, harness session id, machine, instance key, from, to, assigned by, released by and why) and `pij/external` (req-16: dated entries for a seat borrowed from another project) under `.dd/schemas/pij/`, with pass and fail fixtures, and the writer's embedded schema copies (C9) include them.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Assign. `pij directory assign <role>[/<instance>] <seat> --why <text>` binds a live seat to an existing role: it appends a holder row to `community/roles/<id>/holders.dd.json` through the plan 190 writer (validate, build, `git commit --only`), records it in the store (migration 0032), and returns the commit and row. Assigning a second live seat to a one-holder role succeeds with a named warning (req-06). A role or seat that does not exist, or a tombstoned seat, refuses by name and writes nothing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Seat roles (ruling C1). Assign also sets the seat's `seat_roles` row in the same store transaction as the assignment: `pa` for the role `pa`, `pm` for `pm` or any `pm-<n>` role, and `worker` for every other role; a prime is never re-roled. Release does not change seat_roles. A test shows the directory and seat_roles agree after assign.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Release and close. `pij directory release <role>[/<instance>] <seat> --why <text>` closes the holder row (`to`, `released by`, why). `pij close <seat>` ends every open assignment the seat holds, recording `to` and the reason `close`. Close never fails because of the directory: if the writer refuses (no governance worktree, a foreign edit), the close still tombstones, the store keeps the end as pending, the close receipt says so by name, and the next directory write for that project flushes it.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Queue-drain hook (ruling C6). Assign calls a registered after-assign hook with (project, role, instance, seat) after the commit lands, injected through the constructor (P3), with a no-op default. A test registers a hook and sees exactly one call per successful assign and none for a refused one. s05 will use it to drain the role queue.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Window name (req-26, C16). On assign, the holder's tmux window is renamed `<project>:<role>`, or `<project>:<role>-<instance>` for a many-holder role, through the daemon's persistent tmux control client (no new process launch). A seat with no pane, or a rename failure, does not fail the assign; the receipt says so.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "View (req-01). `pij directory` run inside a project lists that project's roles (id, title, kind, holders mode) and their live holders (seat, since, machine), plus pending close-ends, and nothing from another project; `--json` gives the same data. It reads the role and holder documents from the governance worktree in-process and the store; it launches nothing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Rebuild (req-17). Deleting the store's directory rows (pointers, assignments, lineage) and rebuilding from the governance branch head gives byte-identical `pij directory --json` output, including closed holders' lineage.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0009",
+          "claim": "External entries (req-16). `pij directory external add <seat-or-note> --from-project <slug> --why <text>` appends a dated entry to `community/external.dd.json` through the writer. Loans are not otherwise tracked.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0010",
+          "claim": "Help. `pij directory --help` and `pij directory <verb> --help` print the verbs and their flags and exit 0, instead of `E-RS-ARG --help requires a value` (found in the wave B dogfood).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0011",
+          "claim": "Cost. Assign, release, external add and a close that ends an assignment each cost one writer commit (about 9 launches: git 7, ddocs 2) by absolute path, recorded by the spawn counter and covered by spawn_sites.rs; the view and the window rename launch nothing; nothing runs on a timer. The backpressure cost row carries before and after readings.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0012",
+          "claim": "Docs and states. docs/how/pij-rs-api.md documents the verbs and refusals; the pij skill's verb coverage and shim route tables carry them. In this PR: roadmap s04 goes to complete with its plan cell set to docs/plans/195-assign-lineage; req-01, req-06 and req-16 go to shipped; req-17 goes to shipped; c-store and c-verbs go to in-progress (later steps add verbs); c-orient goes to in-progress. All project docs validate clean.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-95a1",
+          "title": "Holders and external schemas",
+          "state": "unchecked",
+          "brief": "AC1. docs-system writes pij/holders and pij/external with fixtures on branch plan/195-schemas, which the coder merges. CS-1.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        },
+        {
+          "id": "ph-95b2",
+          "title": "Assign, release, close hook, view and rebuild",
+          "state": "unchecked",
+          "depends_on": [
+            "ph-95a1"
+          ],
+          "brief": "AC2 to AC12. Coder. Migration 0032 (assignments and lineage index); the verbs through the plan 190 writer; seat_roles per C1; the C6 hook; the close path in crates/daemon/src/http/lifecycle.rs; the view; rebuild from the branch; window rename via the control client; help; docs; flips. Can start before phase 1 lands on the parts that don't parse holder documents. CS-4.",
+          "tasks": "assets/tasks/phase-2/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code facts (2026-11-04, main 6ccd4d8): seats table in crates/store/migrations/0001_init.sql:15-36 (harness session serialised as `session`, crates/core/src/model.rs:348-376; machine is a read projection, not stored per row). seat_roles (seat, role, assigned_by, assigned_at) in 0004_orchestration.sql:48-53, written via crates/store/src/role_assertion.rs. Close: CLI crates/cli/src/lifecycle.rs:9-20 posts /v1/close; handler crates/daemon/src/http/lifecycle.rs:241-348 calls registry.tombstone_if_unchanged; publish_tombstone in crates/store/src/registry.rs:48-99 is the one path for close, reap and revive. Project resolution: project_and_repo in crates/daemon/src/http/directory.rs:331-380. Pointer rebuild: crates/daemon/src/community/pointer.rs:20-85 (from_branch_head). Directory argv is forwarded to the daemon parser (crates/cli/src/governance.rs:14-28, crates/daemon/src/http/directory.rs:55-115), which is why --help fails. Window name is set only at spawn (crates/daemon/src/http/mod.rs:1330-1337, crates/tmux/src/lib.rs:1528); the control client supports rename (crates/tmux/src/control.rs:595-598). Latest migration 0031; migrations registered by sqlx migrate! (crates/store/src/migrate.rs:38)."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "question": "Where does lineage live? Recommended (used in this plan): a separate pij-written `roles/<id>/holders.dd.json`, not rows inside role.dd.json, so a human editing the role never collides with pij's lineage writes (the writer refuses foreign edits on its paths).",
+          "state": "unchecked"
+        },
+        {
+          "question": "Wave B dogfood (docs-system job 6) is importing the hand-written roles and is expected to hit E-RS-DIRECTORY-EXISTS because each role already has memory/INDEX.md. Any writer fix it calls for (for example, adopting an existing role folder) is folded into this plan by pm-001 before phase 2 starts.",
+          "state": "unchecked"
+        }
+      ]
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A close blocked or slowed by a governance write.",
+          "likelihood": "Medium",
+          "impact": "High",
+          "mitigation": "AC4: close never fails on the directory; pending ends are flushed by the next write."
+        },
+        {
+          "risk": "Lineage and the store disagree after a crash between commit and store write.",
+          "likelihood": "Low",
+          "impact": "Medium",
+          "mitigation": "The branch is the authority; rebuild (AC8) restores the store; persist before mutate (P9)."
+        },
+        {
+          "risk": "Renaming a window confuses a human working in it.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "Only on assign, once; the name says what the seat does."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds scoped with -p. Check `df -h /System/Volumes/Data` before a large build; stop and tell pm-001 under 25 GB. Reuse your existing target dir.",
+        "No `git add -A`, no `--no-verify`, never push refs/notes/*. No node_modules: TS proof is CI on the exact head.",
+        "One push per review round; no pushes after a PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
