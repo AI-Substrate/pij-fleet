@@ -52,8 +52,9 @@ operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...);
 `by_op` values sum to `total` (plan 180). `data.pid` is the daemon's own process
 id (plan 190): the spawn counter resets on restart, so two readings compare only
 when their pids match. `data.ddocs` is the ddocs path the daemon resolved once at
-start (`PIJ_DDOCS`, else PATH), or `null` when it found none; `just doctor` prints
-it. A failed or exhausted probe returns
+start (`PIJ_DDOCS`, which must be absolute, else PATH), or `null` when it found
+none; `just doctor` prints it. A relative or empty PATH entry is taken relative
+to the daemon's directory at start, so the kept path is always absolute. A failed or exhausted probe returns
 HTTP 503, `ok:false`, `error:"adapter"`, a diagnostic `meta`,
 `data.status:"unhealthy"` and `data.store.status:"unavailable"`.
 Pool acquisition and SQLite write-lock waits each have a two-second bound;
@@ -829,7 +830,10 @@ Flags: `--title`, `--kind specialist|general`, `--lifecycle long-lived|per-task`
 `--effort`, and the standing packet as `--packet <text>` or `--brief <path>` (a
 repo-relative link to an existing file). ddocs has no union type, so the writer
 checks the pairing itself: an inline packet carries `text` and no `brief`, a
-brief packet `brief` and no `text`, else `E-RS-ARG`. These repeat: `--rule`, `--scope-path`,
+brief packet `brief` and no `text`, else `E-RS-ARG`. ddocs only warns on a
+missing link target, so the writer also checks, before writing anything, that a
+brief is a readable file inside the governance worktree (not absolute, no `..`,
+no symlink out), else `E-RS-ROLE-BRIEF-MISSING`. These repeat: `--rule`, `--scope-path`,
 `--out-of-scope`, `--forbidden`, `--input`, `--output-kind`. A field you leave
 out is left out, so ddocs names it (a role without scope or a standing packet
 refuses). `--file <json>` gives the whole document instead of flags. `--batch
@@ -851,6 +855,7 @@ envelope returns `data.commit`, `data.paths` (repo-relative), `data.roles` as
 | `E-RS-GOV-FOREIGN-EDIT` | a path the write needs carries an edit pij did not make | commit or remove those edits |
 | `E-RS-GOV-LOCKED` | the worktree's `index.lock` stayed held through about 1.5 s of retries; pij never removes it | let that git command finish |
 | `E-RS-DIRECTORY-EXISTS` | `directory add` named a role that already exists | — |
+| `E-RS-ROLE-BRIEF-MISSING` | a standing packet's `brief` is not a readable file inside the governance worktree; names the role and the brief | commit the brief first, or use `--packet` |
 | `E-RS-GOV-GIT` | another git failure | — |
 | `E-RS-ARG` | a bad id (1-48 lowercase letters, digits or hyphens), a missing `--why`, or mixed `--file`, `--batch` and flags | — |
 

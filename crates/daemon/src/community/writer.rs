@@ -162,6 +162,10 @@ impl CommunityWriter {
             }
         }
 
+        for file in files.iter().filter(|file| file.document) {
+            super::role::check_brief(&file.bytes, &top)?;
+        }
+
         let mut undo = Undo::new(&top, &paths);
         for file in &files {
             let target = top.join(&file.path);

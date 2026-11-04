@@ -46,11 +46,17 @@ impl Ddocs {
         Self::resolve(
             std::env::var_os("PIJ_DDOCS").as_deref(),
             std::env::var_os("PATH").as_deref(),
+            &std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
         )
     }
 
-    /// Resolve from explicit `PIJ_DDOCS` and `PATH` values.
-    pub fn resolve(pij_ddocs: Option<&OsStr>, path: Option<&OsStr>) -> Self {
+    /// Resolve from explicit `PIJ_DDOCS` and `PATH` values, as seen from `cwd`.
+    ///
+    /// A relative or empty PATH entry names a directory relative to `cwd`, the
+    /// daemon's directory at start. Every entry is made absolute before the
+    /// search, so the path kept is absolute and still names the same program
+    /// after ddocs is launched in the governance worktree (review of #114, F002).
+    pub fn resolve(pij_ddocs: Option<&OsStr>, path: Option<&OsStr>, cwd: &Path) -> Self {
         if let Some(chosen) = pij_ddocs.filter(|value| !value.is_empty()) {
             let chosen = Path::new(chosen);
             if !chosen.is_absolute() {
@@ -69,8 +75,15 @@ impl Ddocs {
                 ))
             };
         }
-        let found = Resolver::new().resolve(OsStr::new("ddocs"), path);
-        if found.as_encoded_bytes().contains(&b'/') {
+        let absolute = path.and_then(|path| {
+            std::env::join_paths(
+                std::env::split_paths(path)
+                    .map(|dir| cwd.join(dir).components().collect::<PathBuf>()),
+            )
+            .ok()
+        });
+        let found = Resolver::new().resolve(OsStr::new("ddocs"), absolute.as_deref().or(path));
+        if Path::new(&found).is_absolute() {
             Self::Found(PathBuf::from(found))
         } else {
             Self::Missing("ddocs is not on the daemon's PATH and PIJ_DDOCS is unset".to_string())
@@ -188,27 +201,69 @@ mod tests {
         let chosen = tool(&root.join("pinned"), "ddocs-pinned", 0o755);
         let path = std::env::join_paths([root.join("bin")]).unwrap();
         assert_eq!(
-            Ddocs::resolve(Some(chosen.as_os_str()), Some(&path)),
+            Ddocs::resolve(Some(chosen.as_os_str()), Some(&path), &root),
             Ddocs::Found(chosen.clone())
         );
         assert_eq!(
-            Ddocs::resolve(None, Some(&path)),
+            Ddocs::resolve(None, Some(&path), &root),
             Ddocs::Found(on_path.clone())
         );
         assert_eq!(
-            Ddocs::resolve(Some(OsStr::new("")), Some(&path)),
+            Ddocs::resolve(Some(OsStr::new("")), Some(&path), &root),
             Ddocs::Found(on_path)
         );
 
         let flat = tool(&root.join("pinned"), "not-exec", 0o644);
-        let Ddocs::Missing(reason) = Ddocs::resolve(Some(flat.as_os_str()), Some(&path)) else {
+        let Ddocs::Missing(reason) = Ddocs::resolve(Some(flat.as_os_str()), Some(&path), &root)
+        else {
             panic!("a non-executable PIJ_DDOCS is missing, not found");
         };
         assert!(reason.contains("not an executable file"), "{reason}");
-        let Ddocs::Missing(reason) = Ddocs::resolve(Some(OsStr::new("ddocs")), Some(&path)) else {
+        let Ddocs::Missing(reason) = Ddocs::resolve(Some(OsStr::new("ddocs")), Some(&path), &root)
+        else {
             panic!("a relative PIJ_DDOCS is missing");
         };
         assert!(reason.contains("not an absolute path"), "{reason}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Review of #114, F002: a ddocs found through a relative or empty PATH
+    /// entry is kept as an absolute path, so it still launches when the
+    /// writer runs it with the governance worktree as its cwd.
+    #[test]
+    fn a_relative_or_empty_path_entry_resolves_absolutely_and_launches_from_another_cwd() {
+        let root = pij_testkit::fresh_dir("pij-ddocs-relative")
+            .canonicalize()
+            .unwrap();
+        let bin = root.join("tools");
+        std::fs::create_dir_all(&bin).unwrap();
+        let script = bin.join("ddocs");
+        std::fs::write(&script, "#!/bin/sh\necho '{\"status\":\"ok\"}'\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let worktree = root.join("governance");
+        std::fs::create_dir_all(&worktree).unwrap();
+        let document = worktree.join("role.dd.json");
+
+        let absolute = Ddocs::resolve(Some(script.as_os_str()), None, &root);
+        absolute
+            .validate(&worktree, &document)
+            .expect("control: the absolute path launches from the governance cwd");
+        for (path, cwd) in [
+            ("tools", root.as_path()),
+            ("./tools", root.as_path()),
+            ("", bin.as_path()),
+            ("/nonexistent::/also-not", bin.as_path()),
+        ] {
+            let ddocs = Ddocs::resolve(None, Some(OsStr::new(path)), cwd);
+            assert_eq!(
+                ddocs.path(),
+                Some(script.as_path()),
+                "PATH={path:?} from {cwd:?}"
+            );
+            ddocs
+                .validate(&worktree, &document)
+                .unwrap_or_else(|refusal| panic!("PATH={path:?}: {refusal}"));
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -216,7 +271,7 @@ mod tests {
     fn missing_ddocs_refuses_by_name_with_the_install_step() {
         let empty = pij_testkit::fresh_dir("pij-ddocs-missing");
         let path = std::env::join_paths([&empty]).unwrap();
-        let ddocs = Ddocs::resolve(None, Some(&path));
+        let ddocs = Ddocs::resolve(None, Some(&path), &empty);
         assert_eq!(ddocs.path(), None);
         let refusal = ddocs
             .validate(&empty, &empty.join("x.dd.json"))

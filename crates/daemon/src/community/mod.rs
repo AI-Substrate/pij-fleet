@@ -65,6 +65,9 @@ pub const E_FOREIGN_EDIT: &str = "E-RS-GOV-FOREIGN-EDIT";
 pub const E_GOV_LOCKED: &str = "E-RS-GOV-LOCKED";
 /// A git command the writer needs failed.
 pub const E_GOV_GIT: &str = "E-RS-GOV-GIT";
+/// A role's standing packet names a brief that is not a readable file in the
+/// governance worktree.
+pub const E_BRIEF_MISSING: &str = "E-RS-ROLE-BRIEF-MISSING";
 /// `directory add` named a role that already exists.
 pub const E_DIRECTORY_EXISTS: &str = "E-RS-DIRECTORY-EXISTS";
 

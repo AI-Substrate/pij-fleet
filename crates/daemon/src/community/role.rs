@@ -2,7 +2,9 @@
 
 use serde_json::{Map, Value, json};
 
-use super::Refusal;
+use std::path::{Component, Path};
+
+use super::{E_BRIEF_MISSING, Refusal};
 
 /// Role fields given as `pij directory add` flags. Absent fields are left
 /// out, so ddocs names what is missing (for example scope or the packet).
@@ -203,6 +205,56 @@ fn check_packet(document: &Value, id: &str) -> Result<(), Refusal> {
         ));
     }
     Ok(())
+}
+
+/// A `source: brief` packet must name a readable file inside the governance
+/// worktree. ddocs only warns on a missing link target (exit 0), so the writer
+/// checks it before writing anything (review of #114, F001). Other documents,
+/// and documents ddocs will reject anyway, pass through.
+///
+/// # Errors
+/// [`E_BRIEF_MISSING`] with the role id and the brief path.
+pub fn check_brief(bytes: &[u8], worktree: &Path) -> Result<(), Refusal> {
+    let Ok(document) = serde_json::from_slice::<Value>(bytes) else {
+        return Ok(());
+    };
+    let Some(packet) = section(&document, "standing_packet") else {
+        return Ok(());
+    };
+    let Some(brief) = packet["brief"]
+        .as_str()
+        .filter(|_| packet["source"] == "brief")
+    else {
+        return Ok(());
+    };
+    let relative = Path::new(brief);
+    let inside = !brief.is_empty()
+        && relative
+            .components()
+            .all(|part| matches!(part, Component::Normal(_) | Component::CurDir));
+    let root = worktree
+        .canonicalize()
+        .unwrap_or_else(|_| worktree.to_path_buf());
+    let readable = inside
+        && worktree
+            .join(relative)
+            .canonicalize()
+            .is_ok_and(|target| target.starts_with(&root) && target.is_file())
+        && std::fs::File::open(worktree.join(relative)).is_ok();
+    if readable {
+        return Ok(());
+    }
+    Err(Refusal::new(
+        E_BRIEF_MISSING,
+        format!(
+            "role {:?}: the standing packet's brief {brief:?} is not a readable file inside the governance worktree {}",
+            id_of(&document).unwrap_or("?"),
+            worktree.display()
+        ),
+    )
+    .with_next(
+        "Commit the brief to the governance branch first (a repo-relative path), or give the packet inline with --packet.",
+    ))
 }
 
 /// The bytes the writer commits: tab-indented, with a trailing newline, like

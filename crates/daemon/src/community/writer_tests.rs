@@ -329,3 +329,162 @@ fn schema_copies_ride_in_the_same_commit_only_when_they_differ() {
     let second = scratch.git(&scratch.gov, &["show", "--name-only", "--format=", "HEAD"]);
     assert!(!second.contains("schema.json"), "{second}");
 }
+
+// Review of #114 (pij-still-termite): the reviewer's regressions, kept.
+
+fn review_real_role(id: &str, brief: Option<&str>) -> Vec<NewFile> {
+    let fields = crate::community::role::RoleFields {
+        title: Some(id.into()),
+        kind: Some("general".into()),
+        lifecycle: Some("per-task".into()),
+        holders: Some("many".into()),
+        rules: vec!["Review scratch proof.".into()],
+        packet: brief.is_none().then(|| "A real inline packet.".into()),
+        brief: brief.map(str::to_string),
+        ..Default::default()
+    };
+    let document = crate::community::role::stamp(
+        crate::community::role::from_fields(id, &fields).unwrap(),
+        id,
+        "pij-still-termite",
+        "review probe",
+        "2026-11-04",
+    )
+    .unwrap();
+    role(
+        id,
+        &String::from_utf8(crate::community::role::to_bytes(&document)).unwrap(),
+    )
+}
+
+fn index(scratch: &Scratch) -> String {
+    scratch.git(&scratch.gov, &["diff", "--cached", "--name-only"])
+}
+
+#[test]
+fn review_real_ddocs_existing_brief_control() {
+    let ddocs = crate::community::ddocs::Ddocs::from_env();
+    if ddocs.path().is_none() {
+        eprintln!("SKIP review_real_ddocs_existing_brief_control: ddocs is not installed here");
+        return;
+    }
+    let scratch = Scratch::new("pr114-review-existing-brief");
+    std::fs::create_dir(scratch.gov.join("briefs")).unwrap();
+    std::fs::write(scratch.gov.join("briefs/qa.md"), "A standing packet.\n").unwrap();
+    scratch.git(&scratch.gov, &["add", "briefs/qa.md"]);
+    scratch.git(&scratch.gov, &["commit", "-q", "-m", "brief"]);
+    let writer = CommunityWriter::new(Arc::new(ddocs), layout::schema_copies(), &LOCK_RETRY);
+    writer
+        .write(
+            &scratch.main,
+            review_real_role("qa", Some("briefs/qa.md")),
+            "existing brief",
+        )
+        .expect("an existing repo-relative brief is valid");
+}
+
+#[test]
+fn review_real_ddocs_missing_brief_refuses_entire_batch() {
+    let scratch = Scratch::new("pr114-review-missing-brief");
+    let start = head(&scratch);
+    let writer = CommunityWriter::new(
+        Arc::new(crate::community::ddocs::Ddocs::from_env()),
+        layout::schema_copies(),
+        &LOCK_RETRY,
+    );
+    let mut files = review_real_role("inline", None);
+    files.extend(review_real_role(
+        "missing",
+        Some("briefs/definitely-absent.md"),
+    ));
+    let result = writer.write(&scratch.main, files, "one missing packet");
+    assert!(
+        result.is_err(),
+        "a standing packet must reference an existing brief, and a bad batch must commit none; got {result:?}"
+    );
+    assert_eq!(head(&scratch), start);
+    assert_eq!(status(&scratch), "");
+    assert_eq!(index(&scratch), "");
+}
+
+#[test]
+fn review_commit_failure_preserves_foreign_index_and_worktree() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let scratch = Scratch::new("pr114-review-commit-failure");
+    std::fs::write(scratch.gov.join("foreign.md"), "committed\n").unwrap();
+    scratch.git(&scratch.gov, &["add", "foreign.md"]);
+    scratch.git(&scratch.gov, &["commit", "-q", "-m", "foreign base"]);
+    std::fs::write(scratch.gov.join("foreign.md"), "staged edit\n").unwrap();
+    scratch.git(&scratch.gov, &["add", "foreign.md"]);
+    std::fs::write(scratch.gov.join("foreign.md"), "unstaged edit\n").unwrap();
+    let hooks = scratch.root.join("hooks");
+    std::fs::create_dir(&hooks).unwrap();
+    let hook = hooks.join("pre-commit");
+    std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    scratch.git(
+        &scratch.gov,
+        &["config", "core.hooksPath", hooks.to_str().unwrap()],
+    );
+    let before_head = head(&scratch);
+    let before_status = status(&scratch);
+    let before_index = scratch.git(&scratch.gov, &["show", ":foreign.md"]);
+    let result = writer(vec![], &LOCK_RETRY).write(&scratch.main, role("qa", "{}"), "fails");
+    assert_eq!(result.unwrap_err().code, E_GOV_GIT);
+    assert_eq!(head(&scratch), before_head);
+    assert_eq!(status(&scratch), before_status);
+    assert_eq!(
+        scratch.git(&scratch.gov, &["show", ":foreign.md"]),
+        before_index
+    );
+    assert_eq!(
+        std::fs::read_to_string(scratch.gov.join("foreign.md")).unwrap(),
+        "unstaged edit\n"
+    );
+}
+
+/// F001 without ddocs (so it runs in CI): a brief that is missing, outside the
+/// worktree, absolute, or a symlink out of it refuses the whole batch by name,
+/// before anything is written; an existing brief lands.
+#[test]
+fn a_brief_that_is_not_a_file_inside_the_worktree_refuses_the_whole_batch_before_writing() {
+    let scratch = Scratch::new("pij-writer-brief");
+    let outside = scratch.root.join("outside.md");
+    std::fs::write(&outside, "outside\n").unwrap();
+    std::fs::create_dir(scratch.gov.join("briefs")).unwrap();
+    std::fs::write(scratch.gov.join("briefs/qa.md"), "A standing packet.\n").unwrap();
+    std::os::unix::fs::symlink(&outside, scratch.gov.join("briefs/link.md")).unwrap();
+    scratch.git(&scratch.gov, &["add", "briefs"]);
+    scratch.git(&scratch.gov, &["commit", "-q", "-m", "briefs"]);
+    let start = head(&scratch);
+    let writer = writer(vec![], &LOCK_RETRY);
+    for brief in [
+        "briefs/absent.md",
+        "../outside.md",
+        outside.to_str().unwrap(),
+        "briefs/link.md",
+        "briefs",
+    ] {
+        let mut files = review_real_role("inline", None);
+        files.extend(review_real_role("missing", Some(brief)));
+        let refusal = writer
+            .write(&scratch.main, files, "batch")
+            .expect_err(brief);
+        assert_eq!(refusal.code, crate::community::E_BRIEF_MISSING, "{brief}");
+        assert!(
+            refusal.message.contains("\"missing\"") && refusal.message.contains(brief),
+            "{refusal}"
+        );
+        assert_eq!(head(&scratch), start, "{brief}");
+        assert_eq!(status(&scratch), "", "{brief}");
+        assert_eq!(index(&scratch), "", "{brief}");
+    }
+    writer
+        .write(
+            &scratch.main,
+            review_real_role("qa", Some("briefs/qa.md")),
+            "existing brief",
+        )
+        .expect("an existing brief inside the worktree lands");
+}
