@@ -337,13 +337,13 @@
 				},
 				{
 					"id": "req-25",
-					"title": "pij's own PRD register moves into docs",
-					"statement": "pij's existing register at `<government-root>/prd/base-prd.dd.json` moves into `docs/project/prds/`, as a separate step after this PRD's first PR merges.",
+					"title": "pij's own requirements start fresh in PRD 002",
+					"statement": "The earlier register stays archived in the private repo and is never copied here. Its open rows are checked against today's code, and those still true are written in new words into `docs/project/prds/002-pij-base.dd.json`, with no private PR numbers, machine paths or references to other repositories. AGENTS.md and the pij skill point at PRD 002.",
 					"actor": "prime",
 					"priority": "should",
 					"state": "planned",
-					"done_when": "The register validates at its new path and the governance copy is retired with a pointer.",
-					"source": "workshops/001-directory-concept.md"
+					"done_when": "PRD 002 validates clean; every open row of the earlier register has a recorded verdict (kept as a PRD 002 id, or dropped with a reason); the security verdict passes on the exact head; AGENTS.md and the pij skill point at PRD 002.",
+					"source": "workshops/001-directory-concept.md; ruling C15"
 				},
 				{
 					"id": "req-21",
@@ -435,6 +435,11 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "req-27 per ruling C18 (Jordan): communities are self-discovered from their needs; templates are examples, not a checklist. Numbered 27 because req-26 is taken by the s02 PR."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-steady-otter (pm-001), ruling C15",
+					"change": "req-25: the earlier register is not moved; its open rows are triaged into a fresh PRD 002 in new words."
 				}
 			]
 		}

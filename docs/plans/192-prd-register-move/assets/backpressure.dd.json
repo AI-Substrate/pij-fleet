@@ -16,31 +16,31 @@
       "value": [
         {
           "id": "bp-0001",
-          "criterion": "AC1-AC2: nothing lost in conversion, and PRD 002 validates",
+          "criterion": "AC1-AC3: every open row has one verdict, and PRD 002 validates",
           "phase": "ph-a951",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "BUILD: a one-off comparison script in assets/evidence/ reads the frozen source (by commit sha) and PRD 002, and checks every source id appears once with its title, its mapped state and its evidence kept; prints the counts. `ddocs validate docs/project/prds/002-pij-base.dd.json` clean.",
+          "proof": "BUILD: a one-off script in assets/evidence/ takes the source by sha (ids and states only) and triage.md, checks each of the 40 open ids has exactly one verdict and each kept verdict names a PRD 002 id that exists, and prints the counts (kept, dropped as met, dropped as unwanted). `ddocs validate docs/project/prds/002-pij-base.dd.json` clean.",
           "state": "unchecked",
           "probe": "docs/project/prds/"
         },
         {
           "id": "bp-0002",
-          "criterion": "AC3: safe to publish in a public repo",
+          "criterion": "AC4: safe to publish, and no copied wording",
           "phase": "ph-a951",
           "mode": "BUILD",
           "tier": "human-judgement",
-          "proof": "BUILD: a scan of PRD 002 for machine paths, credential-shaped strings, private repo links and other projects' names, output in assets/evidence/scrub.txt; then the security verdict on the exact head.",
+          "proof": "BUILD: a scan of PRD 002 and triage.md for machine paths, credential-shaped strings, PR numbers, other repositories and other projects' names, output in assets/evidence/scrub.txt; a copy check that compares PRD 002 with the source and reports how many runs of eight or more words they share (expected 0), printing counts only, never source text; then the security verdict on the exact head.",
           "state": "unchecked",
           "probe": "assets/evidence/scrub.txt"
         },
         {
           "id": "bp-0003",
-          "criterion": "AC4-AC5: pointers and states",
+          "criterion": "AC5-AC6: pointers and states",
           "phase": "ph-a951",
           "mode": "EXISTS",
           "tier": "computational",
-          "proof": "grep for the old path in AGENTS.md and skills/; `ddocs validate` on PRD 001 and roadmap 001 after the flips; `harness checks --quick`; CI on the exact head; reviewer and security verdicts.",
+          "proof": "grep for `prd/base-prd` in AGENTS.md, skills/ and harness/ (expected none); `ddocs validate` on PRD 001, roadmap 001 and PRD 002; `harness checks --quick`; CI on the exact head; reviewer and security verdicts.",
           "state": "unchecked",
           "probe": "AGENTS.md"
         },

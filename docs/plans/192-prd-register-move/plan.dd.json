@@ -6,7 +6,7 @@
     {
       "name": "meta",
       "value": {
-        "title": "Move pij's PRD register into docs/project as PRD 002",
+        "title": "PRD 002: triage pij's earlier register into a fresh PRD",
         "slug": "prd-register-move",
         "ordinal": 192,
         "status": "draft",
@@ -14,27 +14,28 @@
         "mode": "Simple",
         "created": "2026-11-04",
         "backpressure": "assets/backpressure.dd.json#rows",
-        "summary": "Roadmap 001 step s14, req-25. pij's requirements register becomes docs/project/prds/002-pij-base.dd.json under the pij/prd schema, and the old location gets a pointer. Draft: blocked on the rulings in open questions 1 to 3, because the register is not where AGENTS.md says and its source is private."
+        "summary": "Roadmap 001 step s14, req-25, as ruling C15 recast it. The earlier register stays archived in the private repo and is never copied here. docs-system checks its open rows against today's code and writes the ones still true, in new words, into docs/project/prds/002-pij-base.dd.json under pij/prd. AGENTS.md and the pij skill then point at PRD 002."
       }
     },
     {
       "name": "summary",
-      "value": "Planning found (2026-11-04): pij-fleet's government root has no prd/ folder; AGENTS.md line 18 points at <government-root>/prd/base-prd.dd.json, which does not exist here. The register is in the legacy repo AI-Substrate/pij (PRIVATE), branch prime-governance, path .harness/government/prd/base-prd.dd.json: schema prd/requirements, 54 rows (36 unchecked, 10 checked, 4 shipped, 4 open), 113 KB, last changed 2026-09-07 (e05661c8). pij-fleet is PUBLIC. Rows cite private PR numbers, machine-local paths (/Users/...), scratch files and other projects (chainglass). pij/prd requires priority and done_when on every row; the source has neither. PRD number 002 is claimed for this plan by pm-001."
+      "value": "Planning found (2026-11-04): pij-fleet has no prd/ folder under its government root; AGENTS.md's Governance section points at <government-root>/prd/base-prd.dd.json, which does not exist here. The earlier register lives in a private repo, frozen at commit e05661c8 (2026-09-07): schema prd/requirements, 54 rows, of which 40 are open (36 unchecked, 4 open) and 14 are done (10 checked, 4 shipped). pij-fleet is public, and the rows cite private PRs, machine paths and other projects. Ruling C15: leave the register where it is; triage the open rows into a fresh PRD 002 in new words with no private references. C11 and C12 still govern state, priority and done_when for the rows kept. PRD number 002 is claimed for this plan by pm-001."
     },
     {
       "name": "goals",
       "value": [
-        "pij's requirements live in docs/project/prds/ beside PRD 001, under the same schema.",
-        "No requirement, state or receipt is lost in the move.",
-        "Nothing private reaches the public repo.",
-        "Everything that pointed at the old path points at the new one."
+        "pij's live requirements are in docs/project/prds/002-pij-base.dd.json under pij/prd, beside PRD 001.",
+        "Every open row of the earlier register gets one verdict against today's code: kept and rewritten into PRD 002, or dropped with a reason.",
+        "Nothing private, and no copied text, reaches the public repo.",
+        "AGENTS.md and the pij skill point at PRD 002, not at a path that does not exist here."
       ]
     },
     {
       "name": "non_goals",
       "value": [
-        "Re-deciding any requirement. Rows move as they are; amendments come later, through the PRD procedure (s13).",
-        "Editing the legacy repo. Its prime commits the retirement pointer there."
+        "Copying, converting or publishing the earlier register, its done rows or its wording (C15).",
+        "Editing the private repo or adding a pointer there.",
+        "New requirements the earlier register did not have; those go through the PRD procedure (s13)."
       ]
     },
     {
@@ -42,31 +43,37 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "Frozen source. The source commit sha is recorded, and the legacy register's writer is told it is frozen before conversion starts.",
+          "claim": "Frozen source. The triage reads the register only at commit e05661c8, with `git show` in a read-only checkout of the private repo, and records the sha. No file and no quoted text from that repo enters pij-fleet.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
-          "claim": "Faithful conversion. Every source row becomes a pij/prd requirement with the same id and title; statement comes from the source requirement; state follows the mapping ruled in open question 2; done_when and priority follow open question 3; receipts (completed_evidence) move to delivered_by and note. The source meta's rules (single writer, receipt rule, register discipline) become the why and a changelog row. Row count in equals row count out, checked by script. PRD 002 validates clean.",
+          "claim": "Triage. Each of the 40 open rows gets exactly one verdict in assets/evidence/triage.md: its old id, kept (with its PRD 002 id) or dropped, and a one-line reason in new words that names today's code (a file or a verb) where the code decides it. A row today's code already meets is dropped as met. A row whose verdict is unclear goes to pm-001 as a question, not a guess.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
-          "claim": "Publication. PRD 002 holds no machine paths, credentials, private transcript text or other projects' names, and private PR references follow open question 1. The security verdict passes on the exact head.",
+          "claim": "PRD 002. Kept rows are written fresh as pij/prd requirements with new ids, a statement in new words, a testable done_when, priority `should` unless the need is a must (C12), and state planned, or in-progress where live work is named (C11). Its why, actors and goals describe pij as it is today. No statement or note reuses the source's wording. `ddocs validate docs/project/prds/002-pij-base.dd.json` is clean.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Publication. PRD 002 and the triage record hold no private PR numbers, machine paths, credentials, transcript text, or references to other repositories or projects. The scan and the copy check (bp-0002) are clean, and the security verdict passes on the exact head.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
-          "id": "ac-0004",
-          "claim": "Pointers. AGENTS.md's Governance section and skills/pij/references/prime/rituals/bootstrap.md point at docs/project/prds/002-pij-base.dd.json. The legacy register gets a one-line pointer, committed by its prime.",
+          "id": "ac-0005",
+          "claim": "Pointers. AGENTS.md's Governance section and skills/pij/references/prime/rituals/bootstrap.md point at docs/project/prds/002-pij-base.dd.json, and no file in pij-fleet still points at a register path that does not exist here.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
-          "id": "ac-0005",
-          "claim": "States. In this PR: roadmap s14 goes to shipped with its plan cell set to docs/plans/192-prd-register-move; req-25 goes to shipped. PRD 001 and roadmap 001 validate clean.",
+          "id": "ac-0006",
+          "claim": "States. In this PR: roadmap s14 goes to shipped with its plan cell set to docs/plans/192-prd-register-move; req-25 goes to shipped. req-25 and s14 already carry C15's wording (pm-001, on this branch). PRD 001, roadmap 001 and PRD 002 validate clean.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         }
@@ -77,10 +84,10 @@
       "value": [
         {
           "id": "ph-a951",
-          "title": "Convert, scrub and publish the register",
+          "title": "Triage the open rows into PRD 002",
           "state": "unchecked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
-          "brief": "AC1 to AC5. docs-system seat, after s13 and after the rulings. CS-3: 54 rows, and done_when has to be written for most of them."
+          "brief": "AC1 to AC6. docs-system, after s02 phase 1. CS-3: 40 rows read against today's code; the kept rows written fresh."
         }
       ]
     },
@@ -113,15 +120,18 @@
       "value": [
         {
           "question": "Ruling: may the register, scrubbed, be published in public pij-fleet? Options: (a) move all 54 rows, scrubbed; private PR numbers become 'AI-Substrate/pij#N (private)' or are dropped to the sha; (b) move only rows still open (40), with a note that shipped history stays in the private repo; (c) do not move it; amend req-25 to drop. Recommended: (a). Needs Jordan.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Ruled C15 (Jordan: leave it): none of (a) to (c). The register stays archived in the private repo; its open rows are triaged into a fresh PRD 002 in new words. The plan was rewritten to match."
         },
         {
           "question": "State mapping into planned, in-progress, shipped, dropped. Recommended: checked and shipped to shipped; unchecked and open to planned, or in-progress where the row's note names live work.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Ruled C11. For the kept rows: planned, or in-progress where the row names live work."
         },
         {
           "question": "done_when and priority for rows that lack them. Recommended: shipped rows use their receipt rule as done_when; other rows get the requirement's own testable clause, or 'to be written' in note; priority 'should' unless the row says must.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Ruled C12. done_when is the kept row's own testable clause, or 'to be written' in note; priority `should` unless it is a must."
         }
       ]
     },
@@ -157,31 +167,31 @@
       "name": "risks",
       "value": [
         {
-          "risk": "Private content published in a public repo.",
-          "likelihood": "High",
+          "risk": "Private content or copied wording published in a public repo.",
+          "likelihood": "Medium",
           "impact": "Critical",
-          "mitigation": "Ruling first (open question 1), scrub script, security verdict on the exact head."
+          "mitigation": "C15: fresh words only; scrub scan and copy check (bp-0002); security verdict on the exact head."
         },
         {
-          "risk": "Writing done_when for 50 rows turns the move into a rewrite.",
+          "risk": "The triage turns into a redesign of pij's requirements.",
           "likelihood": "Medium",
           "impact": "Medium",
-          "mitigation": "Open question 3: derive from receipts for shipped rows; a placeholder rule for the rest, flagged in note."
+          "mitigation": "Keep each kept row to the need it states; unclear verdicts go to pm-001 as questions (AC2)."
         },
         {
-          "risk": "The legacy register keeps being edited during the move.",
+          "risk": "The legacy register changes during the triage.",
           "likelihood": "Low",
-          "impact": "Medium",
-          "mitigation": "AC1 freezes it by sha."
+          "impact": "Low",
+          "mitigation": "Read by sha (AC1)."
         }
       ]
     },
     {
       "name": "execution_guardrails",
       "value": [
-        "Read the source only from git by sha; never copy scratch/ or .harness/temp/ files it cites.",
+        "Read the source only with `git show e05661c8:<path>` in the read-only legacy checkout; never write there, never copy its files or text into pij-fleet (C15).",
         "No `git add -A`, no `--no-verify`.",
-        "Do not start until the rulings in open questions 1 to 3 are recorded in assets/rulings.md."
+        "Starts after s02 phase 1 lands; the same docs-system seat does that first."
       ]
     }
   ]
