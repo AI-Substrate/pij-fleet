@@ -61,3 +61,5 @@
 2026-11-04 note pr-116 99d8bf4 sent — C19 scrub (3 files, 5 lines); reviewer pij-estimated-chinchilla (window pij:review-116), security queued; name#N x34 follow-up asked of prime
 2026-11-04 note c21 - folded — no name#N scrub; told heron + lynx. pr-114 8eb245b = main merges only; F001/F002 fix still owed by marten
 2026-11-04 note pr-111-security cb7a0cb pass-with-notes — lynx post-merge confirmation; pm-001 removed fleet-review-111d mid-check (lynx recovered via object DB): remove review worktrees only after all their verdict seats report
+2026-11-04 note pr-114-security d5fd8cf block — lynx S1 medium symlink write escape + rollback; F002 confirmed; routed to marten (F001+F002+S1 one push); governance LOW machine path in reviewer verdict to termite
+2026-11-04 note pr-116-review 99d8bf4 block — chinchilla: findings.md:78 still has the $HOME path; routed to heron; lynx told to wait for new head
