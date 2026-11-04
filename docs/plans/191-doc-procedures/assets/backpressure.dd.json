@@ -1,0 +1,81 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 191 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC2: the procedures and worked examples, and the examples validate and link",
+          "phase": "ph-af3e",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a linked example PRD, blueprint and roadmap beside the procedures; `ddocs validate` clean on each at default depth, and `ddocs links` shows roadmap step to requirement and component to requirement.",
+          "state": "unchecked",
+          "probe": "skills/pij/references/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3: a fresh PM writes a valid, linked PRD and roadmap from the procedure alone",
+          "phase": "ph-af3e",
+          "mode": "BUILD",
+          "tier": "human-judgement",
+          "proof": "BUILD: one canary seat with no prior context, given only the procedure path and a short toy intent, in a scratch copy of the repo; it writes a PRD and a roadmap. `ddocs validate` on both (computational), plus docs-system's note on where the canary hesitated (judgement). Transcript pointer and result in assets/evidence/canary.md.",
+          "state": "unchecked",
+          "probe": "ddocs validate"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4: s01 really is done, then its states flip",
+          "phase": "ph-af3e",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`ddocs validate` clean on PRD, blueprint and roadmap 001 at default depth, and `ddocs graph --path docs/project` draws roadmap to PRD to blueprint, recorded before the flip.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "Cost (AGENTS.md)",
+          "phase": "ph-af3e",
+          "mode": "ABSENT",
+          "tier": "computational",
+          "proof": "None needed: this plan adds no loop, poll, timer, hook, sweep, status line or process launch. It ships markdown and example ddocs only. The canary seat is a one-off proof run, not product cost. No performance verdict is required unless the diff says otherwise.",
+          "state": "unchecked",
+          "note": "Steady-state cost: 0 launches per second, no poll, no per-seat scaling."
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "Merge gate",
+          "phase": "ph-af3e",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`harness checks --quick`; GitHub CI on the exact head; reviewer and security verdicts on that head.",
+          "state": "unchecked",
+          "probe": "harness checks"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "done gate (quick)",
+          "command": "harness checks --quick",
+          "dimension": "correctness"
+        }
+      ]
+    }
+  ]
+}

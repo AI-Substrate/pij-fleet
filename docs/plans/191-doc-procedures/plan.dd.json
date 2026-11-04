@@ -1,0 +1,176 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Doc procedures and worked examples for PRDs, blueprints and roadmaps",
+        "slug": "doc-procedures",
+        "ordinal": 191,
+        "status": "draft",
+        "complexity": "CS-2",
+        "mode": "Simple",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "summary": "Roadmap 001 step s13. The pij skill gets a short procedure and a worked example for writing a PRD, a blueprint and a roadmap under docs/project, and for folding a ruling into them, so a PM that has never seen PRD 001 can write linked, valid docs."
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Delivers PRD 001 req-23 and starts c-skill (the `/pij community` route itself is s10, which links to these files). Sources: docs/project/README.md, docs/project/workshops/001-pij-community/002-limits-and-doc-prompting.md (points 6 to 8), the three schemas in .dd/schemas/pij/, and PRD 001, blueprint 001 and roadmap 001 as the live example. Also closes s01, which #108 merged but left in-progress."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A PM can write a PRD, a blueprint and a roadmap that validate and link, from one short procedure per type.",
+        "A PM can fold a ruling into existing docs without deleting rows.",
+        "The procedure says who writes: the PM that owns the work, with the prime helping; the prime itself when the operator asks.",
+        "Roadmap steps name the roles they need (`needs`), as workshop 002 point 8 says."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "The `/pij community` route and its registry row (s10).",
+        "Role templates (s03).",
+        "New schemas or schema changes. If the procedure exposes a schema gap, record it as a follow-up note to pm-001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Procedures. Files under skills/pij/references/community/ (one per doc type, plus folding a ruling) say, in plain steps: where the file goes and how to get its NNN (ask pm/001 until `pij claim` exists, s11); the ddocs commands to create, edit, validate and build it; how the link cells join roadmap steps to requirement rows and components; the state rules (a builder flips a row in the PR that delivers it; rows are amended, never deleted; drop with state dropped and a note); and `needs` on roadmap steps. Each file stays short enough to read in one pass.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Worked examples. A small linked example PRD, blueprint and roadmap ship beside the procedures and validate clean; the procedures point to them and to PRD 001 as the full-size example.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Fresh-PM canary. A seat with no prior context, given only the procedure and a short intent, writes a PRD and a roadmap in a scratch copy that validate clean and link to each other. Where it hesitated is fixed in the procedure, or recorded.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "States. Before flipping, s01's done-when is checked and recorded. In this PR: roadmap s01 and s13 go to shipped (s13's plan cell set to docs/plans/191-doc-procedures); req-18 and req-23 go to shipped; c-doc-schemas goes to shipped; c-skill goes to in-progress. docs/project/README.md points at the procedures. All three project docs validate clean.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-af3e",
+          "title": "Procedures, examples and a fresh-PM canary",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "brief": "AC1 to AC4. docs-system seat (pij-community-docs). CS-2."
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {
+        "approach": "Validate the examples with ddocs; prove the procedure with a fresh canary seat.",
+        "rationale": "The claim is that a newcomer can follow it, which only a newcomer can test.",
+        "excluded": "Live governance and the prod daemon."
+      }
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {
+        "location": "skills/pij/references/community/ and a pointer in docs/project/README.md.",
+        "rationale": "s10's route will link here; until then the README is how a PM finds it."
+      }
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "question": "Canary harness: OMP by default (AGENTS.md); docs-system may pick another if OMP is unavailable, and says which.",
+          "state": "unchecked"
+        }
+      ]
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "The procedure grows into a manual nobody reads.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "Short files, one per type; the canary marks what was needed."
+        },
+        {
+          "risk": "Examples drift from the schemas.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "ddocs validate on the examples; harness checks covers them."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Never touch the prod daemon or the live governance branch.",
+        "No `git add -A`, no `--no-verify`.",
+        "Schema changes go back to pm-001 as a note, not into this PR."
+      ]
+    }
+  ]
+}
