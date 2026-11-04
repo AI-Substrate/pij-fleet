@@ -47,3 +47,4 @@
 2026-11-04 note pr-113-review 224512d pass-with-notes — pij-varied-fly: F001 closed; CI green; awaiting security delta
 2026-11-04 note pr-111-review a83c73b pass-with-notes — anteater: F003 closed; CI green; awaiting security
 2026-11-04 note reviewers-retired - done — pij-ambitious-anteater (pid 54425) and pij-varied-fly (pid 14710) closed then killed; worktrees 111, 111b, 113 removed; 111c and 113b kept for security
+2026-11-04 deliverable review-114-packet d5fd8cf sent — reviewer pij-still-termite (window pij:review-114, worktree fleet-review-114, shared target dir); security + performance asked; disk 31 GB flagged to prime
