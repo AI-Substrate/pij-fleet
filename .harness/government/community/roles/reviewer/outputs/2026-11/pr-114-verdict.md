@@ -38,7 +38,7 @@ Fix: resolve the winning PATH candidate to an absolute executable path at discov
 
 ## Validation receipts
 
-All cargo invocations used `CARGO_TARGET_DIR=<the coder worktree target>`; no review-worktree target was created. Available disk stayed above the 25 GiB floor (31 GiB initially, 27 GiB at closeout).
+All cargo invocations used `CARGO_TARGET_DIR=<coder-target>`; no review-worktree target was created. Available disk stayed above the 25 GiB floor (31 GiB initially, 27 GiB at closeout).
 
 | Command | Result |
 |---|---|
@@ -68,7 +68,7 @@ At this follow-up, GitHub reports the later head `8eb245b868dd6ecd4aefaaaabd7f0d
 
 Fix F001 and F002, retain their deterministic regressions, and request review of a new frozen head. No schema expansion or unrelated warning policy is needed.
 
-Local reproducible evidence: session `e1e17389-7c15-4043-a345-a4d5df30b473`, `files/pr114-regression-tests.patch` (four reviewer tests, applies to the frozen SHA) and `files/pr114-probe-results.txt` (actual execution output). The patch is review evidence, not an applied product change.
+Local reproducible evidence: `<reviewer-session-files>/pr114-regression-tests.patch` (four reviewer tests, applies to the frozen SHA) and `<reviewer-session-files>/pr114-probe-results.txt` (actual execution output). The patch is review evidence, not an applied product change.
 
 **magicWand:** keep a real-ddocs missing-link batch regression beside the existing fake-validator tests. This is the highest-value encoding: the schema can truthfully warn while the product must refuse an unusable standing packet.
 

@@ -16,7 +16,7 @@ Follow-up: PM explicitly requested checking `git diff d5fd8cf 0c6ea88` and pinni
 
 Final-head follow-up: PM requested b28d815. Read the entire d5fd8cf..b28d815 delta: four documentation files only, adding flake notes, measured-cost correction and coder shared-tool receipts. Backpressure validates 0/0 and build --check reports no drift in a scratch exact-b28d815 snapshot. Exact-head CI run 41769699230 has all four jobs green. Verdict remains block, now pinned to `b28d815be55ee4698d308eea1b67d91c3e4d0fd2`; no runtime code/schema/test changes or rebuild. GitHub already reports 8eb245b, outside this requested verdict. Detached review HEAD stays d5fd8cf.
 
-Reproducible evidence is in session `e1e17389-7c15-4043-a345-a4d5df30b473/files/pr114-regression-tests.patch` and `pr114-probe-results.txt`. The patch applies to the frozen head. Temporary source extraction is disposable; the patch and output carry the evidence.
+Reproducible evidence is in `<reviewer-session-files>/pr114-regression-tests.patch` and `<reviewer-session-files>/pr114-probe-results.txt`. The patch applies to the frozen head. Temporary source extraction is disposable; the patch and output carry the evidence.
 
 **magicWand:** a committed real-ddocs missing-link batch regression, not another fake validator that only rejects a sentinel.
 

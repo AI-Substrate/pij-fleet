@@ -63,3 +63,4 @@
 2026-11-04 note pr-111-security cb7a0cb pass-with-notes — lynx post-merge confirmation; pm-001 removed fleet-review-111d mid-check (lynx recovered via object DB): remove review worktrees only after all their verdict seats report
 2026-11-04 note pr-114-security d5fd8cf block — lynx S1 medium symlink write escape + rollback; F002 confirmed; routed to marten (F001+F002+S1 one push); governance LOW machine path in reviewer verdict to termite
 2026-11-04 note pr-116-review 99d8bf4 block — chinchilla: findings.md:78 still has the $HOME path; routed to heron; lynx told to wait for new head
+2026-11-04 note pr-116 279b0ec sent — fix head; reviewer delta + security full in fleet-review-116b
