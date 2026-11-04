@@ -24,3 +24,10 @@ All readings come from one daemon process (pid 6787).
 
 - The TS proof (typecheck, vitest including `generation-skill-coverage.test.ts`, the full `harness checks`) is CI on the PR head; this worktree has no `node_modules`.
 - Shared-target hazard: other seats' `cargo test` runs in this target (from `~/pi-hacking/fleet-delivery`) overwrote this tree's `pij_core` and `pij_store` artifacts three times, which produced false compile errors and 13 false `pa_watchdog` failures. Cargo names workspace crates' artifacts relative to the workspace root, so worktrees with the same layout share artifact names. Local runs here were taken when no other cargo was running, after touching each crate's `lib.rs`.
+
+## Review round 1 (pij-substantial-mammal, block at 94592ad)
+
+- F001: an assign or release of a role applied none of that role's pending close-ends, yet cleared every pending mark. Now the write applies the role's pending ends to its own rows under the writer lock, and only the ends a commit carried lose their mark (`holders::apply_ends` returns them).
+- F002: `from` had second precision and is part of a holding's key, so an assign, release and reassign within one second collided. Times are now UTC to the millisecond, and `holders::fresh_from` picks a `from` no row of that seat and instance has, under the writer lock. `check_rows` refuses two rows for one holding, and rebuild runs it before replacing anything; the store's `replace_assignments` also refuses a duplicate instead of keeping the first.
+- The reviewer's three HTTP regressions are in `crates/daemon/tests/pr122_review/mod.rs`. Under the shared-target lock (`CARGO_INCREMENTAL=0`, `-p pij-store -p pij-daemon`): clippy `-D warnings` clean; 1122 passed, 0 failed in 50 binaries, including all 14 `directory_http` tests.
+- Cost: unchanged. No new launch sites; each write is still one commit.

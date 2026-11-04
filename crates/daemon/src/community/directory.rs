@@ -197,7 +197,9 @@ impl DirectoryService {
     /// reached it are dropped. One git launch per holders document, plus two.
     ///
     /// # Errors
-    /// [`super::E_GOV_ABSENT`], `E-RS-GOV-GIT` or `E-RS-STORE`.
+    /// [`super::E_GOV_ABSENT`], `E-RS-GOV-GIT`, `E-RS-DIRECTORY-ROW` when a
+    /// holders document records one holding twice (nothing is replaced), or
+    /// `E-RS-STORE`.
     pub async fn rebuild(&self, project: &str, repo: PathBuf) -> Result<Value, Refusal> {
         let project_id = project.to_string();
         let (pointers, rows) = tokio::task::spawn_blocking(move || {
@@ -212,14 +214,23 @@ impl DirectoryService {
                 let document: Value = serde_json::from_str(&text).map_err(|error| {
                     Refusal::new(E_GOV_GIT, format!("{} is not JSON: {error}", pointer.path))
                 })?;
-                rows.extend(holders::from_document(&project_id, &document)?);
+                let read = holders::from_document(&project_id, &document)?;
+                if let Some(first) = read.first() {
+                    holders::check_rows(&first.role, &read)?;
+                }
+                rows.extend(read);
             }
             Ok::<_, Refusal>((pointers, rows))
         })
         .await
         .map_err(|error| Refusal::new(E_GOV_GIT, format!("the rebuild stopped: {error}")))??;
-        let store_error =
-            |error: pij_core::error::PijError| Refusal::new("E-RS-STORE", error.to_string());
+        let store_error = |error: pij_core::error::PijError| match error {
+            pij_core::error::PijError::GovernanceRefused { record, .. } => Refusal::new(
+                "E-RS-DIRECTORY-ROW",
+                format!("the branch records one holding twice ({record})"),
+            ),
+            error => Refusal::new("E-RS-STORE", error.to_string()),
+        };
         self.store
             .replace_community_pointers(project, &pointers)
             .await
@@ -261,9 +272,9 @@ impl DirectoryService {
         let message = format!(
             "community: external {seat} from {from_project}\n\n{note}\n\nPij-Seat: {actor}\nPij-Project: {project}"
         );
-        let (project_id, flush, added) = (project.to_string(), pending.clone(), entry.clone());
-        let (written, _) = self
-            .commit(repo, message, move |root, _| {
+        let (project_id, flush, added) = (project.to_string(), pending, entry.clone());
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
                 let path = std::path::Path::new(super::layout::EXTERNAL);
                 let mut document = match std::fs::read(root.worktree.join(path)) {
                     Ok(bytes) => serde_json::from_slice::<Value>(&bytes).map_err(|error| {
@@ -307,11 +318,17 @@ impl DirectoryService {
                     document: true,
                     existing: Existing::Replace,
                 }];
-                files.extend(flush_files(root, &project_id, &flush, &[])?);
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &flush,
+                    &[],
+                    &mut built.landed,
+                )?);
                 Ok(files)
             })
             .await?;
-        self.flushed(&pending, &written).await?;
+        self.flushed(&built.landed, &written).await?;
         Ok((written, entry))
     }
 
@@ -328,15 +345,21 @@ impl DirectoryService {
         message: String,
     ) -> Result<Written, Refusal> {
         let pending = self.pending(project).await?;
-        let (project_id, flush) = (project.to_string(), pending.clone());
-        let (written, _) = self
-            .commit(repo, message, move |root, _| {
+        let (project_id, flush) = (project.to_string(), pending);
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
                 let mut files = files;
-                files.extend(flush_files(root, &project_id, &flush, &[])?);
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &flush,
+                    &[],
+                    &mut built.landed,
+                )?);
                 Ok(files)
             })
             .await?;
-        self.flushed(&pending, &written).await?;
+        self.flushed(&built.landed, &written).await?;
         Ok(written)
     }
 
@@ -353,7 +376,7 @@ impl DirectoryService {
             ));
         }
         let pending = self.pending(&request.project).await?;
-        let row = Assignment {
+        let draft = Assignment {
             project: request.project.clone(),
             role: request.role.clone(),
             instance: request.instance.clone(),
@@ -361,7 +384,7 @@ impl DirectoryService {
             harness: Some(request.seat.harness.to_string()),
             session: request.seat.harness_session.clone(),
             machine: Some(request.machine.clone()),
-            from: holders::now(),
+            from: String::new(),
             to: None,
             assigned_by: request.actor.to_string(),
             released_by: None,
@@ -378,11 +401,12 @@ impl DirectoryService {
             request.actor,
             request.project
         );
-        let new = row.clone();
-        let flush = pending.clone();
-        let (written, warning) = self
-            .commit(request.repo.clone(), message, move |root, warning| {
+        let flush = pending;
+        let (written, built) = self
+            .commit(request.repo.clone(), message, move |root, built| {
+                let mut new = draft;
                 let mut rows = read_holders(root, &new.project, &new.role)?;
+                built.landed = holders::apply_ends(&mut rows, &flush);
                 if rows
                     .iter()
                     .any(|held| open_for(held, &new.seat, &new.instance))
@@ -400,11 +424,12 @@ impl DirectoryService {
                 if holders_mode(root, &new.role)? == "one"
                     && let Some(other) = rows.iter().find(|held| held.to.is_none())
                 {
-                    *warning = Some(format!(
+                    built.warning = Some(format!(
                         "W-ONE-HOLDER: {} is a one-holder role and {} still holds it",
                         new.role, other.seat
                     ));
                 }
+                new.from = holders::fresh_from(&rows, &new.seat, &new.instance);
                 rows.push(new.clone());
                 let mut files = vec![holders_file(&new.role, &rows)?];
                 files.extend(flush_files(
@@ -412,10 +437,13 @@ impl DirectoryService {
                     &new.project,
                     &flush,
                     &[new.role.as_str()],
+                    &mut built.landed,
                 )?);
+                built.row = Some(new);
                 Ok(files)
             })
             .await?;
+        let row = built.row.clone().expect("a landed assign wrote its row");
         let store = self.store.clone();
         let indexed = row.clone();
         let seat_role = seat_role_for(&row.role).to_string();
@@ -430,7 +458,7 @@ impl DirectoryService {
             })
             .await
             .map_err(|error| store_refusal(&written, &error))?;
-        self.flushed(&pending, &written).await?;
+        self.flushed(&built.landed, &written).await?;
         self.hook
             .assigned(&row.project, &row.role, &row.instance, &request.seat.id);
         let window = self.rename(&request.seat, &row).await;
@@ -441,9 +469,9 @@ impl DirectoryService {
                 holders::to_document(&row.role, std::slice::from_ref(&row))["sections"][1]["value"]
                     [0]
                 .clone(),
-            warning,
+            warning: built.warning,
             seat_role: commit.seat_role,
-            flushed: pending.len(),
+            flushed: built.landed.len(),
             window: Some(window),
         })
     }
@@ -492,12 +520,11 @@ impl DirectoryService {
             (project.to_string(), role.to_string(), instance.to_string());
         let (seat_id, actor_id, release_why) =
             (seat.to_string(), actor.to_string(), why.to_string());
-        let flush = pending.clone();
-        let ended = Arc::new(std::sync::Mutex::new(None));
-        let found = Arc::clone(&ended);
-        let (written, _) = self
-            .commit(repo, message, move |root, _| {
+        let flush = pending;
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
                 let mut rows = read_holders(root, &project_id, &role_id)?;
+                built.landed = holders::apply_ends(&mut rows, &flush);
                 let row = rows
                     .iter_mut()
                     .rev()
@@ -514,22 +541,24 @@ impl DirectoryService {
                 row.to = Some(holders::now());
                 row.released_by = Some(actor_id.clone());
                 row.release_why = Some(release_why.clone());
-                *found.lock().expect("unpoisoned") = Some(row.clone());
+                built.row = Some(row.clone());
                 let mut files = vec![holders_file(&role_id, &rows)?];
-                files.extend(flush_files(root, &project_id, &flush, &[role_id.as_str()])?);
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &flush,
+                    &[role_id.as_str()],
+                    &mut built.landed,
+                )?);
                 Ok(files)
             })
             .await?;
-        let row = ended
-            .lock()
-            .expect("unpoisoned")
-            .take()
-            .expect("a landed release found its row");
+        let row = built.row.clone().expect("a landed release found its row");
         self.store
             .end_assignments(std::slice::from_ref(&row))
             .await
             .map_err(|error| store_refusal(&written, &error))?;
-        self.flushed(&pending, &written).await?;
+        self.flushed(&built.landed, &written).await?;
         Ok(HoldingReceipt {
             commit: written.commit.clone(),
             path: holders_path(role)?,
@@ -537,7 +566,7 @@ impl DirectoryService {
                 .clone(),
             warning: None,
             seat_role: None,
-            flushed: pending.len(),
+            flushed: built.landed.len(),
             window: None,
         })
     }
@@ -618,13 +647,13 @@ impl DirectoryService {
         let message = format!(
             "community: end {seat}'s holdings (close)\n\nPij-Seat: {actor}\nPij-Project: {project}"
         );
-        let (project_id, flush) = (project.to_string(), pending.clone());
-        let (written, _) = self
-            .commit(repo, message, move |root, _| {
-                flush_files(root, &project_id, &flush, &[])
+        let (project_id, flush) = (project.to_string(), pending);
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                flush_files(root, &project_id, &flush, &[], &mut built.landed)
             })
             .await?;
-        self.flushed(&pending, &written).await?;
+        self.flushed(&built.landed, &written).await?;
         Ok(written.commit)
     }
 
@@ -639,38 +668,32 @@ impl DirectoryService {
             .collect())
     }
 
-    async fn flushed(&self, pending: &[Assignment], written: &Written) -> Result<(), Refusal> {
-        if pending.is_empty() {
+    /// Index the ends a landed commit carried, clearing their `end_pending`.
+    /// Only those: an end the commit did not carry stays pending.
+    async fn flushed(&self, landed: &[Assignment], written: &Written) -> Result<(), Refusal> {
+        if landed.is_empty() {
             return Ok(());
         }
-        let cleared: Vec<Assignment> = pending
-            .iter()
-            .cloned()
-            .map(|mut row| {
-                row.end_pending = false;
-                row
-            })
-            .collect();
         self.store
-            .end_assignments(&cleared)
+            .end_assignments(landed)
             .await
             .map_err(|error| store_refusal(written, &error))
     }
 
-    /// Run a holders write on the blocking pool. `build` may set a warning.
+    /// Run a holders write on the blocking pool, under the writer lock.
     async fn commit(
         &self,
         repo: PathBuf,
         message: String,
-        build: impl FnOnce(&GovernanceRoot, &mut Option<String>) -> Result<Vec<NewFile>, Refusal>
+        build: impl FnOnce(&GovernanceRoot, &mut Built) -> Result<Vec<NewFile>, Refusal>
         + Send
         + 'static,
-    ) -> Result<(Written, Option<String>), Refusal> {
+    ) -> Result<(Written, Built), Refusal> {
         let writer = Arc::clone(&self.writer);
         tokio::task::spawn_blocking(move || {
-            let mut warning = None;
-            let written = writer.write_with(&repo, |root| build(root, &mut warning), &message)?;
-            Ok((written, warning))
+            let mut built = Built::default();
+            let written = writer.write_with(&repo, |root| build(root, &mut built), &message)?;
+            Ok((written, built))
         })
         .await
         .map_err(|error| Refusal::new(E_GOV_GIT, format!("the writer stopped: {error}")))?
@@ -753,12 +776,14 @@ fn holders_file(role: &str, rows: &[Assignment]) -> Result<NewFile, Refusal> {
     })
 }
 
-/// Holders files carrying `pending` ends, skipping roles the caller writes.
+/// Holders files carrying `pending` ends, skipping roles the caller writes
+/// (it applies their ends itself). Adds the ends these files carry to `landed`.
 fn flush_files(
     root: &GovernanceRoot,
     project: &str,
     pending: &[Assignment],
     skip: &[&str],
+    landed: &mut Vec<Assignment>,
 ) -> Result<Vec<NewFile>, Refusal> {
     let mut roles: Vec<&str> = pending.iter().map(|row| row.role.as_str()).collect();
     roles.sort_unstable();
@@ -766,27 +791,19 @@ fn flush_files(
     let mut files = Vec::new();
     for role in roles.into_iter().filter(|role| !skip.contains(role)) {
         let mut rows = read_holders(root, project, role)?;
-        apply_ends(&mut rows, pending);
+        landed.extend(holders::apply_ends(&mut rows, pending));
         files.push(holders_file(role, &rows)?);
     }
     Ok(files)
 }
 
-/// Close the open rows `ends` name (same role, seat, instance and `from`).
-pub fn apply_ends(rows: &mut [Assignment], ends: &[Assignment]) {
-    for end in ends {
-        if let Some(row) = rows.iter_mut().find(|row| {
-            row.to.is_none()
-                && row.role == end.role
-                && row.seat == end.seat
-                && row.instance == end.instance
-                && row.from == end.from
-        }) {
-            row.to.clone_from(&end.to);
-            row.released_by.clone_from(&end.released_by);
-            row.release_why.clone_from(&end.release_why);
-        }
-    }
+/// What a write's build reports back: a warning, the pending ends its files
+/// carry, and the holding row it wrote.
+#[derive(Default)]
+struct Built {
+    warning: Option<String>,
+    landed: Vec<Assignment>,
+    row: Option<Assignment>,
 }
 
 fn store_refusal(written: &Written, error: &pij_core::error::PijError) -> Refusal {

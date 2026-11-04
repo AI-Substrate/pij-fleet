@@ -22,39 +22,106 @@ pub fn seat_role_for(role: &str) -> &'static str {
     }
 }
 
-/// The pairing ddocs cannot express: a closed row carries `to` and
+/// The checks ddocs cannot express. A closed row carries `to` and
 /// `released_by` together, an open row neither (plan 195, from docs-system).
+/// No two rows are the same holding (seat, instance and `from`), since that is
+/// the store's key.
 ///
 /// # Errors
 /// `E-RS-DIRECTORY-ROW` naming the role and seat.
 pub fn check_rows(role: &str, rows: &[Assignment]) -> Result<(), Refusal> {
-    match rows
+    if let Some(row) = rows
         .iter()
         .find(|row| row.to.is_some() != row.released_by.is_some())
     {
-        None => Ok(()),
-        Some(row) => Err(Refusal::new(
-            "E-RS-DIRECTORY-ROW",
+        return Err(Refusal::new(
+            E_ROW,
             format!(
                 "role {role:?}: the row for {} from {} must carry `to` and `released_by` together",
                 row.seat, row.from
             ),
-        )),
+        ));
+    }
+    for (index, row) in rows.iter().enumerate() {
+        if rows[..index].iter().any(|earlier| {
+            earlier.seat == row.seat && earlier.instance == row.instance && earlier.from == row.from
+        }) {
+            return Err(Refusal::new(
+                E_ROW,
+                format!(
+                    "role {role:?}: two rows for {} from {} are the same holding",
+                    row.seat, row.from
+                ),
+            )
+            .with_next("Give each row its own `from` on the governance branch, then rebuild"));
+        }
+    }
+    Ok(())
+}
+
+/// A holders row the writer will not accept.
+const E_ROW: &str = "E-RS-DIRECTORY-ROW";
+
+/// Now, in UTC to the millisecond, as holders documents write it
+/// (`2026-11-04T05:00:00.000Z`).
+pub fn now() -> String {
+    stamp(time::OffsetDateTime::now_utc())
+}
+
+fn stamp(at: time::OffsetDateTime) -> String {
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        at.year(),
+        u8::from(at.month()),
+        at.day(),
+        at.hour(),
+        at.minute(),
+        at.second(),
+        at.millisecond()
+    )
+}
+
+/// The `from` of a new holding of `seat` (and `instance`): now, moved on a
+/// millisecond at a time until no row in `rows` has it. `from` is part of a
+/// holding's identity, so an assign, release and reassign within one
+/// millisecond still makes two holdings. Call it under the writer lock, with
+/// the role's committed rows.
+pub fn fresh_from(rows: &[Assignment], seat: &str, instance: &str) -> String {
+    let mut at = time::OffsetDateTime::now_utc();
+    loop {
+        let from = stamp(at);
+        if !rows
+            .iter()
+            .any(|row| row.seat == seat && row.instance == instance && row.from == from)
+        {
+            return from;
+        }
+        at += time::Duration::milliseconds(1);
     }
 }
 
-/// Now, in UTC, as holders documents write it (`2026-11-04T05:00:00Z`).
-pub fn now() -> String {
-    let now = time::OffsetDateTime::now_utc();
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        now.year(),
-        u8::from(now.month()),
-        now.day(),
-        now.hour(),
-        now.minute(),
-        now.second()
-    )
+/// Close the open rows `ends` name (same role, seat, instance and `from`).
+/// Returns the rows those ends now describe, as written, for the store: ends
+/// applied here and ends the branch had already closed. An end whose holding
+/// is not in `rows` at all is left out, so it stays pending.
+pub fn apply_ends(rows: &mut [Assignment], ends: &[Assignment]) -> Vec<Assignment> {
+    let mut landed = Vec::new();
+    for end in ends {
+        if let Some(row) = rows.iter_mut().find(|row| {
+            row.role == end.role
+                && row.seat == end.seat
+                && row.instance == end.instance
+                && row.from == end.from
+        }) {
+            if row.to.is_none() {
+                row.to.clone_from(&end.to);
+                row.released_by.clone_from(&end.released_by);
+                row.release_why.clone_from(&end.release_why);
+            }
+            landed.push(row.clone());
+        }
+    }
+    landed
 }
 
 /// The holders document for `role` with `rows` in order.
@@ -236,12 +303,74 @@ mod tests {
     }
 
     #[test]
-    fn now_is_utc_to_the_second() {
-        let stamp = now();
-        assert_eq!(stamp.len(), 20, "{stamp}");
+    fn two_rows_for_one_holding_are_refused() {
+        let first = row("pij-a", "", Some("2026-11-04T06:00:00Z"));
+        let mut again = row("pij-a", "", None);
+        again.from.clone_from(&first.from);
+        let refusal = check_rows("reviewer", &[first.clone(), again.clone()]).unwrap_err();
+        assert_eq!(refusal.code, "E-RS-DIRECTORY-ROW");
         assert!(
-            stamp.ends_with('Z') && stamp.as_bytes()[10] == b'T',
+            refusal.message.contains("same holding"),
+            "{}",
+            refusal.message
+        );
+        again.instance = "114".into();
+        assert!(check_rows("reviewer", &[first, again]).is_ok());
+    }
+
+    #[test]
+    fn now_is_utc_to_the_millisecond() {
+        let stamp = now();
+        assert_eq!(stamp.len(), 24, "{stamp}");
+        assert!(
+            stamp.ends_with('Z') && stamp.as_bytes()[10] == b'T' && stamp.as_bytes()[19] == b'.',
             "{stamp}"
         );
+    }
+
+    #[test]
+    fn a_fresh_from_never_repeats_the_same_seats_holding() {
+        let mut rows = Vec::new();
+        for _ in 0..50 {
+            let mut next = row("pij-a", "", None);
+            next.from = fresh_from(&rows, "pij-a", "");
+            rows.push(next);
+        }
+        let mut froms: Vec<&str> = rows.iter().map(|row| row.from.as_str()).collect();
+        froms.sort_unstable();
+        froms.dedup();
+        assert_eq!(froms.len(), 50);
+    }
+
+    #[test]
+    fn ends_report_what_landed_and_leave_missing_holdings_pending() {
+        let open = row("pij-a", "", None);
+        let closed = row("pij-b", "", Some("2026-11-04T06:00:00Z"));
+        let mut rows = vec![open.clone(), closed.clone()];
+        let end = |seat: &str, from: &str| {
+            let mut end = row(seat, "", Some("2026-11-04T07:00:00Z"));
+            end.from = from.into();
+            end.release_why = Some("close".into());
+            end.end_pending = true;
+            end
+        };
+        let landed = apply_ends(
+            &mut rows,
+            &[
+                end("pij-a", &open.from),
+                end("pij-b", &closed.from),
+                end("pij-c", &open.from),
+            ],
+        );
+        assert_eq!(rows[0].release_why.as_deref(), Some("close"));
+        assert_eq!(
+            rows[1], closed,
+            "an already closed row keeps the branch's end"
+        );
+        assert_eq!(
+            landed, rows,
+            "pij-c's holding is not on the branch, so it stays pending"
+        );
+        assert!(landed.iter().all(|row| !row.end_pending));
     }
 }

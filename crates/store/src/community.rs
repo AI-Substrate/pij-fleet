@@ -287,6 +287,10 @@ impl SqliteOrchestration {
 
     /// Replace every holding in `project` with `rows`, in one transaction: the
     /// rebuild from the governance branch head.
+    ///
+    /// # Errors
+    /// `E-RS-DIRECTORY-ROW` when two rows are the same holding (role,
+    /// instance, seat and `from`); nothing is replaced.
     pub async fn replace_assignments(&self, project: &str, rows: &[Assignment]) -> Result<()> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
@@ -300,7 +304,16 @@ impl SqliteOrchestration {
                 .await
                 .map_err(adapter_error)?;
             for row in rows.iter().filter(|row| row.project == project) {
-                insert(&mut tx, row).await?;
+                if !insert(&mut tx, row).await? {
+                    tx.rollback().await.map_err(adapter_error)?;
+                    return Err(PijError::GovernanceRefused {
+                        code: "E-RS-DIRECTORY-ROW".to_string(),
+                        record: format!(
+                            "role {} seat {} instance {:?} from {}",
+                            row.role, row.seat, row.instance, row.from
+                        ),
+                    });
+                }
             }
             tx.commit().await.map_err(adapter_error)
         })

@@ -1702,4 +1702,15 @@ async fn community_assignments_record_end_rebuild_and_set_seat_roles_in_one_tran
     store.replace_assignments("pij", &recorded).await.unwrap();
     assert_eq!(store.assignments("pij").await.unwrap(), recorded);
     assert_eq!(store.assignments("other").await.unwrap().len(), 1);
+    let twice = [recorded.clone(), vec![recorded[0].clone()]].concat();
+    let refused = store.replace_assignments("pij", &twice).await.unwrap_err();
+    assert!(
+        matches!(&refused, PijError::GovernanceRefused { code, .. } if code == "E-RS-DIRECTORY-ROW"),
+        "{refused:?}"
+    );
+    assert_eq!(
+        store.assignments("pij").await.unwrap(),
+        recorded,
+        "a refused rebuild replaces nothing"
+    );
 }

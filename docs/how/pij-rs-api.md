@@ -894,7 +894,8 @@ role `pa`, `pm` for `pm` or `pm-<n>`, `worker` otherwise; a prime is never
 re-roled. Then it calls the after-assign hook (ruling C6), which s05 uses to
 drain the role queue. A second live holder of a one-holder role succeeds with
 `data.warning` `W-ONE-HOLDER`. The envelope carries `commit`, `path`, the `row`
-as written, `seat_role` and `flushed` (pending close-ends this write carried).
+as written, `seat_role` and `flushed` (pending close-ends this write carried to the branch;
+only those lose their pending mark).
 
 `pij directory release <role>[/<instance>] <seat> --why <text>` closes the row
 (`to`, `released_by`, `release_why`); seat roles are left as they are.
@@ -904,7 +905,8 @@ as written, `seat_role` and `flushed` (pending close-ends this write carried).
 pending first; each project's commit clears them. If the writer refuses (no
 governance worktree, a foreign edit), the close still tombstones, its receipt
 names the pending ends under `data.directory.pending` with the refusal, and the
-next directory write for that project (any verb) carries them to the branch.
+next directory write for that project (any verb, including an assign or release
+of the same role) carries them to the branch.
 Committed ends are under `data.directory.committed`. A seat with no holdings
 adds nothing to the receipt.
 
@@ -926,7 +928,11 @@ first use (req-16). Loans are not otherwise tracked.
 Holders rows are written so `to` and `released_by` always come together (ddocs
 cannot pair them; the writer refuses otherwise with `E-RS-DIRECTORY-ROW`).
 Release and close keep the assign's `why` and write their reason to
-`release_why`.
+`release_why`. Times are UTC to the millisecond (`2026-11-04T05:00:00.000Z`).
+A holding is its seat, instance and `from`, so the writer gives each new holding
+a `from` no earlier row of that seat and instance has (an assign, release and
+reassign in one second makes two rows). A rebuild refuses a holders document
+that records one holding twice with `E-RS-DIRECTORY-ROW`, and replaces nothing.
 
 | Refusal | When |
 |---|---|

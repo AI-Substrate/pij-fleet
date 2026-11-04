@@ -1361,3 +1361,8 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
     }
     rig.server.abort();
 }
+
+/// PR #122 review regressions (pij-substantial-mammal): same-role writes
+/// flush pending close-ends, and a same-second reassign keeps both holdings.
+#[path = "pr122_review/mod.rs"]
+mod review;
