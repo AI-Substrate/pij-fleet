@@ -58,3 +58,4 @@ From the #110 reviewer, approved by the prime. Add a back-pressure sensor that r
 ## Job 5 (queued 13:17): scrub the plan 175 files (ruling C19)
 
 After #111 merges. A small PR from origin/main: remove the private repository's name (and the `$HOME` path beside it) from `docs/plans/175-pij-skill-realign/assets/findings.md:135` and `assets/survey/prime-rituals.md:11,27`, replacing them with neutral wording ("the earlier private repo"). Then scan all of main for the name: 0 hits outside this PR's own diff. No plan needed; reviewer and security verdicts as usual. Send me the PR number and head.
+- Added 13:48 (security, prime): also scrub the private-repo references at AGENTS.md:76 and :79 (the POLICY-or-BRAKE worked example), keeping the example's meaning. Leave docs/difficulties.md:19 alone (it's public pij-fleet issue 35).

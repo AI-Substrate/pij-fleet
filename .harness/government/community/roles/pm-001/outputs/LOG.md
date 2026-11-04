@@ -48,3 +48,5 @@
 2026-11-04 note pr-111-review a83c73b pass-with-notes — anteater: F003 closed; CI green; awaiting security
 2026-11-04 note reviewers-retired - done — pij-ambitious-anteater (pid 54425) and pij-varied-fly (pid 14710) closed then killed; worktrees 111, 111b, 113 removed; 111c and 113b kept for security
 2026-11-04 deliverable review-114-packet d5fd8cf sent — reviewer pij-still-termite (window pij:review-114, worktree fleet-review-114, shared target dir); security + performance asked; disk 31 GB flagged to prime
+2026-11-04 note pr-111-security 75102c5 pass-with-notes — lynx; AGENTS.md:76,79 added to job 5 scrub; a83c73b delta still owed
+2026-11-04 note pr-114-head 0c6ea88 moved — marten added D-190-1 (docs only) after review start; verdict seats told to review d5fd8cf + delta, pin to 0c6ea88; head frozen
