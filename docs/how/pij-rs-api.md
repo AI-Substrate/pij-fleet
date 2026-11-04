@@ -809,7 +809,9 @@ the standing governance worktree's `.harness/government`, found as
 `harness/scripts/government-root.sh` finds it. The daemon is the only writer:
 
 1. It refuses before writing if any path it is about to write carries an edit it
-   did not make (modified, staged or untracked), or if the role already exists.
+   did not make (modified, staged or untracked), if that path or a directory
+   above it inside the worktree is a symlink (checked with lstat; files are then
+   opened with `O_NOFOLLOW`), or if the role already exists.
 2. It writes the document and has ddocs validate (`--depth 0`) and build it, by
    the absolute path resolved at daemon start.
 3. It commits in the standing governance worktree with `git add -- <its paths>`
@@ -854,6 +856,7 @@ envelope returns `data.commit`, `data.paths` (repo-relative), `data.roles` as
 | `E-RS-DDOCS-INVALID` | ddocs rejected a document; the message is ddocs' own, prefixed with the path | — |
 | `E-RS-GOV-FOREIGN-EDIT` | a path the write needs carries an edit pij did not make | commit or remove those edits |
 | `E-RS-GOV-LOCKED` | the worktree's `index.lock` stayed held through about 1.5 s of retries; pij never removes it | let that git command finish |
+| `E-RS-GOV-SYMLINK` | a path the write needs (the role, its `.dd.md`, a schema copy) is, or sits under, a symlink inside the governance worktree; a clean tracked link is no foreign edit to git, but writing through it could land outside the worktree | replace the link with a real file or directory |
 | `E-RS-DIRECTORY-EXISTS` | `directory add` named a role that already exists | — |
 | `E-RS-ROLE-BRIEF-MISSING` | a standing packet's `brief` is not a readable file inside the governance worktree; names the role and the brief | commit the brief first, or use `--packet` |
 | `E-RS-GOV-GIT` | another git failure | — |

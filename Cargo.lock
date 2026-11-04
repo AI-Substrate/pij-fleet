@@ -1252,6 +1252,7 @@ dependencies = [
  "globset",
  "hostname",
  "hyper-util",
+ "nix",
  "pij-core",
  "pij-harnesses",
  "pij-sidecars",

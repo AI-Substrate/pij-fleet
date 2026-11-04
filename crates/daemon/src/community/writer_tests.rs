@@ -488,3 +488,112 @@ fn a_brief_that_is_not_a_file_inside_the_worktree_refuses_the_whole_batch_before
         )
         .expect("an existing brief inside the worktree lands");
 }
+
+// Review of #114, S1 (pij-wary-lynx): a clean, tracked symlink is no foreign
+// edit to git, so the writer itself refuses any destination that is, or sits
+// under, a symlink. Nothing may land outside the worktree, and the link stays.
+
+fn commit_link(scratch: &Scratch, at: &str, to: &Path) {
+    let link = scratch.gov.join(at);
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(to, &link).unwrap();
+    scratch.git(&scratch.gov, &["add", at]);
+    scratch.git(&scratch.gov, &["commit", "-q", "-m", "link"]);
+}
+
+fn assert_refused_untouched(
+    scratch: &Scratch,
+    refusal: Refusal,
+    link: &str,
+    outside: &Path,
+    start: &str,
+) {
+    assert_eq!(refusal.code, crate::community::E_GOV_SYMLINK, "{refusal}");
+    assert!(refusal.message.contains(link), "{refusal}");
+    assert_eq!(head(scratch), start);
+    assert_eq!(status(scratch), "");
+    assert!(
+        std::fs::symlink_metadata(scratch.gov.join(link))
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the tracked link survives"
+    );
+    let escaped: Vec<_> = std::fs::read_dir(outside)
+        .map(|entries| entries.map(|entry| entry.unwrap().path()).collect())
+        .unwrap_or_default();
+    assert!(escaped.is_empty(), "written outside the root: {escaped:?}");
+}
+
+#[test]
+fn a_dangling_tracked_symlink_at_the_destination_refuses_and_nothing_escapes() {
+    let scratch = Scratch::new("pij-writer-link-file");
+    let outside = scratch.root.join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    let link = ".harness/government/community/roles/qa/role.dd.json";
+    commit_link(&scratch, link, &outside.join("role.json"));
+    let start = head(&scratch);
+    let refusal = writer(vec![], &LOCK_RETRY)
+        .write(&scratch.main, role("qa", "{}"), "add")
+        .unwrap_err();
+    assert_refused_untouched(&scratch, refusal, link, &outside, &start);
+}
+
+#[test]
+fn a_symlinked_ancestor_directory_refuses_and_nothing_escapes() {
+    let scratch = Scratch::new("pij-writer-link-dir");
+    let outside = scratch.root.join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    let link = ".harness/government/community/roles/qa";
+    commit_link(&scratch, link, &outside);
+    let start = head(&scratch);
+    let refusal = writer(vec![], &LOCK_RETRY)
+        .write(&scratch.main, role("qa", "{}"), "add")
+        .unwrap_err();
+    assert_refused_untouched(&scratch, refusal, link, &outside, &start);
+}
+
+/// The rendered sibling and a schema copy are destinations too: a link at
+/// either refuses the whole write before the role document is written.
+#[test]
+fn a_symlinked_rendered_sibling_or_schema_copy_refuses_before_anything_is_written() {
+    for (name, link, schemas) in [
+        (
+            "pij-writer-link-md",
+            ".harness/government/community/roles/qa/role.dd.md",
+            vec![],
+        ),
+        (
+            "pij-writer-link-schema",
+            ".dd/schemas/pij/role/schema.json",
+            vec![(PathBuf::from(".dd/schemas/pij/role/schema.json"), SCHEMA)],
+        ),
+        (
+            "pij-writer-link-schema-dir",
+            ".dd",
+            vec![(PathBuf::from(".dd/schemas/pij/role/schema.json"), SCHEMA)],
+        ),
+    ] {
+        let scratch = Scratch::new(name);
+        let outside = scratch.root.join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        let target = if link == ".dd" {
+            outside.clone()
+        } else {
+            outside.join("target")
+        };
+        commit_link(&scratch, link, &target);
+        let start = head(&scratch);
+        let refusal = writer(schemas, &LOCK_RETRY)
+            .write(&scratch.main, role("qa", "{}"), "add")
+            .unwrap_err();
+        assert!(
+            !scratch
+                .gov
+                .join(".harness/government/community/roles/qa/role.dd.json")
+                .exists(),
+            "{name}: the role document was written"
+        );
+        assert_refused_untouched(&scratch, refusal, link, &outside, &start);
+    }
+}

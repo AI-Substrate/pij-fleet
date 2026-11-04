@@ -63,6 +63,8 @@ pub const E_DDOCS_INVALID: &str = "E-RS-DDOCS-INVALID";
 pub const E_FOREIGN_EDIT: &str = "E-RS-GOV-FOREIGN-EDIT";
 /// The governance worktree's index stayed locked past the retry window.
 pub const E_GOV_LOCKED: &str = "E-RS-GOV-LOCKED";
+/// A destination, or a directory above it, is a symlink.
+pub const E_GOV_SYMLINK: &str = "E-RS-GOV-SYMLINK";
 /// A git command the writer needs failed.
 pub const E_GOV_GIT: &str = "E-RS-GOV-GIT";
 /// A role's standing packet names a brief that is not a readable file in the

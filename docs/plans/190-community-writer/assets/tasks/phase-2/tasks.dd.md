@@ -49,6 +49,7 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 | tk-000c | Writer enforces the standing_packet pairing (pm-001, from docs-system) | — | ph-ebe5 | [x] checked | — | — | [tk-000c](tasks.dd.md#done-when) | ddocs has no union type, so the writer refuses an inline packet without text or with a brief, and a brief packet without a brief or with text. | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) |
 | tk-000d | Biome-format PRD 001 after the phase 1 merge (pm-001) | — | ph-ebe5 | [x] checked | — | — | [tk-000d](tasks.dd.md#done-when) | PRD 001's JSON is Biome-formatted and still validates. | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
 | tk-000e | Review fixes F001 and F002 (#114, pij-still-termite) | — | ph-ebe5 | [x] checked | — | — | [tk-000e](tasks.dd.md#done-when) | F001: a standing packet's brief must be a readable file inside the governance worktree, checked before any write. F002: a PATH-found ddocs is kept as an absolute path. | Verdict: pij-governance community/roles/reviewer/outputs/2026-11/pr-114-verdict.md. The reviewer's regression tests are kept in writer_tests.rs. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) |
+| tk-000f | Security fix S1: no writes through symlinks (#114, pij-wary-lynx) | — | ph-ebe5 | [x] checked | — | — | [tk-000f](tasks.dd.md#done-when) | Every destination and its ancestors inside the governance worktree are checked with lstat; files open with O_NOFOLLOW; rollback restores only regular files. | Report: pij-governance community/roles/security/outputs/2026-11-04-pr-114-d5fd8cf-security.md. F002 was confirmed by security too and is fixed in tk-000e. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) |
 
 <a id="done-when"></a>
 
@@ -144,6 +145,12 @@ Context brief. Purpose: the daemon-side community writer and `pij directory add`
 | --- | --- | --- | --- | --- |
 | dw-0014 | A batch holding a role whose brief is missing, outside the worktree, absolute, a directory or a symlink out of it refuses E-RS-ROLE-BRIEF-MISSING, naming the role and brief, and HEAD, the index and the worktree are unchanged; an existing brief lands. | [x] checked | writer_tests: a_brief_that_is_not_a_file_inside_the_worktree_refuses_the_whole_batch_before_writing, review_real_ddocs_missing_brief_refuses_entire_batch, review_real_ddocs_existing_brief_control; both fail with the check removed | [bp-0002](../../backpressure.dd.md#rows) |
 | dw-0015 | A ddocs found through a relative (tools, ./tools) or empty PATH entry is kept as an absolute path and launches with the governance worktree as cwd. | [x] checked | ddocs tests: a_relative_or_empty_path_entry_resolves_absolutely_and_launches_from_another_cwd; fails with the absolutizing removed | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-000f
+
+| id | assertion | state | receipt | pressure |
+| --- | --- | --- | --- | --- |
+| dw-0016 | A clean tracked symlink at the destination, at an ancestor directory, at the rendered .dd.md, at a schema copy or at .dd refuses E-RS-GOV-SYMLINK; HEAD, status and the link are unchanged and nothing is written outside the governance worktree. | [x] checked | writer_tests: a_dangling_tracked_symlink_at_the_destination_refuses_and_nothing_escapes, a_symlinked_ancestor_directory_refuses_and_nothing_escapes, a_symlinked_rendered_sibling_or_schema_copy_refuses_before_anything_is_written; all three fail with the check removed | [bp-0002](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

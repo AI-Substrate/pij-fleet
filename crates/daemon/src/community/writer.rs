@@ -11,7 +11,9 @@
 //! Nothing runs on a timer.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::io::Write as _;
+use std::os::unix::fs::OpenOptionsExt as _;
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,7 +21,7 @@ use super::ddocs::Validator;
 use super::git::{Locks, git};
 use super::layout::{self, rendered};
 use super::root::{self, GovernanceRoot};
-use super::{E_FOREIGN_EDIT, E_GOV_GIT, E_GOV_LOCKED, Refusal};
+use super::{E_FOREIGN_EDIT, E_GOV_GIT, E_GOV_LOCKED, E_GOV_SYMLINK, Refusal};
 
 /// How long to wait for a held `index.lock` before refusing: the waits between
 /// attempts. Never forced.
@@ -140,6 +142,9 @@ impl CommunityWriter {
         paths.sort();
         paths.dedup();
 
+        for path in &paths {
+            confined(&top, path)?;
+        }
         let foreign = foreign_edits(&top, &paths)?;
         if !foreign.is_empty() {
             return Err(Refusal::new(
@@ -156,7 +161,7 @@ impl CommunityWriter {
         }
         for file in &files {
             if let Existing::Refuse(refusal) = &file.existing
-                && top.join(&file.path).exists()
+                && std::fs::symlink_metadata(top.join(&file.path)).is_ok()
             {
                 return Err(refusal.clone());
             }
@@ -172,7 +177,9 @@ impl CommunityWriter {
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| io_refusal(&target, &error))?;
             }
-            std::fs::write(&target, &file.bytes).map_err(|error| io_refusal(&target, &error))?;
+            // Again, now the directories exist, then a no-follow open.
+            confined(&top, &file.path)?;
+            write_no_follow(&target, &file.bytes).map_err(|error| io_refusal(&target, &error))?;
         }
         for file in files.iter().filter(|file| file.document) {
             self.validator
@@ -280,6 +287,59 @@ fn run<S: AsRef<str>>(top: &Path, args: &[S], locks: Locks) -> Result<String, Re
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Refuse a destination that is, or sits under, a symlink inside the
+/// governance worktree, checked with lstat so no link is followed (review of
+/// #114, S1). A clean tracked symlink is no foreign edit to git, yet writing
+/// through it would land outside the worktree.
+fn confined(top: &Path, path: &Path) -> Result<(), Refusal> {
+    let mut current = top.to_path_buf();
+    for part in path.components() {
+        let Component::Normal(name) = part else {
+            return Err(Refusal::new(
+                E_GOV_SYMLINK,
+                format!(
+                    "{} is not a plain path inside the governance worktree; pij wrote nothing",
+                    path.display()
+                ),
+            ));
+        };
+        current.push(name);
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                let link = current.strip_prefix(top).unwrap_or(&current);
+                return Err(Refusal::new(
+                    E_GOV_SYMLINK,
+                    format!(
+                        "{} passes through the symlink {}, so pij wrote nothing",
+                        path.display(),
+                        link.display()
+                    ),
+                )
+                .with_next(format!(
+                    "Replace {} with a real file or directory in {}, then retry.",
+                    link.display(),
+                    top.display()
+                )));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(io_refusal(&current, &error)),
+        }
+    }
+    Ok(())
+}
+
+/// Write a whole file without following a symlink at its final component.
+fn write_no_follow(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
+        .open(target)?
+        .write_all(bytes)
+}
+
 /// ddocs' refusal of one document in a write of several, naming which.
 fn naming(mut refusal: Refusal, path: &Path) -> Refusal {
     if refusal.code == super::E_DDOCS_INVALID {
@@ -311,7 +371,15 @@ impl Undo {
             top: top.to_path_buf(),
             before: paths
                 .iter()
-                .map(|path| (path.clone(), std::fs::read(top.join(path)).ok()))
+                .map(|path| {
+                    // lstat: only a regular file is content to restore.
+                    let target = top.join(path);
+                    let bytes = std::fs::symlink_metadata(&target)
+                        .ok()
+                        .filter(std::fs::Metadata::is_file)
+                        .and_then(|_| std::fs::read(&target).ok());
+                    (path.clone(), bytes)
+                })
                 .collect(),
             staged: false,
             committed: false,
@@ -337,7 +405,7 @@ impl Drop for Undo {
             let target = self.top.join(path);
             match bytes {
                 Some(bytes) => {
-                    let _ = std::fs::write(&target, bytes);
+                    let _ = write_no_follow(&target, bytes);
                 }
                 None => {
                     let _ = std::fs::remove_file(&target);
