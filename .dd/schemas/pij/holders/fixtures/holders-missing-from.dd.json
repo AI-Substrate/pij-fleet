@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "docs-system"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"seat": "pij-careful-heron",
+					"harness": "copilot",
+					"harness_session": "0b1c2d3e-0000-4000-8000-000000000002",
+					"machine": "studio",
+					"assigned_by": "pij-far-jackal",
+					"why": "Took over from a renamed seat (seat names are machine-wide, C13)."
+				}
+			]
+		}
+	],
+	"references": []
+}
