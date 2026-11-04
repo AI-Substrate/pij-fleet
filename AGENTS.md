@@ -150,7 +150,7 @@ citation disputes, all of which resolved as neither party being wrong.)
 3. Smoke: `just smoke` before merging.
 4. **Before declaring any task done — or before ship — run `harness checks`.**
    The engineering-harness gate: it runs the full deterministic **signal
-   inventory** (local-path portability → typecheck → lockfile allowlist → lint →
+   inventory** (local-path portability → project docs (ddocs) → typecheck → lockfile allowlist → lint →
    test → Copilot native contracts → Rust gate → smoke → commit-trailer
    attribution) as individual stages and reports a per-sensor verdict — and
    unlike `just self-check` it runs **all** sensors, so one invocation surfaces
