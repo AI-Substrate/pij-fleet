@@ -160,6 +160,19 @@ pub trait Spine: Send + Sync {
     /// a wrapper that forgot to delegate would silently bring it back.
     async fn newest(&self) -> Result<Seq>;
 
+    /// The highest-sequence event of one seat, of any kind, or `None`.
+    ///
+    /// One seek on the `(seat, seq)` index. Required, not defaulted to
+    /// `tail(Some(seat), ..).last()`: that reads the seat's whole history, and
+    /// one seat held 3.59M junk rows (issue #119).
+    async fn latest(&self, seat: &SeatId) -> Result<Option<Event>>;
+
+    /// At most `limit` of one seat's events after `since`, oldest first.
+    ///
+    /// A keyset page on the `(seat, seq)` index, so its cost follows `limit`,
+    /// never the seat's history. Required for the reason [`Self::tail_page`] is.
+    async fn seat_page(&self, seat: &SeatId, since: Seq, limit: usize) -> Result<Vec<Event>>;
+
     /// Latest event for one mandatory seat matching any non-empty `kinds`.
     ///
     /// Mandatory seat scope is the load-bearing bound: callers cannot ask an

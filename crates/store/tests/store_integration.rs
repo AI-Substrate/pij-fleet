@@ -819,6 +819,79 @@ async fn all_matching_seeks_seat_and_kind_whatever_else_the_seat_has() {
     }
 }
 
+/// Issue #119: the seat seeks the anomalies, node show and spine events reads
+/// now use stay on an index whatever else the seat holds. `latest_matching` is
+/// one `(seat, kind)` seek per kind: as one `kind IN (..)` statement the planner
+/// walked `spine_by_seat` newest-first, here 20,000 `bg.lost` rows deep.
+#[tokio::test]
+async fn seat_latest_page_and_latest_matching_seek_their_index() {
+    for analyze in [false, true] {
+        let (_fresh, pool) = skewed_seat_history(analyze).await;
+        assert_eq!(
+            plan_of(&pool, pij_store::spine::SEAT_LATEST_SQL, &["pij-history"]).await,
+            vec!["SEARCH spine_events USING INDEX spine_by_seat (seat=?)".to_string()],
+            "analyzed={analyze}"
+        );
+        let page = format!(
+            "EXPLAIN QUERY PLAN {}",
+            pij_store::spine::SEAT_PAGE_SQL
+        );
+        let page_plan = sqlx::query(&page)
+            .bind("pij-history")
+            .bind(0_i64)
+            .bind(500_i64)
+            .fetch_all(&pool)
+            .await
+            .expect("plan")
+            .iter()
+            .map(|row| row.get::<String, _>("detail"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            page_plan,
+            vec!["SEARCH spine_events USING INDEX spine_by_seat (seat=? AND seq>?)".to_string()],
+            "analyzed={analyze}"
+        );
+        assert_eq!(
+            plan_of(
+                &pool,
+                pij_store::spine::LATEST_MATCHING_SQL,
+                &["pij-history", "report.now"]
+            )
+            .await,
+            vec![
+                "SEARCH spine_events USING INDEX spine_by_seat_kind (seat=? AND kind=?)"
+                    .to_string()
+            ],
+            "analyzed={analyze}"
+        );
+        let spine = SqliteSpine::new(pool);
+        let seat = SeatId::from("pij-history");
+        let latest = spine
+            .latest_matching(&seat, &["delivery.outcome", "delivery.held"])
+            .await
+            .expect("latest matching")
+            .expect("a match");
+        assert_eq!(
+            (latest.kind.as_str(), latest.at),
+            ("delivery.held", 4),
+            "the highest sequence across the kinds wins, whatever their order"
+        );
+        assert!(
+            spine
+                .latest_matching(&seat, &["report.now", "seat.put"])
+                .await
+                .expect("no match")
+                .is_none(),
+            "kinds the seat never wrote match nothing"
+        );
+        assert_eq!(
+            spine.latest(&seat).await.expect("latest").map(|event| event.at),
+            Some(4),
+            "the seat's newest row is its last append"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_seat_round_trips_with_every_optional_fact_intact() {
     let fresh = FreshStore::new();
