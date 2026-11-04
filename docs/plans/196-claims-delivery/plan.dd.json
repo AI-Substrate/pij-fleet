@@ -1,0 +1,210 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Number claims and delivery at merge",
+        "slug": "claims-delivery",
+        "ordinal": 196,
+        "complexity": "CS-3",
+        "summary": "Roadmap 001 step s11. `pij claim <kind>` hands out the next number per project and kind with the claiming seat on record, so parallel PMs never collide; and `pij delivered <pr>`, run by whoever merges (ruling C23), records which requirements and steps a merged PR delivered, puts it on the owning PM's card, and prints the ddocs edits for the PM's next docs PR.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Numbers (plans, PRDs, roadmaps, blueprints, migrations) are handed out by hand today: pm-001 checks folders and branches and logs claims in a markdown LOG, and harness builder only sees local worktrees. Requirement and step states lag the code because nobody records delivery at merge. This plan adds a store-backed claim verb and a merge-time delivery verb. Per ruling C23, delivery is a verb the merger runs once (no poll, no webhook), and pij never pushes: it prints the `ddocs set` edits that fill `delivered_by`, and the PM puts them in its next docs PR."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Two seats claiming the same kind at once always get different numbers, and every claim names its seat.",
+        "A claim is released when its work merges or its seat closes.",
+        "After a merge, one command records what the PR delivered and tells the owning PM, without any polling."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Editing the project docs from the daemon: pij prints the edits and never commits or pushes them (C23).",
+        "A GitHub webhook or any periodic check of PR state.",
+        "Changing how plans are scaffolded (harness plan new keeps its --ordinal flag; the claim supplies the number)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Claim. `pij claim <kind> [--project <slug>] --for <subject>` returns the next number for (project, kind) and records it with the claiming seat, subject and time in the store (migration 0033). Known kinds and their widths: plan, prd, roadmap, blueprint (3 digits), migration (4 digits); any other lowercase kind is accepted with 3 digits. The next number is one more than the highest of: the numbers already claimed for that kind, and the numbers already present in the project's main checkout (docs/plans/NNN-*, docs/project/prds|roadmaps|blueprints/NNN-*, crates/store/migrations/NNNN_*), read in-process with no launch.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "No collisions. Ten concurrent claims for one (project, kind) get ten distinct consecutive numbers, under one store write transaction each (BEGIN IMMEDIATE) and a unique (project, kind, number) key. Claims for two projects never interact.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Release. A claim is released (kept as history with released-at and reason) when its seat is tombstoned (hooked into publish_tombstone, the one path for close, reap and revive), when `pij delivered` sees the number land on main, or by `pij claim release <kind> <number>` from the claiming seat or the prime. A released number is never handed out again. `pij claims [--project]` lists open and released claims.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Delivered (ruling C23). `pij delivered <pr> [--project <slug>]` reads the merged PR once with gh (resolved like ddocs: PIJ_GH, else PATH, absolute, once at daemon start; tests inject a fake), refuses by name if the PR is not merged, and takes the delivered addresses from the PR body's `Delivers:` line (full ddocs addresses such as `docs/project/prds/001-pij-community.dd.json#requirements/req-07` and roadmap step addresses). It records (project, PR, address, merge commit, recorded by, time) in the store, idempotently.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Edits printed, never applied. `pij delivered` prints, and returns in --json, the exact `ddocs set` commands that set `delivered_by` on each delivered requirement and the plan cell on each step, for the PM's next docs PR. It writes no project file, commits nothing and pushes nothing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "The PM's card. The delivery is posted on the owning PM's card within one event: the PM is the live holder of the project's `pm-<roadmap number>` role when s04's assignments exist, else the seat given by `--pm <seat>`; with neither, the receipt says no PM was told. Claims whose numbers appear in the PR's files are released (AC3).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Convention. The pij skill's community procedures (skills/pij/references/community/) say how to claim a number, and that every PR body carries a `Delivers:` line; the PR template gains the line. The procedures stop telling PMs to ask pm-001 for numbers.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Cost. `pij claim` and `pij claims` launch nothing (store and in-process directory reads). `pij delivered` costs one gh launch per call by absolute path, recorded by the spawn counter and covered by spawn_sites.rs. Nothing runs on a timer.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0009",
+          "claim": "Docs and states. docs/how/pij-rs-api.md documents both verbs and their refusals; the skill's verb coverage and shim tables carry them. In this PR: roadmap s11 goes to complete with its plan cell set to docs/plans/196-claims-delivery; req-20 and req-21 go to shipped; c-claims and c-merge-delivery go to shipped. All project docs validate clean.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-96a1",
+          "title": "Claims and delivery at merge",
+          "state": "unchecked",
+          "brief": "AC1 to AC9. One coder. Migration 0033 (claims and deliveries); `pij claim`, `pij claims`, `pij claim release`; the tombstone hook; `pij delivered` with an injected gh; the printed edits; the PM card post; skill procedures and PR template; docs and flips. AC6's holder lookup uses s04's assignments if plan 195 has merged; otherwise `--pm` only, and AC6 is checked against that. CS-3.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code facts (2026-11-04, main 6ccd4d8): no GitHub API, webhook or merge hook anywhere; the daemon never calls gh (reqwest is a dependency but unused for PRs). No project-scoped counter exists; streams.ordinal (crates/store/src/orchestration.rs:412-439) shows the reserve-under-BEGIN-IMMEDIATE pattern with ON CONFLICT DO NOTHING; begin_write is crates/store/src/migrate.rs:267-268. Seat card: POST /v1/state -> seat_state (crates/daemon/src/http/mod.rs:636, 2682); report handler at mod.rs:3563. Tombstone: publish_tombstone in crates/store/src/registry.rs:48-99 (close, reap and revive all pass through it). Schemas: pij/prd requirement rows have optional `delivered_by` (.dd/schemas/pij/prd/schema.json:143-183); roadmap steps have state, plan and delivers (.dd/schemas/pij/roadmap/schema.json:66-118). Latest migration 0031; 0032 is claimed by plan 195, 0033 by this plan."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": [
+        {
+          "question": "Ruled C23: delivery is a verb the merger runs (`pij delivered <pr>`), printing the ddocs edits for the PM's docs PR; no poll, no webhook, pij never pushes.",
+          "state": "checked",
+          "answer": "C23, folded into AC4 and AC5."
+        },
+        {
+          "question": "Should `pij claim` also scan remote branches for numbers already used there (the gap that made harness builder miss plans on other branches)? Recommended: no. Scanning needs git launches; from this plan on, claims are the authority, and the main checkout scan covers merged work.",
+          "state": "unchecked"
+        }
+      ]
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A PR body without a `Delivers:` line records nothing and nobody notices.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "`pij delivered` refuses by name when the line is missing, and the PR template carries it (AC7)."
+        },
+        {
+          "risk": "gh missing or unauthenticated on the merger's machine.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "Named refusal with the install or auth step; doctor reports the gh pij will use."
+        },
+        {
+          "risk": "Numbers used by work in flight before claims existed collide with the first claims.",
+          "likelihood": "Low",
+          "impact": "Medium",
+          "mitigation": "The main-checkout scan plus pm-001 importing today's LOG claims (plans 190 to 196, migrations 0031 to 0033) with `pij claim` at first use."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use a private daemon, a scratch store and a fake gh; never the prod daemon or a real PR.",
+        "Builds scoped with -p; check `df -h /System/Volumes/Data` first; stop and tell pm-001 under 25 GB.",
+        "No `git add -A`, no `--no-verify`, never push refs/notes/*. No node_modules: TS proof is CI on the exact head.",
+        "One push per review round; no pushes after a PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
