@@ -26,3 +26,7 @@
 
 2026-11-04 verdict pr:118 868e830398b3bcba4f1c6361a9920745723266b4 pass-with-notes - Two-file docs delta clear; writer still validates all batch documents before render/stage/commit with rollback, no safety bypass; unchanged same-user TOCTOU note retained; governance through 0e159a7c checked; 2026-11-04-pr-118-868e830-security.md.
 
+2026-11-04 verdict pr:120 43821d5ba66ad7e6f46a976785d393f9f4af0c15 pass-with-notes - Product filters/SQL/bounds preserved; in-memory paging and identical-tree CI proof, parser checks static; anomaly history not absolutely capped; separate governance C21 blocker; 2026-11-04-pr-120-43821d5-security.md.
+
+2026-11-04 note prime-governance 4f87bd7168b5ed569fae949d572713b3721c59d5 block - Delivery memory 2026-11-04-daemon-6.5gb-peak-is-anomalies-fold.md:7,12 publishes concrete personal DB/session paths; retained unchanged at 05c57b84f43d5470843eb0218f0d64430ad691ef; values omitted; same report.
+

@@ -30,3 +30,5 @@
 
 2026-11-04 verdict pr-118 868e830398b3bcba4f1c6361a9920745723266b4 pass-with-notes - nine difficulty rows and writer procedure corroborated; P3 unstamped-input and discovery-cwd qualifications; schema positive/negative controls and seven privacy controls pass, all four exact-head CI jobs green; local quick gate tooling-limited, no builds or cargo.
 
+2026-11-04 review-paused pr-120 43821d5ba66ad7e6f46a976785d393f9f4af0c15 incomplete - six focused tests and exact-head CI pass; no correctness finding; required scratch mutation stopped before cargo because disk fell to 24 GiB while waiting for the shared lock. Not a pass or merge approval.
+
