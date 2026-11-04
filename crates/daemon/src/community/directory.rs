@@ -233,6 +233,88 @@ impl DirectoryService {
         )
     }
 
+    /// `pij directory external add` (AC9, req-16): one dated entry in
+    /// `community/external.dd.json`, created on first use. Loans are not
+    /// otherwise tracked.
+    ///
+    /// # Errors
+    /// Any writer refusal; nothing is written.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn external_add(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        seat: &str,
+        from_project: &str,
+        role: Option<&str>,
+        note: &str,
+        actor: &SeatId,
+    ) -> Result<(Written, Value), Refusal> {
+        let mut entry = serde_json::json!({
+            "date": holders::now(), "seat": seat, "from_project": from_project,
+            "note": note, "by": actor.to_string(),
+        });
+        if let Some(role) = role {
+            entry["role"] = serde_json::json!(role);
+        }
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: external {seat} from {from_project}\n\n{note}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+        );
+        let (project_id, flush, added) = (project.to_string(), pending.clone(), entry.clone());
+        let (written, _) = self
+            .commit(repo, message, move |root, _| {
+                let path = std::path::Path::new(super::layout::EXTERNAL);
+                let mut document = match std::fs::read(root.worktree.join(path)) {
+                    Ok(bytes) => serde_json::from_slice::<Value>(&bytes).map_err(|error| {
+                        Refusal::new(
+                            E_GOV_GIT,
+                            format!("{} is not JSON: {error}", path.display()),
+                        )
+                    })?,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        serde_json::json!({
+                            "dd": {"schema": "pij/external"},
+                            "sections": [
+                                {"name": "meta", "value": {"project": project_id}},
+                                {"name": "entries", "value": []},
+                            ],
+                            "references": [],
+                        })
+                    }
+                    Err(error) => {
+                        return Err(Refusal::new(
+                            E_GOV_GIT,
+                            format!("cannot read {}: {error}", path.display()),
+                        ));
+                    }
+                };
+                let entries = document["sections"]
+                    .as_array_mut()
+                    .and_then(|sections| {
+                        sections
+                            .iter_mut()
+                            .find(|section| section["name"] == "entries")
+                    })
+                    .and_then(|section| section["value"].as_array_mut())
+                    .ok_or_else(|| {
+                        Refusal::new(E_GOV_GIT, "external.dd.json has no entries section")
+                    })?;
+                entries.push(added);
+                let mut files = vec![NewFile {
+                    path: path.to_path_buf(),
+                    bytes: role::to_bytes(&document),
+                    document: true,
+                    existing: Existing::Replace,
+                }];
+                files.extend(flush_files(root, &project_id, &flush, &[])?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&pending, &written).await?;
+        Ok((written, entry))
+    }
+
     /// Any other directory write (`directory add`): `files` plus the project's
     /// pending close-ends, in one commit.
     ///
@@ -661,6 +743,7 @@ fn holders_mode(root: &GovernanceRoot, role: &str) -> Result<String, Refusal> {
 }
 
 fn holders_file(role: &str, rows: &[Assignment]) -> Result<NewFile, Refusal> {
+    holders::check_rows(role, rows)?;
     let paths = RolePaths::new(role)?;
     Ok(NewFile {
         path: paths.holders,

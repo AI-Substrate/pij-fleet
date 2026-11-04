@@ -143,6 +143,11 @@ async fn daemon() -> (SocketAddr, tokio::task::JoinHandle<()>, FreshStore) {
 }
 
 async fn rig(hook: Arc<dyn AfterAssign>) -> Rig {
+    let writer = CommunityWriter::new(Arc::new(FakeDdocs), vec![], &LOCK_RETRY);
+    rig_with(hook, writer).await
+}
+
+async fn rig_with(hook: Arc<dyn AfterAssign>, writer: CommunityWriter) -> Rig {
     let fresh = FreshStore::new();
     let config = Config {
         adapters: Adapters {
@@ -158,11 +163,7 @@ async fn rig(hook: Arc<dyn AfterAssign>) -> Rig {
     let mut services = pij_daemon::build_services(&config, &signals)
         .await
         .expect("services");
-    let writer = Arc::new(CommunityWriter::new(
-        Arc::new(FakeDdocs),
-        vec![],
-        &LOCK_RETRY,
-    ));
+    let writer = Arc::new(writer);
     let store = services.directory.store().clone();
     services.community = Arc::clone(&writer);
     let tmux = Arc::new(FakeTmux::new());
@@ -1191,5 +1192,161 @@ async fn a_linked_worktree_finds_its_project_and_an_unknown_repo_names_the_regis
         "{refused}"
     );
     let _ = std::fs::remove_dir_all(stranger);
+    rig.server.abort();
+}
+
+/// AC9 (req-16): external entries append to community/external.dd.json.
+#[tokio::test]
+async fn external_add_creates_then_appends_dated_entries() {
+    let repo = repo("pij-directory-external");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    for seat in ["pij-visitor", "a borrowed reviewer"] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "external",
+                "add",
+                seat,
+                "--from-project",
+                "osk",
+                "--role",
+                "reviewer",
+                "--why",
+                "on loan for #120",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+        assert_eq!(
+            added["data"]["path"],
+            ".harness/government/community/external.dd.json"
+        );
+    }
+    let text = git(
+        &repo.gov,
+        &[
+            "show",
+            "HEAD:.harness/government/community/external.dd.json",
+        ],
+    );
+    let document: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(document["dd"]["schema"], "pij/external");
+    let entries = document["sections"][1]["value"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        (
+            entries[0]["seat"].as_str(),
+            entries[0]["from_project"].as_str(),
+            entries[0]["by"].as_str(),
+            entries[0]["role"].as_str()
+        ),
+        (
+            Some("pij-visitor"),
+            Some("osk"),
+            Some(SEAT),
+            Some("reviewer")
+        )
+    );
+    let refused = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "external", "add", "x", "--why", "w"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(refused["details"]["code"], "E-RS-ARG", "{refused}");
+    rig.server.abort();
+}
+
+/// AC1's Rust half and AC2/AC9 with the real ddocs and the embedded schemas:
+/// role, holders and external documents written by pij validate and build.
+/// Names its skip when ddocs is absent (CI).
+#[tokio::test]
+async fn real_ddocs_validates_what_assign_release_and_external_write() {
+    let ddocs = pij_daemon::community::ddocs::Ddocs::from_env();
+    if ddocs.path().is_none() {
+        eprintln!(
+            "SKIP real_ddocs_validates_what_assign_release_and_external_write: ddocs is not installed here"
+        );
+        return;
+    }
+    let repo = repo("pij-directory-real-ddocs");
+    let writer = CommunityWriter::new(
+        Arc::new(ddocs),
+        pij_daemon::community::layout::schema_copies(),
+        &LOCK_RETRY,
+    );
+    let rig = rig_with(Arc::new(NoHook), writer).await;
+    let main = repo.main.to_str().unwrap();
+    call(
+        rig.addr,
+        "/v1/project",
+        &["project", "create", "fleet", "--repo", main],
+        &repo.main,
+    )
+    .await;
+    for argv in [
+        &[
+            "directory",
+            "add",
+            "reviewer",
+            "--title",
+            "Reviewer",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "per-task",
+            "--holders",
+            "many",
+            "--rule",
+            "Review each PR.",
+            "--packet",
+            "You review.",
+            "--why",
+            "real",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "reviewer/114",
+            "pij-holder",
+            "--why",
+            "review #114",
+        ][..],
+        &[
+            "directory",
+            "release",
+            "reviewer/114",
+            "pij-holder",
+            "--why",
+            "merged",
+        ][..],
+        &[
+            "directory",
+            "external",
+            "add",
+            "pij-visitor",
+            "--from-project",
+            "osk",
+            "--why",
+            "loan",
+        ][..],
+    ] {
+        let done = call(rig.addr, "/v1/directory", argv, &repo.main).await;
+        assert_eq!(done["ok"], true, "{argv:?}: {done}");
+    }
+    let tree = git(&repo.gov, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    for path in [
+        ".dd/schemas/pij/holders/schema.json",
+        ".dd/schemas/pij/external/schema.json",
+        ".harness/government/community/roles/reviewer/holders.dd.md",
+        ".harness/government/community/external.dd.md",
+    ] {
+        assert!(tree.contains(path), "{path} missing from:\n{tree}");
+    }
     rig.server.abort();
 }

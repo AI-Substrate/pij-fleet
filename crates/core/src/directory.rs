@@ -7,6 +7,9 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
     match verb {
         None => Some(OVERVIEW),
         Some("add") => Some(ADD),
+        Some("assign" | "release") => Some(HOLD),
+        Some("external") => Some(EXTERNAL),
+        Some("rebuild") => Some(REBUILD),
         _ => None,
     }
 }
@@ -29,8 +32,13 @@ const OVERVIEW: &str = "\
 pij directory: the project's community directory, on the governance branch.
 
 Usage:
+  pij directory [--project <slug>] [--json]           this project's roles and holders
   pij directory add <id> --why <text> [role flags | --file <json>] [--project <slug>]
   pij directory add --batch <dir> --why <text> [--project <slug>]
+  pij directory assign <role>[/<instance>] <seat> --why <text>
+  pij directory release <role>[/<instance>] <seat> --why <text>
+  pij directory external add <seat-or-note> --from-project <slug> --why <text> [--role <id>]
+  pij directory rebuild                               the store from the branch head
 
 Every write is validated by ddocs and committed by the daemon's single writer,
 touching only its own paths in the standing governance worktree.
@@ -66,6 +74,34 @@ Flags:
   --packet <text> | --brief <repo-relative path>     the standing packet
   --file <json>             the whole document instead of flags
   --batch <dir>             every *.dd.json in <dir>, one commit, all or nothing";
+
+const HOLD: &str = "\
+pij directory assign|release: a seat takes or leaves a role.
+
+Usage:
+  pij directory assign <role>[/<instance>] <seat> --why <text> [--project <slug>]
+  pij directory release <role>[/<instance>] <seat> --why <text> [--project <slug>]
+
+assign appends a row to roles/<id>/holders.dd.json, sets the seat's role (pa,
+pm for pm-<n>, else worker; a prime keeps prime) and renames its tmux window
+<project>:<role>. A second live holder of a one-holder role is allowed with a
+warning. release closes the row. `pij close <seat>` ends every holding.";
+
+const EXTERNAL: &str = "\
+pij directory external add: note a seat borrowed from another project.
+
+Usage:
+  pij directory external add <seat-or-note> --from-project <slug> --why <text> [--role <id>]
+
+Appends a dated entry to community/external.dd.json. Loans are not otherwise
+tracked.";
+
+const REBUILD: &str = "\
+pij directory rebuild: replace this project's directory rows in the store with
+what the governance branch head says. The branch is the truth.
+
+Usage:
+  pij directory rebuild [--project <slug>]";
 
 #[cfg(test)]
 mod tests {

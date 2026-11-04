@@ -22,6 +22,27 @@ pub fn seat_role_for(role: &str) -> &'static str {
     }
 }
 
+/// The pairing ddocs cannot express: a closed row carries `to` and
+/// `released_by` together, an open row neither (plan 195, from docs-system).
+///
+/// # Errors
+/// `E-RS-DIRECTORY-ROW` naming the role and seat.
+pub fn check_rows(role: &str, rows: &[Assignment]) -> Result<(), Refusal> {
+    match rows
+        .iter()
+        .find(|row| row.to.is_some() != row.released_by.is_some())
+    {
+        None => Ok(()),
+        Some(row) => Err(Refusal::new(
+            "E-RS-DIRECTORY-ROW",
+            format!(
+                "role {role:?}: the row for {} from {} must carry `to` and `released_by` together",
+                row.seat, row.from
+            ),
+        )),
+    }
+}
+
 /// Now, in UTC, as holders documents write it (`2026-11-04T05:00:00Z`).
 pub fn now() -> String {
     let now = time::OffsetDateTime::now_utc();
@@ -193,6 +214,25 @@ mod tests {
         let document = to_document("reviewer", std::slice::from_ref(&bare));
         assert_eq!(document["sections"][1]["value"][0]["machine"], "unknown");
         assert_eq!(from_document("pij", &document).unwrap(), vec![bare]);
+    }
+
+    #[test]
+    fn a_row_carries_to_and_released_by_together_or_neither() {
+        let open = row("pij-a", "", None);
+        let closed = row("pij-b", "", Some("2026-11-04T06:00:00Z"));
+        assert!(check_rows("reviewer", &[open.clone(), closed.clone()]).is_ok());
+        let mut half = closed;
+        half.released_by = None;
+        assert_eq!(
+            check_rows("reviewer", &[half]).unwrap_err().code,
+            "E-RS-DIRECTORY-ROW"
+        );
+        let mut other = open;
+        other.released_by = Some("pij-pm".into());
+        assert_eq!(
+            check_rows("reviewer", &[other]).unwrap_err().code,
+            "E-RS-DIRECTORY-ROW"
+        );
     }
 
     #[test]

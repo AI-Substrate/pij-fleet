@@ -23,8 +23,10 @@ use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{Refusal, pointer};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 19] = [
+const SINGLE: [&str; 21] = [
     "why",
+    "from-project",
+    "role",
     "project",
     "file",
     "batch",
@@ -53,7 +55,15 @@ const REPEATED: [&str; 6] = [
     "output-kind",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 5] = ["why", "project", "file", "batch", "actor"];
+const CONTROL: [&str; 7] = [
+    "why",
+    "project",
+    "file",
+    "batch",
+    "actor",
+    "from-project",
+    "role",
+];
 
 #[derive(Debug, Default)]
 struct Arguments {
@@ -71,7 +81,10 @@ impl Arguments {
             [family, ..] if family == "directory" && view => {}
             [family, leaf, ..]
                 if family == "directory"
-                    && matches!(leaf.as_str(), "add" | "assign" | "release" | "rebuild") => {}
+                    && matches!(
+                        leaf.as_str(),
+                        "add" | "assign" | "release" | "rebuild" | "external"
+                    ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
                     "E-RS-UNPORTED",
@@ -123,6 +136,36 @@ impl Arguments {
                     format!("directory add: unsupported --{name}"),
                 ));
             }
+        }
+        let external_only = ["from-project", "role"];
+        if call.leaf != "external"
+            && external_only
+                .iter()
+                .any(|flag| call.single.contains_key(*flag))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --from-project and --role belong to `external add`",
+                    call.leaf
+                ),
+            ));
+        }
+        if call.leaf == "external"
+            && (call.positions.len() != 2
+                || call.positions[0] != "add"
+                || call.single.keys().any(|flag| {
+                    !matches!(
+                        flag.as_str(),
+                        "why" | "project" | "actor" | "from-project" | "role"
+                    )
+                })
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory external add <seat-or-note> --from-project <slug> --why <text> [--role <id>]",
+            ));
         }
         if matches!(call.leaf.as_str(), "view" | "rebuild")
             && (!call.positions.is_empty()
@@ -244,6 +287,7 @@ pub(crate) async fn handle(
     }
     let result = match call.leaf.as_str() {
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
+        "external" => external(&state, &actor.id, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => {
@@ -454,6 +498,47 @@ async fn hold(
     data["role"] = json!(role);
     data["seat"] = json!(seat);
     Ok(data)
+}
+
+/// `directory external add <seat-or-note> --from-project <slug> --why <text>`.
+async fn external(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let from = call
+        .get("from-project")
+        .filter(|from| !from.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--from-project <slug> is required"))?;
+    let role = call.get("role");
+    if let Some(role) = &role {
+        RolePaths::new(role)?;
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let (written, entry) = state
+        .services
+        .directory
+        .external_add(
+            &project,
+            repo,
+            &call.positions[1],
+            &from,
+            role.as_deref(),
+            &why,
+            actor,
+        )
+        .await?;
+    Ok(json!({
+        "project": project,
+        "commit": written.commit,
+        "path": crate::community::layout::EXTERNAL,
+        "entry": entry,
+    }))
 }
 
 /// The project the write belongs to and the repository to find governance from:
