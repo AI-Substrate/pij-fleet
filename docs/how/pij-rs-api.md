@@ -49,7 +49,11 @@ has `ok:true`, `data.status:"healthy"` and
 `data.store:{status:"healthy",timeout_ms:2000}`. `data.spawns:{total,by_op}` counts
 the processes this daemon has launched since it started, by `<program>.<site>`
 operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...); the
-`by_op` values sum to `total` (plan 180). A failed or exhausted probe returns
+`by_op` values sum to `total` (plan 180). `data.pid` is the daemon's own process
+id (plan 190): the spawn counter resets on restart, so two readings compare only
+when their pids match. `data.ddocs` is the ddocs path the daemon resolved once at
+start (`PIJ_DDOCS`, else PATH), or `null` when it found none; `just doctor` prints
+it. A failed or exhausted probe returns
 HTTP 503, `ok:false`, `error:"adapter"`, a diagnostic `meta`,
 `data.status:"unhealthy"` and `data.store.status:"unavailable"`.
 Pool acquisition and SQLite write-lock waits each have a two-second bound;
@@ -771,6 +775,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}` | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>]` | `spine-append`, `spine-events`, `spine-render` |
+| POST `/v1/directory` | `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -793,6 +798,68 @@ The case-id column names exact `.routes[].cases[].id` entries in [`governance-ro
 Project/stream/fence/dispatch/task records are rs store authority, not files under `~/.pij/`. Fences describe intended writes, not permission. Stream close changes its record, not the worktree. Dispatch persists packet digest and outbound linkage before delivery; queued is not delivered, and delivered is not acknowledged. Only the resolved recipient can ack the matching packet SHA; identical ack is idempotent. Canary requires actual nonce-correlated dispatch/ack and observed runtime/model evidence, not descriptor presence. `attest --plan-id` never grants native-extension-delivery attestation. `node show` joins rs records only. `spine render` returns `{text,cursor}` and never writes a legacy ledger file.
 
 Source: [`governance.rs` parser and handlers](../../crates/daemon/src/http/governance.rs), [`report.rs`](../../crates/daemon/src/http/report.rs), [`anomalies.rs`](../../crates/daemon/src/http/anomalies.rs), [`decisions.rs`](../../crates/daemon/src/http/decisions.rs), [`lifecycle.rs`](../../crates/daemon/src/http/lifecycle.rs).
+
+## Community directory (plan 190)
+
+`pij directory add` writes one role definition, a `pij/role` document, to
+`<government-root>/community/roles/<id>/role.dd.json` on the `prime-governance`
+branch, with `memory/INDEX.md` and `outputs/` beside it. `<government-root>` is
+the standing governance worktree's `.harness/government`, found as
+`harness/scripts/government-root.sh` finds it. The daemon is the only writer:
+
+1. It refuses before writing if any path it is about to write carries an edit it
+   did not make (modified, staged or untracked), or if the role already exists.
+2. It writes the document and has ddocs validate (`--depth 0`) and build it, by
+   the absolute path resolved at daemon start.
+3. It commits in the standing governance worktree with `git add -- <its paths>`
+   then `git commit --only -- <its paths>`. Everything else staged, unstaged or
+   untracked there stays as it was, and the checkout's own next commit sees
+   pij's files as committed. No plumbing moves the branch under a checkout, and
+   pij never pushes.
+4. It records `(project, path, commit)` in the store (migration 0031). The rows
+   can be rebuilt from the branch head.
+
+Writes are serialised per governance worktree. The branch also carries copies of
+pij's `pij/*` schemas under `.dd/schemas/pij/`, so ddocs validates there; a write
+refreshes them in the same commit when they differ from pij's.
+
+Flags: `--title`, `--kind specialist|general`, `--lifecycle long-lived|per-task`,
+`--holders one|many`, `--instance-key`, `--default-limit` (like `45m`),
+`--summary`, `--template`, `--template-version`, `--harness`, `--model`,
+`--effort`, and the standing packet as `--packet <text>` or `--brief <path>` (a
+link relative to the role document). These repeat: `--rule`, `--scope-path`,
+`--out-of-scope`, `--forbidden`, `--input`, `--output-kind`. A field you leave
+out is left out, so ddocs names it (a role without scope or a standing packet
+refuses). `--file <json>` gives the whole document instead of flags. `--batch
+<dir>` imports every `*.dd.json` directly in `<dir>` in one commit, each naming
+its own `meta.id`; one invalid document commits none. `--why` is required and
+becomes the changelog row (`date`, `by` the calling seat, `why`). The project is
+`--project`, else the project whose recorded repo holds the caller's directory.
+
+The commit message is `community: add role <id>` (or `community: import <n>
+roles`), then the `--why`, then `Pij-Seat` and `Pij-Project` trailers. The
+envelope returns `data.commit`, `data.paths` (repo-relative), `data.roles` as
+`[{id, path}]`, and for a single role `data.id` and `data.path`.
+
+| Refusal | When | Next step in `details.next` |
+|---|---|---|
+| `E-RS-GOV-ABSENT` | no standing `prime-governance` worktree, or it is detached, missing, another repo's, or has no `.harness/government` | the bootstrap step `government-root.sh` prints |
+| `E-RS-DDOCS-MISSING` | ddocs was not found at daemon start, or will not run | install ddocs or set `PIJ_DDOCS`, then restart the daemon |
+| `E-RS-DDOCS-INVALID` | ddocs rejected a document; the message is ddocs' own, prefixed with the path | — |
+| `E-RS-GOV-FOREIGN-EDIT` | a path the write needs carries an edit pij did not make | commit or remove those edits |
+| `E-RS-GOV-LOCKED` | the worktree's `index.lock` stayed held through about 1.5 s of retries; pij never removes it | let that git command finish |
+| `E-RS-DIRECTORY-EXISTS` | `directory add` named a role that already exists | — |
+| `E-RS-GOV-GIT` | another git failure | — |
+| `E-RS-ARG` | a bad id (1-48 lowercase letters, digits or hyphens), a missing `--why`, or mixed `--file`, `--batch` and flags | — |
+
+Every refusal writes nothing, commits nothing and leaves the worktree as it was.
+
+Cost: three git launches to find the worktree, then one `status`, one `add`, one
+`commit` and one `rev-parse` per write, plus a ddocs `validate` and `build` per
+document (each a node process). Launches are counted as `git.community` and
+`ddocs.community`. Nothing runs on a timer.
+
+Source: [`community/`](../../crates/daemon/src/community/), [`http/directory.rs`](../../crates/daemon/src/http/directory.rs).
 
 ## Canonical wire examples
 
