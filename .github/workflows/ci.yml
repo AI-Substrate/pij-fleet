@@ -48,6 +48,11 @@ jobs:
       - run: node_modules/.bin/tsx harness/scripts/lockfile-allowlist.ts
       - run: npm run typecheck
       - run: npm run lint
+      # Project docs sensor. ddocs is not published to an allowed registry yet,
+      # so the runner has no ddocs: the step reports UNAVAILABLE as a warning
+      # annotation on every run instead of passing silently. When ddocs is on
+      # the runner (PIJ_DDOCS or PATH) it validates and fails on any finding.
+      - run: just ddocs-check --unavailable=warn
       # Integration suites that drive a private Rust daemon (cli.inbox.integration,
       # the watchdog smoke) need the debug pij-rs binary; build it here and make
       # its presence REQUIRED so a missing binary fails loud instead of skipping.

@@ -205,6 +205,12 @@ spawn-rate *ARGS:
 local-path-check:
     node_modules/.bin/tsx harness/scripts/local-path-check.ts
 
+# Validate every ddoc under docs/project/ and the community skill examples, and
+# check each rendered .dd.md is current. ddocs comes from PIJ_DDOCS, else PATH;
+# without it this fails UNAVAILABLE (pass --unavailable=warn to only warn).
+ddocs-check *ARGS:
+    node_modules/.bin/tsx harness/scripts/ddocs-check.ts {{ARGS}}
+
 # Report-only attribution scan, scoped after merge-base with main.
 pij-commit-trailers *ARGS:
     node_modules/.bin/tsx harness/scripts/pij-commit-trailers.ts "$@"
@@ -261,6 +267,7 @@ copilot-models *ARGS:
 # task complete — never run npm directly to compose these steps.
 self-check:
     just local-path-check
+    just ddocs-check
     just lockfile-allowlist
     just typecheck
     just lint

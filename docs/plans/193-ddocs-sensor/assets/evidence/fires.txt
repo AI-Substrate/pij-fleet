@@ -1,0 +1,37 @@
+# ddocs-check fires (plan 193), 2026-11-04, ddocs 0.1.0
+
+Run as `tsx harness/scripts/ddocs-check.ts` (the body of `just ddocs-check`) from the repo root.
+
+## 1. clean tree
+ddocs-check: 6 document(s) validate clean and their .dd.md are current (ddocs via PATH).
+exit=0
+
+## 2. example roadmap links a requirement that does not exist (req-02 -> req-09)
+ddocs-check: 2 failure(s) in 6 document(s):
+  skills/pij/references/community/examples/roadmaps/001-daily-digest.dd.json: validate: no entry with id "req-09" in "requirements"
+  skills/pij/references/community/examples/roadmaps/001-daily-digest.dd.json: build --check: skills/pij/references/community/examples/roadmaps/001-daily-digest.dd.md drifted from the render of skills/pij/references/community/examples/roadmaps/001-daily-digest.dd.json
+Fix with ddocs (set/add), then `ddocs validate <file>` and `ddocs build <file>`; see skills/pij/references/community/README.md.
+exit=1
+
+## 3. example roadmap's .dd.md edited by hand
+ddocs-check: 1 failure(s) in 6 document(s):
+  skills/pij/references/community/examples/roadmaps/001-daily-digest.dd.json: build --check: skills/pij/references/community/examples/roadmaps/001-daily-digest.dd.md drifted from the render of skills/pij/references/community/examples/roadmaps/001-daily-digest.dd.json
+Fix with ddocs (set/add), then `ddocs validate <file>` and `ddocs build <file>`; see skills/pij/references/community/README.md.
+exit=1
+
+## 4. restored
+ddocs-check: 6 document(s) validate clean and their .dd.md are current (ddocs via PATH).
+exit=0
+
+## 5. ddocs unavailable (PATH holds node only, PIJ_DDOCS unset)
+ddocs-check: UNAVAILABLE: ddocs is not on PATH and PIJ_DDOCS is unset. Nothing was validated. Set PIJ_DDOCS to the ddocs executable or put ddocs on PATH.
+exit=2
+
+## 6. same, CI mode (--unavailable=warn, GITHUB_ACTIONS=true)
+ddocs-check: UNAVAILABLE: ddocs is not on PATH and PIJ_DDOCS is unset. Nothing was validated. Set PIJ_DDOCS to the ddocs executable or put ddocs on PATH.
+::warning title=ddocs-check UNAVAILABLE::ddocs-check: UNAVAILABLE: ddocs is not on PATH and PIJ_DDOCS is unset. Nothing was validated. Set PIJ_DDOCS to the ddocs executable or put ddocs on PATH.
+exit=0
+
+## 7. PIJ_DDOCS set but not absolute (refuses, no PATH fallback)
+ddocs-check: UNAVAILABLE: PIJ_DDOCS must be an absolute path, got "ddocs". Nothing was validated. Set PIJ_DDOCS to the ddocs executable or put ddocs on PATH.
+exit=2

@@ -1,0 +1,165 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "ddocs-validate sensor for project docs",
+        "slug": "ddocs-sensor",
+        "ordinal": 193,
+        "status": "draft",
+        "summary": "A back-pressure sensor that runs ddocs over docs/project/ and the community skill examples, wired into harness checks, just self-check and CI. From the #110 review, approved by the prime (packet job 4).",
+        "backpressure": "assets/backpressure.dd.json#rows",
+        "mode": "Simple",
+        "created": "2026-11-04",
+        "complexity": "CS-2"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Nothing checks that the project docs stay valid: #110 and the s02 work edit PRD 001 and roadmap 001 with ddocs, and a broken link or a hand-edited .dd.md would only be found by the next person who runs ddocs. This plan adds `just ddocs-check` (harness/scripts/ddocs-check.ts): every .dd.json under docs/project/ and skills/pij/references/community/ must pass `ddocs validate` with 0 errors and 0 warnings and `ddocs build --check`. ddocs is found by ruling C10 (PIJ_DDOCS, else PATH). Without it the sensor never passes: it fails as UNAVAILABLE, or in CI warns UNAVAILABLE on every run."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A broken link, a schema error or a stale .dd.md in docs/project/ or the skill examples fails the done gate.",
+        "The sensor never passes when it validated nothing: no ddocs, or no documents, is a named non-pass.",
+        "Local gate and CI run the same command."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Publishing ddocs or adding it as a dependency (it is not on an allowed registry yet).",
+        "Validating docs/plans/ or .dd/ fixtures (plans have their own `harness plan validate`; the role fixtures include documents that must fail)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Sensor. `just ddocs-check` runs `ddocs validate --json` and `ddocs build --check --json` on every .dd.json under docs/project/ and skills/pij/references/community/ (node_modules skipped). A document passes only with status ok, 0 errors, 0 warnings, exit 0, and a current .dd.md. Finding no documents is a failure, not a pass. Failures name the file and ddocs' own message, with repo-relative paths.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/fires.txt cases 1-4; 6 documents pass today"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Resolution (ruling C10). ddocs comes from PIJ_DDOCS (an absolute, executable path), else PATH. A PIJ_DDOCS that is set but unusable refuses by name and never falls back to PATH. With no ddocs the sensor prints UNAVAILABLE and exits 2; with `--unavailable=warn` it exits 0 but prints UNAVAILABLE, plus a GitHub warning annotation under Actions.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "ddocs-check.test.ts resolveDdocs cases; fires.txt cases 5-7"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Wiring. The `ddocs` sensor is added to .harness/extensions/checks/ (extension and instructions) and to `just self-check` together, as AGENTS.md requires; AGENTS.md's inventory names it. CI runs `just ddocs-check --unavailable=warn`.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "It fires. Breaking an example (a link to a missing requirement; a hand-edited .dd.md) makes the sensor fail; restoring it passes; no ddocs gives UNAVAILABLE. Transcript in assets/evidence/fires.txt.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "assets/evidence/fires.txt"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "CI decision. ddocs (@ai-substrate/dd) is not published to npmjs and its lockfile resolves only to private feeds, so installing it on the runner would bypass the lockfile allowlist and the seven-day quarantine. CI therefore does not install it and reports UNAVAILABLE as a warning on every run. When ddocs is published to an allowed registry it becomes a locked devDependency and the CI step drops `--unavailable=warn`.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "dd package.json publishConfig npmjs but npmjs serves no @ai-substrate/dd; its package-lock resolves 160 packages to private feed hosts only; CI step comment records the decision"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-d8b9",
+          "title": "ddocs sensor, CI install and proof",
+          "brief": "AC1 to AC5. docs-system. harness/scripts/ddocs-check.ts with tests, the recipe, the checks sensor, self-check, CI step, and the fires proof. CS-2.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {
+        "approach": "Unit tests on the pure parts (resolution, discovery, verdicts) with injected ports; a live transcript against real ddocs for the fires proof.",
+        "rationale": "The risks are a silent pass and a wrong verdict; both are pure decisions, and the live run proves the wiring.",
+        "excluded": "Installing ddocs in CI (AC5)."
+      }
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {
+        "location": ".harness/extensions/checks/instructions.md, the justfile recipe comment, AGENTS.md inventory, the CI step comment.",
+        "rationale": "Agents find sensors through harness instructions and AGENTS.md."
+      }
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "No npm install or just worktree-deps; run local checks with the main checkout's binaries.",
+        "No `git add -A`, no `--no-verify`."
+      ]
+    }
+  ]
+}
