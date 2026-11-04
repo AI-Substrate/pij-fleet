@@ -5,3 +5,4 @@
 2026-11-04 deliverable pr:111 bea49347117d3c251fa8f0cc92e73e9789d58b6b opened — s14 / plan 192: earlier register triaged (40: 23 kept as 20, 12 met, 5 obsolete) into PRD 002; req-0020 pending pm-001
 2026-11-04 deliverable pr:113 75cf1a150d32e2f1b2ecf3ef3f1aab4f979001eb opened — job 4 / plan 193: ddocs-check sensor in harness checks, self-check and CI (warn-UNAVAILABLE in CI until ddocs is on an allowed registry)
 2026-11-04 deliverable pr:116 99d8bf42102a8d642a520fbc27008369de63f8e5 opened — job 5: scrub private-repo name from plan 175 evidence and AGENTS.md (C19)
+2026-11-04 note wave-b-dogfood - refused — job 6: batch import refused on project resolution (no pij project); 'role exists' on memory/INDEX.md confirmed from code; 10 frictions; outputs/2026-11/wave-b-dogfood.md

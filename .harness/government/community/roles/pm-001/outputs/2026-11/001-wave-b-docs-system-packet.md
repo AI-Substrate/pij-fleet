@@ -13,3 +13,7 @@ From pm-001 (pij-steady-otter), 2026-11-04. The prime: "use the new writer on ou
 ## D-190-5 (next docs PR)
 
 Add D-190-5 to `docs/difficulties.md`: CI flake in crates/tmux, `staged_submit_excludes_human_input_mid_body_and_before_enter` ("failed to tear down isolated tmux server: server exited unexpectedly") on #114's a4bb4fa; a rerun of the job passed; not touched by that PR; flaky-test rule (delete it if it fails again). Put it in your next docs PR, or a one-line PR of its own if job 6 produces no PR. Reviewer and security as usual (I'll assign).
+
+## Job 7 (queued 15:10): plan 195 phase 1, schemas
+
+After job 6. Branch `plan/195-schemas` from `origin/plan/195-assign-lineage` (df591de). Plan 195 AC1 and bp-0001: `pij/holders` (per role rows: seat id, harness, harness session id, machine, instance key, from, to, assigned by, released by, why) and `pij/external` (req-16, dated entries) under `.dd/schemas/pij/`, with pass and fail fixtures beside them and results in `docs/plans/195-assign-lineage/assets/evidence/phase-1.md`. Mark ac-0001, bp-0001 and ph-95a1 checked, biome-format, push, and send me the head. The coder (pij-brisk-marten) merges it.

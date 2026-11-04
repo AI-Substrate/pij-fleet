@@ -81,3 +81,6 @@
 2026-11-04 note claim:plan-196 6ccd4d8 claimed — s11 number claims and delivery at merge
 2026-11-04 note claim:migration-0032 6ccd4d8 claimed — s04 assignments and lineage
 2026-11-04 note claim:migration-0033 6ccd4d8 claimed — s11 claims
+2026-11-04 note c22-c23 - folded — C22: core roles prompted not auto-created, security prompted until it exists, req-14 reworded (plan 194); C23: pij delivered <pr> run by the merger, prints ddocs edits for PM docs PR (plan 196)
+2026-11-04 deliverable plan-195 df591de done — s04 plan pushed; coder packet to pij-brisk-marten; phase 1 schemas queued as heron job 7
+2026-11-04 note dogfood-job6 - reported — import blocked at project resolution (no pij project, F1 to prime); F2/F3/F4/F7 to plan 195 (marten AC13-15); F5 no schema change; heron docs PR: D-190-5 + D-WB frictions
