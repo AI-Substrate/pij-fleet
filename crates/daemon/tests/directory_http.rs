@@ -165,11 +165,20 @@ fn head(repo: &Repo) -> String {
 async fn add_writes_commits_and_points_at_a_role_then_refuses_it_twice() {
     let repo = repo("pij-directory-add");
     let (addr, server, _fresh) = daemon().await;
-    let main = repo.main.to_str().unwrap();
+    // The project records the repo through a symlink and the caller sends the
+    // real path (macOS: /tmp versus /private/tmp). Both name one directory.
+    let alias = repo.root.join("alias");
+    std::os::unix::fs::symlink(&repo.main, &alias).unwrap();
     let created = call(
         addr,
         "/v1/project",
-        &["project", "create", "fleet", "--repo", main],
+        &[
+            "project",
+            "create",
+            "fleet",
+            "--repo",
+            alias.to_str().unwrap(),
+        ],
         &repo.main,
     )
     .await;

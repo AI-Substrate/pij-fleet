@@ -355,15 +355,16 @@ async fn project_and_repo(
             })?,
         None => cwd
             .and_then(|cwd| {
+                let cwd = canonical(Path::new(cwd));
                 projects
                     .into_iter()
-                    .filter(|project| {
-                        project
-                            .repo
-                            .as_deref()
-                            .is_some_and(|repo| Path::new(cwd).starts_with(repo))
+                    .filter_map(|project| {
+                        let repo = canonical(Path::new(project.repo.as_deref()?));
+                        cwd.starts_with(&repo)
+                            .then_some((repo.as_os_str().len(), project))
                     })
-                    .max_by_key(|project| project.repo.as_ref().map_or(0, String::len))
+                    .max_by_key(|(depth, _)| *depth)
+                    .map(|(_, project)| project)
             })
             .ok_or_else(|| {
                 Refusal::new(
@@ -383,6 +384,11 @@ async fn project_and_repo(
             )
         })?;
     Ok((project.slug, PathBuf::from(repo)))
+}
+
+/// `/tmp` and `/private/tmp` are one directory on macOS: compare real paths.
+fn canonical(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn caller_path(caller: &CallerContext, path: &str) -> Result<PathBuf, Refusal> {
