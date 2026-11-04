@@ -1,0 +1,88 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 197 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1, AC2: node show and spine events",
+          "phase": "ph-97a1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: pij-daemon and pij-store tests: newest() equals the old tail().last(); spine events pages with a cursor and refuses a limit over the maximum; --peer uses spine_by_seat. `cargo test -p pij-store spine` and `cargo test -p pij-daemon governance`.",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/http/governance.rs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3: same anomalies, scoped and unscoped",
+          "phase": "ph-97a1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: an equivalence test comparing the old fold and the new indexed view over fixture spines.",
+          "state": "unchecked",
+          "probe": "crates/daemon/src/http/anomalies.rs"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4: bounded by construction",
+          "phase": "ph-97a1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a 1M-row synthetic spine in a scratch store; EXPLAIN QUERY PLAN shows index use for each call; a time bound; a guard test against tail(None, ...) in the three handlers.",
+          "state": "unchecked",
+          "probe": "crates/store/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC5: the live before and after (AGENTS.md, resource cost is a correctness property)",
+          "phase": "ph-97a1",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: performance measures one unscoped `pij anomalies --json` and one `pij node show` on the live fleet before and after deploy: CPU, peak RSS, physical footprint, disk read; plus spawn readings with data.pid.",
+          "state": "unchecked",
+          "probe": "pij anomalies --json",
+          "note": "Expected cost after: reads scale with seats x kinds, not spine length; no new launch site, loop or timer."
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC6: docs",
+          "phase": "ph-97a1",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "docs/how/pij-rs-api.md and docs/difficulties.md updated; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/how/pij-rs-api.md"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        }
+      ]
+    }
+  ]
+}

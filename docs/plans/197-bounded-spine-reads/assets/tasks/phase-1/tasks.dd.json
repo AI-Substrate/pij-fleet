@@ -1,0 +1,229 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Indexed reads for the three verbs",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Six tasks for issue #119: the two new Spine seeks first, then the three handlers on them, the equivalence oracle and the 1M-row bound test, docs, and the live measurement performance takes. Open question 1 taken as recommended: --limit default 500, maximum 5000."
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Spine port: latest(seat) and seat_page(seat, since, limit)",
+          "phase": "ph-97a1",
+          "state": "unchecked",
+          "success": "Two required Spine methods: the seat's highest-seq event, and a keyset page of one seat's events; SqliteSpine seeks spine_by_seat by name; every implementor (EventBus, FakeSpine, test wrappers) delegates or implements, none defaults to tail.",
+          "notes": "crates/core/src/ports.rs, crates/store/src/spine.rs, crates/daemon/src/events/mod.rs, crates/testkit/src/fakes.rs and the test Spine wrappers. Required, not defaulted, for the reason the trait already gives for newest().",
+          "satisfies": [],
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "node show and spine events: newest() and a paged, limited read",
+          "phase": "ph-97a1",
+          "state": "unchecked",
+          "success": "node show and the spine-events refusal check read Spine::newest(); spine events reads one tail_page (or seat_page for --peer) of --limit rows (default 500, max 5000, refused by name above it or at 0); the envelope cursor is the last row read and more says whether rows remain; a short page leaves the cursor at the head, so existing --since loops keep working.",
+          "notes": "crates/daemon/src/http/governance.rs node_show and spine_command; flag allowlist at the spine events/render arm; golden fixtures under crates/testkit/fixtures/golden/api if the envelope shape changes.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "satisfies_toward": [],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "anomalies: build the view from per-seat indexed reads",
+          "phase": "ph-97a1",
+          "state": "unchecked",
+          "success": "AnomalyService::list never calls tail. Cursor from newest() read first; cards and done/verify facts from all_matching on spine_by_seat_kind; seat.put from latest_matching with a decode fallback; activity from latest(seat); delivered dispatch seqs from the recipient's dispatch rows; ack/clear dispositions from the seats of candidate rows. Output identical to the fold.",
+          "notes": "crates/daemon/src/http/anomalies.rs. Exactness argument: registry rows are never deleted; dispatch delivered events are published under dispatch.to; dispositions are only producible under the anomaly's own seat (disposition_event; spine append payloads carry no occurrence); activity feeds only observable, which wire() drops.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Bounded by construction: 1M-row scratch store, query plans, guard",
+          "phase": "ph-97a1",
+          "state": "unchecked",
+          "success": "A test seeds a scratch store with at least 1M spine rows (most under one junk seat), asserts EXPLAIN QUERY PLAN for every statement the three verbs now use names an index and never SCAN spine_events, runs each verb under a stated wall-time bound, and runs all three through a Spine guard that refuses tail().",
+          "notes": "Scratch store only; never the prod daemon. Lean payloads to keep the temp file small (disk is near the 25 GB line).",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Docs and difficulty ledger",
+          "phase": "ph-97a1",
+          "state": "unchecked",
+          "success": "docs/how/pij-rs-api.md documents spine events --limit (default, maximum, refusal), the cursor and more; the pij skill route lines show --limit; docs/difficulties.md gets a resolved row; the PR body closes #119 and names the bg.lost junk rows as an open operator decision.",
+          "notes": "skills/pij/references/routes/node.md and references/prime/rituals/store-native.md carry the spine events usage line.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Live before and after (performance seat)",
+          "phase": "ph-97a1",
+          "state": "unchecked",
+          "success": "pm-001 asks performance (pij-frugal-wombat) once the PR is open; it records CPU, peak RSS, physical footprint and disk read for one unscoped pij anomalies --json and one pij node show, before and after deploy, with spawn readings carrying data.pid.",
+          "notes": "Owned by performance, wired by pm-001. Expected: no new launch site, loop or timer; reads scale with seats x kinds.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "cargo test -p pij-store spine: latest(seat) returns the highest-seq row of that seat only (None for an unknown seat); seat_page returns at most limit rows after the cursor, oldest first, and pages to the end.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "cargo test -p pij-daemon governance: node show cursor equals the spine head; spine events pages through a spine larger than one limit with the returned cursor and sees every row once; --limit 5001 and --limit 0 refuse E-RS-ARG naming the maximum; --peer returns only that seat with a paging cursor.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "An equivalence test keeps the old fold as a test oracle and asserts identical pij anomalies JSON, unscoped and with --seat, --here and --project, over fixture spines with stale and fresh cards, parked seats, tombstones, a revived seat with two seat.put rows, done/verify pairs, delivered and acked dispatches, open decisions, ack and clear dispositions, an undecodable latest row, and a seat holding thousands of junk rows.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "cargo test -p pij-daemon bounded_spine: on a >=1M-row scratch spine, every statement plan uses an index with no full scan, each verb completes inside its stated bound, and the guard spine (tail refused) serves all three verbs.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0005",
+            "assertion": "The API doc, skill route lines and difficulty row are in the diff; CI is green on the exact PR head; reviewer, security and performance verdicts are posted.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "The performance verdict on the PR records the before and after for both calls and unchanged spawn counters.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ]
+      }
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}
