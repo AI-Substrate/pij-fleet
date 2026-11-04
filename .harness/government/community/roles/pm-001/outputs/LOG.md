@@ -95,3 +95,4 @@
 2026-11-04 note heron-plan-review - folded — 195 notes 1-6 to marten; 196 notes 7-10 folded (7cec57b)
 2026-11-04 note claim:plan-197 6ccd4d8 claimed — issue #119 bounded spine reads
 2026-11-04 deliverable plan-197 97b3cb8 done — plan pushed; coder pij-swift-kestrel (lent from delivery), shared target; performance asked for live before
+2026-11-04 note pr-118-review 868e830 pass-with-notes — butterfly: 2 P3 wording notes (not owed); reviewer retired; awaiting security

@@ -24,3 +24,5 @@
 
 2026-11-04 verdict pr:114 4ec59a851d224b0a7736c6366ee9f05684f8b447 pass-with-notes - S1/F002 closed; six targeted tests and exact-head CI pass; external-process TOCTOU retained as nonblocking only under observed same-user governance model, not privileged/untrusted-writable deployment; governance through 94b0a775 checked; 2026-11-04-pr-114-4ec59a8-security.md.
 
+2026-11-04 verdict pr:118 868e830398b3bcba4f1c6361a9920745723266b4 pass-with-notes - Two-file docs delta clear; writer still validates all batch documents before render/stage/commit with rollback, no safety bypass; unchanged same-user TOCTOU note retained; governance through 0e159a7c checked; 2026-11-04-pr-118-868e830-security.md.
+
