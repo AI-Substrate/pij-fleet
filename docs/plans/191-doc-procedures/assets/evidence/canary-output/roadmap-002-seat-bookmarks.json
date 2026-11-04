@@ -1,0 +1,72 @@
+{
+	"dd": {
+		"schema": "pij/roadmap"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Roadmap 002: seat bookmarks",
+				"status": "draft",
+				"updated": "2026-11-04",
+				"owner": "pij-glorious-mole"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "Ship seat bookmarks: save, list and delete, durable across a daemon restart, with a list that launches nothing."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Durable bookmark store with save and delete",
+					"state": "planned",
+					"delivers": [
+						"../prds/002-seat-bookmarks.dd.json#requirements/req-01",
+						"../prds/002-seat-bookmarks.dd.json#requirements/req-03",
+						"../prds/002-seat-bookmarks.dd.json#requirements/req-04"
+					],
+					"builds": [],
+					"depends_on": [],
+					"needs": [
+						"role:coder",
+						"role:reviewer"
+					],
+					"done_when": "A seat saves a bookmark, the daemon restarts and the bookmark is still there; deleting it by name removes it and a second delete reports no such bookmark."
+				},
+				{
+					"id": "s02",
+					"title": "List a seat's own bookmarks without launching",
+					"state": "planned",
+					"delivers": [
+						"../prds/002-seat-bookmarks.dd.json#requirements/req-02",
+						"../prds/002-seat-bookmarks.dd.json#requirements/req-05"
+					],
+					"builds": [],
+					"depends_on": [
+						"#steps/s01"
+					],
+					"needs": [
+						"role:coder",
+						"role:reviewer",
+						"role:performance"
+					],
+					"done_when": "Two seats each see only their own bookmarks, and ten lists in a row leave the daemon's spawn counter unchanged."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-04",
+					"by": "pij-glorious-mole",
+					"change": "First draft."
+				}
+			]
+		}
+	],
+	"references": []
+}

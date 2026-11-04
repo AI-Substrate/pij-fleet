@@ -281,7 +281,7 @@
 					"statement": "Every project uses `docs/project/{prds,blueprints,roadmaps,workshops}/`, and every file or folder there is numbered `NNN-<slug>`. PRDs, blueprints and roadmaps are separate files using the `pij/prd`, `pij/blueprint` and `pij/roadmap` schemas, joined by ddocs link cells: roadmap steps deliver requirement rows and build components, and components realise rows. A blueprint may serve many PRDs.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "`ddocs validate` is clean at default depth on PRD 001, blueprint 001 and roadmap 001; `ddocs graph` draws roadmap to PRD to blueprint.",
 					"source": "workshops/001-directory-concept.md"
 				},
@@ -321,7 +321,7 @@
 					"statement": "The pij skill ships a short procedure and a worked example for writing a PRD, a blueprint and a roadmap, and for folding a ruling into them. By default the PM that owns the work writes them and the prime helps; the prime writes them itself when the operator asks, especially early in a project.",
 					"actor": "pm",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A fresh PM following the procedure writes a PRD and roadmap that validate clean and link to each other.",
 					"source": "workshops/001-directory-concept.md"
 				},
@@ -425,6 +425,11 @@
 					"date": "2026-11-04",
 					"by": "pij-far-jackal with Jordan",
 					"change": "Workshop 002: time limits as stall checks (req-22), doc procedures and examples (req-23), steps name needed roles (req-24), register move (req-25); all open questions answered."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "Plan 191: req-18 and req-23 shipped (procedures and examples in skills/pij/references/community/, fresh-PM canary passed)."
 				},
 				{
 					"date": "2026-11-04",

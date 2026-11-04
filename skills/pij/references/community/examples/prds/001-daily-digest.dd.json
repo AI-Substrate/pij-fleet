@@ -1,0 +1,109 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 001: daily digest",
+				"status": "draft",
+				"updated": "2026-11-04",
+				"owner": "pm-001",
+				"summary": "A once-a-day summary of what the fleet did, so the operator can catch up in two minutes."
+			}
+		},
+		{
+			"name": "why",
+			"value": "The operator comes back to a fleet that ran overnight and has to read many cards and logs to learn what happened. One short digest a day would answer that."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-operator",
+					"name": "operator",
+					"need": "Catch up on a day's work quickly."
+				},
+				{
+					"id": "a-prime",
+					"name": "prime",
+					"need": "Point the operator at what needs a decision."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "The operator reads one file to learn what changed yesterday."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "Live dashboards. The digest is written once a day."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "One digest a day",
+					"statement": "At a set hour, pij writes `digests/<yyyy-mm-dd>.md` listing merged PRs, closed seats and open questions from the last 24 hours.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "After one day of fleet activity the digest file exists and names every PR merged that day.",
+					"source": "workshops/001-daily-digest/001-shape.md"
+				},
+				{
+					"id": "req-02",
+					"title": "Decisions first",
+					"statement": "The digest opens with anything waiting on the operator, before the activity list.",
+					"actor": "prime",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A digest written while a question is open shows that question in its first section."
+				},
+				{
+					"id": "req-03",
+					"title": "No cost when idle",
+					"statement": "Writing the digest launches nothing when the fleet did nothing that day.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A day with no activity writes a one-line digest and the spawn counter does not move."
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "Which hour does the digest run?",
+					"default": "06:00 local.",
+					"status": "open"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-04",
+					"by": "pm-001",
+					"change": "First draft."
+				}
+			]
+		}
+	],
+	"references": []
+}

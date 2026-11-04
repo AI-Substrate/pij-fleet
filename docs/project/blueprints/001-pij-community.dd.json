@@ -27,7 +27,7 @@
 					"where": ".dd/schemas/pij/{prd,blueprint,roadmap}",
 					"responsibility": "The three schemas behind docs/project, joined by typed link cells.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-18"],
-					"state": "in-progress"
+					"state": "shipped"
 				},
 				{
 					"id": "c-role-schema",
@@ -197,7 +197,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-15",
 						"../prds/001-pij-community.dd.json#requirements/req-23"
 					],
-					"state": "planned"
+					"state": "in-progress"
 				}
 			]
 		},
@@ -296,9 +296,13 @@
 					"date": "2026-11-04",
 					"by": "pij-far-jackal with Jordan",
 					"change": "Review fixes and Jordan's rulings: queue, memory notes and index, safe verdicts, own-worktree writer, claims and delivery at merge, standard layout."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "Plan 191: c-doc-schemas shipped; c-skill in-progress (doc procedures shipped, the /pij community route is s10)."
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }

@@ -17,3 +17,5 @@ Every file here is numbered. Take the next number with `pij claim <kind>` once i
 - Edit with `ddocs`, then `ddocs validate` and `ddocs build`. Never hand-edit a `.dd.md`.
 - Each roadmap step names the builder plan in `docs/plans/` that does the work.
 - No hand-kept index here; list the folders.
+
+How to write each type, and fold a ruling in: [skills/pij/references/community/](../../skills/pij/references/community/README.md), with a small linked example set beside it.
