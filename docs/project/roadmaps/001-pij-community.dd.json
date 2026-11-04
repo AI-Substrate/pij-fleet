@@ -31,7 +31,7 @@
 				{
 					"id": "s02",
 					"title": "Role schema, layout and the governance writer",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-02",
 						"../prds/001-pij-community.dd.json#requirements/req-03",
@@ -53,7 +53,8 @@
 						"role:reviewer",
 						"role:security",
 						"role:performance"
-					]
+					],
+					"plan": "docs/plans/190-community-writer"
 				},
 				{
 					"id": "s03",
@@ -225,6 +226,11 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "Plan 191: s01 complete (done-when checked, docs/plans/191-doc-procedures/assets/evidence/s01-check.md); s13 complete; needs filled for s02, s13 and s14 (req-24)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 190: s02 complete (`pij directory add` and `--batch` on the governance writer; evidence in docs/plans/190-community-writer/assets/evidence/phase-2.md)."
 				}
 			]
 		}
