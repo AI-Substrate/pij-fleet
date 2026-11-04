@@ -42,7 +42,7 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "Claim. `pij claim <kind> [--project <slug>] --for <subject>` returns the next number for (project, kind) and records it with the claiming seat, subject and time in the store (migration 0033). Known kinds and their widths: plan, prd, roadmap, blueprint (3 digits), migration (4 digits); any other lowercase kind is accepted with 3 digits. The next number is one more than the highest of: the numbers already claimed for that kind, and the numbers already present in the project's main checkout (docs/plans/NNN-*, docs/project/prds|roadmaps|blueprints/NNN-*, crates/store/migrations/NNNN_*), read in-process with no launch.",
+          "claim": "Claim. `pij claim <kind> [--project <slug>] --for <subject>` returns the next number for (project, kind) and records it with the claiming seat, subject and time in the store (migration 0033). Known kinds and their widths: plan, prd, roadmap, blueprint, workshop (3 digits), migration (4 digits); any other lowercase kind is accepted with 3 digits. The next number is one more than the highest of: the numbers already claimed for that kind, and the numbers already present in the project's main checkout (docs/plans/NNN-*, docs/project/prds|roadmaps|blueprints/NNN-*, docs/project/workshops/NNN-*, crates/store/migrations/NNNN_*), read in-process with no launch. When this ships, pm-001 seeds the store with the numbers already handed out on unmerged branches (one `pij claim` per in-flight plan, PRD and migration), since the main-checkout scan cannot see them.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
@@ -66,7 +66,7 @@
         },
         {
           "id": "ac-0005",
-          "claim": "Edits printed, never applied. `pij delivered` prints, and returns in --json, the exact `ddocs set` commands that set `delivered_by` on each delivered requirement and the plan cell on each step, for the PM's next docs PR. It writes no project file, commits nothing and pushes nothing.",
+          "claim": "Edits printed, never applied. `pij delivered` prints, and returns in --json, the exact `ddocs set` commands that add the PR to `delivered_by` on each delivered requirement (pij/prd's delivered_by is one string: the convention is a comma-separated list of PR references such as `#110, #113`, appended and never overwritten, so a requirement delivered over several PRs keeps them all) and the plan cell on each step, for the PM's next docs PR. It writes no project file, commits nothing and pushes nothing.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
@@ -78,7 +78,7 @@
         },
         {
           "id": "ac-0007",
-          "claim": "Convention. The pij skill's community procedures (skills/pij/references/community/) say how to claim a number, and that every PR body carries a `Delivers:` line; the PR template gains the line. The procedures stop telling PMs to ask pm-001 for numbers.",
+          "claim": "Convention. The pij skill's community procedures (skills/pij/references/community/) say how to claim a number, and that every PR body carries a `Delivers:` line; the PR template gains the line. The procedures, skills/pij/references/community/README.md and docs/project/README.md (line 13, 'until then the prime hands numbers out') stop telling people to ask a PM or the prime for numbers.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
@@ -142,7 +142,8 @@
         },
         {
           "question": "Should `pij claim` also scan remote branches for numbers already used there (the gap that made harness builder miss plans on other branches)? Recommended: no. Scanning needs git launches; from this plan on, claims are the authority, and the main checkout scan covers merged work.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "No remote scan. pm-001 seeds in-flight numbers once at ship (AC1); from then on claims are the authority."
         }
       ]
     },
