@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "Migration 0032: assignments and lineage index",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Store tables for open and closed holder rows (project, role, instance, seat, harness session, machine, from, to, assigned by, released by, why, pending-end flag) with upsert, list and replace-for-rebuild, beside migration 0031's pointers.",
           "notes": "No schema dependency. Number 0032 is claimed for this plan.",
           "satisfies_toward": [
@@ -37,7 +37,7 @@
           "id": "tk-0002",
           "title": "Seat roles on assign (ruling C1)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Assign sets seat_roles in the same store transaction as the assignment row: pa for pa, pm for pm or pm-<n>, worker otherwise; a prime is never re-roled; release leaves seat_roles alone.",
           "notes": "Store side first; wired into the verb in the assign task.",
           "satisfies": [
@@ -49,7 +49,7 @@
           "id": "tk-0003",
           "title": "After-assign hook (ruling C6)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "A hook (project, role, instance, seat) injected through the directory service's constructor, no-op by default, called once after an assign's commit lands.",
           "notes": "s05 drains the role queue through it.",
           "satisfies": [
@@ -61,7 +61,7 @@
           "id": "tk-0004",
           "title": "Close ends assignments without failing (AC4)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "`pij close` ends every open assignment of the seat with reason close. If the writer refuses, the tombstone still lands, the end is kept as pending in the store, the close receipt names it, and the next directory write for that project flushes it.",
           "notes": "crates/daemon/src/http/lifecycle.rs. The store and pending parts need no schema; the holders write needs phase 1.",
           "satisfies_toward": [
@@ -73,7 +73,7 @@
           "id": "tk-0005",
           "title": "Window rename on assign (C16, req-26)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Rename the holder's window to <project>:<role> (or <project>:<role>-<instance>) through the persistent control client; a paneless seat or a rename failure leaves the assign successful with a receipt note.",
           "notes": "Open question for pm-001: the control client allow-lists four reads and runs every other command in a new client, so a no-launch rename means allowing rename-window on the control pipe.",
           "satisfies": [
@@ -85,7 +85,7 @@
           "id": "tk-0006",
           "title": "directory --help (AC10)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "`pij directory --help` and `pij directory <verb> --help` print verbs and flags and exit 0.",
           "notes": "No schema dependency. Today argv goes straight to the daemon parser, which refuses --help.",
           "satisfies": [
@@ -127,7 +127,7 @@
           "id": "tk-0009",
           "title": "The view and the rebuild (AC7, AC8)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "`pij directory` lists this project's roles and live holders and pending ends, in-process, launching nothing; --json gives the same data. Deleting the directory rows and rebuilding from the branch head gives byte-identical --json.",
           "notes": "Reads holder documents, so after phase 1.",
           "satisfies": [
@@ -176,7 +176,7 @@
           "id": "tk-000d",
           "title": "Adopt hand-written role folders (AC13, AC14)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "add writes role.dd.json and its .dd.md into an existing role folder, skipping memory and outputs files that exist and never touching role.md; the foreign-edit check sees only written paths; E-RS-DIRECTORY-EXISTS only for an existing role.dd.json, naming it with a next step, and a batch names every existing role.",
           "notes": "From docs-system's wave B dogfood (F3, F4, F11). A new NewFile mode skips a file when a guard path exists.",
           "satisfies": [
@@ -189,7 +189,7 @@
           "id": "tk-000e",
           "title": "Linked worktrees find their project (AC15)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Match the caller's common git dir to each project repo's common git dir, read in-process; refuse with the register step when none matches.",
           "notes": "F2 from the dogfood; the prime registered pij-fleet (F1).",
           "satisfies": [
@@ -206,48 +206,54 @@
           {
             "id": "dw-0001",
             "assertion": "`cargo test -p pij-store` proves the assignment rows upsert by (project, role, instance, seat, from), list per project only, and a replace restores them row for row.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005",
+            "receipt": "98863f6: store_integration community_assignments_record_end_rebuild_and_set_seat_roles_in_one_transaction; pij-store 160/0"
           }
         ],
         "tk-0002": [
           {
             "id": "dw-0002",
             "assertion": "A test assigns pa, pm-001 and reviewer and sees seat_roles pa, pm and worker set in the same transaction; a prime keeps prime; release changes nothing.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "98863f6 + bccfc76: store test (prime kept, unchanged role appends nothing) and directory_http assign test (pm, worker; read_role agrees; release leaves it)"
           }
         ],
         "tk-0003": [
           {
             "id": "dw-0003",
             "assertion": "A registered hook sees exactly one call per successful assign and none for a refused one.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002",
+            "receipt": "bccfc76: directory_http assign test, CountingHook sees exactly three calls for three successful assigns, none for four refusals"
           }
         ],
         "tk-0004": [
           {
             "id": "dw-0004",
             "assertion": "Close of an assigned seat ends its rows; with the governance worktree missing the close still tombstones and reports a named pending end; the next directory write flushes it.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003",
+            "receipt": "bccfc76: directory_http close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_write"
           }
         ],
         "tk-0005": [
           {
             "id": "dw-0005",
             "assertion": "A private tmux server test sees the window renamed on assign with an unchanged spawn counter; a paneless seat assigns with a receipt note.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004",
+            "receipt": "87ad0d4: pij-tmux adapter rename_window_names_the_panes_window_with_one_recorded_launch (real tmux, delta 1); directory_http assign test (window renamed; paneless seat notes it)"
           }
         ],
         "tk-0006": [
           {
             "id": "dw-0006",
             "assertion": "`pij-rs directory --help`, `directory add --help`, `assign --help` and `release --help` exit 0 and list the flags.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006",
+            "receipt": "7a067b4: pij-rs directory --help / -h / add --help exit 0 offline; unknown verb exit 2; directory_http help_is_answered_not_refused"
           }
         ],
         "tk-0007": [
@@ -270,8 +276,9 @@
           {
             "id": "dw-0009",
             "assertion": "Two projects in one store each see only their roles; drop the rows, rebuild, and `pij directory --json` is byte-identical; the spawn counter does not move for the view.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005",
+            "receipt": "87ad0d4: directory_http the_view_is_per_project_and_a_rebuild_gives_byte_identical_json (view reads in-process via root::find)"
           }
         ],
         "tk-000a": [
@@ -302,16 +309,18 @@
           {
             "id": "dw-000d",
             "assertion": "Adding a role into a hand-written folder (memory/INDEX.md with an unstaged edit, outputs/, role.md) commits only role.dd.json and role.dd.md and leaves the others byte-identical; an existing role.dd.json refuses naming it; a batch refusal names every existing role.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0008"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0008",
+            "receipt": "87ad0d4: directory_http add_adopts_a_hand_written_role_folder_and_writes_only_the_document"
           }
         ],
         "tk-000e": [
           {
             "id": "dw-000e",
             "assertion": "A caller in a linked worktree resolves the project without --project; with none, the refusal names `pij project create`.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0009"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0009",
+            "receipt": "87ad0d4: directory_http a_linked_worktree_finds_its_project_and_an_unknown_repo_names_the_register_step"
           }
         ]
       }
