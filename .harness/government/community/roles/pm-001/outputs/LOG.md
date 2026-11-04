@@ -30,3 +30,5 @@
 2026-11-04 note pr-111-security ed41a25 block — pij-wary-lynx: private repo named in plan 192 OQ text (pm-001's kept text) and check.py regex; routed to heron; asked prime to squash-merge (3 branch commits name it) and to rule on plan 175 files on main that already name it
 2026-11-04 note c19 - folded — prime squash-merges #111; heron job 5 = plan 175 scrub PR after #111; security grades head + forward scrub (to lynx with new head)
 2026-11-04 deliverable review-113-packet 75cf1a1 sent — reviewer pij-varied-fly (window pij:review-113, worktree fleet-review-113); security + performance asked; CI-no-ddocs decision to prime; req-27 moved to job 5
+2026-11-04 note pr-113-head 2b328dc moved — req-27 (C18) added by heron; review worktree and verdict seats re-pinned
+2026-11-04 note c20 - folded — CI stays without ddocs and warns UNAVAILABLE (supply-chain rules win); #113 decision confirmed
