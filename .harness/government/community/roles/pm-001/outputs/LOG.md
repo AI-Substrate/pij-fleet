@@ -37,3 +37,4 @@
 2026-11-04 note pr-113-review 75cf1a1 block — pij-varied-fly F001 P2: ddocs-check.ts:126-127 swallows readdir errors (chmod 000 passes); routed to heron after #111 fixes, with optional relative-PATH note
 2026-11-04 note pr-111 ac293a2 held — review fixes in (14 kept/13 rows, 21 met, 5 obsolete), but security scrub missing (3 hits); asked heron for it before re-review
 2026-11-04 note pr-113-security 75cf1a1 pass-with-notes — pij-wary-lynx: no vulns; C20 warn is not validation proof; delta check needed on F001 fix head
+2026-11-04 note pr-111 75102c5 sent — review + security fixes in; re-review by pij-ambitious-anteater and delta security by pij-wary-lynx (C19) in new worktree fleet-review-111b
