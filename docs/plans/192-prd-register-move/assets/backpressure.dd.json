@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: a one-off script in assets/evidence/ takes the source by sha (ids and states only) and triage.md, checks each of the 40 open ids has exactly one verdict and each kept verdict names a PRD 002 id that exists, and prints the counts (kept, dropped as met, dropped as unwanted). `ddocs validate docs/project/prds/002-pij-base.dd.json` clean.",
-          "state": "unchecked",
-          "probe": "docs/project/prds/"
+          "state": "checked",
+          "probe": "docs/project/prds/",
+          "receipt": "assets/evidence/check.py + scrub.txt: 40 verdicts, 0 missing, 0 problems; PRD 002 validates"
         },
         {
           "id": "bp-0002",
@@ -51,8 +52,9 @@
           "mode": "ABSENT",
           "tier": "computational",
           "proof": "None needed: no loop, poll, timer, hook, sweep, status line or launch. Docs and one one-off evidence script that never runs in the product.",
-          "state": "unchecked",
-          "note": "Steady-state cost: 0 launches per second, no poll, no per-seat scaling."
+          "state": "checked",
+          "note": "Steady-state cost: 0 launches per second, no poll, no per-seat scaling.",
+          "receipt": "Docs plus a one-off evidence script; no loop, poll, timer, hook or launch in the product"
         }
       ]
     },

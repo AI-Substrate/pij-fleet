@@ -44,38 +44,44 @@
         {
           "id": "ac-0001",
           "claim": "Frozen source. The triage reads the register only at commit e05661c8, with `git show` in a read-only checkout of the private repo, and records the sha. No file and no quoted text from that repo enters pij-fleet.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "Read only with git show at e05661c8 in the read-only private checkout; check.py takes the sha; no source file or text in this repo (copy check 0)"
         },
         {
           "id": "ac-0002",
           "claim": "Triage. Each of the 40 open rows gets exactly one verdict in assets/evidence/triage.md: its old id, kept (with its PRD 002 id) or dropped, and a one-line reason in new words that names today's code (a file or a verb) where the code decides it. A row today's code already meets is dropped as met. A row whose verdict is unclear goes to pm-001 as a question, not a guess.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/triage.md: 40/40 verdicts (23 kept, 12 dropped-met, 5 dropped-unwanted); req-0020 asked of pm-001, kept as could pending"
         },
         {
           "id": "ac-0003",
           "claim": "PRD 002. Kept rows are written fresh as pij/prd requirements with new ids, a statement in new words, a testable done_when, priority `should` unless the need is a must (C12), and state planned, or in-progress where live work is named (C11). Its why, actors and goals describe pij as it is today. No statement or note reuses the source's wording. `ddocs validate docs/project/prds/002-pij-base.dd.json` is clean.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "docs/project/prds/002-pij-base.dd.json: 20 rows, ddocs validate ok 0/0; copy check 0 shared 8-word runs"
         },
         {
           "id": "ac-0004",
           "claim": "Publication. PRD 002 and the triage record hold no private PR numbers, machine paths, credentials, transcript text, or references to other repositories or projects. The scan and the copy check (bp-0002) are clean, and the security verdict passes on the exact head.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "note": "Scrub and copy check clean (assets/evidence/scrub.txt); security verdict on the exact head pending"
         },
         {
           "id": "ac-0005",
           "claim": "Pointers. AGENTS.md's Governance section and skills/pij/references/prime/rituals/bootstrap.md point at docs/project/prds/002-pij-base.dd.json, and no file in pij-fleet still points at a register path that does not exist here.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "AGENTS.md Governance and bootstrap.md point at PRD 002; grep prd/base-prd in AGENTS.md, skills/, harness/ finds none"
         },
         {
           "id": "ac-0006",
           "claim": "States. In this PR: roadmap s14 goes to shipped with its plan cell set to docs/plans/192-prd-register-move; req-25 goes to shipped. req-25 and s14 already carry C15's wording (pm-001, on this branch). PRD 001, roadmap 001 and PRD 002 validate clean.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "s14 complete (roadmap enum has no shipped) with plan cell; req-25 shipped; PRD 001, roadmap 001, PRD 002 ok 0/0"
         }
       ]
     },

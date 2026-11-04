@@ -184,12 +184,13 @@
 				{
 					"id": "s14",
 					"title": "Triage pij's earlier register into PRD 002",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-25"],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-doc-schemas"],
 					"depends_on": ["#steps/s01"],
 					"done_when": "PRD 002 validates under docs/project/prds/ and every open row of the earlier register has a recorded verdict.",
-					"needs": ["role:docs-system", "role:reviewer", "role:security"]
+					"needs": ["role:docs-system", "role:reviewer", "role:security"],
+					"plan": "docs/plans/192-prd-register-move"
 				},
 				{
 					"id": "s10",
@@ -230,6 +231,11 @@
 					"date": "2026-11-04",
 					"by": "pij-steady-otter (pm-001), ruling C15",
 					"change": "s14 is a triage into a fresh PRD 002, not a move."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "Plan 192: s14 complete. The earlier register was triaged into PRD 002 (docs/project/prds/002-pij-base.dd.json); 23 of 40 open rows kept as 20."
 				}
 			]
 		}

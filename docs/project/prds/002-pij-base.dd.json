@@ -1,0 +1,325 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 002: pij base",
+				"status": "draft",
+				"updated": "2026-11-04",
+				"owner": "pm-001",
+				"summary": "What the pij daemon, CLI and extensions still need outside the community work in PRD 001. Every row was checked against the code on 2026-11-04."
+			}
+		},
+		{
+			"name": "why",
+			"value": "pij's earlier requirement register stays archived where it was written and is not copied here. Its open rows were checked one by one against today's code: rows the code already meets, and rows about the retired TypeScript daemon generation, were dropped. The rows still true are written here fresh, so pij's public repo holds one live list of what is left to build. The triage record is docs/plans/192-prd-register-move/assets/evidence/triage.md."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-operator",
+					"name": "operator",
+					"need": "Trust what the fleet reports, and never have a message typed over their own typing."
+				},
+				{
+					"id": "a-prime",
+					"name": "prime",
+					"need": "A true picture of which seats are alive, where, and on which daemon."
+				},
+				{
+					"id": "a-seat",
+					"name": "any seat",
+					"need": "Send and receive whole messages and recover from its own startup failures."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "Messages arrive whole, at the right seat, and never over a person typing."
+				},
+				{
+					"id": "g-2",
+					"goal": "The registry is true: alive, dead, starting, and which daemon."
+				},
+				{
+					"id": "g-3",
+					"goal": "Every pij verb works or refuses by name with a next step."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "The community directory and its verbs (PRD 001)."
+				},
+				{
+					"id": "n-2",
+					"text": "The earlier register's history, its done rows and its wording."
+				},
+				{
+					"id": "n-3",
+					"text": "Work inside other projects that read pij's HTTP API; pij's side (/v1/seats, /v1/events) exists."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "A seat that is still starting is never reported dead",
+					"statement": "Between spawn and registration, pij does not announce a seat as exited while its pane and process are alive. It holds the notice back, or marks it provisional, until registration settles, and a seat whose first registration fails can still recover on its own.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A freshly spawned seat that is still booting produces no exit notice, and a seat whose first registration failed can adopt and then report.",
+					"source": "triage of the earlier register, 2026-11-04"
+				},
+				{
+					"id": "req-02",
+					"title": "Registering again keeps live state",
+					"statement": "When a seat registers again (restart, reload or adopt), fields the daemon already holds and the new registration does not supply, such as inbound consent and transport details, are kept, not cleared.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A test re-registers a live seat and finds its consent and transport fields unchanged.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "Read crates/daemon/src/registration.rs first; part of this may already hold."
+				},
+				{
+					"id": "req-03",
+					"title": "Delivery never types over a person",
+					"statement": "Before pij types into a pane it looks, at that moment, for a person typing there. It waits instead of injecting, does not count its own echoed text as typing, and stops waiting after a bounded idle time.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A test that types slowly for over 90 seconds without pressing Enter receives nothing until Enter; text pij itself typed does not hold the queue.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "The interaction gate exists (crates/harnesses/src/interaction.rs, consulted from crates/daemon/src/delivery/mod.rs). The idle expiry, the self-echo exemption and a fresh look on every send remain."
+				},
+				{
+					"id": "req-04",
+					"title": "Pane delivery types the whole message, for every harness",
+					"statement": "When a message reaches a seat by typing into its pane, the full body arrives, including bodies over 1 KB, for each harness that uses this path: Codex, Copilot, and Claude without its socket.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "For each of those harnesses, a live run delivers a body over 1 KB intact on the first attempt, and a body carrying control bytes is refused.",
+					"source": "triage of the earlier register, 2026-11-04"
+				},
+				{
+					"id": "req-05",
+					"title": "Claude seats receive messages over their socket",
+					"statement": "A message to a Claude seat travels over Claude's own messaging socket, not keystrokes, and its receipt says one of three things: delivered, held until the operator approves, or denied. Whether daemon-spawned Claude seats accept inbound by default is the operator's decision.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "With inbound accepted, a send arrives byte for byte and its receipt says delivered; with approval required, the receipt says held; a denial is reported as denied.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "crates/transport/src/uds.rs and `pij-rs spawn --accept-inbound` exist; the path is off unless that flag is passed (open question q-01)."
+				},
+				{
+					"id": "req-06",
+					"title": "Revive can preview, re-attach and spot a reused pid",
+					"statement": "`pij-rs revive` can show what it would do without changing anything, re-attach a seat whose process is alive but has lost its binding, and never treats a reused process id as the old seat.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A preview run changes no row; reviving a live but unbound seat binds it again; a recycled pid is reported as a different process.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "`pij-rs revive` exists, with `--assume-dead`."
+				},
+				{
+					"id": "req-07",
+					"title": "Spawn can hand a seat its first task",
+					"statement": "`pij-rs spawn` can carry a first task that the new seat receives once, after it has bound, so it starts work without a separate send.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A spawn given a task yields a seat whose first turn is that task, delivered exactly once.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "The working directory already arrives (`--cwd`)."
+				},
+				{
+					"id": "req-08",
+					"title": "Work trees come with their own cleanup",
+					"statement": "One command creates a work tree, its branch and the next numbered plan folder with empty, valid documents, and binds the new seat to that tree. A matching teardown deletes that tree and branch along with any build output the seat left, and refuses while uncommitted or unpushed work remains. Anything that creates trees ships with the tool that cleans them up.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Create then remove leaves no tree, branch or build directory behind; removing a tree with uncommitted changes refuses and loses nothing.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "`pij-rs stream` opens and closes governed streams; plan scaffolding and build-output cleanup are missing."
+				},
+				{
+					"id": "req-09",
+					"title": "Dead seats are cleaned up",
+					"statement": "A seat whose pane and process are both gone is tombstoned, and delivery checks the pane and process directly instead of trusting a stale row.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "After a seat's pane is killed, the seat is tombstoned without an operator step, and a send to it is refused as dead instead of waiting in the queue.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "`pij-rs reap` reconciles stale bindings when run by hand."
+				},
+				{
+					"id": "req-10",
+					"title": "A seat talks to the daemon that spawned it",
+					"statement": "A seat spawned by a non-default daemon, such as a private test daemon, is given that daemon's address and state directory, so its replies go back there and never to the main daemon.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A seat spawned by a private daemon replies to that daemon, and a reused pane id cannot cause a second adopt on the main daemon.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "Spawned seats get PIJ_SESSION_ID and PIJ_SPAWN_ID today, but not PIJ_RS_ADDR or PIJ_RS_STATE_DIR."
+				},
+				{
+					"id": "req-11",
+					"title": "Every pij verb works or refuses by name",
+					"statement": "Each verb the `pij` shim lists either works or gives a named refusal that says what to run instead. The verbs still unported (peer transcript tail, models, tree, watch and others) are ported or retired on purpose, and the word tail means one thing.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`pij --help` lists no verb that neither works nor refuses with a next step, and reading a peer's transcript has its own verb name.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "Unported verbs return E-RS-UNPORTED today; `pij-rs tail` follows daemon events."
+				},
+				{
+					"id": "req-12",
+					"title": "Several daemons are easy to tell apart",
+					"statement": "When a seat or message can't be found, pij says whether it belongs to another running daemon and lists the daemons that are up; a message queued but undeliverable says so.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "With two daemons running, looking up a seat that lives on the other one names that daemon, and one command lists both.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "`pij generation` is a read-only routing check today."
+				},
+				{
+					"id": "req-13",
+					"title": "Watchdog notices rest on liveness",
+					"statement": "A watchdog notice that a seat is stuck or failing is backed by a liveness signal, not screen text alone, and names the signal that fired.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A seat with error text on screen that is still active raises no fault notice, and every notice names its trigger.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "The detector is .omp/extensions/pij/core/watchdog.ts."
+				},
+				{
+					"id": "req-14",
+					"title": "Typecheck covers test files",
+					"statement": "`just typecheck` checks test files as well, so a test that would not compile cannot pass unnoticed.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A deliberately ill-typed test file makes `just typecheck` fail.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "tsconfig.json excludes **/*.test.ts."
+				},
+				{
+					"id": "req-15",
+					"title": "Every message has a known sender",
+					"statement": "A message in a seat's inbox comes from a registered seat or is plainly marked unverified, and the recipient can always reply to whoever sent it.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A send from an unregistered caller is refused or arrives marked unverified, and a reply to any delivered message reaches its sender.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "Check first whether the derived-sender path in crates/daemon/src/http/shim.rs already meets this."
+				},
+				{
+					"id": "req-16",
+					"title": "Wire changes ship with a restart and tolerate one version back",
+					"statement": "A change to the daemon's wire version ships with a daemon restart and a notice to the fleet in the same step, and clients accept the previous version.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A client built for version N reads a version N-1 envelope, and the restart and fleet notice go out together.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "The extension rejects any version mismatch today (.omp/extensions/pij/core/daemon-wire.ts)."
+				},
+				{
+					"id": "req-17",
+					"title": "Anyone can look at a seat's queue without touching it",
+					"statement": "A read-only view lists the messages waiting for any seat, why each waits and when it is next tried, without claiming or changing them.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "The view shows a waiting message with its reason and next try, and the message is still delivered afterwards.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "crates/store/src/queue.rs has an internal peek; no verb exposes it."
+				},
+				{
+					"id": "req-18",
+					"title": "A sender hears when a queued message lands",
+					"statement": "When a send is queued instead of delivered, the sender gets one later notice when it is delivered or given up. Output from another agent in a pane is never taken for a person typing.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A sender whose message was queued gets exactly one notice on delivery, and a pane busy with agent output does not trigger the typing hold.",
+					"source": "triage of the earlier register, 2026-11-04"
+				},
+				{
+					"id": "req-19",
+					"title": "Copilot's input box is recognised when its footer wraps",
+					"statement": "pij recognises Copilot's input box even when the footer wraps onto two lines, and a held send reports a real next retry time.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A Copilot seat in a narrow pane with a wrapped footer reads as idle, and a held receipt shows a retry time in the future, never zero.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "Footer recognition is in crates/harnesses/src/composer.rs."
+				},
+				{
+					"id": "req-20",
+					"title": "A seat that can't prove itself is admitted as unproven",
+					"statement": "A seat that can't prove its identity at registration is admitted with an unproven grade instead of refused, told how to prove itself, and never given a process binding it has not shown.",
+					"actor": "any seat",
+					"priority": "could",
+					"state": "planned",
+					"done_when": "Registering without proof gives an unproven seat with no process binding and a printed next step, and proving it upgrades the same seat.",
+					"source": "triage of the earlier register, 2026-11-04",
+					"note": "`pij inbox register` admits verified external hosts only; there is no grade today. Kept pending pm-001's answer on whether it is still wanted."
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "Should daemon-spawned Claude seats accept inbound socket messages by default (req-05)?",
+					"default": "Off until the operator rules; consent is the operator's act.",
+					"status": "open"
+				},
+				{
+					"id": "q-02",
+					"question": "Is graded admission (req-20) still wanted, or is refusing an unproven seat the better default?",
+					"default": "Kept as could, planned.",
+					"status": "open"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "First draft from the triage of the earlier register's 40 open rows (ruling C15): 23 kept as 20 rows, 17 dropped."
+				}
+			]
+		}
+	],
+	"references": []
+}

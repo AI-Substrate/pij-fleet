@@ -341,7 +341,7 @@
 					"statement": "The earlier register stays archived in the private repo and is never copied here. Its open rows are checked against today's code, and those still true are written in new words into `docs/project/prds/002-pij-base.dd.json`, with no private PR numbers, machine paths or references to other repositories. AGENTS.md and the pij skill point at PRD 002.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "PRD 002 validates clean; every open row of the earlier register has a recorded verdict (kept as a PRD 002 id, or dropped with a reason); the security verdict passes on the exact head; AGENTS.md and the pij skill point at PRD 002.",
 					"source": "workshops/001-directory-concept.md; ruling C15"
 				},
@@ -440,6 +440,11 @@
 					"date": "2026-11-04",
 					"by": "pij-steady-otter (pm-001), ruling C15",
 					"change": "req-25: the earlier register is not moved; its open rows are triaged into a fresh PRD 002 in new words."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "Plan 192: req-25 shipped; PRD 002 holds the triaged base requirements."
 				}
 			]
 		}
