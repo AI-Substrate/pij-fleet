@@ -20,3 +20,5 @@
 
 - [2026-11-04-pr-114-fix-review.md](2026-11-04-pr-114-fix-review.md): PR 114 final 4ec59a8 pass-with-notes after one-line docs delta; F001/F002 closed, S1 static cases prevented, six guard mutations detected; 39 tests and fmt/clippy pass, security owns lstat/write residual.
 
+- [2026-11-04-pr-118-docs-dogfood.md](2026-11-04-pr-118-docs-dogfood.md): PR 118 pass-with-notes; nine rows corroborated, P3 stamping/discovery-cwd qualifications proved, exact-head CI green; no builds or cargo.
+

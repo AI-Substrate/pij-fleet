@@ -93,3 +93,5 @@
 2026-11-04 deliverable review-118 868e830 sent — reviewer pij-legal-butterfly (window pij:review-118, worktree fleet-review-118); security asked; heron on job 8
 2026-11-04 note plan-194-templates 41b2d4b landed — heron job 8: six v1 templates + README, public-safe scan 0; waits for plan 194 coder (after s04 merges); heron idle
 2026-11-04 note heron-plan-review - folded — 195 notes 1-6 to marten; 196 notes 7-10 folded (7cec57b)
+2026-11-04 note claim:plan-197 6ccd4d8 claimed — issue #119 bounded spine reads
+2026-11-04 deliverable plan-197 97b3cb8 done — plan pushed; coder pij-swift-kestrel (lent from delivery), shared target; performance asked for live before
