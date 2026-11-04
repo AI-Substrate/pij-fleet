@@ -60,3 +60,4 @@
 2026-11-04 note pr-114-review d5fd8cf block — termite F001 missing brief committed; F002 relative PATH ddocs; routed to marten with merge of 795c9b7; disk 27 GB flagged
 2026-11-04 note pr-116 99d8bf4 sent — C19 scrub (3 files, 5 lines); reviewer pij-estimated-chinchilla (window pij:review-116), security queued; name#N x34 follow-up asked of prime
 2026-11-04 note c21 - folded — no name#N scrub; told heron + lynx. pr-114 8eb245b = main merges only; F001/F002 fix still owed by marten
+2026-11-04 note pr-111-security cb7a0cb pass-with-notes — lynx post-merge confirmation; pm-001 removed fleet-review-111d mid-check (lynx recovered via object DB): remove review worktrees only after all their verdict seats report

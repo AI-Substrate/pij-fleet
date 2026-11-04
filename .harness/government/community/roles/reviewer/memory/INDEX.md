@@ -14,3 +14,5 @@
 
 - [2026-11-04-pr-114-community-writer.md](2026-11-04-pr-114-community-writer.md): PR 114 block, repinned to b28d815 after complete docs-only delta; missing brief commits a batch, relative PATH breaks ddocs after chdir; 33 targeted tests pass, both guard mutations detected.
 
+- [2026-11-04-pr-116-scrub.md](2026-11-04-pr-116-scrub.md): PR 116 block; findings.md:78 retains the scrubbed worktree path, four occurrences to one; eight positive controls and exact-head CI pass, meaning preserved.
+

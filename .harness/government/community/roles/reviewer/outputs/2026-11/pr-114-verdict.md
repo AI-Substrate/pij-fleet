@@ -38,7 +38,7 @@ Fix: resolve the winning PATH candidate to an absolute executable path at discov
 
 ## Validation receipts
 
-All cargo invocations used `CARGO_TARGET_DIR=/Users/jordanknight/pi-hacking/fleet-190-community-writer/target`; no review-worktree target was created. Available disk stayed above the 25 GiB floor (31 GiB initially, 27 GiB at closeout).
+All cargo invocations used `CARGO_TARGET_DIR=<the coder worktree target>`; no review-worktree target was created. Available disk stayed above the 25 GiB floor (31 GiB initially, 27 GiB at closeout).
 
 | Command | Result |
 |---|---|

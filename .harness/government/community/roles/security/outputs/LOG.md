@@ -18,3 +18,5 @@
 
 2026-11-04 verdict pr:111 cb7a0cb6be670d140535dfb114b3cd42917329bf pass-with-notes - Rebase change sequences identical; conflict composition checked; merged squash tree matches requested head; worktree disappeared externally, immutable verification completed; inherited scrub note retained; governance through 6e04df6c checked; 2026-11-04-pr-111-cb7a0cb-security.md.
 
+2026-11-04 verdict pr:114 d5fd8cf48b4ffbe636818e996798f4bac3a4d9ed block - Static tracked-symlink confinement bypass, confidence 8/10; PATH/cwd defect confirmed; 9 pure tests pass; governance through d8588bb has separate personal build-path note; C21 applied; later fix not covered; 2026-11-04-pr-114-d5fd8cf-security.md.
+

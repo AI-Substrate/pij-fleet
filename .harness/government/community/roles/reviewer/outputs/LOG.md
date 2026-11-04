@@ -20,3 +20,5 @@
 
 2026-11-04 verdict pr-114 b28d815be55ee4698d308eea1b67d91c3e4d0fd2 block - supersedes 0c6ea88 after complete d5fd8cf..b28d815 docs-only review; cost note matches receipts, backpressure validates and renders without drift, exact-head CI four jobs green; unchanged F001/F002, no rebuild or checkout movement.
 
+2026-11-04 verdict pr-116 99d8bf42102a8d642a520fbc27008369de63f8e5 block - F001: findings.md:78 retains the exact worktree path scrubbed elsewhere (four occurrences to one); meaning preserved, private owner/name hits zero, eight positive controls pass, exact-head CI four jobs green; local quick gate tooling-limited, no Cargo or product edits.
+

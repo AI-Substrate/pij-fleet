@@ -18,7 +18,7 @@ Two limitations are explicit:
 
 Commands: `pij-rs --json ping`, piping each captured envelope through `jq .data.spawns`. Exactly two ping calls; both ping and jq exited 0. Full original envelopes are in the session receipt:
 
-`/Users/jordanknight/.copilot/session-state/0e20571c-8719-43bd-81f8-f738344bcd60/files/performance-baseline-ping-2026-11-04.json`
+`<local session file>`
 
 The receipt is a sequence of three JSON objects: sample 1, sample 2, interval. All per-site counter values are preserved below, so this note does not depend on retaining that session.
 
