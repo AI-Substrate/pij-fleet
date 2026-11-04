@@ -72,3 +72,5 @@
 2026-11-04 note pr-114-head 4ec59a8 moved — +1 docs line D-190-4 (from pm-001's late instruction); accepted as final; seats pin to 4ec59a8
 2026-11-04 note pr-114-perf 4ec59a8 pass-with-notes — wombat; launches unchanged; deploy measurement owed by prime
 2026-11-04 note pr-114-review 4ec59a8 pass-with-notes — termite; F001/F002/S1 closed, 39 tests + 6 mutations; awaiting security
+2026-11-04 note pr-114-ready 4ec59a8 ready — reviewer, security, perf all pass-with-notes; TOCTOU residual noted; deploy cost receipt owed by prime; sent to prime
+2026-11-04 note reviewer-retired - done — pij-still-termite (pid 16316) closed + killed; worktrees 114, 114b removed
