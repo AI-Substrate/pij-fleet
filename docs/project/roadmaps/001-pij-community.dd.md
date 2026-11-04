@@ -52,4 +52,4 @@ Ship the pij community: a per-project directory of roles that outlive their seat
 | 2026-11-04 | pij-far-jackal with Jordan | Added s11 (claims, delivery at merge); widened s05 and s07. |
 | 2026-11-04 | pij-careful-heron | Plan 191: s01 complete (done-when checked, docs/plans/191-doc-procedures/assets/evidence/s01-check.md); s13 complete; needs filled for s02, s13 and s14 (req-24). |
 | 2026-11-04 | pij-steady-otter (pm-001), ruling C15 | s14 is a triage into a fresh PRD 002, not a move. |
-| 2026-11-04 | pij-careful-heron | Plan 192: s14 complete. The earlier register was triaged into PRD 002 (docs/project/prds/002-pij-base.dd.json); 23 of 40 open rows kept as 20. |
+| 2026-11-04 | pij-careful-heron | Plan 192: s14 complete. The earlier register was triaged into PRD 002 (docs/project/prds/002-pij-base.dd.json); 14 of 40 open rows kept as 13. |
