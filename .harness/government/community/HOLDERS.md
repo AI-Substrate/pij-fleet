@@ -9,7 +9,7 @@
 | coder | (per task, assigned by pm-001) | — |
 | coder (s02 phase 2, plan 190) | pij-brisk-marten | 2026-11-04 |
 | reviewer | (per PR, assigned by pm-001) | — |
-| reviewer (PR #110) | pij-sharp-boa | 2026-11-04 |
+| reviewer (PR #111) | pij-ambitious-anteater | 2026-11-04 |
 | security | pij-wary-lynx | 2026-11-04 |
 | performance | pij-frugal-wombat | 2026-11-04 |
 
@@ -23,3 +23,4 @@
 | security | pij-community-security | 2026-11-04 | 2026-11-04 | renamed |
 | performance | pij-community-perf | 2026-11-04 | 2026-11-04 | renamed |
 | pm-001 | pij-community-pm-001 | 2026-11-04 | 2026-11-04 | renamed; wrote the wave A plan |
+| reviewer (PR #110) | pij-sharp-boa | 2026-11-04 | 2026-11-04 | review done; close undone by its extension (#109), process ended |

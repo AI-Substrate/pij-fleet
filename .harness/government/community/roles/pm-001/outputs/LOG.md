@@ -14,3 +14,13 @@
 2026-11-04 note s02-phase-1 c900f85 landed — heron, plan/190-schemas; fixtures re-checked by pm-001 (2 pass, 2 fail as expected); handed to pij-brisk-marten to merge (ff) and biome-format PRD 001
 2026-11-04 deliverable review-110-packet 4c5a792 sent — reviewer pij-sharp-boa (copilot gpt-6.1-sol high, window pij:review-110, worktree fleet-review-110); security asked of pij-wary-lynx; performance not needed (docs only)
 2026-11-04 note s14-go 2f7d59f sent — heron starts job 3; roadmap steps use complete (no schema change); heron fixes PRD 001 source paths in s14
+2026-11-04 note pr-110-security 4c5a792 pass — pij-wary-lynx, no notes owed; reviewer pending
+2026-11-04 note s14-unproven-grade - asked — heron keeps old req-0020 as could/planned pending prime ruling
+2026-11-04 note pr-110-ready 4c5a792 ready — security pass + reviewer pass-with-notes (P3 README.md:23 moved to s14); sent to prime to merge; reviewer pij-sharp-boa closed
+2026-11-04 note c17 - folded — heron: unproven-grade row could/planned citing C17
+2026-11-04 note close-bug - observed — pij close returned tombstoned but seat stayed live 3+ min; killed pid 10182 + pane %417; reported to prime for #109
+2026-11-04 note s02-progress abf07d2 tk-0001..0005 in — marten told to merge phase 1 (e26e96e); TS gates via CI only (worktree-deps banned); lifecycle_http flake to prime
+2026-11-04 note pr-111 1b7c1cd held — conflicts after #110 merge; heron to rebase + C17 + README P3 + difficulties + source paths; job 4 (ddocs sensor) queued
+2026-11-04 deliverable review-111-packet ed41a25 sent — reviewer pij-ambitious-anteater (copilot gpt-6.1-sol high, window pij:review-111, worktree fleet-review-111); security asked of pij-wary-lynx
+2026-11-04 note pr-111-head b13f5b3 moved — one line in difficulties.md; reviewer and security re-pinned to b13f5b3
+2026-11-04 note claim:plan-193 b19c84b claimed — heron job 4, ddocs-validate sensor
