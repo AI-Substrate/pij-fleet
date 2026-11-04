@@ -63,7 +63,7 @@
           "proof": "EXTEND: crates/testkit/tests/spawn_sites.rs covers every new launch site. Live fleet before and after deploy: `pij-rs --json ping | jq .data.spawns` read twice 60 s apart, and `just spawn-rate --seconds 20`; expected no change at rest. Per write on a private daemon: spawn counter delta around one `pij directory add` and one 8-role batch.",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "Expected cost. Loop, poll, timer, sweep: none. Launches per `directory add`: about 7 (ddocs validate, ddocs build, and about 5 git plumbing calls), each by an absolute path resolved once through pij_core::program::launch; ddocs is a node script, so count the node it starts too. A batch costs the same launches once per batch, not per role. Scaling: with requests only; zero per seat and zero per tick; zero launches when nobody writes."
+          "note": "Expected cost. Loop, poll, timer, sweep: none. Launches per `directory add`: about 6 (ddocs validate, ddocs build, and about 4 git calls: a status check on the writer's paths, add, commit --only, rev-parse), each by an absolute path resolved once through pij_core::program::launch; ddocs is a node script, so count the node it starts too. A batch costs the same launches once per batch, not per role. Readings record `data.pid` (AC10)."
         },
         {
           "id": "bp-0006",
@@ -74,6 +74,17 @@
           "proof": "`ddocs validate` on PRD, blueprint and roadmap 001 after the state flips; `just rust-check`; `harness checks`; GitHub CI on the exact head; reviewer, security and performance verdicts on that head.",
           "state": "unchecked",
           "probe": "harness checks"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC10: ping reports the daemon pid",
+          "phase": "ph-ebe5",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: a pij-daemon ping test asserts `data.pid` equals the daemon's own process id; the bp-0005 receipts show the same pid on the before and after readings of each pair.",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "Cost: none. The pid comes from std::process::id(), no launch."
         }
       ]
     },

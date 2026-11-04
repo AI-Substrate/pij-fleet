@@ -46,13 +46,13 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "Schemas. `.dd/schemas/pij/role` holds every req-04 field: id, title, kind (specialist or general), lifecycle (long-lived or per-task), holders (one or many), instance key, scope (paths and rules), out of scope, forbidden paths, default seat (harness, model, effort), inputs, output kinds, standing packet (inline text, or a reference to a brief file), template and version, and a changelog (date, by, why). `pij/output` holds the req-10 fields (kind: verdict, deliverable, note or handover; subject; head; result; notes owed; evidence as command, exit code and log path; external link; writer; requester). `pij/memory` holds the req-09 fields (date, title, tags, one-line hook, body). `ddocs validate` passes on a role with an inline packet and on one that references a brief, and fails on a role missing scope or missing its standing packet.",
+          "claim": "Schemas. `.dd/schemas/pij/role` holds every req-04 field: id, title, kind (specialist or general), lifecycle (long-lived or per-task), holders (one or many), instance key, scope (paths and rules), out of scope, forbidden paths, default seat (harness, model, effort), inputs, output kinds, standing packet (inline text, or a reference to a brief file), template and version, a default time limit (`default_limit`, a duration that req-22's check uses when a send carries no `--limit`; ruling C5), and a changelog (date, by, why). `pij/output` holds the req-10 fields (kind: verdict, deliverable, note or handover; subject; head; result; notes owed; evidence as command, exit code and log path; external link; writer; requester). `pij/memory` holds the req-09 fields (date, title, tags, one-line hook, body). `ddocs validate` passes on a role with an inline packet and on one that references a brief, and fails on a role missing scope or missing its standing packet.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
-          "claim": "Layout. A role lands at `<government-root>/community/roles/<id>/role.dd.json` with its generated `role.dd.md`, beside `memory/` and `outputs/`, as blueprint c-layout says. Rulings stay outside `community/`. The layout's paths are defined in one place in the writer.",
+          "claim": "Layout. A role lands at `<government-root>/community/roles/<id>/role.dd.json` with its generated `role.dd.md`, beside `memory/` and `outputs/`, as blueprint c-layout says. Rulings stay outside `community/`. The layout's paths are defined in one place in the writer. The governance branch also carries copies of the `pij/*` schemas under `.dd/schemas/pij/`, so ddocs validates there; the writer refreshes them in the same commit when pij's schema version moves (ruling C9).",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
@@ -64,13 +64,13 @@
         },
         {
           "id": "ac-0004",
-          "claim": "Checkout safety. In a repo whose governance branch is checked out with an uncommitted change to a tracked file and an untracked file: a write commits; both edits stay exactly as they were and unstaged; and the checkout's next ordinary commit of its own edit neither deletes nor reverts the role pij wrote. Two concurrent writes for one project both land, one after the other; a branch tip that moved underneath a write is retried against the new tip, never forced.",
+          "claim": "Checkout safety (ruling C8). The writer writes into the standing governance worktree and commits with `git add -- <its paths>` then `git commit --only -- <its paths>` (a new path must be added first; `--only` alone refuses an untracked path), staging and committing nothing else. No plumbing moves the ref under a checkout. Proof, in a repo whose governance worktree has an unstaged edit to one tracked file, a staged edit to another, and an untracked file: a write commits only its own paths; all three edits stay exactly as they were (staged stays staged, unstaged stays unstaged); and the checkout's next ordinary commit neither deletes nor reverts what pij wrote. If any path the writer is about to write already carries an edit it did not make (modified, staged or untracked), it refuses by name and writes nothing. Two concurrent writes for one project both land, one after the other, through the one writer per project; a held `index.lock` is retried briefly, then refused by name, never forced.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0005",
-          "claim": "Refusals. With no governance worktree, the verb refuses with a named code and the bootstrap step that harness/scripts/government-root.sh prints. With ddocs missing or not executable, it refuses with a named code and the install step, and `just doctor` reports which ddocs pij will use. A document that fails `ddocs validate` refuses with ddocs' own message and commits nothing.",
+          "claim": "Refusals. With no governance worktree, the verb refuses with a named code and the bootstrap step that harness/scripts/government-root.sh prints. ddocs is resolved once at daemon start from `PIJ_DDOCS`, else PATH (ruling C10); tests inject a fake. With ddocs missing or not executable, it refuses with a named code and the install step, and `just doctor` reports which ddocs pij will use. A document that fails `ddocs validate` refuses with ddocs' own message and commits nothing.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
@@ -94,9 +94,15 @@
         },
         {
           "id": "ac-0009",
-          "claim": "Docs and states. docs/how/pij-rs-api.md documents the verb and its refusals; the pij skill's CLI-verb coverage table and the shim route table carry `directory`. In this PR: roadmap s02 goes to shipped with its plan cell set to docs/plans/190-community-writer; req-02 and req-03 go to shipped; req-04, req-05, req-17 and req-19 go to in-progress (templates, assign, the view and later steps finish them); c-role-schema, c-layout and c-writer go to shipped. All three project docs validate clean.",
+          "claim": "Docs and states. docs/how/pij-rs-api.md documents the verb and its refusals; the pij skill's CLI-verb coverage table and the shim route table carry `directory`. In this PR: roadmap s02 goes to shipped with its plan cell set to docs/plans/190-community-writer; req-03's title, statement and done_when are reworded to ruling C8 (pij commits only its own paths in the governance worktree with `git commit --only`, no plumbing, and never touches anyone else's edits); req-02 and req-03 go to shipped; req-04, req-05, req-17 and req-19 go to in-progress (templates, assign, the view and later steps finish them); c-role-schema, c-layout and c-writer go to shipped. All three project docs validate clean.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0010",
+          "claim": "Ping pid. `pij-rs --json ping` returns the daemon's process id as `data.pid` (from the process itself, no launch). The AC8 cost receipts record the pid with each spawn reading, so a before and after pair is shown to come from one daemon process (the spawn counter resets on restart). `docs/how/pij-rs-api.md` and `docs/how/macos-defender.md` (Measure launches) show the field.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
         }
       ]
     },
@@ -108,7 +114,7 @@
           "title": "Role, output and memory schemas",
           "state": "unchecked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
-          "brief": "AC1. Three schemas under .dd/schemas/pij/ with pass and fail fixtures. Owned by docs-system (ROUTES: .dd/schemas/pij/**), committed on this branch before phase 2 starts. CS-2."
+          "brief": "AC1. Three schemas under .dd/schemas/pij/ with pass and fail fixtures, including `default_limit` on pij/role (C5). Owned by docs-system (ruling C7), committed on this branch before phase 2 starts. CS-2."
         },
         {
           "id": "ph-ebe5",
@@ -118,7 +124,7 @@
             "ph-c762"
           ],
           "tasks": "assets/tasks/phase-2/tasks.dd.json#tasks",
-          "brief": "AC2 to AC9. A Rust governance-root resolver, the writer (validate, build, commit without touching any checkout, CAS on the branch tip, one writer per project), `pij directory add` and `--batch`, the store pointer (migration 0031), refusals, doctor, docs, cost receipts and the doc state flips. Coder. CS-4."
+          "brief": "AC2 to AC10. A Rust governance-root resolver, the writer (validate, build, `git add` plus `git commit --only` of its own paths in the governance worktree per C8, refusing on foreign edits to those paths, one writer per project, schema copies per C9), `pij directory add` and `--batch`, the store pointer (migration 0031), refusals, ddocs resolution and doctor (C10), the daemon pid on ping, docs, cost receipts and the doc state flips. Coder. CS-4."
         }
       ]
     },
@@ -160,19 +166,23 @@
       "value": [
         {
           "question": "Who writes the three schemas? Recommended: docs-system, which owns .dd/schemas/pij/**, as phase 1 on this branch before the coder starts. Alternative: the coder writes them and docs-system gives a verdict.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Ruled C7: docs-system writes them as phase 1 on this branch; the coder gets a docs-system verdict on any later schema change."
         },
         {
           "question": "How does a write avoid leaving the prime's checked-out governance branch stale? Options: (a) the writer commits with plumbing, then updates the checkout's index and files for exactly the paths it wrote, refusing if any of those paths are dirty there (touches only pij-owned paths); (b) the community directory lives on its own ref nobody checks out, which changes req-02's location; (c) the writer refuses while the branch is checked out anywhere, which blocks the prime's standing worktree. Recommended: (a), with req-03 reworded to 'never touches a seat's own edits'. Needs a ruling.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Ruled C8: neither (a), (b) nor (c). The writer commits in the standing governance worktree with `git commit --only -- <its paths>`, staging nothing else, and refuses if those paths carry edits it did not make. No plumbing. req-03 reads 'never touches anyone else's edits'. AC4."
         },
         {
           "question": "Where do pij/* schemas live for the orphan governance branch? Recommended: the writer keeps copies under .dd/schemas/pij/ on the governance branch and refreshes them in the same commit when pij's version moves, so a human can run ddocs there. Alternative: `just install` links them into ~/.dd.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Ruled C9: as recommended, copies under .dd/schemas/pij/ on the governance branch, refreshed by the writer. AC2."
         },
         {
           "question": "How does pij find ddocs on a machine? Recommended: PIJ_DDOCS, else PATH, resolved once at daemon start; doctor reports it; no npm dependency in this plan.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Ruled C10: as recommended, PIJ_DDOCS else PATH, resolved once at daemon start; doctor reports it; tests inject a fake. AC5."
         }
       ]
     },
@@ -211,19 +221,19 @@
           "risk": "The prime's governance checkout goes stale when pij moves the branch tip, and its next commit silently reverts pij's write.",
           "likelihood": "High",
           "impact": "Critical",
-          "mitigation": "Open question 2 needs a ruling before phase 2; AC4 proves the chosen answer."
+          "mitigation": "Ruling C8: commit only the writer's own paths with `git commit --only` in the governance worktree, refuse on foreign edits to them; AC4 proves it."
         },
         {
           "risk": "ddocs is absent in CI and on other machines.",
           "likelihood": "High",
           "impact": "Medium",
-          "mitigation": "Injected validator for unit tests; named refusal and doctor check at runtime; open question 4."
+          "mitigation": "Ruling C10: injected fake for unit tests; named refusal and doctor check at runtime."
         },
         {
           "risk": "Schemas on main and on the governance branch drift apart.",
           "likelihood": "Medium",
           "impact": "Medium",
-          "mitigation": "Open question 3: one source of truth, refreshed by the writer."
+          "mitigation": "Ruling C9: the writer refreshes the copies when pij's schema version moves."
         },
         {
           "risk": "macOS /usr/bin/git is an xcrun shim that starts extra processes.",
@@ -239,7 +249,7 @@
         "Never write to the live governance branch or the prod daemon; scratch repos and a private daemon only.",
         "Builds scoped with -p. Check `df -h /System/Volumes/Data` before a large build; stop and tell pm-001 under 25 GB.",
         "No `git add -A`, no `--no-verify`, never push refs/notes/*.",
-        "Phase 2 starts only after open question 2 has a ruling."
+        "Phase 2 starts only after phase 1 (the schemas) is committed on this branch."
       ]
     }
   ]
