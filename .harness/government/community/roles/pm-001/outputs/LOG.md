@@ -116,3 +116,6 @@
 2026-11-04 deliverable review-121 e13a834 sent — reviewer pij-preferred-salamander, security, perf; lock path stays $PIJ_SHARED_TARGET.lock, switch all seats at merge; node_modules symlink flagged to prime
 2026-11-04 deliverable review-122 94592ad sent — s04 PR: reviewer pij-substantial-mammal (window pij:review-122, worktree fleet-review-122), security + perf; heron import re-run after deploy
 2026-11-04 note c25 - folded — no symlinked node_modules anywhere; TS proof CI-only; told kestrel
+2026-11-04 note pr-121-perf e13a834 pass-with-notes — wombat: wait loop = 3 launches (df, mkdir, sleep) per 20 s per waiter; note bp-0003 says 2
+2026-11-04 note pr-121-review e13a834 block — salamander F001 P1 unlock before cargo descendants exit; F002 P2 symlink vs real path different locks; routed to kestrel
+2026-11-04 note pr-122-perf 94592ad pass-with-notes — wombat: rest 0, assign 10, release 9, view 0, close 11; no tick work; live comparison after deploy

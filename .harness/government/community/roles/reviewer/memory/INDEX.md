@@ -24,3 +24,7 @@
 
 - [2026-11-04-pr-120-bounded-spine.md](2026-11-04-pr-120-bounded-spine.md): PR 120 pass-with-notes; indexed-kind mutation detected, scratch paging/SQLite controls and cold restored oracle pass; overlapped baseline withdrawn; shared-target lock and post-wait disk-floor lessons.
 
+- [2026-11-04-pr-122-assign-lineage.md](2026-11-04-pr-122-assign-lineage.md): PR 122 block; same-role pending-end loss and same-second holding-key collision reproduced; 51 baseline tests pass, three new regressions fail, close guard mutation detected and restored control passes.
+
+- [2026-11-04-pr-121-shared-build.md](2026-11-04-pr-121-shared-build.md): PR 121 block; TERM/INT unlock before build descendants stop, and target symlinks bypass exclusion; eight fake-cargo probe groups and non-exclusive-lock mutation, exact-head CI green.
+

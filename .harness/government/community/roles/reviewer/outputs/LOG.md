@@ -34,3 +34,7 @@
 
 2026-11-04 verdict pr-120 43821d5ba66ad7e6f46a976785d393f9f4af0c15 pass-with-notes - no correctness finding; overlapped initial baseline withdrawn, indexed-kind mutation detected, independent paging/SQLite controls pass, uncontended cold restored daemon oracle and no-tail guard pass; exact-head CI green; local composite gate tooling-limited, live AC5 remains performance-owned.
 
+2026-11-04 verdict pr-122 94592ad6a0ba14a97c8ae1ad2d930c4ba7185ff3 block - F001 P1 same-role writes clear pending close-ends without committing them; F002 P2 same-second release/reassign collides with holding PK and rebuild silently drops the new holding; 51 baseline tests pass, three regressions fail, close guard mutation detected and restored control passes; exact-head CI green, local quick gate tooling-limited.
+
+2026-11-04 verdict pr-121 e13a834de99fe8e41e0373bc3ee0e2edb4956c8e block - P1 TERM/INT unlock while cargo descendants remain active; P2 target symlink selects a different lock for the same directory; both overlap defects reproduced with fake cargo on Bash 3.2, normal controls and non-exclusive-lock mutation pass; exact-head CI four jobs green, local quick gate tooling-limited; no real cargo or product edits.
+
