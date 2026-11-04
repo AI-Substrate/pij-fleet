@@ -102,7 +102,7 @@
         },
         {
           "id": "ac-0009",
-          "claim": "Docs and states. docs/how/pij-rs-api.md documents the verb and its refusals; the pij skill's CLI-verb coverage table and the shim route table carry `directory`. In this PR: roadmap s02 goes to shipped with its plan cell set to docs/plans/190-community-writer; req-03's title, statement and done_when are reworded to ruling C8 (pij commits only its own paths in the governance worktree with `git commit --only`, no plumbing, and never touches anyone else's edits); req-02 and req-03 go to shipped; req-04, req-05, req-17 and req-19 go to in-progress (templates, assign, the view and later steps finish them); c-role-schema, c-layout and c-writer go to shipped. All three project docs validate clean.",
+          "claim": "Docs and states. docs/how/pij-rs-api.md documents the verb and its refusals; the pij skill's CLI-verb coverage table and the shim route table carry `directory`. In this PR: roadmap s02 goes to complete (the pij/roadmap step_state word; PRD rows and blueprint components use shipped) with its plan cell set to docs/plans/190-community-writer; req-03's title, statement and done_when are reworded to ruling C8 (pij commits only its own paths in the governance worktree with `git commit --only`, no plumbing, and never touches anyone else's edits); req-02 and req-03 go to shipped; req-04, req-05, req-17 and req-19 go to in-progress (templates, assign, the view and later steps finish them); c-role-schema, c-layout and c-writer go to shipped. All three project docs validate clean.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
         },
