@@ -43,9 +43,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: crates/cli/tests/skill_verb_coverage.rs and .omp/extensions/pij/core/generation-skill-coverage.test.ts for the new verb; a private daemon run of `pij-rs directory add` and `--batch` against a scratch repo, transcript in assets/evidence/.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/cli/tests/skill_verb_coverage.rs",
-          "receipt": "tests/directory_http.rs (3 passed); assets/evidence/private-run.txt with real ddocs; skill_verb_coverage.rs passes; generation-skill-coverage.test.ts not yet run (no node_modules here)"
+          "receipt": "tests/directory_http.rs (3 passed); evidence/private-run.txt with real ddocs; skill_verb_coverage.rs local pass; generation-skill-coverage.test.ts CI on ce95a06 (check (22), check (24) pass)"
         },
         {
           "id": "bp-0004",
