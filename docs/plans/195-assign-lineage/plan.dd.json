@@ -122,8 +122,9 @@
         {
           "id": "ac-0012",
           "claim": "Docs and states. docs/how/pij-rs-api.md documents the verbs and refusals; the pij skill's verb coverage and shim route tables carry them. In this PR: roadmap s04 goes to complete with its plan cell set to docs/plans/195-assign-lineage; req-01, req-06 and req-16 go to shipped; req-17 goes to shipped; c-store and c-verbs go to in-progress (later steps add verbs); c-orient goes to in-progress. All project docs validate clean.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006",
+          "receipt": "s04 complete with plan cell; req-01, req-06, req-16, req-17 shipped; c-store, c-verbs, c-orient in-progress; PRD, blueprint, roadmap 001 validate 0/0; ddocs-check 7 clean; API doc and skill table carry the verbs"
         },
         {
           "id": "ac-0013",

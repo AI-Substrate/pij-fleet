@@ -80,7 +80,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-10",
 						"../prds/001-pij-community.dd.json#requirements/req-17"
 					],
-					"state": "planned"
+					"state": "in-progress"
 				},
 				{
 					"id": "c-verbs",
@@ -95,7 +95,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-10",
 						"../prds/001-pij-community.dd.json#requirements/req-16"
 					],
-					"state": "planned"
+					"state": "in-progress"
 				},
 				{
 					"id": "c-send-role",
@@ -146,7 +146,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-12",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
-					"state": "planned"
+					"state": "in-progress"
 				},
 				{
 					"id": "c-templates",
@@ -306,6 +306,11 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 190: c-role-schema, c-layout and c-writer shipped; c-writer's responsibility reworded per rulings C8 (commit only its own paths with `git commit --only`, no plumbing) and C9 (schema copies on the governance branch)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 195: c-store (assignments, migration 0032), c-verbs (assign, release, external add, rebuild, the view, help) and c-orient (the directory view) in-progress; later steps add the rest."
 				}
 			]
 		}

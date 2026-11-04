@@ -140,7 +140,7 @@
           "id": "tk-000a",
           "title": "Docs, skill tables and state flips (AC12)",
           "phase": "ph-95b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "pij-rs-api.md documents the verbs and refusals; skill CLI-verb and shim route tables carry them; roadmap s04 complete with plan cell; req-01, req-06, req-16, req-17 shipped; c-store, c-verbs, c-orient in-progress; all project docs validate.",
           "notes": "Biome-format docs/project JSON after ddocs writes.",
           "satisfies": [
@@ -287,8 +287,9 @@
           {
             "id": "dw-000a",
             "assertion": "`ddocs validate` is clean on PRD, blueprint and roadmap 001 and `just ddocs-check` passes with the flips applied.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006",
+            "receipt": "ddocs validate 0/0 on PRD, blueprint and roadmap 001; tsx harness/scripts/ddocs-check.ts: 7 documents clean"
           }
         ],
         "tk-000b": [
