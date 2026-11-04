@@ -8,3 +8,11 @@
 | C4 | 2026-11-04 | `--reply wake` to a cold requester? (delivery) | An audited forced wake, as the PA watchdog does. The requester asked to be woken; falling back to an FYI would strand it. |
 | C5 | 2026-11-04 | Where does req-22's default limit live? (delivery) | A `default_limit` field in the role schema, added in s02. |
 | C6 | 2026-11-04 | Draining the role queue on assign (delivery) | s04's assign exposes a hook that s05 uses to drain the role's queue to the new holder. |
+| C7 | 2026-11-04 | R1: who writes s02's schemas? (pm-001) | docs-system, as s02 phase 1; the coder gets a docs-system verdict on any schema change after. |
+| C8 | 2026-11-04 | R2: the writer moving prime-governance under the prime's checkout (pm-001) | The writer commits in the standing governance worktree with `git commit --only -- <the paths it wrote>`, staging nothing else, and refuses if those paths carry edits it did not make. No plumbing that moves the ref under a checkout. req-03 reads "never touches anyone else's edits". |
+| C9 | 2026-11-04 | R3: schemas on the orphan governance branch (pm-001) | The writer keeps copies of the `pij/*` schemas under `.dd/` on the governance branch and refreshes them when pij's version moves. |
+| C10 | 2026-11-04 | R4: finding ddocs (pm-001) | `PIJ_DDOCS`, else PATH, resolved once at daemon start; `just doctor` reports it; tests inject a fake. |
+| C11 | 2026-11-04 | R6: state mapping for the old register (pm-001) | As recommended: checked or shipped → shipped; unchecked or open → planned, in-progress where the note names live work. |
+| C12 | 2026-11-04 | R7: missing priority and done_when (pm-001) | As recommended: shipped rows take their receipt as done_when; others their own testable clause, or "to be written" in the note; priority `should` unless the row says must. |
+| C13 | 2026-11-04 | Seat names (Jordan) | Seat ids are machine-wide: animal names (`pij-<adjective>-<animal>`), never the role or project. The role lives in HOLDERS.md. |
+| C14 | 2026-11-04 | Closing seats (Jordan: "we are not the police") | Ownership on `pij close` is to be loosened; filed as an issue. Until then, spawn every seat with `--role` so the spawner is its parent. |
