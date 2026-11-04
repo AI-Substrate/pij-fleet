@@ -75,7 +75,7 @@ One row per survey row (`assets/survey/{core,routes,prime-core,prime-rituals}.md
 | ro-19 | routes · ops.md :58 | STALE | "In-place reattachment … remain[s a] named gap" | FIXED | references/routes/ops.md:57 | `pij-rs adopt --help` `--reclaim`; api § Adopt continuity order |
 | ro-20 | routes · ops.md :46 | MISSING | The reap eligibility rule | FIXED | references/routes/ops.md:48 | crates/daemon/src/reaper.rs:17,82 |
 | ro-21 | routes · ops.md :9-14 | MISSING | Daemon lifecycle: `pij-rs ping`, `pij-rs daemon --bind` | FIXED | references/routes/ops.md:13, references/routes/ops.md:16 | `pij-rs daemon --help`, `pij-rs peers --help`; `--offline`/`--insecure-bind` left to --help (not agent work) |
-| ro-22 | routes · ops.md :75-77 | STALE | Government example `$HOME/pi-hacking/pij-worktrees/pij-governance` | RULED R2 | references/routes/ops.md:80 | `harness/scripts/government-root.sh` exit 1 "found 0" |
+| ro-22 | routes · ops.md :75-77 | STALE | Government example naming a since-removed governance worktree path | RULED R2 | references/routes/ops.md:80 | `harness/scripts/government-root.sh` exit 1 "found 0" |
 | ro-23 | routes · delegate.md :23-24 | STALE | The forbidden list includes `.the-flow-state.json`, the-flow.json, the-flow.md | RULED R6 | references/routes/delegate.md:23 | `.the-flow-state.json` dropped |
 | ro-24 | routes · delegate.md :36 | MISSING | `pij-rs spawn … --parent <your-seat>` | FIXED | references/routes/delegate.md:36 | `pij-rs spawn --help` `--role` |
 | ro-25 | routes · ready.md :22 | WRONG | "`pij adopt` rejects `--harness pi` by design" | FIXED | references/routes/ready.md:22 | identity_tests.rs:1310 adopts `pi` with 200 |
