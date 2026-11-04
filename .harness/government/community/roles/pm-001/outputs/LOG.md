@@ -89,3 +89,6 @@
 2026-11-04 note s04-window-rename e20020c decided — option (b): one recorded tmux launch per assign; control-client allowlist (S2) untouched; marten rewords AC6/AC11/bp-0004/bp-0007
 2026-11-04 note f1-c24 - folded — prime registered project pij-fleet (F1); refusal must name project create (marten AC15); C24 prime is a template (plan 194 OQ2, heron job 8)
 2026-11-04 note plan-195-schemas bf78bff landed — heron job 7; to marten with layout.rs SCHEMAS array note; heron next: docs PR then job 8
+2026-11-04 note dogfood-rerun - confirmed — F2 + F3 live (nothing written); F11 batch refusal names only first role -> marten AC13
+2026-11-04 deliverable review-118 868e830 sent — reviewer pij-legal-butterfly (window pij:review-118, worktree fleet-review-118); security asked; heron on job 8
+2026-11-04 note plan-194-templates 41b2d4b landed — heron job 8: six v1 templates + README, public-safe scan 0; waits for plan 194 coder (after s04 merges); heron idle

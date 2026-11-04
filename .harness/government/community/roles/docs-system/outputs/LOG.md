@@ -8,3 +8,5 @@
 2026-11-04 note wave-b-dogfood - refused — job 6: batch import refused on project resolution (no pij project); 'role exists' on memory/INDEX.md confirmed from code; 10 frictions; outputs/2026-11/wave-b-dogfood.md
 2026-11-04 deliverable plan/195-schemas bf78bff4fbba0e23eb07b1bbcaa54bb75c8bc028 done — job 7 / plan 195 phase 1: pij/holders and pij/external schemas + fixtures
 2026-11-04 note wave-b-dogfood-run2 - refused — job 6 re-run after project registered: worktree still E-RS-ARG (F2); canonical E-RS-DIRECTORY-EXISTS naming absent role.dd.json (F3); nothing written
+2026-11-04 deliverable pr:118 868e830398b3bcba4f1c6361a9920745723266b4 opened — D-190-5 + D-WB-1..8 + 'don't pre-validate roles' procedure line
+2026-11-04 deliverable plan/194-templates 41b2d4b1fa99c6edc8e830c7bb3b21aa81bb3130 done — job 8 / plan 194 phase 1: six role templates + README
