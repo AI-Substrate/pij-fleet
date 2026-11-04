@@ -98,3 +98,8 @@
 2026-11-04 note pr-118-review 868e830 pass-with-notes — butterfly: 2 P3 wording notes (not owed); reviewer retired; awaiting security
 2026-11-04 note pr-118-ready 868e830 ready — reviewer + security pass-with-notes; sent to prime
 2026-11-04 note plan-197-before 97253 measured — wombat: anomalies CPU 13.8s, wall 9.7s, footprint 6.49 GiB; node show CPU 10.6s, wall 6.9s, RSS 7.2 GiB
+2026-11-04 note disk 24.7GB escalated — both coders stopped building; prime asked to free space; marten re-told (b) rename + schemas landed
+2026-11-04 note shared-target - rule — builds into fleet-190 target serialised via mkdir lock /tmp/pij-shared-target.lock + touch sources; #119 priority; unlocked results unreliable
+2026-11-04 deliverable review-120 43821d5 sent — PR #120 (plan 197, closes #119): reviewer pij-exciting-chameleon (window pij:review-120, worktree fleet-review-120), security + performance asked; live AFTER after deploy
+2026-11-04 note shared-target - breach — marten built without lock (wait-for-no-cargo loop) while kestrel held it; told marten to use mkdir lock and re-run; reviewer 120 warned
+2026-11-04 note pr-120-perf 43821d5 pass-with-notes — wombat: no new launch/loop; all SEARCH on 1M rows; note: all_matching scales with selected report/dispatch history, not seats x kinds alone; AFTER pending deploy
