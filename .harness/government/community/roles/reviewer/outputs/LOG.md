@@ -32,3 +32,5 @@
 
 2026-11-04 review-paused pr-120 43821d5ba66ad7e6f46a976785d393f9f4af0c15 incomplete - six focused tests and exact-head CI pass; no correctness finding; required scratch mutation stopped before cargo because disk fell to 24 GiB while waiting for the shared lock. Not a pass or merge approval.
 
+2026-11-04 verdict pr-120 43821d5ba66ad7e6f46a976785d393f9f4af0c15 pass-with-notes - no correctness finding; overlapped initial baseline withdrawn, indexed-kind mutation detected, independent paging/SQLite controls pass, uncontended cold restored daemon oracle and no-tail guard pass; exact-head CI green; local composite gate tooling-limited, live AC5 remains performance-owned.
+

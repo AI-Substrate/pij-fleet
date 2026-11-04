@@ -108,3 +108,7 @@
 2026-11-04 note brake 37794 stopped — pm-001 killed marten's unlocked cargo test --workspace at 21 GB (under floor), blocking reviewer 120; source untouched; prime told
 2026-11-04 note s04 b6f2cc2 complete — all ACs checked; open PR now with partial local rust gate + CI; disk 21 GB
 2026-11-04 deliverable coder-196 7cec57b sent — s11 coder pij-exuberant-wildcat (window pij:coder-196, worktree fleet-196-claims-delivery, shared target + lock)
+2026-11-04 note pr-120-ready 43821d5 ready — reviewer/security/perf all pass-with-notes; sent to prime; reviewer retired; worktree removed; AFTER owed post-deploy
+2026-11-04 note pr-120-merged b24cb58 merged — bounced pid 60418; AFTER asked of wombat; PA rule lift pending the reading
+2026-11-04 note claim:plan-198 b24cb58 claimed — just shared-build wrapper (lock, disk floor, source refresh), coder kestrel
+2026-11-04 deliverable plan-198 0c0e858 done — just shared-build plan; coder kestrel

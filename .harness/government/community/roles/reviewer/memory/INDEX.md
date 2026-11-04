@@ -22,3 +22,5 @@
 
 - [2026-11-04-pr-118-docs-dogfood.md](2026-11-04-pr-118-docs-dogfood.md): PR 118 pass-with-notes; nine rows corroborated, P3 stamping/discovery-cwd qualifications proved, exact-head CI green; no builds or cargo.
 
+- [2026-11-04-pr-120-bounded-spine.md](2026-11-04-pr-120-bounded-spine.md): PR 120 pass-with-notes; indexed-kind mutation detected, scratch paging/SQLite controls and cold restored oracle pass; overlapped baseline withdrawn; shared-target lock and post-wait disk-floor lessons.
+

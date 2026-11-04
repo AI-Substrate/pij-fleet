@@ -8,7 +8,7 @@
 | docs-system | pij-careful-heron | 2026-11-04 |
 | coder | (per task, assigned by pm-001) | — |
 | coder (s04, plan 195) | pij-brisk-marten | 2026-11-04 |
-| coder (#119, plan 197) | pij-swift-kestrel | 2026-11-04 (lent from delivery) |
+| coder (plan 198, shared-build) | pij-swift-kestrel | 2026-11-04 (lent from delivery) |
 | coder (s11, plan 196) | pij-exuberant-wildcat | 2026-11-04 |
 | reviewer | (per PR, assigned by pm-001) | — |
 | reviewer (PR #114) | pij-still-termite | 2026-11-04 |
@@ -30,3 +30,4 @@
 | reviewer (PR #111) | pij-ambitious-anteater | 2026-11-04 | 2026-11-04 | review done |
 | reviewer (PR #113) | pij-varied-fly | 2026-11-04 | 2026-11-04 | review done |
 | coder (s02 phase 2, plan 190) | pij-brisk-marten | 2026-11-04 | 2026-11-04 | merged #114; same seat moved to s04 |
+| coder (#119, plan 197) | pij-swift-kestrel | 2026-11-04 | 2026-11-04 | merged #120 |
