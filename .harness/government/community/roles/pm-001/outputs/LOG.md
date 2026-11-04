@@ -71,3 +71,4 @@
 2026-11-04 note pr-114 a4bb4fa sent — F001+F002+S1 fixed (CI green, clean with main); re-verdicts from termite, lynx, wombat in fleet-review-114b; two flakes deferred to ledger
 2026-11-04 note pr-114-head 4ec59a8 moved — +1 docs line D-190-4 (from pm-001's late instruction); accepted as final; seats pin to 4ec59a8
 2026-11-04 note pr-114-perf 4ec59a8 pass-with-notes — wombat; launches unchanged; deploy measurement owed by prime
+2026-11-04 note pr-114-review 4ec59a8 pass-with-notes — termite; F001/F002/S1 closed, 39 tests + 6 mutations; awaiting security

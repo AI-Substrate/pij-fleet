@@ -18,3 +18,5 @@
 
 - [2026-11-04-pr-116-fix-review.md](2026-11-04-pr-116-fix-review.md): PR 116 fix head 279b0ec passes; F001 closed, generic install roots allowed after PM clarification; corrected probe's 20 controls, docs and exact-head CI pass.
 
+- [2026-11-04-pr-114-fix-review.md](2026-11-04-pr-114-fix-review.md): PR 114 final 4ec59a8 pass-with-notes after one-line docs delta; F001/F002 closed, S1 static cases prevented, six guard mutations detected; 39 tests and fmt/clippy pass, security owns lstat/write residual.
+

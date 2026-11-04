@@ -24,3 +24,7 @@
 
 2026-11-04 verdict pr-116 279b0ec430edcb0b64ed39f76afbbb6ac111be20 pass - corrects the provisional same-head block after PM clarification: generic documented install roots are allowed; F001 closed, no outstanding findings; tracked-tree identity/path scrub zero, 20 controls pass, plan validates 0/0 and render has no drift, four CI jobs green; local quick gate tooling-limited, original worktree unchanged.
 
+2026-11-04 verdict pr-114 a4bb4fa1e9786667051897156e78c3143a75303e pass-with-notes - F001/F002 closed; static S1 controls and six expected mutation failures verified, restored 32 community + 3 HTTP + 4 spawn-site tests pass; scoped fmt/clippy and merged DD documents pass, main merge clean, manifests identical; security owns lstat/write residual, local composite gate tooling-limited.
+
+2026-11-04 verdict pr-114 4ec59a851d224b0a7736c6366ee9f05684f8b447 pass-with-notes - final one-line D-190-4 delta reviewed, no new finding; F001/F002 closure, static S1 checks and a4bb4fa evidence carried forward; exact final-head CI four jobs green, no rebuild or checkout movement; security residual note unchanged.
+

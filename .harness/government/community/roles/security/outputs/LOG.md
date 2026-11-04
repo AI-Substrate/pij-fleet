@@ -22,3 +22,5 @@
 
 2026-11-04 verdict pr:116 279b0ec430edcb0b64ed39f76afbbb6ac111be20 pass-with-notes - Full six-file scrub clear; calibrated controls 4 identity/5 private path, whole-tree target hits 0; 34 bare refs allowed by C21; no further scrub owed; governance through 9e4a5c9b and scrub3cf verified; 2026-11-04-pr-116-279b0ec-security.md.
 
+2026-11-04 verdict pr:114 4ec59a851d224b0a7736c6366ee9f05684f8b447 pass-with-notes - S1/F002 closed; six targeted tests and exact-head CI pass; external-process TOCTOU retained as nonblocking only under observed same-user governance model, not privileged/untrusted-writable deployment; governance through 94b0a775 checked; 2026-11-04-pr-114-4ec59a8-security.md.
+

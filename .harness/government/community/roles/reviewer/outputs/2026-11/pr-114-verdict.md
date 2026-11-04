@@ -1,75 +1,62 @@
-reviewer: block (head b28d815be55ee4698d308eea1b67d91c3e4d0fd2)
+reviewer: pass-with-notes (head 4ec59a851d224b0a7736c6366ee9f05684f8b447)
 
-Two P2 correctness findings. Reviewed the frozen detached worktree, not a moving PR head. No product edits, commits, pushes, deployment, production-daemon testing or test writes to live governance were made. Security and measured-cost verdicts remain with their assigned reviewers.
+F001 and F002 are closed. No new blocking correctness finding in the scoped repair or main-merge review. This supersedes the block at b28d815; unchanged baseline evidence is carried forward, not claimed as rerun. Security's independent verdict and disposition of the documented lstat/write race are still required; this is not a security or measured-cost approval.
 
-Supersedes the earlier verdicts at d5fd8cf and 0c6ea88. Per the PM's final-head request, inspected the complete `git diff d5fd8cf b28d815`: only four documentation files change. They record the lifecycle-test flake, renumber difficulty rows, correct bp-0005's estimate to the measured 9/add and 7 + 2N/batch cost, and add the coder's shared-tooling receipts. The cost note now agrees with the existing transcript; the shared-tooling results are attributed to the coder, not claimed as this reviewer's local gate. The delta has no new correctness finding. All production code, schemas and tests are identical, so F001/F002 and the existing runtime receipts carry forward unchanged. No Rust rebuild was needed; the checkout stays at d5fd8cf.
+Final-head delta: read the complete `git diff a4bb4fa 4ec59a8`, exactly one added D-190-4 row in `docs/difficulties.md`. It records the already reported test flake and rerun receipts, without changing code, tests, schemas or dependencies. No new finding. The a4bb4fa runtime and mutation evidence below carries forward unchanged; no rebuild or checkout movement.
 
-## Findings
+## Repair findings
 
-### F001 [P2] Reject a nonexistent standing-packet brief before committing
+| Item | Disposition | Observed proof |
+|---|---|---|
+| F001: missing brief commits a batch | Closed | The writer checks brief targets before creating its undo snapshot or writing any file. Missing, absolute, parent-traversing, outside-symlink and directory targets refuse `E-RS-ROLE-BRIEF-MISSING`, naming the role and brief. Existing readable regular-file control passes. The real-ddocs missing-brief regression and validator-independent batch test both pass with HEAD/index/status unchanged. |
+| F002: relative PATH breaks ddocs after cwd changes | Closed | PATH entries are resolved against the daemon-start cwd and retained only as absolute paths. Actual launches from a different governance cwd pass for `tools`, `./tools`, empty and interior-empty PATH components; absolute override precedence remains covered. |
+| S1: pre-existing symlink destinations escape the root | Static reproductions prevented | Dangling tracked destination links, linked ancestors, rendered siblings, schema-copy destinations and `.dd` ancestors refuse `E-RS-GOV-SYMLINK` before any write. The tests preserve HEAD/status/the link and assert no external output. Original checkout safety, batch atomicity, lock retry and commit-failure rollback controls still pass. |
 
-Location: `crates/daemon/src/community/ddocs.rs:110-111`, with the packet check at `crates/daemon/src/community/role.rs:182-205`.
+**Remaining note:** confinement is lstat-based, not an atomic no-follow/openat guarantee. An unrelated local process can swap an entry between inspection and write, including around renderer or rollback operations. The per-worktree mutex serializes this daemon's writers, not external filesystem actors. The packet and implementation evidence already identify this residual; security owns its risk grade and merge disposition. No waiver is implied here.
 
-The role contract requires `source: brief` to reference an existing file. `check_packet` only checks that the string is nonempty, and `Ddocs::run` treats every zero exit code as validation success. Real ddocs reports a missing file link as a warning with exit 0. Consequently a role with `brief: "briefs/definitely-absent.md"` is committed successfully, including in an otherwise valid batch. The stored role has no usable standing packet.
+The symlink veto is a **one-directional safety interlock (a brake), not a policy**: removing it permits more writes. It does not choose a different retention or ownership outcome.
 
-Independent reproduction: a real-ddocs scratch writer accepted a two-role batch containing one valid inline packet and one missing brief, returning `Ok(Written { commit: "56a7be9df470926fb07d7715855d490ad471259e", ... })`. The regression expecting refusal and no commit fails. The positive control, with a committed `briefs/qa.md` in the same governance-root layout, passes.
+## Mutation evidence
 
-Fix: check that the brief resolves to an existing readable file in the governance worktree, or promote this specific missing-brief diagnostic to a named refusal, before committing any batch path. Include the role and brief path in the refusal. Do not blanket-reject unrelated advisory ddocs warnings. Add both existing/missing-brief controls and assert that the missing-brief batch leaves HEAD and the index unchanged.
+In an immutable-a4bb4fa scratch extraction, bypassing the brief check, restoring the old PATH lookup, and disabling the symlink veto produces exactly six expected failures: two F001 tests, the F002 execution-level test, and three S1 tests. The other 26 tests pass. Restoring the source bytes makes all 32 pass again; the restored writer and ddocs files were compared byte-for-byte with the frozen checkout before that rerun. Neither review worktree was edited.
 
-### F002 [P2] Make a PATH-discovered ddocs path absolute before changing cwd
+## Merge review
 
-Location: `crates/daemon/src/community/ddocs.rs:72-74` and `:96-98`.
+The two merges preserve both req-26 and req-27, retain req-03's C8 wording/state while taking main's corrected source address, and retain both roadmap s14 and s02 history. The merged PRD and roadmap validate and their generated Markdown has no drift. Main's harness/schema-sensor changes are inherited, not reimplemented by this PR.
 
-The PATH fallback accepts any resolver result containing `/` as `Found`, including relative entries such as `tools/ddocs`, `./ddocs` and an empty PATH component's `./ddocs`. The child then changes cwd to the governance worktree. The accepted executable path is now relative to another directory, so an installed ddocs fails as `E-RS-DDOCS-MISSING` instead of running the program resolved at daemon startup. This contradicts AC5/C10's resolved-once, absolute-path contract.
+`git merge-tree --write-tree a4bb4fa1e9786667051897156e78c3143a75303e 4b14b21` succeeds without conflicts. `Cargo.lock` and `crates/daemon/Cargo.toml` have no differences against main 4b14b21. The branch includes main through 795c9b7; this clean-merge proof does not claim that later 4b14b21 is already an ancestor.
 
-Independent reproduction: the same executable launched successfully with an absolute `PIJ_DDOCS` path after cwd changed. Resolving it through a relative PATH entry returned `Found("pr114-relative-ddocs-54407/ddocs")`; validation from the scratch governance directory returned `E-RS-DDOCS-MISSING`, OS error 2.
+## Commands and results
 
-Fix: resolve the winning PATH candidate to an absolute executable path at discovery time and retain that path. Add execution-level controls for relative and empty PATH components, with a different governance cwd, alongside the existing absolute-path and explicit-override tests.
-
-## What passed
-
-- AC4/C8: real scratch repositories preserve unstaged, staged and untracked edits; commit only pij's paths; preserve pij's files in the next ordinary commit; refuse named foreign edits; serialize concurrent writes; retry and then refuse a held index lock without removing it. An added commit-hook failure control also preserves the foreign index bytes and worktree contents.
-- Safety mutation: disabling the foreign-edit guard makes the committed foreign-edit regression fail. This guard is a **one-directional safety interlock (a brake), not a policy**: removing it permits more writes; it does not select a different outcome policy.
-- AC6: existing eight-role HTTP import and invalid-document all-or-nothing tests pass. Inline/brief source-field pairing tests pass. F001 is the additional missing-file case the fake validator does not cover.
-- AC7: row-for-row pointer rebuild from real branch history passes, as does store upsert/project isolation. Migration 0031 adds only `community_pointers` and advances schema version 30 to 31.
-- AC8, static scope only: both new launch sites use the program-launch helper and record counters; no timer/poll/per-seat loop was added. Removing both records makes `spawn_sites` fail naming `community/ddocs.rs::run` and `community/git.rs::git`; restoring them makes all four checks pass. The supplied private-daemon receipts say 0 launches/60 s at rest, 9/add and 23/eight-role batch. This is not a separate live-cost verdict.
-- AC9/AC11: PRD, blueprint and roadmap validate with zero errors/warnings. req-03 matches C8; the selected shipped/in-progress states, s02 complete, and req-26's partial naming status match the plan. Required role fields, `default_limit`, output kinds and memory fields are present.
-- AC10: ping returns the serving process's pid and a ddocs field. Doctor reads the daemon-resolved ddocs path. Absolute override precedence and named missing/invalid-tool refusals pass; F002 is the uncovered relative-PATH case.
-
-## Validation receipts
-
-All cargo invocations used `CARGO_TARGET_DIR=<coder-target>`; no review-worktree target was created. Available disk stayed above the 25 GiB floor (31 GiB initially, 27 GiB at closeout).
+All cargo commands used `CARGO_TARGET_DIR=<coder-target>` and `CARGO_INCREMENTAL=0`, with package scope. Disk was checked before builds and stayed above the 25 GiB stop floor, from 30 GiB initially to 26-27 GiB near closeout. No dependency installs, product edits, commits, pushes, deployment or production-daemon testing.
 
 | Command | Result |
 |---|---|
-| `cargo test --locked -p pij-daemon --lib community -- --nocapture` | PASS: 24 tests; real ddocs ran, not skipped |
+| `cargo test --locked -p pij-daemon --lib community -- --nocapture` | PASS: 32 tests on the frozen repair checkout; real ddocs ran |
 | `cargo test --locked -p pij-daemon --test directory_http -- --nocapture` | PASS: 3 tests |
-| `cargo test --locked -p pij-store --test store_integration community_pointers -- --nocapture` | PASS: 1 test |
 | `cargo test --locked -p pij-testkit --test spawn_sites -- --nocapture` | PASS: 4 tests |
-| `cargo test --locked -p pij-daemon --lib ping_reports_the_daemon_pid -- --nocapture` | PASS: 1 test |
-| Scratch extraction: `cargo test --locked --manifest-path <scratch>/Cargo.toml -p pij-daemon --lib community:: -- --nocapture` | 26 PASS, 2 FAIL: the independent F001/F002 regressions above; production source restored after mutations |
-| Scratch foreign-edit-guard mutation: `cargo test --locked --manifest-path <scratch>/Cargo.toml -p pij-daemon --lib a_path_carrying_a_foreign_edit_refuses_and_writes_nothing -- --nocapture` | EXPECTED FAIL with guard disabled; passes restored |
-| Scratch counter mutations: `cargo test --locked --manifest-path <scratch>/Cargo.toml -p pij-testkit --test spawn_sites every_daemon_launch_site_records_itself -- --nocapture` | EXPECTED FAIL naming both removed counters; all 4 tests pass restored |
-| `ddocs --json validate <fixture> --depth 0` on all 9 new fixtures | 7 expected PASS; 2 expected E402 refusals for missing scope/packet |
-| `ddocs --json validate <project-document> --depth 0` on PRD, blueprint and roadmap 001 | PASS: all 3, zero errors/warnings |
-| `git diff --check origin/main...HEAD` | PASS |
-| `git diff --check d5fd8cf48b4ffbe636818e996798f4bac3a4d9ed 0c6ea8886e6f4dec9cc09d61cdcd654157be28ae` | PASS; complete delta read, only 2 Markdown files |
-| `git diff --check d5fd8cf48b4ffbe636818e996798f4bac3a4d9ed b28d815be55ee4698d308eea1b67d91c3e4d0fd2` | PASS; complete final delta read, only 4 documentation files |
-| Exact-b28d815 snapshot: `ddocs --json validate docs/plans/190-community-writer/assets/backpressure.dd.json --depth 0` | PASS: zero errors/warnings |
-| Exact-b28d815 snapshot: `ddocs --json build docs/plans/190-community-writer/assets/backpressure.dd.json --check` | PASS: no generated Markdown drift |
-| `harness boot --json` | Advisory NOT-READY: no linked-worktree node_modules |
-| `harness checks --quick --json` | FAIL: 5 JS/tooling stages; Copilot-native PASS; attribution WARN; Rust and smoke explicitly skipped |
+| Scratch `cargo test --locked --manifest-path <scratch>/Cargo.toml -p pij-daemon --lib community -- --nocapture` with the three guards weakened | EXPECTED FAIL: 26 pass, 6 fail |
+| Same scratch command after exact source restoration | PASS: all 32 |
+| `cargo fmt -p pij-daemon -- --check` | PASS |
+| `cargo clippy --locked -p pij-daemon --all-targets -- -D warnings` | PASS |
+| `ddocs --json validate <document> --depth 0` for PRD 001, roadmap 001 and phase-2 tasks | PASS: all 3, zero errors/warnings |
+| `ddocs --json build <document> --check` for those same documents | PASS: all 3, no drift |
+| `git diff --check b28d815 a4bb4fa` | PASS |
+| `git diff --check a4bb4fa 4ec59a8` | PASS: complete one-line documentation delta read |
+| Merge-tree against main 4b14b21; dependency-manifest comparison | PASS: no conflicts; both named manifests identical |
+| `harness boot --json` | Advisory NOT-READY: intentionally absent linked-worktree JS dependencies |
+| `harness checks --quick --json` | FAIL: 6 JS/tooling stages; Copilot-native PASS; attribution WARN; Rust and smoke explicitly skipped |
 
-Local TS/full lint/smoke/full-workspace checks are not claimed green. The packet forbids dependency linking/install and scopes Rust builds. GitHub CI is green for all four jobs on both the tested d5fd8cf ([run 41768673271](https://github.com/AI-Substrate/pij-fleet/actions/runs/41768673271)) and this verdict's exact b28d815 ([run 41769699230](https://github.com/AI-Substrate/pij-fleet/actions/runs/41769699230)). Those green checks do not cover the two reproduced cases.
+The full local composite gate is not claimed green. Exact-a4bb4fa CI passes all four jobs, [run 41773746384](https://github.com/AI-Substrate/pij-fleet/actions/runs/41773746384); the final 4ec59a8 head also passes all four jobs, [run 41774675967](https://github.com/AI-Substrate/pij-fleet/actions/runs/41774675967). There are no added launch sites or timer/per-seat loops in the repair; spawn-site contracts pass. Performance owns the separate cost verdict.
 
-At this follow-up, GitHub reports the later head `8eb245b868dd6ecd4aefaaaabd7f0de89a378dab`. This verdict is pinned to the explicitly requested `b28d815be55ee4698d308eea1b67d91c3e4d0fd2`, not to that newer head. The review worktree was never moved.
+The new review checkout remains clean at a4bb4fa; the original checkout remains at d5fd8cf. GitHub's head matches this final verdict: `4ec59a851d224b0a7736c6366ee9f05684f8b447`.
 
 ## Handoff and harness feedback
 
-Fix F001 and F002, retain their deterministic regressions, and request review of a new frozen head. No schema expansion or unrelated warning policy is needed.
+No correctness fix is owed by this scoped review. Obtain the independent security verdict for the residual before merging, and preserve exact-head attribution if the PR moves again.
 
-Local reproducible evidence: `<reviewer-session-files>/pr114-regression-tests.patch` (four reviewer tests, applies to the frozen SHA) and `<reviewer-session-files>/pr114-probe-results.txt` (actual execution output). The patch is review evidence, not an applied product change.
+Evidence: `<reviewer-session-files>/pr114-fix-delta.diff`, `pr114-fix-mutation-results.txt` and `pr114-fix-restored-results.txt`. Machine-local build/session paths are deliberately represented by placeholders.
 
-**magicWand:** keep a real-ddocs missing-link batch regression beside the existing fake-validator tests. This is the highest-value encoding: the schema can truthfully warn while the product must refuse an unusable standing packet.
+**magicWand fulfilled:** the real-ddocs warning-bearing negative case, readable-brief control and cross-cwd executable control now live in the committed regression suite, rather than only in a review transcript.
 
-**difficulties:** local composite proof is unavailable in the intentionally dependency-free review checkout; PR documentation heads moved while the assigned review SHA stayed frozen. Captured as DL-001/MW-001 in the review worktree's ignored harness buffer. No shared harness state was rewritten.
+**difficulties:** local composite proof remains tooling-limited; a shared Cargo target contended briefly during review. No workaround installs or competing target were introduced. The new worktree's ignored observation buffer records the proof boundary as INS-001.
