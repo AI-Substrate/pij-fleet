@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-04",
+				"title": "Read project docs from an unmerged PR branch",
+				"tags": [
+					"docs-system",
+					"orientation",
+					"git"
+				],
+				"hook": "If docs/project isn't on main yet, read it from the PR branch with git show; don't wait."
+			}
+		},
+		{
+			"name": "body",
+			"value": "When the packet points at docs that only exist on an open PR, run `git fetch -q origin <branch>` and `git show origin/<branch>:<path>`."
+		}
+	],
+	"references": []
+}

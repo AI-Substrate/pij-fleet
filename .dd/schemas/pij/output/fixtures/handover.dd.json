@@ -1,0 +1,23 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"kind": "handover",
+				"role": "docs-system",
+				"subject": "role:docs-system",
+				"writer": "pij-community-docs",
+				"writer_holds_role": true,
+				"date": "2026-11-04"
+			}
+		},
+		{
+			"name": "body",
+			"value": "In flight: nothing. Next: wait for pm-001's packet for s13 and s14, then branch from main."
+		}
+	],
+	"references": []
+}

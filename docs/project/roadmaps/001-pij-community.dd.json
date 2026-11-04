@@ -31,7 +31,7 @@
 				{
 					"id": "s02",
 					"title": "Role schema, layout and the governance writer",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-02",
 						"../prds/001-pij-community.dd.json#requirements/req-03",
@@ -53,7 +53,8 @@
 						"role:reviewer",
 						"role:security",
 						"role:performance"
-					]
+					],
+					"plan": "docs/plans/190-community-writer"
 				},
 				{
 					"id": "s03",
@@ -236,6 +237,11 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "Plan 192: s14 complete. The earlier register was triaged into PRD 002 (docs/project/prds/002-pij-base.dd.json); 16 of 40 open rows kept as 14."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 190: s02 complete (`pij directory add` and `--batch` on the governance writer; evidence in docs/plans/190-community-writer/assets/evidence/phase-2.md)."
 				}
 			]
 		}

@@ -1,0 +1,101 @@
+{
+  "dd_schema": 1,
+  "description": "A pij community output: one record a role holder wrote (req-10). Lives at <government-root>/community/roles/<role>/outputs/<yyyy-mm>/. A verdict carries the exact head commit, its result (pass, pass-with-notes or block), notes owed and evidence of what ran; writer_holds_role is false when the writer did not hold the role at write time. answers is the msg_id of the request it answers (ruling C3). A handover's body holds what is in flight now.",
+  "enums": {
+    "output_kind": {
+      "values": [
+        "verdict",
+        "deliverable",
+        "note",
+        "handover"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "kind",
+          "role",
+          "subject",
+          "writer",
+          "date"
+        ],
+        "fields": {
+          "kind": {
+            "type": "enum",
+            "enum": "output_kind"
+          },
+          "role": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "head": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "writer": {
+            "type": "string"
+          },
+          "writer_holds_role": {
+            "type": "bool"
+          },
+          "requester": {
+            "type": "string"
+          },
+          "answers": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "notes_owed": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "text"
+        }
+      }
+    },
+    "evidence": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "command",
+            "exit_code"
+          ],
+          "fields": {
+            "command": {
+              "type": "string"
+            },
+            "exit_code": {
+              "type": "int"
+            },
+            "log": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "body": {
+      "shape": {
+        "type": "text"
+      }
+    }
+  }
+}

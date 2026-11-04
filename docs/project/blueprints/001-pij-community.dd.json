@@ -39,7 +39,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-04",
 						"../prds/001-pij-community.dd.json#requirements/req-10"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-layout",
@@ -52,21 +52,21 @@
 						"../prds/001-pij-community.dd.json#requirements/req-09",
 						"../prds/001-pij-community.dd.json#requirements/req-16"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-writer",
 					"name": "Governance writer",
 					"kind": "module",
 					"where": "crates/daemon",
-					"responsibility": "Writes a ddoc, runs `ddocs validate` and `ddocs build` by absolute path, commits on the governance branch from pij's own worktree or with git plumbing, never from a seat's checkout, and records the pointer. One writer per project, serialised by the daemon; a batch mode for imports. Named refusals for missing governance or ddocs.",
+					"responsibility": "Writes a ddoc, runs `ddocs validate` and `ddocs build` by absolute path, and commits only the paths it wrote in the standing governance worktree with `git add` then `git commit --only` (ruling C8), refusing when those paths carry edits it did not make; no plumbing moves the branch under a checkout. Keeps copies of the `pij/*` schemas on the governance branch (ruling C9) and records the pointer. One writer per project, serialised by the daemon; a batch mode for imports. Named refusals for missing governance or ddocs.",
 					"realises": [
 						"../prds/001-pij-community.dd.json#requirements/req-02",
 						"../prds/001-pij-community.dd.json#requirements/req-03",
 						"../prds/001-pij-community.dd.json#requirements/req-05",
 						"../prds/001-pij-community.dd.json#requirements/req-09"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-store",
@@ -301,6 +301,11 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "Plan 191: c-doc-schemas shipped; c-skill in-progress (doc procedures shipped, the /pij community route is s10)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 190: c-role-schema, c-layout and c-writer shipped; c-writer's responsibility reworded per rulings C8 (commit only its own paths with `git commit --only`, no plumbing) and C9 (schema copies on the governance branch)."
 				}
 			]
 		}

@@ -3219,6 +3219,34 @@ async fn retired_harness_override_cannot_launch_without_its_spine_event() {
     server.abort();
 }
 
+/// Plan 190, AC10: ping names the daemon process, so two spawn readings can be
+/// shown to come from one daemon (the counter resets on restart).
+#[tokio::test]
+async fn ping_reports_the_daemon_pid() {
+    let services = crate::build_services(
+        &pij_core::config::Config::default(),
+        std::path::Path::new("/tmp/pij-test-ping-pid-signals"),
+    )
+    .await
+    .expect("fake services");
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let health: serde_json::Value = reqwest::Client::new()
+        .get(format!("http://{addr}/health"))
+        .bearer_auth("key")
+        .send()
+        .await
+        .expect("health request")
+        .json()
+        .await
+        .expect("health envelope");
+    assert_eq!(health["data"]["pid"], serde_json::json!(std::process::id()));
+    assert!(
+        health["data"].get("ddocs").is_some(),
+        "ping names the ddocs it resolved, or null"
+    );
+    server.abort();
+}
+
 #[tokio::test]
 async fn retired_harness_override_launches_and_records_policy_exception() {
     let policy = pij_core::config::Config {

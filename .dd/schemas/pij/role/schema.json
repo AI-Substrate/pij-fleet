@@ -1,0 +1,210 @@
+{
+  "dd_schema": 1,
+  "description": "A pij community role: a job that outlives the seats that hold it. Lives at <government-root>/community/roles/<id>/role.dd.json. Scope and the standing packet are required. The standing packet is inline text (source: inline, text) or a repo-relative reference to an existing brief file (source: brief, brief). default_limit is the duration req-22's stall check uses when a send carries no --limit (ruling C5), written like 30m, 2h or 1h30m.",
+  "enums": {
+    "role_kind": {
+      "values": [
+        "specialist",
+        "general"
+      ]
+    },
+    "role_lifecycle": {
+      "values": [
+        "long-lived",
+        "per-task"
+      ]
+    },
+    "role_holders": {
+      "values": [
+        "one",
+        "many"
+      ]
+    },
+    "packet_source": {
+      "values": [
+        "inline",
+        "brief"
+      ]
+    },
+    "output_kind": {
+      "values": [
+        "verdict",
+        "deliverable",
+        "note",
+        "handover"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "lifecycle",
+          "holders"
+        ],
+        "fields": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "enum",
+            "enum": "role_kind"
+          },
+          "lifecycle": {
+            "type": "enum",
+            "enum": "role_lifecycle"
+          },
+          "holders": {
+            "type": "enum",
+            "enum": "role_holders"
+          },
+          "instance_key": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "template_version": {
+            "type": "string"
+          },
+          "default_limit": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "scope": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "rules"
+        ],
+        "fields": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "out_of_scope": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "text"
+        }
+      }
+    },
+    "forbidden_paths": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "default_seat": {
+      "shape": {
+        "type": "object",
+        "required": [
+          "harness"
+        ],
+        "fields": {
+          "harness": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "inputs": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "text"
+        }
+      }
+    },
+    "output_kinds": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "enum",
+          "enum": "output_kind"
+        }
+      }
+    },
+    "standing_packet": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "fields": {
+          "source": {
+            "type": "enum",
+            "enum": "packet_source"
+          },
+          "text": {
+            "type": "text"
+          },
+          "brief": {
+            "type": "link",
+            "target": "file"
+          }
+        }
+      }
+    },
+    "changelog": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "by",
+            "why"
+          ],
+          "fields": {
+            "date": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "why": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}

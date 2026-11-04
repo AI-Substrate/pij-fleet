@@ -121,18 +121,18 @@
 					"statement": "Role definitions, role memory, outputs, the routing table and external entries live under `<government-root>/community/`. The project's rulings stay where they are, outside the community directory: they are the project's law, not any role's memory. When governance is not set up, every directory verb refuses by name and points at the setup step; it never falls back to another location.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "With no government root, `pij directory add x` exits with the named refusal and a runnable next step; with one, the file appears under `community/roles/x/`.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-03",
-					"title": "pij is the only writer, and never touches anyone's working tree",
-					"statement": "Directory files are written only through pij verbs. pij writes the JSON, runs `ddocs validate` and `ddocs build` by absolute path, and commits on the governance branch from its own worktree or with git plumbing, so uncommitted edits in the prime's governance checkout are never swept up or collided with. The store keeps a pointer (project id, repo-relative path, commit). pij never pushes. A missing `ddocs` gives a named refusal, and `just doctor` checks for it. A batch mode imports many records in one commit.",
+					"title": "pij is the only writer, and never touches anyone else's edits",
+					"statement": "Directory files are written only through pij verbs. pij writes the JSON into the standing governance worktree, runs `ddocs validate` and `ddocs build` by absolute path, and commits only the paths it wrote, with `git add -- <paths>` then `git commit --only -- <paths>`. It uses no plumbing that moves the branch under a checkout, and it refuses when a path it is about to write carries an edit it did not make, so it never stages, commits, overwrites or reverts anyone else's edits. The store keeps a pointer (project id, repo-relative path, commit). pij never pushes. A missing `ddocs` gives a named refusal, and `just doctor` reports which ddocs pij uses. A batch mode imports many records in one commit.",
 					"actor": "any seat",
 					"priority": "must",
-					"state": "planned",
-					"done_when": "With an uncommitted edit in the governance checkout, a directory write commits and leaves that edit untouched and unstaged; each `.dd.json` validates clean; with `ddocs` off PATH the verb refuses by name.",
+					"state": "shipped",
+					"done_when": "With an unstaged edit, a staged edit and an untracked file in the governance worktree, a directory write commits only its own paths and leaves all three exactly as they were, and the checkout's next commit keeps what pij wrote; a write to a path carrying someone else's edit refuses and writes nothing; each `.dd.json` validates clean; with `ddocs` off PATH the verb refuses by name.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
@@ -141,7 +141,7 @@
 					"statement": "A role definition holds: id, title, kind (specialist or general), lifecycle (long-lived or per-task), holders (one or many), instance key for many-holder roles (for example a roadmap number), scope (paths and rules, such as 'reviews every PR'), out of scope, forbidden paths, default seat (harness, model, effort), inputs, output kinds, standing packet (inline or by reference to an existing brief file), template and version it came from, and a changelog.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "`ddocs validate` passes on a role created from each shipped template and on one whose standing packet references a brief file, and fails on one missing scope or standing packet.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -151,7 +151,7 @@
 					"statement": "Any seat may create, edit, assign or release. pij does not gate these by role. Every change records who made it and why in the role's changelog.",
 					"actor": "any seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "A worker seat can assign itself to a role, and the role's changelog shows its seat id and reason.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -271,7 +271,7 @@
 					"statement": "Git is the shared copy; each machine's store is a local index rebuildable from the governance branch. Lineage records the machine. Transcripts never move between machines.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "Deleting the store's directory index and rebuilding from the branch gives the same `pij directory` output.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -291,7 +291,7 @@
 					"statement": "Every directory write and notification happens per request or per change, never on a timer and never per seat per tick. The cost of writes and route FYIs is measured on the live fleet before merge.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "The plan's backpressure carries a cost row with before and after readings from `pij-rs --json ping` and `just spawn-rate`.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -354,6 +354,17 @@
 					"state": "planned",
 					"done_when": "Merging a PR that names req-07 records the PR on req-07 and shows on the PM's card within one event.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
+				},
+				{
+					"id": "req-26",
+					"title": "Seat names are machine-wide animal names",
+					"statement": "Seat ids are machine-wide, so a seat is named `pij-<adjective>-<animal>` and never after a role or a project; the role a seat holds lives in the directory (HOLDERS until s04). Role ids are unique only within one project's directory, so two projects may each have a `security` role. A role holder's tmux window is named `<project>:<role>` (for example `pij:security`), so the window says what the seat does while the seat id stays unique.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "A spawn without `--id` gets a `pij-<adjective>-<animal>` id; a spawn with an `--id` that names a role or project is refused by name; two projects can each add a `security` role; a role holder's tmux window reads `<project>:<role>`.",
+					"note": "Part done today: the daemon already allocates `pij-<adjective>-<animal>` when `--id` is omitted (crates/core/src/names.rs; the noun corpus is animals and SHIP_NAMES is empty). Not done: an explicit `--id` is accepted as given (pij-community-docs was), `--name` defaults the window to the seat id, and per-project role ids wait on the directory (s02, s04).",
+					"source": "community RULINGS.md C13 (Jordan, 2026-11-04)"
 				},
 				{
 					"id": "req-27",
@@ -430,6 +441,16 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "Plan 191: req-18 and req-23 shipped (procedures and examples in skills/pij/references/community/, fresh-PM canary passed)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "req-26: seat names are machine-wide animal names, role ids unique per project, windows named <project>:<role> (ruling C13; plan 190 AC11)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 190: req-03 reworded per ruling C8 (pij commits only its own paths in the governance worktree with `git commit --only`, no plumbing, and never touches anyone else's edits); req-02 and req-03 shipped; req-04, req-05, req-17 and req-19 in-progress (templates, assign, the view and later steps finish them)."
 				},
 				{
 					"date": "2026-11-04",

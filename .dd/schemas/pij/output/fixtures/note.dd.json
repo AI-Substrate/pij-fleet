@@ -1,0 +1,22 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"kind": "note",
+				"role": "pm-001",
+				"subject": "roadmap:001#steps/s02",
+				"writer": "pij-steady-otter",
+				"date": "2026-11-04"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Migration number 0031 claimed for plan 190."
+		}
+	],
+	"references": []
+}

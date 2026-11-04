@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"kind": "deliverable",
+				"role": "docs-system",
+				"subject": "pr:110",
+				"head": "0123456789abcdef0123456789abcdef01234567",
+				"result": "opened",
+				"writer": "pij-careful-heron",
+				"requester": "pij-steady-otter",
+				"date": "2026-11-04"
+			}
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "harness checks --quick",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Plan 191 doc procedures, PR opened against main."
+		}
+	],
+	"references": []
+}

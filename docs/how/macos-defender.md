@@ -49,10 +49,10 @@ top -l 2 -o cpu -n 12 -stats pid,command,cpu   # Defender: epsext, wdavdaemon_en
 To see which daemon code launches what, read the daemon's own counter:
 
 ```sh
-pij-rs --json ping | jq '.data.spawns'   # {total, by_op: {"ps.proc-liveness-fallback": N, "tmux.send-keys": N, ...}}
+pij-rs --json ping | jq '{pid: .data.pid, spawns: .data.spawns}'   # {pid, spawns: {total, by_op: {"ps.proc-liveness-fallback": N, ...}}}
 ```
 
-The counts are exact and run since the daemon started, so take two readings a known number of seconds apart and divide the difference. Each operation is named `<program>.<site>`, so `ps.*` names which code runs `ps`. A test (`crates/testkit/tests/spawn_sites.rs`) fails when a daemon launch site doesn't record itself.
+The counts are exact and run since the daemon started, so take two readings a known number of seconds apart and divide the difference. The counter resets when the daemon restarts, so record `data.pid` with each reading: a before and after pair compares only when both show the same pid. Each operation is named `<program>.<site>`, so `ps.*` names which code runs `ps`. A test (`crates/testkit/tests/spawn_sites.rs`) fails when a daemon launch site doesn't record itself.
 
 ## What exclusions don't fix
 

@@ -1,0 +1,70 @@
+{
+	"dd": {
+		"schema": "pij/role"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "docs-system",
+				"title": "Docs system",
+				"kind": "specialist",
+				"lifecycle": "long-lived",
+				"holders": "one",
+				"default_limit": "2h"
+			}
+		},
+		{
+			"name": "scope",
+			"value": {
+				"paths": [
+					".dd/schemas/pij/**",
+					"docs/project/**"
+				],
+				"rules": [
+					"Doc procedures and worked examples in the pij skill, and the role templates.",
+					"Roadmap 001 steps s13, s14, s03 and the template half of s10."
+				]
+			}
+		},
+		{
+			"name": "out_of_scope",
+			"value": [
+				"Rust code (coders, delivery)."
+			]
+		},
+		{
+			"name": "default_seat",
+			"value": {
+				"harness": "copilot",
+				"model": "claude-opus-5.5",
+				"effort": "high"
+			}
+		},
+		{
+			"name": "output_kinds",
+			"value": [
+				"deliverable",
+				"note"
+			]
+		},
+		{
+			"name": "standing_packet",
+			"value": {
+				"source": "brief",
+				"brief": ".dd/schemas/pij/role/fixtures/brief.md"
+			}
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-04",
+					"by": "pij-far-jackal",
+					"why": "Imported from the hand-written roles/docs-system/role.md; packet kept in a brief file."
+				}
+			]
+		}
+	],
+	"references": []
+}

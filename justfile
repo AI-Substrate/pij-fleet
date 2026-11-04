@@ -75,6 +75,7 @@ doctor:
     @echo "skill:      $(readlink ~/.agents/skills/pij 2>/dev/null || echo '(unlinked — run: just pij-skill-link-global)')"
     just omp-doctor
     @printf 'daemon:     '; pij-rs ping 2>/dev/null || echo '(not running — run: just bounce-rs)'
+    @printf 'ddocs:      '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.ddocs === undefined ? "(unknown: this daemon predates the ddocs field)" : (d.ddocs ?? "(missing: install ddocs or set PIJ_DDOCS, then run: just bounce-rs)")); })'
 
 # Link this worktree's packages from the canonical checkout without npm resolution.
 # --check is read-only; missing JS tooling never prevents Rust-only work.
