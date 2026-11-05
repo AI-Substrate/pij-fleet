@@ -6,11 +6,11 @@
     {
       "name": "meta",
       "value": {
-        "title": "s04 follow-ups: lineage import, batch assign and fixes",
+        "title": "Reshape and s04 follow-ups: retire, merge, lineage import, batch assign, fixes",
         "slug": "directory-followups",
         "ordinal": 206,
         "complexity": "CS-2",
-        "summary": "Follow-ups from s04's review and the wave B dogfood: record closed seats in lineage, assign many holders in one commit, fix the latent same-second test, and stamp changelog dates with a zone.",
+        "summary": "Delivers req-28 (C26, PEC: communities are reshaped as the work changes) with `pij directory retire` and `merge`, as new roadmap step s15; plus s04 follow-ups from review and the dogfood: closed-seat lineage, batch assign, the latent same-second test, zoned dates.",
         "status": "draft",
         "mode": "Full",
         "created": "2026-11-04",
@@ -62,15 +62,33 @@
         },
         {
           "id": "ac-0005",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. No timer or poll.",
+          "claim": "Retire (req-28). `pij directory retire <role> --why <text>` marks a role retired by a writer commit with a changelog row; it refuses while the role has a live holder (release first) or queued requests (s05), naming them. Its memory, outputs and lineage stay readable, and `pij directory` lists it as retired, not missing; `--json` carries the state. Sends to a retired role refuse by name.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
         {
           "id": "ac-0006",
-          "claim": "Docs and states. Docs: difficulties.md rows F13, F15, F16 and #122 F003 marked resolved. No roadmap state changes (follow-up work). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "claim": "Merge (req-28). `pij directory merge <from> --into <to> --why <text>` retires <from> pointing at <to> in one writer commit (both roles' changelogs get a row; <from>'s memory and outputs stay where they are and are listed under <to> as merged-from). A send to <from> afterwards refuses and names <to>.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Roadmap step s15 (pm-001's decision, reported to the prime). In this PR, roadmap 001 gains step s15 'Reshape: retire and merge roles', delivering req-28, depending on s04, with its plan cell set to docs/plans/206-directory-followups, state complete; req-28 goes to shipped. PR #125 (which adds req-28) must merge first.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. Retire and merge are one writer commit each. No timer or poll.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
+          "id": "ac-0009",
+          "claim": "Docs and states. Docs: docs/how/pij-rs-api.md documents retire and merge; difficulties.md rows F13, F15, F16 and #122 F003 marked resolved. No roadmap state changes (follow-up work). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0009"
         }
       ]
     },
@@ -79,9 +97,9 @@
       "value": [
         {
           "id": "ph-00ce",
-          "title": "s04 follow-ups: lineage import, batch assign and fixes",
+          "title": "Reshape and s04 follow-ups: retire, merge, lineage import, batch assign, fixes",
           "state": "unchecked",
-          "brief": "All ACs. One coder. CS-2.",
+          "brief": "All ACs. One coder (lane E, after s11). CS-3.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

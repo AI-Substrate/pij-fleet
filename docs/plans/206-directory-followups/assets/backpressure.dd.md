@@ -24,8 +24,11 @@
 | bp-0002 | AC2 | ph-00ce | BUILD | computational | BUILD: eight holders in one commit; one bad line commits none. | [ ] unchecked | — | — | crates/ |
 | bp-0003 | AC3 | ph-00ce | BUILD | computational | BUILD: the test passes 50 runs in a row under load. | [ ] unchecked | — | — | crates/ |
 | bp-0004 | AC4 | ph-00ce | BUILD | computational | BUILD: a written date round-trips with its zone; the view shows local time and zone. | [ ] unchecked | — | — | crates/ |
-| bp-0005 | AC5: cost | ph-00ce | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. No timer or poll. | — | pij-rs --json ping |
-| bp-0006 | AC6: docs and states | ph-00ce | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0005 | AC5 | ph-00ce | BUILD | computational | BUILD: retire with no holder commits with a changelog row; with a live holder or queued request it refuses; memory, outputs and lineage still read; the view shows it retired. | [ ] unchecked | — | — | crates/ |
+| bp-0006 | AC6 | ph-00ce | BUILD | computational | BUILD: merge commits once with both changelog rows; the view shows the merge; a send to &lt;from&gt; names &lt;to&gt;. | [ ] unchecked | — | — | crates/ |
+| bp-0007 | AC7 | ph-00ce | BUILD | computational | EXISTS: `ddocs validate` on roadmap 001 and PRD 001; `just ddocs-check`. | [ ] unchecked | — | — | crates/ |
+| bp-0008 | AC8: cost | ph-00ce | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. No timer or poll. | — | pij-rs --json ping |
+| bp-0009 | AC9: docs and states | ph-00ce | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
 
 <a id="sensors"></a>
 
