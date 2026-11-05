@@ -14,15 +14,138 @@
     },
     {
       "name": "summary",
-      "value": ""
+      "value": "Six tasks, one coder. The table is pure (routes.rs); regeneration rides the existing directory writer commit; delivery is one held FYI from pij-bg per trigger (assign, compact control, revive) and the routes verb on demand; changed rows go as one held FYI to the project prime. Tests use scratch repos and a private daemon (crates/daemon/tests/directory_http.rs pattern). No new launch, timer or poll."
     },
     {
       "name": "tasks",
-      "value": []
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Routes core: crates/daemon/src/community/routes.rs",
+          "phase": "ph-00ca",
+          "state": "unchecked",
+          "success": "A pure module (no IO beyond reading role documents in-process, no launches) builds the table from every role's scope: one row per scope.paths entry and one per scope.rules entry, sent to role:<id>, ordered by role id. It finds overlaps (two roles whose path claims share a literal prefix, component-wise, up to the first glob), renders ROUTES.md (title, a generated-file note, the rows, an Overlaps section when any), renders the seat-facing table with a Holder now column from live holdings, and diffs two tables into added and removed rows. Markdown cells escape pipes and newlines.",
+          "notes": "ROUTES.md carries no holder names, so a change of holder never changes the file (AC3). Rows are (what, role); a rule edit is one removed and one added row.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Regenerate ROUTES.md in the writer commit; pij directory routes",
+          "phase": "ph-00ca",
+          "state": "unchecked",
+          "success": "DirectoryService::write (every role add today, and any later scope, retire or merge verb that writes role documents through it) builds the table from the roles on disk overlaid with the documents being written and adds community/ROUTES.md to the same commit when its bytes differ, so a regeneration is never a second commit. The add receipt carries routes: {regenerated, added, removed, overlaps}. Overlaps are named warnings (W-ROUTES-OVERLAP). `pij directory routes [--project <slug>]` prints the seat-facing table and overlaps and says whether ROUTES.md is stale; `--write --why <text>` regenerates a stale ROUTES.md in one writer commit (the adopt step for the hand-written file) and is a no-op when current.",
+          "notes": "First generation overwrites the hand-written ROUTES.md in a writer commit; the old text stays in history. assign, release and external add do not regenerate.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Changed rows go as one FYI to the prime",
+          "phase": "ph-00ca",
+          "state": "unchecked",
+          "success": "When a write changes rows, pij holds one FYI from pij-bg to the project's prime (projects.prime_id, else the machine's current designated prime) listing the added and removed rows and the commit. No prime, or a closed one, sends nothing and says so in the receipt. Assign and release never send it.",
+          "notes": "q-03: the prime only. Blueprint k-2 still says every live seat; fix it in tk-0006.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Deliver the table on assign, after compact, on revive",
+          "phase": "ph-00ca",
+          "state": "unchecked",
+          "success": "One held FYI from pij-bg carrying the seat-facing table reaches the seat: after `directory assign` lands (for that project); after a `compact` control is admitted (send --command compact or compact-self), for each project the seat holds a role in; after a revive relaunches the seat, for the projects it holds roles in, else the project whose repo holds its folder. A seat with no project with roles gets nothing. Each trigger is one delivery. A delivery failure never fails the assign, compact or revive; the receipt says what happened.",
+          "notes": "Held, not woken: controls never carry FYIs, and the OMP extension latches delivery while compacting, so the table lands in the first turn after the compact. Risk: if Copilot's onUserPromptSubmitted fires for a typed /compact it would claim the FYI pre-compact; say so in the PR. Harness-initiated compactions are not seen by the daemon.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Cost receipts",
+          "phase": "ph-00ca",
+          "state": "unchecked",
+          "success": "No new launch site, timer or poll: regeneration rides the add's existing writer commit; each trigger is a few store reads, an in-process read of the role documents and one held FYI. spawn_sites.rs passes unchanged. Private-daemon spawn deltas per verb, and live at-rest readings (ping spawns twice 60 s apart, just spawn-rate --seconds 20), are in the evidence and PR body.",
+          "notes": "Live after-deploy readings are pm-001's or performance's after merge; this PR carries the before reading and the private-daemon deltas.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Docs and states",
+          "phase": "ph-00ca",
+          "state": "unchecked",
+          "success": "docs/how/pij-rs-api.md documents routes, the regeneration, the triggers and W-ROUTES-OVERLAP; pij directory help and the skill's verb table carry `routes`; roadmap s08 complete with plan cell docs/plans/202-routing-table, req-11 shipped, c-routes shipped, k-2 says the prime only; just ddocs-check passes; PR body has a Delivers line.",
+          "notes": "Shared seams (skills/pij, crates/cli): minimal diffs, merge origin/main before the PR.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006"
+        }
+      ]
     },
     {
       "name": "done_when",
-      "value": {}
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "Unit tests: rows from paths and rules ordered by role; two roles claiming crates/x/** and crates/x/y.rs overlap, disjoint paths do not; a pipe in a rule is escaped; a diff of a rule edit is one removed and one added row; a holder change leaves ROUTES.md bytes identical.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "HTTP test against a scratch repo: adding a role commits ROUTES.md in the same commit as role.dd.json; adding a second role claiming the same path returns a W-ROUTES-OVERLAP warning and ROUTES.md lists the overlap; directory routes prints the table; --write on a hand-written ROUTES.md replaces it in one commit and a second --write writes nothing.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "HTTP test: a role add holds exactly one FYI for the project prime naming the added rows; assign then release of a holder holds none for the prime.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "Tests: assign holds one routes FYI for the assigned seat; a compact control to a role holder holds one; a revive of a role holder holds one; a seat in no project with roles gets none.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0005",
+            "assertion": "spawn_sites.rs green with no new site; private-daemon ping spawn deltas for directory add, routes, assign and compact recorded; live at-rest ping and spawn-rate readings recorded.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "just ddocs-check and ddocs validate on the project docs pass; skill verb coverage tests green in CI on the exact head; reviewer, security and performance verdicts at that head.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ]
+      }
     },
     {
       "name": "goals",
@@ -96,6 +219,5 @@
       "name": "execution_guardrails",
       "value": []
     }
-  ],
-  "references": []
+  ]
 }
