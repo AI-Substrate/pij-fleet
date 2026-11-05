@@ -357,6 +357,7 @@ async fn delivered(
         .map_err(store_refusal)?;
 
     let told = match (&pm, commit.events.first()) {
+        _ if addresses.is_empty() => "it delivers no row (`Delivers: none`)".to_string(),
         (Some(pm), Some(_)) => format!("posted on {pm}'s card"),
         (Some(pm), None) => format!("already recorded; {pm}'s card was told the first time"),
         (None, _) => "no PM was told: no live pm holder for this roadmap and no --pm".to_string(),

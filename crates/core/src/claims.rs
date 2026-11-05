@@ -212,7 +212,8 @@ impl fmt::Display for DeliversError {
             Self::Missing => write!(
                 f,
                 "the PR body has no `{DELIVERS}` line naming ddocs addresses \
-                 (e.g. `{DELIVERS} docs/project/prds/001-pij-community.dd.json#requirements/req-20`)"
+                 (e.g. `{DELIVERS} docs/project/prds/001-pij-community.dd.json#requirements/req-20`, \
+                 or `{DELIVERS} none`)"
             ),
             Self::Bad(token) => write!(
                 f,
@@ -225,13 +226,15 @@ impl fmt::Display for DeliversError {
 
 /// The addresses every `Delivers:` line in `body` names, deduplicated in order.
 /// Separators are commas and whitespace; backticks and angle brackets around a
-/// token are ignored, and a bare `none` delivers nothing on purpose.
+/// token are ignored. `Delivers: none` says on purpose that the PR delivers no
+/// row, and gives an empty list.
 ///
 /// # Errors
-/// [`DeliversError::Missing`] when no line names an address;
-/// [`DeliversError::Bad`] for the first token that is not one.
+/// [`DeliversError::Missing`] when no line names an address or `none`;
+/// [`DeliversError::Bad`] for the first token that is neither.
 pub fn delivers(body: &str) -> Result<Vec<Address>, DeliversError> {
     let mut addresses = Vec::new();
+    let mut none = false;
     for line in body.lines() {
         let line = line.trim().trim_start_matches(['-', '*', ' ']);
         let Some(rest) = line
@@ -246,13 +249,17 @@ pub fn delivers(body: &str) -> Result<Vec<Address>, DeliversError> {
             if token.is_empty() {
                 continue;
             }
+            if token.eq_ignore_ascii_case("none") {
+                none = true;
+                continue;
+            }
             let address = Address::parse(token).ok_or_else(|| DeliversError::Bad(token.into()))?;
             if !addresses.contains(&address) {
                 addresses.push(address);
             }
         }
     }
-    if addresses.is_empty() {
+    if addresses.is_empty() && !none {
         return Err(DeliversError::Missing);
     }
     Ok(addresses)
@@ -382,6 +389,7 @@ mod tests {
         assert_eq!(addresses[0].roadmap(), None);
         assert_eq!(delivers("no line here"), Err(DeliversError::Missing));
         assert_eq!(delivers("Delivers:   \n"), Err(DeliversError::Missing));
+        assert_eq!(delivers("Delivers: none"), Ok(Vec::new()));
         assert_eq!(
             delivers("Delivers: req-20"),
             Err(DeliversError::Bad("req-20".into()))
