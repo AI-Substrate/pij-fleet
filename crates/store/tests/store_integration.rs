@@ -1714,3 +1714,110 @@ async fn community_assignments_record_end_rebuild_and_set_seat_roles_in_one_tran
         "a refused rebuild replaces nothing"
     );
 }
+
+/// Plan 199 (migration 0034): requests sent to a role. A request round-trips
+/// with its reply mode and limit; the queue is per role, takes instance-less
+/// requests for any instance, runs oldest first, and a delivered request
+/// leaves it exactly once.
+#[tokio::test]
+async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let request = |id: &str, role: &str, instance: &str, at: u64| RoleRequest {
+        id: id.into(),
+        project: "pij".into(),
+        role: role.into(),
+        instance: instance.into(),
+        requester: "pij-asker".into(),
+        body: format!("please {id}"),
+        in_reply_to: None,
+        fyi: false,
+        reply: ReplyMode::Wake,
+        limit_ms: None,
+        state: RequestState::Queued,
+        holder: None,
+        created_at: at,
+        delivered_at: None,
+    };
+    let mut fyi = request("r-fyi", "coder", "196", 30);
+    fyi.fyi = true;
+    fyi.reply = ReplyMode::None;
+    fyi.limit_ms = Some(45 * 60_000);
+    fyi.in_reply_to = Some("m-0".into());
+    for row in [
+        request("r-late", "coder", "", 20),
+        request("r-early", "coder", "", 10),
+        fyi.clone(),
+        request("r-other-instance", "coder", "197", 5),
+        request("r-other-role", "reviewer", "", 1),
+    ] {
+        store.record_role_request(&row).await.expect("record");
+    }
+    assert_eq!(
+        store.role_request("r-fyi").await.expect("read"),
+        Some(fyi),
+        "reply, limit, fyi and in_reply_to round-trip"
+    );
+    let duplicate = store
+        .record_role_request(&request("r-late", "coder", "", 99))
+        .await
+        .expect_err("one request per id");
+    assert!(
+        duplicate.to_string().contains("E-RS-ROLE-REQUEST-EXISTS"),
+        "{duplicate}"
+    );
+
+    let ids = |rows: Vec<RoleRequest>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(store
+            .queued_role_requests("pij", "coder", "196")
+            .await
+            .unwrap()),
+        ["r-early", "r-late", "r-fyi"],
+        "instance 196 takes its own and instance-less requests, oldest first"
+    );
+    assert_eq!(
+        ids(store
+            .queued_role_requests("pij", "coder", "")
+            .await
+            .unwrap()),
+        ["r-early", "r-late"],
+        "an instance-less holder takes only instance-less requests"
+    );
+    assert!(
+        store
+            .queued_role_requests("other", "coder", "196")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    assert!(
+        store
+            .mark_role_request_delivered("r-early", "pij-coder", 40)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .mark_role_request_delivered("r-early", "pij-coder", 41)
+            .await
+            .unwrap(),
+        "a delivered request is never delivered twice"
+    );
+    let delivered = store.role_request("r-early").await.unwrap().expect("row");
+    assert_eq!(
+        (
+            delivered.state,
+            delivered.holder.as_deref(),
+            delivered.delivered_at
+        ),
+        (RequestState::Delivered, Some("pij-coder"), Some(40))
+    );
+    assert_eq!(
+        ids(store.all_queued_role_requests().await.unwrap()),
+        ["r-other-role", "r-other-instance", "r-late", "r-fyi"]
+    );
+}
