@@ -125,6 +125,70 @@ pub fn from_fields(id: &str, fields: &RoleFields) -> Result<Value, Refusal> {
     Ok(json!({"dd": {"schema": "pij/role"}, "sections": sections, "references": []}))
 }
 
+/// `document` with every field `fields` gives replacing its own (plan 194:
+/// `add --from template:<name>` then flags). A repeated flag replaces the
+/// whole list; a packet or brief replaces the standing packet.
+///
+/// # Errors
+/// `E-RS-ARG` when both `--packet` and `--brief` are given, or the document
+/// has no sections array.
+pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, Refusal> {
+    let overrides = from_fields("override", fields)?;
+    let Some(sections) = document["sections"].as_array_mut() else {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "the role document has no sections array",
+        ));
+    };
+    if let Some(given) = section(&overrides, "meta").and_then(Value::as_object) {
+        let meta = slot(sections, "meta", json!({}));
+        for (key, value) in given.iter().filter(|(key, _)| *key != "id") {
+            meta[key] = value.clone();
+        }
+    }
+    if !fields.rules.is_empty() {
+        slot(sections, "scope", json!({}))["rules"] = json!(fields.rules);
+    }
+    if !fields.scope_paths.is_empty() {
+        slot(sections, "scope", json!({}))["paths"] = json!(fields.scope_paths);
+    }
+    for (name, values) in [
+        ("out_of_scope", &fields.out_of_scope),
+        ("forbidden_paths", &fields.forbidden),
+        ("inputs", &fields.inputs),
+        ("output_kinds", &fields.output_kinds),
+    ] {
+        if !values.is_empty() {
+            *slot(sections, name, json!([])) = json!(values);
+        }
+    }
+    for (key, value) in [
+        ("harness", &fields.harness),
+        ("model", &fields.model),
+        ("effort", &fields.effort),
+    ] {
+        if let Some(value) = value {
+            slot(sections, "default_seat", json!({}))[key] = json!(value);
+        }
+    }
+    if let Some(packet) = section(&overrides, "standing_packet") {
+        *slot(sections, "standing_packet", json!({})) = packet.clone();
+    }
+    Ok(document)
+}
+
+/// The value of section `name`, added with `empty` when the document lacks it.
+fn slot<'a>(sections: &'a mut Vec<Value>, name: &str, empty: Value) -> &'a mut Value {
+    let at = match sections.iter().position(|section| section["name"] == name) {
+        Some(at) => at,
+        None => {
+            sections.push(json!({"name": name, "value": empty}));
+            sections.len() - 1
+        }
+    };
+    &mut sections[at]["value"]
+}
+
 /// The role id a document names in `meta.id`.
 pub fn id_of(document: &Value) -> Option<&str> {
     section(document, "meta")?.get("id")?.as_str()
@@ -406,6 +470,49 @@ mod tests {
         ] {
             assert_eq!(with(bad.clone()).unwrap_err().code, "E-RS-ARG", "{bad}");
         }
+    }
+
+    #[test]
+    fn flags_override_a_template_document_field_by_field() {
+        let base = json!({"dd": {"schema": "pij/role"}, "sections": [
+            {"name": "meta", "value": {"id": "pm", "title": "PM", "holders": "one"}},
+            {"name": "scope", "value": {"rules": ["old"], "paths": ["a/**"]}},
+            {"name": "default_seat", "value": {"harness": "omp"}},
+            {"name": "standing_packet", "value": {"source": "inline", "text": "t"}},
+        ], "references": []});
+        let fields = RoleFields {
+            title: Some("PM for roadmap 001".into()),
+            rules: vec!["new".into()],
+            model: Some("m".into()),
+            output_kinds: vec!["note".into()],
+            brief: Some("briefs/pm.md".into()),
+            ..RoleFields::default()
+        };
+        let document = apply_fields(base.clone(), &fields).unwrap();
+        let meta = section(&document, "meta").unwrap();
+        assert_eq!(meta["id"], "pm", "the id is not a field");
+        assert_eq!(meta["title"], "PM for roadmap 001");
+        assert_eq!(meta["holders"], "one");
+        assert_eq!(
+            section(&document, "scope").unwrap(),
+            &json!({"rules": ["new"], "paths": ["a/**"]})
+        );
+        assert_eq!(
+            section(&document, "default_seat").unwrap(),
+            &json!({"harness": "omp", "model": "m"})
+        );
+        assert_eq!(
+            section(&document, "output_kinds").unwrap(),
+            &json!(["note"])
+        );
+        assert_eq!(
+            section(&document, "standing_packet").unwrap(),
+            &json!({"source": "brief", "brief": "briefs/pm.md"})
+        );
+        assert_eq!(
+            apply_fields(base.clone(), &RoleFields::default()).unwrap(),
+            base
+        );
     }
 
     #[test]
