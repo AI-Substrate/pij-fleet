@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "delivery"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-05T23:09:43.232Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
+				}
+			]
+		}
+	]
+}
