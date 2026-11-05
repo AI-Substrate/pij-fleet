@@ -71,7 +71,7 @@
 				{
 					"id": "s04",
 					"title": "Assign, release, lineage and the directory view",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-01",
 						"../prds/001-pij-community.dd.json#requirements/req-06",
@@ -84,7 +84,8 @@
 						"../blueprints/001-pij-community.dd.json#components/c-orient"
 					],
 					"depends_on": ["#steps/s02"],
-					"done_when": "Lineage survives a store rebuild; the view lists roles and holders for this project only."
+					"done_when": "Lineage survives a store rebuild; the view lists roles and holders for this project only.",
+					"plan": "docs/plans/195-assign-lineage"
 				},
 				{
 					"id": "s05",
@@ -242,6 +243,11 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 190: s02 complete (`pij directory add` and `--batch` on the governance writer; evidence in docs/plans/190-community-writer/assets/evidence/phase-2.md)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 195: s04 complete (assign, release, close-ends, lineage, the view and rebuild; evidence in docs/plans/195-assign-lineage/assets/evidence/phase-2.md)."
 				}
 			]
 		}

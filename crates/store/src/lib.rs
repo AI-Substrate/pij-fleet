@@ -20,7 +20,7 @@ mod role_assertion;
 pub mod spine;
 pub mod status;
 
-pub use community::CommunityPointer;
+pub use community::{Assignment, AssignmentCommit, CommunityPointer};
 pub use governance::GovernanceOutcome;
 pub use migrate::{SCHEMA_VERSION, StorePool, open, require_current_schema, schema_version};
 pub use orchestration::{

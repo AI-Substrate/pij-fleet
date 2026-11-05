@@ -576,7 +576,8 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Write a role into the community directory (`directory add`, plan 190).
+    /// The community directory: `directory add` (plan 190), `--help` (plan 195).
+    #[command(disable_help_flag = true)]
     Directory {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -1175,6 +1176,13 @@ async fn run(cli: Cli) -> ExitCode {
     {
         return bg_emit(&addr, text, data.as_deref(), data_file.as_deref(), cli.json).await;
     }
+    // Directory help needs no daemon or key; the shim path gets the same text
+    // from the daemon (plan 195, AC10).
+    if let Command::Directory { args } = &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        return directory_help(args);
+    }
     let client = match DaemonClient::new(&state_dir, &addr) {
         Ok(client) => client,
         Err(error) => {
@@ -1651,6 +1659,23 @@ async fn run(cli: Cli) -> ExitCode {
                 as_json,
             )
         }
+        Command::Directory { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let response =
+                pij_cli::governance::governance(&client, "directory", &args, &caller_context())
+                    .await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                // Only the view carries `pending`; `add` also returns `roles`.
+                Some(view)
+                    if view.get("roles").is_some_and(Value::is_array)
+                        && view.get("pending").is_some() =>
+                {
+                    println!("{}", render_directory(view));
+                    ExitCode::SUCCESS
+                }
+                _ => emit(&response, as_json),
+            }
+        }
         Command::Project { args }
         | Command::Stream { args }
         | Command::Fence { args }
@@ -1661,8 +1686,7 @@ async fn run(cli: Cli) -> ExitCode {
         | Command::Task { args }
         | Command::Node { args }
         | Command::Orchestration { args }
-        | Command::Spine { args }
-        | Command::Directory { args } => {
+        | Command::Spine { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             let family = command_name
                 .strip_prefix("pij ")
@@ -2611,6 +2635,70 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
         println!("{}", render(envelope, json));
     }
     ExitCode::from(exit_code(envelope))
+}
+
+/// `pij directory` for a human: each role, its mode and its live holders.
+fn render_directory(view: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    let roles = view["roles"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut out = format!("{}: {} role(s)", text(&view["project"]), roles.len());
+    for role in roles {
+        let live = role["live"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let holders: Vec<String> = live
+            .iter()
+            .map(|holder| {
+                let instance = holder["instance"].as_str().filter(|key| !key.is_empty());
+                format!(
+                    "{}{} since {} on {}{}",
+                    text(&holder["seat"]),
+                    instance.map(|key| format!(" ({key})")).unwrap_or_default(),
+                    text(&holder["since"]),
+                    text(&holder["machine"]),
+                    if holder["end_pending"] == true {
+                        ", end pending"
+                    } else {
+                        ""
+                    }
+                )
+            })
+            .collect();
+        let _ = write!(
+            out,
+            "\n  {} ({}, {}): {}",
+            text(&role["id"]),
+            text(&role["kind"]),
+            text(&role["holders"]),
+            if holders.is_empty() {
+                "no holder".to_string()
+            } else {
+                holders.join("; ")
+            }
+        );
+    }
+    out
+}
+
+fn directory_help(args: &[String]) -> ExitCode {
+    let verb = pij_core::directory::verb(args);
+    match pij_core::directory::help(verb) {
+        Some(text) => {
+            println!("{text}");
+            ExitCode::SUCCESS
+        }
+        None => {
+            eprintln!(
+                "pij directory: unknown verb {:?}; run `pij directory --help`",
+                verb.unwrap_or_default()
+            );
+            ExitCode::from(2)
+        }
+    }
 }
 
 /// The human summary of a written fleet report.

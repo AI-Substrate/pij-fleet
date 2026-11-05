@@ -7,12 +7,11 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use pij_core::model::{Envelope, ErrorKind};
+use pij_core::model::{Envelope, ErrorKind, SeatId};
 use serde_json::{Value, json};
 
 use super::governance::GovernanceRequest;
@@ -24,8 +23,10 @@ use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{Refusal, pointer};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 19] = [
+const SINGLE: [&str; 21] = [
     "why",
+    "from-project",
+    "role",
     "project",
     "file",
     "batch",
@@ -54,10 +55,19 @@ const REPEATED: [&str; 6] = [
     "output-kind",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 5] = ["why", "project", "file", "batch", "actor"];
+const CONTROL: [&str; 7] = [
+    "why",
+    "project",
+    "file",
+    "batch",
+    "actor",
+    "from-project",
+    "role",
+];
 
 #[derive(Debug, Default)]
 struct Arguments {
+    leaf: String,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -65,12 +75,20 @@ struct Arguments {
 
 impl Arguments {
     fn parse(argv: &[String]) -> Result<Self, Refusal> {
+        // A bare `pij directory` (or one with only flags) is the view.
+        let view = argv.len() == 1 || argv.get(1).is_some_and(|token| token.starts_with("--"));
         match argv {
-            [family, leaf, ..] if family == "directory" && leaf == "add" => {}
+            [family, ..] if family == "directory" && view => {}
+            [family, leaf, ..]
+                if family == "directory"
+                    && matches!(
+                        leaf.as_str(),
+                        "add" | "assign" | "release" | "rebuild" | "external"
+                    ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
                     "E-RS-UNPORTED",
-                    format!("directory {leaf}: unknown command; s02 ships `directory add`"),
+                    format!("directory {leaf}: unknown command; run `pij directory --help`"),
                 ));
             }
             _ => {
@@ -80,8 +98,15 @@ impl Arguments {
                 ));
             }
         }
-        let mut call = Self::default();
-        let mut tokens = argv[2..].iter();
+        let mut call = Self {
+            leaf: if view {
+                "view".to_string()
+            } else {
+                argv[1].clone()
+            },
+            ..Self::default()
+        };
+        let mut tokens = argv[if view { 1 } else { 2 }..].iter();
         while let Some(token) = tokens.next() {
             let Some(flag) = token.strip_prefix("--") else {
                 call.positions.push(token.clone());
@@ -111,6 +136,62 @@ impl Arguments {
                     format!("directory add: unsupported --{name}"),
                 ));
             }
+        }
+        let external_only = ["from-project", "role"];
+        if call.leaf != "external"
+            && external_only
+                .iter()
+                .any(|flag| call.single.contains_key(*flag))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --from-project and --role belong to `external add`",
+                    call.leaf
+                ),
+            ));
+        }
+        if call.leaf == "external"
+            && (call.positions.len() != 2
+                || call.positions[0] != "add"
+                || call.single.keys().any(|flag| {
+                    !matches!(
+                        flag.as_str(),
+                        "why" | "project" | "actor" | "from-project" | "role"
+                    )
+                })
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]",
+            ));
+        }
+        if matches!(call.leaf.as_str(), "view" | "rebuild")
+            && (!call.positions.is_empty()
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "project" | "actor"))
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {} takes only [--project <slug>]", call.leaf),
+            ));
+        }
+        if matches!(call.leaf.as_str(), "assign" | "release")
+            && (call.describes_a_role()
+                || call.get("file").is_some()
+                || call.get("batch").is_some())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: takes <role>[/<instance>] <seat> --why <text> [--project <slug>]",
+                    call.leaf
+                ),
+            ));
         }
         Ok(call)
     }
@@ -162,6 +243,24 @@ pub(crate) async fn handle(
     State(state): State<AppState>,
     Json(request): Json<GovernanceRequest>,
 ) -> Response {
+    if request
+        .argv
+        .first()
+        .is_some_and(|family| family == "directory")
+        && pij_core::directory::wants_help(&request.argv[1..])
+    {
+        let verb = pij_core::directory::verb(&request.argv[1..]);
+        return match pij_core::directory::help(verb) {
+            Some(text) => envelope(
+                StatusCode::OK,
+                &Envelope::ok(COMMAND, json!({"help": text})),
+            ),
+            None => refused(&Refusal::new(
+                "E-RS-UNPORTED",
+                format!("directory {}: unknown command", verb.unwrap_or_default()),
+            )),
+        };
+    }
     let call = match Arguments::parse(&request.argv) {
         Ok(call) => call,
         Err(refusal) => return refused(&refusal),
@@ -186,7 +285,21 @@ pub(crate) async fn handle(
             "--actor does not match the daemon-resolved caller",
         ));
     }
-    match add(&state, actor.id.as_str(), &request.caller, &call).await {
+    let result = match call.leaf.as_str() {
+        "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
+        "external" => external(&state, &actor.id, &request.caller, &call).await,
+        "view" | "rebuild" => {
+            match project_and_repo(&state, &request.caller, call.get("project")).await {
+                Ok((project, repo)) if call.leaf == "view" => {
+                    state.services.directory.view(&project, &repo).await
+                }
+                Ok((project, repo)) => state.services.directory.rebuild(&project, repo).await,
+                Err(refusal) => Err(refusal),
+            }
+        }
+        _ => add(&state, actor.id.as_str(), &request.caller, &call).await,
+    };
+    match result {
         Ok(data) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, data)),
         Err(refusal) => refused(&refusal),
     }
@@ -248,24 +361,28 @@ async fn add(
             ));
         }
         let document = role::stamp(document, &id, actor, &why, &date)?;
-        let taken = exists(&id, &paths.document);
+        let dir = paths
+            .document
+            .parent()
+            .expect("a role document sits in its folder");
         files.push(NewFile {
             path: paths.document.clone(),
             bytes: role::to_bytes(&document),
             document: true,
-            existing: Existing::Refuse(taken.clone()),
+            existing: Existing::Refuse(exists(&id, &paths.document)),
         });
+        // An existing folder's own memory and outputs are adopted as they are.
         files.push(NewFile {
             path: paths.memory_index,
             bytes: RolePaths::empty_memory_index(&id).into_bytes(),
             document: false,
-            existing: Existing::Refuse(taken.clone()),
+            existing: Existing::Skip(dir.join("memory")),
         });
         files.push(NewFile {
             path: paths.outputs_keep,
             bytes: Vec::new(),
             document: false,
-            existing: Existing::Refuse(taken),
+            existing: Existing::Skip(dir.join("outputs")),
         });
         ids.push(id);
     }
@@ -280,16 +397,11 @@ async fn add(
         ),
     };
     let message = format!("{subject}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}");
-    let writer = Arc::clone(&state.services.community);
-    let written: Written =
-        tokio::task::spawn_blocking(move || writer.write(&repo, files, &message))
-            .await
-            .map_err(|error| {
-                Refusal::new(
-                    crate::community::E_GOV_GIT,
-                    format!("the writer stopped: {error}"),
-                )
-            })??;
+    let written: Written = state
+        .services
+        .directory
+        .write(&project, repo, files, message)
+        .await?;
 
     let pointers = pointer::for_write(&project, &written.paths, &written.commit);
     state
@@ -328,6 +440,107 @@ async fn add(
     Ok(data)
 }
 
+/// `directory assign|release <role>[/<instance>] <seat> --why <text>` (plan 195).
+async fn hold(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let [target, seat] = call.positions.as_slice() else {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("directory {} takes <role>[/<instance>] <seat>", call.leaf),
+        ));
+    };
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let (role, instance) = target.split_once('/').unwrap_or((target.as_str(), ""));
+    RolePaths::new(role)?;
+    if instance.contains('/') || instance.trim() != instance {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("bad instance key {instance:?}"),
+        ));
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let seat_id = SeatId::from(seat.as_str());
+    let directory = &state.services.directory;
+    let receipt = if call.leaf == "assign" {
+        let descriptor = state
+            .services
+            .registry
+            .get(&seat_id)
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+            .ok_or_else(|| Refusal::new("E-RS-NOT-FOUND", format!("seat {seat} does not exist")))?;
+        directory
+            .assign(crate::community::directory::AssignRequest {
+                project: project.clone(),
+                repo,
+                role: role.to_string(),
+                instance: instance.to_string(),
+                seat: descriptor,
+                actor: actor.clone(),
+                why,
+                machine: state.machine_alias.clone(),
+            })
+            .await?
+    } else {
+        directory
+            .release(&project, repo, role, instance, &seat_id, actor, &why)
+            .await?
+    };
+    let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+    data["project"] = json!(project);
+    data["role"] = json!(role);
+    data["seat"] = json!(seat);
+    Ok(data)
+}
+
+/// `directory external add <seat> --from-project <slug> --why <note>`.
+async fn external(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let from = call
+        .get("from-project")
+        .filter(|from| !from.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--from-project <slug> is required"))?;
+    let role = call.get("role");
+    if let Some(role) = &role {
+        RolePaths::new(role)?;
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let (written, entry) = state
+        .services
+        .directory
+        .external_add(
+            &project,
+            repo,
+            &call.positions[1],
+            &from,
+            role.as_deref(),
+            &why,
+            actor,
+        )
+        .await?;
+    Ok(json!({
+        "project": project,
+        "commit": written.commit,
+        "path": crate::community::layout::EXTERNAL,
+        "entry": entry,
+    }))
+}
+
 /// The project the write belongs to and the repository to find governance from:
 /// `--project`, else the project whose repo holds the caller's directory.
 async fn project_and_repo(
@@ -353,25 +566,15 @@ async fn project_and_repo(
             .ok_or_else(|| {
                 Refusal::new("E-RS-NOT-FOUND", format!("project {slug:?} does not exist"))
             })?,
-        None => cwd
-            .and_then(|cwd| {
-                let cwd = canonical(Path::new(cwd));
-                projects
-                    .into_iter()
-                    .filter_map(|project| {
-                        let repo = canonical(Path::new(project.repo.as_deref()?));
-                        cwd.starts_with(&repo)
-                            .then_some((repo.as_os_str().len(), project))
-                    })
-                    .max_by_key(|(depth, _)| *depth)
-                    .map(|(_, project)| project)
-            })
-            .ok_or_else(|| {
+        None => {
+            let cwd = cwd.ok_or_else(|| {
                 Refusal::new(
                     "E-RS-ARG",
-                    "no project's repo holds this directory; name it with --project <slug>",
+                    "name the project with --project <slug>, or call from inside its repo",
                 )
-            })?,
+            })?;
+            match_project(projects, Path::new(cwd))?
+        }
     };
     let repo = project
         .repo
@@ -384,6 +587,63 @@ async fn project_and_repo(
             )
         })?;
     Ok((project.slug, PathBuf::from(repo)))
+}
+
+/// The project for a caller in `cwd`: the one whose repo holds it (the deepest),
+/// else the one whose repo shares its common git dir, so a linked worktree
+/// finds its project (plan 195, AC15). Read in-process, no launch.
+fn match_project(
+    projects: Vec<pij_core::orchestration::Project>,
+    cwd: &Path,
+) -> Result<pij_core::orchestration::Project, Refusal> {
+    let here = canonical(cwd);
+    let common = crate::community::root::common_dir(&here);
+    let mut held: Vec<(usize, pij_core::orchestration::Project)> = Vec::new();
+    let mut shared: Vec<pij_core::orchestration::Project> = Vec::new();
+    for project in projects {
+        let Some(repo) = project
+            .repo
+            .as_deref()
+            .map(|repo| canonical(Path::new(repo)))
+        else {
+            continue;
+        };
+        if here.starts_with(&repo) {
+            held.push((repo.as_os_str().len(), project));
+        } else if common.is_some() && crate::community::root::common_dir(&repo) == common {
+            shared.push(project);
+        }
+    }
+    if let Some((_, project)) = held.into_iter().max_by_key(|(depth, _)| *depth) {
+        return Ok(project);
+    }
+    match shared.len() {
+        1 => Ok(shared.remove(0)),
+        0 => {
+            let main = common.as_deref().and_then(Path::parent).map_or_else(
+                || "<main checkout>".to_string(),
+                |main| main.display().to_string(),
+            );
+            Err(Refusal::new(
+                "E-RS-NOT-FOUND",
+                format!("no project records the repository holding {}", here.display()),
+            )
+            .with_next(format!(
+                "Register it: pij project create <name> --repo {main} --prime <seat>; or name a project with --project <slug>."
+            )))
+        }
+        _ => Err(Refusal::new(
+            "E-RS-ARG",
+            format!(
+                "several projects share this repository ({}); name one with --project <slug>",
+                shared
+                    .iter()
+                    .map(|project| project.slug.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        )),
+    }
 }
 
 /// `/tmp` and `/private/tmp` are one directory on macOS: compare real paths.
@@ -521,7 +781,7 @@ mod tests {
             "E-RS-ARG"
         );
         assert_eq!(
-            Arguments::parse(&argv(&["directory", "assign", "qa"]))
+            Arguments::parse(&argv(&["directory", "evict", "qa"]))
                 .unwrap_err()
                 .code,
             "E-RS-UNPORTED"

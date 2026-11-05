@@ -285,6 +285,12 @@ rust-check:
     cargo clippy --locked --workspace --all-targets -- -D warnings
     cargo test --locked --workspace
 
+# Cargo into a target several worktrees share, one worktree at a time (plan 198):
+# lock, disk floor, fresh sources, CARGO_INCREMENTAL=0, always released.
+# `PIJ_SHARED_TARGET=<abs dir> just shared-build [--timeout <min>] -- test -p pij-store --then clippy -p pij-store`
+shared-build *ARGS:
+    @bash harness/scripts/shared-build.sh "$@"
+
 # --- ergonomics ---
 
 # Link the pij extension + curated MCP/models into ~/.omp/agent and the native

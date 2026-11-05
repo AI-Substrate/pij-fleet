@@ -1483,6 +1483,15 @@ impl TmuxPort for TmuxAdapter {
         Ok(())
     }
 
+    async fn rename_window(&self, pane: &str, name: &str) -> Result<()> {
+        // A pane target resolves to the window holding it.
+        self.run(
+            "rename-window",
+            &os_args(["rename-window", "-t", pane, "--", name]),
+        )?;
+        Ok(())
+    }
+
     async fn new_window(
         &self,
         session: &str,

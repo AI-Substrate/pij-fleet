@@ -357,6 +357,34 @@ impl Spine for FakeSpine {
     async fn newest(&self) -> Result<Seq> {
         Ok(Seq(self.state.lock().expect("fake spine mutex").seq))
     }
+    async fn latest(&self, seat: &SeatId) -> Result<Option<Event>> {
+        let state = self.state.lock().expect("fake spine mutex");
+        Ok(state
+            .events
+            .iter()
+            .rev()
+            .find(|(_, event)| event.seat.as_ref() == Some(seat))
+            .map(|(seq, event)| {
+                let mut event = event.clone();
+                event.seq = Some(*seq);
+                event
+            }))
+    }
+
+    async fn seat_page(&self, seat: &SeatId, since: Seq, limit: usize) -> Result<Vec<Event>> {
+        let state = self.state.lock().expect("fake spine mutex");
+        Ok(state
+            .events
+            .iter()
+            .filter(|(seq, event)| *seq > since && event.seat.as_ref() == Some(seat))
+            .take(limit)
+            .map(|(seq, event)| {
+                let mut event = event.clone();
+                event.seq = Some(*seq);
+                event
+            })
+            .collect())
+    }
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         if kinds.is_empty() {
@@ -540,6 +568,21 @@ impl Spine for CountingSpine {
 
     async fn newest(&self) -> Result<Seq> {
         self.inner.newest().await
+    }
+    async fn latest(
+        &self,
+        seat: &pij_core::model::SeatId,
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        self.inner.latest(seat).await
+    }
+
+    async fn seat_page(
+        &self,
+        seat: &pij_core::model::SeatId,
+        since: pij_core::model::Seq,
+        limit: usize,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.seat_page(seat, since, limit).await
     }
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
@@ -2487,6 +2530,14 @@ impl TmuxPort for FakeTmux {
         let mut state = self.state.lock().expect("fake tmux mutex");
         state.recorder.record(format!("kill:{pane}"));
         state.panes.retain(|p| p.id != pane);
+        Ok(())
+    }
+
+    async fn rename_window(&self, pane: &str, name: &str) -> Result<()> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        state
+            .recorder
+            .record(format!("rename-window:{pane}:{name}"));
         Ok(())
     }
 
