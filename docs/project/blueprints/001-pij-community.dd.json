@@ -167,7 +167,7 @@
 					"where": "crates/cli + crates/store",
 					"responsibility": "`pij claim <kind>` hands out the next NNN per project and kind, and releases it on merge or close.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-20"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-merge-delivery",
@@ -176,7 +176,7 @@
 					"where": "crates/daemon",
 					"responsibility": "On a PR merge, reads the PR's links to requirement rows and steps, records the delivery and fills `delivered_by` through a docs PR, and updates the owning PM's card.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-21"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-limits",
@@ -311,6 +311,11 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 195: c-store (assignments, migration 0032), c-verbs (assign, release, external add, rebuild, the view, help) and c-orient (the directory view) in-progress; later steps add the rest."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 196: c-claims and c-merge-delivery shipped. Delivery is the verb the merger runs (C23); the edits are printed for the PM's docs PR, never applied."
 				}
 			]
 		}

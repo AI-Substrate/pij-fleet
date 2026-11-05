@@ -151,7 +151,7 @@
 				{
 					"id": "s11",
 					"title": "Number claims and delivery at merge",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-20",
 						"../prds/001-pij-community.dd.json#requirements/req-21"
@@ -161,7 +161,8 @@
 						"../blueprints/001-pij-community.dd.json#components/c-merge-delivery"
 					],
 					"depends_on": ["#steps/s02"],
-					"done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card."
+					"done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card.",
+					"plan": "docs/plans/196-claims-delivery"
 				},
 				{
 					"id": "s12",
@@ -248,6 +249,11 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 195: s04 complete (assign, release, close-ends, lineage, the view and rebuild; evidence in docs/plans/195-assign-lineage/assets/evidence/phase-2.md)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 196: s11 complete (number claims and delivery at merge; evidence in docs/plans/196-claims-delivery/assets/evidence/)."
 				}
 			]
 		}
