@@ -151,8 +151,8 @@
 				},
 				{
 					"id": "req-08",
-					"title": "Changes are attributed and visible",
-					"statement": "Every policy change records who made it, when and why, and tells the subject seat. `pij state` and the seat's card show its current policy.",
+					"title": "Anyone may change a policy; the default route is the parent or prime",
+					"statement": "The seat's parent and its community's prime change its policy with `pij permissions set <seat> <policy> --reason`. Any other seat may too, but must pass `--force` with a reason, because we are not the police. A locked seat changing its own policy is the same case and needs `--force`. Every change records who made it, when and why, and tells the subject seat. `pij state` and the seat's card show its current policy.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "planned",
@@ -178,7 +178,8 @@
 					"id": "q-01",
 					"question": "Who may change a seat's policy? Locking down is only meaningful if the seat can't unlock itself.",
 					"default": "Its parent and the community's prime, not the seat itself.",
-					"status": "open"
+					"answer": "Its parent and the prime by default; anyone else may, but must pass --force with a reason (Jordan, 2026-11-06). A seat changing its own policy needs --force too.",
+					"status": "answered"
 				},
 				{
 					"id": "q-02",
@@ -207,6 +208,11 @@
 					"date": "2026-11-04",
 					"by": "pij-far-jackal with Jordan",
 					"change": "First draft from Jordan's ask."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-far-jackal with Jordan",
+					"change": "q-01 answered: anyone may change a policy, parent and prime by default, anyone else with --force and a reason (req-08)."
 				}
 			]
 		}
