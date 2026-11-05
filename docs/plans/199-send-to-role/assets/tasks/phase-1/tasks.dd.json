@@ -18,11 +18,143 @@
     },
     {
       "name": "tasks",
-      "value": []
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Request store: migration 0034 role_requests",
+          "phase": "ph-00c7",
+          "state": "unchecked",
+          "success": "role_requests(id = the send's msg_id, project, role, instance, requester, body, in_reply_to, fyi, reply wake|fyi|none, limit_ms, state queued|delivered, holder, created_at, delivered_at) with a partial index on queued rows; SqliteOrchestration records a request, lists a role's queued requests oldest first (instance-less requests match any instance), lists every queued request, and marks one delivered. SCHEMA_VERSION 34.",
+          "notes": "crates/store/migrations/0034_role_requests.sql, crates/store/src/role_requests.rs. Migration number claimed by pm-001.",
+          "satisfies": [],
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Resolve a role send: one holder, several, mismatch, reply and limit",
+          "phase": "ph-00c7",
+          "state": "unchecked",
+          "success": "pij send role:<id>[/<instance>] (HTTP send and the shim, one shared function) resolves the project (--project or the caller's cwd), checks the role document exists in the governance worktree without launching anything, and finds live holders from open assignments plus the registry. One holder: an ordinary send (or FYI) to that seat through the cold-wake guard, recorded as a delivered request; the receipt carries request {id, role, instance, reply, limit_ms, state, holder}. Two or more: refuse listing them. A seat_roles disagreement for pm/pa/worker refuses with a named mismatch (C1). --reply wake|fyi|none (default wake) and --limit (default the role's default_limit, C5) are accepted only on role sends; role:x@machine and --command to a role refuse by name.",
+          "notes": "crates/daemon/src/delivery/role_send.rs (+ http wiring in http/mod.rs and http/shim.rs), native CLI flags in crates/cli. Instance-less address on a many-holder role with several instance holders is several holders.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Queue and wake when no holder is live",
+          "phase": "ph-00c7",
+          "state": "unchecked",
+          "success": "With no live holder the request is queued (an --fyi send too, C2) and the project's PA holder, else the current prime designation, else a live prime-role seat, is woken once through the ordinary delivery path (cold wake audited, as the PA watchdog does) with the request and runnable next steps: revive the last holder (its context size) or assign a fresh seat. The PA digest lists queued requests until they drain (one store read per digest, no new timer). pij never starts a seat.",
+          "notes": "Reuses pa_watchdog wake path; the digest section renders only when non-empty so existing digests are unchanged.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Drain the role queue on assign (C6)",
+          "phase": "ph-00c7",
+          "state": "unchecked",
+          "success": "An AfterAssign implementation, wired in build_services in place of NoHook, delivers the role's queued requests to the new holder in order (one delivery each, as the requester, FYIs held) and marks each delivered. A refused assign runs no hook and drains nothing.",
+          "notes": "The hook is synchronous; it spawns the drain.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Cost readings",
+          "phase": "ph-00c7",
+          "state": "unchecked",
+          "success": "No new launch site, loop, poll or timer: spawn_sites.rs unchanged and green; the PR states per-verb cost; performance takes the live at-rest before and after.",
+          "notes": "Role resolution reads the governance worktree in-process (root::find, a stat, one JSON read); no git launch.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Docs and states",
+          "phase": "ph-00c7",
+          "state": "unchecked",
+          "success": "docs/how/pij-rs-api.md documents role sends, --reply, --limit, --project and refusals; the skill lines carry them; roadmap s05 complete, req-07 shipped, req-08 in-progress, c-send-role shipped; just ddocs-check passes; PR body has Delivers:.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006"
+        }
+      ]
     },
     {
       "name": "done_when",
-      "value": {}
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "pij-store tests: a request round-trips with reply and limit; queued listing is per role and instance, oldest first; mark-delivered removes it from the queue; a duplicate id refuses.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "pij-daemon tests: 1 live holder delivers with the request id on the receipt; role:coder/196 reaches only that instance; 2 holders refuse naming both; a C1 mismatch refuses naming both roles; reply and limit round-trip; --reply on a seat send refuses.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0003",
+            "assertion": "Two live holders refuse with both seats named.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0004",
+            "assertion": "pij-daemon tests: a zero-holder send queues, wakes the PA once with both commands and the last holder context size, an FYI queues too, and the digest shows the queued request; no timer added.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0005",
+            "assertion": "pij-daemon tests: two queued requests arrive in order after an assign and are marked delivered; a refused assign drains nothing.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0006",
+            "assertion": "spawn_sites test green with no new site; performance verdict records the at-rest readings.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0007",
+            "assertion": "ddocs-check and skill verb coverage green; CI on the exact head; reviewer, security and performance verdicts.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007"
+          }
+        ]
+      }
     },
     {
       "name": "goals",
@@ -96,6 +228,5 @@
       "name": "execution_guardrails",
       "value": []
     }
-  ],
-  "references": []
+  ]
 }
