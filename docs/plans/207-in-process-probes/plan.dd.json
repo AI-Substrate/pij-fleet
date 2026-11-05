@@ -1,0 +1,167 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "In-process UTC offset and process ancestry (issues #127, #128)",
+        "slug": "in-process-probes",
+        "ordinal": 207,
+        "complexity": "CS-2",
+        "summary": "Two daemon launch sites go to zero at steady state: the per-pending-Claude-seat `/bin/date` for the UTC offset (#127, a per-tick-per-seat launch AGENTS.md forbids) and the per-ancestor `/bin/ps` in registration (#128). Both become in-process reads, each with a before and after counter reading and a spawn_sites guard.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Found by the performance seat (governance roles/performance/memory/2026-11-06-spawn-attribution.md, file:line at f327a7d). Pre-existing since 03ab38e; not caused by s04. Doesn't gate the PEC try-out, so it sits behind the s05 critical path. Delivery (pij-swift-kestrel) owns claude_bind: if another coder takes this, kestrel reviews the bind change."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Two daemon launch sites go to zero at steady state: the per-pending-Claude-seat `/bin/date` for the UTC offset (#127, a per-tick-per-seat launch AGENTS.md forbids) and the per-ancestor `/bin/ps` in registration (#128). Both become in-process reads, each with a before and after counter reading and a spawn_sites guard."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "#127, UTC offset in-process. `crates/harnesses/src/proc.rs:322-327` computes the local UTC offset in-process (the time crate's local offset or libc localtime_r's tm_gmtoff) instead of launching `date`; every caller (claude_bind's loop at claude_bind.rs:73,90 from lib.rs:669-673, FYI claim and read, carrier flush, Claude adopt, revive, double-seat) gets the same value as before.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "#128, ancestry in-process. `crates/daemon/src/registration.rs:1647-1662` reads each ancestor's pid, parent and command in-process (macOS proc_pidinfo or sysctl KERN_PROC; Linux /proc) instead of launching `/bin/ps`, keeping the 32-ancestor cap and the same results for native (:437) and paneless (:223) registration.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Guards. crates/testkit/tests/spawn_sites.rs fails if a `date` launch returns on the UTC-offset path or a `ps` launch returns on the registration ancestry path.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Readings. The performance seat records, on the live fleet before and after deploy, `date.utc-offset` and `ps.registration-native-process` over a 60 s at-rest window with pending Claude seats present (expected: to 0), plus the daemon total, with data.pid on each reading.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Removes launches: date.utc-offset to 0 and ps.registration-native-process to 0 at steady state; no new launch, loop or timer. The before and after readings are AC4.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and states. No roadmap or PRD state changes (an issue fix). The PR closes #127 and #128; docs/difficulties.md gets a resolved row. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00cf",
+          "title": "In-process UTC offset and process ancestry (issues #127, #128)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code: crates/harnesses/src/proc.rs:322-327; crates/daemon/src/claude_bind.rs:73,90; crates/daemon/src/lib.rs:669-673; crates/core/src/config.rs:201; crates/daemon/src/registration.rs:223, :437, :1647-1662; crates/testkit/tests/spawn_sites.rs. If a new dependency is needed (the time crate's local-offset feature or libproc), keep it to the smallest one and say why; the lockfile allowlist applies."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
