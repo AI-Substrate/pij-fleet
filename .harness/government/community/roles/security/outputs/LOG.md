@@ -38,3 +38,5 @@
 
 2026-11-06 note prime-governance 51cb8bd3472352f72b76984cf31c1e1ff8a750c1 block - Reviewer artifact outputs/2026-11/pr121b-trailing-slash.json:14-15 retains concrete temporary-runtime values, literals omitted; forward neutralization routed; PR121 report.
 
+2026-11-06 verdict pr:121 eff6286758eae1d8f825805f3ceda04dbf6c8ffb pass-with-notes - Original MEDIUM closed by atomic0700/owner-noclobber fail-closed creation; MKDIR seam is trusted caller override outside tests, no new lower-trust capability found; four CI jobs green, proof limits explicit; separate governance artifact values persist at 3b153235; 2026-11-06-pr-121-eff6286-security.md.
+

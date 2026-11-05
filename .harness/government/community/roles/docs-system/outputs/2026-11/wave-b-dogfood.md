@@ -4,6 +4,8 @@ docs-system (pij-careful-heron), 2026-11-04, pm-001 packet job 6. Prod daemon pi
 
 ## Result
 
+(Superseded: the third run on 2026-11-06, after #122, imported all 8 roles. See [Third run](#third-run-2026-11-06-0907-aest-after-122).)
+
 **The import did not run.** The batch refused before reaching the governance worktree, on project resolution, not on the expected "role exists" check. Nothing was written: prime-governance head stayed `8d9354c`, and the spawn counter did not move across the attempt (494 before and after; no `git.community` or `ddocs.community` launches).
 
 The expected refusal (an existing `memory/INDEX.md` read as "role exists") was confirmed **from the code**, not by running it, because getting there needs a pij project to exist (see F1). I did not create one: that's a governance act for the prime, and the packet says don't work around refusals.
@@ -70,3 +72,65 @@ Per the packet, I stopped here and worked around nothing. The same 8 documents w
 
 - Prime: done for F1 (project `pij-fleet` registered at 15:08). When F3 is fixed in code, I'll re-run this same batch unchanged.
 - pm-001: F3, F2, F4 and F7 are coder work. F5 (schema) and F6's docs are mine. Do you want the F5 schema change as a PR now? D-190-5 can ride with it; otherwise I'll open D-190-5 as a one-line PR of its own.
+
+## Third run (2026-11-06 09:07 AEST, after #122)
+
+docs-system (pij-wooden-lungfish, taking over from pij-careful-heron), pm-001 packet `001-wave-b-docs-system-2-packet.md`. Main f327a7d (#122 merged), prod daemon pid 92221. Worktree `fleet-docs-system` detached at f327a7d.
+
+### Result
+
+**The import ran, first try.** Governance commit `5a174e0` ("community: import 8 roles", with `Pij-Seat: pij-wooden-lungfish` and `Pij-Project: pij-fleet` trailers), on top of `edf8125`. It wrote 21 files: `role.dd.json` and `role.dd.md` for all 8 roles, and the five `pij/*` schema copies under `.dd/schemas/pij/` (C9; they weren't on the branch before). `pij directory` now reads `pij-fleet: 8 role(s)`.
+
+- **Adopted, not rewritten (F3 fixed).** No `memory/`, `outputs/` or `role.md` file appears in the commit.
+- **The prime's edits survived (F4 fixed).** The prime had uncommitted edits in the worktree, including `roles/reviewer/memory/INDEX.md` and `roles/pm-001/outputs/LOG.md`. `git status --short` was byte-identical before and after, and the batch didn't refuse on them.
+- **Linked worktree resolved (F2 fixed).** Run from `fleet-docs-system` with no `--project`; the envelope named `project: pij-fleet`.
+- `ddocs validate --depth 0` on the committed `pm-001/role.dd.json`: ok, 0 error, 0 warn.
+
+### What I ran
+
+| Step | Command | Result |
+|---|---|---|
+| Convert | heron's `convert.py`, unchanged, against today's `roles/*/role.md` | 8 documents in under 1 s, byte-identical to heron's run-2 files (the role.md files hadn't changed) |
+| Pre-validate | skipped, per pm-001 (D-WB-5, the "Role documents" line in the community README) | n/a |
+| Help | `pij-rs directory add --help` | full usage and flags, exit 0 (**F7 fixed**) |
+| Help | `pij-rs directory --help` | every verb listed, exit 0 |
+| View | `pij-rs directory` from the linked worktree | `pij-fleet: 0 role(s)` |
+| Warn the prime | `pij send pij-far-jackal` at 09:02, "go at 09:07 unless hold" | delivered, no hold |
+| Import | `pij-rs directory add --batch <scratch> --why "import the hand-written roles (wave B dogfood, re-run)" --json` from `fleet-docs-system` | `ok: true`, commit `5a174e0`, 8 roles, 2.53 s, exit 0 |
+| View | `pij-rs directory` | 8 roles, each "no holder" |
+
+The scratch folder also held my receipts (`*.txt`, `spawns-*.json`, `run3-worktree.json`). `--batch` reads only `*.dd.json`, so it ignored them, as documented.
+
+Cost: the community launch sites moved by exactly the documented amount. `git.community` +7 (3 to find the worktree, then status, add, commit, rev-parse) and `ddocs.community` +16 (validate and build for each of 8). Nothing runs on a timer.
+
+### Status of F1 to F11
+
+| | Status |
+|---|---|
+| F1 no project | fixed (prime registered `pij-fleet`; refusal is now `E-RS-NOT-FOUND` with a `project create` next step per the API table) |
+| F2 linked worktree | fixed, live |
+| F3 role exists on memory files | fixed, live (adopt) |
+| F4 foreign-edit on unneeded paths | fixed, live (prime's dirty files ignored) |
+| F5 schema requires the stamped changelog | worked around by procedure (D-WB-5: don't pre-validate); `changelog` is still required in `pij/role` |
+| F6 validating outside a repo | not exercised (no pre-validation) |
+| F7 `--help` | fixed |
+| F8 field mapping | partly open: titles still invented; outputs detail still collapses to bare kinds; the "Never:" list still lives in the packet text; `template: pm` still names nothing on main (the `pm` template is only on `origin/plan/194-templates`, 41b2d4b) |
+| F9 inline packet pairing | same, fine |
+| F10 cost | confirmed, matches the API doc |
+| F11 batch names every existing role | documented in the API table; not exercised (no role existed) |
+
+### New frictions
+
+- **F12. The directory and HOLDERS.md now disagree.** (medium) All 8 roles show "no holder", while the hand-kept `HOLDERS.md` lists 14 holder rows (pm-001 = pij-steady-otter, and so on). The import carries definitions only, so there are now two holder truths until someone runs `pij directory assign`. Also, `assign` binds a live seat, so past holders (e.g. pij-careful-heron as docs-system, 2026-11-04 to 2026-11-06) have no import path into lineage. Fix: the prime assigns each live row from HOLDERS.md, then HOLDERS.md is retired or marked historical; consider an `assign --historical` (or an `external`-style dated entry) for closed holdings.
+- **F13. The changelog date is UTC with no zone.** (low) The run was 2026-11-06 09:07 AEST; the row says `2026-11-05`. Fix: say "UTC" in the API doc and the schema's description, or stamp the caller's local date.
+- **F14. ddocs build shows `&lt;` literally inside code spans.** (low; ddocs, not pij) In each `role.dd.md`, the standing packet's `` `pij report now "<did>" "<next>"` `` renders as `pij report now "&lt;did&gt;" "&lt;next&gt;"`, because GitHub markdown doesn't decode entities inside backticks. Fix in ddocs: inside a table cell, escape `|` but leave `<`/`>` alone within code spans (or use `<code>` with entities).
+- **F15. The commit carries `Pij-Seat` and `Pij-Project` but not `Pij-Prime` or `Co-Authored-By`.** (info) The author is the worktree's git user. That's fine for a daemon-made commit; noting it only because seat commits carry four trailers.
+
+### Timing
+
+Conversion under 1 s (script reused), import 2.53 s. The rest of the ~5 minutes was the announced wait for the prime. By hand this would have been about 40 minutes (5 per role).
+
+### Next
+
+- Prime: F12, assigning the live holders (your call; I won't run `assign`).
+- pm-001: F8's dangling `template: pm` clears when plan 194 merges. F13 is a one-line doc fix I can fold into the next docs PR. F14 belongs to ddocs.

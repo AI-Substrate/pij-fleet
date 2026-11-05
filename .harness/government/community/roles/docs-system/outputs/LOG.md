@@ -10,3 +10,4 @@
 2026-11-04 note wave-b-dogfood-run2 - refused — job 6 re-run after project registered: worktree still E-RS-ARG (F2); canonical E-RS-DIRECTORY-EXISTS naming absent role.dd.json (F3); nothing written
 2026-11-04 deliverable pr:118 868e830398b3bcba4f1c6361a9920745723266b4 opened — D-190-5 + D-WB-1..8 + 'don't pre-validate roles' procedure line
 2026-11-04 deliverable plan/194-templates 41b2d4b1fa99c6edc8e830c7bb3b21aa81bb3130 done — job 8 / plan 194 phase 1: six role templates + README
+2026-11-06 note wave-b-dogfood-run3 - done — import ran from the linked worktree: governance 5a174e0, 8 roles adopted (role.dd.json + .dd.md + 5 schema copies), 2.53 s, git.community +7, ddocs.community +16; F2/F3/F4/F7 fixed live; new F12 (directory vs HOLDERS.md), F13 (UTC changelog date), F14 (ddocs entity in code span)
