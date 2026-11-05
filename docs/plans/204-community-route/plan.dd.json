@@ -1,0 +1,161 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "The /pij community route and optional templates",
+        "slug": "community-route",
+        "ordinal": 204,
+        "complexity": "CS-2",
+        "summary": "Roadmap 001 s10: the pij skill gets a token-lean community route that teaches the prime to set up and run an emergent community (PEC), the PM to assign and release seats for its work, and the PA to see memory written before compacts; plus the optional role templates as examples.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Delivers req-15 and the rest of req-13 and req-27; builds c-skill and finishes c-templates. Depends on s03 (templates) and s09 (prompts). Wording is PEC (C26, C18): build what the work needs now, reshape as it changes; templates are examples. Workers are told what to do by their packets, not the route."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Roadmap 001 s10: the pij skill gets a token-lean community route that teaches the prime to set up and run an emergent community (PEC), the PM to assign and release seats for its work, and the PA to see memory written before compacts; plus the optional role templates as examples."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Route. `skills/pij/references/routes/community.md` (and its SKILL.md routing entry) teaches the prime (stand up and reshape a community from needs), the PM (assign and release for its work; claims via s11) and the PA (memory before compacts), linking the doc procedures; token-lean.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Optional templates. v1 templates for some or all of: devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer, transcriber; each validates, is public-safe, and is marked as an example.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Fresh-prime canary. A seat with no prior context follows only the route and stands up a directory with core roles and a security role in a scratch project; where it hesitated is fixed or recorded.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Docs and embedded templates only: no launch, loop or timer.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Docs and states. In this PR: roadmap s10 goes to complete (plan cell docs/plans/204-community-route); req-13, req-15 and req-27 go to shipped; c-skill and c-templates go to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00cc",
+          "title": "The /pij community route and optional templates",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Read first: skills/pij/SKILL.md routing, skills/pij/references/community/, templates/roles/ (s03), plan 191's canary approach. Canary harness: OMP by default (AGENTS.md); OMP refuses linked worktrees, so use a plain clone as plan 191 did."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
