@@ -42,6 +42,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "record the live holder (06 Nov roadmap push)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-05T23:18:00.621Z",
+					"harness": "copilot",
+					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
+					"instance_key": "201",
+					"machine": "ops.osk.lan",
+					"seat": "pij-back-tapir",
+					"why": "record the live holder (06 Nov roadmap push)"
 				}
 			]
 		}
