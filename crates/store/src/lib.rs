@@ -7,6 +7,7 @@
 #![deny(missing_docs)]
 
 pub mod background;
+pub mod claims;
 pub mod community;
 pub mod decisions;
 pub mod dispatch;
@@ -20,6 +21,7 @@ mod role_assertion;
 pub mod spine;
 pub mod status;
 
+pub use claims::{Claim, DeliveryCommit, DeliveryNote, DeliveryRecord, ReleaseOutcome};
 pub use community::{Assignment, AssignmentCommit, CommunityPointer};
 pub use governance::GovernanceOutcome;
 pub use migrate::{SCHEMA_VERSION, StorePool, open, require_current_schema, schema_version};
