@@ -124,7 +124,7 @@ Cost: the community launch sites moved by exactly the documented amount. `git.co
 - **F12. The directory and HOLDERS.md now disagree.** (medium) All 8 roles show "no holder", while the hand-kept `HOLDERS.md` lists 14 holder rows (pm-001 = pij-steady-otter, and so on). The import carries definitions only, so there are now two holder truths until someone runs `pij directory assign`. Also, `assign` binds a live seat, so past holders (e.g. pij-careful-heron as docs-system, 2026-11-04 to 2026-11-06) have no import path into lineage. Fix: the prime assigns each live row from HOLDERS.md, then HOLDERS.md is retired or marked historical; consider an `assign --historical` (or an `external`-style dated entry) for closed holdings.
 - **F13. The changelog date is UTC with no zone.** (low) The run was 2026-11-06 09:07 AEST; the row says `2026-11-05`. Fix: say "UTC" in the API doc and the schema's description, or stamp the caller's local date.
 - **F14. ddocs build shows `&lt;` literally inside code spans.** (low; ddocs, not pij) In each `role.dd.md`, the standing packet's `` `pij report now "<did>" "<next>"` `` renders as `pij report now "&lt;did&gt;" "&lt;next&gt;"`, because GitHub markdown doesn't decode entities inside backticks. Fix in ddocs: inside a table cell, escape `|` but leave `<`/`>` alone within code spans (or use `<code>` with entities).
-- **F15. The commit carries `Pij-Seat` and `Pij-Project` but not `Pij-Prime` or `Co-Authored-By`.** (info) The author is the worktree's git user. That's fine for a daemon-made commit; noting it only because seat commits carry four trailers.
+- **Note (info, not numbered). The commit carries `Pij-Seat` and `Pij-Project` but not `Pij-Prime` or `Co-Authored-By`.** The author is the worktree's git user. That's fine for a daemon-made commit; noting it only because seat commits carry four trailers.
 
 ### Timing
 
@@ -134,3 +134,7 @@ Conversion under 1 s (script reused), import 2.53 s. The rest of the ~5 minutes 
 
 - Prime: F12, assigning the live holders (your call; I won't run `assign`).
 - pm-001: F8's dangling `template: pm` clears when plan 194 merges. F13 is a one-line doc fix I can fold into the next docs PR. F14 belongs to ddocs.
+
+### Later the same morning
+
+pm-001 assigned the 8 live holders with `pij directory assign` (F12) and added two frictions of its own: **F15** (medium) past or closed seats can't enter lineage, since assign needs a live seat and release needs a row, so HOLDERS.md history can't be migrated; **F16** (low) there's no batch assign, so 8 holders took 8 commits. F12 to F16 are in `docs/difficulties.md` as D-WB-9 to D-WB-13 (the PEC rename-forward docs PR).
