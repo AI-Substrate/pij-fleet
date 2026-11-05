@@ -31,6 +31,31 @@ pub const MAX_KIND_LEN: usize = 32;
 /// The PR body line that names what a PR delivered.
 pub const DELIVERS: &str = "Delivers:";
 
+/// `pij claim|claims|delivered --help`: one text for the three verbs, shared
+/// by the native CLI (no daemon needed) and the daemon (shim callers).
+pub const HELP: &str = "\
+pij claim, pij claims, pij delivered: numbers and delivery at merge (plan 196).
+
+Usage:
+  pij claim <kind> --for <subject> [--project <slug>]       take the next number, recorded with your seat
+  pij claim release <kind> <number> [--why <text>] [--project <slug>]
+  pij claims [--project <slug>] [--open]                    open and released claims
+  pij delivered <pr> [--pm <seat>] [--project <slug>]       record what a merged PR delivered
+
+Kinds: plan, prd, roadmap, blueprint and workshop are three digits; migration is
+four; any other lowercase kind is three. The next number is one past the highest
+claimed (open or released) and the highest already in the project's main
+checkout. A claim is released when its seat closes, when `pij delivered` sees
+its number in a merged PR's files, or by its seat or the prime.
+
+`pij delivered` is run once by whoever merges (ruling C23). It reads the PR with
+gh, takes the addresses from the body's `Delivers:` line, records them, posts on
+the PM's card (the live pm-<roadmap> holder, else --pm) and PRINTS the
+`ddocs set` edits for the PM's next docs PR. It changes no file and pushes nothing.
+
+The project is --project, else the one whose repository holds your directory.
+";
+
 /// Whether `kind` is a claimable kind: lowercase ASCII, starting with a
 /// letter, then letters, digits or `-`.
 pub fn valid_kind(kind: &str) -> bool {

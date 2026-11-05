@@ -8,7 +8,7 @@
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Event, SeatId};
 use pij_core::wire;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
 
@@ -100,7 +100,7 @@ pub struct DeliveryCommit {
 }
 
 /// One delivered PR, as a PM's card shows it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeliveryNote {
     /// The project slug.
     pub project: String,

@@ -57,36 +57,9 @@ impl Ddocs {
     /// search, so the path kept is absolute and still names the same program
     /// after ddocs is launched in the governance worktree (review of #114, F002).
     pub fn resolve(pij_ddocs: Option<&OsStr>, path: Option<&OsStr>, cwd: &Path) -> Self {
-        if let Some(chosen) = pij_ddocs.filter(|value| !value.is_empty()) {
-            let chosen = Path::new(chosen);
-            if !chosen.is_absolute() {
-                return Self::Missing(format!(
-                    "PIJ_DDOCS={} is not an absolute path",
-                    chosen.display()
-                ));
-            }
-            // A path holding `/` comes back unchanged; check it as posix_spawn would.
-            return if executable(chosen) {
-                Self::Found(chosen.to_path_buf())
-            } else {
-                Self::Missing(format!(
-                    "PIJ_DDOCS={} is not an executable file",
-                    chosen.display()
-                ))
-            };
-        }
-        let absolute = path.and_then(|path| {
-            std::env::join_paths(
-                std::env::split_paths(path)
-                    .map(|dir| cwd.join(dir).components().collect::<PathBuf>()),
-            )
-            .ok()
-        });
-        let found = Resolver::new().resolve(OsStr::new("ddocs"), absolute.as_deref().or(path));
-        if Path::new(&found).is_absolute() {
-            Self::Found(PathBuf::from(found))
-        } else {
-            Self::Missing("ddocs is not on the daemon's PATH and PIJ_DDOCS is unset".to_string())
+        match resolve_tool("ddocs", "PIJ_DDOCS", pij_ddocs, path, cwd) {
+            Ok(found) => Self::Found(found),
+            Err(reason) => Self::Missing(reason),
         }
     }
 
@@ -169,6 +142,52 @@ fn ddocs_message(stdout: &[u8], stderr: &[u8]) -> String {
         message.push_str(&format!("\n{next}"));
     }
     message
+}
+
+/// Find a tool once, at daemon start: `$<env>` when set (absolute and
+/// executable), else the first `name` on PATH, every PATH entry made absolute
+/// against `cwd` so the kept path names the same program from any cwd.
+/// Shared by ddocs (C10) and gh (plan 196).
+///
+/// # Errors
+/// Why there is none, naming the variable.
+pub(crate) fn resolve_tool(
+    name: &str,
+    env: &str,
+    chosen: Option<&OsStr>,
+    path: Option<&OsStr>,
+    cwd: &Path,
+) -> Result<PathBuf, String> {
+    if let Some(chosen) = chosen.filter(|value| !value.is_empty()) {
+        let chosen = Path::new(chosen);
+        if !chosen.is_absolute() {
+            return Err(format!(
+                "{env}={} is not an absolute path",
+                chosen.display()
+            ));
+        }
+        // A path holding `/` comes back unchanged; check it as posix_spawn would.
+        return if executable(chosen) {
+            Ok(chosen.to_path_buf())
+        } else {
+            Err(format!(
+                "{env}={} is not an executable file",
+                chosen.display()
+            ))
+        };
+    }
+    let absolute = path.and_then(|path| {
+        std::env::join_paths(
+            std::env::split_paths(path).map(|dir| cwd.join(dir).components().collect::<PathBuf>()),
+        )
+        .ok()
+    });
+    let found = Resolver::new().resolve(OsStr::new(name), absolute.as_deref().or(path));
+    if Path::new(&found).is_absolute() {
+        Ok(PathBuf::from(found))
+    } else {
+        Err(format!("{name} is not on the daemon's PATH and {env} is unset"))
+    }
 }
 
 /// The test `posix_spawn` applies (a regular file `access(X_OK)` allows),

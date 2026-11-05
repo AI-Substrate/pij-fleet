@@ -173,6 +173,8 @@ pub struct Services {
     pub community: Arc<community::writer::CommunityWriter>,
     /// Role holding: assign, release and close-ends (plan 195).
     pub directory: Arc<community::directory::DirectoryService>,
+    /// gh as resolved once at daemon start, for `pij delivered` (plan 196).
+    pub gh: Arc<dyn community::gh::PullRequests>,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -608,6 +610,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         ddocs,
         community: community_writer,
         directory,
+        gh: Arc::new(community::gh::Gh::from_env()),
         offline: config.is_fully_offline(),
     })
 }

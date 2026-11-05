@@ -608,6 +608,10 @@ pub struct StateCard {
     /// FYIs held for this seat's next real turn (plan 158).
     #[serde(default)]
     pub pending_fyis: u64,
+    /// PRs whose delivery named this seat as the PM, newest first (plan 196,
+    /// AC6): `pij delivered` posts here. Empty when none.
+    #[serde(default)]
+    pub deliveries: Vec<pij_store::DeliveryNote>,
     /// Session facts read from the seat's transcript (plan 157): context size,
     /// last call and cache state. Busy/idle is `state`, never this block.
     ///
