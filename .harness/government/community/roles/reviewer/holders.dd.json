@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "reviewer"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-05T23:18:02.571Z",
+					"harness": "copilot",
+					"harness_session": "f673eaa8-37a9-4472-bf6d-4a29baa1c451",
+					"instance_key": "125",
+					"machine": "ops.osk.lan",
+					"seat": "pij-interior-jellyfish",
+					"why": "record the live holder (06 Nov roadmap push)"
+				}
+			]
+		}
+	]
+}
