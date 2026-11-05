@@ -11,7 +11,7 @@
     "end first"
   ],
   "exported_targets": [
-    "/private/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pr121-review-3yxphbne/target space/",
-    "/private/var/folders/mv/9mcvlzg504b158ctlswmgwph0000gn/T/pr121-review-3yxphbne/target space"
+    "<tmpdir>/target space/",
+    "<tmpdir>/target space"
   ]
 }
