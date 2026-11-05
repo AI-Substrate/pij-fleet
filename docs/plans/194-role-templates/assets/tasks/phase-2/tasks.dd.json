@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "Template catalog: embed every templates/roles version, list, load, diff in-process",
           "phase": "ph-94b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "community/templates.rs holds every templates/roles/<name>/v<n>/role.dd.json as include_bytes!, a test fails on any file not embedded, and a line diff runs in-process.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
@@ -38,7 +38,7 @@
           "id": "tk-0002",
           "title": "directory add --from template:<name>[@v<n>] and --from file:<brief>; directory templates",
           "phase": "ph-94b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "add copies the named version through the writer with meta.id set and template/template_version recorded, flags override fields; file: is --brief; unknown name or version refuses by name listing what exists; templates lists names and versions.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
@@ -49,7 +49,7 @@
           "id": "tk-0003",
           "title": "Drift in the view and directory template-diff <id>",
           "phase": "ph-94b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "the view marks a role whose template version is behind the latest; template-diff prints T@vn to T@vm; nothing is applied and the role file is byte-identical.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
@@ -60,7 +60,7 @@
           "id": "tk-0004",
           "title": "Core-role and security prompts in the view, PEC wording",
           "phase": "ph-94b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "the view lists each missing core role with a runnable --from template line and a security prompt until a security role exists, in the PEC wording; nothing is created.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
@@ -71,7 +71,7 @@
           "id": "tk-0005",
           "title": "Docs and states: README to PEC, API doc, skill coverage, community procedure, req-14 reworded, flips",
           "phase": "ph-94b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "templates README in PEC wording; pij-rs-api.md and skill table carry --from, templates and template-diff; community README says templates are examples; req-14 reworded with a C22 changelog row; s03 complete, req-13/14 shipped, req-27 and c-templates in-progress; just ddocs-check clean.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0006",
@@ -86,7 +86,7 @@
           "id": "tk-0006",
           "title": "Cost proof on a private daemon and the PR gates",
           "phase": "ph-94b2",
-          "state": "unchecked",
+          "state": "checked",
           "success": "spawn-counter deltas around templates, template-diff and one add --from template recorded in assets/evidence/phase-2.md; scoped rust-check, biome, local-path-check, lockfile-allowlist and ddocs-check pass.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0007"
@@ -102,13 +102,13 @@
           {
             "id": "dw-0001",
             "assertion": "The embedding test walks templates/roles/ and fails when a role.dd.json there is not in the catalog; the catalog bytes equal the files.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           },
           {
             "id": "dw-0002",
             "assertion": "The diff of two template versions is computed in-process and launches nothing.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0006"
           }
         ],
@@ -116,19 +116,19 @@
           {
             "id": "dw-0003",
             "assertion": "In a scratch governance repo, add --from template:<name> for each of the six templates commits a role with meta.id set and template and template_version recorded, and real ddocs validates it when installed.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           },
           {
             "id": "dw-0004",
             "assertion": "An unknown template or version refuses with E-RS-ARG naming it and listing what exists; nothing is committed.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           },
           {
             "id": "dw-0005",
             "assertion": "A flag given with --from template overrides that field; --from file:<brief> writes the same document as --brief <brief>.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -136,13 +136,13 @@
           {
             "id": "dw-0006",
             "assertion": "With a v1 and a v2 fixture template, a role from v1 with a local edit shows drift in the view, template-diff prints the v1 to v2 change, and the role file is byte-identical afterwards.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           },
           {
             "id": "dw-0007",
             "assertion": "A role from the latest version, or from no template, shows no drift.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],
@@ -150,13 +150,13 @@
           {
             "id": "dw-0008",
             "assertion": "An empty directory view lists five core-role prompts and a security prompt, each with a runnable pij directory add line, and the PEC guidance; nothing is written.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0004"
           },
           {
             "id": "dw-0009",
             "assertion": "After adding security (or a role from the security template) its prompt is gone; a role made from a core template clears that core prompt.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0004"
           }
         ],
@@ -164,13 +164,13 @@
           {
             "id": "dw-000a",
             "assertion": "just ddocs-check is clean and ddocs validate reports 0 errors and 0 warnings on PRD 001, the roadmap and the blueprint with req-14 reworded and the state flips.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0005"
           },
           {
             "id": "dw-000b",
             "assertion": "The skill verb coverage tests pass with templates and template-diff in the directory row.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0005"
           }
         ],
@@ -178,7 +178,7 @@
           {
             "id": "dw-000c",
             "assertion": "On a private daemon the spawn counter moves 0 around directory templates and template-diff, and only by the writer's usual launches around one add --from template.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0006"
           }
         ]

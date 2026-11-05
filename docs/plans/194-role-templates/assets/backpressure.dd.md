@@ -12,7 +12,7 @@
 | title | Plan 194 backpressure |
 | plan | [meta](../plan.dd.md#meta) |
 | basis_sha | — |
-| certainty | Partial |
+| certainty | Confident |
 
 <a id="rows"></a>
 
@@ -21,11 +21,11 @@
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | bp-0001 | AC1: six templates validate and are public-safe | ph-94a1 | BUILD | computational | BUILD: `ddocs validate` on each template (0/0); a scan for machine paths, private repos and seat ids (0 hits); recorded in assets/evidence/phase-1.md. | [x] checked | — | docs/plans/194-role-templates/assets/evidence/phase-1.md | templates/roles/ |
-| bp-0002 | AC2, AC3: --from template and embedding | ph-94b2 | BUILD | computational | BUILD: pij-daemon tests: add from each template in a scratch governance repo validates and records template and version; unknown name and version refuse by name; an un-embedded file under templates/roles/ fails the embedding test. | [ ] unchecked | — | — | crates/daemon/src/community/ |
-| bp-0003 | AC4: drift shows, never applies | ph-94b2 | BUILD | computational | BUILD: a role from a v1 fixture template with a local edit, then a v2 fixture: the view marks drift, template-diff prints v1-&gt;v2, and the role file is byte-identical afterwards. | [ ] unchecked | — | — | crates/daemon/src/community/ |
-| bp-0004 | AC5: prompts | ph-94b2 | BUILD | computational | BUILD: an empty directory's view lists five core-role prompts and a security prompt with runnable lines; adding security clears its prompt; nothing is created. | [ ] unchecked | — | — | crates/daemon/src/ |
-| bp-0005 | AC6, AC8: req-14 rewording, docs and states | ph-94b2 | EXTEND | computational | EXTEND: `just ddocs-check`; `ddocs validate` on the project docs; skill verb coverage tests; CI on the exact head; reviewer and security verdicts. | [ ] unchecked | — | — | docs/project/prds/001-pij-community.dd.json |
-| bp-0006 | AC7: cost | ph-94b2 | ABSENT | computational | Private daemon: spawn counter delta around `pij directory templates` and `template-diff` (expected 0), and around one add --from template (the writer's usual 9). | [ ] unchecked | Steady-state cost: none. Templates are embedded bytes; no new launch site, loop or timer. | — | pij-rs --json ping |
+| bp-0002 | AC2, AC3: --from template and embedding | ph-94b2 | BUILD | computational | BUILD: pij-daemon tests: add from each template in a scratch governance repo validates and records template and version; unknown name and version refuse by name; an un-embedded file under templates/roles/ fails the embedding test. | [x] checked | — | directory_http templates (5 passed incl. real ddocs); community and http::directory units (50 passed); docs/plans/194-role-templates/assets/evidence/phase-2.md | crates/daemon/src/community/ |
+| bp-0003 | AC4: drift shows, never applies | ph-94b2 | BUILD | computational | BUILD: a role from a v1 fixture template with a local edit, then a v2 fixture: the view marks drift, template-diff prints v1-&gt;v2, and the role file is byte-identical afterwards. | [x] checked | — | templates_http drift_shows_the_upstream_change_and_never_applies_it; docs/plans/194-role-templates/assets/evidence/phase-2.md | crates/daemon/src/community/ |
+| bp-0004 | AC5: prompts | ph-94b2 | BUILD | computational | BUILD: an empty directory's view lists five core-role prompts and a security prompt with runnable lines; adding security clears its prompt; nothing is created. | [x] checked | — | templates_http prompts_list_missing_core_roles_and_security_and_create_nothing; docs/plans/194-role-templates/assets/evidence/phase-2.md | crates/daemon/src/ |
+| bp-0005 | AC6, AC8: req-14 rewording, docs and states | ph-94b2 | EXTEND | computational | EXTEND: `just ddocs-check`; `ddocs validate` on the project docs; skill verb coverage tests; CI on the exact head; reviewer and security verdicts. | [x] checked | — | ddocs-check clean (7 documents); skill_verb_coverage 4 passed; CI on the PR head and verdicts pending | docs/project/prds/001-pij-community.dd.json |
+| bp-0006 | AC7: cost | ph-94b2 | ABSENT | computational | Private daemon: spawn counter delta around `pij directory templates` and `template-diff` (expected 0), and around one add --from template (the writer's usual 9). | [x] checked | Steady-state cost: none. Templates are embedded bytes; no new launch site, loop or timer. | Private daemon pid 26469: templates 0, view 0, template-diff 0, add --from template 9 (git.community 7, ddocs.community 2); docs/plans/194-role-templates/assets/evidence/phase-2.md | pij-rs --json ping |
 
 <a id="sensors"></a>
 

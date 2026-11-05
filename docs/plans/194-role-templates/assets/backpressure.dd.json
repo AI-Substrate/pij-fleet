@@ -8,7 +8,7 @@
       "value": {
         "title": "Plan 194 backpressure",
         "plan": "../plan.dd.json#meta",
-        "certainty": "Partial"
+        "certainty": "Confident"
       }
     },
     {
@@ -32,8 +32,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: pij-daemon tests: add from each template in a scratch governance repo validates and records template and version; unknown name and version refuse by name; an un-embedded file under templates/roles/ fails the embedding test.",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/community/"
+          "state": "checked",
+          "probe": "crates/daemon/src/community/",
+          "receipt": "directory_http templates (5 passed incl. real ddocs); community and http::directory units (50 passed); docs/plans/194-role-templates/assets/evidence/phase-2.md"
         },
         {
           "id": "bp-0003",
@@ -42,8 +43,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: a role from a v1 fixture template with a local edit, then a v2 fixture: the view marks drift, template-diff prints v1->v2, and the role file is byte-identical afterwards.",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/community/"
+          "state": "checked",
+          "probe": "crates/daemon/src/community/",
+          "receipt": "templates_http drift_shows_the_upstream_change_and_never_applies_it; docs/plans/194-role-templates/assets/evidence/phase-2.md"
         },
         {
           "id": "bp-0004",
@@ -52,8 +54,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: an empty directory's view lists five core-role prompts and a security prompt with runnable lines; adding security clears its prompt; nothing is created.",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/"
+          "state": "checked",
+          "probe": "crates/daemon/src/",
+          "receipt": "templates_http prompts_list_missing_core_roles_and_security_and_create_nothing; docs/plans/194-role-templates/assets/evidence/phase-2.md"
         },
         {
           "id": "bp-0005",
@@ -62,8 +65,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: `just ddocs-check`; `ddocs validate` on the project docs; skill verb coverage tests; CI on the exact head; reviewer and security verdicts.",
-          "state": "unchecked",
-          "probe": "docs/project/prds/001-pij-community.dd.json"
+          "state": "checked",
+          "probe": "docs/project/prds/001-pij-community.dd.json",
+          "receipt": "ddocs-check clean (7 documents); skill_verb_coverage 4 passed; CI on the PR head and verdicts pending"
         },
         {
           "id": "bp-0006",
@@ -72,9 +76,10 @@
           "mode": "ABSENT",
           "tier": "computational",
           "proof": "Private daemon: spawn counter delta around `pij directory templates` and `template-diff` (expected 0), and around one add --from template (the writer's usual 9).",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
-          "note": "Steady-state cost: none. Templates are embedded bytes; no new launch site, loop or timer."
+          "note": "Steady-state cost: none. Templates are embedded bytes; no new launch site, loop or timer.",
+          "receipt": "Private daemon pid 26469: templates 0, view 0, template-diff 0, add --from template 9 (git.community 7, ddocs.community 2); docs/plans/194-role-templates/assets/evidence/phase-2.md"
         }
       ]
     },
