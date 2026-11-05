@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: `ddocs validate` on each template (0/0); a scan for machine paths, private repos and seat ids (0 hits); recorded in assets/evidence/phase-1.md.",
-          "state": "unchecked",
-          "probe": "templates/roles/"
+          "state": "checked",
+          "probe": "templates/roles/",
+          "receipt": "docs/plans/194-role-templates/assets/evidence/phase-1.md"
         },
         {
           "id": "bp-0002",

@@ -20,7 +20,7 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1: six templates validate and are public-safe | ph-94a1 | BUILD | computational | BUILD: `ddocs validate` on each template (0/0); a scan for machine paths, private repos and seat ids (0 hits); recorded in assets/evidence/phase-1.md. | [ ] unchecked | — | — | templates/roles/ |
+| bp-0001 | AC1: six templates validate and are public-safe | ph-94a1 | BUILD | computational | BUILD: `ddocs validate` on each template (0/0); a scan for machine paths, private repos and seat ids (0 hits); recorded in assets/evidence/phase-1.md. | [x] checked | — | docs/plans/194-role-templates/assets/evidence/phase-1.md | templates/roles/ |
 | bp-0002 | AC2, AC3: --from template and embedding | ph-94b2 | BUILD | computational | BUILD: pij-daemon tests: add from each template in a scratch governance repo validates and records template and version; unknown name and version refuse by name; an un-embedded file under templates/roles/ fails the embedding test. | [ ] unchecked | — | — | crates/daemon/src/community/ |
 | bp-0003 | AC4: drift shows, never applies | ph-94b2 | BUILD | computational | BUILD: a role from a v1 fixture template with a local edit, then a v2 fixture: the view marks drift, template-diff prints v1-&gt;v2, and the role file is byte-identical afterwards. | [ ] unchecked | — | — | crates/daemon/src/community/ |
 | bp-0004 | AC5: prompts | ph-94b2 | BUILD | computational | BUILD: an empty directory's view lists five core-role prompts and a security prompt with runnable lines; adding security clears its prompt; nothing is created. | [ ] unchecked | — | — | crates/daemon/src/ |

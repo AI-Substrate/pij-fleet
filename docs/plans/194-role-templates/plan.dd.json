@@ -44,8 +44,9 @@
         {
           "id": "ac-0001",
           "claim": "Templates. docs-system writes six templates under `templates/roles/<name>/v1/role.dd.json`: prime, pm, pa, coder and reviewer (core) and security (recommended). Each validates against pij/role, carries `template` and `template_version`, has a standing packet written fresh for a public repo (no private references, no machine-local paths), and leaves project-specific fields (scope paths, instance key) as clearly marked placeholders. A `templates/roles/README.md` says they are examples to adapt, not a checklist (C18), in the PEC wording (C26). The coder updates the README from phase 1 to that wording in phase 2.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/phase-1.md: 6 templates validate 0/0; README per C18; public-safety scan 0 hits"
         },
         {
           "id": "ac-0002",
@@ -97,9 +98,10 @@
         {
           "id": "ph-94a1",
           "title": "The six templates",
-          "state": "unchecked",
+          "state": "checked",
           "brief": "AC1. docs-system writes templates/roles/ (six v1 templates and the README) on branch plan/194-templates, which the coder merges. No build. CS-2.",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks",
+          "receipt": "templates/roles/{prime,pm,pa,coder,reviewer,security}/v1/role.dd.json and README.md; evidence assets/evidence/phase-1.md"
         },
         {
           "id": "ph-94b2",
