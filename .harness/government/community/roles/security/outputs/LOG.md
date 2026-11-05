@@ -30,3 +30,11 @@
 
 2026-11-04 note prime-governance 4f87bd7168b5ed569fae949d572713b3721c59d5 block - Delivery memory 2026-11-04-daemon-6.5gb-peak-is-anomalies-fold.md:7,12 publishes concrete personal DB/session paths; retained unchanged at 05c57b84f43d5470843eb0218f0d64430ad691ef; values omitted; same report.
 
+2026-11-06 note prime-governance 590772d10bb3cb9ba69c0d32b777d7c46d2654fa resolved - Owner fix independently verified through public tip 1a2cb887bdfb428a5da09e9d38b856ff6385ab29; both original path values absent, replacements neutral, fix additions contain no copied values; no duplicate edit needed; remediation follow-up in 2026-11-04-pr-120-43821d5-security.md.
+
+2026-11-06 verdict pr:122 e4527770a69db16cf5b3a85df528d4e08c21672a pass-with-notes - Authority/prime/close/confinement/adopt/argv boundaries preserved; pending-end/holding fix assessed; four CI checks green, identical-tree 1874-case evidence; no local Cargo; governance proof limit explicit; 2026-11-06-pr-122-e452777-security.md.
+
+2026-11-06 verdict pr:121 2ecbd26a8437593f03e27b1b7e412862d7900baf block - Conditional MEDIUM cross-user owner symlink overwrite under permissive umask, static 9/10; private atomic lock mode required; green CI not cross-user proof; 2026-11-06-pr-121-2ecbd26-security.md.
+
+2026-11-06 note prime-governance 51cb8bd3472352f72b76984cf31c1e1ff8a750c1 block - Reviewer artifact outputs/2026-11/pr121b-trailing-slash.json:14-15 retains concrete temporary-runtime values, literals omitted; forward neutralization routed; PR121 report.
+
