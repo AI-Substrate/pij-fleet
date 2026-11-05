@@ -173,6 +173,14 @@ citation disputes, all of which resolved as neither party being wrong.)
 - **`just rs-install`** builds `pij-rs` (release) and links it next to the
   `pij` shim in `$(npm prefix -g)/bin`. **`just bounce-rs`** rebuilds and
   restarts the daemon; **`just rs-autostart`** registers a macOS LaunchAgent.
+- **`just shared-build`**: any seat building into a cargo target another
+  worktree also uses runs cargo through it, never bare:
+  `PIJ_SHARED_TARGET=<abs dir> just shared-build -- <cargo args> [--then <cargo args>]`.
+  Cargo names workspace artifacts by crate, so two trees building into one
+  target overwrite each other mid-build. The recipe serialises builds with a
+  lock, refuses under the disk floor (`PIJ_DISK_FLOOR_GB`, default 25), rebuilds
+  your own sources with `CARGO_INCREMENTAL=0`, and always releases. A stale lock
+  is reported with its clear command, never cleared for you (plan 198).
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just doctor`** — read-only audit: CLI shim shape, `pij-rs` on PATH, skill
