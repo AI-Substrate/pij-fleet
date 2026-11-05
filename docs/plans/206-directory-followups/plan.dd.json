@@ -68,7 +68,7 @@
         },
         {
           "id": "ac-0006",
-          "claim": "Merge (req-28). `pij directory merge <from> --into <to> --why <text>` retires <from> pointing at <to> in one writer commit (both roles' changelogs get a row; <from>'s memory and outputs stay where they are and are listed under <to> as merged-from). A send to <from> afterwards refuses and names <to>.",
+          "claim": "Merge (req-28). `pij directory merge <from> --into <to> --why <text>` retires <from> pointing at <to> in one writer commit (both roles' changelogs get a row; <from>'s memory and outputs stay where they are and are listed under <to> as merged-from). Both roles' memory, outputs and lineage are preserved and stay readable afterwards (none moved or rewritten). A send to <from> afterwards refuses and names <to>.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
         },
