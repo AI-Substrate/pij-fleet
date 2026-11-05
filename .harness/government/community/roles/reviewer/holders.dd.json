@@ -20,7 +20,10 @@
 					"harness_session": "f673eaa8-37a9-4472-bf6d-4a29baa1c451",
 					"instance_key": "125",
 					"machine": "ops.osk.lan",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-interior-jellyfish",
+					"to": "2026-11-05T23:23:43.005Z",
 					"why": "record the live holder (06 Nov roadmap push)"
 				}
 			]

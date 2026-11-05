@@ -18,4 +18,4 @@
 
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| — | pij-interior-jellyfish | copilot | f673eaa8-37a9-4472-bf6d-4a29baa1c451 | ops.osk.lan | 125 | 2026-11-05T23:18:02.571Z | — | pij-steady-otter | — | record the live holder (06 Nov roadmap push) | — |
+| — | pij-interior-jellyfish | copilot | f673eaa8-37a9-4472-bf6d-4a29baa1c451 | ops.osk.lan | 125 | 2026-11-05T23:18:02.571Z | 2026-11-05T23:23:43.005Z | pij-steady-otter | pij-steady-otter | record the live holder (06 Nov roadmap push) | close |
