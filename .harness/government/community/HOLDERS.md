@@ -1,22 +1,8 @@
-# Holders (hand-kept until s04)
+# Holders
 
-| Role | Holder | Since |
-|---|---|---|
-| pm-001 | pij-steady-otter | 2026-11-04 |
-| pa | pij-watchful-badger | 2026-11-04 |
-| delivery | pij-swift-kestrel | 2026-11-04 |
-| docs-system | pij-careful-heron | 2026-11-04 |
-| coder | (per task, assigned by pm-001) | — |
-| coder (s04, plan 195) | pij-brisk-marten | 2026-11-04 |
-| coder (plan 198, shared-build) | pij-swift-kestrel | 2026-11-04 (lent from delivery) |
-| coder (s11, plan 196) | pij-exuberant-wildcat | 2026-11-04 |
-| reviewer | (per PR, assigned by pm-001) | — |
-| reviewer (PR #114) | pij-still-termite | 2026-11-04 |
-| reviewer (PR #121) | pij-preferred-salamander | 2026-11-04 |
-| reviewer (PR #122) | pij-substantial-mammal | 2026-11-04 |
-| reviewer (PR #116) | pij-estimated-chinchilla | 2026-11-04 |
-| security | pij-wary-lynx | 2026-11-04 |
-| performance | pij-frugal-wombat | 2026-11-04 |
+Current holders live in the directory, written by pij since s04 (2026-11-06). Run `pij directory` to see them; change them with `pij directory assign` and `release`. Do not hand-edit holders here.
+
+The lineage below is history from before s04: the verbs cannot import closed seats yet (F15).
 
 ## Lineage
 
