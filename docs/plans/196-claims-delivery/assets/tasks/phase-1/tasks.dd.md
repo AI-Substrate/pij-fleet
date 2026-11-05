@@ -27,19 +27,89 @@
 
 ## Summary
 
-_Empty._
+Context brief. Purpose: store-backed number claims and a merge-time delivery verb (C23). Entrypoints: crates/store/src/{migrate,registry,community}.rs (begin_write, publish_tombstone, assignments), crates/daemon/src/http/directory.rs (argv/caller wire, project_and_repo), crates/daemon/src/community/ddocs.rs (resolve-once pattern for gh), http/mod.rs seat_card (the card) and Endpoint table, crates/cli/src/{main,governance}.rs, the shim's RS_ROUTE_TABLE. Decisions: the PM's card gains a deliveries list (latest few PRs naming that seat as PM, one indexed read) and one delivered spine event carries the push; the PM is the live holder of pm-<roadmap number> from the step addresses, else --pm. Order: tk-0001 and tk-0002 first, tk-0003 and tk-0004 independent, then tk-0005 and tk-0006, then wiring, docs, cost and states. Tests: a scratch store, scratch main checkouts with numbered folders, a fake gh through Services; a private daemon for cost. Hazards: shared cargo target via just shared-build only; no node_modules (TS proof is CI); biome-format each ddocs write under docs/project.
 
 <a id="tasks"></a>
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Pure claim and delivery rules in pij-core | — | ph-96a1 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | pij_core::claims: known kinds and widths (plan, prd, roadmap, blueprint, workshop 3; migration 4; other lowercase kinds 3), the main-checkout name patterns per kind, numbers named by a list of file paths, the PR body's Delivers line parsed into ddocs addresses, and the printed ddocs set edits (delivered_by appended as a comma-separated PR list, never overwritten; a step's plan cell). | Pure: no IO. The daemon reads the files and gh; core decides. | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Migration 0033 and the claims store | — | ph-96a1 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | Migration 0033: claims (project, kind, number, seat, subject, claimed_at, released_at, released_by, release_reason; unique (project, kind, number)) and deliveries (project, pr, address, merge_commit, recorded_by, recorded_at, pm). claim() takes the next number under BEGIN IMMEDIATE as one more than the highest of the kind's claims (open or released) and the checkout floor; release() by the claiming seat or the prime; list per project. | Pattern: streams.ordinal reserve under BEGIN IMMEDIATE (orchestration.rs). Number 0033 claimed for this plan; 0032 is plan 195's. | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) | [ac-0003](../../../plan.dd.md#acceptance-criteria) |
+| tk-0003 | Release on tombstone | — | ph-96a1 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | publish_tombstone releases the seat's open claims in the same transaction (reason seat-closed), so close, reap and revive all release. | One UPDATE on an index of open claims by seat; no new launch or loop. | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | gh port resolved once at daemon start | — | ph-96a1 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | community::gh: PIJ_GH, else PATH, absolute, decided once at start like ddocs (C10); one launch per call, recorded by the spawn counter as gh.delivered; a trait the tests replace with a fake. ping reports the gh path; just doctor prints it. | Mirrors community::ddocs. Missing or unauthenticated gh refuses by name with the install or auth step. | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | pij claim, pij claims and pij claim release over HTTP | — | ph-96a1 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | POST /v1/claim and /v1/claims on the governance argv/caller wire: the caller seat resolved by the identity ladder, the project from --project or the caller's repo, the checkout floor read in-process from the project's main checkout (docs/plans and docs/plans/archive, docs/project/prds\|roadmaps\|blueprints\|workshops, crates/store/migrations). No launch. | Reuses directory.rs project_and_repo. Refusals by name: bad kind, missing --for, release by another seat, unknown claim. | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | pij delivered and the PM's card | — | ph-96a1 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | POST /v1/delivered &lt;pr&gt; [--project] [--pm &lt;seat&gt;]: one gh read (merged state, merge commit, body, files); refuses an unmerged PR or a body with no Delivers line by name; records the rows idempotently with one delivered event on the spine; releases claims whose numbers appear in the PR's files; prints the ddocs set edits and returns them in --json; posts on the PM's card (live holder of pm-&lt;roadmap number&gt;, else --pm, else says no PM was told). The state card gains a deliveries list read by one indexed query. | Writes no project file and pushes nothing. delivered_by's current value is read in-process from the project's checkout so the edit appends. | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | [ac-0003](../../../plan.dd.md#acceptance-criteria) |
+| tk-0007 | CLI, shim and skill tables | — | ph-96a1 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | pij-rs claim, claims and delivered forward argv like directory; the shim's RS_ROUTE_TABLE carries the three verbs; SKILL.md's CLI-verb coverage table has a row for them. | TS proof is CI on the exact head (no node_modules here, C25). | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
+| tk-0008 | Convention and API docs | — | ph-96a1 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | Community procedures (README, prd, roadmap, blueprint) say to claim a number with pij claim and that every PR body carries a Delivers line; docs/project/README.md line 13 and the community README stop sending people to a PM or the prime for numbers; the PR template gains a Delivers line; docs/how/pij-rs-api.md documents both verbs and their refusals. | docs-system owns docs/project/** and the procedures; keep edits to what AC7 and AC9 name. | [ac-0007](../../../plan.dd.md#acceptance-criteria) | [ac-0009](../../../plan.dd.md#acceptance-criteria) |
+| tk-0009 | Cost receipts | — | ph-96a1 | [ ] unchecked | — | — | [tk-0009](tasks.dd.md#done-when) | Private daemon: spawn counter deltas around one claim (0), one claims list (0) and one delivered with a fake gh (1), with data.pid. Live fleet readings are taken by pm-001 after deploy. | No loop, poll, timer or sweep is added. | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0010 | Project states and gates | — | ph-96a1 | [ ] unchecked | — | — | [tk-0010](tasks.dd.md#done-when) | In this PR: roadmap s11 complete with plan docs/plans/196-claims-delivery; req-20 and req-21 shipped; c-claims and c-merge-delivery shipped. Scoped rust gate through just shared-build, main-checkout biome, local-path-check, lockfile-allowlist and just ddocs-check before the PR; the PR body carries a Delivers line. | ddocs set then biome format on each project doc. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | Unit tests: widths and kind validation; a Delivers line with requirement and step addresses parses, a body without one refuses by name; delivered_by '#110' plus #121 renders '#110, #121' and an existing #121 is not added twice. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | cargo test -p pij-store claims: next number from claims and from the floor; ten concurrent claims for one (project, kind) get ten distinct consecutive numbers; two projects never interact; a released number is never reissued. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | A store test tombstones the claiming seat and sees its open claims released with reason seat-closed while another seat's claim stays open; pij claims lists both states. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | Resolution tests as for ddocs (PIJ_GH wins, must be absolute and executable, PATH fallback); spawn_sites.rs passes with the new launch site. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | pij-daemon test on a private daemon and scratch checkout: claim returns the number after the highest folder, claims lists it with its seat, release by another seat refuses and by the claimer releases. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0006 | pij-daemon tests with a fake gh: a merged PR with a Delivers line records rows, prints ddocs set commands and shows on the PM's card (via --pm and via the pm-001 holder); a re-run records nothing new; an unmerged PR and a missing line refuse by name; the scratch checkout's git status stays clean. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0007 | The PM seat's state card carries the delivery after one call, and the spine holds one delivered event naming the PM. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0007
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0008 | cargo test -p pij-cli skill_verb_coverage passes with the three verbs; the TS shim coverage test passes in CI. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-0008
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0009 | grep finds no 'Get the number from pm/001' or 'the prime hands numbers out' in the procedures or docs/project/README.md; just ddocs-check passes. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-0009
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0010 | Receipts in assets/evidence show claim 0, claims 0 and delivered 1 launches on the private daemon. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-0010
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0011 | ddocs validate is clean on the PRD, roadmap and blueprint; the scoped rust gate, biome, local-path-check, lockfile-allowlist and just ddocs-check pass on the PR head. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
