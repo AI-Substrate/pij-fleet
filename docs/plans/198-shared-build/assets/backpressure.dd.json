@@ -1,0 +1,62 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 198 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1, AC2: lock, refresh, release and floor",
+          "phase": "ph-98a1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: harness/scripts/shared-build.test.ts (or .bats) with a fake cargo: env refusals, owner file, source touch, release on success, failure and signal, refusal under a fake floor.",
+          "state": "unchecked",
+          "probe": "harness/scripts/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3, AC4: no overlap; stale locks reported, not cleared",
+          "phase": "ph-98a1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: two concurrent runs with a slow fake cargo record non-overlapping intervals; a lock whose owner pid is dead is reported with the clear command and left in place.",
+          "state": "unchecked",
+          "probe": "harness/scripts/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC5, AC6: docs and cost",
+          "phase": "ph-98a1",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "difficulties.md row, AGENTS.md line, `just --list` shows the recipe; CI on the exact head; reviewer and security verdicts. Cost stated in the PR: nothing at rest; a mkdir and a df per 20 s per waiting caller.",
+          "state": "unchecked",
+          "probe": "justfile",
+          "note": "Steady-state cost: none. Transient while waiting: about 2 launches per 20 s per waiting caller, only while another build holds the lock."
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        }
+      ]
+    }
+  ]
+}

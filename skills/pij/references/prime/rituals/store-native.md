@@ -20,7 +20,7 @@ Documents still follow [Governance branch — the rules](./bootstrap.md#governan
 
 **Pass `--project` on `task set`**: only the `task-set` event carries it. Later `report.state` and `state-verified` events carry the `assignment_id`, not the project, so `spine events --project` does not show them unless the report passes `--refs project:<slug>`; otherwise follow the assignment id.
 
-Read-back: `pij spine events [--since <seq>] [--project <slug>] [--peer <id>]`,
+Read-back: `pij spine events [--since <seq>] [--project <slug>] [--peer <id>] [--limit N]` (one page of at most 500 by default; page on with `--since <cursor>` while `more` is true),
 `pij project list|show <slug>`.
 
 ## Store facts to respect

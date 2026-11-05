@@ -102,6 +102,29 @@ impl Spine for TestSpine {
     async fn newest(&self) -> Result<Seq> {
         Ok(Seq(self.next.load(Ordering::Relaxed)))
     }
+    async fn latest(&self, seat: &SeatId) -> Result<Option<Event>> {
+        Ok(self
+            .events
+            .lock()
+            .expect("test spine mutex")
+            .iter()
+            .rev()
+            .find(|event| event.seat.as_ref() == Some(seat))
+            .cloned())
+    }
+
+    async fn seat_page(&self, seat: &SeatId, since: Seq, limit: usize) -> Result<Vec<Event>> {
+        Ok(self
+            .events
+            .lock()
+            .expect("test spine mutex")
+            .iter()
+            .filter(|event| event.seq.is_some_and(|seq| seq > since))
+            .filter(|event| event.seat.as_ref() == Some(seat))
+            .take(limit)
+            .cloned()
+            .collect())
+    }
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         assert!(

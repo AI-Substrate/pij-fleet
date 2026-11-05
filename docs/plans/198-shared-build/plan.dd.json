@@ -1,0 +1,169 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "just shared-build: one safe way to build into a shared cargo target",
+        "slug": "shared-build",
+        "ordinal": 198,
+        "complexity": "CS-2",
+        "summary": "When disk forces several worktrees to share one CARGO_TARGET_DIR, concurrent builds overwrite each other's workspace-crate artifacts and give false results. On 2026-11-04 seats used private wait loops and broke the convention twice. This plan encodes the rule as one recipe: `just shared-build -- <cargo args>` takes a lock, checks the disk floor, refreshes the caller's sources and releases the lock on any exit.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Found 2026-11-04: with about 25 GB free, three seats (two coders and a reviewer) shared ~/pi-hacking/fleet-190-community-writer/target. Cargo names workspace crates' artifacts by crate, so a build in one worktree overwrote another's pij_core and pij_store, giving missing symbols and false test failures (marten, three times). pm-001 set a manual rule (a mkdir lock at /tmp/pij-shared-target.lock, touch sources, CARGO_INCREMENTAL=0), and it was broken twice by seats whose own loops waited only for 'no cargo running'. The #120 reviewer asked for one canonical wrapper; the prime approved it. Encode, don't document."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A seat that builds into a shared target can't corrupt another seat's build or get a corrupted result.",
+        "The disk floor is checked by the tool, not remembered by the seat.",
+        "A stale lock is visible and explained, never silently broken."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Making shared targets the default: a seat with its own target keeps using plain cargo.",
+        "Freeing disk or managing target size.",
+        "Changing CI."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Recipe. `just shared-build -- <cargo args>` (a thin recipe over harness/scripts/shared-build.sh) requires PIJ_SHARED_TARGET (absolute) and refuses by name without it; exports CARGO_TARGET_DIR to it and CARGO_INCREMENTAL=0; takes the lock at `$PIJ_SHARED_TARGET.lock` with an atomic mkdir; writes an owner file (seat id from PIJ_ID if set, else the user, plus pid, worktree and start time); touches the caller worktree's crates/*/src/{lib,main}.rs; runs the cargo command; and releases the lock in a trap on any exit, including failure and SIGINT or SIGTERM. Several commands can share one lock hold with `--then` separators, or by calling the recipe once per batch.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Disk floor. Before taking the lock and again before each cargo command, the free space on the target's volume is checked against PIJ_DISK_FLOOR_GB (default 25). Under the floor the recipe refuses by name with the free space and the floor, launching no cargo; if it holds the lock, it releases it first.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Waiting and stale locks. While the lock is held, the recipe prints the owner line once and waits, checking every 20 s, with an optional `--timeout <minutes>` that gives up by name. If the owner pid is gone, it reports the lock as stale with the owner line and the exact command to clear it, and does not clear it itself (a brake, not a policy).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Proof. A test (vitest or bats, matching harness/scripts conventions) with a fake cargo and a temporary target shows: two concurrent invocations never overlap (the second starts after the first releases); a failing cargo still releases the lock; SIGTERM releases it; under the floor no cargo runs; a dead owner pid is reported stale and not cleared.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Docs. docs/difficulties.md gets a row for the shared-target hazard (found 2026-11-04, resolved by this recipe); AGENTS.md's harness tooling section names `just shared-build` for any seat on a shared target; `just` with no recipe lists it.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost. Nothing at rest. While waiting, one mkdir and one df per 20 s per waiting caller; while holding, one df per cargo command. No daemon change, no new daemon launch site.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-98a1",
+          "title": "The recipe, its tests and docs",
+          "state": "unchecked",
+          "brief": "AC1 to AC6. One coder (pij-swift-kestrel, who used the manual lock). Shell script plus recipe plus test. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Manual rule (pm-001, 2026-11-04 15:51): `until mkdir /tmp/pij-shared-target.lock; do sleep 20; done`, owner file, touch crates/*/src/lib.rs and main.rs, CARGO_INCREMENTAL=0, -p scoping, rm -rf the lock in a trap. Breaches: a seat's private loop waited for 'no cargo running' (pgrep) and started a workspace test while another seat held the lock (16:00 and 16:07). The justfile's rust-check (justfile:282-286) runs workspace-wide fmt, clippy and test. Harness scripts live in harness/scripts/ with .test.ts tests (vitest, run in CI)."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A seat bypasses the recipe and runs plain cargo into the shared target.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "AGENTS.md names the recipe; packets name it; the owner file makes a bypass visible to the next caller."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Test with a fake cargo and temporary dirs only; never against the real shared target while others build.",
+        "No `git add -A`, no `--no-verify`. No node_modules: TS proof is CI on the exact head.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}

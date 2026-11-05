@@ -92,9 +92,9 @@ Supersession needs shared real SQLite queue/decision/spine authority. Mixed/fake
 pij list --json
 pij sessions --json
 pij node show <seat> --json
-pij spine events [--peer <seat>] [--project <slug>] [--since N] --json
+pij spine events [--peer <seat>] [--project <slug>] [--since N] [--limit N] --json   # one page; "more": true means call again with --since <cursor>
 pij spine append --kind <kind> [--refs <a,b>] [--project <slug>] --json
-pij spine render [--peer <seat>] [--project <slug>] [--since N] --json
+pij spine render [--peer <seat>] [--project <slug>] [--since N] [--limit N] --json
 pij anomalies [--here] [--project <slug>] [--seat <seat>] --json
 ```
 

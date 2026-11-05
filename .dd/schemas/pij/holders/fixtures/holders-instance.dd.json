@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "coder"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"seat": "pij-brisk-marten",
+					"harness": "copilot",
+					"machine": "studio",
+					"instance_key": "195",
+					"from": "2026-11-04T05:00:00Z",
+					"assigned_by": "pij-steady-otter",
+					"why": "Coder for plan 195 phase 2."
+				}
+			]
+		}
+	],
+	"references": []
+}

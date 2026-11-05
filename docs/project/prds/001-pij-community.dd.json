@@ -111,7 +111,7 @@
 					"statement": "Each project has one community directory, bound to the project path the same way a prime is. It lists every role, its scope, its holders, its memory and its outputs.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pij directory` run inside a project shows that project's roles and nothing from another project.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -161,7 +161,7 @@
 					"statement": "`pij directory assign <role> <seat>` and `release` bind and unbind seats. Lineage records every holder: seat id, harness session id, machine, from and to. Assigning a second live seat to a one-holder role warns but does not block. `pij close` still tombstones the seat and also ends its assignment.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "After assign, release, assign of another seat and a close, lineage shows both seats with their session ids, machine and times.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -261,7 +261,7 @@
 					"statement": "The prime may add an external entry to record a seat borrowed from another project. Loans are not otherwise tracked.",
 					"actor": "prime",
 					"priority": "could",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pij directory external add` writes a dated note under `community/external.dd.json`.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -271,7 +271,7 @@
 					"statement": "Git is the shared copy; each machine's store is a local index rebuildable from the governance branch. Lineage records the machine. Transcripts never move between machines.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "Deleting the store's directory index and rebuilding from the branch gives the same `pij directory` output.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -363,7 +363,7 @@
 					"priority": "must",
 					"state": "in-progress",
 					"done_when": "A spawn without `--id` gets a `pij-<adjective>-<animal>` id; a spawn with an `--id` that names a role or project is refused by name; two projects can each add a `security` role; a role holder's tmux window reads `<project>:<role>`.",
-					"note": "Part done today: the daemon already allocates `pij-<adjective>-<animal>` when `--id` is omitted (crates/core/src/names.rs; the noun corpus is animals and SHIP_NAMES is empty). Not done: an explicit `--id` is accepted as given (pij-community-docs was), `--name` defaults the window to the seat id, and per-project role ids wait on the directory (s02, s04).",
+					"note": "Part done today: the daemon already allocates `pij-<adjective>-<animal>` when `--id` is omitted (crates/core/src/names.rs; the noun corpus is animals and SHIP_NAMES is empty). Not done: an explicit `--id` is accepted as given (pij-community-docs was), `--name` defaults the window to the seat id, and per-project role ids wait on the directory (s02, s04). Plan 195 ships the window naming: assign renames the holder's window `<project>:<role>` (pij targets panes by id, never by that name). Still open: refusing an explicit `--id` that names a role or project.",
 					"source": "community RULINGS.md C13 (Jordan, 2026-11-04)"
 				},
 				{
@@ -471,6 +471,16 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "Source paths fixed: req-01 to req-21 cite workshops/001-pij-community/001-community-directory.md, req-22 to req-25 cite workshops/001-pij-community/002-limits-and-doc-prompting.md (the old path did not exist)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 195: req-01 (the per-project directory view), req-06 (assign, release and lineage), req-16 (external entries) and req-17 (lineage on the branch; the store rebuilds from it) shipped."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 195: req-26's note records the window naming shipped on assign; the --id refusal is still open, so it stays in-progress."
 				}
 			]
 		}
