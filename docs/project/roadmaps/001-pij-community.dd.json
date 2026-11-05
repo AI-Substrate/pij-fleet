@@ -31,7 +31,7 @@
 				{
 					"id": "s02",
 					"title": "Role schema, layout and the governance writer",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-02",
 						"../prds/001-pij-community.dd.json#requirements/req-03",
@@ -53,7 +53,8 @@
 						"role:reviewer",
 						"role:security",
 						"role:performance"
-					]
+					],
+					"plan": "docs/plans/190-community-writer"
 				},
 				{
 					"id": "s03",
@@ -183,13 +184,14 @@
 				},
 				{
 					"id": "s14",
-					"title": "Move pij's PRD register into docs",
-					"state": "planned",
+					"title": "Triage pij's earlier register into PRD 002",
+					"state": "complete",
 					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-25"],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-doc-schemas"],
 					"depends_on": ["#steps/s01"],
-					"done_when": "The register validates under docs/project/prds/.",
-					"needs": ["role:docs-system", "role:reviewer", "role:security"]
+					"done_when": "PRD 002 validates under docs/project/prds/ and every open row of the earlier register has a recorded verdict.",
+					"needs": ["role:docs-system", "role:reviewer", "role:security"],
+					"plan": "docs/plans/192-prd-register-move"
 				},
 				{
 					"id": "s10",
@@ -225,6 +227,21 @@
 					"date": "2026-11-04",
 					"by": "pij-careful-heron",
 					"change": "Plan 191: s01 complete (done-when checked, docs/plans/191-doc-procedures/assets/evidence/s01-check.md); s13 complete; needs filled for s02, s13 and s14 (req-24)."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-steady-otter (pm-001), ruling C15",
+					"change": "s14 is a triage into a fresh PRD 002, not a move."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-careful-heron",
+					"change": "Plan 192: s14 complete. The earlier register was triaged into PRD 002 (docs/project/prds/002-pij-base.dd.json); 16 of 40 open rows kept as 14."
+				},
+				{
+					"date": "2026-11-04",
+					"by": "pij-brisk-marten",
+					"change": "Plan 190: s02 complete (`pij directory add` and `--batch` on the governance writer; evidence in docs/plans/190-community-writer/assets/evidence/phase-2.md)."
 				}
 			]
 		}

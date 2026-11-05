@@ -294,6 +294,21 @@ impl Spine for EventBus {
     async fn newest(&self) -> Result<Seq> {
         self.spine.newest().await
     }
+    async fn latest(
+        &self,
+        seat: &pij_core::model::SeatId,
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        self.spine.latest(seat).await
+    }
+
+    async fn seat_page(
+        &self,
+        seat: &pij_core::model::SeatId,
+        since: pij_core::model::Seq,
+        limit: usize,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.spine.seat_page(seat, since, limit).await
+    }
 
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         self.spine.latest_matching(seat, kinds).await

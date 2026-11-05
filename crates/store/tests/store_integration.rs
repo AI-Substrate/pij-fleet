@@ -819,6 +819,80 @@ async fn all_matching_seeks_seat_and_kind_whatever_else_the_seat_has() {
     }
 }
 
+/// Issue #119: the seat seeks the anomalies, node show and spine events reads
+/// now use stay on an index whatever else the seat holds. `latest_matching` is
+/// one `(seat, kind)` seek per kind: as one `kind IN (..)` statement the planner
+/// walked `spine_by_seat` newest-first, here 20,000 `bg.lost` rows deep.
+#[tokio::test]
+async fn seat_latest_page_and_latest_matching_seek_their_index() {
+    for analyze in [false, true] {
+        let (_fresh, pool) = skewed_seat_history(analyze).await;
+        assert_eq!(
+            plan_of(&pool, pij_store::spine::SEAT_LATEST_SQL, &["pij-history"]).await,
+            vec!["SEARCH spine_events USING INDEX spine_by_seat (seat=?)".to_string()],
+            "analyzed={analyze}"
+        );
+        let page = format!("EXPLAIN QUERY PLAN {}", pij_store::spine::SEAT_PAGE_SQL);
+        let page_plan = sqlx::query(&page)
+            .bind("pij-history")
+            .bind(0_i64)
+            .bind(500_i64)
+            .fetch_all(&pool)
+            .await
+            .expect("plan")
+            .iter()
+            .map(|row| row.get::<String, _>("detail"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            page_plan,
+            vec!["SEARCH spine_events USING INDEX spine_by_seat (seat=? AND seq>?)".to_string()],
+            "analyzed={analyze}"
+        );
+        assert_eq!(
+            plan_of(
+                &pool,
+                pij_store::spine::LATEST_MATCHING_SQL,
+                &["pij-history", "report.now"]
+            )
+            .await,
+            vec![
+                "SEARCH spine_events USING INDEX spine_by_seat_kind (seat=? AND kind=?)"
+                    .to_string()
+            ],
+            "analyzed={analyze}"
+        );
+        let spine = SqliteSpine::new(pool);
+        let seat = SeatId::from("pij-history");
+        let latest = spine
+            .latest_matching(&seat, &["delivery.outcome", "delivery.held"])
+            .await
+            .expect("latest matching")
+            .expect("a match");
+        assert_eq!(
+            (latest.kind.as_str(), latest.at),
+            ("delivery.held", 4),
+            "the highest sequence across the kinds wins, whatever their order"
+        );
+        assert!(
+            spine
+                .latest_matching(&seat, &["report.now", "seat.put"])
+                .await
+                .expect("no match")
+                .is_none(),
+            "kinds the seat never wrote match nothing"
+        );
+        assert_eq!(
+            spine
+                .latest(&seat)
+                .await
+                .expect("latest")
+                .map(|event| event.at),
+            Some(4),
+            "the seat's newest row is its last append"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_seat_round_trips_with_every_optional_fact_intact() {
     let fresh = FreshStore::new();
@@ -1447,4 +1521,57 @@ async fn watchdog_migrations_move_a_schema_28_store_to_current_losing_nothing() 
     };
     assert!(!store.claim_limit_wake(&again).await.unwrap());
     assert_eq!(store.limit_wakes().await.unwrap(), vec![wake]);
+}
+
+/// Plan 190, AC7: the community pointer is a cache of the governance branch.
+/// Writes upsert by (project, path); a rebuild replaces one project's rows in a
+/// single transaction and leaves other projects alone.
+#[tokio::test]
+async fn community_pointers_upsert_by_path_and_a_rebuild_restores_them_row_for_row() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let pointer = |project: &str, path: &str, commit: &str| pij_store::CommunityPointer {
+        project: project.into(),
+        path: path.into(),
+        commit: commit.into(),
+    };
+    let pm = ".harness/government/community/roles/pm/role.dd.json";
+    let qa = ".harness/government/community/roles/qa/role.dd.json";
+    store
+        .record_community_pointers(&[pointer("pij", pm, "c1"), pointer("other", pm, "o1")])
+        .await
+        .unwrap();
+    store
+        .record_community_pointers(&[pointer("pij", qa, "c2")])
+        .await
+        .unwrap();
+    store
+        .record_community_pointers(&[pointer("pij", pm, "c3")])
+        .await
+        .unwrap();
+    let recorded = store.community_pointers("pij").await.unwrap();
+    assert_eq!(
+        recorded,
+        vec![pointer("pij", pm, "c3"), pointer("pij", qa, "c2")]
+    );
+
+    sqlx::query("DELETE FROM community_pointers WHERE project = 'pij'")
+        .execute(&store_pool(&fresh).await)
+        .await
+        .unwrap();
+    assert!(store.community_pointers("pij").await.unwrap().is_empty());
+    store
+        .replace_community_pointers("pij", &[pointer("pij", qa, "c2"), pointer("pij", pm, "c3")])
+        .await
+        .unwrap();
+    assert_eq!(store.community_pointers("pij").await.unwrap(), recorded);
+    assert_eq!(
+        store.community_pointers("other").await.unwrap(),
+        vec![pointer("other", pm, "o1")]
+    );
+}
+
+async fn store_pool(fresh: &FreshStore) -> pij_store::StorePool {
+    pij_store::open(&fresh.path()).await.expect("second pool")
 }

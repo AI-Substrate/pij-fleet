@@ -20,7 +20,7 @@ The PM that owns the work writes its docs, and the prime helps when asked. The p
 1. **Where.** `docs/project/{prds,blueprints,roadmaps}/NNN-<slug>.dd.json`. The slug is a few kebab-case words naming the feature (`seat-bookmarks`); use the same slug for a project's PRD, blueprint and roadmap so they pair by name. Workshops go in `docs/project/workshops/NNN-<slug>/NNN-<topic>.md`.
 2. **The number.** Ask your project's PM role (pm/001 in pij) for the next NNN of that type, or the prime if you are that PM. Once `pij claim` exists (roadmap step s11) use that instead. Never guess a number from the folder listing; a parallel PM may hold it.
 3. **Run ddocs from the repo root.** From a subdirectory it can't find the `pij/*` schemas and every file fails with `E401 schema ... was not found`.
-4. **Create** a file by writing its `.dd.json`. Start from the matching example and replace every value. `owner` and changelog `by` are the role you hold (`pm-001`), or your seat id if you hold none yet. Dates are local `date +%F`. The schema is `pij/prd`, `pij/blueprint` or `pij/roadmap`; `ddocs schema show pij/prd` lists the sections and required fields.
+4. **Create** a file by writing its `.dd.json`. Start from the matching example and replace every value. `owner` and changelog `by` are the role you hold (`pm-001`), or your seat id if you hold none yet. Dates are local `date +%F`. The schema is `pij/prd`, `pij/blueprint` or `pij/roadmap`. `ddocs schema show pij/prd` lists its sections and enums but not the fields of each row; those are in the procedure for each type and in the examples.
 5. **Edit** an existing file with ddocs, which validates before it writes:
    - `ddocs set '<file>#requirements/req-03/state' in-progress`
    - `ddocs add '<file>#requirements' "$(cat /tmp/row.json)"` (put the JSON in a file when it has backticks or `$`)
@@ -45,3 +45,7 @@ Example: `"delivers": ["../prds/001-daily-digest.dd.json#requirements/req-01"]`.
 - Rows are amended, never deleted. To drop one, set its state to `dropped` (steps: `abandoned`) and say why in its `note`.
 - Ids are never reused. A new requirement takes the next free `req-NN`, even after a drop.
 - Every change of meaning adds a `changelog` row: date, who, what changed.
+
+## Role documents
+
+Roles under `<government-root>/community/roles/` are written only by `pij directory add`, which adds the changelog row and runs `ddocs validate` and `ddocs build` itself. Don't pre-validate a role document with ddocs: `pij/role` requires a `changelog` section that only the writer adds, so a hand check always fails on it.

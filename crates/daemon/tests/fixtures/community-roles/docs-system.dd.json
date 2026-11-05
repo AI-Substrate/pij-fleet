@@ -1,0 +1,66 @@
+{
+	"dd": {
+		"schema": "pij/role"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "docs-system",
+				"title": "Docs system",
+				"kind": "specialist",
+				"lifecycle": "long-lived",
+				"holders": "one",
+				"default_limit": "45m"
+			}
+		},
+		{
+			"name": "scope",
+			"value": {
+				"paths": [],
+				"rules": [
+					"Owns `.dd/schemas/pij/**`, `docs/project/**`, the doc procedures and worked examples in the pij skill, and the role templates. Steps s13, s14, s03, and the template half of s10."
+				]
+			}
+		},
+		{
+			"name": "out_of_scope",
+			"value": [
+				"Rust code (coders, delivery)."
+			]
+		},
+		{
+			"name": "default_seat",
+			"value": {
+				"harness": "copilot",
+				"model": "claude-opus-5.5",
+				"effort": "high"
+			}
+		},
+		{
+			"name": "output_kinds",
+			"value": [
+				"deliverable",
+				"note"
+			]
+		},
+		{
+			"name": "standing_packet",
+			"value": {
+				"source": "inline",
+				"text": "You hold the `docs-system` role in the pij community for pij-fleet (`<repo>`). Load the pij skill and the builder skill. Read, in order: `.harness/government/community/README.md` and `ROUTES.md` in the governance worktree (`<governance-worktree>`), this file, then `memory/INDEX.md` and any note it points you to. Work from `docs/project/prds/001-pij-community.dd.json` and `docs/project/roadmaps/001-pij-community.dd.json` on main. Report on your card with `pij report now \"<did>\" \"<next>\"` at the start and end of each unit. Reply to whoever sent you work with `pij send <seat> --body-file <path>`. Before a compact or close, write your memory note.\n\nNever: restart, bounce or deploy the prod daemon; run a second daemon on the default tmux server; type into a pane; read credential files; `git add -A`; `--no-verify`; push `refs/notes/*`; run `just worktree-deps` or `npm install`. Builds are scoped with `-p`. Check `df -h /System/Volumes/Data` before a large build and stop and tell the prime under 25 GB free."
+			}
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-04",
+					"by": "<seat>",
+					"why": "Shaped like the hand-written roles/docs-system/role.md."
+				}
+			]
+		}
+	],
+	"references": []
+}

@@ -75,6 +75,7 @@ doctor:
     @echo "skill:      $(readlink ~/.agents/skills/pij 2>/dev/null || echo '(unlinked — run: just pij-skill-link-global)')"
     just omp-doctor
     @printf 'daemon:     '; pij-rs ping 2>/dev/null || echo '(not running — run: just bounce-rs)'
+    @printf 'ddocs:      '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.ddocs === undefined ? "(unknown: this daemon predates the ddocs field)" : (d.ddocs ?? "(missing: install ddocs or set PIJ_DDOCS, then run: just bounce-rs)")); })'
 
 # Link this worktree's packages from the canonical checkout without npm resolution.
 # --check is read-only; missing JS tooling never prevents Rust-only work.
@@ -205,6 +206,12 @@ spawn-rate *ARGS:
 local-path-check:
     node_modules/.bin/tsx harness/scripts/local-path-check.ts
 
+# Validate every ddoc under docs/project/ and the community skill examples, and
+# check each rendered .dd.md is current. ddocs comes from PIJ_DDOCS, else PATH;
+# without it this fails UNAVAILABLE (pass --unavailable=warn to only warn).
+ddocs-check *ARGS:
+    node_modules/.bin/tsx harness/scripts/ddocs-check.ts {{ARGS}}
+
 # Report-only attribution scan, scoped after merge-base with main.
 pij-commit-trailers *ARGS:
     node_modules/.bin/tsx harness/scripts/pij-commit-trailers.ts "$@"
@@ -261,6 +268,7 @@ copilot-models *ARGS:
 # task complete — never run npm directly to compose these steps.
 self-check:
     just local-path-check
+    just ddocs-check
     just lockfile-allowlist
     just typecheck
     just lint

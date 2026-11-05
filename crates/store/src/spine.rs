@@ -10,7 +10,7 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use sqlx::sqlite::SqliteRow;
-use sqlx::{Pool, QueryBuilder, Row, Sqlite, SqliteConnection};
+use sqlx::{Pool, Row, Sqlite, SqliteConnection};
 
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Event, SeatId, Seq};
@@ -47,6 +47,22 @@ pub const MATCHING_AFTER_SQL: &str = "SELECT seq, v, at, kind, seat, payload FRO
 /// 0.4 s per call on 4.16M rows, three calls per `/v1/state` card).
 pub const SEAT_TAIL_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
      INDEXED BY spine_by_seat WHERE seat = ?1 AND seq > ?2 ORDER BY seq";
+
+/// [`Spine::latest`]: one seat's newest row, one seek on `spine_by_seat`.
+pub const SEAT_LATEST_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     INDEXED BY spine_by_seat WHERE seat = ?1 ORDER BY seq DESC LIMIT 1";
+
+/// [`Spine::seat_page`]: a keyset page of one seat's rows on `spine_by_seat`.
+pub const SEAT_PAGE_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     INDEXED BY spine_by_seat WHERE seat = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3";
+
+/// [`Spine::latest_matching`] for ONE kind: a seek on `spine_by_seat_kind`.
+///
+/// One statement per kind, never `kind IN (..)`: with two or more kinds the
+/// planner walks `spine_by_seat` newest-first to skip the sort, which for a
+/// seat with none of those kinds reads its whole history (3.59M rows, #119).
+pub const LATEST_MATCHING_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
+     INDEXED BY spine_by_seat_kind WHERE seat = ?1 AND kind = ?2 ORDER BY seq DESC LIMIT 1";
 
 /// Every spine event after a cursor, from every seat.
 pub const TAIL_SQL: &str = "SELECT seq, v, at, kind, seat, payload FROM spine_events \
@@ -267,6 +283,37 @@ impl Spine for SqliteSpine {
         spine_head(&self.pool).await
     }
 
+    async fn latest(&self, seat: &SeatId) -> Result<Option<Event>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(SEAT_LATEST_SQL)
+            .bind(seat.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .as_ref()
+            .map(decode_event)
+            .transpose()
+    }
+
+    async fn seat_page(&self, seat: &SeatId, since: Seq, limit: usize) -> Result<Vec<Event>> {
+        require_current_schema(&self.pool).await?;
+        let since = i64::try_from(since.0).map_err(|_| PijError::Adapter {
+            adapter: "store/spine".to_string(),
+            message: "seat_page cursor exceeds a signed 64-bit integer".to_string(),
+        })?;
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        sqlx::query(SEAT_PAGE_SQL)
+            .bind(seat.as_str())
+            .bind(since)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?
+            .iter()
+            .map(decode_event)
+            .collect()
+    }
+
     async fn latest_matching(&self, seat: &SeatId, kinds: &[&str]) -> Result<Option<Event>> {
         if kinds.is_empty() {
             return Err(PijError::Adapter {
@@ -275,27 +322,26 @@ impl Spine for SqliteSpine {
             });
         }
         require_current_schema(&self.pool).await?;
-        let mut query = QueryBuilder::<Sqlite>::new(
-            "SELECT seq, v, at, kind, seat, payload FROM spine_events WHERE seat = ",
-        );
-        query.push_bind(seat.as_str());
-        query.push(" AND kind IN (");
-        {
-            let mut kinds_sql = query.separated(", ");
-            for kind in kinds {
-                kinds_sql.push_bind(*kind);
+        // One read snapshot, so the per-kind answers describe the same spine.
+        let mut snapshot = self.pool.begin().await.map_err(adapter_error)?;
+        let mut latest: Option<Event> = None;
+        for kind in kinds {
+            let Some(row) = sqlx::query(LATEST_MATCHING_SQL)
+                .bind(seat.as_str())
+                .bind(*kind)
+                .fetch_optional(&mut *snapshot)
+                .await
+                .map_err(adapter_error)?
+            else {
+                continue;
+            };
+            let event = decode_event(&row)?;
+            if latest.as_ref().is_none_or(|best| best.seq < event.seq) {
+                latest = Some(event);
             }
-            kinds_sql.push_unseparated(")");
         }
-        query.push(" ORDER BY seq DESC LIMIT 1");
-        query
-            .build()
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(adapter_error)?
-            .as_ref()
-            .map(decode_event)
-            .transpose()
+        snapshot.rollback().await.map_err(adapter_error)?;
+        Ok(latest)
     }
 
     async fn latest_matching_message(

@@ -576,6 +576,11 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Write a role into the community directory (`directory add`, plan 190).
+    Directory {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// List registered seats; --here scopes to this process's cwd.
     List {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1656,7 +1661,8 @@ async fn run(cli: Cli) -> ExitCode {
         | Command::Task { args }
         | Command::Node { args }
         | Command::Orchestration { args }
-        | Command::Spine { args } => {
+        | Command::Spine { args }
+        | Command::Directory { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             let family = command_name
                 .strip_prefix("pij ")
@@ -3109,6 +3115,7 @@ impl Command {
             Command::Node { .. } => "pij node",
             Command::Orchestration { .. } => "pij orchestration",
             Command::Spine { .. } => "pij spine",
+            Command::Directory { .. } => "pij directory",
             Command::List { .. } => "pij list",
             Command::State { .. } => "pij state",
             Command::Tail { .. } => "pij tail",
@@ -3376,6 +3383,7 @@ mod tests {
                 "node",
                 "orchestration",
                 "spine",
+                "directory",
                 "list",
                 "state",
                 "tail"

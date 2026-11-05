@@ -15,7 +15,7 @@
 
 Follow the skill's canonical [Governance branch — the rules](skills/pij/references/prime/rituals/bootstrap.md#governance-branch--the-rules), including PRD reconciliation and store/document authority.
 Resolve `<government-root>` with `harness/scripts/government-root.sh [REPO]` (REPO defaults to cwd); the linked bootstrap covers absent/unavailable worktrees.
-The live register is `<government-root>/prd/base-prd.dd.json` (edit via `ddocs`, then `ddocs validate` and `ddocs build`); the TypeScript-era register is closed at `<government-root>/prd/archive/`.
+pij's live requirements are on main in `docs/project/prds/`: PRD 001 (the community) and PRD 002 (`docs/project/prds/002-pij-base.dd.json`, the base register). Edit them with `ddocs`, then `ddocs validate` and `ddocs build`; `docs/project/README.md` has the rules.
 
 ## Inherited from pi-mono (do not violate without explicit user approval)
 
@@ -73,10 +73,10 @@ makes the operation do *more* (delete more, send more, kill more), it was a
 
 **A one-directional safety interlock is not a policy.**
 
-Worked example (pij#183, s101). The orphaned-tap sweep reads each file's mtime
+Worked example (a change in the earlier private repo, session s101). The orphaned-tap sweep reads each file's mtime
 for a 5-minute grace, so "does it consult a timestamp?" is honestly **yes** — and
 answering "no" would have been false while answering "yes, therefore it is
-retention" would have blocked it behind an unrelated ruling (pij#204). The
+retention" would have blocked it behind an unrelated, still-open ruling on retention. The
 resolving question was directional:
 
 | input | decides deletion | can only spare |
@@ -150,7 +150,7 @@ citation disputes, all of which resolved as neither party being wrong.)
 3. Smoke: `just smoke` before merging.
 4. **Before declaring any task done — or before ship — run `harness checks`.**
    The engineering-harness gate: it runs the full deterministic **signal
-   inventory** (local-path portability → typecheck → lockfile allowlist → lint →
+   inventory** (local-path portability → project docs (ddocs) → typecheck → lockfile allowlist → lint →
    test → Copilot native contracts → Rust gate → smoke → commit-trailer
    attribution) as individual stages and reports a per-sensor verdict — and
    unlike `just self-check` it runs **all** sensors, so one invocation surfaces

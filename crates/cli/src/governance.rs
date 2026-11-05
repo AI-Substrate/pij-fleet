@@ -25,6 +25,7 @@ pub async fn governance(
         "node" => "/v1/node",
         "orchestration" => "/v1/orchestration",
         "spine" => "/v1/spine",
+        "directory" => "/v1/directory",
         _ => {
             let mut error = Envelope::refused(
                 format!("pij {family}"),

@@ -1,0 +1,98 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 193 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-AC2: verdicts and ddocs resolution",
+          "phase": "ph-d8b9",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: harness/scripts/ddocs-check.test.ts (vitest) on resolveDdocs, findDocuments, judgeValidate and judgeBuildCheck with injected ports.",
+          "state": "checked",
+          "probe": "harness/scripts/ddocs-check.test.ts",
+          "receipt": "vitest harness/scripts/ddocs-check.test.ts: 9 passed (main checkout's vitest, --root this tree); the unreadable-root test fails when the error branch is removed"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3, AC5: wired into harness checks, self-check and CI",
+          "phase": "ph-d8b9",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: the sensor in .harness/extensions/checks/extension.ts and `just self-check`; CI step `just ddocs-check --unavailable=warn` shows its UNAVAILABLE annotation on the PR run.",
+          "state": "checked",
+          "probe": "just ddocs-check",
+          "receipt": "CI run 41766023159: warning annotation 'ddocs-check UNAVAILABLE' on check (22) and check (24)"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4: the sensor fails on a broken example and passes when restored",
+          "phase": "ph-d8b9",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: live transcript in assets/evidence/fires.txt: clean pass, missing-link failure, hand-edited .dd.md failure, restored pass, UNAVAILABLE (exit 2), CI warn mode (exit 0 with annotation), bad PIJ_DDOCS refusal.",
+          "state": "checked",
+          "probe": "assets/evidence/fires.txt",
+          "receipt": "assets/evidence/fires.txt, 10 cases including chmod 000 docs/project"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "Cost (AGENTS.md)",
+          "phase": "ph-d8b9",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "None at rest: no loop, poll, timer, hook, sweep, status line or daemon launch. The sensor runs only inside `harness checks`, `just self-check` and CI, and launches ddocs twice per document per run (12 node launches for today's 6 documents, about 3 s), scaling with the number of documents, not seats or time.",
+          "state": "checked",
+          "probe": "just ddocs-check",
+          "note": "Steady-state cost: 0 launches per second.",
+          "receipt": "12 ddocs launches per run for 6 documents, ~3.3 s; nothing at rest"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "Merge gate",
+          "phase": "ph-d8b9",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`harness checks --quick` (or its stages with the main checkout's binaries where this worktree lacks node_modules); GitHub CI on the exact head; reviewer and security verdicts (the PR changes CI).",
+          "state": "unchecked",
+          "probe": "harness checks"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: req-27 (ruling C18) in PRD 001",
+          "phase": "ph-d8b9",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: `ddocs validate docs/project/prds/001-pij-community.dd.json` clean with req-27 present, state planned, source ruling C18, and a changelog row; `just ddocs-check` passes on it.",
+          "state": "checked",
+          "probe": "docs/project/prds/001-pij-community.dd.json",
+          "note": "Cost: none.",
+          "receipt": "ddocs validate ok 0/0 with req-27; ddocs-check 6 documents clean"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "project docs",
+          "command": "just ddocs-check",
+          "dimension": "correctness"
+        }
+      ]
+    }
+  ]
+}

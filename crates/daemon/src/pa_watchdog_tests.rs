@@ -1527,6 +1527,22 @@ impl pij_core::ports::Spine for CountingSpine {
     async fn newest(&self) -> pij_core::error::Result<pij_core::model::Seq> {
         self.inner.newest().await
     }
+
+    async fn latest(
+        &self,
+        seat: &pij_core::model::SeatId,
+    ) -> pij_core::error::Result<Option<pij_core::model::Event>> {
+        self.inner.latest(seat).await
+    }
+
+    async fn seat_page(
+        &self,
+        seat: &pij_core::model::SeatId,
+        since: pij_core::model::Seq,
+        limit: usize,
+    ) -> pij_core::error::Result<Vec<pij_core::model::Event>> {
+        self.inner.seat_page(seat, since, limit).await
+    }
     async fn latest_matching(
         &self,
         seat: &SeatId,
