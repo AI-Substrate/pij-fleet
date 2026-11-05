@@ -1215,6 +1215,157 @@ async fn a_linked_worktree_finds_its_project_and_an_unknown_repo_names_the_regis
 }
 
 /// AC9 (req-16): external entries append to community/external.dd.json.
+/// Plan 201, AC1 and AC3: a note is one commit with its INDEX line, the
+/// INDEX keeps hand-written lines, reads print the INDEX or one note, and there
+/// is no way to delete.
+#[tokio::test]
+async fn memory_add_writes_one_note_per_commit_and_reads_back() {
+    let repo = repo("pij-directory-memory");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let index = repo
+        .gov
+        .join(".harness/government/community/roles/reviewer/memory/INDEX.md");
+    let hand = "# reviewer memory\n\n- [old.md](old.md): by hand\n";
+    std::fs::write(&index, hand).unwrap();
+    std::fs::write(index.with_file_name("old.md"), "kept\n").unwrap();
+    git(&repo.gov, &["add", "."]);
+    git(&repo.gov, &["commit", "-q", "-m", "hand memory"]);
+    let before = head(&repo);
+
+    let add = |title: &'static str| {
+        vec![
+            "directory",
+            "memory",
+            "add",
+            "reviewer",
+            "--title",
+            title,
+            "--tags",
+            "pr,cost",
+            "--tags",
+            "spine",
+            "--hook",
+            "open for the fix",
+            "--body",
+            "the body\n",
+        ]
+    };
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &add("PR 200: what broke"),
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    let note = ".harness/government/community/roles/reviewer/memory/";
+    let path = added["data"]["path"].as_str().unwrap();
+    assert!(
+        path.starts_with(note) && path.ends_with("-pr-200-what-broke.dd.json"),
+        "{path}"
+    );
+    assert_eq!(added["data"]["commit"], head(&repo));
+    let changed = git(&repo.gov, &["show", "--name-only", "--format=", "HEAD"]);
+    assert_eq!(changed.lines().count(), 3, "{changed}");
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{before}..HEAD")]
+        )
+        .trim(),
+        "1"
+    );
+    let text = std::fs::read_to_string(&index).unwrap();
+    assert!(text.starts_with(hand), "{text}");
+    assert!(
+        text.contains("PR 200: what broke](") && text.contains("(pr, cost, spine)"),
+        "{text}"
+    );
+
+    let again = call(
+        rig.addr,
+        "/v1/directory",
+        &add("PR 200: what broke"),
+        &repo.main,
+    )
+    .await;
+    assert_eq!(again["details"]["code"], "E-RS-MEMORY-EXISTS", "{again}");
+
+    let read = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "memory", "reviewer"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(read["data"]["index"], text, "{read}");
+    let one = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "memory",
+            "reviewer",
+            "--note",
+            "pr-200-what-broke",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(
+        one["data"]["meta"]["tags"],
+        json!(["pr", "cost", "spine"]),
+        "{one}"
+    );
+    assert_eq!(one["data"]["body"], "the body\n");
+    let hand_note = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "memory", "reviewer", "--note", "old"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(hand_note["data"]["text"], "kept\n", "{hand_note}");
+
+    for (argv, code) in [
+        (
+            &["directory", "memory", "delete", "reviewer"][..],
+            "E-RS-UNPORTED",
+        ),
+        (
+            &["directory", "memory", "reviewer", "--note", "nope"][..],
+            "E-RS-MEMORY-NOTE-MISSING",
+        ),
+        (
+            &["directory", "memory", "ghost"][..],
+            "E-RS-DIRECTORY-ROLE-MISSING",
+        ),
+        (
+            &[
+                "directory",
+                "memory",
+                "add",
+                "reviewer",
+                "--title",
+                "t",
+                "--hook",
+                "h",
+            ][..],
+            "E-RS-ARG",
+        ),
+        (
+            &["directory", "memory", "reviewer", "--body", "x"][..],
+            "E-RS-ARG",
+        ),
+    ] {
+        let refused = call(rig.addr, "/v1/directory", argv, &repo.main).await;
+        assert_eq!(refused["details"]["code"], code, "{argv:?}: {refused}");
+    }
+    assert_eq!(git(&repo.gov, &["status", "--porcelain"]), "");
+    rig.server.abort();
+}
+
 #[tokio::test]
 async fn external_add_creates_then_appends_dated_entries() {
     let repo = repo("pij-directory-external");

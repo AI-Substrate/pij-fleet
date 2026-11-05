@@ -1661,6 +1661,19 @@ async fn run(cli: Cli) -> ExitCode {
         }
         Command::Directory { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let args = match pij_cli::governance::inline_body_file(&args, |source| {
+                if source == "-" {
+                    std::io::read_to_string(std::io::stdin())
+                } else {
+                    std::fs::read_to_string(source)
+                }
+            }) {
+                Ok(args) => args,
+                Err(reason) => {
+                    eprintln!("pij directory: {reason}");
+                    return ExitCode::from(2);
+                }
+            };
             let response =
                 pij_cli::governance::governance(&client, "directory", &args, &caller_context())
                     .await;
@@ -1679,6 +1692,15 @@ async fn run(cli: Cli) -> ExitCode {
                 }
                 Some(data) if data.get("diff").is_some_and(Value::is_string) => {
                     println!("{}", render_template_diff(data));
+                    ExitCode::SUCCESS
+                }
+                // `directory memory <role>` and `--note`: the text itself.
+                Some(memory) if memory.get("index").is_some_and(Value::is_string) => {
+                    print!("{}", memory["index"].as_str().unwrap_or_default());
+                    ExitCode::SUCCESS
+                }
+                Some(memory) if memory.get("note").is_some() && memory.get("commit").is_none() => {
+                    println!("{}", render_memory_note(memory));
                     ExitCode::SUCCESS
                 }
                 _ => emit(&response, as_json),
@@ -2762,6 +2784,33 @@ fn render_template_diff(data: &Value) -> String {
             data["diff"].as_str().unwrap_or_default().trim_end()
         ),
     }
+}
+
+/// One memory note for a human: its title line, then the body as written.
+fn render_memory_note(note: &Value) -> String {
+    if let Some(text) = note["text"].as_str() {
+        return text.trim_end().to_string();
+    }
+    let meta = &note["meta"];
+    let tags: Vec<&str> = meta["tags"]
+        .as_array()
+        .map(|tags| tags.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let mut out = format!(
+        "# {}\n{} · {}",
+        meta["title"].as_str().unwrap_or("-"),
+        meta["date"].as_str().unwrap_or("-"),
+        meta["hook"].as_str().unwrap_or("-"),
+    );
+    if !tags.is_empty() {
+        let _ = write!(out, " ({})", tags.join(", "));
+    }
+    let _ = write!(
+        out,
+        "\n\n{}",
+        note["body"].as_str().unwrap_or_default().trim_end()
+    );
+    out
 }
 
 fn directory_help(args: &[String]) -> ExitCode {
