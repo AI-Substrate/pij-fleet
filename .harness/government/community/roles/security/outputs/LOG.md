@@ -40,3 +40,7 @@
 
 2026-11-06 verdict pr:121 eff6286758eae1d8f825805f3ceda04dbf6c8ffb pass-with-notes - Original MEDIUM closed by atomic0700/owner-noclobber fail-closed creation; MKDIR seam is trusted caller override outside tests, no new lower-trust capability found; four CI jobs green, proof limits explicit; separate governance artifact values persist at 3b153235; 2026-11-06-pr-121-eff6286-security.md.
 
+2026-11-06 verdict pr:125 9384397762d2e7955ceff0de373640b85553227b pass - Complete eight-file C26 PEC rename-forward docs reviewed; no private/host-state content or unsafe advice; validation delegation intact; no tests/builds/CI claim; 2026-11-06-pr-125-9384397-security.md.
+
+2026-11-06 note prime-governance edf81257e776acf448f9aea71d0b2300b1adbb3b resolved - Reviewer artifact entries neutral; both original values absent across tracked fix/public-tip snapshots through 43852c29395ae72d203c2b247f9383c5dcc8910b; values omitted, no duplicate edit; PR125 and PR121 repair follow-up.
+
