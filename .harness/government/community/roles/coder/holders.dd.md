@@ -19,3 +19,4 @@
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | 196 | 2026-11-05T23:09:45.254Z | — | pij-steady-otter | — | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | — |
+| — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 194 | 2026-11-05T23:09:45.659Z | — | pij-steady-otter | — | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | — |

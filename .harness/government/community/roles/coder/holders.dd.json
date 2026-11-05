@@ -22,6 +22,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-exuberant-wildcat",
 					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-05T23:09:45.659Z",
+					"harness": "copilot",
+					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
+					"instance_key": "194",
+					"machine": "ops.osk.lan",
+					"seat": "pij-following-marsupial",
+					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
 				}
 			]
 		}
