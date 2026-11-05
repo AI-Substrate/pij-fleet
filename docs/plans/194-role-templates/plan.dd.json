@@ -43,7 +43,7 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "Templates. docs-system writes six templates under `templates/roles/<name>/v1/role.dd.json`: prime, pm, pa, coder and reviewer (core) and security (recommended). Each validates against pij/role, carries `template` and `template_version`, has a standing packet written fresh for a public repo (no private references, no machine-local paths), and leaves project-specific fields (scope paths, instance key) as clearly marked placeholders. A `templates/roles/README.md` says they are examples to adapt, not a checklist (C18).",
+          "claim": "Templates. docs-system writes six templates under `templates/roles/<name>/v1/role.dd.json`: prime, pm, pa, coder and reviewer (core) and security (recommended). Each validates against pij/role, carries `template` and `template_version`, has a standing packet written fresh for a public repo (no private references, no machine-local paths), and leaves project-specific fields (scope paths, instance key) as clearly marked placeholders. A `templates/roles/README.md` says they are examples to adapt, not a checklist (C18), in the PEC wording (C26). The coder updates the README from phase 1 to that wording in phase 2.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
@@ -67,7 +67,7 @@
         },
         {
           "id": "ac-0005",
-          "claim": "Prompts (C22, C18). `pij directory` for a project lists each missing core role (prime, pm, pa, coder, reviewer) with its runnable `pij directory add <id> --from template:<id>` line, and shows a security prompt until a role whose template is security, or whose id is security, exists. The prompt text says the templates are examples and that roles should come from what the project's work needs. Nothing is created automatically. Adding security clears its prompt.",
+          "claim": "Prompts (C22, C18). `pij directory` for a project lists each missing core role (prime, pm, pa, coder, reviewer) with its runnable `pij directory add <id> --from template:<id>` line, and shows a security prompt until a role whose template is security, or whose id is security, exists. The prompt text uses the Pij Emergent Communities (PEC) wording (ruling C26): the prime and humans build whatever community the work needs now and reshape it as the work changes; the templates are examples (C18), not a checklist. Nothing is created automatically. Adding security clears its prompt.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
@@ -108,7 +108,7 @@
           "depends_on": [
             "ph-94a1"
           ],
-          "brief": "AC2 to AC8. Coder. Embedding, --from template and file, templates listing, template-diff, the prompts inside s04's `pij directory` view (so it starts after plan 195 merges, or adds the prompts to the view there), req-14 rewording, docs and flips. CS-3.",
+          "brief": "AC2 to AC8. Coder. Embedding, --from template and file, templates listing, template-diff, the prompts inside s04's `pij directory` view (plan 195 merged as #122, f327a7d, so the view exists), req-14 rewording, docs and flips. CS-3.",
           "tasks": "assets/tasks/phase-2/tasks.dd.json#tasks"
         }
       ]
