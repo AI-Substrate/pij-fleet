@@ -1,0 +1,62 @@
+{
+  "dd_schema": 1,
+  "description": "Seats a community borrowed from another project (req-16). Lives at <government-root>/community/external.dd.json, written by `pij directory external add`. Each entry is a dated note; loans are not otherwise tracked.",
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "fields": {
+          "project": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "entries": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "seat",
+            "from_project",
+            "note",
+            "by"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "date": {
+              "type": "string"
+            },
+            "seat": {
+              "type": "string"
+            },
+            "from_project": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "note": {
+              "type": "text"
+            },
+            "by": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
