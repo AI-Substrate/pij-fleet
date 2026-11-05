@@ -1575,3 +1575,142 @@ async fn community_pointers_upsert_by_path_and_a_rebuild_restores_them_row_for_r
 async fn store_pool(fresh: &FreshStore) -> pij_store::StorePool {
     pij_store::open(&fresh.path()).await.expect("second pool")
 }
+
+/// Plan 195 (migration 0032): holdings, and the seat role set in the same
+/// transaction (ruling C1). A prime is never re-roled; an unchanged role
+/// appends no event; a seat that is not live refuses and writes nothing.
+#[tokio::test]
+async fn community_assignments_record_end_rebuild_and_set_seat_roles_in_one_transaction() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let registry = SqliteRegistry::new(pool.clone(), support::publisher());
+    for id in ["pij-holder", "pij-prime", "pij-gone"] {
+        registry
+            .put(SeatDescriptor::new(id, Harness::Omp, "/abs/tree"))
+            .await
+            .unwrap();
+    }
+    registry
+        .tombstone(&SeatId::from("pij-gone"), "test")
+        .await
+        .unwrap();
+    let store = pij_store::SqliteOrchestration::new(pool);
+    store
+        .assert_role_committed(
+            &SeatId::from("pij-prime"),
+            &SeatId::from("pij-prime"),
+            Some("prime"),
+            1,
+        )
+        .await
+        .unwrap();
+    let row = |project: &str, role: &str, seat: &str, from: &str| pij_store::Assignment {
+        project: project.into(),
+        role: role.into(),
+        instance: String::new(),
+        seat: seat.into(),
+        harness: Some("omp".into()),
+        session: None,
+        machine: Some("local".into()),
+        from: from.into(),
+        to: None,
+        assigned_by: "pij-pm".into(),
+        released_by: None,
+        why: "test".into(),
+        release_why: None,
+        end_pending: false,
+    };
+
+    let pa = row("pij", "pa", "pij-holder", "2026-11-04T05:00:00Z");
+    let commit = store
+        .record_assignment_committed(&pa, Some("pa"), 10)
+        .await
+        .unwrap();
+    assert_eq!(commit.seat_role.as_deref(), Some("pa"));
+    assert_eq!(commit.events.len(), 1);
+    assert_eq!(commit.events[0].kind, "role-set");
+    assert!(commit.events[0].seq.is_some());
+    let again = row("pij", "pa", "pij-holder", "2026-11-04T05:01:00Z");
+    let unchanged = store
+        .record_assignment_committed(&again, Some("pa"), 11)
+        .await
+        .unwrap();
+    assert!(
+        unchanged.events.is_empty(),
+        "an unchanged role appends nothing"
+    );
+
+    let prime = row("pij", "reviewer", "pij-prime", "2026-11-04T05:02:00Z");
+    let kept = store
+        .record_assignment_committed(&prime, Some("worker"), 12)
+        .await
+        .unwrap();
+    assert_eq!(kept.seat_role.as_deref(), Some("prime"));
+    assert!(kept.events.is_empty(), "a prime is never re-roled");
+
+    let held = store.record_assignment_committed(&pa, Some("pa"), 13).await;
+    assert!(
+        matches!(held, Err(PijError::GovernanceRefused { ref code, .. }) if code == "E-RS-DIRECTORY-HELD"),
+        "{held:?}"
+    );
+    let gone = row("pij", "qa", "pij-gone", "2026-11-04T05:03:00Z");
+    let refused = store
+        .record_assignment_committed(&gone, Some("worker"), 14)
+        .await;
+    assert!(
+        matches!(refused, Err(PijError::GovernanceRefused { ref code, .. }) if code == "E-RS-ARG"),
+        "{refused:?}"
+    );
+    store
+        .record_assignment_committed(
+            &row("other", "pa", "pij-holder", "2026-11-04T05:04:00Z"),
+            None,
+            15,
+        )
+        .await
+        .unwrap();
+
+    let mut end = pa.clone();
+    end.to = Some("2026-11-04T06:00:00Z".into());
+    end.released_by = Some("pij-holder".into());
+    end.release_why = Some("close".into());
+    end.end_pending = true;
+    store
+        .end_assignments(std::slice::from_ref(&end))
+        .await
+        .unwrap();
+    let open: Vec<_> = store
+        .open_assignments("pij-holder")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| (row.project, row.from))
+        .collect();
+    assert_eq!(
+        open,
+        [
+            ("other".to_string(), "2026-11-04T05:04:00Z".to_string()),
+            ("pij".to_string(), "2026-11-04T05:01:00Z".to_string()),
+        ]
+    );
+
+    let recorded = store.assignments("pij").await.unwrap();
+    assert_eq!(recorded.len(), 3);
+    assert!(recorded.contains(&end));
+    store.replace_assignments("pij", &[]).await.unwrap();
+    assert!(store.assignments("pij").await.unwrap().is_empty());
+    store.replace_assignments("pij", &recorded).await.unwrap();
+    assert_eq!(store.assignments("pij").await.unwrap(), recorded);
+    assert_eq!(store.assignments("other").await.unwrap().len(), 1);
+    let twice = [recorded.clone(), vec![recorded[0].clone()]].concat();
+    let refused = store.replace_assignments("pij", &twice).await.unwrap_err();
+    assert!(
+        matches!(&refused, PijError::GovernanceRefused { code, .. } if code == "E-RS-DIRECTORY-ROW"),
+        "{refused:?}"
+    );
+    assert_eq!(
+        store.assignments("pij").await.unwrap(),
+        recorded,
+        "a refused rebuild replaces nothing"
+    );
+}

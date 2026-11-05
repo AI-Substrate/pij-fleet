@@ -123,6 +123,80 @@ pub fn resolve(repo: &Path) -> Result<GovernanceRoot, Refusal> {
     })
 }
 
+/// [`resolve`] without launching anything, for the view (plan 195, AC7): it
+/// reads git's own worktree records (`<common>/HEAD`, and `HEAD` and `gitdir`
+/// under `<common>/worktrees/*`) to find the one worktree with the governance
+/// branch checked out.
+///
+/// # Errors
+/// [`E_GOV_ABSENT`] with the bootstrap step, as [`resolve`].
+pub fn find(repo: &Path) -> Result<GovernanceRoot, Refusal> {
+    let refuse = |message: String| {
+        Refusal::new(E_GOV_ABSENT, format!("government-root: {message}")).with_next(BOOTSTRAP)
+    };
+    let common = common_dir(repo)
+        .ok_or_else(|| refuse(format!("{} is not inside a git repository", repo.display())))?;
+    let wanted = format!("ref: refs/heads/{GOVERNANCE_BRANCH}");
+    let checked_out =
+        |head: &Path| std::fs::read_to_string(head).is_ok_and(|text| text.trim() == wanted);
+    let mut roots = Vec::new();
+    if checked_out(&common.join("HEAD"))
+        && let Some(main) = common.parent()
+    {
+        roots.push(main.to_path_buf());
+    }
+    for entry in std::fs::read_dir(common.join("worktrees"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let record = entry.path();
+        if checked_out(&record.join("HEAD"))
+            && let Ok(gitdir) = std::fs::read_to_string(record.join("gitdir"))
+            && let Some(root) = Path::new(gitdir.trim()).parent()
+        {
+            roots.push(root.to_path_buf());
+        }
+    }
+    let [root] = roots.as_slice() else {
+        return Err(refuse(format!(
+            "expected one standing {GOVERNANCE_BRANCH} worktree; found {}",
+            roots.len()
+        )));
+    };
+    let government = root.join(super::layout::GOVERNMENT);
+    if !government.is_dir() {
+        return Err(refuse(format!(
+            "government directory is unavailable: {}",
+            government.display()
+        )));
+    }
+    Ok(GovernanceRoot {
+        worktree: canonical(root),
+        government: canonical(&government),
+    })
+}
+
+/// The repository's common git directory, found by walking up from `start`.
+pub(crate) fn common_dir(start: &Path) -> Option<PathBuf> {
+    let mut dir = Some(start);
+    while let Some(current) = dir {
+        let dotgit = current.join(".git");
+        if dotgit.is_dir() {
+            return Some(canonical(&dotgit));
+        }
+        if let Ok(text) = std::fs::read_to_string(&dotgit) {
+            let gitdir = current.join(text.trim().strip_prefix("gitdir:")?.trim());
+            let common = std::fs::read_to_string(gitdir.join("commondir"))
+                .map(|relative| gitdir.join(relative.trim()))
+                .unwrap_or(gitdir);
+            return Some(canonical(&common));
+        }
+        dir = current.parent();
+    }
+    None
+}
+
 fn read(dir: &Path, args: &[&str]) -> Result<String, String> {
     let output =
         git(dir, args, Locks::Read).map_err(|error| format!("could not run git: {error}"))?;
@@ -239,6 +313,28 @@ mod tests {
             refusal.message.contains("standing worktree is unavailable"),
             "{refusal}"
         );
+    }
+
+    /// The view's in-process lookup (no launch: `find` calls no git) agrees
+    /// with the git-backed resolver.
+    #[test]
+    fn find_agrees_with_resolve() {
+        let scratch = Scratch::new("pij-community-find");
+        for start in [scratch.main.clone(), scratch.gov.join(".harness")] {
+            assert_eq!(find(&start).unwrap(), resolve(&start).unwrap(), "{start:?}");
+        }
+        scratch.git(
+            &scratch.main,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                scratch.gov.to_str().unwrap(),
+            ],
+        );
+        let refusal = find(&scratch.main).unwrap_err();
+        assert_eq!(refusal.code, E_GOV_ABSENT);
+        assert!(refusal.message.contains("found 0"), "{refusal}");
     }
 
     #[test]

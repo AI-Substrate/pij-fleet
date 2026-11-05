@@ -50,6 +50,10 @@ pub enum Existing {
     Refuse(Refusal),
     /// Overwrite it.
     Replace,
+    /// Skip this file, writing and checking nothing, when the given
+    /// worktree-relative path (a folder, usually) already exists: adopting a
+    /// hand-written role keeps its own memory and outputs (plan 195, AC13).
+    Skip(PathBuf),
 }
 
 /// A landed write.
@@ -101,6 +105,22 @@ impl CommunityWriter {
         files: Vec<NewFile>,
         message: &str,
     ) -> Result<Written, Refusal> {
+        self.write_with(repo, |_| Ok(files), message)
+    }
+
+    /// [`Self::write`], with the files built from the resolved governance root
+    /// while this worktree's lock is held, so a read-modify-write (a holders
+    /// document gaining a row) cannot interleave with another write. No extra
+    /// launch: the root is resolved once, here.
+    ///
+    /// # Errors
+    /// Whatever `build` refuses with, or any [`Self::write`] refusal.
+    pub fn write_with(
+        &self,
+        repo: &Path,
+        build: impl FnOnce(&GovernanceRoot) -> Result<Vec<NewFile>, Refusal>,
+        message: &str,
+    ) -> Result<Written, Refusal> {
         let root = root::resolve(repo)?;
         let lock = {
             let mut worktrees = self
@@ -110,6 +130,7 @@ impl CommunityWriter {
             Arc::clone(worktrees.entry(root.worktree.clone()).or_default())
         };
         let _serial = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let files = build(&root)?;
         self.write_serialised(root, files, message)
     }
 
@@ -130,6 +151,11 @@ impl CommunityWriter {
                 });
             }
         }
+        // Only paths this write will actually write are checked (AC14).
+        files.retain(|file| match &file.existing {
+            Existing::Skip(guard) => std::fs::symlink_metadata(top.join(guard)).is_err(),
+            _ => true,
+        });
         let mut paths: Vec<PathBuf> = Vec::new();
         for file in &files {
             paths.push(file.path.clone());
@@ -157,11 +183,29 @@ impl CommunityWriter {
                 top.display()
             )));
         }
+        // Every refusal at once, so a batch names each existing role (F11).
+        let mut taken: Vec<&Refusal> = Vec::new();
         for file in &files {
             if let Existing::Refuse(refusal) = &file.existing
                 && std::fs::symlink_metadata(top.join(&file.path)).is_ok()
+                && !taken.contains(&refusal)
             {
-                return Err(refusal.clone());
+                taken.push(refusal);
+            }
+        }
+        match taken.as_slice() {
+            [] => {}
+            [one] => return Err((*one).clone()),
+            many => {
+                return Err(Refusal {
+                    code: many[0].code,
+                    message: many
+                        .iter()
+                        .map(|refusal| refusal.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                    next: many[0].next.clone(),
+                });
             }
         }
 
