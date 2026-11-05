@@ -1,0 +1,167 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "s04 follow-ups: lineage import, batch assign and fixes",
+        "slug": "directory-followups",
+        "ordinal": 206,
+        "complexity": "CS-2",
+        "summary": "Follow-ups from s04's review and the wave B dogfood: record closed seats in lineage, assign many holders in one commit, fix the latent same-second test, and stamp changelog dates with a zone.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "From #122's review (F003) and the dogfood (F13, F15, F16). F14 (ddocs renders <did> in code spans as an entity) is a ddocs issue, out of scope."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Follow-ups from s04's review and the wave B dogfood: record closed seats in lineage, assign many holders in one commit, fix the latent same-second test, and stamp changelog dates with a zone."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "F15, lineage import. `pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>` lets the prime record a closed seat's past holding (no live seat needed), validated against overlaps; refused for anyone but the prime.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "F16, batch assign. `pij directory assign --batch <file>` (role, instance, seat lines) records many holders in one writer commit, all or nothing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "F003, the latent flake. The same-second HTTP test from #122 stops assuming a wall-clock second (inject the clock or drop the precondition) and keeps proving that rapid assign, release and reassign never collide.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "F13, zones. Changelog and holder dates written by the writer carry an explicit zone (RFC 3339 with offset or Z), and the view prints the local time with its zone.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. No timer or poll.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and states. Docs: difficulties.md rows F13, F15, F16 and #122 F003 marked resolved. No roadmap state changes (follow-up work). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00ce",
+          "title": "s04 follow-ups: lineage import, batch assign and fixes",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: crates/daemon/src/community/ (holders, directory), crates/daemon/tests/pr122_review/, the dogfood report (governance roles/docs-system/outputs/2026-11/wave-b-dogfood.md). No migration expected."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
