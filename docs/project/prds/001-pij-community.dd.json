@@ -231,18 +231,18 @@
 					"statement": "pij ships role templates, each with a version. `pij directory add <id> --from template:<name>` copies one onto the governance branch, where it is edited freely; `--from file:<brief>` makes a role from a project's own brief, referenced rather than copied. When a template moves ahead, `pij directory` shows the difference and never applies it automatically. Templates are written fresh for the public repo.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A role taken from template v1 shows a diff after the template moves to v2, and its local edits are untouched.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-14",
 					"title": "Core roles and the security reminder",
-					"statement": "Creating a directory creates the core roles: prime, pm, pa, coder, reviewer. pij prompts the prime until a security role exists. Optional templates include devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer and transcriber.",
+					"statement": "A new directory prompts the prime for the core roles (prime, pm, pa, coder, reviewer) and for security until each exists, each with a runnable command to start it from a template; nothing is created automatically (ruling C22). Optional templates include devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer and transcriber.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
-					"done_when": "A new directory lists the five core roles and a security prompt; adding `security` clears the prompt.",
+					"state": "shipped",
+					"done_when": "A new directory lists prompts for the five core roles and for security, each with a runnable `pij directory add` line, and creates nothing; adding `security` clears its prompt.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
@@ -372,7 +372,7 @@
 					"statement": "A community's roles are discovered from what its work needs. Role templates are examples, not a checklist: the `/pij community` route and the prime's prompts say so, and the prime is prompted to notice a need no role covers and create a role for it, which may look nothing like any template.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "The `/pij community` route and the prime's prompts state that templates are examples; with a roadmap need that no role or template covers, the prime is prompted to create a role for it, and the new role validates without coming from a template.",
 					"note": "Delivered across s03 (templates), s09 (prime prompts) and s10 (the route).",
 					"source": "ruling C18"
@@ -481,6 +481,11 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 195: req-26's note records the window naming shipped on assign; the --id refusal is still open, so it stays in-progress."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-following-marsupial",
+					"change": "Plan 194: req-14 reworded per ruling C22, from creating the core roles to prompting for them and for security until each exists, creating nothing. req-13 and req-14 shipped; req-27 in-progress (the s03 wording; s09 and s10 to come)."
 				}
 			]
 		}

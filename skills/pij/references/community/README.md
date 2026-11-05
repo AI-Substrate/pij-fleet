@@ -48,4 +48,4 @@ Example: `"delivers": ["../prds/001-daily-digest.dd.json#requirements/req-01"]`.
 
 ## Role documents
 
-Roles under `<government-root>/community/roles/` are written only by `pij directory add`, which adds the changelog row and runs `ddocs validate` and `ddocs build` itself. Don't pre-validate a role document with ddocs: `pij/role` requires a `changelog` section that only the writer adds, so a hand check always fails on it.
+Roles under `<government-root>/community/roles/` are written only by `pij directory add`, which adds the changelog row and runs `ddocs validate` and `ddocs build` itself. Start a role from a template with `pij directory add <id> --from template:<name>` when one fits (`pij directory templates` lists them), or from your own brief with `--from file:<brief>`. Templates are examples, not a checklist (Pij Emergent Communities, PEC): build the roles the work needs now, which may look nothing like any template, and reshape them as the work changes. Don't pre-validate a role document with ddocs: `pij/role` requires a `changelog` section that only the writer adds, so a hand check always fails on it.
