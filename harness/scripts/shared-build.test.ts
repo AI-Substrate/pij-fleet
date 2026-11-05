@@ -2,6 +2,7 @@ import { type SpawnOptions, spawn, spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -114,9 +115,11 @@ interface Run {
 	stderr: string;
 }
 
-function start(f: Fixture, args: string[], env: NodeJS.ProcessEnv = {}) {
+function start(f: Fixture, args: string[], env: NodeJS.ProcessEnv = {}, umask?: string) {
 	const options: SpawnOptions = { cwd: f.worktree, env: { ...f.env, ...env } };
-	const child = spawn("bash", [SCRIPT, ...args], options);
+	const child = umask
+		? spawn("sh", ["-c", `umask ${umask} && exec bash "$0" "$@"`, SCRIPT, ...args], options)
+		: spawn("bash", [SCRIPT, ...args], options);
 	let stderr = "";
 	child.stderr?.on("data", (chunk: Buffer) => {
 		stderr += chunk.toString();
@@ -313,6 +316,37 @@ describe("just shared-build", () => {
 			"end second",
 		]);
 		expect(existsSync(join(f.target, ".lock"))).toBe(false);
+	});
+
+	it("under a permissive umask (002) the lock is private: 0700 while held", async () => {
+		const f = fixture();
+		const held = start(f, ["--", "first"], { NAP: "1.5" }, "002");
+		await until(() => log(f).some((line) => line.startsWith("start first")));
+		expect(statSync(f.lock).mode & 0o777).toBe(0o700);
+		expect((await held.done).code).toBe(0);
+		expect(existsSync(f.lock)).toBe(false);
+	});
+
+	it("refuses an owner path planted after the lock is made, and never follows it", async () => {
+		const f = fixture();
+		const victim = join(f.root, "victim");
+		writeFileSync(victim, "keep\n");
+		const plant = join(f.root, "planting-mkdir");
+		executable(
+			plant,
+			[
+				'/bin/mkdir "$@" || exit $?',
+				"for last; do :; done",
+				`ln -s "${victim}" "$last/owner"`,
+			].join("\n"),
+		);
+		const result = await start(f, ["--", "build"], { PIJ_SHARED_BUILD_MKDIR: plant }, "002").done;
+		expect(result.code).toBe(2);
+		expect(result.stderr).toContain(`something already sits at ${f.lock}/owner; no cargo run`);
+		expect(readFileSync(victim, "utf8")).toBe("keep\n");
+		expect(lstatSync(victim).isFile()).toBe(true);
+		expect(log(f)).toEqual([]);
+		expect(existsSync(f.lock)).toBe(false);
 	});
 
 	it("reports a dead owner's lock as stale with the clear command, and never clears it", async () => {

@@ -27,6 +27,7 @@
 set -uo pipefail
 
 DF="${PIJ_SHARED_BUILD_DF:-/bin/df}"         # test seam
+MKDIR="${PIJ_SHARED_BUILD_MKDIR:-/bin/mkdir}" # test seam
 POLL="${PIJ_SHARED_BUILD_POLL_SECONDS:-20}"  # test seam
 FLOOR_GB="${PIJ_DISK_FLOOR_GB:-25}"
 
@@ -220,17 +221,21 @@ check_floor() {
 # A target that does not exist yet may not have a parent either.
 /bin/mkdir -p "${lock%/*}" || refuse 2 "could not create the directory for $lock"
 
+# The lock is created 0700 in the mkdir itself, never chmod-ed afterwards: under
+# a permissive umask (002) a group-writable lock would let another user plant
+# a symlink at the owner file before it is written. Other users still wait on
+# it; they just cannot read its owner line.
 announced=0
 while :; do
 	check_floor
-	if /bin/mkdir "$lock" 2>/dev/null; then
+	if "$MKDIR" -m 0700 "$lock" 2>/dev/null; then
 		held=1
 		break
 	fi
 	# A failed mkdir that left no lock is not a holder. The holder may have
 	# released between the two calls, so try once more before refusing.
 	if [ ! -d "$lock" ]; then
-		if /bin/mkdir "$lock" 2>/dev/null; then
+		if "$MKDIR" -m 0700 "$lock" 2>/dev/null; then
 			held=1
 			break
 		fi
@@ -251,7 +256,14 @@ while :; do
 	/bin/sleep "$POLL"
 done
 
-printf 'seat=%s pid=%s worktree=%s started=%s\n' "$seat" "$$" "$worktree" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$lock/owner"
+# Never follow or overwrite whatever sits at the owner path: anything there
+# already was not written by this hold. noclobber makes the create exclusive.
+owner_line="seat=$seat pid=$$ worktree=$worktree started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+if [ -e "$lock/owner" ] || [ -L "$lock/owner" ] ||
+	! (set -o noclobber && printf '%s\n' "$owner_line" >"$lock/owner") 2>/dev/null; then
+	release
+	refuse 2 "could not write the owner line in $lock: something already sits at $lock/owner; no cargo run"
+fi
 
 # The other tree's artifacts carry newer mtimes than this tree's sources; touch
 # them so cargo rebuilds what this worktree actually holds.
