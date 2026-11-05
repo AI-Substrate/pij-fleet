@@ -25,6 +25,16 @@
 					"seat": "pij-interior-jellyfish",
 					"to": "2026-11-05T23:23:43.005Z",
 					"why": "record the live holder (06 Nov roadmap push)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-05T23:50:25.403Z",
+					"harness": "copilot",
+					"harness_session": "235e5da8-b7fc-4331-b348-01c70ad05c95",
+					"instance_key": "126",
+					"machine": "ops.osk.lan",
+					"seat": "pij-subsequent-reindeer",
+					"why": "reviewer for PR #126 (s03)"
 				}
 			]
 		}
