@@ -32,6 +32,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-following-marsupial",
 					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-05T23:17:59.982Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "199",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "record the live holder (06 Nov roadmap push)"
 				}
 			]
 		}
