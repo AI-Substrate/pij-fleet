@@ -62,6 +62,18 @@
 					"why": "reviewed #114 LOG:50,76"
 				},
 				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-04T00:00:00.000Z",
+					"harness": "unknown",
+					"instance_key": "116",
+					"machine": "unknown",
+					"release_why": "lineage add",
+					"released_by": "pij-far-jackal",
+					"seat": "pij-estimated-chinchilla",
+					"to": "2026-11-05T00:00:00.000Z",
+					"why": "reviewed #116 LOG:61"
+				},
+				{
 					"assigned_by": "pij-steady-otter",
 					"from": "2026-11-05T23:18:02.571Z",
 					"harness": "copilot",
