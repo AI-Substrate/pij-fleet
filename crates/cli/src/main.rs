@@ -2548,6 +2548,11 @@ async fn run_daemon(
             if let Err(error) = statusline_script {
                 eprintln!("pij-rs claude statusline: {error}");
             }
+            // Installed before the readiness line, not on the first poll of
+            // ctrl_c(): a SIGINT sent as soon as "listening on" appears must
+            // shut down cleanly rather than take the default action (F27).
+            let interrupt =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
             println!(
                 "pij-rs daemon: listening on {} · key {} (0600) · offline={} · paired with {}",
                 daemon.addr,
@@ -2585,7 +2590,12 @@ async fn run_daemon(
                     daemon.addr
                 ),
             }
-            let _ = tokio::signal::ctrl_c().await;
+            match interrupt {
+                Ok(mut interrupt) => {
+                    interrupt.recv().await;
+                }
+                Err(error) => eprintln!("pij-rs: could not install the interrupt handler: {error}"),
+            }
             println!("pij-rs daemon: shutting down");
             match daemon.shutdown().await {
                 Ok(()) => ExitCode::SUCCESS,
