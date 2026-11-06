@@ -19,7 +19,7 @@
     },
     {
       "name": "summary",
-      "value": "Delivers req-12, req-24 and the s09 part of req-27; req-14's prompts landed in s03. Depends on s05 (waiting requests), s06 (latest outputs) and s07 (memory freshness). Wording is PEC (C26): the prime and humans build whatever community the work needs now and reshape it as the work changes; templates are examples (C18)."
+      "value": "Delivers req-12, req-24 and the s09 part of req-27; req-14's prompts landed in s03. Depends on s05 (waiting requests), s06 (latest outputs) and s07 (memory freshness). Wording is PEC (C26): the prime and humans build whatever community the work needs now and reshape it as the work changes; templates are examples (C18). Ruling C28 (Jordan, 06 Nov) adds how the prime is prompted to grow a PEC: signals for and against a role, a role is not a seat, boundary reviews, and every recommendation naming its signal (ac-0008, req-29)."
     },
     {
       "name": "goals",
@@ -73,8 +73,14 @@
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
         },
         {
+          "id": "ac-0008",
+          "claim": "Growing a PEC (ruling C28, req-29). The prime's prompts teach C28 and make every recommendation name its signal. Signals for a new role: the same system or paths recurring; a finding re-derived; a judgment that must be independent of the author; a seat carrying two domains; a path needing one owner. Signals against: one-off work; overlap with an existing role (extend it instead); nothing worth remembering; mostly idle. A role is not a seat: many cold roles, few live seats. At boundaries (wave end, compact, PR merge), prompt boundary reviews: split overloaded roles, merge or retire idle ones (s15 verbs). Templates stay examples. Each prompt that recommends creating, splitting, merging or retiring a role prints the signal it rests on, and none fires without one.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
           "id": "ac-0007",
-          "claim": "Docs and states. In this PR: roadmap s09 goes to complete (plan cell docs/plans/203-prime-prompts); req-12 and req-24 go to shipped; req-27 goes to in-progress (s10 finishes it); c-orient goes to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "claim": "Docs and states. In this PR: roadmap s09 goes to complete (plan cell docs/plans/203-prime-prompts); req-12 and req-24 go to shipped; req-29 is added to PRD 001 (C28: role recommendations name their signal; a role is not a seat; boundary reviews) and goes to in-progress (s10 finishes it); req-27 goes to in-progress (s10 finishes it); c-orient goes to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007"
         }

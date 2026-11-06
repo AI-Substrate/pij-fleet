@@ -84,6 +84,16 @@
           "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
           "state": "unchecked",
           "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: in a test project, each C28 condition (a recurring path with no owner, an idle role, an overloaded role, a step need) yields a prompt that names its signal; a prompt with no signal is impossible (the type requires it); the wording carries 'a role is not a seat' and says templates are examples. Docs-system verdict on the wording.",
+          "state": "unchecked",
+          "probe": "crates/"
         }
       ]
     },
