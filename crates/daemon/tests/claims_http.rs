@@ -26,6 +26,7 @@ const HOLDER: (&str, &str) = ("pij-test-holder", "%44");
 
 const PRD: &str = "docs/project/prds/001-demo.dd.json";
 const ROADMAP: &str = "docs/project/roadmaps/001-demo.dd.json";
+const WORKSTREAM: &str = "docs/project/workstreams/001-demo.dd.json";
 
 /// Answers from a fixed set of PRs and counts its calls.
 #[derive(Default)]
@@ -442,9 +443,21 @@ async fn delivered_posts_on_the_live_pm_holder_and_without_one_says_nobody_was_t
                 &format!("Delivers: {PRD}#requirements/req-21"),
                 &FILES,
             ),
+            pr(
+                142,
+                "MERGED",
+                &format!("Delivers: {WORKSTREAM}#steps/s02"),
+                &FILES,
+            ),
         ],
     )
     .await;
+    std::fs::create_dir_all(rig.main.join("docs/project/workstreams")).unwrap();
+    std::fs::write(
+        rig.main.join(WORKSTREAM),
+        document(json!([{"name": "steps", "value": [{"id": "s02"}]}])),
+    )
+    .unwrap();
     rig.store
         .record_assignment_committed(
             &pij_store::Assignment {
@@ -481,7 +494,14 @@ async fn delivered_posts_on_the_live_pm_holder_and_without_one_says_nobody_was_t
     );
     assert_eq!(rig.card(HOLDER.0).await["data"]["deliveries"][0]["pr"], 140);
 
-    // req-21 alone names no roadmap step, so no holder applies and no --pm was given.
+    // C29: a step in the renamed folder finds the same pm-001 holder.
+    let renamed = rig
+        .call(OTHER, "/v1/delivered", &["delivered", "142"])
+        .await;
+    assert_eq!(renamed["data"]["pm"], HOLDER.0, "{renamed}");
+    assert_eq!(renamed["data"]["pm_source"], "holder");
+
+    // req-21 alone names no workstream step, so no holder applies and no --pm was given.
     let untold = rig
         .call(OTHER, "/v1/delivered", &["delivered", "141"])
         .await;
@@ -494,6 +514,47 @@ async fn delivered_posts_on_the_live_pm_holder_and_without_one_says_nobody_was_t
             .contains("no PM was told"),
         "{untold}"
     );
+}
+
+/// Ruling C29: roadmaps become workstreams. `workstream` and its old name
+/// `roadmap` claim from one counter and scan both folders, so a number is
+/// never handed out twice under the two names.
+#[tokio::test]
+async fn workstream_and_roadmap_claim_one_sequence_across_both_folders() {
+    let rig = rig("pij-claims-workstream", Vec::new()).await;
+    let claim = |kind: &'static str| {
+        let rig = &rig;
+        async move {
+            rig.call(CODER, "/v1/claim", &["claim", kind, "--for", "w"])
+                .await
+        }
+    };
+    let first = claim("workstream").await;
+    assert_eq!(
+        first["data"]["formatted"], "002",
+        "past roadmaps/001: {first}"
+    );
+    assert_eq!(first["data"]["kind"], "workstream");
+    let alias = claim("roadmap").await;
+    assert_eq!(alias["data"]["formatted"], "003", "{alias}");
+    assert_eq!(alias["data"]["kind"], "workstream");
+    assert!(
+        alias["data"]["line"]
+            .as_str()
+            .unwrap()
+            .contains("roadmap is workstream's old name"),
+        "{alias}"
+    );
+
+    let renamed = rig.main.join("docs/project/workstreams");
+    std::fs::create_dir_all(&renamed).unwrap();
+    std::fs::write(renamed.join("007-later.dd.json"), "").unwrap();
+    let past_renamed = claim("roadmap").await;
+    assert_eq!(past_renamed["data"]["formatted"], "008", "{past_renamed}");
+    let released = rig
+        .call(CODER, "/v1/claim", &["claim", "release", "roadmap", "8"])
+        .await;
+    assert_eq!(released["data"]["kind"], "workstream", "{released}");
 }
 
 // Review of #131 (pij-pleased-marmot): the four regression candidates from

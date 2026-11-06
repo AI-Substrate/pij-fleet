@@ -162,6 +162,8 @@ async fn claim(
             ),
         ));
     }
+    let typed = kind.as_str();
+    let kind = claims::canonical(typed);
     let subject = call.get("for").ok_or_else(|| {
         Refusal::new(
             "E-RS-ARG",
@@ -179,7 +181,10 @@ async fn claim(
         .await
         .map_err(store_refusal)?;
     let formatted = claims::format(kind, claim.number);
-    let line = format!("{kind} {formatted} claimed by {actor} for {subject:?} in {project}");
+    let mut line = format!("{kind} {formatted} claimed by {actor} for {subject:?} in {project}");
+    if typed != kind {
+        line.push_str(&format!(" ({typed} is {kind}'s old name)"));
+    }
     let mut data = serde_json::to_value(&claim).expect("a claim serialises");
     data["formatted"] = json!(formatted);
     data["floor"] = json!(floor);
@@ -198,6 +203,7 @@ async fn release(
     let [kind, number] = call.positions.as_slice() else {
         return Err(Refusal::new("E-RS-ARG", format!("usage: {usage}")));
     };
+    let kind = claims::canonical(kind);
     let number: u64 = number
         .parse()
         .map_err(|_| Refusal::new("E-RS-ARG", format!("{number:?} is not a number")))?;
@@ -213,7 +219,7 @@ async fn release(
         .release_claim(
             &ClaimKey {
                 project: project.clone(),
-                kind: kind.clone(),
+                kind: kind.to_string(),
                 number,
             },
             actor,
@@ -342,7 +348,7 @@ async fn delivered(
         && flag != told.as_str()
     {
         notes.push(format!(
-            "--pm {flag} not used: {told} holds the PM role for this roadmap"
+            "--pm {flag} not used: {told} holds the PM role for this workstream"
         ));
     }
     let releases: Vec<(String, u64)> =
@@ -387,7 +393,7 @@ async fn delivered(
         match (replay, &told_pm) {
             (false, Some(pm)) => format!("posted on {pm}'s card"),
             (false, None) => {
-                "no PM was told: no live pm holder for this roadmap and no --pm".to_string()
+                "no PM was told: no live pm holder for this workstream and no --pm".to_string()
             }
             (true, Some(pm)) => format!("already recorded; {pm}'s card was told the first time"),
             (true, None) => "already recorded; no PM was told the first time".to_string(),
@@ -434,8 +440,9 @@ async fn delivered(
     }))
 }
 
-/// The live holder of the project's `pm-<roadmap>` role for the roadmaps the
-/// addresses' steps belong to, when exactly one seat holds them.
+/// The live holder of the project's `pm-<workstream>` role for the workstreams
+/// (or roadmaps, their old name) the addresses' steps belong to, when exactly
+/// one seat holds them.
 async fn holder_pm(
     state: &AppState,
     project: &str,
@@ -443,8 +450,8 @@ async fn holder_pm(
 ) -> Result<Option<SeatId>, Refusal> {
     let roles: BTreeSet<String> = addresses
         .iter()
-        .filter_map(Address::roadmap)
-        .map(|roadmap| format!("pm-{}", claims::format("roadmap", roadmap)))
+        .filter_map(Address::workstream)
+        .map(|workstream| format!("pm-{}", claims::format("workstream", workstream)))
         .collect();
     if roles.is_empty() {
         return Ok(None);

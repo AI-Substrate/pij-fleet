@@ -1022,12 +1022,15 @@ writer commit as any add. No loop or timer.
 
 `pij claim <kind> --for <subject>` hands out the next number for the project and
 kind and records it with the calling seat, the subject and the time (migration
-0033). Kinds `plan`, `prd`, `roadmap`, `blueprint` and `workshop` are three
+0033). Kinds `plan`, `prd`, `workstream`, `blueprint` and `workshop` are three
 digits, `migration` four, and any other lowercase kind (letters, digits and `-`,
-starting with a letter; not `release`) three. The number is one more than the
+starting with a letter; not `release`) three. `roadmap` is `workstream`'s old
+name (ruling C29): it claims, releases and records as `workstream`, from one
+sequence, scanning `docs/project/workstreams` and `docs/project/roadmaps`
+alike, so a number is never handed out under both names. The number is one more than the
 highest of every claim for that kind, open or released, and the highest already
 in the project's main checkout: `docs/plans/NNN-*` and `docs/plans/archive/NNN-*`,
-`docs/project/{prds,roadmaps,blueprints,workshops}/NNN-*`, and
+`docs/project/{prds,workstreams,roadmaps,blueprints,workshops}/NNN-*`, and
 `crates/store/migrations/NNNN_*`, read in-process. Each claim is one
 `BEGIN IMMEDIATE` transaction over a unique (project, kind, number) key, so
 concurrent claims get distinct consecutive numbers and projects never interact.
@@ -1055,7 +1058,8 @@ separated by commas or spaces, or `none`. It records (project, PR, address,
 merge commit, recorded by, time, PM) once per address; a re-run records nothing
 new and appends no event. When it records anything it appends one `delivered`
 event whose seat is the PM. The PM is the live holder of the project's
-`pm-<roadmap number>` role for the roadmaps the step addresses belong to, else
+`pm-<workstream number>` role for the workstreams the step addresses belong to
+(`docs/project/workstreams/NNN-*#steps/...`, or the old `roadmaps` folder), else
 the live seat given by `--pm`; with neither, `data.pm` is `null` and the line
 says no PM was told. `data.pm` is the card actually told: on a replay that
 records nothing new it is the PM the first call told (`earlier_pm`), never a

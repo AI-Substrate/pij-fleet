@@ -13,14 +13,28 @@ use serde_json::Value;
 
 /// Kinds pij knows, with their digit widths. Any other lowercase kind is
 /// accepted with [`DEFAULT_WIDTH`] and has no folder to scan.
-pub const KNOWN_KINDS: [(&str, usize); 6] = [
+pub const KNOWN_KINDS: [(&str, usize); 7] = [
     ("plan", 3),
     ("prd", 3),
+    ("workstream", 3),
     ("roadmap", 3),
     ("blueprint", 3),
     ("workshop", 3),
     ("migration", 4),
 ];
+
+/// Old kind names and the kind each now names (ruling C29: roadmaps become
+/// workstreams). An alias claims, releases and scans as its kind, so one
+/// number is never handed out under both names.
+pub const KIND_ALIASES: [(&str, &str); 1] = [("roadmap", "workstream")];
+
+/// The kind `kind` names: itself, or what its old name now names.
+pub fn canonical(kind: &str) -> &str {
+    KIND_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == kind)
+        .map_or(kind, |(_, current)| *current)
+}
 
 /// The width of a kind pij does not know.
 pub const DEFAULT_WIDTH: usize = 3;
@@ -42,15 +56,17 @@ Usage:
   pij claims [--project <slug>] [--open]                    open and released claims
   pij delivered <pr> [--pm <seat>] [--project <slug>]       record what a merged PR delivered
 
-Kinds: plan, prd, roadmap, blueprint and workshop are three digits; migration is
-four; any other lowercase kind is three. The next number is one past the highest
+Kinds: plan, prd, workstream, blueprint and workshop are three digits; migration
+is four; any other lowercase kind is three. roadmap is workstream's old name: it
+claims the same numbers, scanning docs/project/workstreams and
+docs/project/roadmaps alike. The next number is one past the highest
 claimed (open or released) and the highest already in the project's main
 checkout. A claim is released when its seat closes, when `pij delivered` sees
 its number in a merged PR's files, or by its seat or the prime.
 
 `pij delivered` is run once by whoever merges (ruling C23). It reads the PR with
 gh, takes the addresses from the body's `Delivers:` line, records them, posts on
-the PM's card (the live pm-<roadmap> holder, else --pm) and PRINTS the
+the PM's card (the live pm-<workstream> holder, else --pm) and PRINTS the
 `ddocs set` edits for the PM's next docs PR. It changes no file and pushes nothing.
 
 The project is --project, else the one whose repository holds your directory.
@@ -82,10 +98,10 @@ pub fn format(kind: &str, number: u64) -> String {
 /// Folders, relative to a project's main checkout, whose entries carry
 /// `kind`'s numbers. Empty for a kind pij does not know.
 pub fn folders(kind: &str) -> &'static [&'static str] {
-    match kind {
+    match canonical(kind) {
         "plan" => &["docs/plans", "docs/plans/archive"],
         "prd" => &["docs/project/prds"],
-        "roadmap" => &["docs/project/roadmaps"],
+        "workstream" => &["docs/project/workstreams", "docs/project/roadmaps"],
         "blueprint" => &["docs/project/blueprints"],
         "workshop" => &["docs/project/workshops"],
         "migration" => &["crates/store/migrations"],
@@ -114,6 +130,9 @@ pub fn numbers_in_paths<'a>(paths: impl IntoIterator<Item = &'a str>) -> BTreeSe
     let mut found = BTreeSet::new();
     for path in paths {
         for (kind, _) in KNOWN_KINDS {
+            if canonical(kind) != kind {
+                continue;
+            }
             for folder in folders(kind) {
                 let Some(rest) = path
                     .strip_prefix(folder)
@@ -182,11 +201,14 @@ impl Address {
         })
     }
 
-    /// The roadmap number when this is a step of `docs/project/roadmaps/NNN-*`.
-    pub fn roadmap(&self) -> Option<u64> {
-        let name = self.path.strip_prefix("docs/project/roadmaps/")?;
+    /// The workstream number when this is a step of
+    /// `docs/project/workstreams/NNN-*` (or its old folder, `roadmaps`).
+    pub fn workstream(&self) -> Option<u64> {
+        let name = folders("workstream")
+            .iter()
+            .find_map(|folder| self.path.strip_prefix(*folder)?.strip_prefix('/'))?;
         (self.section == "steps" && !name.contains('/'))
-            .then(|| number_in_name("roadmap", name))
+            .then(|| number_in_name("workstream", name))
             .flatten()
     }
 }
@@ -379,6 +401,8 @@ mod tests {
             "docs/plans/archive/150-old/plan.dd.json",
             "crates/store/migrations/0033_claims.sql",
             "docs/project/prds/002-pij-base.dd.json",
+            "docs/project/roadmaps/001-pij-community.dd.json",
+            "docs/project/workstreams/002-next.dd.json",
             "docs/plans/README.md",
             "crates/store/src/lib.rs",
         ];
@@ -390,6 +414,8 @@ mod tests {
                 ("plan".to_string(), 150),
                 ("plan".to_string(), 196),
                 ("prd".to_string(), 2),
+                ("workstream".to_string(), 1),
+                ("workstream".to_string(), 2),
             ]
         );
         assert_eq!(
@@ -409,8 +435,14 @@ mod tests {
             addresses[0].to_string(),
             "docs/project/prds/001-pij-community.dd.json#requirements/req-20"
         );
-        assert_eq!(addresses[1].roadmap(), Some(1));
-        assert_eq!(addresses[0].roadmap(), None);
+        assert_eq!(addresses[1].workstream(), Some(1));
+        assert_eq!(addresses[0].workstream(), None);
+        let renamed = Address::parse("docs/project/workstreams/003-x.dd.json#steps/s01").unwrap();
+        assert_eq!(renamed.workstream(), Some(3));
+        assert_eq!(
+            (canonical("roadmap"), canonical("plan")),
+            ("workstream", "plan")
+        );
         assert_eq!(delivers("no line here"), Err(DeliversError::Missing));
         assert_eq!(delivers("Delivers:   \n"), Err(DeliversError::Missing));
         assert_eq!(delivers("Delivers: none"), Ok(Vec::new()));
