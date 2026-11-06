@@ -508,7 +508,7 @@ async fn review_unreadable_checkout_refuses_without_allocating_a_number() {
     let plans = rig.main.join("docs/plans");
     std::fs::create_dir_all(plans.join("001-existing")).unwrap();
     let permissions = std::fs::metadata(&plans).unwrap().permissions();
-    std::fs::set_permissions(&plans, std::fs::Permissions::from_mode(0)).unwrap();
+    std::fs::set_permissions(&plans, std::fs::Permissions::from_mode(0o000)).unwrap();
     let inaccessible = std::fs::read_dir(&plans).is_err();
     let result = rig
         .call(
@@ -543,7 +543,7 @@ async fn review_unreadable_delivered_by_does_not_offer_an_overwriting_edit() {
     .await;
     let path = rig.main.join(PRD);
     let permissions = std::fs::metadata(&path).unwrap().permissions();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0)).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
     let inaccessible = std::fs::read_to_string(&path).is_err();
     let result = rig
         .call(OTHER, "/v1/delivered", &["delivered", "150"])
