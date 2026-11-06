@@ -2,6 +2,8 @@
 
 These support **Pij Emergent Communities (PEC)** (ruling C26): the prime and the humans build whatever community the work needs now, and reshape it as the work changes, adding, merging or retiring roles as needs shift. The templates are examples of `pij/role` documents to adapt, **not a checklist** (ruling C18). Start from a template when one fits, change it to fit, and write a new role from scratch when no template does. Several of your roles may look nothing like these.
 
+A PEC exists to build lasting knowledge of its problem space (ruling C30). Specialist roles hold what the fleet learns, in role memory and outputs that outlive any seat, so a role can be called on later: revived, or taken by a fresh seat that reads it. Long-running specialists are a feature, not a cost. Nothing here is engineering-specific: a design workshop, a research effort or an operations team grows its roles the same way, and "this would be worth remembering" is a reason to add one (C28).
+
 | Template | Kind | Holders | What it's for |
 |---|---|---|---|
 | [prime](prime/v1/role.dd.json) | general | one | Leads the community: the directory, rulings, routing, merges. |
