@@ -31,3 +31,4 @@
 | — | pij-local-warbler | copilot | 92c00825-7025-4673-b7d6-8c3fb82fad45 | ops.osk.lan | 209 | 2026-11-06T03:32:27.640Z | — | pij-steady-otter | — | plan 209 fleet follow-ups | — |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | 211 | 2026-11-06T08:05:50.616Z | — | pij-steady-otter | — | plan 211 registration attempts (#145) | — |
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 213 | 2026-11-06T08:44:43.213Z | — | pij-steady-otter | — | plan 213 shim forwards community verbs (prime 18:43) | — |
+| — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | 212 | 2026-11-06T10:24:19.295Z | — | pij-steady-otter | — | plan 212 role send follow-ups | — |
