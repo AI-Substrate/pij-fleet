@@ -137,6 +137,22 @@ impl DirectoryService {
         self
     }
 
+    /// The same service with no after-assign hook, for a hook that needs the
+    /// services itself: holding this copy instead of the real directory keeps
+    /// the services free of a reference cycle, so a stopped daemon's services
+    /// drop.
+    #[must_use]
+    pub fn without_hook(&self) -> Self {
+        Self {
+            writer: Arc::clone(&self.writer),
+            store: self.store.clone(),
+            event_bus: Arc::clone(&self.event_bus),
+            hook: Arc::new(NoHook),
+            tmux: Arc::clone(&self.tmux),
+            templates: self.templates.clone(),
+        }
+    }
+
     /// The role templates this service copies from and compares against.
     pub fn templates(&self) -> &Catalog {
         &self.templates

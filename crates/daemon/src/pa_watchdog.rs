@@ -258,11 +258,12 @@ async fn audit(
 }
 
 /// The send guard's own verdict for `seat` now. When it is cold, the wake
-/// about to happen is recorded exactly like a forced `pij send`, before it is
-/// sent. Returns the receipt's `cold_check` label.
-async fn audit_cold_wake(
+/// about to happen is recorded exactly like a forced `pij send` from `from`,
+/// before it is sent. Returns the receipt's `cold_check` label.
+pub(crate) async fn audit_cold_wake(
     services: &Services,
     seat: &SeatDescriptor,
+    from: &str,
     msg_id: &str,
     reason: &str,
     now_ms: u64,
@@ -285,7 +286,7 @@ async fn audit_cold_wake(
                 kind: COLD_WAKE_FORCED_KIND.to_string(),
                 seat: Some(seat.id.clone()),
                 payload: json!({
-                    "from": BG_ACTOR,
+                    "from": from,
                     "from_machine": null,
                     "msg_id": msg_id,
                     "reason": reason,
@@ -325,7 +326,7 @@ pub(crate) async fn wake_pa(
     reason: &str,
     now_ms: u64,
 ) -> (String, String) {
-    match audit_cold_wake(services, pa, &msg_id, reason, now_ms).await {
+    match audit_cold_wake(services, pa, BG_ACTOR, &msg_id, reason, now_ms).await {
         Ok(cold_check) => match services.delivery.accept(bg_msg(&pa.id, body, msg_id)).await {
             Ok(receipt) => (outcome_word(&receipt.outcome).to_string(), cold_check),
             Err(cause) => (format!("error: {cause}"), cold_check),
@@ -670,7 +671,15 @@ impl PaWatchdog {
                     let local = pij_harnesses::local_clock_text(*resets_at, None)
                         .unwrap_or_else(|| format!("{resets_at} UTC epoch"));
                     let body = wake_body(&stop.limit_type, *resets_at, &local, &stop.seats, late);
-                    match audit_cold_wake(services, seat, &msg_id, LIMIT_RESET_REASON, now_ms).await
+                    match audit_cold_wake(
+                        services,
+                        seat,
+                        BG_ACTOR,
+                        &msg_id,
+                        LIMIT_RESET_REASON,
+                        now_ms,
+                    )
+                    .await
                     {
                         Ok(cold_check) => {
                             let delivery = match services

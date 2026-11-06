@@ -191,11 +191,9 @@ async fn rig_inner(
     services.community = Arc::clone(&writer);
     let tmux = Arc::new(FakeTmux::new());
     services.tmux = tmux.clone();
+    let drain = hook.is_none().then(|| Arc::new(RoleQueueDrain::new()));
     let hook = hook.unwrap_or_else(|| {
-        Arc::new(RoleQueueDrain::new(
-            store.clone(),
-            Arc::clone(&services.delivery),
-        ))
+        Arc::clone(drain.as_ref().expect("no hook given")) as Arc<dyn AfterAssign>
     });
     let delivery = Arc::clone(&services.delivery);
     services.directory = Arc::new(
@@ -219,6 +217,9 @@ async fn rig_inner(
         services.registry.put(seat).await.expect("seed seat");
     }
     let roles = Arc::clone(&services.roles);
+    if let Some(drain) = drain {
+        drain.bind(services.clone());
+    }
     let kept = services.clone();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -2019,26 +2020,14 @@ async fn review_overlapping_assign_drains_must_deliver_an_unscoped_request_once(
         )
         .unwrap(),
     );
+    let mut gated = rig.services.clone();
+    gated.delivery = delivery;
     let first_seat = SeatId::from("pij-holder");
     let second_seat = SeatId::from("pij-second");
     let drained = tokio::time::timeout(std::time::Duration::from_secs(30), async {
         tokio::join!(
-            pij_daemon::delivery::role_send::drain(
-                &rig.store,
-                &delivery,
-                "fleet",
-                "reviewer",
-                "a",
-                &first_seat
-            ),
-            pij_daemon::delivery::role_send::drain(
-                &rig.store,
-                &delivery,
-                "fleet",
-                "reviewer",
-                "b",
-                &second_seat
-            )
+            pij_daemon::delivery::role_send::drain(&gated, "fleet", "reviewer", "a", &first_seat),
+            pij_daemon::delivery::role_send::drain(&gated, "fleet", "reviewer", "b", &second_seat)
         )
     })
     .await
@@ -2068,4 +2057,154 @@ async fn review_overlapping_assign_drains_must_deliver_an_unscoped_request_once(
         Some(winner),
         "the row names the holder that got it"
     );
+}
+
+/// Security review of #129 (pij-wary-lynx). S1: a drain scheduled for A that
+/// runs after A's release must not consume a request queued after it; it stays
+/// queued for the next holder, who gets it once. S2: a drained wake to a cold
+/// holder gets the audited treatment an immediate send gets, recorded before
+/// the delivery.
+#[tokio::test]
+async fn security_a_released_holder_never_drains_and_a_cold_drain_is_audited() {
+    use pij_core::session_status::{Fact, SeatStatus, SessionStatusReply};
+    use pij_daemon::delivery::role_send::{DRAIN_WAKE_REASON, drain};
+    use pij_testkit::fakes::FakeSessionStatus;
+
+    let repo = repo("pij-security-role-drain");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    for argv in [
+        [
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "lead",
+        ],
+        [
+            "directory",
+            "release",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "done",
+        ],
+    ] {
+        let done = call(rig.addr, "/v1/directory", &argv, &repo.main).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let queued = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "after-release",
+        json!({}),
+    )
+    .await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+
+    let old = SeatId::from("pij-holder");
+    let stale = drain(&rig.services, "fleet", "pm-001", "", &old).await;
+    assert!(stale.is_empty(), "the released holder claimed: {stale:?}");
+    let row = rig
+        .store
+        .role_request("after-release")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(
+        (row.state, row.holder),
+        (pij_store::RequestState::Queued, None),
+        "a stale drain leaves the request queued"
+    );
+    assert!(
+        !inbox_bodies(&rig, "pij-holder")
+            .await
+            .iter()
+            .any(|body| body.contains("after-release")),
+        "old A never receives a request queued after its release"
+    );
+
+    // The next holder is cold: 720k tokens, last call two hours ago.
+    let next = SeatId::from("pij-second");
+    let mut seat = rig.services.registry.get(&next).await.unwrap().unwrap();
+    seat.harness_session = Some("cold-session".into());
+    rig.services.registry.put(seat).await.unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let mut cold = rig.services.clone();
+    cold.session_status = Arc::new(FakeSessionStatus::new().with_reply(
+        "cold-session",
+        SessionStatusReply::Status(SeatStatus {
+            model: Fact::native("claude-opus-5-5".to_string()),
+            context_used_tokens: Fact::derived(720_000),
+            last_call_at_ms: Fact::native(now - 2 * 60 * 60 * 1_000),
+            ..SeatStatus::unknown()
+        }),
+    ));
+    let assigned = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-second",
+            "--why",
+            "next",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let drained = drain(&cold, "fleet", "pm-001", "", &next).await;
+    assert_eq!(drained, [("after-release".to_string(), Ok(()))]);
+    assert!(
+        drain(&rig.services, "fleet", "pm-001", "", &old)
+            .await
+            .is_empty(),
+        "the old holder still gets nothing"
+    );
+
+    let audit = rig
+        .services
+        .spine
+        .latest_matching(&next, &[pij_core::cold_wake::COLD_WAKE_FORCED_KIND])
+        .await
+        .unwrap()
+        .expect("the cold wake was audited");
+    let payload: Value = serde_json::from_str(&audit.payload).unwrap();
+    assert_eq!(payload["from"], SEAT, "{payload}");
+    assert_eq!(payload["msg_id"], "after-release", "{payload}");
+    assert_eq!(payload["reason"], DRAIN_WAKE_REASON, "{payload}");
+    let outcome = rig
+        .services
+        .spine
+        .latest_matching(&next, &["delivery.outcome"])
+        .await
+        .unwrap()
+        .expect("delivered");
+    assert!(audit.seq < outcome.seq, "the audit comes before the wake");
+    let row = rig
+        .store
+        .role_request("after-release")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(
+        (row.state, row.holder.as_deref()),
+        (pij_store::RequestState::Delivered, Some("pij-second"))
+    );
+    assert_eq!(
+        inbox_bodies(&rig, "pij-second")
+            .await
+            .iter()
+            .filter(|body| body.contains("after-release"))
+            .count(),
+        1
+    );
+    rig.server.abort();
 }
