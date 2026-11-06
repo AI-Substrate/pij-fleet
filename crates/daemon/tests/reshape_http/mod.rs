@@ -386,6 +386,10 @@ async fn retire_and_merge_reshape_roles_and_keep_their_history() {
             "E-RS-ARG",
         ),
         (vec!["retire", "sec"], "E-RS-ARG"),
+        (
+            vec!["edit", "qa", "--set", "title=x", "--why", "w"],
+            "E-RS-DIRECTORY-RETIRED",
+        ),
         (vec!["retire", "--why", "w"], "E-RS-ARG"),
     ] {
         let refused = directory(addr, &repo, &argv).await;
@@ -403,5 +407,99 @@ async fn retire_and_merge_reshape_roles_and_keep_their_history() {
     );
     assert_eq!(head(&repo), before, "no refusal committed");
     assert_eq!(git(&repo.gov, &["status", "--porcelain"]), "");
+    server.abort();
+}
+
+/// docs-system verdict on #135, notes 2 and 3: the writer holds merged_into to
+/// retired roles that exist (ddocs cannot), and edit never changes a role's
+/// state: a whole-document edit that leaves state out keeps it, and one that
+/// sets it refuses.
+#[tokio::test]
+async fn the_writer_holds_merged_into_to_retired_roles_and_edit_keeps_state() {
+    let repo = repo("pij-directory-standing-guards");
+    let (addr, server, _fresh) = daemon().await;
+    fleet(addr, &repo).await;
+    let added = directory(
+        addr,
+        &repo,
+        &[
+            "add", "sec", "--rule", "r", "--packet", "p", "--why", "start",
+        ],
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    let base = committed(&repo, "sec");
+    let write = |name: &str, id: &str, meta: &[(&str, &str)]| {
+        let mut document = base.clone();
+        document["sections"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|section| section["name"] != "changelog");
+        let value = &mut document["sections"][0]["value"];
+        value["id"] = json!(id);
+        for (key, field) in meta {
+            value[*key] = json!(field);
+        }
+        let path = repo.root.join(name);
+        std::fs::write(&path, serde_json::to_string(&document).unwrap()).unwrap();
+        path.to_str().unwrap().to_string()
+    };
+
+    let before = head(&repo);
+    let dangling = write("dangling.dd.json", "old", &[("merged_into", "sec")]);
+    let nowhere = write(
+        "nowhere.dd.json",
+        "old",
+        &[("state", "retired"), ("merged_into", "nobody")],
+    );
+    let retiring = write("retiring.dd.json", "sec", &[("state", "retired")]);
+    for (argv, code) in [
+        (
+            vec!["add", "old", "--file", dangling.as_str(), "--why", "w"],
+            "E-RS-ARG",
+        ),
+        (
+            vec!["add", "old", "--file", nowhere.as_str(), "--why", "w"],
+            "E-RS-DIRECTORY-ROLE-MISSING",
+        ),
+        (
+            vec!["edit", "sec", "--file", retiring.as_str(), "--why", "w"],
+            "E-RS-ARG",
+        ),
+    ] {
+        let refused = directory(addr, &repo, &argv).await;
+        assert_eq!(refused["details"]["code"], code, "{argv:?}: {refused}");
+    }
+    assert_eq!(head(&repo), before, "no refusal committed");
+
+    let active = write("active.dd.json", "kept", &[("state", "active")]);
+    let added = directory(
+        addr,
+        &repo,
+        &["add", "kept", "--file", active.as_str(), "--why", "w"],
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    let silent = write("silent.dd.json", "kept", &[("title", "Kept")]);
+    let edited = directory(
+        addr,
+        &repo,
+        &[
+            "edit",
+            "kept",
+            "--file",
+            silent.as_str(),
+            "--why",
+            "retitle",
+        ],
+    )
+    .await;
+    assert_eq!(edited["ok"], true, "{edited}");
+    let meta = section(&committed(&repo, "kept"), "meta");
+    assert_eq!(meta["title"], "Kept");
+    assert_eq!(
+        meta["state"], "active",
+        "a whole-document edit keeps the state"
+    );
     server.abort();
 }

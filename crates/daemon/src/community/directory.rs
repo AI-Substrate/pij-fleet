@@ -230,7 +230,9 @@ impl DirectoryService {
                 "merged_from": ids
                     .iter()
                     .zip(&standings)
-                    .filter(|(_, standing)| standing.merged_into.as_deref() == Some(id.as_str()))
+                    .filter(|(_, standing)| {
+                        standing.retired() && standing.merged_into.as_deref() == Some(id.as_str())
+                    })
                     .map(|(from, _)| from.clone())
                     .collect::<Vec<_>>(),
                 "live": live,
@@ -632,10 +634,23 @@ impl DirectoryService {
         let (written, built) = self
             .commit(repo, message, move |root, built| {
                 let current = read_role(root, &id)?;
+                let standing = role::standing(&current);
+                refuse_retired(&id, &standing)?;
                 let edited = match change {
                     RoleEdit::Fields(fields) => role::apply_fields(current.clone(), &fields)?,
-                    RoleEdit::Document(document) => role::keep_changelog(document, &current),
+                    RoleEdit::Document(document) => role::carry_standing(
+                        role::keep_changelog(document, &current),
+                        &current,
+                    ),
                 };
+                if role::standing(&edited) != standing {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        format!(
+                            "edit does not change role {id:?}'s state or merged_into; use pij directory retire or merge"
+                        ),
+                    ));
+                }
                 if edited == current {
                     return Err(Refusal::new(
                         "E-RS-ARG",
@@ -679,6 +694,9 @@ impl DirectoryService {
         let (project_id, flush) = (project.to_string(), pending);
         let (written, built) = self
             .commit(repo, message, move |root, built| {
+                for file in files.iter().filter(|file| file.document) {
+                    check_merge_target(root, file)?;
+                }
                 let mut files = files;
                 files.extend(flush_files(
                     root,
@@ -1046,6 +1064,37 @@ fn open_for(row: &Assignment, seat: &str, instance: &str) -> bool {
 
 fn holders_path(role: &str) -> Result<String, Refusal> {
     Ok(RolePaths::new(role)?.holders.display().to_string())
+}
+
+/// A role document's `merged_into` must name another role in this directory
+/// (docs-system verdict on #135, note 2); ddocs cannot check it.
+fn check_merge_target(root: &GovernanceRoot, file: &NewFile) -> Result<(), Refusal> {
+    let Some(id) = file
+        .path
+        .parent()
+        .filter(|_| {
+            file.path
+                .file_name()
+                .is_some_and(|name| name == "role.dd.json")
+        })
+        .and_then(|dir| dir.file_name())
+        .and_then(|name| name.to_str())
+    else {
+        return Ok(());
+    };
+    let Ok(document) = serde_json::from_slice::<Value>(&file.bytes) else {
+        return Ok(());
+    };
+    let Some(into) = role::standing(&document).merged_into else {
+        return Ok(());
+    };
+    if into == id {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("role {id:?} cannot be merged into itself"),
+        ));
+    }
+    read_role(root, &into).map(|_| ())
 }
 
 /// Refuse a write to a retired role, naming where a merged one went.

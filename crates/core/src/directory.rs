@@ -135,7 +135,7 @@ retire marks the role retired (meta.state) with a changelog row. merge retires
 commit. Nothing is moved or rewritten: a retired role's memory, outputs and
 lineage stay readable, and the view lists a merged role under its target. A role
 with a live holder refuses (release it first); a retired role cannot be assigned,
-retired again or merged into.";
+edited, retired again or merged into.";
 
 const HOLD: &str = "\
 pij directory assign|release: a seat takes or leaves a role.

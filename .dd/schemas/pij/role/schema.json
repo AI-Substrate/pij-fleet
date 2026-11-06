@@ -1,6 +1,6 @@
 {
   "dd_schema": 1,
-  "description": "A pij community role: a job that outlives the seats that hold it. Lives at <government-root>/community/roles/<id>/role.dd.json. Scope and the standing packet are required. The standing packet is inline text (source: inline, text) or a repo-relative reference to an existing brief file (source: brief, brief). default_limit is the duration req-22's stall check uses when a send carries no --limit (ruling C5), written like 30m, 2h or 1h30m. state is active (or absent) until `pij directory retire` or `merge` sets it retired; merged_into names the role a merged role now lives under, and merged-from is derived from it (plan 206, req-28).",
+  "description": "A pij community role: a job that outlives the seats that hold it. Lives at <government-root>/community/roles/<id>/role.dd.json. Scope and the standing packet are required. The standing packet is inline text (source: inline, text) or a repo-relative reference to an existing brief file (source: brief, brief). default_limit is the duration req-22's stall check uses when a send carries no --limit (ruling C5), written like 30m, 2h or 1h30m. state is active (or absent) until `pij directory retire` or `merge` sets it retired; merged_into names the role a merged role now lives under, and merged-from is derived from it (plan 206, req-28). merged_into appears only with state retired and names a role that exists; ddocs cannot check either, so the writer enforces both.",
   "enums": {
     "role_kind": {
       "values": [

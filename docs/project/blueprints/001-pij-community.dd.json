@@ -93,7 +93,8 @@
 						"../prds/001-pij-community.dd.json#requirements/req-05",
 						"../prds/001-pij-community.dd.json#requirements/req-06",
 						"../prds/001-pij-community.dd.json#requirements/req-10",
-						"../prds/001-pij-community.dd.json#requirements/req-16"
+						"../prds/001-pij-community.dd.json#requirements/req-16",
+						"../prds/001-pij-community.dd.json#requirements/req-28"
 					],
 					"state": "in-progress"
 				},
@@ -321,6 +322,11 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "c-templates in-progress: the core and security templates ship in plan 194, compiled into the daemon; the optional templates come in s10."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "c-verbs realises req-28: plan 206 adds pij directory retire and merge (roadmap s15)."
 				}
 			]
 		}

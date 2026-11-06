@@ -233,6 +233,26 @@ pub fn retire(mut document: Value, into: Option<&str>) -> Result<Value, Refusal>
     Ok(document)
 }
 
+/// `document` with `committed`'s `meta.state` and `meta.merged_into` where it
+/// leaves them out, so a whole-document edit never silently un-retires a role
+/// (docs-system verdict on #135, note 3).
+pub fn carry_standing(mut document: Value, committed: &Value) -> Value {
+    let Some(from) = section(committed, "meta").cloned() else {
+        return document;
+    };
+    if let Some(sections) = document["sections"].as_array_mut() {
+        let meta = slot(sections, "meta", json!({}));
+        for field in ["state", "merged_into"] {
+            if meta.get(field).is_none()
+                && let Some(value) = from.get(field)
+            {
+                meta[field] = value.clone();
+            }
+        }
+    }
+    document
+}
+
 /// `document` carrying `committed`'s changelog in place of its own, so a
 /// whole-document edit never rewrites history (plan 206, F20).
 pub fn keep_changelog(mut document: Value, committed: &Value) -> Value {
@@ -291,6 +311,15 @@ pub fn stamp(
         }
     }
     check_packet(&document, id)?;
+    let standing = standing(&document);
+    if standing.merged_into.is_some() && !standing.retired() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!(
+                "role {id:?} records meta.merged_into without meta.state retired; a merge writes both (pij directory merge)"
+            ),
+        ));
+    }
     let row = json!({"date": date, "by": by, "why": why});
     let Some(sections) = document["sections"].as_array_mut() else {
         return Err(Refusal::new(
@@ -447,6 +476,21 @@ mod tests {
             }
         );
         assert!(standing(&json!({})).state == "active", "no meta is active");
+        let committed = retire(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa"}}]}),
+            Some("sec"),
+        )
+        .unwrap();
+        let carried = carry_standing(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa", "title": "Q"}}]}),
+            &committed,
+        );
+        assert_eq!(standing(&carried), standing(&committed));
+        let explicit = carry_standing(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa", "state": "active"}}]}),
+            &committed,
+        );
+        assert_eq!(standing(&explicit).state, "active", "a given state is kept");
         assert!(retire(json!({}), None).is_err());
     }
 

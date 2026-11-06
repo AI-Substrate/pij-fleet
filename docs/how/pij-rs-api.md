@@ -1038,12 +1038,17 @@ gives each role `state` (`active` or `retired`), `merged_into` (or null) and
 `merged_from` (the roles merged into it, derived from their `merged_into`), and
 the human view prints `retired, merged into <to>` and `merged from <from>`. A
 retired role no longer clears a core-role prompt (C22). `data` is `{project, id,
-state, merged_into, commit, paths}`.
+state, merged_into, commit, paths}`. Only retire and merge change a role's
+standing: `edit` refuses a retired role and refuses a change to `state` or
+`merged_into` (a `--file` that leaves them out keeps them). ddocs cannot tie
+`merged_into` to `state: retired` or check that it names a role, so the writer
+refuses either on every write (`E-RS-ARG`, `E-RS-DIRECTORY-ROLE-MISSING`), and
+`merged_from` counts only retired roles.
 
 | Refusal | When |
 |---|---|
 | `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
-| `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign to a retired role refuses too, naming the merge target when there is one |
+| `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign and edit of a retired role refuse too, naming the merge target when there is one |
 | `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
 | `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |
 
