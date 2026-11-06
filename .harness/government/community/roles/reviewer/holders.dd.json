@@ -56,7 +56,10 @@
 					"harness_session": "3e7756cf-b339-46ac-9b12-46d3065045cc",
 					"instance_key": "130",
 					"machine": "ops.osk.lan",
+					"release_why": "#130 verdict posted (block); fix pending",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-usual-seahorse",
+					"to": "2026-11-06T01:16:27.133Z",
 					"why": "reviewer for PR #130 (s08)"
 				},
 				{

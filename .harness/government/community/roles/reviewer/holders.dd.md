@@ -21,5 +21,5 @@
 | — | pij-interior-jellyfish | copilot | f673eaa8-37a9-4472-bf6d-4a29baa1c451 | ops.osk.lan | 125 | 2026-11-05T23:18:02.571Z | 2026-11-05T23:23:43.005Z | pij-steady-otter | pij-steady-otter | record the live holder (06 Nov roadmap push) | close |
 | — | pij-subsequent-reindeer | copilot | 235e5da8-b7fc-4331-b348-01c70ad05c95 | ops.osk.lan | 126 | 2026-11-05T23:50:25.403Z | 2026-11-06T00:27:56.160Z | pij-steady-otter | pij-steady-otter | reviewer for PR #126 (s03) | close |
 | — | pij-many-tiglon | copilot | 6a91000b-c9e9-45a3-a6cd-f83a462adb9a | ops.osk.lan | 129 | 2026-11-06T00:37:37.656Z | — | pij-steady-otter | — | reviewer for PR #129 (s05) | — |
-| — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 130 | 2026-11-06T00:51:51.703Z | — | pij-steady-otter | — | reviewer for PR #130 (s08) | — |
+| — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 130 | 2026-11-06T00:51:51.703Z | 2026-11-06T01:16:27.133Z | pij-steady-otter | pij-steady-otter | reviewer for PR #130 (s08) | #130 verdict posted (block); fix pending |
 | — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 131 | 2026-11-06T01:01:54.632Z | — | pij-steady-otter | — | reviewer for PR #131 (s11) | — |
