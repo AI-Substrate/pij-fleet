@@ -90,14 +90,15 @@
 				{
 					"id": "s05",
 					"title": "Send to a role, the role queue and reply modes",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-07",
 						"../prds/001-pij-community.dd.json#requirements/req-08"
 					],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-send-role"],
 					"depends_on": ["#steps/s04"],
-					"done_when": "The 0, 1 and 2 holder cases, instances, the PA wake and the three reply modes behave as the PRD says."
+					"done_when": "The 0, 1 and 2 holder cases, instances, the PA wake and the three reply modes behave as the PRD says.",
+					"plan": "docs/plans/199-send-to-role"
 				},
 				{
 					"id": "s06",
