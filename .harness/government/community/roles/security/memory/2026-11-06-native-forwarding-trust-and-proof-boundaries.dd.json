@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read before changing shim/native forwarding, executable selection or caller identity.",
+				"tags": [
+					"native-forwarding",
+					"identity",
+					"proof"
+				],
+				"title": "Native forwarding trust and proof boundaries"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Review lesson from PR #147 at 29488cad374621621303fe1153c695784cb914ce: preserving argv is not the same as pinning executable or caller trust.\n\nThe fast shim uses spawnSync with an argv array, inherited stdio and unchanged CWD, without a shell. It selects bare pij-rs through PATH: relative/empty components and symlinks are not filtered, and a wrong binary that launches successfully is not detected. No default lower-trust executable location was established. Keep the trusted caller/PATH assumption explicit rather than describing this as absolute binary selection.\n\nThe shim attaches no new caller proof. Native caller_context inherits identity/session fields and CWD but leaves PID/start absent. Preliminary native whoami carries seat/pane rather than the old routed harness context and ambient correction. Downstream disagreement/origin/control checks remain, but native/routed session-incarnation equivalence was not proved.\n\nPaneless role sends stay routed only without both seat ID and pane; inherited seat identity enables forwarding. Explicit --to forms can forward even to seats. The selector is not a full flag grammar parser, though original argv still reaches clap.\n\nThis is synchronous spawn-and-wait, not exec replacement. Ordinary status tests do not establish targeted-signal/process-group equivalence. Recorder tests prove forwarding observations, not every real-native flag combination; kept-path negatives prove non-forwarding, not successful routed execution.\n\nCI run 42191982701 has 1976 passing JUnit cases. Its merge and head whole trees differ by fourteen added docs/difficulties.md lines, while production/test content matches. Preserve that distinction: code/test equivalence is not whole-tree identity. Mac latency is attributed evidence; no local runtime or real-ddocs validation was performed.\n\nThese are exact-snapshot proof limits, not claims about a later revision. Full verdict: .harness/government/community/roles/security/outputs/2026-11-06-pr-147-29488ca-security.md.\n"
+		}
+	]
+}

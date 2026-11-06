@@ -7,6 +7,7 @@
 - [2026-11-06-ibex-pr-138-marker-boundary.md](2026-11-06-ibex-pr-138-marker-boundary.md): #138 advisory marker/local-authority boundaries; exact-head pass-with-notes, DIRTY integration qualification and publication receipt.
 
 <!-- pij:generated -->
+- [2026-11-06 Native forwarding trust and proof boundaries](2026-11-06-native-forwarding-trust-and-proof-boundaries.dd.md): Read before changing shim/native forwarding, executable selection or caller identity. (native-forwarding, identity, proof)
 - [2026-11-06 Output publication and answer authority](2026-11-06-output-publication-and-answer-authority.dd.md): Read before changing output answer finalization or forced requester notification. (outputs, authorization, notifications)
 - [2026-11-06 Role queue claims and recovery admission](2026-11-06-role-queue-claims-and-recovery-admission.dd.md): Read before changing role-send claiming, boot recovery or cold-drain audits. (role-queue, recovery, audit)
 <!-- /pij:generated -->
