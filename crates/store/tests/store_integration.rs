@@ -1724,7 +1724,45 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
     use pij_store::{ReplyMode, RequestState, RoleRequest};
     let fresh = FreshStore::new();
     let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let registry = SqliteRegistry::new(pool.clone(), support::publisher());
+    for id in ["pij-coder", "pij-other", "pij-stranger", "pij-gone"] {
+        registry
+            .put(SeatDescriptor::new(id, Harness::Omp, "/abs/tree"))
+            .await
+            .unwrap();
+    }
     let store = pij_store::SqliteOrchestration::new(pool);
+    // pij-coder and pij-other hold coder/196; pij-gone held it but is
+    // tombstoned; pij-stranger is live and holds nothing.
+    for seat in ["pij-coder", "pij-other", "pij-gone"] {
+        store
+            .record_assignment_committed(
+                &pij_store::Assignment {
+                    project: "pij".into(),
+                    role: "coder".into(),
+                    instance: "196".into(),
+                    seat: seat.into(),
+                    harness: Some("omp".into()),
+                    session: None,
+                    machine: Some("local".into()),
+                    from: "2026-11-06T00:00:00Z".into(),
+                    to: None,
+                    assigned_by: "pij-pm".into(),
+                    released_by: None,
+                    why: "test".into(),
+                    release_why: None,
+                    end_pending: false,
+                },
+                Some("worker"),
+                1,
+            )
+            .await
+            .unwrap();
+    }
+    registry
+        .tombstone(&SeatId::from("pij-gone"), "test")
+        .await
+        .unwrap();
     let request = |id: &str, role: &str, instance: &str, at: u64| RoleRequest {
         id: id.into(),
         project: "pij".into(),
@@ -1798,6 +1836,51 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
     );
 
     assert!(
+        !store
+            .mark_role_request_delivered("r-early", "pij-coder", 39)
+            .await
+            .unwrap(),
+        "only a claimed request can be delivered"
+    );
+    for (id, seat, why) in [
+        (
+            "r-early",
+            "pij-stranger",
+            "a seat that does not hold the role",
+        ),
+        ("r-early", "pij-gone", "a tombstoned holder"),
+        (
+            "r-other-instance",
+            "pij-coder",
+            "a holder of another instance",
+        ),
+    ] {
+        assert!(
+            !store.claim_role_request(id, seat).await.unwrap(),
+            "{why} cannot claim (#129 security S1)"
+        );
+    }
+    assert!(
+        store
+            .claim_role_request("r-early", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .claim_role_request("r-early", "pij-other")
+            .await
+            .unwrap(),
+        "one claim: a second drain skips it"
+    );
+    assert!(
+        !store
+            .mark_role_request_delivered("r-early", "pij-other", 40)
+            .await
+            .unwrap(),
+        "only the claiming holder delivers it"
+    );
+    assert!(
         store
             .mark_role_request_delivered("r-early", "pij-coder", 40)
             .await
@@ -1810,6 +1893,47 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
             .unwrap(),
         "a delivered request is never delivered twice"
     );
+    assert!(
+        store
+            .claim_role_request("r-late", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .release_role_request_claim("r-late", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store
+            .role_request("r-late")
+            .await
+            .unwrap()
+            .map(|row| (row.state, row.holder)),
+        Some((RequestState::Queued, None)),
+        "a failed dispatch gives the request back to the queue"
+    );
+    assert!(
+        store
+            .claim_role_request("r-fyi", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .abandon_role_request("r-fyi", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(store.role_request("r-fyi").await.unwrap().is_none());
+    assert!(
+        !store
+            .abandon_role_request("r-late", "pij-coder")
+            .await
+            .unwrap(),
+        "abandon never touches a queued request"
+    );
     let delivered = store.role_request("r-early").await.unwrap().expect("row");
     assert_eq!(
         (
@@ -1821,7 +1945,7 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
     );
     assert_eq!(
         ids(store.all_queued_role_requests().await.unwrap()),
-        ["r-other-role", "r-other-instance", "r-late", "r-fyi"]
+        ["r-other-role", "r-other-instance", "r-late"]
     );
 }
 

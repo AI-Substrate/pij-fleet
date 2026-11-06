@@ -48,6 +48,9 @@ impl ReplyMode {
 pub enum RequestState {
     /// No live holder took it yet.
     Queued,
+    /// Claimed for `holder` and being dispatched: no other drain or send may
+    /// dispatch it.
+    Delivering,
     /// Delivered to `holder`.
     Delivered,
 }
@@ -57,6 +60,7 @@ impl RequestState {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Queued => "queued",
+            Self::Delivering => "delivering",
             Self::Delivered => "delivered",
         }
     }
@@ -93,11 +97,17 @@ pub struct RoleRequest {
     pub created_at: u64,
     /// When it reached its holder.
     pub delivered_at: Option<u64>,
-    /// When its holder was sent the one time-limit check-in (s12).
+    /// When its holder was sent the one time-limit check-in (s12). Set once,
+    /// by the watchdog round, before the check-in is sent.
     pub checkin_at: Option<u64>,
-    /// When the PA (else the prime) was told the check-in went unanswered.
+    /// When the PA (else the prime) was told the check-in went unanswered
+    /// (s12). Set once, before the notice is sent; the request then leaves the
+    /// round's open set.
     pub escalated_at: Option<u64>,
-    /// When an output answered it (s06).
+    /// When an output first answered it (s06, `pij output --answers <id>`),
+    /// through [`SqliteOrchestration::mark_role_request_answered`]. The first
+    /// answer's time is kept. An answered request leaves the round's open set,
+    /// so s12 never checks it in or escalates it.
     pub answered_at: Option<u64>,
 }
 
@@ -243,8 +253,10 @@ impl SqliteOrchestration {
         self.stamp_once(id, "escalated_at", at).await
     }
 
-    /// Record that an output answered the request at `at` (s06); `false`
-    /// when it was already answered or is unknown.
+    /// Record that an output answered request `id` at `at` (s06: lane B's
+    /// `pij output --answers <id>` calls this). Idempotent: a second answer
+    /// keeps the first time and returns `false`, as does an unknown id. From
+    /// then on the s12 round skips the request.
     pub async fn mark_role_request_answered(&self, id: &str, at: u64) -> Result<bool> {
         self.stamp_once(id, "answered_at", at).await
     }
@@ -272,32 +284,95 @@ impl SqliteOrchestration {
         .await
     }
 
-    /// Mark a queued request delivered to `holder` at `at`.
-    ///
-    /// Returns `false` when it was not queued (already delivered, or unknown),
-    /// so two drains can never deliver one request twice.
+    /// Claim a queued request for `holder` before dispatching it: the one
+    /// atomic step that decides which drain delivers it. In the same
+    /// statement, `holder` must be live and hold the request's role now (the
+    /// instance it names, or any for an instance-less request), so a drain
+    /// scheduled before a release can never deliver to the old holder
+    /// (security review of #129, S1). `false` when it is no longer queued,
+    /// another drain won, or `holder` does not hold the role now; the request
+    /// then stays queued.
+    pub async fn claim_role_request(&self, id: &str, holder: &str) -> Result<bool> {
+        self.transition(
+            id,
+            holder,
+            "UPDATE role_requests SET state = 'delivering', holder = ?2 \
+             WHERE id = ?1 AND state = 'queued' \
+             AND EXISTS (SELECT 1 FROM seats WHERE seats.id = ?2 AND seats.tombstoned_at IS NULL) \
+             AND EXISTS (SELECT 1 FROM community_assignments AS held \
+                 WHERE held.project = role_requests.project AND held.role = role_requests.role \
+                 AND held.seat = ?2 AND held.to_at IS NULL \
+                 AND (role_requests.instance = '' OR held.instance = role_requests.instance))",
+            None,
+        )
+        .await
+    }
+
+    /// Mark a request claimed for `holder` delivered at `at`. `false` when it
+    /// is not claimed for that holder, so a request is delivered at most once.
     pub async fn mark_role_request_delivered(
         &self,
         id: &str,
         holder: &str,
         at: u64,
     ) -> Result<bool> {
+        self.transition(
+            id,
+            holder,
+            "UPDATE role_requests SET state = 'delivered', delivered_at = ?3 \
+             WHERE id = ?1 AND state = 'delivering' AND holder = ?2",
+            Some(at),
+        )
+        .await
+    }
+
+    /// Give a claimed request back to the queue after its dispatch failed, so
+    /// the next assign can take it.
+    pub async fn release_role_request_claim(&self, id: &str, holder: &str) -> Result<bool> {
+        self.transition(
+            id,
+            holder,
+            "UPDATE role_requests SET state = 'queued', holder = NULL \
+             WHERE id = ?1 AND state = 'delivering' AND holder = ?2",
+            None,
+        )
+        .await
+    }
+
+    /// Forget a request a send claimed for `holder` but could not dispatch
+    /// (refused, or the cold-wake guard said no), so the sender's retry
+    /// resolves afresh. Never touches a queued or delivered request.
+    pub async fn abandon_role_request(&self, id: &str, holder: &str) -> Result<bool> {
+        self.transition(
+            id,
+            holder,
+            "DELETE FROM role_requests WHERE id = ?1 AND state = 'delivering' AND holder = ?2",
+            None,
+        )
+        .await
+    }
+
+    async fn transition(
+        &self,
+        id: &str,
+        holder: &str,
+        sql: &'static str,
+        at: Option<u64>,
+    ) -> Result<bool> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let (id, holder) = (id.to_string(), holder.to_string());
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            let changed = sqlx::query(
-                "UPDATE role_requests SET state = 'delivered', holder = ?2, delivered_at = ?3 \
-                 WHERE id = ?1 AND state = 'queued'",
-            )
-            .bind(&id)
-            .bind(&holder)
-            .bind(sql_i64(at, "delivered_at")?)
-            .execute(&mut *tx)
-            .await
-            .map_err(adapter_error)?
-            .rows_affected()
+            let mut query = sqlx::query(sql).bind(&id).bind(&holder);
+            if let Some(at) = at {
+                query = query.bind(sql_i64(at, "delivered_at")?);
+            }
+            let changed = query
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected()
                 == 1;
             tx.commit().await.map_err(adapter_error)?;
             Ok(changed)
@@ -337,6 +412,7 @@ fn role_request(row: &sqlx::sqlite::SqliteRow) -> Result<RoleRequest> {
             .transpose()?,
         state: match state.as_str() {
             "queued" => RequestState::Queued,
+            "delivering" => RequestState::Delivering,
             "delivered" => RequestState::Delivered,
             other => return Err(corrupt("state", other)),
         },
