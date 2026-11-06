@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read before sending a request, assigning a verdict seat, or chasing a quiet coder",
+				"tags": [
+					"s05",
+					"s12",
+					"messaging",
+					"holdings"
+				],
+				"title": "Routing work through PEC verbs"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- Reviewer verdicts: assign reviewer/<pr> first, then send role:reviewer/<pr> --limit <dur>. Security and performance are one-holder roles with two holders, so neither role:X nor role:X/<pr> resolves (F62); send to the seat until plan 212 fixes it.\n- A busy Copilot seat (300k+ context, long turns) gets normal sends hours late and out of order, while --fyi rides along promptly (F69). Send urgent answers to busy coders as --fyi. Send to IDLE seats normally, because an FYI won't wake them.\n- s12 limits work: no answer means a check-in, then the PA. But a plain pij send reply doesn't mark a request answered (F68). Reply with --in-reply-to <request id> and update the card (pij report now).\n- Holdings don't end at merge (F70). After each merge, release coder/<plan> and reviewer/<pr> until plan 212 makes pij delivered do it.\n- lineage add is prime-only. Prepare a script of commands from the LOG and give it to the prime.\n- When a seat says it's waiting for your answer, check its queue lag before resending. Five resends didn't help warbler; compaction did.\n"
+		}
+	]
+}

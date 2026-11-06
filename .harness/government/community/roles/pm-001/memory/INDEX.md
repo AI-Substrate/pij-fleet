@@ -8,4 +8,5 @@
 
 <!-- pij:generated -->
 - [2026-11-06 Final heads and verdict routing](2026-11-06-final-heads-and-verdict-routing.dd.md): Read before sending any head to verdict seats (verdicts, heads)
+- [2026-11-06 Routing work through PEC verbs](2026-11-06-routing-work-through-pec-verbs.dd.md): Read before sending a request, assigning a verdict seat, or chasing a quiet coder (s05, s12, messaging, holdings)
 <!-- /pij:generated -->
