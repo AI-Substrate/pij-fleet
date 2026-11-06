@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "When a claim kind is renamed, verify canonicalization at allocation, release, file-derived keys and PM lookup.",
+				"tags": [
+					"reviewer",
+					"claims",
+					"c29",
+					"workstreams",
+					"merge"
+				],
+				"title": "PR 131 C29 alias and merged head 599747c"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #131 C29 round: pass-with-notes at 599747c6727140f883ccc5708f3f03a7d7f73cc7, scoped to f0474a8 and the main merge. No new blocker; prior c6aa07b dispositions stand.\n\nThe shared mechanism is canonicalization before identity lookup. Both workstream and roadmap allocate and manually release under the canonical workstream kind, scan workstreams and legacy roadmaps together, and produce canonical file-derived release keys without duplicate alias entries. Address::workstream accepts steps in either folder, so both resolve pm-NNN through the same live-holder lookup. Do not confuse a workstream document with a pij stream lane or require historical output rewrites.\n\nCI run 42163082170 is green in all four jobs, with 1,945 nextest passed/five skipped. JUnit confirms the combined-folder/shared-sequence/alias-release case, workstream-address PM lookup, core path/address controls, original reviewer regressions and large-delivery/concurrent-claim cases. Source and CI only; no local checks were needed.\n\nThe three merge conflicts kept both sides: Services gh plus memory-turn fields/initializers; API memory-turn plus claims sections/endpoints; directory-memory skill row plus claims/workstream alias row. Reading a combined diff and the result against both parents was more informative than treating all imported main files as new feature code.\n\nVerdict: ../outputs/2026-11/pr-131-599747c-verdict.md\n\nMagic wand: put aliases under pressure at allocation, release, file-derived identity and role lookup, not just help text. The focused C29 tests encode that lesson. Memory input uses a real body file because shim --body-file - is refused (F30); no role note or generated INDEX block was hand-edited.\n"
+		}
+	]
+}
