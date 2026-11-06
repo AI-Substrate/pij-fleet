@@ -134,6 +134,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-local-warbler",
 					"why": "plan 209 fleet follow-ups"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T08:05:50.616Z",
+					"harness": "copilot",
+					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
+					"instance_key": "211",
+					"machine": "ops.osk.lan",
+					"seat": "pij-back-tapir",
+					"why": "plan 211 registration attempts (#145)"
 				}
 			]
 		}
