@@ -18,6 +18,7 @@
 
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| — | pij-brisk-marten | unknown | — | unknown | 190 | 2026-11-04T00:00:00.000Z | 2026-11-06T00:00:00.000Z | pij-far-jackal | pij-far-jackal | s02 writer (plan 190) then s04 (plan 195, #122); closed 06 Nov LOG:13,85,138 | lineage add |
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | 196 | 2026-11-05T23:09:45.254Z | 2026-11-06T01:01:55.389Z | pij-steady-otter | pij-steady-otter | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | s11 PR #131 out for verdicts |
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 194 | 2026-11-05T23:09:45.659Z | 2026-11-06T00:31:35.601Z | pij-steady-otter | pij-steady-otter | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | s03 merged (#126) |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | 199 | 2026-11-05T23:17:59.982Z | — | pij-steady-otter | — | record the live holder (06 Nov roadmap push) | — |

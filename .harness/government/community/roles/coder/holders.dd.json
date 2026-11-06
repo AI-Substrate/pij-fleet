@@ -14,6 +14,18 @@
 			"name": "rows",
 			"value": [
 				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-04T00:00:00.000Z",
+					"harness": "unknown",
+					"instance_key": "190",
+					"machine": "unknown",
+					"release_why": "lineage add",
+					"released_by": "pij-far-jackal",
+					"seat": "pij-brisk-marten",
+					"to": "2026-11-06T00:00:00.000Z",
+					"why": "s02 writer (plan 190) then s04 (plan 195, #122); closed 06 Nov LOG:13,85,138"
+				},
+				{
 					"assigned_by": "pij-steady-otter",
 					"from": "2026-11-05T23:09:45.254Z",
 					"harness": "copilot",
