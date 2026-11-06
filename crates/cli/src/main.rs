@@ -383,6 +383,15 @@ enum Command {
         /// Why a forced cold wake is worth its price.
         #[arg(long, requires = "force")]
         reason: Option<String>,
+        /// For `--to role:<id>`: how you hear back, `wake` (default), `fyi` or `none`.
+        #[arg(long)]
+        reply: Option<String>,
+        /// For `--to role:<id>`: the time limit, like `45m` (default: the role's default_limit).
+        #[arg(long)]
+        limit: Option<String>,
+        /// For `--to role:<id>`: the project whose directory resolves it (default: your repo).
+        #[arg(long)]
+        project: Option<String>,
     },
     /// Publish this seat's busy/idle state, for a turn-boundary hook (Claude's
     /// UserPromptSubmit and Stop). Prints nothing on success; `--json` prints the envelope.
@@ -1366,6 +1375,9 @@ async fn run(cli: Cli) -> ExitCode {
             fyi,
             force,
             reason,
+            reply,
+            limit,
+            project,
         } => {
             let acting = match resolve_command_seat(&client, "pij send", from.as_deref()).await {
                 Ok(seat) => seat,
@@ -1381,6 +1393,8 @@ async fn run(cli: Cli) -> ExitCode {
                     }
                 }
             };
+            // A control keeps its own caller field; only a role message carries one here.
+            let to_role = to.seat.as_str().starts_with("role:") && command.is_none();
             let request = SendRequest {
                 from: acting,
                 to,
@@ -1391,7 +1405,33 @@ async fn run(cli: Cli) -> ExitCode {
                 fyi,
                 force,
                 reason,
+                reply,
+                limit,
+                project,
+                caller: to_role.then(caller_context),
             };
+            if to_role {
+                let mut response = client.send_role(&request).await;
+                if response.ok {
+                    let data = response.data.as_ref();
+                    let field = |key: &str| {
+                        data.and_then(|data| data["request"][key].as_str())
+                            .unwrap_or("?")
+                            .to_string()
+                    };
+                    let holder = data
+                        .and_then(|data| data["request"]["holder"].as_str())
+                        .map_or_else(String::new, |holder| format!(" to {holder}"));
+                    response.meta = Some(format!(
+                        "from {}; request {} {}{holder} (reply {})",
+                        request.from,
+                        request.msg_id,
+                        field("state"),
+                        field("reply")
+                    ));
+                }
+                return emit(&response, cli.json);
+            }
             let mut response = if request.command.is_some() {
                 client.send_control(&request, &caller_context()).await
             } else {
@@ -1496,6 +1536,10 @@ async fn run(cli: Cli) -> ExitCode {
                 fyi: false,
                 force: false,
                 reason: None,
+                reply: None,
+                limit: None,
+                project: None,
+                caller: None,
             };
             let mut response = client.send_control(&request, &caller_context()).await;
             let raw = response.raw_json.take();

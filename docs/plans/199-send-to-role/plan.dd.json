@@ -1,0 +1,173 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Send to a role, the role queue and reply modes",
+        "slug": "send-to-role",
+        "ordinal": 199,
+        "complexity": "CS-4",
+        "summary": "Roadmap 001 s05: `pij send role:<id>[/<instance>]` resolves to exactly one live holder through the directory, queues when there is none and wakes the PA, refuses with a list when there are several, and stores the requester's reply mode.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Delivers req-07 and the request half of req-08 (the notify half is s06). Rulings: C1 (the directory is the authority for role: addressing; if it disagrees with seat_roles the send refuses with a named mismatch), C2 (an --fyi send to a role with no holder still queues and wakes the PA, else the prime), C3 (the role-send receipt prints the request id, which s06's `pij output --answers` uses), C4 (`--reply wake` to a cold requester is an audited forced wake, as the PA watchdog does), C6 (s04's after-assign hook drains the role queue to the new holder)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Roadmap 001 s05: `pij send role:<id>[/<instance>]` resolves to exactly one live holder through the directory, queues when there is none and wakes the PA, refuses with a list when there are several, and stores the requester's reply mode."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Resolve. `pij send role:<id>` and `role:<id>/<instance>` resolve through the project's directory holders (s04) to exactly one live seat and deliver as a normal send; the receipt prints the request id (C3). A directory/seat_roles disagreement refuses with a named mismatch (C1).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Queue and wake. With no live holder, the request is stored on the role's queue (migration 0034: requests with role, instance, requester, reply mode, limit, state) and the PA (else the prime) is woken once with runnable next steps: revive the last holder (showing its context size) or assign a fresh seat. An --fyi send queues too (C2). The queue appears in the PA's watchdog feed until cleared; no new timer. pij never starts a seat itself.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Drain on assign (C6). Assigning a holder runs the s04 after-assign hook, which delivers that role's queued requests to the new holder in order and marks them delivered.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Several holders. With two or more live holders on the addressed role and instance, the send refuses and lists them.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Reply modes (req-08, request half). `--reply wake|fyi|none` (default wake) is stored on the request and returned in the receipt; s06 uses it to notify. `--limit <duration>` is stored for s12 (default: the role's default_limit, C5).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Sends to a role cost what a normal send costs; queueing is a store write; the PA wake is one delivery; draining on assign is one delivery per queued request. No new timer or poll; the queue rides the existing watchdog round.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Docs and states. In this PR: roadmap s05 goes to complete (plan cell docs/plans/199-send-to-role); req-07 goes to shipped; req-08 goes to in-progress (s06 finishes it); c-send-role goes to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00c7",
+          "title": "Send to a role, the role queue and reply modes",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-4.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: crates/daemon/src/delivery/ (send path), crates/daemon/src/community/ (directory holders from #122 and the after-assign hook), the PA watchdog feed (pa_watchdog), crates/cli send parsing. Migration 0034 is claimed for this plan."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
