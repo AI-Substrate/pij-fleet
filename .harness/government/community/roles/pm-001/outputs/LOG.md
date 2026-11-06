@@ -308,3 +308,120 @@
 2026-11-06 verdict pr-131 599747c perf pass-with-notes. Waiting marmot, ibex
 2026-11-06 verdict pr-131 599747c reviewer pass-with-notes. Waiting ibex
 2026-11-06 READY pr-131 599747c (marmot, ibex, wombat pass-with-notes) -> prime; 201 evidence machine alias -> warbler 209
+2026-11-06 MERGED #131 59b4cf1 (s11 live, daemon 32149). Seeded claims plan 202-210, migration 0034-0036, prd 003. Announced to 13 seats. delivered edits req-20/21 -> lungfish docs PR; F40/F41 -> 209
+2026-11-06 #141 draft s09 d2ee8e3 AC1-5,7 green; owed: ac-0008 C28, C29 helper, C30, F39, cost receipts, Delivers line. marsupial FYI verb check vs #141. Load 98.
+2026-11-06 #129 c73b85e F003 (boot recovery + PA visibility) pushed but DIRTY -> kestrel merge main + Delivers line
+2026-11-06 s11 dogfood: F42 shim claims raw JSON, F43 stub help, F44 shim cost, F45 seeds on one seat (accepted), F46 prose Delivers silent. #142 docs (delivered_by req-09/20/21) -> seahorse+ibex
+2026-11-06 verdict pr-136 4249044 docs-system pass-with-notes (C28/29/30); low notes queued to marsupial
+2026-11-06 READY pr-142 d2235f5 (seahorse pass, ibex pass) -> prime
+2026-11-06 READY pr-143 fdb0b27 (seahorse pass, ibex pass) -> prime
+2026-11-06 lynx stuck on modal dialog ~13:30-15:16 (F47 high); declined via ctrl+d; #134 security -> ibex; lynx keeps #129. wombat live: 1.73/s, reg ps 1.125/s (#134 fixes)
+2026-11-06 verdict pr-134 c54aeb5 security (ibex) pass-with-notes; all three in; DIRTY -> marsupial merge main
+2026-11-06 lynx #130 8bfba9d qualification: colon-delimiter id collision note; seat ids can't contain ':' so the first-colon split is unambiguous; no action
+2026-11-06 pr-134 final 5f4bafa (main merged; difficulties.md only conflict) -> marmot ibex wombat merge-delta
+2026-11-06 verdict pr-134 5f4bafa reviewer pass-with-notes (merge delta); body fix: one Delivers: none line -> marsupial
+2026-11-06 READY pr-134 5f4bafa (marmot, ibex, wombat pass-with-notes; kestrel bind pass) -> prime; body Delivers fix pending
+2026-11-06 MERGED #134 2089a3c (daemon 88522). prime BEFORE 1.316/s (reg ps 0.999). wombat AFTER requested
+2026-11-06 #134 AFTER (wombat via prime): 1.316 -> 0.702/s (-47%), date 0, reg ps 0.999 -> 0.641. Opened issue #145 (healthy seats re-register); wombat attributes; coder = first free lane after PEC batch
+2026-11-06 warbler 209 #144 ad4d08b AC1-3 green; #130/#138 main merges STILL not done -> priority re-sent
+2026-11-06 #129 8b6432f (F003 + main merge) CI running. F48: stopping shared-build/gate shell orphans cargo test (ppid 1), compiled stale ~90 min (kestrel) -> 209
+2026-11-06 #145 wombat attribution: 0.644/s reg ps, zero seat.put; blocked on missing attempt telemetry; leads: retired contexts (artificial-turtle, alert-lamprey, breezy-panda) with 30s standby + HTTP400 lease failures, receive/heartbeat re-attestation, per-call paneless shim registration. Coder: add bounded per-address/mode/outcome counters first
+2026-11-06 pr-129 final 314da13 (F003 + main) -> tiglon lynx wombat; worktree review-129-314da13
+2026-11-06 verdict pr-129 314da13 reviewer (tiglon) pass-with-notes. Waiting lynx, wombat
+2026-11-06 #141 0c2df19 AC6 cost done; missing C29 helper, C30, F39, Delivers addresses -> tapir one push
+2026-11-06 verdict pr-129 314da13 perf BLOCK P001 (boot recovery jobs EXISTS unindexed) -> kestrel amend 0034 index + plan test; hold #133 merge
+2026-11-06 verdict pr-129 314da13 security (lynx) pass-with-notes; only perf P001 open
+2026-11-06 #141 51a7dc8 C30 done (F39 + Delivers still owed). load 190 (osk tsc un-niced, mediaanalysisd, OrbStack). warbler told push #130 9bf1afc now
+2026-11-06 pr-141 final 47bd3b2 (s09) -> seahorse (reviewer/141), ibex, wombat (s09 commits only), lungfish wording; worktree review-141-47bd3b2
+2026-11-06 pr-137 4ab6460 (s06) early review -> marmot (reviewer/137), lynx, wombat (after 141); worktree review-137-4ab6460
+2026-11-06 pr-133 9919d4d (s12) review -> tiglon (reviewer/133), ibex, wombat (queued); worktree review-133-9919d4d
+2026-11-06 plan 211 registration attempts (#145) pushed dec49d8; coder/211 tapir after compact-self (first memory-turn dogfood)
+2026-11-06 spawn pij-thrifty-marten (copilot gpt-6.1-sol high) + assign performance; marten: #141,#137,#133; wombat: #129 P001, #145
+2026-11-06 verdict pr-141 47bd3b2 docs-system pass-with-notes; notes (call_on grammar bug, C28 two truths, C30 boundary memory, attributions) queued to tapir; batch with verdict findings
+2026-11-06 pr-141 47bd3b2 seahorse pre-block: 4 command-generation bugs (fold_needs packet, call_on --to, --body-file -, two_domains instance+dedup) + replay test -> tapir queue
+2026-11-06 verdict pr-133 9919d4d reviewer (tiglon) BLOCK F001 answered race, F002 stamps consumed on failure (already queued to kestrel)
+2026-11-06 verdict pr-141 47bd3b2 perf (wombat) pass-with-notes; 2 cheap notes queued to tapir; marten skips #141
+2026-11-06 verdict pr-141 47bd3b2 security (ibex) BLOCK HIGH S001 shell injection in printed --why; GO to tapir: one round (S001 + seahorse 5 + lungfish + perf 2)
+2026-11-06 memory turn dogfood (tapir): worked end to end. F49 prompt --body-file -, F50 shim memory JSON, F51 one note wording -> 209; F47/F48 ledger to lungfish
+2026-11-06 verdict pr-137 4ab6460 perf (marten) pass-with-notes; waiting marmot, lynx
+2026-11-06 ruling-pm #137: non-holder output publish-only; --answers requires request holder / live role holder / prime, else refused
+2026-11-06 pr-129 final f2e7741 (P001 index) -> wombat tiglon lynx delta; worktree review-129-f2e7741
+2026-11-06 verdict pr-141 47bd3b2 reviewer (seahorse) BLOCK F001-F004 (already in tapir's GO round)
+2026-11-06 verdict pr-129 f2e7741 reviewer (tiglon) pass-with-notes delta. Waiting wombat, lynx
+2026-11-06 verdict pr-133 9919d4d perf (marten) pass-with-notes; reviewer blocked; waiting ibex
+2026-11-06 verdict pr-137 4ab6460 reviewer (marmot) BLOCK F001 global path PK, F002 notification id alias, N001 -> tapir #137 round
+2026-11-06 verdict pr-133 9919d4d security (ibex) pass-with-notes. Perf lists pinned: wombat #129 P001 + #145; marten #133/#137/#141 next heads. (prime: dup work = F25, s05 role queue would fix)
+2026-11-06 verdict pr-137 4ab6460 security (lynx) BLOCK S001 answer authority (=PM ruling) -> tapir #137 round complete list
+2026-11-06 verdict pr-129 f2e7741 security (lynx) pass-with-notes delta. Waiting wombat P001
+2026-11-06 READY pr-129 f2e7741 (tiglon, lynx, wombat pass-with-notes) -> prime
+2026-11-06 pr-130 final bfa8984 (main merge; routes hook -> admit_control) -> seahorse ibex marten delta; worktree review-130-bfa8984
+2026-11-06 MERGED #129 dc9f2e4 (s05 live, daemon 5893). Announced s05 to 13 seats; verdict requests via role:<role>/<pr> instances from now; lungfish s05 dogfood via role:docs-system
+2026-11-06 unblocked: #133 kestrel (retarget main + F001/F002 + Delivers), #135 wildcat (s05 refusals + main + ready); marsupial told #135 likely first
+2026-11-06 #130 DIRTY again after #129 merge; warbler re-merge after bfa8984 verdicts
+2026-11-06 verdict pr-130 bfa8984 perf (marten) pass-with-notes delta; waiting seahorse, ibex
+2026-11-06 verdict pr-130 bfa8984 reviewer (seahorse) pass-with-notes delta; waiting ibex then warbler re-merge
+2026-11-06 verdict pr-130 bfa8984 security (ibex) pass-with-notes; all three in -> warbler merge main again
+2026-11-06 s05 dogfood (lungfish): F52 role refusal advice loops (medium), F53 shim send help, F54 shim role receipt, F55 shim refuses --body, F56 assign doesn't report drained (medium), F57 window rename no restore, F58 shim directory add raw JSON, F59 no list/withdraw queued request (medium) -> plan 212 s05 follow-ups; F55 -> tapir #141
+2026-11-06 plan 212 role send follow-ups pushed 37389db (F52-F59); coder: kestrel after #133
+2026-11-06 plan 213 shim native forward pushed 0536450, coder/213 marsupial; 209 drops shim items; 212 AC5 superseded
+2026-11-06 F61: s05 drain to requester-as-holder refused (self-send), request stranded queued, log-only (daemon.log 08:40:15Z; store row 01a1b003 queued) -> plan 212
+2026-11-06 ruling-pm retire with queued requests: refuse listing them; --drop-queued closes as withdrawn + FYI requesters -> wildcat #135
+2026-11-06 READY pr-146 9f6282d (seahorse pass-with-notes, ibex pass) -> prime; owner fix + F61 next ledger
+2026-11-06 F62: one-holder roles (security, performance) take no instances; with 2 holders role:security refuses and role:security/<pr> refuses -> unaddressable; fell back to seat sends for #147. -> plan 212 (with F52) / #135 edit cardinality. #147 29488ca -> marmot (role:reviewer/147 ok), lynx, marten
+2026-11-06 verdict pr-147 29488ca perf (marten) pass-with-notes; waiting marmot, lynx
+2026-11-06 verdict pr-147 29488ca security (lynx) pass-with-notes; waiting marmot
+2026-11-06 #147 lynx notes: shim resolves pij-rs via unpinned PATH; native whoami differs from routed correction -> follow-up (pin absolute pij-rs like gh/ddocs)
+2026-11-06 verdict pr-147 29488ca reviewer (marmot) BLOCK F001 arity, F002 PIJ_SESSION_ID identity, N001 --json -> marsupial + lynx PATH pin notes; F62 confirmed by marmot
+2026-11-06 pr-147 final 5c8ff97 -> marmot (role:reviewer/147), lynx, marten delta; worktree review-147-5c8ff97
+2026-11-06 verdict pr-147 5c8ff97 perf (marten) pass-with-notes; waiting marmot, lynx
+2026-11-06 verdict pr-147 5c8ff97 security (lynx) pass-with-notes; waiting marmot
+2026-11-06 READY pr-147 5c8ff97 (marmot, lynx, marten pass-with-notes) -> prime
+2026-11-06 #135 --drop-queued design approved (delete + spine event; merge no re-home); build on fleet-194
+2026-11-06 #144 209 ea02f36 progress; re-sent answers: #138 go merge main, #130 second merge, AC5 approved, reaper drop
+2026-11-06 pr-133 final 44f1eea -> tiglon (role:reviewer/133), ibex, marten delta; kestrel compact then plan 212 (coder/212)
+2026-11-06 verdict pr-133 44f1eea perf (marten) pass-with-notes; waiting tiglon, ibex
+2026-11-06 verdict pr-133 44f1eea reviewer (tiglon) BLOCK F002 residual (target re-resolve after admit -> double notify on PA rotation) -> kestrel pin target in claim
+2026-11-06 ctx kestrel 300k -> 25k (compact-self via memory turn); resuming #133 residual then 212
+2026-11-06 verdict pr-133 44f1eea security (ibex) pass-with-notes; reviewer residual F002 being fixed
+2026-11-06 F63 full gate under taskpolicy -b fails timing tests -> asked prime (test exec nice-only). warbler: #130/#138 merges priority (still not pushed)
+2026-11-06 prime F63: compile taskpolicy -b, test exec nice-only; encode in shared-build (209). FYI'd coders
+2026-11-06 pr-141 final bfc5c54 -> seahorse (role:reviewer/141), ibex, marten, lungfish (role:docs-system) delta; worktree review-141-bfc5c54
+2026-11-06 pr-135 final 3621220 -> marmot (role:reviewer/135), lynx, wombat; worktree review-135-3621220; tk-0007 cost receipt as PR comment
+2026-11-06 verdict pr-141 bfc5c54 perf (marten) pass-with-notes; lungfish pass; waiting seahorse, ibex
+2026-11-06 pr-141 bfc5c54 seahorse: F001-F005 closed; F006 P2 no-holder assign drops instance -> tapir queued
+2026-11-06 verdict pr-141 bfc5c54 security (ibex) pass-with-notes; GO tapir F006
+2026-11-06 verdict pr-141 bfc5c54 reviewer BLOCK F006 only (+ per-instance holder check, distinct seats in test)
+2026-11-06 verdict pr-135 3621220 perf (wombat) pass-with-notes; waiting marmot, lynx
+2026-11-06 pr-135 head moved e60be54 (tk-0007 evidence only) -> marmot lynx wombat delta; worktree review-135-e60be54
+2026-11-06 #135 e60be54 rust-test flake tmux adapter dropped_staged_submit (F64) -> rerun; still draft
+2026-11-06 verdict pr-135 e60be54 perf (wombat) pass-with-notes (counts match edit9/retire9/merge11); reviewer block pending formal
+2026-11-06 verdict pr-135 3621220 reviewer (marmot) BLOCK 3xP2 (queued race, post-commit withdrawal retry, repair cmds lose project/instance) -> wildcat; carries to e60be54
+2026-11-06 verdict pr-135 e60be54 security (lynx) pass-with-notes; reviewer block -> wildcat fix
+2026-11-06 pr-138 final 61ff55a (main merge + F32) -> seahorse (role:reviewer/138), ibex, marten delta; worktree review-138-61ff55a
+2026-11-06 verdict pr-135 e60be54 reviewer (marmot) BLOCK confirmed (F001-F003 unchanged); appended marmot's LOG line
+2026-11-06 verdict pr-138 61ff55a perf (marten) pass-with-notes; waiting seahorse, ibex
+2026-11-06 verdict pr-138 61ff55a security (ibex) pass-with-notes; waiting seahorse
+2026-11-06 READY pr-138 61ff55a (seahorse, ibex, marten pass-with-notes) -> prime
+2026-11-06 pr-133 final d9ce4ca (F002 residual pin target) -> tiglon (role:reviewer/133), ibex, marten delta; F64 += tmux separate_adapters flake
+2026-11-06 MERGED #138 433666e (208 live, daemon 82923). lineage add prime-only -> prepared files/lineage-past.sh (12 lines) for prime. F65 Delivers validation CI (prime's F64 renumbered)
+2026-11-06 208 announced; F65 -> warbler 209
+2026-11-06 lineage 12/12 ok (prime b4eaddf..318c8e4), F15 dogfood pass. F66 lineage raw JSON via shim -> marsupial; F67 lineage --batch -> warbler 209
+2026-11-06 verdict pr-133 d9ce4ca reviewer (tiglon) pass-with-notes; waiting ibex, marten
+2026-11-06 verdict pr-133 d9ce4ca perf (marten) pass-with-notes; waiting ibex
+2026-11-06 READY pr-133 d9ce4ca (tiglon, ibex, marten pass-with-notes) -> prime
+2026-11-06 MERGED #133 2c6fa1e (s12 live, daemon 85273). Lane table sent to prime (answering limited request). s12 announced. tapir: #137 retarget after #141 F006
+2026-11-06 s12 dogfood: coder/203 request 01a1b0ae checkin+escalated -> badger (PA) verified tapir active, no release; coder/209 request checked in. F68: replying with pij send doesn't set answered_at (only s06 output --answers), so limited requests escalate even when replied (tiglon/seahorse rows answered_at=0) -> s06/#137 or plan 212
+2026-11-06 pr-135 final 3ecec77 (F001 gate, F002 resume, F003 scoped + 2 main merges) -> marmot (role:reviewer/135 limit 90m), lynx, wombat; worktree review-135-3ecec77
+2026-11-06 F69 suspect: normal sends to warbler (extension-stream) since 20:21 not acted on; FYIs are. Sent answers as FYI
+2026-11-06 warbler is hours behind on its queue (answering 15:00 stop-build msg at 22:30); not lost sends (F69 withdrawn, it's F25 backlog at 656k). PA compacting at turn end
+2026-11-06 verdict pr-135 3ecec77 perf (wombat) pass-with-notes; waiting marmot, lynx
+2026-11-06 F69 (reframed): to a busy Copilot seat, normal sends arrive hours late and OUT OF ORDER while FYIs ride along promptly (warbler confirmed 22:36). Workaround: urgent answers as FYI. -> F25 follow-up plan. warbler merging main into #130 now
+2026-11-06 verdict pr-135 3ecec77 reviewer BLOCK residual F001 (requeue bypass, cancelled gate) -> wildcat GO
+2026-11-06 verdict pr-135 3ecec77 security (lynx) BLOCK HIGH S001 unquoted instance in printed release cmd -> wildcat same round
+2026-11-06 pr-130 final 5d22029 (main merge 2 + batch routes) -> seahorse (role:reviewer/130), ibex, marten delta; worktree review-130-5d22029
+2026-11-06 verdict pr-130 5d22029 perf (marten) pass-with-notes; waiting seahorse, ibex
+2026-11-06 verdict pr-130 5d22029 reviewer (seahorse) pass-with-notes; waiting ibex
+2026-11-06 READY pr-130 5d22029 (seahorse, ibex, marten pass-with-notes) -> prime
+2026-11-06 MERGED #130 3ebbd23 (s08 live, daemon 27104). Announced. F70 stale holdings: released 12 (dogfood); product part -> 212. F71 release --batch -> 212
+2026-11-06 handover written outputs/handover-pij-steady-otter-2026-11-06.md before PA compaction (552k); F72 routes self-write (prime)
+2026-11-06 post-compaction resume. pr-144 ready 464e061 (plan 209, CI green x2, CLEAN) -> seahorse (assigned reviewer/144, role send limit 90m), ibex, marten; full review; worktree review-144-464e061
