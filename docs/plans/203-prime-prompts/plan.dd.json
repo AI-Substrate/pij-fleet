@@ -39,37 +39,37 @@
         {
           "id": "ac-0001",
           "claim": "Picture. `pij directory` shows, per role: holders, waiting requests (s05), latest output (s06) and memory freshness (s07).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "Prompts (req-12). Each condition prints its runnable command: no live holder with requests waiting; two live holders on a one-holder role; memory not updated across recent closes; a recommended role missing.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Needs (req-24, req-27). A roadmap step's `needs: role:<id>` with no such role shows a prompt to create it from a template or as a new definition; the prime is also prompted to notice a need no role covers, in the PEC wording.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
           "claim": "F21 (low, s03 dogfood): the view names the project's designated prime (the seat the project records as prime), so a missing `prime` role document doesn't read like a missing prime.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
           "claim": "F22 (low, s03 dogfood): view polish. Holder times show local time with zone (the writer's zoned dates come from plan 206's F13), and a many-holder role's row wraps to one line per holder instead of one very long line.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
         {
           "id": "ac-0006",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). The view reads documents in-process and the store; it launches nothing. No timer or poll.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
         },
         {
