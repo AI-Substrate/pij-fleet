@@ -38,7 +38,10 @@
 					"harness_session": "fcc65013-77f1-4b8f-8bce-8c6a57b45201",
 					"instance_key": "147",
 					"machine": "ops.osk.lan",
+					"release_why": "instance not supported on a one-holder role (F62); sent by seat",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-thrifty-marten",
+					"to": "2026-11-06T09:13:26.189Z",
 					"why": "verdict on #147 (plan 213)"
 				}
 			]
