@@ -212,7 +212,7 @@
 					"statement": "pij builds a routing table from every role's scope (paths and rules), warns on overlapping scopes, writes it to `community/ROUTES.md`, and sends it to a seat when it is assigned to a role, after a compact, when a revived seat returns, and on demand (`pij directory routes`). When routes change, the changed rows go as an FYI to the prime only. A change of holder sends nothing.",
 					"actor": "worker seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Adding a role regenerates ROUTES.md and sends one FYI to the prime; two roles claiming one path give an overlap warning; reassigning a holder sends nothing.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -515,6 +515,11 @@
 					"date": "2026-11-06",
 					"by": "docs-system",
 					"change": "delivered_by recorded: req-20 and req-21 by #131 (s11, from the prime's `pij delivered 131`); req-09 by #132 (s07), set by hand because #132's Delivers line names the step in prose, not as ddocs addresses."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-local-warbler",
+					"change": "Plan 202: req-11 shipped (routing table, overlap warning, FYIs to seats on assign, compact and revive, changed rows to the prime only, `pij directory routes`)."
 				}
 			]
 		}

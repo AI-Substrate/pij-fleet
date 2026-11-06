@@ -23,6 +23,7 @@ mod report;
 mod revive;
 pub mod role;
 mod role_send;
+mod routes;
 mod shim;
 mod types;
 mod watchdog;
@@ -2143,7 +2144,25 @@ pub(crate) async fn send_control(
 /// Admit one authorized control: the single place a control enters delivery,
 /// so a compact held for a memory turn takes the same path when it runs.
 async fn admit_control(state: &AppState, msg: Msg) -> Result<pij_core::model::Receipt, PijError> {
-    state.services.delivery.accept_control(msg).await
+    let compact = msg.command.as_deref() == Some("compact");
+    let target = msg.to.clone();
+    let receipt = state.services.delivery.accept_control(msg).await?;
+    if compact {
+        // Held for the first turn after the compact (plan 202), here so a compact
+        // the memory turn held gets it too. Keyed to the compact's recipient and
+        // id: a replay holds nothing new, and another seat's compact with the same
+        // id still gets its own.
+        let id = format!("routes-after-compact:{target}:{}", receipt.msg_id);
+        routes::deliver(
+            &state.services,
+            &target,
+            None,
+            routes::Trigger::Compact,
+            Some(id),
+        )
+        .await;
+    }
+    Ok(receipt)
 }
 
 /// Map a delivery failure onto the wire, once.

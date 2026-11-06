@@ -8,7 +8,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use pij_core::config::{AdapterChoice, Adapters, Config};
-use pij_core::model::{Harness, SeatDescriptor, SeatId};
+use pij_core::model::{Harness, PaneProcess, ProcIdentity, SeatDescriptor, SeatId};
 use pij_daemon::community::Refusal;
 use pij_daemon::community::ddocs::Validator;
 use pij_daemon::community::directory::{AfterAssign, DirectoryService, NoHook};
@@ -17,13 +17,18 @@ use pij_daemon::community::templates::Catalog;
 use pij_daemon::community::writer::{CommunityWriter, LOCK_RETRY};
 use pij_daemon::delivery::role_send::RoleQueueDrain;
 use pij_daemon::http::{HttpConfig, router_with_config};
-use pij_testkit::fakes::FakeTmux;
+use pij_testkit::fakes::{FakeLiveness, FakeTmux};
 use pij_testkit::{FreshStore, fresh_dir};
 use serde_json::{Value, json};
 
 const KEY: &str = "directory-test-key";
 const SEAT: &str = "pij-test-coder";
 const PANE: &str = "%41";
+/// The caller's process, live in its pane, so it may send controls.
+const CALLER_PROC: ProcIdentity = ProcIdentity {
+    pid: 910_041,
+    proc_start: 7,
+};
 
 /// Refuses a document holding `INVALID`; renders every other one.
 struct FakeDdocs;
@@ -226,8 +231,15 @@ async fn rig_inner(
     let writer = Arc::new(writer);
     let store = services.directory.store().clone();
     services.community = Arc::clone(&writer);
-    let tmux = Arc::new(FakeTmux::new());
+    let tmux = Arc::new(FakeTmux::new().with_pane_process(
+        PANE,
+        PaneProcess {
+            pid: CALLER_PROC.pid,
+            cwd: "/tmp".to_string(),
+        },
+    ));
     services.tmux = tmux.clone();
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(CALLER_PROC));
     let drain = hook.is_none().then(|| Arc::new(RoleQueueDrain::new()));
     let hook = hook.unwrap_or_else(|| {
         Arc::clone(drain.as_ref().expect("no hook given")) as Arc<dyn AfterAssign>
@@ -247,10 +259,21 @@ async fn rig_inner(
         (SEAT, Some(PANE), None),
         ("pij-holder", Some("%51"), Some(SEAT)),
         ("pij-second", None, Some(SEAT)),
+        // A recorded pane tmux does not have: a compact target, and dead for revive.
+        ("pij-dormant", Some("%61"), Some(SEAT)),
     ] {
         let mut seat = SeatDescriptor::new(id, Harness::Omp, "/tmp");
         seat.pane = pane.map(str::to_string);
         seat.parent = parent.map(SeatId::from);
+        seat.proc = match id {
+            SEAT => Some(CALLER_PROC),
+            // A process the liveness fake has never seen: observed dead.
+            "pij-dormant" => Some(ProcIdentity {
+                pid: 4242,
+                proc_start: 10,
+            }),
+            _ => None,
+        };
         services.registry.put(seat).await.expect("seed seat");
     }
     let roles = Arc::clone(&services.roles);
@@ -1097,6 +1120,8 @@ async fn add_adopts_a_hand_written_role_folder_and_writes_only_the_document() {
     assert_eq!(
         committed.lines().collect::<Vec<_>>(),
         [
+            // The first role write replaces any hand-written table (plan 202).
+            ".harness/government/community/ROUTES.md",
             ".harness/government/community/roles/coder/role.dd.json",
             ".harness/government/community/roles/coder/role.dd.md",
         ]
@@ -1595,9 +1620,481 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
 #[path = "pr122_review/mod.rs"]
 mod review;
 
+/// Every FYI held for `recipient`, as `(sender, body)`, oldest first.
+async fn fyis(rig: &Rig, recipient: &str) -> Vec<(String, String)> {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    let rows = sqlx::query_as(
+        "SELECT sender, body FROM fyis WHERE recipient = ?1 ORDER BY held_at_ms, id",
+    )
+    .bind(recipient)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    rows
+}
+
+/// Plan 201: a compact to a role holder is held for its memory turn and
+/// admitted in the background; the turn's `memory.turn` event is appended
+/// after that admission (and so after its routes FYI). Waits for `turns`.
+async fn memory_turns(rig: &Rig, seat: &str, turns: i64) {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let ended: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM spine_events WHERE kind = 'memory.turn' AND seat = ?1",
+        )
+        .bind(seat)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if ended >= turns {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{seat}: {ended} of {turns} memory turns ended"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    pool.close().await;
+}
+
+fn routes_md(repo: &Repo) -> String {
+    std::fs::read_to_string(repo.gov.join(pij_daemon::community::layout::ROUTES)).unwrap()
+}
+
+fn names_at_head(repo: &Repo) -> String {
+    git(&repo.gov, &["show", "--name-only", "--format=", "HEAD"])
+}
+
+async fn fleet_with_prime(rig: &Rig, repo: &Repo) {
+    let main = repo.main.to_str().unwrap();
+    let created = call(
+        rig.addr,
+        "/v1/project",
+        &[
+            "project",
+            "create",
+            "fleet",
+            "--repo",
+            main,
+            "--prime",
+            "pij-second",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+}
+
+async fn add_role(rig: &Rig, repo: &Repo, id: &str, path: &str, rule: &str) -> Value {
+    call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            id,
+            "--scope-path",
+            path,
+            "--rule",
+            rule,
+            "--packet",
+            "You hold it.",
+            "--why",
+            "routes test",
+        ],
+        &repo.main,
+    )
+    .await
+}
+
+/// Plan 202 AC1 and AC3: a role add rewrites ROUTES.md (adopting a hand-written
+/// one) in its own commit, warns on an overlap and tells the prime once per
+/// change; assign and release change no route and tell the prime nothing.
+#[tokio::test]
+async fn role_changes_regenerate_routes_in_their_commit_and_tell_the_prime_once() {
+    let repo = repo("pij-routes-regenerate");
+    let routes_path = repo.gov.join(pij_daemon::community::layout::ROUTES);
+    std::fs::create_dir_all(routes_path.parent().unwrap()).unwrap();
+    std::fs::write(&routes_path, "# Hand-written\n| merges | prime |\n").unwrap();
+    git(&repo.gov, &["add", "."]);
+    git(&repo.gov, &["commit", "-q", "-m", "hand-written routes"]);
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+
+    let added = add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    assert_eq!(added["ok"], true, "{added}");
+    let names = names_at_head(&repo);
+    assert!(names.contains("community/ROUTES.md"), "{names}");
+    assert!(names.contains("roles/delivery/role.dd.json"), "{names}");
+    let table = routes_md(&repo);
+    assert!(!table.contains("Hand-written"), "{table}");
+    assert!(
+        table.contains("| `crates/delivery/**` | role:delivery |\n| Owns sends. | role:delivery |"),
+        "{table}"
+    );
+    let routes = &added["data"]["routes"];
+    assert_eq!(routes["regenerated"], true, "{routes}");
+    assert_eq!(routes["added"].as_array().unwrap().len(), 2, "{routes}");
+    assert_eq!(routes["prime"]["sent"], "fyi", "{routes}");
+    assert!(added["data"].get("warnings").is_none(), "{added}");
+    let prime = fyis(&rig, "pij-second").await;
+    assert_eq!(prime.len(), 1, "{prime:?}");
+    assert_eq!(prime[0].0, "pij-bg");
+    assert!(
+        prime[0].1.starts_with("Routes changed in fleet")
+            && prime[0]
+                .1
+                .contains("+ `crates/delivery/**` -> role:delivery"),
+        "{}",
+        prime[0].1
+    );
+
+    let overlapping = add_role(
+        &rig,
+        &repo,
+        "storage",
+        "crates/delivery/queue.rs",
+        "Owns the queue.",
+    )
+    .await;
+    assert_eq!(overlapping["ok"], true, "{overlapping}");
+    assert_eq!(
+        overlapping["data"]["warnings"],
+        json!([
+            "W-ROUTES-OVERLAP: crates/delivery/** (role:delivery) overlaps crates/delivery/queue.rs (role:storage)"
+        ])
+    );
+    assert!(routes_md(&repo).contains("## Overlaps"));
+    assert_eq!(fyis(&rig, "pij-second").await.len(), 2);
+
+    // A change of holder: no route changes and the prime hears nothing.
+    let before = routes_md(&repo);
+    for leaf in ["assign", "release"] {
+        let held = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                leaf,
+                "delivery",
+                "pij-holder",
+                "--why",
+                "rotate",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(held["ok"], true, "{held}");
+        assert!(!names_at_head(&repo).contains("ROUTES.md"));
+    }
+    assert_eq!(routes_md(&repo), before);
+    assert_eq!(fyis(&rig, "pij-second").await.len(), 2);
+    rig.server.abort();
+}
+
+/// Plan 202 AC2 (on demand): `directory routes` prints the table with live
+/// holders and says whether ROUTES.md is stale; `--write` rewrites a stale one
+/// in one commit and writes nothing when it is current.
+#[tokio::test]
+async fn routes_on_demand_and_write_only_when_stale() {
+    let repo = repo("pij-routes-demand");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "delivery",
+            "pij-holder",
+            "--why",
+            "own it",
+        ],
+        &repo.main,
+    )
+    .await;
+
+    let shown = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(shown["ok"], true, "{shown}");
+    assert_eq!(shown["data"]["stale"], false);
+    let text = shown["data"]["text"].as_str().unwrap();
+    assert!(
+        text.contains("| `crates/delivery/**` | role:delivery | pij-holder |"),
+        "{text}"
+    );
+
+    let head_before = head(&repo);
+    let current = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes", "--write", "--why", "check"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(current["ok"], true, "{current}");
+    assert_eq!(current["data"]["written"]["regenerated"], false);
+    assert_eq!(head(&repo), head_before);
+
+    std::fs::write(
+        repo.gov.join(pij_daemon::community::layout::ROUTES),
+        "edited by hand\n",
+    )
+    .unwrap();
+    git(&repo.gov, &["commit", "-q", "-am", "a hand edit"]);
+    let stale = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(stale["data"]["stale"], true, "{stale}");
+    let written = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes", "--write", "--why", "adopt"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(written["ok"], true, "{written}");
+    assert_eq!(written["data"]["commit"], head(&repo));
+    assert_eq!(
+        names_at_head(&repo).trim(),
+        ".harness/government/community/ROUTES.md"
+    );
+    assert_eq!(written["data"]["stale"], false);
+    // No row changed, so the prime hears only of the one role add.
+    assert_eq!(fyis(&rig, "pij-second").await.len(), 1);
+
+    let refused = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes", "--write"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(refused["details"]["code"], "E-RS-ARG", "{refused}");
+    rig.server.abort();
+}
+
+/// Plan 202 AC2: assign, a compact control and a revive each hold the table
+/// once for a role holder; a seat holding no role gets nothing.
+#[tokio::test]
+async fn assign_compact_and_revive_each_send_a_holder_the_table_once() {
+    let repo = repo("pij-routes-triggers");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    for seat in ["pij-holder", "pij-dormant"] {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", "delivery", seat, "--why", "own it"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["data"]["routes"]["sent"], "fyi", "{assigned}");
+        assert_eq!(assigned["data"]["routes"]["projects"], json!(["fleet"]));
+    }
+    let held = fyis(&rig, "pij-holder").await;
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert_eq!(held[0].0, "pij-bg");
+    assert!(
+        held[0].1.starts_with("Routing table for fleet."),
+        "{}",
+        held[0].1
+    );
+    assert!(
+        held[0]
+            .1
+            .contains("| Owns sends. | role:delivery | pij-holder |"),
+        "{}",
+        held[0].1
+    );
+
+    let compact = call(
+        rig.addr,
+        "/v1/shim/send",
+        &["send", "pij-holder", "--command", "compact"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(compact["ok"], true, "{compact}");
+    assert_eq!(compact["data"]["held"], "memory-turn", "{compact}");
+    memory_turns(&rig, "pij-holder", 1).await;
+    assert_eq!(fyis(&rig, "pij-holder").await.len(), 2);
+    let own = call(rig.addr, "/v1/shim/send", &["compact-self"], &repo.main).await;
+    assert_eq!(own["ok"], true, "{own}");
+    assert!(fyis(&rig, SEAT).await.is_empty(), "holds no role");
+
+    let revived: Value = reqwest::Client::new()
+        .post(format!("http://{}/v1/revive", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({"id": "pij-dormant", "session": "fleet", "fresh": true}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(revived["ok"], true, "{revived}");
+    let dormant = fyis(&rig, "pij-dormant").await;
+    assert_eq!(dormant.len(), 2, "assign and revive: {dormant:?}");
+    assert!(dormant[1].1.starts_with("Routing table for fleet."));
+    rig.server.abort();
+}
+
 /// Plan 194 (s03): --from template and file, templates, drift and prompts.
 #[path = "templates_http/mod.rs"]
 mod templates;
+
+/// Review of #130, F001 (pij-usual-seahorse's regression, adopted): replaying
+/// one compact request, by its caller-chosen msg_id, queues one compact and
+/// holds one table, while the FYI is held and after it is claimed.
+#[tokio::test]
+async fn reviewer_compact_request_replay_does_not_duplicate_routes() {
+    let repo = repo("pij-pr130-review-replay");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    let added = add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    assert_eq!(added["ok"], true, "{added}");
+    let assigned = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "delivery",
+            "pij-holder",
+            "--why",
+            "own it",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    assert_eq!(fyis(&rig, "pij-holder").await.len(), 1);
+    let request = json!({
+        "from": SEAT,
+        "to": {"seat": "pij-holder"},
+        "body": "",
+        "command": "compact",
+        "msg_id": "reviewer-one-compact",
+        "caller": {"tmuxPane": PANE, "cwd": repo.main},
+    });
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    for attempt in 1..=3 {
+        if attempt == 3 {
+            // As if the seat's next turn claimed it.
+            sqlx::query("UPDATE fyis SET state = 'delivered' WHERE recipient = 'pij-holder'")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let response: Value = reqwest::Client::new()
+            .post(format!("http://{}/v1/send", rig.addr))
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["data"]["msg_id"], "reviewer-one-compact");
+        // Each request is held for the holder's memory turn, then admitted.
+        memory_turns(&rig, "pij-holder", attempt).await;
+        let controls: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM jobs WHERE dedupe_key = 'reviewer-one-compact'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let held = fyis(&rig, "pij-holder").await;
+        assert_eq!(
+            controls, 1,
+            "attempt {attempt}: same request queues one compact"
+        );
+        assert_eq!(
+            held.len(),
+            2,
+            "attempt {attempt}: one assign FYI and one compact FYI, even on replay"
+        );
+    }
+    pool.close().await;
+    rig.server.abort();
+}
+
+/// Review of #130, F002: the FYI id is global, so the compact's routes FYI is
+/// keyed to its recipient too. Two seats compacted with one caller-chosen
+/// msg_id each get exactly one table, and a replay to either adds none.
+#[tokio::test]
+async fn one_compact_msg_id_to_two_seats_gives_each_its_own_table_once() {
+    let repo = repo("pij-pr130-review-two-seats");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    for seat in ["pij-holder", "pij-dormant"] {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", "delivery", seat, "--why", "own it"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["ok"], true, "{assigned}");
+    }
+    for attempt in 1..=2 {
+        for seat in ["pij-holder", "pij-dormant"] {
+            let response: Value = reqwest::Client::new()
+                .post(format!("http://{}/v1/send", rig.addr))
+                .bearer_auth(KEY)
+                .json(&json!({
+                    "from": SEAT,
+                    "to": {"seat": seat},
+                    "body": "",
+                    "command": "compact",
+                    "msg_id": "one-shared-compact",
+                    "caller": {"tmuxPane": PANE, "cwd": repo.main},
+                }))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(response["ok"], true, "{seat}: {response}");
+        }
+        for seat in ["pij-holder", "pij-dormant"] {
+            memory_turns(&rig, seat, attempt).await;
+            let held = fyis(&rig, seat).await;
+            assert_eq!(
+                held.len(),
+                2,
+                "attempt {attempt}, {seat}: its assign table and one compact table: {held:?}"
+            );
+        }
+    }
+    rig.server.abort();
+}
 
 /// Plan 208 F16: `assign --batch` records many holdings in one commit, and a
 /// file with any bad line writes nothing and names every one.
@@ -2269,10 +2766,17 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
         assert_eq!(request.holder.as_deref(), Some("pij-holder"), "{id}");
     }
     let head = inbox_bodies(&rig, "pij-holder").await;
+    let first = head.first().map(String::as_str).unwrap_or_default();
+    // Each assign holds the routing table for its holder (plan 202), and held
+    // FYIs ride along with the seat's next real message: this drained request.
+    let (request, riders) = first.split_once("\n\nAlso, ").unwrap_or((first, ""));
     assert_eq!(
-        head.first().map(String::as_str),
-        Some("[pij role:pm-001 request req-a from pij-test-coder · reply wake]\nplease req-a"),
+        request, "[pij role:pm-001 request req-a from pij-test-coder · reply wake]\nplease req-a",
         "the oldest request is first in the holder's queue"
+    );
+    assert!(
+        riders.is_empty() || riders.contains("Routing table for fleet."),
+        "only the routing table rides along: {first}"
     );
     let events = call(
         rig.addr,

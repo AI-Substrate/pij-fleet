@@ -427,7 +427,8 @@ pub(super) async fn revive_seat(
         role: None,
         caller: None,
     };
-    launch_seat_locked(
+    let seat = spawn_request.id.clone();
+    let response = launch_seat_locked(
         &state,
         spawn_request,
         ExistingSeatPolicy {
@@ -437,5 +438,19 @@ pub(super) async fn revive_seat(
         spawn_guard,
         Some(receipt),
     )
-    .await
+    .await;
+    if response.status().is_success()
+        && let Some(seat) = seat
+    {
+        // Held for the revived seat's first turn (plan 202).
+        super::routes::deliver(
+            &state.services,
+            &seat,
+            None,
+            super::routes::Trigger::Revive,
+            None,
+        )
+        .await;
+    }
+    response
 }
