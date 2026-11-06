@@ -269,6 +269,7 @@ copilot-models *ARGS:
 self-check:
     just local-path-check
     just ddocs-check
+    just pij-skill-check
     just lockfile-allowlist
     just typecheck
     just lint
