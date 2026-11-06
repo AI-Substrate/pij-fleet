@@ -92,3 +92,7 @@
 
 2026-11-06 note pr:130 8bfba9de1206a0f781bd853827df38abc961ca08 pass-with-notes - Queued-request delta reread agrees with existing filed/posted verdict, which was preserved and read back rather than duplicated; nonblocking custom-ID delimiter collision qualifies universal F002 claims, latest DIRTY merge gate independent; exact PM line re-sent; 2026-11-06-pr-130-8bfba9d-qualification.md.
 
+2026-11-06 verdict pr:134 5f4bafa0a75b1f245e67d04520c2c2874a56f1ef pass-with-notes - Merge delta keeps registration/harness/spawn code unchanged; requested diff contains only two testkit fixtures identical to main parent; prior S001/C27 verdict stands; exact head MERGEABLE/CLEAN, four green checks and identical CI tree; native proof limits retained; 2026-11-06-pr-134-5f4bafa-security.md.
+
+2026-11-06 verdict pr:129 314da13a19d8d233e8c7b6d48d3de0991635b47e pass-with-notes - Historical stale-holder MEDIUM closed by current-holder atomic claim; request-bound cold audit precedes wake; local holder/origin-bound transactional boot admission recovery and metadata-only digest verified; startup continues on logged recovery error, no universal exactly-once/model-completion claim; four green checks and identical-tree 1968-case proof, CI-only; 2026-11-06-pr-129-314da13-security.md.
+
