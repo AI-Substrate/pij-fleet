@@ -84,3 +84,11 @@
 
 2026-11-06 friction security-memory-add blocked - E-RS-GOV-FOREIGN-EDIT on roles/security/memory/INDEX.md carrying pre-s07 uncommitted edits; supported verb wrote nothing. PM notified for prime baseline commit before retry; no index cleanup, manual memory write or governance commit attempted. PR #131 comment 6677181209 read-back verified.
 
+2026-11-06 verdict pr:142 d2235f542b6953dc37790cf96ee2289953515ffa pass - Docs-only public-safety delta: PRD JSON/generated Markdown, 21 changed lines clear; calibrated positive/allowed-reference controls pass; exact head CLEAN and four green checks before publication; row/changelog correctness excluded; 2026-11-06-pr-142-d2235f5-security.md.
+
+2026-11-06 verdict pr:143 fdb0b2745c4a194227f0d405b99a089a4e92c39c pass - Docs-only public-safety delta: difficulties.md 12 additions clear; four positive categories and eight allowed-reference controls pass; exact head CLEAN and four green checks before publication; owner/severity/correspondence/merge-tree correctness excluded; 2026-11-06-pr-143-fdb0b27-security.md.
+
+2026-11-06 verdict pr:134 c54aeb51438ef0f20845ec5e7d560a7a2fefc02c pass-with-notes - S001 cross-PID/raw-ucomm substitution closed; amended C27 single-PID host-only cached/fail-closed reads verified; four green checks, identical-tree 1900-case proof; current PR DIRTY/CONFLICTING, native evidence attributed rather than exact-head certified; no replacement-head/merge clearance; 2026-11-06-pr-134-c54aeb5-security.md.
+
+2026-11-06 note pr:130 8bfba9de1206a0f781bd853827df38abc961ca08 pass-with-notes - Queued-request delta reread agrees with existing filed/posted verdict, which was preserved and read back rather than duplicated; nonblocking custom-ID delimiter collision qualifies universal F002 claims, latest DIRTY merge gate independent; exact PM line re-sent; 2026-11-06-pr-130-8bfba9d-qualification.md.
+
