@@ -26,9 +26,10 @@ use pij_store::{Assignment, ReplyMode, RequestState, RoleRequest, SqliteOrchestr
 use serde_json::{Value, json};
 
 use crate::Services;
-use crate::community::directory::{AfterAssign, E_ROLE_MISSING};
+use crate::community::directory::{AfterAssign, E_RETIRED, E_ROLE_MISSING};
 use crate::community::holders::seat_role_for;
 use crate::community::layout::RolePaths;
+use crate::community::role;
 use crate::community::{Refusal, root};
 
 /// Every role address starts with this.
@@ -187,6 +188,7 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
         return replay(&send, existing);
     }
     let document = role_document(&send.repo, &send.project, &send.address.role)?;
+    refuse_retired(&send, &role::standing(&document))?;
     let meta = section(&document, "meta");
     if !send.address.instance.is_empty()
         && meta.and_then(|meta| meta["holders"].as_str()) == Some("one")
@@ -435,6 +437,33 @@ fn role_document(repo: &Path, project: &str, role: &str) -> Result<Value, Refusa
             "E-RS-ARG",
             format!("{} is not a role document: {error}", path.display()),
         )
+    })
+}
+
+/// A retired role takes no sends; a merged one names where its work went
+/// (plan 206, req-28). Nothing is queued for either.
+fn refuse_retired(send: &RoleSend, standing: &role::Standing) -> Result<(), Refusal> {
+    if !standing.retired() {
+        return Ok(());
+    }
+    let role = &send.address.role;
+    Err(match &standing.merged_into {
+        Some(into) => Refusal::new(
+            E_RETIRED,
+            format!(
+                "role {role} in project {} was merged into {into}; nothing was sent",
+                send.project
+            ),
+        )
+        .with_next(format!("Send to {ROLE_PREFIX}{into} instead.")),
+        None => Refusal::new(
+            E_RETIRED,
+            format!(
+                "role {role} in project {} is retired; nothing was sent",
+                send.project
+            ),
+        )
+        .with_next(format!("pij directory view --project {}", send.project)),
     })
 }
 

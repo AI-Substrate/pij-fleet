@@ -503,3 +503,96 @@ async fn the_writer_holds_merged_into_to_retired_roles_and_edit_keeps_state() {
     );
     server.abort();
 }
+
+/// Plan 206 with s05 (#129): a role with requests queued for a holder cannot
+/// be retired or merged away, and a retired or merged role takes no sends,
+/// the merged one naming where its work went. Nothing is queued for either.
+#[tokio::test]
+async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
+    let repo = repo("pij-directory-reshape-sends");
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    for id in ["qa", "review", "sec"] {
+        let added = directory(
+            addr,
+            &repo,
+            &["add", id, "--rule", "r", "--packet", "p", "--why", "start"],
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{id}: {added}");
+    }
+    for (role, msg) in [("qa", "req-qa"), ("review", "req-review")] {
+        let queued = send_to(addr, &repo.main, &format!("role:{role}"), msg, json!({})).await;
+        assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+    }
+
+    let before = head(&repo);
+    let retire = directory(addr, &repo, &["retire", "qa", "--why", "done"]).await;
+    assert_eq!(
+        refusal_code(&retire),
+        "E-RS-DIRECTORY-ROLE-QUEUED",
+        "{retire}"
+    );
+    assert!(
+        retire.to_string().contains("1 request(s) queued"),
+        "{retire}"
+    );
+    let merge = directory(
+        addr,
+        &repo,
+        &["merge", "review", "--into", "sec", "--why", "folded"],
+    )
+    .await;
+    assert_eq!(
+        refusal_code(&merge),
+        "E-RS-DIRECTORY-ROLE-QUEUED",
+        "{merge}"
+    );
+    assert_eq!(head(&repo), before, "a refused reshape commits nothing");
+
+    // Assigning drains the queue to the holder; then the role can go.
+    for role in ["qa", "review"] {
+        for verb in ["assign", "release"] {
+            let done = directory(addr, &repo, &[verb, role, "pij-holder", "--why", "w"]).await;
+            assert_eq!(done["ok"], true, "{verb} {role}: {done}");
+        }
+    }
+    let retired = directory(addr, &repo, &["retire", "qa", "--why", "done"]).await;
+    assert_eq!(retired["ok"], true, "{retired}");
+    let merged = directory(
+        addr,
+        &repo,
+        &["merge", "review", "--into", "sec", "--why", "folded"],
+    )
+    .await;
+    assert_eq!(merged["ok"], true, "{merged}");
+
+    let to_retired = send_to(addr, &repo.main, "role:qa", "req-retired", json!({})).await;
+    assert_eq!(
+        refusal_code(&to_retired),
+        "E-RS-DIRECTORY-RETIRED",
+        "{to_retired}"
+    );
+    assert!(
+        to_retired.to_string().contains("is retired"),
+        "{to_retired}"
+    );
+    let to_merged = send_to(addr, &repo.main, "role:review", "req-merged", json!({})).await;
+    assert_eq!(
+        refusal_code(&to_merged),
+        "E-RS-DIRECTORY-RETIRED",
+        "{to_merged}"
+    );
+    assert!(
+        to_merged.to_string().contains("merged into sec"),
+        "{to_merged}"
+    );
+    assert_eq!(to_merged["details"]["next"], "Send to role:sec instead.");
+    for msg in ["req-retired", "req-merged"] {
+        assert!(
+            rig.store.role_request(msg).await.unwrap().is_none(),
+            "{msg} queued"
+        );
+    }
+}

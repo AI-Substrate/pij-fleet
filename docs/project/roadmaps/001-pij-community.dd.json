@@ -216,7 +216,7 @@
 				{
 					"id": "s15",
 					"title": "Reshape: retire and merge roles",
-					"state": "in-progress",
+					"state": "complete",
 					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-28"],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-verbs"],
 					"depends_on": ["#steps/s04", "#steps/s05"],
@@ -288,6 +288,11 @@
 					"date": "2026-11-06",
 					"by": "pij-exuberant-wildcat",
 					"change": "s15 depends on s05 (its send refusal needs role sends) and needs docs-system, reviewer and security (it changes the pij/role schema, C7)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 206: s15 complete (pij directory edit, retire and merge; retire waits for queued role requests; a retired or merged role refuses sends)."
 				}
 			]
 		}

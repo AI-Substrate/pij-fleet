@@ -33,6 +33,9 @@ pub const E_NOT_HELD: &str = "E-RS-DIRECTORY-NOT-HELD";
 pub const E_RETIRED: &str = "E-RS-DIRECTORY-RETIRED";
 /// The role still has a live holder (plan 206: release before retiring).
 pub const E_ROLE_HELD: &str = "E-RS-DIRECTORY-ROLE-HELD";
+/// The role has requests queued for a holder (plan 206: retiring would strand
+/// them).
+pub const E_ROLE_QUEUED: &str = "E-RS-DIRECTORY-ROLE-QUEUED";
 /// A role made from a template records no template version (plan 206, F19).
 pub const E_NO_TEMPLATE_VERSION: &str = "E-RS-DIRECTORY-NO-TEMPLATE-VERSION";
 
@@ -588,6 +591,25 @@ impl DirectoryService {
         why: &str,
     ) -> Result<Written, Refusal> {
         let paths = RolePaths::new(id)?;
+        // Read before the writer lock (the store is async, the commit is not).
+        // Once the retirement lands the send path refuses the role, so a send
+        // can only slip in between this read and the commit.
+        let queued = self
+            .store
+            .queued_role_request_count(project, id)
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+        if queued > 0 {
+            return Err(Refusal::new(
+                E_ROLE_QUEUED,
+                format!(
+                    "role {id:?} has {queued} request(s) queued for a holder; retiring it would strand them"
+                ),
+            )
+            .with_next(format!(
+                "Assign a holder to drain them (pij directory assign {id} <seat> --why <text>), release it, then retire."
+            )));
+        }
         let pending = self.pending(project).await?;
         let (project_id, id, into, by, why) = (
             project.to_string(),

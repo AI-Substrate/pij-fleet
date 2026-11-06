@@ -215,6 +215,23 @@ impl SqliteOrchestration {
         .collect()
     }
 
+    /// How many requests for `role` in `project`, any instance, wait queued
+    /// for a holder: what retiring the role would strand (plan 206). One
+    /// count on the partial `role_requests_queued` index.
+    pub async fn queued_role_request_count(&self, project: &str, role: &str) -> Result<u64> {
+        require_current_schema(&self.pool).await?;
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM role_requests INDEXED BY role_requests_queued \
+             WHERE project = ?1 AND role = ?2 AND state = 'queued'",
+        )
+        .bind(project)
+        .bind(role)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(count as u64)
+    }
+
     /// Every request not yet settled, queued or stuck `delivering`, oldest
     /// first: the PA digest's list (review of #129, F003). Bodies are not
     /// read (blank here); the digest never shows them. Two partial-index reads.

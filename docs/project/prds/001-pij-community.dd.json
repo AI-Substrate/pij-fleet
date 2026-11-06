@@ -386,9 +386,9 @@
 					"statement": "A pij emergent community is never fixed at setup. As the work changes, the prime or a human can add, merge or retire roles. A retired or merged role keeps its memory, outputs and lineage, and templates stay examples throughout.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "A role can be retired, and two roles merged, each by a directory write that commits on the governance branch with a changelog row. Afterwards the retired role's memory, outputs and lineage are still readable, and the directory view lists it as retired rather than missing.",
-					"note": "Extends req-27 (grow from needs) to reshaping. Plan 206 (s15) adds `pij directory retire` and `merge`; adding a role shipped with s02.",
+					"note": "Extends req-27 (grow from needs) to reshaping. Plan 206 (s15) shipped `pij directory edit`, `retire` and `merge`; a retired role refuses sends to it and cannot be retired while requests wait queued for it. Adding a role shipped with s02.",
 					"source": "ruling C26"
 				}
 			]
@@ -520,6 +520,11 @@
 					"date": "2026-11-06",
 					"by": "pij-exuberant-wildcat",
 					"change": "req-28 in progress: plan 206 (roadmap s15) adds pij directory retire and merge."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 206: req-28 shipped (pij directory retire and merge, with the s05 send refusal and the queued-request guard)."
 				}
 			]
 		}

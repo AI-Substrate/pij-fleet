@@ -779,6 +779,7 @@ Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored
 | `E-RS-ROLE-ONLY` | `--reply`, `--limit` or `--project` on a send to a seat |
 | `E-RS-ROLE-ADDRESS` | a malformed address, an instance on a one-holder role, `role:<id>@<machine>` or a forwarded role send (role addresses are local and never forwarded), or `--command` to a role |
 | `E-RS-DIRECTORY-ROLE-MISSING` | the project's directory has no such role (next: `pij directory view`) |
+| `E-RS-DIRECTORY-RETIRED` | the role is retired (plan 206); nothing is sent or queued. A merged role names the role it went to, and the next step is `Send to role:<to> instead.` |
 | `E-RS-ROLE-HOLDERS` | two or more live holders |
 | `E-RS-ROLE-MISMATCH` | the holder's `seat_roles` role disagrees with the directory (a `pm`, `pa` or `worker` role other than the one the directory implies; a prime is never re-roled). Next: `pij role <seat> <role>` |
 
@@ -1080,16 +1081,23 @@ standing: `edit` refuses a retired role and refuses a change to `state` or
 `merged_into` (a `--file` that leaves them out keeps them). ddocs cannot tie
 `merged_into` to `state: retired` or check that it names a role, so the writer
 refuses either on every write (`E-RS-ARG`, `E-RS-DIRECTORY-ROLE-MISSING`), and
-`merged_from` counts only retired roles.
+`merged_from` counts only retired roles. Once retired, a role takes no sends:
+`pij send role:<id>` refuses `E-RS-DIRECTORY-RETIRED`, naming the merge target.
+The queued-request check is one count on the `role_requests_queued` index,
+read before the writer lock; a send can only slip in between that read and the
+commit, after which the send path refuses.
 
 | Refusal | When |
 |---|---|
 | `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
+| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)); retiring or merging it away would strand them. The count is named, and the next step is to assign a holder (which drains them), release it, then retire |
 | `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign and edit of a retired role refuse too, naming the merge target when there is one |
 | `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
 | `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |
 
-Cost: one writer commit per edit, retire or merge, the same as an add. No loop
+Cost: one writer commit per edit, retire or merge, the same as an add, plus
+one indexed count for retire and merge. The send path reads the role document
+it already reads. No loop
 or timer.
 
 ### Role memory (plan 201)
