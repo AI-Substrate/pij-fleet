@@ -50,3 +50,5 @@
 
 2026-11-06 note pr:129 fd7bf4141420f132974ece403faa5ae8c64c9982 block - INTERIM stale assignment drain sends later requests to released holder, MEDIUM9/10, in-memory migrations/SELECT proof; no transport or old-head PR verdict; replacement head/CI and remaining review pending; 2026-11-06-pr-129-fd7bf41-interim-security.md.
 
+2026-11-06 verdict pr:129 da23eb7566844c93857ecb11ba58c4da6947c605 block - Final merged head retains identical vulnerable drain blob; released holder can receive subsequently queued requests, MEDIUM9/10; in-memory proof carries; four CI jobs green/identical tree do not cover race; audit/stage qualifications recorded; 2026-11-06-pr-129-da23eb7-security.md.
+

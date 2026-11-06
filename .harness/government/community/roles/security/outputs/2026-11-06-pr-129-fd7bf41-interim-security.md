@@ -39,3 +39,7 @@ Local-bearer/asserted-from and shim caller derivation remain the existing trust 
 Related contract note: delivery/role_send.rs:637 directly admits non-FYI drained bodies without the cold guard/audit used by immediate sends at http/role_send.rs:144. Align that admission with the existing cold-wake contract while repairing the drain; no live cold wake or additional graded access exploit is claimed.
 
 Zero-holder PA/prime nudges use fixed daemon identity, request-derived IDs and a fixed role-queue reason; the watchdog records mandatory cold-wake audit before sending and audit failure prevents the nudge. C4 requester-reply forced wake is not yet implemented in this head: requester/reply mode are stored for s06, so later answer ownership/consent/notification behavior is not certified.
+
+## Final merged-head disposition
+
+Carryover and green CI are now verified for da23eb7566844c93857ecb11ba58c4da6947c605. The vulnerable role-send blob is identical and the final exact-head verdict is BLOCK; see 2026-11-06-pr-129-da23eb7-security.md and PR comment https://github.com/AI-Substrate/pij-fleet/pull/129#issuecomment-6673787981. This interim note remains the old-head evidence record, not a separate posted old-head verdict.
