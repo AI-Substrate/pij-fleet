@@ -342,86 +342,59 @@ async fn handle(
                 Vec::new()
             };
             if holdings.is_empty() {
-                return close_seat(
+                return match close_seat(
                     &state,
                     command,
                     &actor.id,
                     target,
                     call.reason,
                     Some(expected),
-                    None,
                 )
-                .await;
+                .await
+                {
+                    Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
+                    Err(response) => response,
+                };
             }
-            let bound = state.services.memory_turn_bound;
-            let action = memory_turn::Action::Close;
-            if actor.id == target {
-                // The caller is mid-turn: it cannot wait on its own turn's end.
-                let held = memory_turn::held(action, &target, &holdings, bound);
-                let background = state.clone();
-                let reason = call.reason;
-                tokio::spawn(async move {
-                    memory_turn::run(&background, &target, holdings, action, bound).await;
-                    let closed = close_seat(
-                        &background,
-                        command,
-                        &target,
-                        target.clone(),
-                        reason,
-                        None,
-                        None,
-                    )
-                    .await;
-                    if !closed.status().is_success() {
-                        eprintln!(
-                            "pij-rs: the close of {target} after its memory turn failed with {}",
-                            closed.status()
-                        );
-                    }
-                });
-                return envelope(StatusCode::OK, &Envelope::ok(command, held));
-            }
-            let report = memory_turn::run(&state, &target, holdings, action, bound).await;
-            // The turn moved the seat's row (its activity), so read it again.
-            close_seat(
+            let held = memory_turn::hold(
                 &state,
-                command,
-                &actor.id,
-                target,
-                call.reason,
-                None,
-                Some(report),
-            )
-            .await
+                expected,
+                holdings,
+                memory_turn::Then::Close {
+                    actor: actor.id,
+                    reason: call.reason,
+                },
+            );
+            envelope(StatusCode::OK, &Envelope::ok(command, held))
         }
     }
 }
 
-/// Tombstone `target` and end its holdings. `expected` is the row the caller
-/// checked ownership against; `None` reads it again (after a memory turn).
-async fn close_seat(
+/// Tombstone `target` and end its holdings, returning the receipt data or the
+/// refusal. `expected` is the row the caller checked ownership against; `None`
+/// reads it again (after a memory turn).
+pub(super) async fn close_seat(
     state: &AppState,
     command: &str,
     actor: &SeatId,
     target: SeatId,
     reason: String,
     expected: Option<SeatDescriptor>,
-    memory: Option<memory_turn::Report>,
-) -> Response {
+) -> std::result::Result<Value, Response> {
     let expected = match expected {
         Some(expected) => expected,
         None => match state.services.registry.get(&target).await {
             Ok(Some(expected)) => expected,
             Ok(None) => {
-                return runtime_failure(
+                return Err(runtime_failure(
                     command,
                     PijError::NoRegistryEntry {
                         seat: target,
                         store: "the daemon's configured registry".to_string(),
                     },
-                );
+                ));
             }
-            Err(error) => return runtime_failure(command, error),
+            Err(error) => return Err(runtime_failure(command, error)),
         },
     };
     let receipt = if expected.tombstoned_at.is_some() {
@@ -452,18 +425,15 @@ async fn close_seat(
             if !ends.committed.is_empty() || !ends.pending.is_empty() {
                 data["directory"] = serde_json::to_value(&ends).unwrap_or(Value::Null);
             }
-            if let Some(memory) = &memory {
-                data["memory_turn"] = serde_json::to_value(memory).unwrap_or(Value::Null);
-            }
-            envelope(StatusCode::OK, &Envelope::ok(command, data))
+            Ok(data)
         }
-        Ok(None) => runtime_failure(
+        Ok(None) => Err(runtime_failure(
             command,
             PijError::Adapter {
                 adapter: "lifecycle/tombstone-receipt".to_string(),
                 message: format!("no matching durable tombstone event for {target}"),
             },
-        ),
-        Err(error) => runtime_failure(command, error),
+        )),
+        Err(error) => Err(runtime_failure(command, error)),
     }
 }

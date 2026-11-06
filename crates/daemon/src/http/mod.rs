@@ -2056,32 +2056,13 @@ pub(crate) async fn send_control(
     if msg.command.as_deref() == Some("compact") {
         let holdings = memory_turn::holdings(state, &target.id).await;
         if !holdings.is_empty() {
-            let bound = state.services.memory_turn_bound;
-            let action = memory_turn::Action::Compact;
-            if actor.id == target.id {
-                // The caller is mid-turn: it cannot wait on its own turn's end.
-                let seat = target.id.clone();
-                let held = memory_turn::held(action, &seat, &holdings, bound);
-                let background = state.clone();
-                tokio::spawn(async move {
-                    memory_turn::run(&background, &seat, holdings, action, bound).await;
-                    if let Err(error) = admit_control(&background, msg).await {
-                        eprintln!(
-                            "pij-rs: the compact of {seat} after its memory turn failed: {error}"
-                        );
-                    }
-                });
-                return envelope(StatusCode::OK, &Envelope::ok(name, held));
-            }
-            let report = memory_turn::run(state, &target.id, holdings, action, bound).await;
-            return match admit_control(state, msg).await {
-                Ok(receipt) => {
-                    let mut data = serde_json::to_value(&receipt).unwrap_or_default();
-                    data["memory_turn"] = serde_json::to_value(&report).unwrap_or_default();
-                    envelope(StatusCode::OK, &Envelope::ok(name, data))
-                }
-                Err(error) => send_failure(name, error),
-            };
+            let held = memory_turn::hold(
+                state,
+                target.clone(),
+                holdings,
+                memory_turn::Then::Compact(msg),
+            );
+            return envelope(StatusCode::OK, &Envelope::ok(name, held));
         }
     }
     match admit_control(state, msg).await {

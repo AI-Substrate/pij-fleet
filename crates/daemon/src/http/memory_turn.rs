@@ -6,20 +6,26 @@
 //! proceeds and says so. A seat holding no role is compacted or closed
 //! directly.
 //!
+//! The caller is answered `held` at once and the action runs in the daemon,
+//! so no client's request timeout (Copilot's 65 s, Node fetch's 300 s) can cut
+//! the hold short, and a seat compacting or closing itself, which is mid-turn,
+//! is handled the same way. The action is skipped if the seat was closed or
+//! revived during the turn.
+//!
 //! The hold ends on facts the daemon already sees: the prompt's
 //! `delivery.outcome` and then the seat's next `seat.activity` `idle`, which
 //! every harness publishes at its turn boundary. An idle is only published on a
 //! change from working, so the first idle after delivery is the end of the turn
 //! that read the prompt, whether it started that turn or arrived mid-turn.
 //!
-//! Cost: one indexed holdings query per compact or close. For a holder, one
-//! delivery, one live subscription, one spine event and one deadline. No poll,
-//! no launch.
+//! Cost: one indexed holdings query per compact or close. For a holder being
+//! compacted or closed, one live subscription while its turn is pending, one
+//! delivery, one spine event and one deadline. No poll, no launch.
 
 use std::time::{Duration, Instant};
 
 use pij_core::events::EventFilter;
-use pij_core::model::{Event, Msg, SeatId};
+use pij_core::model::{Event, Msg, SeatDescriptor, SeatId};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio_stream::StreamExt;
@@ -27,7 +33,8 @@ use tokio_stream::StreamExt;
 use super::AppState;
 use crate::delivery::OUTCOME_EVENT_KIND;
 
-/// How long a compact or close waits for the memory turn to end.
+/// How long a compact or close waits for the memory turn to end: the one
+/// default, reported as `bound_ms`.
 pub const BOUND: Duration = Duration::from_secs(5 * 60);
 /// Overrides [`BOUND`] in seconds, read once at daemon start.
 pub const BOUND_ENV: &str = "PIJ_RS_MEMORY_TURN_SECS";
@@ -85,9 +92,125 @@ pub(crate) struct Report {
     pub(crate) prompt: String,
     pub(crate) ended: Ended,
     pub(crate) waited_ms: u64,
+    pub(crate) bound_ms: u64,
     /// In words, when the action proceeded without the turn.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) note: Option<String>,
+    /// What happened to the action after the turn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) then: Option<String>,
+    /// A held close's own receipt data (`tombstoned_at`, `directory`, …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) closed: Option<Value>,
+}
+
+/// The action a memory turn holds back.
+pub(crate) enum Then {
+    /// The authorized compact control, admitted after the turn.
+    Compact(Msg),
+    /// `pij close` by `actor`.
+    Close {
+        /// The closing seat.
+        actor: SeatId,
+        /// The close reason.
+        reason: String,
+    },
+}
+
+impl Then {
+    fn action(&self) -> Action {
+        match self {
+            Self::Compact(_) => Action::Compact,
+            Self::Close { .. } => Action::Close,
+        }
+    }
+}
+
+/// Hold `then` for `seat`'s memory turn: answer `held` now, and in the daemon
+/// deliver the prompt, wait for the turn or the bound, run the action unless
+/// the seat was closed or revived meanwhile, and record one spine event.
+pub(crate) fn hold(
+    state: &AppState,
+    seat: SeatDescriptor,
+    holdings: Vec<Holding>,
+    then: Then,
+) -> Value {
+    let bound = state.services.memory_turn_bound;
+    let action = then.action();
+    let answer = held(action, &seat.id, &holdings, bound);
+    let state = state.clone();
+    tokio::spawn(async move {
+        let mut report = run(&state, &seat.id, holdings, action, bound).await;
+        let (then, closed) = proceed(&state, &seat, then).await;
+        report.then = Some(then);
+        report.closed = closed;
+        record(&state, &seat.id, &report).await;
+    });
+    answer
+}
+
+/// Run the held action against the seat it was held for, and only that one:
+/// what happened, and a close's receipt data.
+async fn proceed(state: &AppState, held: &SeatDescriptor, then: Then) -> (String, Option<Value>) {
+    match state.services.registry.get(&held.id).await {
+        Ok(Some(now)) => {
+            if let Some(skip) = skip_reason(held, &now) {
+                return (skip.to_string(), None);
+            }
+        }
+        Ok(None) => return ("skipped: the seat no longer exists".to_string(), None),
+        Err(error) => return (format!("failed: could not read the seat: {error}"), None),
+    }
+    match then {
+        Then::Compact(msg) => match super::admit_control(state, msg).await {
+            Ok(_) => ("compact admitted".to_string(), None),
+            Err(error) => (format!("failed: {error}"), None),
+        },
+        Then::Close { actor, reason } => {
+            let closed = super::lifecycle::close_seat(
+                state,
+                "pij close",
+                &actor,
+                held.id.clone(),
+                reason,
+                None,
+            )
+            .await;
+            match closed {
+                Ok(data) => ("closed".to_string(), Some(data)),
+                Err(refused) => (
+                    format!("failed: the close answered {}", refused.status()),
+                    None,
+                ),
+            }
+        }
+    }
+}
+
+/// Why the held action must not run against `now`: the seat closed, or a
+/// revive put another process in it, during the turn.
+pub(crate) fn skip_reason(held: &SeatDescriptor, now: &SeatDescriptor) -> Option<&'static str> {
+    if now.tombstoned_at.is_some() {
+        Some("skipped: the seat was closed during its memory turn")
+    } else if now.proc != held.proc {
+        Some("skipped: the seat was revived during its memory turn")
+    } else {
+        None
+    }
+}
+
+async fn record(state: &AppState, seat: &SeatId, report: &Report) {
+    let event = Event {
+        seq: None,
+        v: 1,
+        at: now_ms(),
+        kind: EVENT_KIND.to_string(),
+        seat: Some(seat.clone()),
+        payload: serde_json::to_string(report).unwrap_or_else(|_| "{}".to_string()),
+    };
+    if let Err(error) = state.services.event_bus.publish(event).await {
+        eprintln!("pij-rs could not record the memory turn for {seat}: {error}");
+    }
 }
 
 /// The seat's open holdings: one indexed query. Empty for a non-holder, or
@@ -194,8 +317,8 @@ impl Watch {
 }
 
 /// Deliver the memory prompt to `seat` and wait until its turn ends or
-/// `bound` passes. Records one [`EVENT_KIND`] spine event either way.
-pub(crate) async fn run(
+/// `bound` passes.
+async fn run(
     state: &AppState,
     seat: &SeatId,
     holdings: Vec<Holding>,
@@ -274,40 +397,30 @@ pub(crate) async fn run(
             verb(action)
         )),
     };
-    let report = Report {
+    Report {
         action,
         holdings,
         prompt: msg_id,
         ended,
         waited_ms,
+        bound_ms: millis(bound),
         note,
-    };
-    let event = Event {
-        seq: None,
-        v: 1,
-        at: now_ms(),
-        kind: EVENT_KIND.to_string(),
-        seat: Some(seat.clone()),
-        payload: serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()),
-    };
-    if let Err(error) = services.event_bus.publish(event).await {
-        eprintln!("pij-rs could not record the memory turn for {seat}: {error}");
+        then: None,
+        closed: None,
     }
-    report
 }
 
-/// The receipt a self-compact or self-close answers with: the action waits,
-/// in the background, for the turn the caller is in to end.
-pub(crate) fn held(action: Action, seat: &SeatId, holdings: &[Holding], bound: Duration) -> Value {
+/// What a holder's compact or close answers with at once.
+fn held(action: Action, seat: &SeatId, holdings: &[Holding], bound: Duration) -> Value {
     json!({
         "seat": seat,
         "held": "memory-turn",
         "memory_turn": {
             "action": action,
             "holdings": holdings,
-            "bound_secs": bound.as_secs(),
+            "bound_ms": millis(bound),
             "note": format!(
-                "this seat holds a role, so pij asked it to write its memory; the {} runs when this turn ends, or after {}s",
+                "this seat holds a role, so pij asked it to write its memory; the {} runs when its turn ends, or after {}s",
                 verb(action),
                 bound.as_secs()
             ),
@@ -320,6 +433,10 @@ fn verb(action: Action) -> &'static str {
         Action::Compact => "compact",
         Action::Close => "close",
     }
+}
+
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 fn now_ms() -> u64 {
@@ -401,6 +518,25 @@ mod tests {
         );
         let idle = event(ACTIVITY, json!({"state": "idle"}));
         assert_eq!(Watch::new("p", true).on(&idle), Some(Ended::TurnEnd));
+    }
+
+    #[test]
+    fn a_held_action_skips_a_seat_closed_or_revived_during_the_turn() {
+        let mut held = SeatDescriptor::new("s", pij_core::model::Harness::Omp, "/tree");
+        held.proc = Some(pij_core::model::ProcIdentity {
+            pid: 1,
+            proc_start: 7,
+        });
+        assert_eq!(skip_reason(&held, &held.clone()), None);
+        let mut revived = held.clone();
+        revived.proc = Some(pij_core::model::ProcIdentity {
+            pid: 2,
+            proc_start: 9,
+        });
+        assert!(skip_reason(&held, &revived).unwrap().contains("revived"));
+        let mut closed = held.clone();
+        closed.tombstoned_at = Some(1);
+        assert!(skip_reason(&held, &closed).unwrap().contains("closed"));
     }
 
     #[test]

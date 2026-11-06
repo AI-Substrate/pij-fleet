@@ -53,7 +53,7 @@
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "One writer commit per note. The memory turn is one delivery before a compact or close; no timer or poll (the hold waits on the turn-end event the daemon already sees)."
+          "note": "One writer commit per note. The memory turn costs one live subscription per pending memory turn (only for role holders being compacted or closed), one delivery and one deadline; no timer or poll (the hold waits on the turn-end event the daemon already sees)."
         },
         {
           "id": "bp-0005",

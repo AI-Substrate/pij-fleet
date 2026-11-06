@@ -17,9 +17,16 @@ transcript: [private-run.txt](private-run.txt). Readings are `pij-rs --json ping
 | close of a seat holding no role | 0 | 0 | +1 `tmux.pipe-pane detach` | the existing tap teardown; one holdings query |
 | close of a holder (turn hit the bound) | +7 | +2 | +1 detach, +2 clear-options | the existing close-end commit and tap teardown; the memory turn itself launched nothing |
 
-The memory turn is one delivery, one live subscription, one `memory.turn`
-spine event and one deadline per compact or close of a holder. No poll, no
-timer, no launch. `crates/testkit/tests/spawn_sites.rs` passes: no new launch
+The memory turn costs one live subscription per pending memory turn (only for
+role holders being compacted or closed), one delivery, one `memory.turn` spine
+event and one deadline. No poll, no timer, no launch.
+
+The transcript predates pm-001's design notes (msg 0054): the holder's close
+there answered inline. A holder's compact or close now answers `held` at once
+and runs in the daemon, so no client timeout can cut the hold short (the Copilot
+extension's 65 s, Node fetch's 300 s). It launches nothing new, so the counts
+stand. That change is proven in CI, not by a new private run, because of the
+fleet build backoff. `crates/testkit/tests/spawn_sites.rs` passes: no new launch
 site.
 
 Live daemon before deploy (2026-11-06, pid 93273, read-only, no bounce):

@@ -773,7 +773,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | GET and POST `/v1/anomalies` | `anomalies [--here] [--project <slug>]`; GET `here=<absolute-path>&project=<slug>` | `anomalies-list`, `anomalies-argv` |
 | GET and POST `/v1/decisions` | `decisions [--state <open/answered/all>] [--asked_by <seat>] [--parent <seat>]`; GET keys `state`, `asked_by`, `parent` (literal underscore; `--asked-by` refuses) | `decisions-list`, `decisions-argv` |
 | POST `/v1/answer` | `answer [--supersede] <decision> <answer>`; typed `{decision, answer, supersede?, caller}` | `decision-answer`, `decision-answer-supersede` |
-| POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder gets a [memory turn](#the-memory-turn) first | `seat-close` |
+| POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
 | POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
@@ -1049,29 +1049,34 @@ daemon asks that seat to write what it learned. It reads the seat's open
 holdings (one indexed query; a seat with none is compacted or closed exactly
 as before), delivers one prompt from `pij-bg` naming each role and project and
 the `pij directory memory add` command, then holds the action until the prompt
-is delivered and the seat next publishes `idle`, or until the bound (5 minutes;
-`PIJ_RS_MEMORY_TURN_SECS`, a positive integer read at daemon start, overrides it)
-passes, after which it proceeds anyway.
+is delivered and the seat next publishes `idle`, or until the bound passes,
+after which it proceeds anyway. The bound is one constant, 5 minutes
+(`memory_turn::BOUND`); `PIJ_RS_MEMORY_TURN_SECS`, a positive integer read at
+daemon start, overrides it.
 
-- A caller compacting or closing another seat waits inline. The receipt (the
-  control's delivery receipt, or the close's tombstone receipt) gains
-  `data.memory_turn`: `action`, `holdings`, `prompt` (its msg_id), `ended`
-  (`turn-end`, `bound`, or `undelivered` when the prompt was refused or could not
-  be sent) and `waited_ms`, plus a `note` saying the action proceeded without
-  the turn whenever it did not end with the turn.
-- A seat compacting or closing itself is mid-turn and cannot wait on itself. It
-  gets `data.held: "memory-turn"` and `data.memory_turn` (`action`, `holdings`,
-  `bound_secs`, `note`) at once; the compact or close runs in the daemon when that
-  turn ends (or at the bound). A self-close receipt therefore has no
-  `tombstoned_at` yet.
+The caller is answered at once with `data.held: "memory-turn"` and
+`data.memory_turn` (`action`, `holdings`, `bound_ms`, `note`), and the compact or
+close runs in the daemon. So no client's request timeout can cut the hold
+short (the Copilot extension gives up after 65 s, Node's fetch after 300 s), and
+a seat compacting or closing itself, which is mid-turn, is handled the same
+way. A held close therefore has no `tombstoned_at` in its answer: the tombstone
+lands when the turn ends. Before the action runs the daemon reads the seat
+again and skips it if the seat was closed, or revived into another process,
+during the turn.
 
-Every turn records one `memory.turn` spine event on the seat with the same
-fields. The wait is a live subscription to the seat's `delivery.outcome` and
-`seat.activity` events with one deadline: no poll, no timer, no launch. An idle
-is only published on a change from working, so the first idle after delivery
-ends the turn that read the prompt, whether the prompt started that turn or
-arrived during it. Cost: for a holder, one delivery, one spine event and the
-note writes the seat chooses to make; for anyone else, one store query.
+Every turn records one `memory.turn` spine event on the seat: `action`,
+`holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or
+`undelivered` when the prompt was refused or could not be sent), `waited_ms`,
+`bound_ms`, a `note` whenever the action proceeded without the turn, and `then`
+(`closed`, `compact admitted`, `skipped: …` or `failed: …`). The wait is a live
+subscription to the seat's `delivery.outcome` and `seat.activity` events with one
+deadline: no poll, no timer, no launch. An idle is only published on a change
+from working, so the first idle after delivery ends the turn that read the
+prompt, whether the prompt started that turn or arrived during it.
+
+Cost: one live subscription per pending memory turn (only for role holders
+being compacted or closed), one delivery, one spine event and one deadline; no
+poll and no launch. Anyone else pays one store query.
 
 ## Canonical wire examples
 

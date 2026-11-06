@@ -123,6 +123,41 @@ struct Rig {
     store: pij_store::SqliteOrchestration,
     roles: Arc<pij_daemon::http::role::RoleService>,
     tmux: Arc<FakeTmux>,
+    bus: Arc<pij_daemon::events::EventBus>,
+}
+
+/// `pij close <seat>`, and when the seat holds a role (plan 201: the close is
+/// held for its memory turn, bounded at 50 ms here) the close's own receipt
+/// data once it has landed.
+async fn close_landed(rig: &Rig, cwd: &Path, seat: &str) -> Value {
+    let answer: Value = reqwest::Client::new()
+        .post(format!("http://{}/v1/close", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({"seat": seat, "reason": "done", "caller": {"TMUX_PANE": PANE, "cwd": cwd}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(answer["ok"], true, "{answer}");
+    if answer["data"]["held"] != "memory-turn" {
+        return answer["data"].clone();
+    }
+    for _ in 0..500 {
+        if let Some(event) = rig
+            .bus
+            .latest_matching(&seat.into(), &["memory.turn"])
+            .await
+            .unwrap()
+        {
+            let turn: Value = serde_json::from_str(&event.payload).unwrap();
+            assert_eq!(turn["then"], "closed", "{turn}");
+            return turn["closed"].clone();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the held close of {seat} never landed");
 }
 
 /// Counts after-assign calls (ruling C6).
@@ -196,6 +231,7 @@ async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: 
         services.registry.put(seat).await.expect("seed seat");
     }
     let roles = Arc::clone(&services.roles);
+    let bus = Arc::clone(&services.event_bus);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = router_with_config(services, HttpConfig::local(KEY.to_string()));
@@ -207,6 +243,7 @@ async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: 
         store,
         roles,
         tmux,
+        bus,
     }
 }
 
@@ -755,18 +792,9 @@ async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_writ
         let assigned = call(rig.addr, "/v1/directory", argv, &repo.main).await;
         assert_eq!(assigned["ok"], true, "{assigned}");
     }
-    let close = |seat: &str| {
-        reqwest::Client::new()
-            .post(format!("http://{}/v1/close", rig.addr))
-            .bearer_auth(KEY)
-            .json(&json!({"seat": seat, "reason": "done", "caller": {"TMUX_PANE": PANE, "cwd": repo.main}}))
-            .send()
-    };
-
-    let closed: Value = close("pij-holder").await.unwrap().json().await.unwrap();
-    assert_eq!(closed["ok"], true, "{closed}");
+    let closed = close_landed(&rig, &repo.main, "pij-holder").await;
     assert_eq!(
-        closed["data"]["directory"]["committed"][0]["project"], "fleet",
+        closed["directory"]["committed"][0]["project"], "fleet",
         "{closed}"
     );
     let row = &holders_at_head(&repo, "pm-001")[0];
@@ -779,14 +807,13 @@ async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_writ
         &repo.main,
         &["worktree", "remove", "--force", repo.gov.to_str().unwrap()],
     );
-    let pending: Value = close("pij-second").await.unwrap().json().await.unwrap();
-    assert_eq!(
-        pending["ok"], true,
+    let pending = close_landed(&rig, &repo.main, "pij-second").await;
+    assert!(
+        pending["tombstoned_at"].is_number(),
         "the close never fails on the directory: {pending}"
     );
-    assert!(pending["data"]["tombstoned_at"].is_number(), "{pending}");
     assert_eq!(
-        pending["data"]["directory"]["pending"][0]["code"], "E-RS-GOV-ABSENT",
+        pending["directory"]["pending"][0]["code"], "E-RS-GOV-ABSENT",
         "{pending}"
     );
     let stored = rig.store.assignments("fleet").await.unwrap();

@@ -212,12 +212,45 @@ async fn compact_queued(rig: &Rig, seat: &str) -> bool {
         })
 }
 
+/// The `memory.turn` spine event for `seat`, once the held action has run.
+async fn turn_event(rig: &Rig, seat: &str) -> Value {
+    for _ in 0..500 {
+        if let Some(event) = rig
+            .bus
+            .latest_matching(&seat.into(), &["memory.turn"])
+            .await
+            .unwrap()
+        {
+            return serde_json::from_str(&event.payload).unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("no memory.turn event for {seat}");
+}
+
+async fn tombstoned(rig: &Rig, seat: &str) -> bool {
+    rig.registry
+        .get(&seat.into())
+        .await
+        .unwrap()
+        .unwrap()
+        .tombstoned_at
+        .is_some()
+}
+
 #[tokio::test]
-async fn a_holders_close_waits_for_its_memory_turn_then_closes() {
+async fn a_holders_close_answers_held_at_once_and_closes_after_the_turn() {
     let rig = rig(Duration::from_secs(30), &["holder"]).await;
-    let addr = rig.addr;
-    let closing =
-        tokio::spawn(async move { post(addr, "/v1/close", close("holder", "prime")).await });
+    let started = std::time::Instant::now();
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "no client waits on the 30 s bound: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(held["ok"], true, "{held}");
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    assert_eq!(held["data"]["memory_turn"]["bound_ms"], 30_000, "{held}");
     let prompt = prompt_for(&rig, "holder").await;
     assert_eq!(prompt.from.as_str(), pij_core::BG_ACTOR);
     assert!(
@@ -228,41 +261,19 @@ async fn a_holders_close_waits_for_its_memory_turn_then_closes() {
         prompt.body
     );
     tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(!closing.is_finished(), "the close waits for the turn");
     assert!(
-        rig.registry
-            .get(&"holder".into())
-            .await
-            .unwrap()
-            .unwrap()
-            .tombstoned_at
-            .is_none()
+        !tombstoned(&rig, "holder").await,
+        "the close waits for the turn"
     );
 
     take_turn(&rig, "holder", &prompt).await;
-    let closed = closing.await.unwrap();
-    assert_eq!(closed["ok"], true, "{closed}");
-    assert!(closed["data"]["tombstoned_at"].is_number(), "{closed}");
-    assert_eq!(
-        closed["data"]["memory_turn"]["ended"], "turn-end",
-        "{closed}"
-    );
-    assert_eq!(
-        closed["data"]["memory_turn"]["prompt"],
-        prompt.msg_id.as_str()
-    );
-    assert!(closed["data"]["memory_turn"]["note"].is_null());
-    let recorded = rig
-        .bus
-        .latest_matching(&"holder".into(), &["memory.turn"])
-        .await
-        .unwrap()
-        .expect("the turn is on the spine");
-    assert!(
-        recorded.payload.contains("turn-end"),
-        "{}",
-        recorded.payload
-    );
+    let turn = turn_event(&rig, "holder").await;
+    assert_eq!(turn["ended"], "turn-end", "{turn}");
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert_eq!(turn["prompt"], prompt.msg_id.as_str());
+    assert_eq!(turn["bound_ms"], 30_000);
+    assert!(turn["note"].is_null(), "{turn}");
+    assert!(tombstoned(&rig, "holder").await);
     rig.server.abort();
 }
 
@@ -271,11 +282,12 @@ async fn a_seat_holding_no_role_is_closed_and_compacted_directly() {
     let rig = rig(Duration::from_secs(30), &["holder"]).await;
     let compacted = post(rig.addr, "/v1/send", compact("plain", "prime")).await;
     assert_eq!(compacted["ok"], true, "{compacted}");
-    assert!(compacted["data"]["memory_turn"].is_null(), "{compacted}");
+    assert!(compacted["data"]["held"].is_null(), "{compacted}");
     assert!(compact_queued(&rig, "plain").await);
     let closed = post(rig.addr, "/v1/close", close("plain", "prime")).await;
     assert_eq!(closed["ok"], true, "{closed}");
-    assert!(closed["data"]["memory_turn"].is_null(), "{closed}");
+    assert!(closed["data"]["tombstoned_at"].is_number(), "{closed}");
+    assert!(closed["data"]["held"].is_null(), "{closed}");
     assert!(
         rig.bus
             .latest_matching(&"plain".into(), &["memory.turn"])
@@ -289,40 +301,55 @@ async fn a_seat_holding_no_role_is_closed_and_compacted_directly() {
 #[tokio::test]
 async fn when_the_bound_passes_the_close_proceeds_and_says_so() {
     let rig = rig(Duration::from_millis(300), &["holder"]).await;
-    let closed = post(rig.addr, "/v1/close", close("holder", "prime")).await;
-    assert_eq!(closed["ok"], true, "{closed}");
-    assert!(closed["data"]["tombstoned_at"].is_number(), "{closed}");
-    let turn = &closed["data"]["memory_turn"];
-    assert_eq!(turn["ended"], "bound", "{closed}");
-    assert!(turn["waited_ms"].as_u64().unwrap() >= 300, "{closed}");
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let turn = turn_event(&rig, "holder").await;
+    assert_eq!(turn["ended"], "bound", "{turn}");
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert!(turn["waited_ms"].as_u64().unwrap() >= 300, "{turn}");
     assert!(
         turn["note"]
             .as_str()
             .unwrap()
             .contains("proceeded without its memory turn"),
-        "{closed}"
+        "{turn}"
+    );
+    assert!(tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}
+
+#[tokio::test]
+async fn a_parents_compact_of_a_holder_is_held_and_admitted_after_the_turn() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let held = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event(&rig, "holder").await;
+    assert_eq!(turn["then"], "compact admitted", "{turn}");
+    assert!(
+        compact_queued(&rig, "holder").await,
+        "the compact follows the turn"
     );
     rig.server.abort();
 }
 
 #[tokio::test]
-async fn a_parents_compact_of_a_holder_is_admitted_only_after_the_turn() {
+async fn a_seat_revived_during_its_turn_is_not_closed() {
     let rig = rig(Duration::from_secs(30), &["holder"]).await;
-    let addr = rig.addr;
-    let compacting =
-        tokio::spawn(async move { post(addr, "/v1/send", compact("holder", "prime")).await });
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
     let prompt = prompt_for(&rig, "holder").await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(!compacting.is_finished(), "the compact waits for the turn");
+    let mut revived = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    revived.proc = Some(ProcIdentity {
+        pid: 930_001,
+        proc_start: 9,
+    });
+    rig.registry.put(revived).await.unwrap();
     take_turn(&rig, "holder", &prompt).await;
-    let compacted = compacting.await.unwrap();
-    assert_eq!(compacted["ok"], true, "{compacted}");
-    assert_eq!(compacted["data"]["msg_id"], "compact-holder", "{compacted}");
-    assert_eq!(compacted["data"]["memory_turn"]["ended"], "turn-end");
-    assert!(
-        compact_queued(&rig, "holder").await,
-        "the compact follows the turn"
-    );
+    let turn = turn_event(&rig, "holder").await;
+    assert!(turn["then"].as_str().unwrap().contains("revived"), "{turn}");
+    assert!(!tombstoned(&rig, "holder").await);
     rig.server.abort();
 }
 
@@ -335,15 +362,11 @@ async fn a_holder_closing_or_compacting_itself_is_held_until_its_turn_ends() {
     let prompt = prompt_for(&rig, "prime").await;
     assert!(!compact_queued(&rig, "prime").await);
     take_turn(&rig, "prime", &prompt).await;
-    let mut queued = false;
-    for _ in 0..200 {
-        if compact_queued(&rig, "prime").await {
-            queued = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(queued, "the compact runs once the turn ends");
+    assert_eq!(turn_event(&rig, "prime").await["then"], "compact admitted");
+    assert!(
+        compact_queued(&rig, "prime").await,
+        "the compact runs once the turn ends"
+    );
     let (job, _) = rig
         .queue
         .claim(&[delivery_kind(&"prime".into())], "test-harness")
@@ -360,15 +383,14 @@ async fn a_holder_closing_or_compacting_itself_is_held_until_its_turn_ends() {
     assert!(closed["data"]["tombstoned_at"].is_null(), "{closed}");
     let prompt = prompt_for(&rig, "prime").await;
     take_turn(&rig, "prime", &prompt).await;
-    let mut tombstoned = false;
-    for _ in 0..200 {
-        let seat = rig.registry.get(&"prime".into()).await.unwrap().unwrap();
-        if seat.tombstoned_at.is_some() {
-            tombstoned = true;
+    let mut closed_after = false;
+    for _ in 0..500 {
+        if tombstoned(&rig, "prime").await {
+            closed_after = true;
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    assert!(tombstoned, "the close lands once the turn ends");
+    assert!(closed_after, "the close lands once the turn ends");
     rig.server.abort();
 }
