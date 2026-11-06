@@ -24,7 +24,14 @@ export interface RsHttpRoute extends RouteIdentity {
 
 export interface RsNativeRoute extends RouteIdentity {
 	/** Native stdout/stderr/exit are the contract, not a JSON envelope. */
-	readonly nativeCommand: "commit-trailers" | "fleet-report" | "bg";
+	readonly nativeCommand:
+		| "commit-trailers"
+		| "fleet-report"
+		| "bg"
+		| "directory"
+		| "claim"
+		| "claims"
+		| "delivered";
 }
 
 export interface RsUnportedRoute extends RouteIdentity {
@@ -265,7 +272,6 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		"node",
 		"orchestration",
 		"spine",
-		"directory",
 		"role",
 		"link",
 		"watchdog",
@@ -289,6 +295,15 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		why: "Forward the native trailer-only stdout, stderr and exit contract",
 	},
 	{ verb: "fleet-report", nativeCommand: "fleet-report", why: "Forward the native report writer" },
+	// Plan 213: pij-rs owns these verbs' grammar, help and output; the shim hands
+	// them over unchanged (harness/scripts/pij-native-verbs.json, the same list).
+	...(["directory", "claim", "claims", "delivered"] as const).map(
+		(verb): RsNativeRoute => ({
+			verb,
+			nativeCommand: verb,
+			why: "pij-rs owns this community verb's grammar, help and output",
+		}),
+	),
 	{
 		verb: "spawn",
 		unported: "shim spawn grammar is not native spawn grammar; use pij-rs spawn --help",

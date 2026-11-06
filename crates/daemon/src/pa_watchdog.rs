@@ -61,7 +61,7 @@ use pij_core::model::{
     DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
 };
 use pij_core::orchestration::PrimeState;
-use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
+use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, QueuedRequest};
 use pij_core::ports::SeatFilter;
 use pij_core::ports::SpineWindow;
 use pij_core::report::CardRecord;
@@ -258,11 +258,12 @@ async fn audit(
 }
 
 /// The send guard's own verdict for `seat` now. When it is cold, the wake
-/// about to happen is recorded exactly like a forced `pij send`, before it is
-/// sent. Returns the receipt's `cold_check` label.
-async fn audit_cold_wake(
+/// about to happen is recorded exactly like a forced `pij send` from `from`,
+/// before it is sent. Returns the receipt's `cold_check` label.
+pub(crate) async fn audit_cold_wake(
     services: &Services,
     seat: &SeatDescriptor,
+    from: &str,
     msg_id: &str,
     reason: &str,
     now_ms: u64,
@@ -285,7 +286,7 @@ async fn audit_cold_wake(
                 kind: COLD_WAKE_FORCED_KIND.to_string(),
                 seat: Some(seat.id.clone()),
                 payload: json!({
-                    "from": BG_ACTOR,
+                    "from": from,
                     "from_machine": null,
                     "msg_id": msg_id,
                     "reason": reason,
@@ -317,7 +318,7 @@ fn bg_msg(to: &SeatId, body: String, msg_id: String) -> Msg {
 /// Wake a PA through the ordinary delivery path, not held when it is cold:
 /// waking it is the point. A cold wake is audited first, with `reason`.
 /// Returns the delivery outcome word (or error) and the `cold_check` label.
-async fn wake_pa(
+pub(crate) async fn wake_pa(
     services: &Services,
     pa: &SeatDescriptor,
     body: String,
@@ -325,7 +326,7 @@ async fn wake_pa(
     reason: &str,
     now_ms: u64,
 ) -> (String, String) {
-    match audit_cold_wake(services, pa, &msg_id, reason, now_ms).await {
+    match audit_cold_wake(services, pa, BG_ACTOR, &msg_id, reason, now_ms).await {
         Ok(cold_check) => match services.delivery.accept(bg_msg(&pa.id, body, msg_id)).await {
             Ok(receipt) => (outcome_word(&receipt.outcome).to_string(), cold_check),
             Err(cause) => (format!("error: {cause}"), cold_check),
@@ -670,7 +671,15 @@ impl PaWatchdog {
                     let local = pij_harnesses::local_clock_text(*resets_at, None)
                         .unwrap_or_else(|| format!("{resets_at} UTC epoch"));
                     let body = wake_body(&stop.limit_type, *resets_at, &local, &stop.seats, late);
-                    match audit_cold_wake(services, seat, &msg_id, LIMIT_RESET_REASON, now_ms).await
+                    match audit_cold_wake(
+                        services,
+                        seat,
+                        BG_ACTOR,
+                        &msg_id,
+                        LIMIT_RESET_REASON,
+                        now_ms,
+                    )
+                    .await
                     {
                         Ok(cold_check) => {
                             let delivery = match services
@@ -950,12 +959,14 @@ impl PaWatchdog {
             })
             .collect::<Vec<_>>();
         let anomalies = stale_cards(services, &rows, now_ms).await;
+        let queued = queued_requests(services, now_ms).await;
         FleetView {
             pa: pa.id.clone(),
             prime: prime.map(|prime| prime.id.clone()),
             scope,
             rows,
             anomalies,
+            queued,
             interval_ms: interval_secs * 1_000,
         }
     }
@@ -1019,6 +1030,35 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
         DeliveryOutcome::Queued { .. } => "queued",
         DeliveryOutcome::Held { .. } => "held",
         DeliveryOutcome::Refused { .. } => "refused",
+    }
+}
+
+/// Requests waiting on a role with no live holder (plan 199): one indexed
+/// read per digest, so the queue rides the round with no timer of its own.
+/// A failed read leaves the list empty rather than holding up the nudge.
+async fn queued_requests(services: &Services, now_ms: u64) -> Vec<QueuedRequest> {
+    match services.governance.store().unsettled_role_requests().await {
+        Ok(requests) => requests
+            .into_iter()
+            .map(|request| QueuedRequest {
+                address: crate::delivery::role_send::RoleAddress {
+                    role: request.role,
+                    instance: request.instance,
+                }
+                .display(),
+                project: request.project,
+                id: request.id,
+                requester: SeatId::from(request.requester.as_str()),
+                waiting_ms: now_ms.saturating_sub(request.created_at),
+                delivering_to: (request.state == pij_store::RequestState::Delivering)
+                    .then(|| request.holder.as_deref().map(SeatId::from))
+                    .flatten(),
+            })
+            .collect(),
+        Err(cause) => {
+            eprintln!("pa watchdog: queued role requests unavailable: {cause}");
+            Vec::new()
+        }
     }
 }
 

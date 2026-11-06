@@ -91,14 +91,15 @@
 				{
 					"id": "s05",
 					"title": "Send to a role, the role queue and reply modes",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-07",
 						"../prds/001-pij-community.dd.json#requirements/req-08"
 					],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-send-role"],
 					"depends_on": ["#steps/s04"],
-					"done_when": "The 0, 1 and 2 holder cases, instances, the PA wake and the three reply modes behave as the PRD says."
+					"done_when": "The 0, 1 and 2 holder cases, instances, the PA wake and the three reply modes behave as the PRD says.",
+					"plan": "docs/plans/199-send-to-role"
 				},
 				{
 					"id": "s06",
@@ -118,14 +119,15 @@
 				{
 					"id": "s07",
 					"title": "Role memory and its prompts",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-09"],
 					"builds": [
 						"../blueprints/001-pij-community.dd.json#components/c-memory-hook",
 						"../blueprints/001-pij-community.dd.json#components/c-layout"
 					],
 					"depends_on": ["#steps/s04"],
-					"done_when": "Notes are one file each with a generated INDEX.md, and a role holder's compact and close are each preceded by the memory turn."
+					"done_when": "Notes are one file each with a generated INDEX.md, and a role holder's compact and close are each preceded by the memory turn.",
+					"plan": "docs/plans/201-role-memory"
 				},
 				{
 					"id": "s08",
@@ -152,7 +154,7 @@
 				{
 					"id": "s11",
 					"title": "Number claims and delivery at merge",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-20",
 						"../prds/001-pij-community.dd.json#requirements/req-21"
@@ -162,7 +164,8 @@
 						"../blueprints/001-pij-community.dd.json#components/c-merge-delivery"
 					],
 					"depends_on": ["#steps/s02"],
-					"done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card."
+					"done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card.",
+					"plan": "docs/plans/196-claims-delivery"
 				},
 				{
 					"id": "s12",
@@ -259,6 +262,11 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "s03 complete (plan 194); its done_when now says the core roles are prompted, not created (ruling C22)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 196: s11 complete (number claims and delivery at merge; evidence in docs/plans/196-claims-delivery/assets/evidence/)."
 				}
 			]
 		}

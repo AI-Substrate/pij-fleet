@@ -68,6 +68,29 @@ pub fn now() -> String {
     stamp(time::OffsetDateTime::now_utc())
 }
 
+/// `at`'s calendar date `offset_minutes` from UTC, as `YYYY-MM-DD`: the date
+/// a memory note is filed under (plan 209, F32).
+pub fn local_date(at: time::OffsetDateTime, offset_minutes: i32) -> String {
+    let offset = time::UtcOffset::from_whole_seconds(offset_minutes.saturating_mul(60))
+        .unwrap_or(time::UtcOffset::UTC);
+    let at = at.to_offset(offset);
+    format!(
+        "{:04}-{:02}-{:02}",
+        at.year(),
+        u8::from(at.month()),
+        at.day()
+    )
+}
+
+/// Today on this machine's clock, read in-process (no launch). A note written
+/// at 08:00 in Brisbane is filed under that day, not yesterday's UTC date.
+pub fn today() -> String {
+    local_date(
+        time::OffsetDateTime::now_utc(),
+        pij_harnesses::proc::local_utc_offset_minutes().unwrap_or(0),
+    )
+}
+
 /// `at` as holders documents write it: UTC to the millisecond, with `Z`.
 pub fn stamp(at: time::OffsetDateTime) -> String {
     let at = at.to_offset(time::UtcOffset::UTC);
@@ -458,6 +481,15 @@ mod tests {
             "2026-11-06T00:00:00.999Z",
             "another instance is another holding"
         );
+    }
+
+    #[test]
+    fn a_memory_note_is_filed_under_the_local_date() {
+        // Plan 209, F32: 23:30 UTC on 5 Nov is already 6 Nov in Brisbane.
+        let at = parse_time("2026-11-05T23:30:00Z").unwrap();
+        assert_eq!(local_date(at, 600), "2026-11-06");
+        assert_eq!(local_date(at, 0), "2026-11-05");
+        assert_eq!(local_date(at, -300), "2026-11-05");
     }
 
     #[test]
