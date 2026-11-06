@@ -26,6 +26,8 @@ pub async fn governance(
         "orchestration" => "/v1/orchestration",
         "spine" => "/v1/spine",
         "directory" => "/v1/directory",
+        "output" => "/v1/output",
+        "outputs" => "/v1/outputs",
         _ => {
             let mut error = Envelope::refused(
                 format!("pij {family}"),
@@ -48,8 +50,60 @@ pub async fn governance(
         .await
 }
 
+/// `--body-file <path|->` read here and sent as `--body`, so stdin works and
+/// the daemon reads no caller file (`pij output`, plan 200).
+///
+/// # Errors
+/// The flag without a value, or a body that cannot be read.
+pub fn body_file_to_body(
+    args: &[String],
+    mut read: impl FnMut(&str) -> std::io::Result<String>,
+) -> Result<Vec<String>, String> {
+    let mut out = Vec::with_capacity(args.len());
+    let mut tokens = args.iter();
+    while let Some(token) = tokens.next() {
+        if token == "--" {
+            out.push(token.clone());
+            out.extend(tokens.by_ref().cloned());
+            break;
+        }
+        let source = match token.strip_prefix("--body-file") {
+            Some("") => tokens
+                .next()
+                .ok_or("--body-file requires a path, or - for stdin")?
+                .clone(),
+            Some(rest) if rest.starts_with('=') => rest[1..].to_string(),
+            _ => {
+                out.push(token.clone());
+                continue;
+            }
+        };
+        let body = read(&source).map_err(|error| {
+            let from = if source == "-" { "stdin" } else { &source };
+            format!("could not read the body from {from}: {error}")
+        })?;
+        out.extend(["--body".to_string(), body]);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_output_body_file_is_read_here_and_sent_as_body() {
+        let argv = |tokens: &[&str]| tokens.iter().map(|t| (*t).to_string()).collect::<Vec<_>>();
+        let read = |source: &str| Ok(format!("from {source}"));
+        assert_eq!(
+            super::body_file_to_body(&argv(&["note", "--body-file", "-"]), read).unwrap(),
+            argv(&["note", "--body", "from -"])
+        );
+        assert_eq!(
+            super::body_file_to_body(&argv(&["note", "--body-file=n.md"]), read).unwrap(),
+            argv(&["note", "--body", "from n.md"])
+        );
+        assert!(super::body_file_to_body(&argv(&["note", "--body-file"]), read).is_err());
+    }
+
     use axum::extract::{Json, State};
     use axum::http::HeaderMap;
     use axum::routing::post;

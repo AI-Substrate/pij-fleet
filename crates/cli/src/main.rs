@@ -591,6 +591,18 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Write a role's output and tell whoever asked (plan 200).
+    #[command(disable_help_flag = true)]
+    Output {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// A project's role outputs, by subject and exact head or by role (plan 200).
+    #[command(disable_help_flag = true)]
+    Outputs {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// List registered seats; --here scopes to this process's cwd.
     List {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1192,6 +1204,17 @@ async fn run(cli: Cli) -> ExitCode {
     {
         return directory_help(args);
     }
+    if let Command::Output { args } | Command::Outputs { args } = &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        let family = if matches!(cli.command, Command::Outputs { .. }) {
+            "outputs"
+        } else {
+            "output"
+        };
+        println!("{}", pij_core::outputs::help(family));
+        return ExitCode::SUCCESS;
+    }
     let client = match DaemonClient::new(&state_dir, &addr) {
         Ok(client) => client,
         Err(error) => {
@@ -1723,6 +1746,38 @@ async fn run(cli: Cli) -> ExitCode {
                 }
                 Some(data) if data.get("diff").is_some_and(Value::is_string) => {
                     println!("{}", render_template_diff(data));
+                    ExitCode::SUCCESS
+                }
+                _ => emit(&response, as_json),
+            }
+        }
+        Command::Output { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let args = match pij_cli::governance::body_file_to_body(&args, |source| {
+                if source == "-" {
+                    std::io::read_to_string(std::io::stdin())
+                } else {
+                    std::fs::read_to_string(source)
+                }
+            }) {
+                Ok(args) => args,
+                Err(reason) => {
+                    eprintln!("pij output: {reason}");
+                    return ExitCode::from(2);
+                }
+            };
+            emit(
+                &pij_cli::governance::governance(&client, "output", &args, &caller_context()).await,
+                as_json,
+            )
+        }
+        Command::Outputs { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let response =
+                pij_cli::governance::governance(&client, "outputs", &args, &caller_context()).await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                Some(data) if data.get("outputs").is_some_and(Value::is_array) => {
+                    println!("{}", render_outputs(data));
                     ExitCode::SUCCESS
                 }
                 _ => emit(&response, as_json),
@@ -2689,6 +2744,39 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
     ExitCode::from(exit_code(envelope))
 }
 
+/// `pij outputs` for a human: one line per output, newest first.
+fn render_outputs(data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    let rows = data["outputs"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut out = format!("{}: {} output(s)", text(&data["project"]), rows.len());
+    for row in rows {
+        let _ = write!(
+            out,
+            "\n  {} {} on {}{}{} by {}{}: {}",
+            text(&row["role"]),
+            text(&row["kind"]),
+            text(&row["subject"]),
+            row["head"]
+                .as_str()
+                .map_or_else(String::new, |head| format!(" at {head}")),
+            row["result"]
+                .as_str()
+                .map_or_else(String::new, |result| format!(" ({result})")),
+            text(&row["writer"]),
+            if row["writer_holds_role"] == false {
+                " (not a holder)"
+            } else {
+                ""
+            },
+            text(&row["path"]),
+        );
+    }
+    out
+}
+
 /// `pij directory` for a human: each role, its mode and its live holders.
 fn render_directory(view: &Value) -> String {
     let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
@@ -3328,6 +3416,8 @@ impl Command {
             Command::Orchestration { .. } => "pij orchestration",
             Command::Spine { .. } => "pij spine",
             Command::Directory { .. } => "pij directory",
+            Command::Output { .. } => "pij output",
+            Command::Outputs { .. } => "pij outputs",
             Command::List { .. } => "pij list",
             Command::State { .. } => "pij state",
             Command::Tail { .. } => "pij tail",
@@ -3612,6 +3702,8 @@ mod tests {
                 "orchestration",
                 "spine",
                 "directory",
+                "output",
+                "outputs",
                 "list",
                 "state",
                 "tail"
