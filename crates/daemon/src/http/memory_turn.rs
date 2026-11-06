@@ -133,6 +133,11 @@ pub(crate) struct Report {
     /// What happened to the action after the turn.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) then: Option<String>,
+    /// When the bound passed while the prompt was still being admitted, how
+    /// that admission settled after the action: `delivered-late`, `queued`,
+    /// `refused` or `failed: …` (plan 209, #132 F005). Nothing is withdrawn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) admission: Option<String>,
     /// A held close's own receipt data (`tombstoned_at`, `directory`, …).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) closed: Option<Value>,
@@ -202,11 +207,17 @@ pub(crate) fn hold(
     answer["memory_turn"] = held(action, &holdings, bound);
     let state = state.clone();
     tokio::spawn(async move {
-        let mut report = run(&state, &seat.id, holdings, action, bound, held_at, deadline).await;
+        let (mut report, late) =
+            run(&state, &seat.id, holdings, action, bound, held_at, deadline).await;
         let (then, closed) = proceed(&state, &seat, then).await;
         // Free the seat before the event is visible, so a reader of the event
         // can always take the next turn.
         drop(pending);
+        // The action ran at the bound; the late prompt's admission is still
+        // the turn's, so the event says how it settled.
+        if let Some(late) = late {
+            report.admission = Some(settled(late.await));
+        }
         report.then = Some(then);
         report.closed = closed;
         record(&state, &seat.id, &report).await;
@@ -378,9 +389,9 @@ pub(crate) fn prompt(action: Action, holdings: &[Holding], bound: Duration) -> S
         .collect();
     let mut text = format!(
         "pij memory turn: pij is about to {verb} this seat, and you hold {}.\n\n\
-         Before that, write down what you learned that the next holder of the role should know: \
-         one note per lesson, short, with a hook that says when to open it. Read the role's notes first \
-         so you add rather than repeat.\n",
+         Before that, write one note with what you learned that the next holder of the role should know \
+         (more only if they are truly separate): short, with a hook that says when to open it. Read the \
+         role's notes first so you add rather than repeat.\n",
         held.join(", ")
     );
     let mut seen: Vec<(&str, &str)> = Vec::new();
@@ -441,8 +452,27 @@ impl Watch {
     }
 }
 
+/// The prompt's admission, owned by its turn.
+type Admission = tokio::task::JoinHandle<pij_core::error::Result<Receipt>>;
+
+/// How a late admission settled, for [`Report::admission`].
+fn settled(
+    joined: std::result::Result<pij_core::error::Result<Receipt>, tokio::task::JoinError>,
+) -> String {
+    match joined {
+        Ok(Ok(receipt)) => match receipt.outcome {
+            DeliveryOutcome::Delivered { .. } => "delivered-late".to_string(),
+            DeliveryOutcome::Queued { .. } | DeliveryOutcome::Held { .. } => "queued".to_string(),
+            DeliveryOutcome::Refused { .. } => "refused".to_string(),
+        },
+        Ok(Err(error)) => format!("failed: {error}"),
+        Err(error) => format!("failed: {error}"),
+    }
+}
+
 /// Deliver the memory prompt to `seat` and wait until its turn ends or
-/// `bound` passes.
+/// `bound` passes. When the bound passes during the prompt's admission, the
+/// admission comes back with the report, still running.
 async fn run(
     state: &AppState,
     seat: &SeatId,
@@ -451,7 +481,7 @@ async fn run(
     bound: Duration,
     started: Instant,
     deadline: tokio::time::Instant,
-) -> Report {
+) -> (Report, Option<Admission>) {
     let services = &state.services;
     // Subscribed before the send, so neither fact can slip past.
     let mut events = services
@@ -460,26 +490,37 @@ async fn run(
     let at = now_ms();
     let msg_id = format!("memory-turn-{seat}-{at}");
     // Admission runs under the same deadline as the wait: a transport hold
-    // (Claude's socket grace) must not outlast the bound. Dropping the accept
-    // future only discards its reply; the admission itself runs to completion.
-    let sent = tokio::time::timeout_at(
-        deadline,
-        services.delivery.accept(Msg {
-            from: SeatId::from(pij_core::BG_ACTOR),
-            to: seat.clone(),
-            body: prompt(action, &holdings, bound),
-            msg_id: msg_id.clone(),
-            from_machine: None,
-            in_reply_to: None,
-            command: None,
-        }),
-    )
-    .await;
+    // (Claude's socket grace) must not outlast the bound. The turn owns the
+    // admission as a task, so past the bound it keeps it and records how it
+    // settled (plan 209, #132 F005).
+    let delivery = Arc::clone(&services.delivery);
+    let msg = Msg {
+        from: SeatId::from(pij_core::BG_ACTOR),
+        to: seat.clone(),
+        body: prompt(action, &holdings, bound),
+        msg_id: msg_id.clone(),
+        from_machine: None,
+        in_reply_to: None,
+        command: None,
+    };
+    let mut admission: Admission = tokio::spawn(async move { delivery.accept(msg).await });
+    let sent = match tokio::time::timeout_at(deadline, &mut admission).await {
+        Err(_elapsed) => Err(admission),
+        Ok(Ok(sent)) => Ok(sent),
+        Ok(Err(join)) => Ok(Err(pij_core::error::PijError::Adapter {
+            adapter: "daemon/memory-turn".to_string(),
+            message: format!("the prompt's admission task failed: {join}"),
+        })),
+    };
+    let mut late = None;
     let (ended, why) = match sent {
-        Err(_elapsed) => (
-            Ended::Bound,
-            Some("the memory prompt was still being admitted".to_string()),
-        ),
+        Err(admission) => {
+            late = Some(admission);
+            (
+                Ended::Bound,
+                Some("the memory prompt was still being admitted".to_string()),
+            )
+        }
         Ok(Err(error)) => (
             Ended::Undelivered,
             Some(format!("the memory prompt could not be sent: {error}")),
@@ -524,7 +565,7 @@ async fn run(
             verb(action)
         )),
     };
-    Report {
+    let report = Report {
         action,
         holdings,
         prompt: msg_id,
@@ -534,7 +575,9 @@ async fn run(
         note,
         then: None,
         closed: None,
-    }
+        admission: None,
+    };
+    (report, late)
 }
 
 /// The `memory_turn` a holder's compact or close answers with at once.
