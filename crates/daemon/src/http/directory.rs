@@ -749,7 +749,7 @@ async fn memory(
         (None, Some(file)) if file == "-" => {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "--body-file - reads stdin, which only the pij CLI can do; pass --body or a file path",
+                "--body-file - reads stdin, which the daemon cannot; `pij` and `pij-rs` send it as --body, or pass --body or a file path",
             ));
         }
         (None, Some(file)) => {

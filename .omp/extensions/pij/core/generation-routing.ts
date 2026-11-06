@@ -24,7 +24,14 @@ export interface RsHttpRoute extends RouteIdentity {
 
 export interface RsNativeRoute extends RouteIdentity {
 	/** Native stdout/stderr/exit are the contract, not a JSON envelope. */
-	readonly nativeCommand: "commit-trailers" | "fleet-report" | "bg";
+	readonly nativeCommand:
+		| "commit-trailers"
+		| "fleet-report"
+		| "bg"
+		| "claim"
+		| "claims"
+		| "delivered"
+		| "directory";
 }
 
 export interface RsUnportedRoute extends RouteIdentity {
@@ -266,9 +273,6 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		"orchestration",
 		"spine",
 		"directory",
-		"claim",
-		"claims",
-		"delivered",
 		"role",
 		"link",
 		"watchdog",
@@ -286,6 +290,22 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 			why: "Forward argv and caller to the existing shared daemon operation",
 		}),
 	),
+	// The native CLI owns these verbs' human output, --help and stdin
+	// (`--body-file -`); the shim used to print their raw JSON (plan 209: F30,
+	// F41, F42, F43, F50).
+	...(["claim", "claims", "delivered"] as const).map(
+		(verb): RsNativeRoute => ({
+			verb,
+			nativeCommand: verb,
+			why: "The native CLI renders claims and deliveries and owns their --help",
+		}),
+	),
+	{
+		verb: "directory",
+		leaf: "memory",
+		nativeCommand: "directory",
+		why: "The native CLI reads --body-file - from stdin and prints the memory INDEX as text",
+	},
 	{
 		verb: "commit-trailers",
 		nativeCommand: "commit-trailers",
