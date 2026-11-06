@@ -110,3 +110,5 @@
 
 2026-11-06 verdict pr:147 29488cad374621621303fe1153c695784cb914ce pass-with-notes - Array argv/inherited stdio/native downstream checks retained; PATH unpinned and caller-proof/signal equivalence explicitly not certified, no lower-trust exploit established; four green jobs/1976-case proof with code/test equivalence and 14-doc-line whole-tree difference; no local execution; 2026-11-06-pr-147-29488ca-security.md.
 
+2026-11-06 verdict pr:147 5c8ff97a8cb021e4f862afdde137713c50658c05 pass-with-notes - Reviewer F002 normal parent-ID inheritance acknowledged and repaired by pane-only non-help forwarding/full whoami context; absolute-entry resolver and clap-derived value lexer verified; no binary authenticity/universal identity certificate; four green jobs/1978 cases, code/test equality with 14-doc-line tree difference; no local execution; 2026-11-06-pr-147-5c8ff97-security.md.
+
