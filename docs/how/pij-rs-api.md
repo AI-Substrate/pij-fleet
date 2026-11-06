@@ -989,7 +989,10 @@ returns `{id, template, version, latest, behind, diff}`: `diff` is a unified dif
 of the template between the role's version and the latest, computed in-process,
 and empty when the role is current or came from no template. Nothing is ever
 applied: the role file is untouched. A role without `role.dd.json` refuses with
-`E-RS-DIRECTORY-ROLE-MISSING`.
+`E-RS-DIRECTORY-ROLE-MISSING`. A role that records a template but no
+`template_version` refuses with `E-RS-DIRECTORY-NO-TEMPLATE-VERSION`, and a
+version that is not a number with `E-RS-ARG`; both name the next step, `pij
+directory edit <id> --set template_version=<n> --why <text>` (plan 206, F19).
 
 The view also carries `prompts` and `guidance` while any core role (prime, pm,
 pa, coder, reviewer) or security is missing (ruling C22). A role counts for a
@@ -1004,6 +1007,27 @@ the human view's drift hint does the same. `guidance` states the PEC wording. Th
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
+
+### Reshaping roles (plan 206)
+
+`pij directory edit <id> --why <text>` changes a role that exists (F20). Give
+`--set <field>=<value>` (repeatable; `title`, `kind`, `lifecycle`, `holders`,
+`instance_key`, `default_limit`, `summary`, `template`, `template_version`,
+`harness`, `model`, `effort`, `packet` or `brief`) and any of the role flags
+`add` takes, or `--file <json>` for the whole document. The writer reads the
+committed role under its lock, applies the change (a repeated flag replaces the
+whole list, as for `add --from`), keeps the changelog (a `--file` document's
+own changelog is replaced by the committed one), adds one row with `--why`, and
+commits it like an add (validate, build, commit, pointer). `data` is `{project,
+id, path, commit, paths}`.
+
+| Refusal | When |
+|---|---|
+| `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json`; the next step is `pij directory add` |
+| `E-RS-ARG` | no id, no `--why`, nothing to change, an edit that changes nothing, `--set` without `=`, a field `--set` cannot set, a field given twice, `--file` with flags, a document naming another id, or `--set` on any verb but edit |
+| `E-RS-DDOCS-INVALID` | ddocs refuses the edited document; nothing is committed |
+
+Cost: one writer commit per edit, the same as an add. No loop or timer.
 
 ## Canonical wire examples
 
