@@ -281,6 +281,56 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
     );
 }
 
+/// Plan 207 (#127, #128): launches retired for in-process reads stay retired.
+/// Every launch must record itself (above), so a returning launch shows up
+/// either under its old operation name or as a new `/bin/date` launch.
+#[test]
+fn retired_launches_stay_retired() {
+    // (file the pattern is retired in, or every daemon file; pattern; why)
+    const RETIRED: [(Option<&str>, &str, &str); 2] = [
+        (
+            None,
+            "\"date.utc-offset\"",
+            "#127: the UTC offset is read in-process (pij_harnesses::proc::local_utc_offset_minutes)",
+        ),
+        (
+            Some("crates/harnesses/src/proc.rs"),
+            "Command::new(\"/bin/date\")",
+            "#127: the UTC-offset path launches no date",
+        ),
+    ];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().expect("the workspace root");
+    let mut files = Vec::new();
+    for krate in DAEMON_CRATES {
+        rust_files(&root.join("crates").join(krate).join("src"), &mut files);
+    }
+    // Guard against a vacuous pass: the in-process reader must be in the scan.
+    let proc_rs = root.join("crates/harnesses/src/proc.rs");
+    assert!(
+        production_lines(&proc_rs)
+            .iter()
+            .any(|line| line.contains("pub fn local_utc_offset_minutes()")),
+        "the scan no longer sees local_utc_offset_minutes; fix the scanner"
+    );
+    let mut returned = Vec::new();
+    for path in &files {
+        let file = path.strip_prefix(&root).unwrap().display().to_string();
+        for (index, line) in production_lines(path).iter().enumerate() {
+            for (only, pattern, why) in RETIRED {
+                if only.is_none_or(|only| only == file) && line.contains(pattern) {
+                    returned.push(format!("{file}:{}: {} ({why})", index + 1, line.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        returned.is_empty(),
+        "a retired launch came back:\n  {}",
+        returned.join("\n  ")
+    );
+}
+
 /// Plan 182 (pij-fleet#74): `git` and `tmux` live wherever the user installed
 /// them, so they cannot be named by a fixed path. The daemon launches them
 /// through `pij_core::program::launch`, which resolves PATH once and launches

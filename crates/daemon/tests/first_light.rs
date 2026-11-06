@@ -83,21 +83,22 @@ async fn ping_counts_the_daemons_process_launches_by_operation() {
         envelope.data.expect("ping data")["spawns"].clone()
     };
     let total = |spawns: &serde_json::Value| spawns["total"].as_u64().expect("spawns.total");
-    let dated = |spawns: &serde_json::Value| {
+    let fallback = |spawns: &serde_json::Value| {
         spawns["by_op"]
             .as_object()
             .expect("spawns.by_op")
-            .get("date.utc-offset")
+            .get("ps.proc-liveness-fallback")
             .map_or(0, |count| count.as_u64().expect("a count"))
     };
 
     let before = spawns().await;
     // A real launch site: liveness launches nothing for live or reaped pids
-    // (plan 182), so read the UTC offset, which runs `/bin/date` every time.
-    pij_harnesses::proc::local_utc_offset_minutes().expect("date answers");
+    // (plan 182) and the UTC offset is in-process (plan 207), so probe a pid
+    // only `ps` can decide: a zombie on macOS, a thread id on Linux.
+    only_ps_decides().await;
     let after = spawns().await;
 
-    assert!(dated(&after) > dated(&before), "{before} -> {after}");
+    assert!(fallback(&after) > fallback(&before), "{before} -> {after}");
     assert!(total(&after) > total(&before), "{before} -> {after}");
     let by_op_sum: u64 = after["by_op"]
         .as_object()
@@ -110,6 +111,40 @@ async fn ping_counts_the_daemons_process_launches_by_operation() {
         total(&after),
         "one snapshot: the operations sum to the total"
     );
+}
+
+/// Probe one pid that liveness hands to its exact-pid `/bin/ps` fallback.
+async fn only_ps_decides() {
+    use pij_core::ports::LivenessPort;
+    let liveness = pij_harnesses::proc::ProcLiveness::new();
+    #[cfg(target_os = "macos")]
+    {
+        let zombie = std::process::Command::new("/usr/bin/true")
+            .spawn()
+            .expect("spawn a child");
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        liveness
+            .proc_start(zombie.id())
+            .await
+            .expect("probe a zombie");
+        drop(zombie);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let (park, parked) = std::sync::mpsc::channel::<()>();
+        let worker = std::thread::spawn(move || {
+            let _ = parked.recv();
+        });
+        let pid = std::process::id();
+        let tid: u32 = std::fs::read_dir("/proc/self/task")
+            .expect("list threads")
+            .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+            .find(|&tid| tid != pid)
+            .expect("a thread id other than the pid");
+        liveness.proc_start(tid).await.expect("probe a thread id");
+        drop(park);
+        worker.join().expect("join");
+    }
 }
 
 #[tokio::test]

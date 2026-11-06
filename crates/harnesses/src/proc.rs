@@ -312,39 +312,32 @@ fn classify(pid: u32, output: CommandOutput) -> Result<Option<u64>> {
     }
 }
 
-/// Read the host's current UTC offset in minutes from the platform clock.
+/// Read the host's current UTC offset in minutes, in-process.
 ///
 /// Spawn binding uses this only for a fresh process, so the current offset is
 /// the offset at process start; no historical timezone lookup is required.
+/// Plan 207 (#127): libc `localtime_r` through `time`, the conversion `date`
+/// itself makes (ADR 0001), so claude_bind's per-pending-seat tick and every
+/// other caller launch nothing.
 ///
 /// # Errors
-/// Returns an adapter error when `date +%z` fails or emits an invalid offset.
+/// Returns an adapter error when the platform reports no offset.
 pub fn local_utc_offset_minutes() -> Result<i32> {
-    pij_core::spawns::record("date.utc-offset");
-    let output = Command::new("/bin/date")
-        .arg("+%z")
-        .env("LC_ALL", "C")
-        .output()
-        .map_err(|error| PijError::Adapter {
-            adapter: ADAPTER.to_string(),
-            message: format!("could not read local UTC offset: {error}"),
-        })?;
-    if !output.status.success() {
-        return Err(PijError::Adapter {
-            adapter: ADAPTER.to_string(),
-            message: "date +%z failed while reading local UTC offset".to_string(),
-        });
-    }
-    let value = std::str::from_utf8(&output.stdout)
-        .map_err(|error| PijError::Adapter {
-            adapter: ADAPTER.to_string(),
-            message: format!("local UTC offset was not UTF-8: {error}"),
-        })?
-        .trim();
-    parse_utc_offset(value).ok_or_else(|| PijError::Adapter {
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    utc_offset_minutes_at(now).ok_or_else(|| PijError::Adapter {
         adapter: ADAPTER.to_string(),
-        message: format!("invalid date +%z offset {value:?}; expected +HHMM or -HHMM"),
+        message: "could not read the local UTC offset".to_string(),
     })
+}
+
+/// The local UTC offset in force at `epoch_seconds`, in minutes.
+fn utc_offset_minutes_at(epoch_seconds: i64) -> Option<i32> {
+    let instant = time::OffsetDateTime::from_unix_timestamp(epoch_seconds).ok()?;
+    // macOS: re-read the zone the way a fresh `date` would (sound there; see ADR 0001).
+    #[cfg(target_os = "macos")]
+    let _ = time::util::refresh_tz();
+    let offset = time::UtcOffset::local_offset_at(instant).ok()?;
+    Some(i32::from(offset.whole_minutes()))
 }
 
 /// One Claude process's own record, `<claude home>/sessions/<pid>.json`.
@@ -431,20 +424,6 @@ pub fn process_start_matches_utc_record(
     let record_seconds = packed_naive_seconds(record)?;
     let observed_seconds = packed_naive_seconds(observed_local)?;
     Ok(observed_seconds - record_seconds == i64::from(utc_offset_minutes) * 60)
-}
-
-fn parse_utc_offset(value: &str) -> Option<i32> {
-    if value.len() != 5 {
-        return None;
-    }
-    let sign = match value.as_bytes()[0] {
-        b'+' => 1,
-        b'-' => -1,
-        _ => return None,
-    };
-    let hour = value[1..3].parse::<i32>().ok()?;
-    let minute = value[3..5].parse::<i32>().ok()?;
-    (hour <= 23 && minute <= 59).then_some(sign * (hour * 60 + minute))
 }
 
 fn packed_naive_seconds(value: u64) -> Result<i64> {
@@ -663,6 +642,59 @@ mod tests {
             output.status.success() && stdout.contains("1 passed"),
             "{stdout}{}",
             String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// Plan 207 (#127): the offset in force at each instant, across a DST
+    /// change, from a process with extra threads (ADR 0001), and no launch.
+    #[test]
+    fn utc_offset_is_read_in_process_at_each_instant() {
+        const CHILD: &str = "PIJ_UTC_OFFSET_TZ_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let worker = std::thread::spawn(|| std::thread::park());
+            let before = pij_core::spawns::snapshot().total;
+            // Melbourne: daylight time (+11) until 5 April 2026, standard (+10) in July.
+            assert_eq!(super::utc_offset_minutes_at(1_775_000_000), Some(660));
+            assert_eq!(super::utc_offset_minutes_at(1_782_864_000), Some(600));
+            assert!(matches!(super::local_utc_offset_minutes(), Ok(600 | 660)));
+            assert_eq!(pij_core::spawns::snapshot().total, before, "no launch");
+            worker.thread().unpark();
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "proc::tests::utc_offset_is_read_in_process_at_each_instant",
+                "--exact",
+            ])
+            .env("TZ", "Australia/Melbourne")
+            .env(CHILD, "1")
+            .output()
+            .expect("re-run under TZ=Australia/Melbourne");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// Plan 207 (#127): the in-process offset is the one `date +%z` prints.
+    #[test]
+    fn utc_offset_matches_date() {
+        let printed = std::process::Command::new("/bin/date")
+            .arg("+%z")
+            .env("LC_ALL", "C")
+            .output()
+            .expect("run date");
+        let text = String::from_utf8(printed.stdout).expect("utf-8");
+        let text = text.trim();
+        let sign = if text.starts_with('-') { -1 } else { 1 };
+        let minutes =
+            sign * (text[1..3].parse::<i32>().unwrap() * 60 + text[3..5].parse::<i32>().unwrap());
+        assert_eq!(
+            super::local_utc_offset_minutes().unwrap(),
+            minutes,
+            "date +%z = {text}"
         );
     }
 
