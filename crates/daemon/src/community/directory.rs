@@ -884,7 +884,7 @@ impl DirectoryService {
                 match problems.as_slice() {
                     [] => {}
                     [(code, one)] if drafts.len() == 1 => {
-                        return Err(Refusal::new(*code, one.clone()));
+                        return Err(Refusal::new(code, one.clone()));
                     }
                     many => {
                         let code = if many.iter().all(|(code, _)| *code == E_OVERLAP) {
