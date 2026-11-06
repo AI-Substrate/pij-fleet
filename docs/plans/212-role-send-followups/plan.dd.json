@@ -10,7 +10,7 @@
         "slug": "role-send-followups",
         "ordinal": 212,
         "complexity": "CS-3",
-        "summary": "Fix what the s05 dogfood found: the role-address refusal loop (F52), a silent drain on assign (F56), no way to see or withdraw a queued request (F59), the window rename on release (F57), and the shim's gaps around role sends (F53, F54, F55, F58).",
+        "summary": "Fix what the s05 dogfood found: the role-address refusal loop (F52), a silent drain on assign (F56), no way to see or withdraw a queued request (F59), the window rename on release (F57), and a drain to the requester itself stranding the request (F61). The shim's gaps around role sends (F53, F54, F55, F58) were closed by plan 213 (#147).",
         "status": "draft",
         "mode": "Full",
         "created": "2026-11-04",
@@ -24,7 +24,7 @@
     {
       "name": "goals",
       "value": [
-        "Fix what the s05 dogfood found: the role-address refusal loop (F52), a silent drain on assign (F56), no way to see or withdraw a queued request (F59), the window rename on release (F57), and the shim's gaps around role sends (F53, F54, F55, F58)."
+        "Fix what the s05 dogfood found: the role-address refusal loop (F52), a silent drain on assign (F56), no way to see or withdraw a queued request (F59), the window rename on release (F57), and a drain to the requester itself stranding the request (F61). The shim's gaps around role sends (F53, F54, F55, F58) were closed by plan 213 (#147)."
       ]
     },
     {
@@ -39,44 +39,59 @@
         {
           "id": "ac-0001",
           "claim": "F52, the refusal loop. E-RS-ROLE-HOLDERS (several holders) and E-RS-ROLE-ADDRESS (an instance on a role whose holders have no instances) never advise each other in a loop: the several-holders refusal lists each holder with its instance, or says the holders have no instances and gives the runnable fix (assign per-PR instances: pij directory assign <role>/<instance> <seat>); next is never null.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "crates/daemon/tests/directory_http.rs: role_send_refusals_never_advise_each_other_in_a_loop, several_holders_refuse_by_name_and_an_instance_reaches_only_its_holder"
         },
         {
           "id": "ac-0002",
           "claim": "F56, drain on assign is visible. The assign receipt lists the requests it drained (id, requester, reply mode), in human and --json output.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "crates/daemon/tests/directory_http.rs: an_assign_receipt_lists_its_drain_and_a_request_from_the_new_holder_is_closed; crates/cli/src/main.rs render_holdings"
         },
         {
           "id": "ac-0003",
           "claim": "F59, list and withdraw. `pij requests [--role <id>] [--state queued|delivering|delivered]` lists role requests; `pij requests withdraw <id> --why <text>` withdraws a queued one (requester, the PA or the prime only).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "crates/daemon/tests/directory_http.rs: requests_lists_and_withdraw_closes_a_queued_request_for_its_requester_or_the_pa"
         },
         {
           "id": "ac-0004",
           "claim": "F57, windows. Releasing a holding restores the window name the assign replaced (or the seat's default) when the seat holds no other role.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "receipt": "crates/daemon/tests/directory_http.rs: add_writes_commits_and_points_at_a_role_then_refuses_it_twice (release renames to the next holding, then the seat's name)"
         },
         {
           "id": "ac-0005",
           "claim": "Shim parity for role sends (F53, F54, F55, F58). pij send --help shows role:<id>[/<instance>], --reply and --fyi; the human receipt prints the request id and reply mode; --body is accepted (or the help and every printed command say positional or --body-file only); directory add prints the human form.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005",
+          "note": "Superseded by plan 213 (#147, merged 6d9de0c): the shim forwards role sends, --help and directory to pij-rs unchanged.",
+          "receipt": "#147"
         },
         {
           "id": "ac-0006",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch site. List and withdraw are store reads and writes; the receipt and window changes are in-process.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006",
+          "receipt": "No new timer, poll or launch site: list and withdraw are indexed store reads and one write; the drain's close is one write; a release that renames is one tmux launch at the existing rename-window site. crates/testkit/tests/spawn_sites.rs unchanged."
         },
         {
           "id": "ac-0007",
           "claim": "Docs and states. No workstream state changes (follow-ups); docs/how/pij-rs-api.md documents pij requests and the new receipt fields. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007",
+          "receipt": "docs/how/pij-rs-api.md (send to a role, requests, refusals, route row, window, cost); skills/pij/SKILL.md; docs/difficulties.md F52, F56, F57, F59 resolved"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "F61, a drain to the requester. When the seat an assign drains to is a queued request's own requester, the request is closed (\"the requester took the role\") instead of failing the self-send and staying queued; the assign receipt says so, and a retry of its send replays it as closed.",
+          "state": "checked",
+          "receipt": "crates/daemon/tests/directory_http.rs: an_assign_receipt_lists_its_drain_and_a_request_from_the_new_holder_is_closed",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
         }
       ]
     },

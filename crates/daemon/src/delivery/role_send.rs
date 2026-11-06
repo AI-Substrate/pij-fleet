@@ -22,7 +22,9 @@ use pij_core::model::{DeliveryOutcome, Msg, Receipt, SeatDescriptor, SeatId};
 use pij_core::orchestration::PrimeState;
 use pij_core::ports::Registry;
 use pij_core::session_status::SessionStatusBlock;
-use pij_store::{Assignment, ReplyMode, RequestState, RoleRequest, SqliteOrchestration};
+use pij_store::{
+    Assignment, CloseOutcome, ReplyMode, RequestState, RoleRequest, SqliteOrchestration,
+};
 use serde_json::{Value, json};
 
 use crate::Services;
@@ -186,18 +188,39 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     {
         return replay(&send, existing);
     }
+    // A request closed before any holder took it (plan 212) is never queued
+    // again by a retry of its send.
+    if let Some(closed) = store
+        .closed_role_request(&send.msg_id)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+    {
+        return replay(&send, closed.request);
+    }
     let document = role_document(&send.repo, &send.project, &send.address.role)?;
     let meta = section(&document, "meta");
+    let one_holder = meta.and_then(|meta| meta["holders"].as_str()) == Some("one");
+    let assignments = store
+        .assignments(&send.project)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+    let open: Vec<&Assignment> = assignments
+        .iter()
+        .filter(|row| row.to.is_none() && row.role == send.address.role)
+        .collect();
+    // An instance on a one-holder role resolves only when a holding has it
+    // (plan 212, F52): the per-PR instances a PM assigns are addressable.
     if !send.address.instance.is_empty()
-        && meta.and_then(|meta| meta["holders"].as_str()) == Some("one")
+        && one_holder
+        && !open.iter().any(|row| row.instance == send.address.instance)
     {
-        return Err(Refusal::new(
-            E_ROLE_ADDRESS,
-            format!(
-                "role {} has one holder and no instances; address it as {ROLE_PREFIX}{}",
-                send.address.role, send.address.role
-            ),
-        ));
+        let mut role_live = Vec::new();
+        for row in &open {
+            if let Some(seat) = live_seat(services.registry.as_ref(), &row.seat).await? {
+                role_live.push(seat.id);
+            }
+        }
+        return Err(no_such_instance(&send, &role_live));
     }
     let reply = match send.options.reply.as_deref() {
         None => ReplyMode::Wake,
@@ -220,16 +243,12 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
                 crate::http::background::parse_duration_ms(text, "default_limit").ok()
             }),
     };
-    let assignments = store
-        .assignments(&send.project)
-        .await
-        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
     let mut live = Vec::new();
-    for row in assignments.iter().filter(|row| {
-        row.to.is_none()
-            && row.role == send.address.role
-            && (send.address.instance.is_empty() || row.instance == send.address.instance)
-    }) {
+    for row in open
+        .iter()
+        .copied()
+        .filter(|row| send.address.instance.is_empty() || row.instance == send.address.instance)
+    {
         if let Some(seat) = live_seat(services.registry.as_ref(), &row.seat).await? {
             live.push((row, seat));
         }
@@ -294,25 +313,81 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
                 recorded: false,
             })
         }
-        several => Err(Refusal::new(
+        several => Err(several_holders(&send, several)),
+    }
+}
+
+/// Two or more live holders (plan 212, F52). Each is listed with its
+/// instance. When some have one, `next` addresses that instance; when none
+/// does, an instance cannot pick one, so `next` is the fix: give a holding an
+/// instance. Never advice that refuses again.
+fn several_holders(send: &RoleSend, several: &[(&Assignment, SeatDescriptor)]) -> Refusal {
+    let role = &send.address.role;
+    let listed = several
+        .iter()
+        .map(|(row, seat)| {
+            if row.instance.is_empty() {
+                format!("{} (no instance)", seat.id)
+            } else {
+                format!("{} ({ROLE_PREFIX}{role}/{})", seat.id, row.instance)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let head = format!(
+        "{} has {} live holders in project {}: {listed}",
+        send.address.display(),
+        several.len(),
+        send.project,
+    );
+    match several.iter().find(|(row, _)| !row.instance.is_empty()) {
+        Some((row, _)) => Refusal::new(
+            E_ROLE_HOLDERS,
+            format!("{head}; address one by its instance, or send to the seat"),
+        )
+        .with_next(format!(
+            "pij send {ROLE_PREFIX}{role}/{} \"<text>\"",
+            row.instance
+        )),
+        None => Refusal::new(
             E_ROLE_HOLDERS,
             format!(
-                "{} has {} live holders in project {}: {}; address one as {ROLE_PREFIX}{}/<instance>, or send to the seat",
-                send.address.display(),
-                several.len(),
-                send.project,
-                several
-                    .iter()
-                    .map(|(row, seat)| if row.instance.is_empty() {
-                        seat.id.to_string()
-                    } else {
-                        format!("{} ({})", seat.id, row.instance)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                send.address.role
+                "{head}; none has an instance, so an instance cannot pick one. Send to a seat \
+                 (pij send {} \"<text>\"), or give each holding an instance, as per-PR verdict \
+                 roles do",
+                several[0].1.id
             ),
+        )
+        .with_next(format!(
+            "pij directory assign {role}/<instance> {} --why \"<why>\" --project {}",
+            several[0].1.id, send.project
         )),
+    }
+}
+
+/// An instance on a one-holder role that no holding has (plan 212, F52). With
+/// one live holder, `next` is the role address; with several, that address
+/// would refuse too, so `next` sends to a seat.
+fn no_such_instance(send: &RoleSend, live: &[SeatId]) -> Refusal {
+    let role = &send.address.role;
+    let refusal = |message: String| Refusal::new(E_ROLE_ADDRESS, message);
+    match live {
+        [_] | [] => refusal(format!(
+            "role {role} has one holder and no holding has instance {}; address it as {ROLE_PREFIX}{role}",
+            send.address.instance
+        ))
+        .with_next(format!("pij send {ROLE_PREFIX}{role} \"<text>\"")),
+        several => refusal(format!(
+            "role {role} has one holder, but {} seats hold it ({}) and none has instance {}; send to a seat",
+            several.len(),
+            several
+                .iter()
+                .map(SeatId::as_str)
+                .collect::<Vec<_>>()
+                .join(", "),
+            send.address.instance
+        ))
+        .with_next(format!("pij send {} \"<text>\"", several[0])),
     }
 }
 
@@ -359,12 +434,19 @@ pub fn replay_receipt(request: &RoleRequest, now_ms: u64) -> Receipt {
             "replay: request {} was already delivered to {holder}; not sent again",
             request.id
         ),
+        (RequestState::Closed, _) => format!(
+            "replay: request {} was closed before any holder took it (pij requests --state closed); not sent again",
+            request.id
+        ),
         _ => format!(
             "replay: request {} is still queued for a holder; not sent again",
             request.id
         ),
     };
-    let outcome = if request.state == RequestState::Delivered {
+    let outcome = if matches!(
+        request.state,
+        RequestState::Delivered | RequestState::Closed
+    ) {
         DeliveryOutcome::Held { reason }
     } else {
         DeliveryOutcome::Queued {
@@ -673,34 +755,92 @@ impl RoleQueueDrain {
     }
 }
 
+#[async_trait::async_trait]
 impl AfterAssign for RoleQueueDrain {
-    fn assigned(&self, project: &str, role: &str, instance: &str, seat: &SeatId) {
-        let Some(services) = self.services.get().cloned() else {
+    async fn assigned(
+        &self,
+        project: &str,
+        role: &str,
+        instance: &str,
+        seat: &SeatId,
+    ) -> Vec<Value> {
+        let Some(services) = self.services.get() else {
             eprintln!("pij-rs: role queue for {role} not drained: services not bound");
-            return;
+            return Vec::new();
         };
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            eprintln!("pij-rs: role queue for {role} not drained: no runtime");
-            return;
-        };
-        let (project, role, instance, seat) = (
-            project.to_string(),
-            role.to_string(),
-            instance.to_string(),
-            seat.clone(),
-        );
-        runtime.spawn(async move {
-            for (id, outcome) in drain(&services, &project, &role, &instance, &seat).await {
-                if let Err(cause) = outcome {
-                    eprintln!("pij-rs: role request {id} for {seat} not drained: {cause}");
-                }
+        match drain(services, project, role, instance, seat).await {
+            Ok(drained) => drained
+                .iter()
+                .inspect(|one| {
+                    if let Err(cause) = &one.outcome {
+                        eprintln!(
+                            "pij-rs: role request {} for {seat} not drained: {cause}",
+                            one.id
+                        );
+                    }
+                })
+                .map(Drained::receipt)
+                .collect(),
+            Err(cause) => {
+                eprintln!("pij-rs: role queue for {role} not drained: {cause}");
+                vec![json!({"error": format!("the queue could not be read: {cause}")})]
             }
+        }
+    }
+}
+
+/// Why the drain closes a request instead of delivering it (plan 212, F61).
+pub const REQUESTER_TOOK_ROLE: &str = "the requester took the role";
+
+/// How the drain settled one request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DrainedAs {
+    /// Delivered to the new holder.
+    Delivered,
+    /// Closed: the new holder sent it ([`REQUESTER_TOOK_ROLE`]).
+    Closed,
+}
+
+/// One request the drain settled, or failed to (then it stays queued).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Drained {
+    /// The request id.
+    pub id: String,
+    /// Who sent it.
+    pub from: String,
+    /// How the requester wants to hear back.
+    pub reply: ReplyMode,
+    /// What happened, or why it is still queued.
+    pub outcome: Result<DrainedAs, String>,
+}
+
+impl Drained {
+    /// The assign receipt's entry (F56).
+    pub fn receipt(&self) -> Value {
+        let mut entry = json!({
+            "request": self.id,
+            "from": self.from,
+            "reply": self.reply.as_str(),
         });
+        match &self.outcome {
+            Ok(DrainedAs::Delivered) => entry["outcome"] = json!("delivered"),
+            Ok(DrainedAs::Closed) => {
+                entry["outcome"] = json!("closed");
+                entry["why"] = json!(REQUESTER_TOOK_ROLE);
+            }
+            Err(cause) => {
+                entry["outcome"] = json!("queued");
+                entry["error"] = json!(cause);
+            }
+        }
+        entry
     }
 }
 
 /// Deliver `role`'s queued requests a holder of `instance` can take to `seat`,
-/// oldest first, each from its requester; mark each one delivered.
+/// oldest first, each from its requester; mark each one delivered. A request
+/// `seat` sent itself is closed instead ([`REQUESTER_TOOK_ROLE`], plan 212,
+/// F61): a seat cannot send to itself, and it already knows what it asked.
 ///
 /// Each is claimed before it is dispatched, and the claim holds only while
 /// `seat` is live and holds the role at that moment, so two drains never
@@ -716,19 +856,37 @@ pub async fn drain(
     role: &str,
     instance: &str,
     seat: &SeatId,
-) -> Vec<(String, Result<(), String>)> {
+) -> Result<Vec<Drained>, String> {
     let store = services.directory.store();
-    let queued = match store.queued_role_requests(project, role, instance).await {
-        Ok(queued) => queued,
-        Err(cause) => return vec![(format!("{project}/{role}"), Err(cause.to_string()))],
-    };
+    let queued = store
+        .queued_role_requests(project, role, instance)
+        .await
+        .map_err(|cause| cause.to_string())?;
     let mut outcomes = Vec::new();
     for mut request in queued {
+        let settled = |outcome: Result<DrainedAs, String>| Drained {
+            id: request.id.clone(),
+            from: request.requester.clone(),
+            reply: request.reply,
+            outcome,
+        };
+        if request.requester == seat.as_str() {
+            let at = crate::http::system_time_ms().map_err(|cause| cause.to_string())?;
+            match store
+                .close_role_request(&request.id, seat.as_str(), REQUESTER_TOOK_ROLE, at)
+                .await
+            {
+                Ok(CloseOutcome::Closed(_)) => outcomes.push(settled(Ok(DrainedAs::Closed))),
+                Ok(_) => {}
+                Err(cause) => outcomes.push(settled(Err(cause.to_string()))),
+            }
+            continue;
+        }
         match store.claim_role_request(&request.id, seat.as_str()).await {
             Ok(true) => {}
             Ok(false) => continue,
             Err(cause) => {
-                outcomes.push((request.id, Err(cause.to_string())));
+                outcomes.push(settled(Err(cause.to_string())));
                 continue;
             }
         }
@@ -748,9 +906,14 @@ pub async fn drain(
                 .release_role_request_claim(&request.id, seat.as_str())
                 .await;
         }
-        outcomes.push((request.id, outcome));
+        outcomes.push(Drained {
+            id: request.id,
+            from: request.requester,
+            reply: request.reply,
+            outcome: outcome.map(|()| DrainedAs::Delivered),
+        });
     }
-    outcomes
+    Ok(outcomes)
 }
 
 /// At boot, settle the requests a stopped daemon left `delivering` (review

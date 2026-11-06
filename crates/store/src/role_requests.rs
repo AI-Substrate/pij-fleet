@@ -53,6 +53,9 @@ pub enum RequestState {
     Delivering,
     /// Delivered to `holder`.
     Delivered,
+    /// Closed before any holder took it: withdrawn, or the requester took the
+    /// role itself (plan 212). Kept in `closed_role_requests`, never queued.
+    Closed,
 }
 
 impl RequestState {
@@ -62,8 +65,46 @@ impl RequestState {
             Self::Queued => "queued",
             Self::Delivering => "delivering",
             Self::Delivered => "delivered",
+            Self::Closed => "closed",
         }
     }
+
+    /// Parse a stored or typed state.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "queued" => Some(Self::Queued),
+            "delivering" => Some(Self::Delivering),
+            "delivered" => Some(Self::Delivered),
+            "closed" => Some(Self::Closed),
+            _ => None,
+        }
+    }
+}
+
+/// A request closed before any holder took it (plan 212, F59 and F61).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosedRoleRequest {
+    /// The request as sent, in state [`RequestState::Closed`].
+    pub request: RoleRequest,
+    /// When it was closed.
+    pub closed_at: u64,
+    /// The seat that closed it.
+    pub closed_by: String,
+    /// Why.
+    pub why: String,
+}
+
+/// What [`SqliteOrchestration::close_role_request`] did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CloseOutcome {
+    /// It was queued and is now closed.
+    Closed(ClosedRoleRequest),
+    /// No request has that id.
+    Unknown,
+    /// It is delivering or delivered, so a holder has it.
+    NotQueued(RoleRequest),
+    /// It was closed before.
+    AlreadyClosed(ClosedRoleRequest),
 }
 
 /// One request sent to a role.
@@ -117,6 +158,14 @@ const RECOVER_TAKEN_SQL: &str = "UPDATE role_requests SET state = 'delivered', d
 
 const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
      limit_ms, state, holder, created_at, delivered_at";
+
+/// A closed row read through [`role_request`], plus who closed it.
+const CLOSED_COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, \
+     reply, limit_ms, 'closed' AS state, NULL AS holder, created_at, NULL AS delivered_at, \
+     closed_at, closed_by, close_why";
+
+/// How many rows one `pij requests` read returns at most, newest first.
+pub const REQUESTS_LIST_LIMIT: u32 = 100;
 
 impl SqliteOrchestration {
     /// Record a request, queued or already delivered.
@@ -386,6 +435,153 @@ impl SqliteOrchestration {
     }
 }
 
+impl SqliteOrchestration {
+    /// Close queued request `id` as `by`, at `at`, for `why` (plan 212): move it
+    /// to `closed_role_requests` and out of the queue in one transaction, so
+    /// no drain can deliver it and the PA digest drops it. Only a queued
+    /// request closes; the outcome says what stood in the way otherwise.
+    pub async fn close_role_request(
+        &self,
+        id: &str,
+        by: &str,
+        why: &str,
+        at: u64,
+    ) -> Result<CloseOutcome> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (owned_id, by, why) = (id.to_string(), by.to_string(), why.to_string());
+        let at = sql_i64(at, "closed_at")?;
+        let moved = owned_write(async move {
+            let id = owned_id;
+            let mut tx = begin_write(&pool).await?;
+            let moved = sqlx::query(
+                "INSERT INTO closed_role_requests (id, project, role, instance, requester, body, \
+                 in_reply_to, fyi, reply, limit_ms, created_at, closed_at, closed_by, close_why) \
+                 SELECT id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
+                 limit_ms, created_at, ?2, ?3, ?4 FROM role_requests \
+                 WHERE id = ?1 AND state = 'queued'",
+            )
+            .bind(&id)
+            .bind(at)
+            .bind(&by)
+            .bind(&why)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            if moved {
+                sqlx::query("DELETE FROM role_requests WHERE id = ?1 AND state = 'queued'")
+                    .bind(&id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(adapter_error)?;
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(moved)
+        })
+        .await?;
+        let closed = self.closed_role_request(id).await?;
+        Ok(match (moved, closed) {
+            (true, Some(closed)) => CloseOutcome::Closed(closed),
+            (false, Some(closed)) => CloseOutcome::AlreadyClosed(closed),
+            (_, None) => match self.role_request(id).await? {
+                Some(open) => CloseOutcome::NotQueued(open),
+                None => CloseOutcome::Unknown,
+            },
+        })
+    }
+
+    /// One closed request by id.
+    pub async fn closed_role_request(&self, id: &str) -> Result<Option<ClosedRoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {CLOSED_COLUMNS} FROM closed_role_requests WHERE id = ?1"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .as_ref()
+        .map(closed_role_request)
+        .transpose()
+    }
+
+    /// `project`'s requests in `state` (for `role` when given), newest first,
+    /// at most [`REQUESTS_LIST_LIMIT`]; with no state, the open ones (queued
+    /// and delivering). Each state is one indexed read.
+    pub async fn list_role_requests(
+        &self,
+        project: &str,
+        role: Option<&str>,
+        state: Option<RequestState>,
+    ) -> Result<Vec<ClosedOrOpen>> {
+        require_current_schema(&self.pool).await?;
+        let states = match state {
+            Some(state) => vec![state],
+            None => vec![RequestState::Queued, RequestState::Delivering],
+        };
+        let mut rows = Vec::new();
+        for state in states {
+            let sql = if state == RequestState::Closed {
+                format!(
+                    "SELECT {CLOSED_COLUMNS} FROM closed_role_requests \
+                     WHERE project = ?1 AND (?2 IS NULL OR role = ?2) \
+                     ORDER BY closed_at DESC, id DESC LIMIT ?3"
+                )
+            } else {
+                format!(
+                    "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_by_project \
+                     WHERE project = ?1 AND state = '{}' AND (?2 IS NULL OR role = ?2) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?3",
+                    state.as_str()
+                )
+            };
+            let read = sqlx::query(&sql)
+                .bind(project)
+                .bind(role)
+                .bind(i64::from(REQUESTS_LIST_LIMIT))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(adapter_error)?;
+            for row in &read {
+                rows.push(if state == RequestState::Closed {
+                    ClosedOrOpen::Closed(closed_role_request(row)?)
+                } else {
+                    ClosedOrOpen::Open(role_request(row)?)
+                });
+            }
+        }
+        if state.is_none() {
+            rows.sort_by_key(|row| match row {
+                ClosedOrOpen::Open(request) => std::cmp::Reverse(request.created_at),
+                ClosedOrOpen::Closed(closed) => std::cmp::Reverse(closed.closed_at),
+            });
+            rows.truncate(REQUESTS_LIST_LIMIT as usize);
+        }
+        Ok(rows)
+    }
+}
+
+/// One row of [`SqliteOrchestration::list_role_requests`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClosedOrOpen {
+    /// Queued, delivering or delivered.
+    Open(RoleRequest),
+    /// Closed before any holder took it.
+    Closed(ClosedRoleRequest),
+}
+
+fn closed_role_request(row: &sqlx::sqlite::SqliteRow) -> Result<ClosedRoleRequest> {
+    let closed_at: i64 = row.try_get("closed_at").map_err(adapter_error)?;
+    Ok(ClosedRoleRequest {
+        request: role_request(row)?,
+        closed_at: sql_u64(closed_at, "closed_at")?,
+        closed_by: row.try_get("closed_by").map_err(adapter_error)?,
+        why: row.try_get("close_why").map_err(adapter_error)?,
+    })
+}
+
 fn role_request(row: &sqlx::sqlite::SqliteRow) -> Result<RoleRequest> {
     let text = |name: &str| -> Result<String> { row.try_get(name).map_err(adapter_error) };
     let reply: String = text("reply")?;
@@ -415,6 +611,7 @@ fn role_request(row: &sqlx::sqlite::SqliteRow) -> Result<RoleRequest> {
             "queued" => RequestState::Queued,
             "delivering" => RequestState::Delivering,
             "delivered" => RequestState::Delivered,
+            "closed" => RequestState::Closed,
             other => return Err(corrupt("state", other)),
         },
         holder: row.try_get("holder").map_err(adapter_error)?,

@@ -35,17 +35,29 @@ pub const E_NOT_HELD: &str = "E-RS-DIRECTORY-NOT-HELD";
 pub const E_OVERLAP: &str = "E-RS-DIRECTORY-OVERLAP";
 
 /// Called once after each assign lands (ruling C6); s05 drains the role queue
-/// through it.
+/// through it, and the assign waits for it so its receipt can say what was
+/// drained (plan 212, F56).
+#[async_trait::async_trait]
 pub trait AfterAssign: Send + Sync {
-    /// `instance` is empty for a one-holder role.
-    fn assigned(&self, project: &str, role: &str, instance: &str, seat: &SeatId);
+    /// `instance` is empty for a one-holder role. Returns one receipt entry per
+    /// request the hook settled; empty when nothing waited.
+    async fn assigned(
+        &self,
+        project: &str,
+        role: &str,
+        instance: &str,
+        seat: &SeatId,
+    ) -> Vec<Value>;
 }
 
 /// The default: nothing happens after an assign.
 pub struct NoHook;
 
+#[async_trait::async_trait]
 impl AfterAssign for NoHook {
-    fn assigned(&self, _: &str, _: &str, _: &str, _: &SeatId) {}
+    async fn assigned(&self, _: &str, _: &str, _: &str, _: &SeatId) -> Vec<Value> {
+        Vec::new()
+    }
 }
 
 /// One assign.
@@ -91,6 +103,10 @@ pub struct HoldingReceipt {
     /// assign.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window: Option<Value>,
+    /// The role's queued requests the assign settled (plan 212, F56): each
+    /// with its requester, reply mode and outcome. Absent when none waited.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub drained: Vec<Value>,
 }
 
 /// What a close did to the closed seat's holdings, per project.
@@ -693,8 +709,10 @@ impl DirectoryService {
                 })
                 .await
                 .map_err(|error| store_refusal(&written, &error))?;
-            self.hook
-                .assigned(&row.project, &row.role, &row.instance, &request.seat.id);
+            let drained = self
+                .hook
+                .assigned(&row.project, &row.role, &row.instance, &request.seat.id)
+                .await;
             let window = self.rename(&request.seat, row).await;
             receipts.push(
                 HoldingReceipt {
@@ -707,6 +725,7 @@ impl DirectoryService {
                     seat_role: commit.seat_role,
                     flushed: built.landed.len(),
                     window: Some(window),
+                    drained,
                 },
             );
         }
@@ -719,32 +738,55 @@ impl DirectoryService {
     /// adapter's recorded site; never the control client, whose allow-list
     /// stays reads only (S2).
     async fn rename(&self, seat: &SeatDescriptor, row: &Assignment) -> Value {
-        let name_of = |held: &Assignment| {
-            if held.instance.is_empty() {
-                format!("{}:{}", held.project, held.role)
-            } else {
-                format!("{}:{}-{}", held.project, held.role, held.instance)
-            }
-        };
-        let name = name_of(row);
-        let open = self
-            .store
-            .open_assignments(seat.id.as_str())
-            .await
-            .unwrap_or_default();
-        let first = open
-            .iter()
-            .min_by_key(|held| (holders::parse_time(&held.from), held.from.clone()));
-        if let Some(first) = first.filter(|first| {
+        let name = window_name(row);
+        if let Some(first) = self.first_open(seat).await.filter(|first| {
             (&first.project, &first.role, &first.instance, &first.from)
                 != (&row.project, &row.role, &row.instance, &row.from)
         }) {
-            let kept = name_of(first);
+            let kept = window_name(&first);
             return serde_json::json!({
                 "name": kept, "renamed": false,
                 "reason": format!("the window keeps the seat's first open holding, {kept}"),
             });
         }
+        self.rename_to(seat, name).await
+    }
+
+    /// After `released` ended (plan 212, F57): when it was the holding the
+    /// window is named for, name the window for the seat's next first open
+    /// holding, or give it back the seat's own name (what spawn names a
+    /// window) when it holds nothing else. Otherwise the window keeps its
+    /// name, with no launch. At most one tmux launch, at the assign's site.
+    pub async fn window_after_release(&self, seat: &SeatDescriptor, released: &Value) -> Value {
+        let first = self.first_open(seat).await;
+        let released_from = released["from"].as_str().and_then(holders::parse_time);
+        if let Some(first) = first
+            .as_ref()
+            .filter(|first| holders::parse_time(&first.from) < released_from)
+        {
+            let kept = window_name(first);
+            return serde_json::json!({
+                "name": kept, "renamed": false,
+                "reason": format!("the window keeps the seat's first open holding, {kept}"),
+            });
+        }
+        let name = first
+            .as_ref()
+            .map_or_else(|| seat.id.to_string(), window_name);
+        self.rename_to(seat, name).await
+    }
+
+    /// The seat's earliest open holding, in any project.
+    async fn first_open(&self, seat: &SeatDescriptor) -> Option<Assignment> {
+        self.store
+            .open_assignments(seat.id.as_str())
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .min_by_key(|held| (holders::parse_time(&held.from), held.from.clone()))
+    }
+
+    async fn rename_to(&self, seat: &SeatDescriptor, name: String) -> Value {
         let Some(pane) = seat.pane.as_deref() else {
             return serde_json::json!({"name": name, "renamed": false, "reason": "the seat has no pane"});
         };
@@ -849,6 +891,7 @@ impl DirectoryService {
             seat_role: None,
             flushed: built.landed.len(),
             window: None,
+            drained: Vec::new(),
         })
     }
 
@@ -924,6 +967,7 @@ impl DirectoryService {
             seat_role: None,
             flushed: built.landed.len(),
             window: None,
+            drained: Vec::new(),
         })
     }
 
@@ -1187,4 +1231,13 @@ fn system_ms() -> u64 {
         .map_or(0, |elapsed| {
             u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
         })
+}
+
+/// `<project>:<role>`, or `<project>:<role>-<instance>` (req-26, C16).
+fn window_name(held: &Assignment) -> String {
+    if held.instance.is_empty() {
+        format!("{}:{}", held.project, held.role)
+    } else {
+        format!("{}:{}-{}", held.project, held.role, held.instance)
+    }
 }

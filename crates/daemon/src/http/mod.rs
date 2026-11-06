@@ -20,6 +20,7 @@ mod identity;
 mod lifecycle;
 pub mod memory_turn;
 mod report;
+mod requests;
 mod revive;
 pub mod role;
 mod role_send;
@@ -204,13 +205,15 @@ enum Endpoint {
     Claims,
     /// `pij delivered <pr>`, run once by the merger (plan 196, ruling C23).
     Delivered,
+    /// `pij requests` and `pij requests withdraw` (plan 212, F59).
+    Requests,
     /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
     /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
     BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 56] = [
+    const ALL: [Self; 57] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -266,6 +269,7 @@ impl Endpoint {
         Self::Claim,
         Self::Claims,
         Self::Delivered,
+        Self::Requests,
         Self::BackgroundEmit,
     ];
 
@@ -321,6 +325,7 @@ impl Endpoint {
             Self::Claim => "/v1/claim",
             Self::Claims => "/v1/claims",
             Self::Delivered => "/v1/delivered",
+            Self::Requests => "/v1/requests",
             Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
@@ -375,6 +380,7 @@ impl Endpoint {
             | Self::Claim
             | Self::Claims
             | Self::Delivered
+            | Self::Requests
             | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
@@ -613,6 +619,7 @@ fn router_with_optional_federation(
                     | Endpoint::Claim
                     | Endpoint::Claims
                     | Endpoint::Delivered
+                    | Endpoint::Requests
                     | Endpoint::BackgroundEmit
             ) {
                 Method::POST
@@ -688,6 +695,7 @@ fn router_with_optional_federation(
             Endpoint::Claim | Endpoint::Claims | Endpoint::Delivered => {
                 router.route(endpoint.path(), post(claims::handle))
             }
+            Endpoint::Requests => router.route(endpoint.path(), post(requests::handle)),
             Endpoint::ShimSend => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimCompactSelf => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),

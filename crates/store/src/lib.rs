@@ -32,5 +32,8 @@ pub use orchestration::{
 pub use queue::SqliteQueue;
 pub use registry::SqliteRegistry;
 pub use role_assertion::{Placement, PlacementCommit};
-pub use role_requests::{ReplyMode, RequestState, RoleRequest};
+pub use role_requests::{
+    CloseOutcome, ClosedOrOpen, ClosedRoleRequest, REQUESTS_LIST_LIMIT, ReplyMode, RequestState,
+    RoleRequest,
+};
 pub use spine::SqliteSpine;

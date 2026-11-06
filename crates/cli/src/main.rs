@@ -621,6 +621,12 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// List role requests, or withdraw a queued one (plan 212, F59).
+    #[command(disable_help_flag = true)]
+    Requests {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// List registered seats; --here scopes to this process's cwd.
     List {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1232,6 +1238,12 @@ async fn run(cli: Cli) -> ExitCode {
         print!("{}", pij_core::claims::HELP);
         return ExitCode::SUCCESS;
     }
+    if let Command::Requests { args } = &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        print!("{}", pij_core::requests::HELP);
+        return ExitCode::SUCCESS;
+    }
     let client = match DaemonClient::new(&state_dir, &addr) {
         Ok(client) => client,
         Err(error) => {
@@ -1808,12 +1820,30 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_memory_note(memory));
                     ExitCode::SUCCESS
                 }
+                // An assign or release, single or `--batch` (plan 212, F56, F57).
+                Some(data) if is_holding(data) || data["holdings"].is_array() => {
+                    println!("{}", render_holdings(data));
+                    ExitCode::SUCCESS
+                }
                 _ => emit(&response, as_json),
             }
         }
         Command::Claim { args } => claims_verb(&client, "claim", &args, cli.json).await,
         Command::Claims { args } => claims_verb(&client, "claims", &args, cli.json).await,
         Command::Delivered { args } => claims_verb(&client, "delivered", &args, cli.json).await,
+        Command::Requests { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let response =
+                pij_cli::governance::governance(&client, "requests", &args, &caller_context())
+                    .await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                Some(data) => {
+                    println!("{}", render_requests(data));
+                    ExitCode::SUCCESS
+                }
+                None => emit(&response, as_json),
+            }
+        }
         Command::Project { args }
         | Command::Stream { args }
         | Command::Fence { args }
@@ -2801,6 +2831,113 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
 
 /// `pij directory` for a human: each role, its mode and its live holders.
 /// Times are shown in local time with their offset (F13); `--json` keeps UTC.
+/// `pij requests` and `pij requests withdraw` for a human (plan 212, F59).
+fn render_requests(data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+    if let Some(line) = data["line"].as_str() {
+        return line.to_string();
+    }
+    let rows = data["requests"].as_array().cloned().unwrap_or_default();
+    let mut out = format!(
+        "{}: {} {} request{}",
+        text(&data["project"]),
+        rows.len(),
+        text(&data["state"]),
+        if rows.len() == 1 { "" } else { "s" }
+    );
+    for row in rows {
+        let address = match row["instance"].as_str() {
+            Some(instance) if !instance.is_empty() => {
+                format!("role:{}/{instance}", text(&row["role"]))
+            }
+            _ => format!("role:{}", text(&row["role"])),
+        };
+        let whom = match (row["holder"].as_str(), row["closed_by"].as_str()) {
+            (_, Some(by)) => format!("closed by {by}: {}", text(&row["why"])),
+            (Some(holder), None) => format!("holder {holder}"),
+            (None, None) => "no holder".to_string(),
+        };
+        let _ = write!(
+            out,
+            "\n  {}  {}  {}  from {}  reply {}  {}",
+            text(&row["id"]),
+            text(&row["state"]),
+            address,
+            text(&row["requester"]),
+            text(&row["reply"]),
+            whom
+        );
+    }
+    out
+}
+
+/// An assign or release receipt: it carries its holders row and commit.
+fn is_holding(data: &Value) -> bool {
+    data["row"].is_object() && data["commit"].is_string() && data["flushed"].is_number()
+}
+
+/// Assign and release receipts for a human: the holding, the window, and each
+/// queued request the assign settled (plan 212, F56).
+fn render_holdings(data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+    let holdings = match data["holdings"].as_array() {
+        Some(many) => many.clone(),
+        None => vec![data.clone()],
+    };
+    let mut out = Vec::new();
+    for holding in &holdings {
+        let row = &holding["row"];
+        let ended = row["to"].is_string();
+        // `.../roles/<role>/holders.dd.json`: a batch holding carries no `role`.
+        let path = text(&holding["path"]);
+        let from_path = std::path::Path::new(&path)
+            .parent()
+            .and_then(std::path::Path::file_name)
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let role = holding["role"].as_str().map_or(from_path, str::to_string);
+        let role = match row["instance_key"].as_str() {
+            Some(instance) if !instance.is_empty() => format!("{role}/{instance}"),
+            _ => role,
+        };
+        out.push(format!(
+            "{} {} {} {} (commit {})",
+            if ended { "released" } else { "assigned" },
+            role,
+            if ended { "from" } else { "to" },
+            text(&row["seat"]),
+            text(&holding["commit"]).chars().take(7).collect::<String>()
+        ));
+        if let Some(warning) = holding["warning"].as_str() {
+            out.push(format!("  {warning}"));
+        }
+        let window = &holding["window"];
+        if let Some(name) = window["name"].as_str() {
+            out.push(
+                match (window["renamed"].as_bool(), window["reason"].as_str()) {
+                    (Some(true), _) => format!("  window renamed {name}"),
+                    (_, Some(reason)) => format!("  window {name} unchanged: {reason}"),
+                    _ => format!("  window {name} unchanged"),
+                },
+            );
+        }
+        for drained in holding["drained"].as_array().into_iter().flatten() {
+            let mut line = format!(
+                "  request {} from {} (reply {}): {}",
+                text(&drained["request"]),
+                text(&drained["from"]),
+                text(&drained["reply"]),
+                text(&drained["outcome"])
+            );
+            if let Some(why) = drained["why"].as_str().or(drained["error"].as_str()) {
+                line.push_str(&format!(" ({why})"));
+            }
+            out.push(line);
+        }
+    }
+    out.join("\n")
+}
+
 fn render_directory(view: &Value) -> String {
     let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
     let offset = pij_harnesses::proc::local_utc_offset_minutes().ok();
@@ -3546,6 +3683,7 @@ impl Command {
             Command::Claim { .. } => "pij claim",
             Command::Claims { .. } => "pij claims",
             Command::Delivered { .. } => "pij delivered",
+            Command::Requests { .. } => "pij requests",
             Command::List { .. } => "pij list",
             Command::State { .. } => "pij state",
             Command::Tail { .. } => "pij tail",
@@ -4605,8 +4743,8 @@ mod shim_forward_tests {
         // Negative controls: a new verb that owns its help but is not listed,
         // and a listed verb clap no longer has, both fail.
         let grown =
-            Cli::command().subcommand(clap::Command::new("requests").disable_help_flag(true));
-        assert_eq!(gaps(&grown, &listed), ["requests"]);
+            Cli::command().subcommand(clap::Command::new("future-verb").disable_help_flag(true));
+        assert_eq!(gaps(&grown, &listed), ["future-verb"]);
         let mut stale = listed.clone();
         stale.push("retired-verb".to_string());
         assert_eq!(gaps(&Cli::command(), &stale), ["retired-verb"]);

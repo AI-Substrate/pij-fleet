@@ -35,6 +35,7 @@ pub mod pa_digest;
 pub mod ports;
 pub mod program;
 pub mod report;
+pub mod requests;
 pub mod session_status;
 pub mod spawns;
 pub mod status;

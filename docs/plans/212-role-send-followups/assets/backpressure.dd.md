@@ -24,9 +24,10 @@
 | bp-0002 | AC2 | ph-00d4 | BUILD | computational | BUILD: queue two, assign, and the receipt names both. | [ ] unchecked | — | — | crates/ |
 | bp-0003 | AC3 | ph-00d4 | BUILD | computational | BUILD: list filters; the requester withdraws; a third seat is refused; a withdrawn request never drains. | [ ] unchecked | — | — | crates/ |
 | bp-0004 | AC4 | ph-00d4 | BUILD | computational | BUILD: assign then release restores the name; with a second role held, the window keeps that role's name. | [ ] unchecked | — | — | crates/ |
-| bp-0005 | AC5 | ph-00d4 | BUILD | computational | BUILD: shim tests for help text, receipt fields, --body and add output. | [ ] unchecked | — | — | crates/ |
+| bp-0005 | AC5 | ph-00d4 | BUILD | computational | BUILD: shim tests for help text, receipt fields, --body and add output. | [ ] unchecked | Superseded by plan 213 (#147): crates/cli/tests/shim_forward.rs proves help, receipt and --body parity. | — | crates/ |
 | bp-0006 | AC6: cost | ph-00d4 | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | No new timer, poll or launch site. List and withdraw are store reads and writes; the receipt and window changes are in-process. | — | pij-rs --json ping |
 | bp-0007 | AC7: docs and states | ph-00d4 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0008 | AC8: F61 | ph-00d4 | BUILD | computational | BUILD: directory_http test queues a request from the seat later assigned the role, and asserts the receipt's closed entry, the closed row and the replay. | [ ] unchecked | — | — | crates/daemon/tests/directory_http.rs |
 
 <a id="sensors"></a>
 
