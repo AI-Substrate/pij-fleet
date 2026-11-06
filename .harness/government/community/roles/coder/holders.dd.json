@@ -91,6 +91,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-local-warbler",
 					"why": "plan 208 directory polish"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T01:01:56.479Z",
+					"harness": "copilot",
+					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
+					"instance_key": "206",
+					"machine": "ops.osk.lan",
+					"seat": "pij-exuberant-wildcat",
+					"why": "plan 206 reshape (s15)"
 				}
 			]
 		}
