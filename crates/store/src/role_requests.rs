@@ -93,11 +93,17 @@ pub struct RoleRequest {
     pub created_at: u64,
     /// When it reached its holder.
     pub delivered_at: Option<u64>,
-    /// When its holder was sent the one time-limit check-in (s12).
+    /// When its holder was sent the one time-limit check-in (s12). Set once,
+    /// by the watchdog round, before the check-in is sent.
     pub checkin_at: Option<u64>,
-    /// When the PA (else the prime) was told the check-in went unanswered.
+    /// When the PA (else the prime) was told the check-in went unanswered
+    /// (s12). Set once, before the notice is sent; the request then leaves the
+    /// round's open set.
     pub escalated_at: Option<u64>,
-    /// When an output answered it (s06).
+    /// When an output first answered it (s06, `pij output --answers <id>`),
+    /// through [`SqliteOrchestration::mark_role_request_answered`]. The first
+    /// answer's time is kept. An answered request leaves the round's open set,
+    /// so s12 never checks it in or escalates it.
     pub answered_at: Option<u64>,
 }
 
@@ -243,8 +249,10 @@ impl SqliteOrchestration {
         self.stamp_once(id, "escalated_at", at).await
     }
 
-    /// Record that an output answered the request at `at` (s06); `false`
-    /// when it was already answered or is unknown.
+    /// Record that an output answered request `id` at `at` (s06: lane B's
+    /// `pij output --answers <id>` calls this). Idempotent: a second answer
+    /// keeps the first time and returns `false`, as does an unknown id. From
+    /// then on the s12 round skips the request.
     pub async fn mark_role_request_answered(&self, id: &str, at: u64) -> Result<bool> {
         self.stamp_once(id, "answered_at", at).await
     }
