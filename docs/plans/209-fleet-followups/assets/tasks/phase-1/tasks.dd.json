@@ -211,6 +211,18 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0015"
           ],
           "done": "tasks.dd.json#done_when/tk-0016"
+        },
+        {
+          "id": "tk-0017",
+          "title": "F63: shared-build compiles tests in QoS, runs them nice-only",
+          "phase": "ph-00d1",
+          "state": "unchecked",
+          "success": "See ac-0016.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0016"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0017"
         }
       ]
     },
@@ -344,6 +356,14 @@
             "assertion": "The bp-0015 assertion passes in CI.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0015"
+          }
+        ],
+        "tk-0017": [
+          {
+            "id": "dw-0017",
+            "assertion": "shared-build.test.ts passes in CI.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0016"
           }
         ]
       }

@@ -51,6 +51,7 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | tk-0014 | F67: lineage add --batch | — | ph-00d1 | [ ] unchecked | — | — | [tk-0014](tasks.dd.md#done-when) | See ac-0013. | — | [ac-0013](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0015 | F41: delivered prints its edits | — | ph-00d1 | [ ] unchecked | — | — | [tk-0015](tasks.dd.md#done-when) | See ac-0014. | — | [ac-0014](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0016 | F40: the foreign-edit refusal names who commits | — | ph-00d1 | [ ] unchecked | — | — | [tk-0016](tasks.dd.md#done-when) | See ac-0015. | — | [ac-0015](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0017 | F63: shared-build compiles tests in QoS, runs them nice-only | — | ph-00d1 | [ ] unchecked | — | — | [tk-0017](tasks.dd.md#done-when) | See ac-0016. | — | [ac-0016](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -151,6 +152,12 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0016 | The bp-0015 assertion passes in CI. | [ ] unchecked | [bp-0015](../../backpressure.dd.md#rows) |
+
+### tk-0017
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0017 | shared-build.test.ts passes in CI. | [ ] unchecked | [bp-0016](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

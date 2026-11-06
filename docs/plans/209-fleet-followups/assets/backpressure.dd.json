@@ -164,6 +164,16 @@
           "proof": "BUILD: writer_tests: a hand-edited memory INDEX refuses with the path named and a next step naming the prime.",
           "state": "unchecked",
           "probe": "crates/daemon"
+        },
+        {
+          "id": "bp-0016",
+          "criterion": "AC16",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: shared-build.test.ts: a --then batch with a test logs build and test --no-run under taskpolicy -b and test -- name with no taskpolicy, all at niceness 19; the --then batch test counts three cargo calls. Cost: a cargo test adds one cargo and one nice launch (its run step, which compiles nothing); nothing at rest or per poll.",
+          "state": "unchecked",
+          "probe": "harness/scripts/shared-build.sh"
         }
       ]
     },

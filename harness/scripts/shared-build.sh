@@ -8,10 +8,9 @@
 # atomic mkdir lock for the whole batch, checks the disk floor, rebuilds the
 # caller's own sources, and always releases.
 #
-# Builds run niced. A test that times real child processes (ps, tmux, spawn
-# timing) may instead run from an already-built binary under `nice -n 19`
-# alone, its budgets stretched by PIJ_TEST_TIME_SCALE (plan 209, F28; AGENTS.md,
-# resource cost item 5).
+# Builds run niced and tests run nice-only (below); a test's wall-clock
+# budgets on real child processes stretch with PIJ_TEST_TIME_SCALE (plan 209,
+# F28; AGENTS.md, resource cost item 5).
 #
 #   PIJ_SHARED_TARGET=<absolute target dir> \
 #     just shared-build [--timeout <minutes>|<seconds>s] -- <cargo args> [--then <cargo args>]...
@@ -32,10 +31,16 @@
 # can never starve the seats around it. rustc and linkers inherit both. Each
 # wrapper is skipped if absent. (Fleet cost rule, plan 208.)
 #
+# A `cargo test` compiles that way (`cargo test ... --no-run`), then runs the
+# same command under `nice -n 19` alone, which finds nothing left to compile
+# and only runs the test binaries: background QoS slows a test's own child
+# processes past its wall-clock budgets (F63, plan 209).
+#
 # Cost: nothing at rest. Waiting: one df, one mkdir and one sleep per poll
 # (20 s) per waiting caller. Holding: one df per cargo command, plus the nice
 # and taskpolicy launches, each of which execs into the next (one or two
-# launches per cargo command, never per poll).
+# launches per cargo command, never per poll); a `cargo test` adds one more
+# cargo and nice for its run step.
 
 set -uo pipefail
 
@@ -307,19 +312,24 @@ for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
 done
 [ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
 
-wrap=()
-[ -x "$NICE" ] && wrap+=("$NICE" -n 19)
+# Compiling runs niced and in background QoS; running tests runs niced only.
+nice_only=()
+[ -x "$NICE" ] && nice_only+=("$NICE" -n 19)
+wrap=(${nice_only[@]+"${nice_only[@]}"})
 [ -x "$TASKPOLICY" ] && wrap+=("$TASKPOLICY" -b)
 
-export CARGO_TARGET_DIR="$target"
-export CARGO_INCREMENTAL=0
-for command in "${commands[@]}"; do
-	check_floor
-	eval "set -- $command"
-	# In the background under `wait`, so a signal is handled at once rather
-	# than after cargo finishes; `set -m` gives the job its own process group.
+# One cargo command under a wrapper, in its own process group, drained after.
+# In the background under `wait`, so a signal is handled at once rather than
+# after cargo finishes; `set -m` gives the job its own process group.
+run_cargo() { # <wrap|nice_only> <cargo args>...
+	local mode=$1 status
+	shift
 	set -m
-	${wrap[@]+"${wrap[@]}"} cargo "$@" &
+	if [ "$mode" = wrap ]; then
+		${wrap[@]+"${wrap[@]}"} cargo "$@" &
+	else
+		${nice_only[@]+"${nice_only[@]}"} cargo "$@" &
+	fi
 	child=$!
 	set +m
 	wait "$child"
@@ -327,5 +337,40 @@ for command in "${commands[@]}"; do
 	# Whatever cargo left running in its group must not outlive the hold.
 	drain "$child"
 	child=""
-	[ "$status" -eq 0 ] || exit "$status"
+	return "$status"
+}
+
+# `cargo test <args> [-- <test args>]` compiles as `cargo test <args> --no-run`:
+# the build options without anything after `--`.
+build_only() {
+	local arg
+	for arg in "$@"; do
+		[ "$arg" = "--" ] && break
+		printf '%s\0' "$arg"
+	done
+	printf '%s\0' --no-run
+}
+
+export CARGO_TARGET_DIR="$target"
+export CARGO_INCREMENTAL=0
+for command in "${commands[@]}"; do
+	check_floor
+	eval "set -- $command"
+	runs_tests=0
+	if [ "${1:-}" = test ]; then
+		runs_tests=1
+		for arg in "$@"; do
+			[ "$arg" = "--" ] && break
+			[ "$arg" = "--no-run" ] && runs_tests=0
+		done
+	fi
+	if [ "$runs_tests" = 1 ]; then
+		compile=()
+		while IFS= read -r -d '' arg; do compile+=("$arg"); done < <(build_only "$@")
+		run_cargo wrap "${compile[@]}" || exit $?
+		check_floor
+		run_cargo nice_only "$@" || exit $?
+	else
+		run_cargo wrap "$@" || exit $?
+	fi
 done

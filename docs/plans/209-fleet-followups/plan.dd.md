@@ -62,6 +62,7 @@ No roadmap step; these keep CI trustworthy and close notes the verdict seats lef
 | ac-0013 | F67 (pm-001 21:32): pij directory lineage add --batch &lt;file&gt; --why &lt;text&gt; records many past holdings in one writer commit, all or nothing, like assign --batch; a bad time, a missing role or an overlap (with a committed holding or an earlier line) names every bad line and writes nothing. | [ ] unchecked | — | — | [bp-0013](assets/backpressure.dd.md#rows) | — |
 | ac-0014 | F41 (pm-001 14:56): pij delivered in human mode prints each ddocs set delivered_by edit, not only under --json. pij-rs renders them, and the pij shim hands delivered to pij-rs (plan 213). | [ ] unchecked | — | — | [bp-0014](assets/backpressure.dd.md#rows) | — |
 | ac-0015 | F40 (pm-001 14:56): E-RS-GOV-FOREIGN-EDIT names the dirty paths and, as its next step, says the prime commits or removes hand edits in the governance worktree, so a seat knows to send the prime those paths. | [ ] unchecked | — | — | [bp-0015](assets/backpressure.dd.md#rows) | — |
+| ac-0016 | F63 (prime, via pm-001 20:52): just shared-build compiles a cargo test with --no-run under nice -n 19 taskpolicy -b, then runs the same command under nice -n 19 alone, so test binaries never run in background QoS; arguments after -- reach only the run. AGENTS.md (resource cost item 5) and the script header say so. | [ ] unchecked | — | — | [bp-0016](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 

@@ -35,6 +35,7 @@
 | bp-0013 | AC13 | ph-00d1 | BUILD | computational | BUILD: directory_http a_lineage_batch_is_one_commit_all_or_nothing: three past holdings in one commit across two roles; an in-batch overlap plus a missing role, and a reversed span, write nothing and name the lines. | [ ] unchecked | — | — | crates/daemon |
 | bp-0014 | AC14 | ph-00d1 | BUILD | computational | BUILD: pij-cli unit test delivered_prints_the_edits_for_the_docs_pr renders two edits as their commands. | [ ] unchecked | — | — | crates/cli |
 | bp-0015 | AC15 | ph-00d1 | BUILD | computational | BUILD: writer_tests: a hand-edited memory INDEX refuses with the path named and a next step naming the prime. | [ ] unchecked | — | — | crates/daemon |
+| bp-0016 | AC16 | ph-00d1 | BUILD | computational | BUILD: shared-build.test.ts: a --then batch with a test logs build and test --no-run under taskpolicy -b and test -- name with no taskpolicy, all at niceness 19; the --then batch test counts three cargo calls. Cost: a cargo test adds one cargo and one nice launch (its run step, which compiles nothing); nothing at rest or per poll. | [ ] unchecked | — | — | harness/scripts/shared-build.sh |
 
 <a id="sensors"></a>
 

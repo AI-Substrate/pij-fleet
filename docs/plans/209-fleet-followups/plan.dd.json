@@ -126,6 +126,12 @@
           "claim": "F40 (pm-001 14:56): E-RS-GOV-FOREIGN-EDIT names the dirty paths and, as its next step, says the prime commits or removes hand edits in the governance worktree, so a seat knows to send the prime those paths.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0015"
+        },
+        {
+          "id": "ac-0016",
+          "claim": "F63 (prime, via pm-001 20:52): just shared-build compiles a cargo test with --no-run under nice -n 19 taskpolicy -b, then runs the same command under nice -n 19 alone, so test binaries never run in background QoS; arguments after -- reach only the run. AGENTS.md (resource cost item 5) and the script header say so.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0016"
         }
       ]
     },
