@@ -173,6 +173,8 @@ pub struct Services {
     pub community: Arc<community::writer::CommunityWriter>,
     /// Role holding: assign, release and close-ends (plan 195).
     pub directory: Arc<community::directory::DirectoryService>,
+    /// gh as resolved once at daemon start, for `pij delivered` (plan 196).
+    pub gh: Arc<dyn community::gh::PullRequests>,
     /// How long a compact or close of a role holder waits for its memory turn
     /// (plan 201).
     pub memory_turn_bound: std::time::Duration,
@@ -616,6 +618,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         ddocs,
         community: community_writer,
         directory,
+        gh: Arc::new(community::gh::Gh::from_env()),
         memory_turn_bound: {
             let (bound, warning) = http::memory_turn::bound_from(
                 std::env::var(http::memory_turn::BOUND_ENV).ok().as_deref(),

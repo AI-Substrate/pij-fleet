@@ -1,3 +1,5 @@
+Delivers: <full ddocs addresses, e.g. docs/project/prds/001-pij-community.dd.json#requirements/req-20; or none>
+
 ## What changed
 
 ## Why

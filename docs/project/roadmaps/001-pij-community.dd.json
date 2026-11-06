@@ -157,7 +157,7 @@
 				{
 					"id": "s11",
 					"title": "Number claims and delivery at merge",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-20",
 						"../prds/001-pij-community.dd.json#requirements/req-21"
@@ -167,7 +167,8 @@
 						"../blueprints/001-pij-community.dd.json#components/c-merge-delivery"
 					],
 					"depends_on": ["#steps/s02"],
-					"done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card."
+					"done_when": "Parallel claims never collide, and a merged PR's delivery shows on the requirement and the PM's card.",
+					"plan": "docs/plans/196-claims-delivery"
 				},
 				{
 					"id": "s12",
@@ -265,6 +266,11 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "s03 complete (plan 194); its done_when now says the core roles are prompted, not created (ruling C22)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 196: s11 complete (number claims and delivery at merge; evidence in docs/plans/196-claims-delivery/assets/evidence/)."
 				},
 				{
 					"date": "2026-11-06",
