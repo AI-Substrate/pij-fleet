@@ -74,6 +74,18 @@
 					"why": "reviewed #116 LOG:61"
 				},
 				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-04T00:00:00.000Z",
+					"harness": "unknown",
+					"instance_key": "118",
+					"machine": "unknown",
+					"release_why": "lineage add",
+					"released_by": "pij-far-jackal",
+					"seat": "pij-legal-butterfly",
+					"to": "2026-11-05T00:00:00.000Z",
+					"why": "reviewed #118 LOG:93"
+				},
+				{
 					"assigned_by": "pij-steady-otter",
 					"from": "2026-11-05T23:18:02.571Z",
 					"harness": "copilot",
