@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "#127: local UTC offset in-process (time local_offset_at, refresh_tz on macOS)",
           "phase": "ph-00cf",
-          "state": "unchecked",
+          "state": "checked",
           "success": "local_utc_offset_minutes reads the offset with the time crate (libc localtime_r, the ADR 0001 path) and launches nothing; every caller gets the same minutes as date +%z.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
@@ -37,7 +37,7 @@
           "id": "tk-0002",
           "title": "Spike: macOS process args in-process without unsafe (sysctl KERN_PROCARGS2 via the smallest safe crate)",
           "phase": "ph-00cf",
-          "state": "unchecked",
+          "state": "checked",
           "success": "A probe reads ppid, ucomm and argv for this process, its parent and pid 1 in-process and the result is compared with ps -o ppid= -o ucomm= -o args=; the dependency choice and the unreadable-args fallback are recorded.",
           "satisfies_toward": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
@@ -48,7 +48,7 @@
           "id": "tk-0003",
           "title": "#128: registration ancestry in-process on macOS, 32-ancestor cap kept",
           "phase": "ph-00cf",
-          "state": "unchecked",
+          "state": "checked",
           "success": "read_native_process on macOS reads parent and kernel name in-process for every ancestor and launches /bin/ps for argv only for a host-named ancestor (ruling C27), at most 1 per registration; native and paneless registration give the same results.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
@@ -62,7 +62,7 @@
           "id": "tk-0004",
           "title": "spawn_sites guards for date.utc-offset and ps.registration-native-process",
           "phase": "ph-00cf",
-          "state": "unchecked",
+          "state": "checked",
           "success": "crates/testkit/tests/spawn_sites.rs fails if either launch returns.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
@@ -91,7 +91,7 @@
           {
             "id": "dw-0001",
             "assertion": "A test compares local_utc_offset_minutes with date +%z now, and local_offset_at with a fixed TZ across a DST boundary, from a multithreaded process; the spawn counter does not move.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -99,7 +99,7 @@
           {
             "id": "dw-0002",
             "assertion": "The probe output for self, parent and pid 1 is recorded in assets/evidence with the ps line beside it, and the chosen crate, its licence, release date and new transitive crates are named.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -107,7 +107,7 @@
           {
             "id": "dw-0003",
             "assertion": "The existing registration tests pass unchanged; a test walks this test process's real ancestry the production way and matches ps for each ancestor, launching ps only for host-named ones; a registration test counts one argv read per registration (C27).",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -115,7 +115,7 @@
           {
             "id": "dw-0004",
             "assertion": "Reintroducing either launch in a scratch copy fails the guard; restoring passes.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],
@@ -123,7 +123,7 @@
           {
             "id": "dw-0005",
             "assertion": "Private-daemon readings show date.utc-offset at 0 across FYI reads (each reads the offset) and at rest, and ps.registration-native-process at 1 per paneless registration over a real chain (C27); the live before and after pair is the performance seat's.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0005"
           },
           {

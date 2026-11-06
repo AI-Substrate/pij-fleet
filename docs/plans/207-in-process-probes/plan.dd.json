@@ -39,20 +39,23 @@
         {
           "id": "ac-0001",
           "claim": "#127, UTC offset in-process. `crates/harnesses/src/proc.rs:322-327` computes the local UTC offset in-process (the time crate's local offset or libc localtime_r's tm_gmtoff) instead of launching `date`; every caller (claude_bind's loop at claude_bind.rs:73,90 from lib.rs:669-673, FYI claim and read, carrier flush, Claude adopt, revive, double-seat) gets the same value as before.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "docs/plans/207-in-process-probes/assets/evidence/phase-1.md"
         },
         {
           "id": "ac-0002",
           "claim": "#128, ancestry in-process (ruling C27). `crates/daemon/src/registration.rs` reads each ancestor's parent and kernel name in-process (macOS proc_pidinfo short BSD info; Linux /proc as before) and launches `/bin/ps` for argv only when the name is a harness host's (copilot, claude, codex, node), so a registration launches at most 1 ps instead of one per ancestor. The 32-ancestor cap and the results for native and paneless registration are unchanged. `unsafe_code = \"forbid\"` stays absolute (C27).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "docs/plans/207-in-process-probes/assets/evidence/phase-1.md"
         },
         {
           "id": "ac-0003",
           "claim": "Guards. crates/testkit/tests/spawn_sites.rs fails if a `date` launch returns on the UTC-offset path, or if registration's `ps` is reached other than through the host-name gate; a registration test counts at most 1 argv read per registration (C27).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "docs/plans/207-in-process-probes/assets/evidence/phase-1.md"
         },
         {
           "id": "ac-0004",
@@ -63,8 +66,9 @@
         {
           "id": "ac-0005",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). Removes launches: date.utc-offset to 0, and ps.registration-native-process from one per ancestor to at most 1 per registration (C27); no new launch, loop or timer. The before and after readings are AC4.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005",
+          "receipt": "docs/plans/207-in-process-probes/assets/evidence/phase-1.md"
         },
         {
           "id": "ac-0006",
