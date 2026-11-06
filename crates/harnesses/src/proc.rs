@@ -312,6 +312,24 @@ fn classify(pid: u32, output: CommandOutput) -> Result<Option<u64>> {
     }
 }
 
+/// A process's parent pid and kernel accounting name (`p_comm`, what
+/// `ps -o ucomm=` prints), read in-process (plan 207, #128). The short BSD
+/// info answers for every process, other users' included. Its name field is
+/// 16 bytes with the NUL, so a 16-character name reads as its first 15; the
+/// host names registration compares against (copilot, claude, codex, node)
+/// are all shorter. `None` when the kernel has no such process or will not say.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn parent_and_name(pid: u32) -> Option<(u32, String)> {
+    use proc_pidinfo::{Pid, ProcBSDShortInfo, proc_pidinfo};
+    let info = proc_pidinfo::<ProcBSDShortInfo>(Pid(pid)).ok()??;
+    if info.pbsi_pid.0 != pid {
+        return None;
+    }
+    let name = info.comm().ok()?.to_string();
+    Some((info.pbsi_ppid.0, name))
+}
+
 /// Read the host's current UTC offset in minutes, in-process.
 ///
 /// Spawn binding uses this only for a fresh process, so the current offset is
@@ -676,6 +694,38 @@ mod tests {
             "{stdout}{}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    /// Plan 207 (#128): parent and kernel name in-process, matching `ps`
+    /// `ppid=` and `ucomm=`, for root-owned launchd, this process and a dead pid.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parent_and_name_match_ps_without_a_launch() {
+        let ps = |pid: u32| {
+            let out = std::process::Command::new("/bin/ps")
+                .args(["-p", &pid.to_string(), "-o", "ppid=", "-o", "ucomm="])
+                .env("LC_ALL", "C")
+                .output()
+                .expect("run ps");
+            let text = String::from_utf8(out.stdout).expect("utf-8");
+            let mut fields = text.split_whitespace();
+            let parent = fields.next()?.parse::<u32>().ok()?;
+            // The short BSD info keeps 15 of `p_comm`'s 16 characters.
+            Some((parent, fields.next()?.chars().take(15).collect::<String>()))
+        };
+        let me = std::process::id();
+        let expected: Vec<_> = [1, me].into_iter().map(ps).collect();
+        let before = pij_core::spawns::snapshot().total;
+        let read: Vec<_> = [1, me].into_iter().map(super::parent_and_name).collect();
+        assert_eq!(pij_core::spawns::snapshot().total, before, "no launch");
+        assert_eq!(read, expected);
+        assert_eq!(read[0].as_ref().map(|(parent, _)| *parent), Some(0));
+        let mut child = std::process::Command::new("/usr/bin/true")
+            .spawn()
+            .expect("spawn");
+        let dead = child.id();
+        child.wait().expect("reap");
+        assert_eq!(super::parent_and_name(dead), None);
     }
 
     /// Plan 207 (#127): the in-process offset is the one `date +%z` prints.
