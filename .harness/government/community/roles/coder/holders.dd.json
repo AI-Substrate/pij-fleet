@@ -65,6 +65,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-local-warbler",
 					"why": "record the live holder (06 Nov roadmap push)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T00:31:36.106Z",
+					"harness": "copilot",
+					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
+					"instance_key": "207",
+					"machine": "ops.osk.lan",
+					"seat": "pij-following-marsupial",
+					"why": "plan 207, issues #127 and #128"
 				}
 			]
 		}
