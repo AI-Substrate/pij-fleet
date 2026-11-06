@@ -20,6 +20,7 @@ mod lifecycle;
 mod report;
 mod revive;
 pub mod role;
+mod routes;
 mod shim;
 mod types;
 mod watchdog;
@@ -2051,8 +2052,15 @@ pub(crate) async fn send_control(
         msg_id: request.msg_id,
         in_reply_to: request.in_reply_to,
     };
+    let compact = msg.command.as_deref() == Some("compact");
     match state.services.delivery.accept_control(msg).await {
-        Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(name, receipt)),
+        Ok(receipt) => {
+            if compact {
+                // Held for the first turn after the compact (plan 202).
+                routes::deliver(&state.services, &target.id, None, routes::Trigger::Compact).await;
+            }
+            envelope(StatusCode::OK, &Envelope::ok(name, receipt))
+        }
         Err(error) => send_failure(name, error),
     }
 }

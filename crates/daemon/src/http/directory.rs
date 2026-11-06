@@ -16,11 +16,13 @@ use serde_json::{Value, json};
 
 use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
+use super::routes::Trigger;
 use super::{AppState, envelope};
 use crate::community::layout::{RolePaths, exists};
 use crate::community::role::{self, RoleFields};
+use crate::community::routes::{self, Overlap, Regenerated};
 use crate::community::writer::{Existing, NewFile, Written};
-use crate::community::{Refusal, pointer};
+use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 
 const COMMAND: &str = "pij directory";
 const SINGLE: [&str; 21] = [
@@ -55,7 +57,8 @@ const REPEATED: [&str; 6] = [
     "output-kind",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 7] = [
+const CONTROL: [&str; 8] = [
+    "write",
     "why",
     "project",
     "file",
@@ -83,7 +86,7 @@ impl Arguments {
                 if family == "directory"
                     && matches!(
                         leaf.as_str(),
-                        "add" | "assign" | "release" | "rebuild" | "external"
+                        "add" | "assign" | "release" | "rebuild" | "external" | "routes"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -113,6 +116,16 @@ impl Arguments {
                 continue;
             };
             if flag == "json" {
+                continue;
+            }
+            if flag == "write" {
+                if call
+                    .single
+                    .insert("write".to_string(), String::new())
+                    .is_some()
+                {
+                    return Err(Refusal::new("E-RS-ARG", "duplicate --write"));
+                }
                 continue;
             }
             let (name, value) = match flag.split_once('=') {
@@ -165,6 +178,25 @@ impl Arguments {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 "usage: pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]",
+            ));
+        }
+        if call.leaf != "routes" && call.single.contains_key("write") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --write belongs to `routes`", call.leaf),
+            ));
+        }
+        if call.leaf == "routes"
+            && (!call.positions.is_empty()
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "project" | "actor" | "write" | "why"))
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory routes [--project <slug>] [--write --why <text>]",
             ));
         }
         if matches!(call.leaf.as_str(), "view" | "rebuild")
@@ -288,6 +320,7 @@ pub(crate) async fn handle(
     let result = match call.leaf.as_str() {
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
         "external" => external(&state, &actor.id, &request.caller, &call).await,
+        "routes" => routes_leaf(&state, &actor.id, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => {
@@ -397,13 +430,52 @@ async fn add(
         ),
     };
     let message = format!("{subject}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}");
-    let written: Written = state
+    let (written, regenerated): (Written, Regenerated) = state
         .services
         .directory
         .write(&project, repo, files, message)
         .await?;
+    record_pointers(state, &project, &written).await?;
+    let routes = routes_receipt(state, &project, &written, &regenerated).await;
+    let roles: Vec<Value> = ids
+        .iter()
+        .map(|id| {
+            let path = RolePaths::new(id).expect("checked above").document;
+            json!({"id": id, "path": path.display().to_string()})
+        })
+        .collect();
+    let mut data = json!({
+        "project": project,
+        "commit": written.commit,
+        "worktree": written.root.worktree.display().to_string(),
+        "paths": written.paths,
+        "roles": roles,
+        "routes": routes,
+    });
+    if !regenerated.table.overlaps.is_empty() {
+        data["warnings"] = json!(
+            regenerated
+                .table
+                .overlaps
+                .iter()
+                .map(Overlap::warning)
+                .collect::<Vec<_>>()
+        );
+    }
+    if let [only] = roles.as_slice() {
+        data["id"] = only["id"].clone();
+        data["path"] = only["path"].clone();
+    }
+    Ok(data)
+}
 
-    let pointers = pointer::for_write(&project, &written.paths, &written.commit);
+/// Record the store pointers for the documents a write committed.
+async fn record_pointers(
+    state: &AppState,
+    project: &str,
+    written: &Written,
+) -> Result<(), Refusal> {
+    let pointers = pointer::for_write(project, &written.paths, &written.commit);
     state
         .services
         .governance
@@ -418,25 +490,83 @@ async fn add(
                     written.commit
                 ),
             )
-        })?;
-    let roles: Vec<Value> = ids
-        .iter()
-        .map(|id| {
-            let path = RolePaths::new(id).expect("checked above").document;
-            json!({"id": id, "path": path.display().to_string()})
         })
-        .collect();
-    let mut data = json!({
-        "project": project,
-        "commit": written.commit,
-        "worktree": written.root.worktree.display().to_string(),
-        "paths": written.paths,
-        "roles": roles,
-    });
-    if let [only] = roles.as_slice() {
-        data["id"] = only["id"].clone();
-        data["path"] = only["path"].clone();
+}
+
+/// What a write did to the routing table, after telling the prime of any
+/// changed rows (plan 202).
+async fn routes_receipt(
+    state: &AppState,
+    project: &str,
+    written: &Written,
+    regenerated: &Regenerated,
+) -> Value {
+    let prime = super::routes::notify_prime(
+        &state.services,
+        project,
+        &written.commit,
+        &regenerated.change,
+    )
+    .await;
+    json!({
+        "path": crate::community::layout::ROUTES,
+        "regenerated": regenerated.file.is_some(),
+        "added": regenerated.change.added,
+        "removed": regenerated.change.removed,
+        "overlaps": regenerated.table.overlaps,
+        "prime": prime,
+    })
+}
+
+/// `directory routes [--write --why <text>]` (plan 202): the table as a seat
+/// sees it, on demand; `--write` regenerates a stale `ROUTES.md` in one commit.
+async fn routes_leaf(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let why = call.get("why").filter(|why| !why.trim().is_empty());
+    let write = call.get("write").is_some();
+    if write && why.is_none() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "--write needs --why <text>: it becomes the commit message",
+        ));
     }
+    if !write && why.is_some() {
+        return Err(Refusal::new("E-RS-ARG", "--why goes with --write"));
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let root = root::find(&repo)?;
+    let mut data = json!({"project": project, "path": crate::community::layout::ROUTES});
+    if let Some(why) = why {
+        let message =
+            format!("community: routes\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}");
+        match state
+            .services
+            .directory
+            .write(&project, repo.clone(), Vec::new(), message)
+            .await
+        {
+            Ok((written, regenerated)) => {
+                record_pointers(state, &project, &written).await?;
+                data["commit"] = json!(written.commit);
+                data["written"] = routes_receipt(state, &project, &written, &regenerated).await;
+            }
+            Err(refusal) if refusal.code == E_NOTHING_TO_WRITE => {
+                data["written"] = json!({"regenerated": false, "reason": "ROUTES.md is current"});
+            }
+            Err(refusal) => return Err(refusal),
+        }
+    }
+    let table = routes::build(&routes::read_roles(&root.worktree));
+    let holders = super::routes::live_holders(&state.services, &project).await?;
+    data["stale"] = json!(routes::regenerate(&root.worktree, &[]).file.is_some());
+    data["text"] = json!(routes::for_seat(&project, &table, &holders));
+    data["routes"] = json!(table.routes);
+    data["overlaps"] = json!(table.overlaps);
+    data["holders"] = json!(holders);
     Ok(data)
 }
 
@@ -494,6 +624,12 @@ async fn hold(
             .await?
     };
     let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+    if call.leaf == "assign" {
+        // A change of holder changes no route; the new holder gets the table.
+        data["routes"] =
+            super::routes::deliver(&state.services, &seat_id, Some(&project), Trigger::Assign)
+                .await;
+    }
     data["project"] = json!(project);
     data["role"] = json!(role);
     data["seat"] = json!(seat);
@@ -592,7 +728,7 @@ async fn project_and_repo(
 /// The project for a caller in `cwd`: the one whose repo holds it (the deepest),
 /// else the one whose repo shares its common git dir, so a linked worktree
 /// finds its project (plan 195, AC15). Read in-process, no launch.
-fn match_project(
+pub(super) fn match_project(
     projects: Vec<pij_core::orchestration::Project>,
     cwd: &Path,
 ) -> Result<pij_core::orchestration::Project, Refusal> {

@@ -56,6 +56,9 @@ const SCHEMAS: [(&str, &[u8]); 5] = [
 /// `community/external.dd.json`: seats borrowed from other projects (req-16).
 pub const EXTERNAL: &str = ".harness/government/community/external.dd.json";
 
+/// `community/ROUTES.md`: the routing table pij generates (plan 202).
+pub const ROUTES: &str = ".harness/government/community/ROUTES.md";
+
 /// One role's files under `community/roles/<id>/`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RolePaths {
