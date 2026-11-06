@@ -38,7 +38,7 @@ fn section<'a>(document: &'a Value, name: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no {name} section in {document}"))["value"]
 }
 
-/// AC2, bp-0002: each of the six shipped templates becomes a role with its id
+/// AC2, bp-0002: each shipped template becomes a role with its id
 /// and where it came from; flags override; an unknown name or version refuses
 /// by name, listing what exists, and commits nothing.
 #[tokio::test]
@@ -57,7 +57,24 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
         .collect();
     assert_eq!(
         names,
-        ["coder", "pa", "pm", "prime", "reviewer", "security"]
+        [
+            "coder",
+            "designer",
+            "devcontainer",
+            "docs-keeper",
+            "infra",
+            "note-taker",
+            "pa",
+            "pm",
+            "prime",
+            "qa",
+            "release",
+            "researcher",
+            "reviewer",
+            "security",
+            "topic-expert",
+            "transcriber",
+        ]
     );
     assert_eq!(listed["data"]["templates"][0]["versions"], json!([1]));
 
@@ -151,7 +168,7 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
     .await;
     let message = unknown["meta"].as_str().unwrap_or_default();
     assert!(
-        message.contains("coder, pa, pm, prime, reviewer, security"),
+        message.contains("coder, designer, devcontainer, docs-keeper"),
         "lists what exists: {message}"
     );
     let version = directory(

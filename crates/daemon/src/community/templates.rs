@@ -56,13 +56,23 @@ macro_rules! shipped {
 
 /// Every shipped `templates/roles/<name>/v<n>/role.dd.json`. A version is
 /// never edited after it ships; a new one is a new row here.
-const SHIPPED: [(&str, u32, &[u8]); 6] = shipped![
+const SHIPPED: [(&str, u32, &[u8]); 16] = shipped![
     ("coder", 1),
+    ("designer", 1),
+    ("devcontainer", 1),
+    ("docs-keeper", 1),
+    ("infra", 1),
+    ("note-taker", 1),
     ("pa", 1),
     ("pm", 1),
     ("prime", 1),
+    ("qa", 1),
+    ("release", 1),
+    ("researcher", 1),
     ("reviewer", 1),
     ("security", 1),
+    ("topic-expert", 1),
+    ("transcriber", 1),
 ];
 
 /// A set of templates, sorted by name then version.
