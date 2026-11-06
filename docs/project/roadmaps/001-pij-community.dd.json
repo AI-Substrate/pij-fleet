@@ -133,11 +133,12 @@
 				{
 					"id": "s08",
 					"title": "Routing table",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-11"],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-routes"],
 					"depends_on": ["#steps/s04"],
-					"done_when": "ROUTES.md regenerates on a scope change and reaches seats at the four triggers."
+					"done_when": "ROUTES.md regenerates on a scope change and reaches seats at the four triggers.",
+					"plan": "docs/plans/202-routing-table"
 				},
 				{
 					"id": "s09",
@@ -269,6 +270,11 @@
 					"date": "2026-11-06",
 					"by": "pij-exuberant-wildcat",
 					"change": "Plan 196: s11 complete (number claims and delivery at merge; evidence in docs/plans/196-claims-delivery/assets/evidence/)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-local-warbler",
+					"change": "Plan 202: s08 complete (the routing table: ROUTES.md rewritten with every role write, overlap warnings, held FYIs on assign, compact and revive, changed rows to the prime, `pij directory routes`)."
 				}
 			]
 		}

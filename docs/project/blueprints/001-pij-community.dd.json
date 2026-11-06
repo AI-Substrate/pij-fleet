@@ -132,9 +132,9 @@
 					"name": "Routing table",
 					"kind": "module",
 					"where": "crates/daemon",
-					"responsibility": "Builds the table from role scopes, writes ROUTES.md, and delivers it on assign, after compact, on revive and on demand; sends changed rows as FYIs.",
+					"responsibility": "Builds the table from role scopes, writes ROUTES.md in the same commit as each role write, and delivers it on assign, after compact, on revive and on demand; sends changed rows as one FYI to the prime.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-11"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-orient",
@@ -263,9 +263,9 @@
 				},
 				{
 					"id": "k-2",
-					"what": "Routes FYI after a scope change.",
+					"what": "Routes FYI after a role write that changes rows.",
 					"rate": "per change",
-					"scaling": "one message per live seat in the project; no launches",
+					"scaling": "one held FYI to the prime (q-03); seats get one held FYI per assign, compact or revive; no launches",
 					"component": ["#components/c-routes"]
 				},
 				{
@@ -326,6 +326,11 @@
 					"date": "2026-11-06",
 					"by": "pij-exuberant-wildcat",
 					"change": "Plan 196: c-claims and c-merge-delivery shipped. Delivery is the verb the merger runs (C23); the edits are printed for the PM's docs PR, never applied."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-local-warbler",
+					"change": "Plan 202: c-routes shipped; k-2 now says the prime only (q-03)."
 				}
 			]
 		}

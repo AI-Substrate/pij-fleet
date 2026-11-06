@@ -1814,6 +1814,18 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_directory(view));
                     ExitCode::SUCCESS
                 }
+                // `directory routes`: the table as a seat is sent it.
+                Some(routes) if routes.get("overlaps").is_some() => {
+                    if let Some(text) = routes["text"].as_str() {
+                        println!("{text}");
+                    }
+                    if routes["stale"] == true {
+                        println!(
+                            "\nROUTES.md is stale; `pij directory routes --write --why <text>` rewrites it."
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
                 Some(data) if data.get("templates").is_some_and(Value::is_array) => {
                     println!("{}", render_templates(&data["templates"]));
                     ExitCode::SUCCESS
