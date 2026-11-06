@@ -244,6 +244,16 @@ async fn turn_event(rig: &Rig, seat: &str) -> Value {
     panic!("no memory.turn event for {seat}");
 }
 
+/// A revive: the same seat id, another process.
+async fn revive(rig: &Rig, seat: &str) {
+    let mut revived = rig.registry.get(&seat.into()).await.unwrap().unwrap();
+    revived.proc = Some(ProcIdentity {
+        pid: 930_001,
+        proc_start: 9,
+    });
+    rig.registry.put(revived).await.unwrap();
+}
+
 async fn tombstoned(rig: &Rig, seat: &str) -> bool {
     rig.registry
         .get(&seat.into())
@@ -357,12 +367,7 @@ async fn a_seat_revived_during_its_turn_is_not_closed() {
     let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
     assert_eq!(held["data"]["held"], "memory-turn", "{held}");
     let prompt = prompt_for(&rig, "holder").await;
-    let mut revived = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
-    revived.proc = Some(ProcIdentity {
-        pid: 930_001,
-        proc_start: 9,
-    });
-    rig.registry.put(revived).await.unwrap();
+    revive(&rig, "holder").await;
     take_turn(&rig, "holder", &prompt).await;
     let turn = turn_event(&rig, "holder").await;
     assert!(turn["then"].as_str().unwrap().contains("revived"), "{turn}");
@@ -411,4 +416,35 @@ async fn a_holder_closing_or_compacting_itself_is_held_until_its_turn_ends() {
     }
     assert!(closed_after, "the close lands once the turn ends");
     rig.server.abort();
+}
+
+/// Review F001: a held self-compact or self-close never acts on the
+/// incarnation a revive put in the seat during the turn.
+#[tokio::test]
+async fn a_held_self_compact_or_close_does_not_act_on_a_revived_seat() {
+    let rig = rig(Duration::from_secs(30), &["prime"]).await;
+    let held = post(rig.addr, "/v1/send", compact("prime", "prime")).await;
+    held_compact_receipt(&held, "compact-prime");
+    let prompt = prompt_for(&rig, "prime").await;
+    revive(&rig, "prime").await;
+    take_turn(&rig, "prime", &prompt).await;
+    let turn = turn_event(&rig, "prime").await;
+    assert!(turn["then"].as_str().unwrap().contains("revived"), "{turn}");
+    assert!(!compact_queued(&rig, "prime").await, "no compact for the new process");
+    rig.server.abort();
+
+    let rig = rig_again().await;
+    let held = post(rig.addr, "/v1/close", close("prime", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "prime").await;
+    revive(&rig, "prime").await;
+    take_turn(&rig, "prime", &prompt).await;
+    let turn = turn_event(&rig, "prime").await;
+    assert!(turn["then"].as_str().unwrap().contains("revived"), "{turn}");
+    assert!(!tombstoned(&rig, "prime").await, "the revived seat stays open");
+    rig.server.abort();
+}
+
+async fn rig_again() -> Rig {
+    rig(Duration::from_secs(30), &["prime"]).await
 }

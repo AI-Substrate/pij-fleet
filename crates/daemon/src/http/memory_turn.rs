@@ -171,14 +171,16 @@ pub(crate) fn hold(
 /// Run the held action against the seat it was held for, and only that one:
 /// what happened, and a close's receipt data.
 async fn proceed(state: &AppState, held: &SeatDescriptor, then: Then) -> (String, Option<Value>) {
-    match state.services.registry.get(&held.id).await {
-        Ok(Some(now)) => {
-            if let Some(skip) = skip_reason(held, &now) {
-                return (skip.to_string(), None);
-            }
-        }
+    // The brake: the action was authorized against the incarnation it was held
+    // for. One read; a close then compares-and-sets against exactly this row,
+    // so ordinary activity changes during the turn are allowed.
+    let now = match state.services.registry.get(&held.id).await {
+        Ok(Some(now)) => now,
         Ok(None) => return ("skipped: the seat no longer exists".to_string(), None),
         Err(error) => return (format!("failed: could not read the seat: {error}"), None),
+    };
+    if let Some(skip) = skip_reason(held, &now) {
+        return (skip.to_string(), None);
     }
     match then {
         Then::Compact(msg) => match super::admit_control(state, msg).await {
@@ -192,7 +194,7 @@ async fn proceed(state: &AppState, held: &SeatDescriptor, then: Then) -> (String
                 &actor,
                 held.id.clone(),
                 reason,
-                None,
+                Some(now),
             )
             .await;
             match closed {
@@ -207,11 +209,12 @@ async fn proceed(state: &AppState, held: &SeatDescriptor, then: Then) -> (String
 }
 
 /// Why the held action must not run against `now`: the seat closed, or a
-/// revive put another process in it, during the turn.
+/// revive put another incarnation (process or pane) in it, during the turn.
+/// A one-directional brake: removing it only lets more actions run.
 pub(crate) fn skip_reason(held: &SeatDescriptor, now: &SeatDescriptor) -> Option<&'static str> {
     if now.tombstoned_at.is_some() {
         Some("skipped: the seat was closed during its memory turn")
-    } else if now.proc != held.proc {
+    } else if now.proc != held.proc || now.pane != held.pane {
         Some("skipped: the seat was revived during its memory turn")
     } else {
         None
@@ -309,10 +312,13 @@ pub(crate) struct Watch {
 }
 
 impl Watch {
-    pub(crate) fn new(prompt: &str, delivered: bool) -> Self {
+    /// Unarmed: only the prompt's own `delivery.outcome`, read in stream order,
+    /// arms it, so an idle buffered before delivery never ends the turn, even
+    /// when the send's receipt already says delivered.
+    pub(crate) fn new(prompt: &str) -> Self {
         Self {
             prompt: prompt.to_string(),
-            delivered,
+            delivered: false,
         }
     }
 
@@ -370,14 +376,13 @@ async fn run(
             Some(format!("the memory prompt could not be sent: {error}")),
         ),
         Ok(receipt) => {
-            let delivered = matches!(receipt.outcome, DeliveryOutcome::Delivered { .. });
             if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
                 (
                     Ended::Undelivered,
                     Some("the seat refused the memory prompt".to_string()),
                 )
             } else {
-                let mut watch = Watch::new(&msg_id, delivered);
+                let mut watch = Watch::new(&msg_id);
                 let deadline = tokio::time::Instant::now() + bound;
                 loop {
                     match tokio::time::timeout_at(deadline, events.next()).await {
@@ -481,7 +486,7 @@ mod tests {
 
     #[test]
     fn the_turn_ends_on_the_first_idle_after_the_prompt_is_delivered() {
-        let mut watch = Watch::new("p", false);
+        let mut watch = Watch::new("p");
         let idle = event(ACTIVITY, json!({"state": "idle"}));
         assert_eq!(
             watch.on(&idle),
@@ -516,17 +521,28 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_prompt_ends_the_wait_and_a_delivered_receipt_counts() {
+    fn a_refused_prompt_ends_the_wait() {
         let refused = event(
             OUTCOME_EVENT_KIND,
             json!({"msg_id": "p", "outcome": {"outcome": "refused", "reason": "no"}}),
         );
-        assert_eq!(
-            Watch::new("p", false).on(&refused),
-            Some(Ended::Undelivered)
-        );
+        assert_eq!(Watch::new("p").on(&refused), Some(Ended::Undelivered));
+    }
+
+    /// Review F003: subscribe; the old turn's idle is buffered; the prompt is
+    /// delivered directly and its outcome published. Read in stream order, the
+    /// old idle comes first and must not end the prompt's turn.
+    #[test]
+    fn an_idle_buffered_before_the_prompts_delivery_does_not_end_its_turn() {
+        let mut watch = Watch::new("p");
         let idle = event(ACTIVITY, json!({"state": "idle"}));
-        assert_eq!(Watch::new("p", true).on(&idle), Some(Ended::TurnEnd));
+        let delivered = event(
+            OUTCOME_EVENT_KIND,
+            json!({"msg_id": "p", "outcome": {"outcome": "delivered", "origin": "injected_to_transport"}}),
+        );
+        assert_eq!(watch.on(&idle), None, "the old turn's idle");
+        assert_eq!(watch.on(&delivered), None);
+        assert_eq!(watch.on(&idle), Some(Ended::TurnEnd), "the prompt's turn");
     }
 
     #[test]
@@ -543,6 +559,16 @@ mod tests {
             proc_start: 9,
         });
         assert!(skip_reason(&held, &revived).unwrap().contains("revived"));
+        let mut moved = held.clone();
+        moved.pane = Some("%9".into());
+        assert!(skip_reason(&held, &moved).unwrap().contains("revived"));
+        let mut working = held.clone();
+        working.state = pij_core::model::SystemState::Working;
+        assert_eq!(
+            skip_reason(&held, &working),
+            None,
+            "activity is not a new incarnation"
+        );
         let mut closed = held.clone();
         closed.tombstoned_at = Some(1);
         assert!(skip_reason(&held, &closed).unwrap().contains("closed"));

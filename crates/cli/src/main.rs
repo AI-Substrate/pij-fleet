@@ -1371,6 +1371,7 @@ async fn run(cli: Cli) -> ExitCode {
             } else {
                 client.send(&request).await
             };
+            let raw = response.raw_json.clone();
             if response.ok {
                 response.meta = Some(format!("from {}; msg_id {}", request.from, request.msg_id));
                 // This is a CLI-derived receipt, not an unchanged daemon reply.
@@ -1382,7 +1383,10 @@ async fn run(cli: Cli) -> ExitCode {
                 println!("{held}");
                 return ExitCode::SUCCESS;
             }
-            emit(&response, cli.json)
+            match with_memory_turn(&response, raw.as_deref()).filter(|_| response.ok) {
+                Some(shown) => emit(&shown, cli.json),
+                None => emit(&response, cli.json),
+            }
         }
         Command::Activity {
             seat,
@@ -1468,9 +1472,12 @@ async fn run(cli: Cli) -> ExitCode {
                 reason: None,
             };
             let mut response = client.send_control(&request, &caller_context()).await;
+            let raw = response.raw_json.take();
             response.command = "pij compact-self".to_string();
-            response.raw_json = None;
-            emit(&response, cli.json)
+            match with_memory_turn(&response, raw.as_deref()) {
+                Some(shown) => emit(&shown, cli.json),
+                None => emit(&response, cli.json),
+            }
         }
         Command::Inbox {
             action,
@@ -2638,6 +2645,29 @@ fn system_time_ms() -> Result<u64, PijError> {
     })
 }
 
+/// A held compact's control receipt with what the typed `Receipt` drops put
+/// back: `held` and `memory_turn` (plan 201), read from the daemon's raw
+/// reply. `None` when the reply carries no memory turn, so every other receipt
+/// prints exactly as before.
+fn with_memory_turn(
+    response: &Envelope<pij_core::model::Receipt>,
+    raw: Option<&str>,
+) -> Option<Envelope<Value>> {
+    let daemon: Value = serde_json::from_str(raw?).ok()?;
+    let data = &daemon["data"];
+    if data["memory_turn"].is_null() {
+        return None;
+    }
+    let mut value = serde_json::to_value(response).ok()?;
+    if !value["data"].is_object() {
+        return None;
+    }
+    for key in ["held", "memory_turn"] {
+        value["data"][key] = data[key].clone();
+    }
+    serde_json::from_value(value).ok()
+}
+
 /// Is this send receipt an FYI held for the recipient's next turn?
 /// The human line for a held FYI, with the receipt's warning (plan 159) on
 /// the next line. `None` when the send was not held as an FYI.
@@ -3621,6 +3651,28 @@ mod tests {
                 "state",
                 "tail"
             ]
+        );
+    }
+
+    /// Review F002: a held compact's reply decodes as the typed control
+    /// receipt the client uses, and its memory_turn survives to the output.
+    #[test]
+    fn a_held_compact_reply_decodes_as_a_receipt_and_keeps_its_memory_turn() {
+        let raw = r#"{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"m1","outcome":{"outcome":"held","reason":"memory-turn"},"at":5,"held":"memory-turn","memory_turn":{"action":"compact","bound_ms":300000}}}"#;
+        let mut typed: Envelope<pij_core::model::Receipt> =
+            serde_json::from_str(raw).expect("the client's typed decode");
+        typed.raw_json = None;
+        let shown = with_memory_turn(&typed, Some(raw)).expect("a held compact");
+        let data = shown.data.expect("data");
+        assert_eq!(data["msg_id"], "m1");
+        assert_eq!(data["outcome"]["outcome"], "held");
+        assert_eq!(data["held"], "memory-turn");
+        assert_eq!(data["memory_turn"]["bound_ms"], 300_000);
+        assert!(with_memory_turn(&typed, None).is_none());
+        let plain = r#"{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"m2","outcome":{"outcome":"queued"},"at":5}}"#;
+        assert!(
+            with_memory_turn(&typed, Some(plain)).is_none(),
+            "an ordinary receipt prints as before"
         );
     }
 

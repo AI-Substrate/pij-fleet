@@ -1064,8 +1064,13 @@ short (the Copilot extension gives up after 65 s, Node's fetch after 300 s), and
 a seat compacting or closing itself, which is mid-turn, is handled the same
 way. A held close therefore has no `tombstoned_at` in its answer: the tombstone
 lands when the turn ends. Before the action runs the daemon reads the seat
-again and skips it if the seat was closed, or revived into another process,
-during the turn.
+once and skips the action if the seat was closed, or a revive put another
+incarnation in it (its process or pane changed), during the turn: a brake, so
+an old action never gains authority over a replacement that reuses the seat
+id. A close then compares-and-sets against that same read, so the seat's
+ordinary activity changes during the turn do not block it. The native CLI's
+`send --command compact` and `compact-self` print the held receipt with its
+`held` and `memory_turn`.
 
 Every turn records one `memory.turn` spine event on the seat: `action`,
 `holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or
@@ -1073,9 +1078,13 @@ Every turn records one `memory.turn` spine event on the seat: `action`,
 `bound_ms`, a `note` whenever the action proceeded without the turn, and `then`
 (`closed`, `compact admitted`, `skipped: …` or `failed: …`). The wait is a live
 subscription to the seat's `delivery.outcome` and `seat.activity` events with one
-deadline: no poll, no timer, no launch. An idle is only published on a change
-from working, so the first idle after delivery ends the turn that read the
-prompt, whether the prompt started that turn or arrived during it.
+deadline: no poll, no timer, no launch. The turn starts at the prompt's own
+`delivery.outcome` in the event stream, never at the send's receipt, so an idle
+that was published before the prompt was delivered (and is still buffered when
+a direct delivery returns) belongs to the previous turn and is ignored. An idle
+is only published on a change from working, so the first idle after that
+boundary ends the turn that read the prompt, whether the prompt started that
+turn or arrived during it.
 
 Cost: one live subscription per pending memory turn (only for role holders
 being compacted or closed), one delivery, one spine event and one deadline; no
