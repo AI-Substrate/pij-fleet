@@ -1,0 +1,179 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Fleet follow-ups: flakes, test timing and verdict notes",
+        "slug": "fleet-followups",
+        "ordinal": 209,
+        "complexity": "CS-3",
+        "summary": "Follow-ups from the 06 Nov roadmap push: fix the CI flakes (F27), make real-child timing tests honest under background QoS (F28), put the skill check in the gate (F26), and land three non-blocking verdict notes from #129, #131 and #132.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "No roadmap step; these keep CI trustworthy and close notes the verdict seats left. AC1 to AC3 are independent and start now. AC4 needs #131 merged, AC5 needs #129 merged and AC6 needs #132 merged; do them in that order as each lands. Every build is niced (nice -n 19 taskpolicy -b just shared-build). Tests that time real child processes may run nice-only (prime, 06 Nov)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Follow-ups from the 06 Nov roadmap push: fix the CI flakes (F27), make real-child timing tests honest under background QoS (F28), put the skill check in the gate (F26), and land three non-blocking verdict notes from #129, #131 and #132."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "F27, flakes. Each of these is fixed at its root cause (or, if the cause is outside pij, made deterministic with a named reason): claude_heal_scripts copilot_status_line_hands_the_payload_to_pij_rs_in_one_process (BrokenPipe writing a child's stdin: treat EPIPE after the child has read its payload as success); pane_observer real_tmux; pij-cli claude_inbound daemon_boot_repairs_once_and_publishes_one_change_event (an isolated daemon child exits non-zero); the TS watchdog smoke's private-daemon teardown (exit null); the reaper tests under load.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "F28, timing under QoS. Tests that measure real child processes against a wall-clock budget read one test-only scale (for example PIJ_TEST_TIME_SCALE, default 1) so a slow, niced machine stretches the budget instead of failing, and production budgets are untouched. The nice-only rule for such tests is written in AGENTS.md and the shared-build doc.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "F26, the skill check. harness/scripts/pij-skill-check.sh passes on main: each of its 20 failing checks is fixed or retired with a reason, and it runs in `harness checks` and `just self-check` (a new sensor in .harness/extensions/checks/).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "#131 N002 (after #131 merges). The delivery card's recorded_by comes from the same row as its recorded_at (the newest record for that PR), so a retry by a different recorder is attributed to that recorder.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "#129 digest scope (after #129 merges). The PA digest reads only queued rows for the PA's projects (from its open assignments), without bodies, with a prime-only fallback across all projects; the 'delivering' rows stay visible.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "#132 late admission (after #132 merges). When a memory turn ends at the bound while its prompt is still being admitted, the turn awaits the owned admission's settle after the held action and records admission delivered-late, queued or refused in memory.turn. Nothing is withdrawn; the record is honest.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). AC1 to AC3 change tests and the gate only; no production launch. AC4 and AC5 are single indexed reads replacing existing ones. AC6 adds one awaited future per bound-ended turn; no timer, poll or launch.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Docs and states. No roadmap state changes (follow-ups). docs/difficulties.md records F26, F27 and F28 as resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00d1",
+          "title": "Fleet follow-ups: flakes, test timing and verdict notes",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-3.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Sources: today's CI runs (flake names above), the verdict files under roles/reviewer/outputs/2026-11/ (pr-131-c6aa07b-verdict.md N002), roles/performance/outputs/2026-11-06-pr129-a560297-cost.md (digest), and pm-001's tapir F005 decision (LOG, 13:01). No migration expected."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
