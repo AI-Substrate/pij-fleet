@@ -30,7 +30,7 @@
           "phase": "ph-00cf",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "BUILD: the existing registration tests pass unchanged; a test walks a real process chain and matches the old ps output; the counter stays 0 across registrations.",
+          "proof": "BUILD: the existing registration tests pass unchanged; a test walks a real process chain and matches the old ps output, launching ps only for host-named ancestors; a registration test counts at most 1 argv read per registration (C27).",
           "state": "unchecked",
           "probe": "crates/"
         },
@@ -63,7 +63,7 @@
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "Removes launches: date.utc-offset to 0 and ps.registration-native-process to 0 at steady state; no new launch, loop or timer. The before and after readings are AC4."
+          "note": "Removes launches: date.utc-offset to 0 and ps.registration-native-process from one per ancestor to at most 1 per registration (ruling C27); no new launch, loop or timer. The before and after readings are AC4."
         },
         {
           "id": "bp-0006",

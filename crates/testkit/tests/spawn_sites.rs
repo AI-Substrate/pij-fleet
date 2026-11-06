@@ -331,6 +331,53 @@ fn retired_launches_stay_retired() {
     );
 }
 
+/// Plan 207 (#128, ruling C27): registration's `ps` reads argv only for a
+/// host-named ancestor, at most one per registration on every observed chain
+/// (`registration::tests::paneless_registration_reads_argv_only_for_the_host_named_ancestor`
+/// counts it). A TRIPWIRE: the launch lives in `read_argv_with_ps` alone, and
+/// only `read_native_process`, which passes it to the host-name gate, names it.
+#[test]
+fn registration_ps_runs_only_behind_the_host_name_gate() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let path = root.join("crates/daemon/src/registration.rs");
+    let lines = production_lines(&path);
+    let mut function = String::new();
+    let mut records = Vec::new();
+    let mut mentions = Vec::new();
+    for line in &lines {
+        if let Some(name) = fn_name(line) {
+            function = name;
+        }
+        if line.contains("\"ps.registration-native-process\"") {
+            records.push(function.clone());
+        }
+        if line.contains("read_argv_with_ps") && !line.trim_start().starts_with("fn ") {
+            mentions.push(function.clone());
+        }
+    }
+    assert_eq!(
+        records,
+        ["read_argv_with_ps"],
+        "where the registration ps is recorded"
+    );
+    assert_eq!(
+        mentions,
+        ["read_native_process"],
+        "read_argv_with_ps must be reached only through read_native_process_from's host-name gate"
+    );
+    let gate = lines
+        .iter()
+        .position(|line| line.contains("fn read_native_process_from("))
+        .expect("the host-name gate");
+    assert!(
+        lines[gate..]
+            .iter()
+            .take(20)
+            .any(|line| line.contains("HOST_NAMES.contains(")),
+        "read_native_process_from no longer checks HOST_NAMES before reading argv"
+    );
+}
+
 /// Plan 182 (pij-fleet#74): `git` and `tmux` live wherever the user installed
 /// them, so they cannot be named by a fixed path. The daemon launches them
 /// through `pij_core::program::launch`, which resolves PATH once and launches

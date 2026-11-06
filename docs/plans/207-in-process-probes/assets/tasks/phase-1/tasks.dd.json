@@ -49,7 +49,7 @@
           "title": "#128: registration ancestry in-process on macOS, 32-ancestor cap kept",
           "phase": "ph-00cf",
           "state": "unchecked",
-          "success": "read_native_process on macOS reads parent, kernel accounting name and argv in-process; native and paneless registration give the same results; no /bin/ps launch.",
+          "success": "read_native_process on macOS reads parent and kernel name in-process for every ancestor and launches /bin/ps for argv only for a host-named ancestor (ruling C27), at most 1 per registration; native and paneless registration give the same results.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -106,7 +106,7 @@
         "tk-0003": [
           {
             "id": "dw-0003",
-            "assertion": "The existing registration tests pass unchanged; a test walks this test process's real ancestry in-process and matches ps for each ancestor's parent, name and argv; the counter stays 0.",
+            "assertion": "The existing registration tests pass unchanged; a test walks this test process's real ancestry the production way and matches ps for each ancestor, launching ps only for host-named ones; a registration test counts one argv read per registration (C27).",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
@@ -122,7 +122,7 @@
         "tk-0005": [
           {
             "id": "dw-0005",
-            "assertion": "Private-daemon readings show date.utc-offset and ps.registration-native-process at 0 across claude_bind ticks with a pending Claude seat and a registration; the live before and after pair is the performance seat's.",
+            "assertion": "Private-daemon readings show date.utc-offset at 0 across FYI reads (each reads the offset) and at rest, and ps.registration-native-process at 1 per paneless registration over a real chain (C27); the live before and after pair is the performance seat's.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0005"
           },

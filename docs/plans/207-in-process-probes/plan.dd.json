@@ -44,25 +44,25 @@
         },
         {
           "id": "ac-0002",
-          "claim": "#128, ancestry in-process. `crates/daemon/src/registration.rs:1647-1662` reads each ancestor's pid, parent and command in-process (macOS proc_pidinfo or sysctl KERN_PROC; Linux /proc) instead of launching `/bin/ps`, keeping the 32-ancestor cap and the same results for native (:437) and paneless (:223) registration.",
+          "claim": "#128, ancestry in-process (ruling C27). `crates/daemon/src/registration.rs` reads each ancestor's parent and kernel name in-process (macOS proc_pidinfo short BSD info; Linux /proc as before) and launches `/bin/ps` for argv only when the name is a harness host's (copilot, claude, codex, node), so a registration launches at most 1 ps instead of one per ancestor. The 32-ancestor cap and the results for native and paneless registration are unchanged. `unsafe_code = \"forbid\"` stays absolute (C27).",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
-          "claim": "Guards. crates/testkit/tests/spawn_sites.rs fails if a `date` launch returns on the UTC-offset path or a `ps` launch returns on the registration ancestry path.",
+          "claim": "Guards. crates/testkit/tests/spawn_sites.rs fails if a `date` launch returns on the UTC-offset path, or if registration's `ps` is reached other than through the host-name gate; a registration test counts at most 1 argv read per registration (C27).",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
-          "claim": "Readings. The performance seat records, on the live fleet before and after deploy, `date.utc-offset` and `ps.registration-native-process` over a 60 s at-rest window with pending Claude seats present (expected: to 0), plus the daemon total, with data.pid on each reading.",
+          "claim": "Readings. The performance seat records, on the live fleet before and after deploy, `date.utc-offset` and `ps.registration-native-process` over a 60 s at-rest window with pending Claude seats present (expected: date.utc-offset to 0; ps.registration-native-process at most 1 per registration, C27), plus the daemon total, with data.pid on each reading.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Removes launches: date.utc-offset to 0 and ps.registration-native-process to 0 at steady state; no new launch, loop or timer. The before and after readings are AC4.",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Removes launches: date.utc-offset to 0, and ps.registration-native-process from one per ancestor to at most 1 per registration (C27); no new launch, loop or timer. The before and after readings are AC4.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
@@ -112,7 +112,13 @@
     },
     {
       "name": "open_questions",
-      "value": []
+      "value": [
+        {
+          "question": "#128: argv on macOS needs sysctl(KERN_PROCARGS2), which needs unsafe; the workspace forbids it and no safe crate works (sysctl 0.7.1 ENOENT; sysinfo lists every pid). Allow one audited unsafe function (A) or read argv with ps only for host-named ancestors (B)?",
+          "state": "checked",
+          "answer": "Ruling C27 (prime, 2026-11-06): B. unsafe_code = \"forbid\" stays absolute; A is reopened only if measurements show registration still hurts."
+        }
+      ]
     },
     {
       "name": "workshop_opportunities",

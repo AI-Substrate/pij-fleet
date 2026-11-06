@@ -48,10 +48,10 @@ Found by the performance seat (governance roles/performance/memory/2026-11-06-sp
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
 | ac-0001 | #127, UTC offset in-process. `crates/harnesses/src/proc.rs:322-327` computes the local UTC offset in-process (the time crate's local offset or libc localtime_r's tm_gmtoff) instead of launching `date`; every caller (claude_bind's loop at claude_bind.rs:73,90 from lib.rs:669-673, FYI claim and read, carrier flush, Claude adopt, revive, double-seat) gets the same value as before. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | #128, ancestry in-process. `crates/daemon/src/registration.rs:1647-1662` reads each ancestor's pid, parent and command in-process (macOS proc_pidinfo or sysctl KERN_PROC; Linux /proc) instead of launching `/bin/ps`, keeping the 32-ancestor cap and the same results for native (:437) and paneless (:223) registration. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Guards. crates/testkit/tests/spawn_sites.rs fails if a `date` launch returns on the UTC-offset path or a `ps` launch returns on the registration ancestry path. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | Readings. The performance seat records, on the live fleet before and after deploy, `date.utc-offset` and `ps.registration-native-process` over a 60 s at-rest window with pending Claude seats present (expected: to 0), plus the daemon total, with data.pid on each reading. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | Cost (AGENTS.md, resource cost is a correctness property). Removes launches: date.utc-offset to 0 and ps.registration-native-process to 0 at steady state; no new launch, loop or timer. The before and after readings are AC4. | [ ] unchecked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | #128, ancestry in-process (ruling C27). `crates/daemon/src/registration.rs` reads each ancestor's parent and kernel name in-process (macOS proc_pidinfo short BSD info; Linux /proc as before) and launches `/bin/ps` for argv only when the name is a harness host's (copilot, claude, codex, node), so a registration launches at most 1 ps instead of one per ancestor. The 32-ancestor cap and the results for native and paneless registration are unchanged. `unsafe_code = "forbid"` stays absolute (C27). | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Guards. crates/testkit/tests/spawn_sites.rs fails if a `date` launch returns on the UTC-offset path, or if registration's `ps` is reached other than through the host-name gate; a registration test counts at most 1 argv read per registration (C27). | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | Readings. The performance seat records, on the live fleet before and after deploy, `date.utc-offset` and `ps.registration-native-process` over a 60 s at-rest window with pending Claude seats present (expected: date.utc-offset to 0; ps.registration-native-process at most 1 per registration, C27), plus the daemon total, with data.pid on each reading. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | Cost (AGENTS.md, resource cost is a correctness property). Removes launches: date.utc-offset to 0, and ps.registration-native-process from one per ancestor to at most 1 per registration (C27); no new launch, loop or timer. The before and after readings are AC4. | [ ] unchecked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
 | ac-0006 | Docs and states. No roadmap or PRD state changes (an issue fix). The PR closes #127 and #128; docs/difficulties.md gets a resolved row. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line. | [ ] unchecked | — | — | [bp-0006](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
@@ -111,7 +111,9 @@ _Empty._
 
 ## Open Questions
 
-_No entries._
+| question | state | note | answer |
+| --- | --- | --- | --- |
+| #128: argv on macOS needs sysctl(KERN_PROCARGS2), which needs unsafe; the workspace forbids it and no safe crate works (sysctl 0.7.1 ENOENT; sysinfo lists every pid). Allow one audited unsafe function (A) or read argv with ps only for host-named ancestors (B)? | [x] checked | — | Ruling C27 (prime, 2026-11-06): B. unsafe_code = "forbid" stays absolute; A is reopened only if measurements show registration still hurts. |
 
 <a id="workshop-opportunities"></a>
 

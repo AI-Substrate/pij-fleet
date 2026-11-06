@@ -669,7 +669,7 @@ mod tests {
     fn utc_offset_is_read_in_process_at_each_instant() {
         const CHILD: &str = "PIJ_UTC_OFFSET_TZ_CHILD";
         if std::env::var_os(CHILD).is_some() {
-            let worker = std::thread::spawn(|| std::thread::park());
+            let worker = std::thread::spawn(std::thread::park);
             let before = pij_core::spawns::snapshot().total;
             // Melbourne: daylight time (+11) until 5 April 2026, standard (+10) in July.
             assert_eq!(super::utc_offset_minutes_at(1_775_000_000), Some(660));

@@ -1635,8 +1635,48 @@ fn read_native_proc_file(path: &Path) -> std::result::Result<Option<Vec<u8>>, Re
 #[cfg(any(not(target_os = "linux"), test))]
 const PROCESS_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// The kernel names of the processes a harness matcher can accept
+/// ([`NativeProcess::is_external_host`], [`NativeProcess::is_copilot_host`]).
+/// Only an ancestor with one of these names needs its argv (ruling C27).
+#[cfg(any(not(target_os = "linux"), test))]
+const HOST_NAMES: [&str; 4] = ["copilot", "claude", "codex", "node"];
+
+/// Plan 207 (#128, ruling C27): every ancestor's parent and kernel name are
+/// read in-process; `/bin/ps` runs for argv only when the name is a harness
+/// host's, so a registration launches at most one `ps` per host-named ancestor
+/// (one on every observed chain) instead of one per ancestor.
 #[cfg(not(target_os = "linux"))]
 fn read_native_process(pid: u32) -> std::result::Result<Option<NativeProcess>, RegistrationError> {
+    read_native_process_from(pid, pij_harnesses::proc::parent_and_name, read_argv_with_ps)
+}
+
+/// [`read_native_process`] with its two readers injected, for tests.
+#[cfg(any(not(target_os = "linux"), test))]
+fn read_native_process_from(
+    pid: u32,
+    kernel: impl FnOnce(u32) -> Option<(u32, String)>,
+    with_argv: impl FnOnce(u32) -> std::result::Result<Option<NativeProcess>, RegistrationError>,
+) -> std::result::Result<Option<NativeProcess>, RegistrationError> {
+    let Some((parent, name)) = kernel(pid) else {
+        // No such process (or none the kernel will describe): as `ps` exiting
+        // non-zero did, the ancestor disappeared.
+        return Ok(None);
+    };
+    if HOST_NAMES.contains(&name.as_str()) {
+        return with_argv(pid);
+    }
+    // No matcher accepts this name, so its argv is never read: the name stands
+    // in for argv[0], which keeps a non-empty argv and the same refusal text.
+    Ok(Some(NativeProcess {
+        parent,
+        executable: name.clone(),
+        executable_replaced: false,
+        argv: vec![name],
+    }))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_argv_with_ps(pid: u32) -> std::result::Result<Option<NativeProcess>, RegistrationError> {
     use std::process::Command;
 
     // One requested PID, never a machine-wide process census. The child, output,
@@ -1817,8 +1857,8 @@ mod tests {
     use crate::delivery::DeliveryService;
 
     use super::{
-        NativeProcess, RegistrationError, RegistrationService, parse_native_process,
-        requested_model_matches,
+        HOST_NAMES, NativeProcess, RegistrationError, RegistrationService, parse_native_process,
+        read_native_process_from, requested_model_matches,
     };
     use crate::events::EventBus;
     use crate::http::role::RoleService;
@@ -4603,6 +4643,153 @@ mod tests {
                 assert_eq!(registry.get(&seat.id).await.unwrap(), Some(seat));
             }
         }
+    }
+
+    /// Plan 207 (#128, ruling C27): parents and names are read in-process and
+    /// argv (the `ps` launch) only for a host-named ancestor, so a registration
+    /// over the CLI, shell and host chain reads argv once, for the host.
+    #[tokio::test]
+    async fn paneless_registration_reads_argv_only_for_the_host_named_ancestor() {
+        for harness in [Harness::Claude, Harness::Copilot, Harness::Codex] {
+            for node in [false, true] {
+                let (service, _registry) = native_service(Vec::new(), paneless_liveness()).await;
+                let argv_reads = Arc::new(AtomicU64::new(0));
+                let reads = Arc::clone(&argv_reads);
+                let kernel = move |pid: u32| {
+                    paneless_process(pid, harness, node).map(|process| {
+                        let name = std::path::Path::new(&process.executable)
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .into_owned();
+                        (process.parent, name)
+                    })
+                };
+                let (seat, _) = service
+                    .register_paneless_with_observer(
+                        paneless_claim(harness),
+                        Some(SESSION.into()),
+                        |pid| {
+                            let reads = Arc::clone(&reads);
+                            ready(read_native_process_from(pid, kernel, move |pid| {
+                                reads.fetch_add(1, Ordering::SeqCst);
+                                Ok(paneless_process(pid, harness, node))
+                            }))
+                        },
+                    )
+                    .await
+                    .expect("verified external ancestor");
+                assert_eq!(seat.proc, Some(HOST), "{harness:?} node={node}");
+                assert_eq!(
+                    argv_reads.load(Ordering::SeqCst),
+                    1,
+                    "{harness:?} node={node}: one ps, for the host only"
+                );
+            }
+        }
+    }
+
+    /// Every host a matcher accepts has a name in HOST_NAMES, or its argv
+    /// would never be read and it could not be recognized.
+    #[test]
+    fn every_host_name_a_matcher_accepts_reads_argv() {
+        for harness in [Harness::Claude, Harness::Copilot, Harness::Codex] {
+            for node in [false, true] {
+                let host = paneless_process(HOST.pid, harness, node).unwrap();
+                assert!(host.is_external_host(harness));
+                let name = std::path::Path::new(&host.executable).file_name().unwrap();
+                assert!(
+                    HOST_NAMES.contains(&name.to_str().unwrap()),
+                    "{harness:?} node={node}: {name:?}"
+                );
+            }
+        }
+        let shell = read_native_process_from(
+            7,
+            |_| Some((1, "zsh".into())),
+            |_| panic!("no argv read for a shell"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!((shell.parent, shell.executable.as_str()), (1, "zsh"));
+        assert!(!shell.is_copilot_host());
+        assert!(
+            read_native_process_from(7, |_| None, |_| panic!("gone"))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    /// Plan 207 (#128): this test's real ancestry, read the production way,
+    /// matches `ps` for every ancestor (parent, kernel name, and argv where
+    /// read), and launches `ps` only for host-named ancestors.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_real_ancestry_matches_ps_and_launches_only_for_host_names() {
+        // Alone in a child process, so no other test's launch moves the counter.
+        const CHILD: &str = "PIJ_REAL_ANCESTRY_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = Command::new(std::env::current_exe().expect("test binary"))
+                .args([
+                    "registration::tests::a_real_ancestry_matches_ps_and_launches_only_for_host_names",
+                    "--exact",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .expect("re-run alone");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "{stdout}{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        let launches = || {
+            pij_core::spawns::snapshot()
+                .by_op
+                .get("ps.registration-native-process")
+                .copied()
+                .unwrap_or(0)
+        };
+        let mut pid = std::process::id();
+        let mut hosts = 0;
+        let mut seen = 0;
+        let before = launches();
+        while pid > 1 && seen < 32 {
+            let process = super::read_native_process(pid)
+                .unwrap()
+                .expect("a live ancestor");
+            let out = Command::new("/bin/ps")
+                .args([
+                    "-ww",
+                    "-p",
+                    &pid.to_string(),
+                    "-o",
+                    "ppid=",
+                    "-o",
+                    "ucomm=",
+                    "-o",
+                    "args=",
+                ])
+                .env("LC_ALL", "C")
+                .output()
+                .unwrap();
+            let old = parse_native_process(&out.stdout).unwrap();
+            assert_eq!(process.parent, old.parent, "pid {pid}");
+            let name: String = old.executable.chars().take(15).collect();
+            if HOST_NAMES.contains(&old.executable.as_str()) {
+                hosts += 1;
+                assert_eq!(process.argv, old.argv, "pid {pid}");
+                assert_eq!(process.executable, old.executable, "pid {pid}");
+            } else {
+                assert_eq!(process.executable, name, "pid {pid}");
+            }
+            pid = process.parent;
+            seen += 1;
+        }
+        assert!(seen >= 2, "walked only {seen} ancestors");
+        assert_eq!(launches() - before, hosts, "one ps per host-named ancestor");
     }
 
     #[test]
