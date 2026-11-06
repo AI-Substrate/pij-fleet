@@ -4,7 +4,7 @@ A PRD says what to build and why, as requirement rows that each have a state and
 
 ## Steps
 
-1. Get the number from pm/001 and create `docs/project/prds/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/prd"}`.
+1. Claim the number (`pij claim prd --for <slug>`) and create `docs/project/prds/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/prd"}`.
 2. Fill the sections. Required ones are marked *.
    - **meta*** `title` ("PRD NNN: <name>"), `status` (`draft` until the operator accepts it), `updated`, `owner` (your PM role, e.g. `pm-001`, or your seat id if you hold no role yet), `summary` (two sentences).
    - **why*** the problem in plain words, with the incident or numbers that prompted it if there are any.

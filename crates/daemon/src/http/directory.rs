@@ -821,7 +821,7 @@ async fn memory(
 
 /// The project the write belongs to and the repository to find governance from:
 /// `--project`, else the project whose repo holds the caller's directory.
-async fn project_and_repo(
+pub(crate) async fn project_and_repo(
     state: &AppState,
     caller: &CallerContext,
     named: Option<String>,

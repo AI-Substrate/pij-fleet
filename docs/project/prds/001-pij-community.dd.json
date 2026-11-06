@@ -301,7 +301,7 @@
 					"statement": "`pij claim prd|roadmap|blueprint|migration|<kind>` hands out the next NNN for a project, recorded with the claiming seat, and releases it when the work merges or the seat closes. Parallel PMs never collide on a number.",
 					"actor": "pm",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Two seats claiming at once get different numbers; a claim held by a closed seat is released.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -351,7 +351,7 @@
 					"statement": "When a PR merges, pij records which requirement rows and roadmap steps it delivered (from the PR's links), fills `delivered_by`, and puts it on the owning PM's card, so states stop lagging the code.",
 					"actor": "pm",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Merging a PR that names req-07 records the PR on req-07 and shows on the PM's card within one event.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -502,6 +502,11 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "Plan 194: req-14 reworded per ruling C22, from creating the core roles to prompting for them and for security until each exists, creating nothing. req-13 and req-14 shipped; req-27 in-progress (the s03 wording; s09 and s10 to come)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 196: req-20 (pij claim, released on close or merge) and req-21 (pij delivered records a merged PR's Delivers line, posts on the PM's card and prints the delivered_by edits) shipped."
 				}
 			]
 		}
