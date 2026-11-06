@@ -151,6 +151,18 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0010"
           ],
           "done": "tasks.dd.json#done_when/tk-0011"
+        },
+        {
+          "id": "tk-0012",
+          "title": "directory add papercuts (F35-F38)",
+          "phase": "ph-00d1",
+          "state": "unchecked",
+          "success": "Each of F35, F36, F37 and F38 has its fix and one test.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0011"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0012"
         }
       ]
     },
@@ -244,6 +256,14 @@
             "assertion": "The tests in bp-0010 pass in CI.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0010"
+          }
+        ],
+        "tk-0012": [
+          {
+            "id": "dw-0012",
+            "assertion": "The four tests in bp-0011 pass in CI.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0011"
           }
         ]
       }

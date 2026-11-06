@@ -195,13 +195,6 @@ mod tests {
         assert!(help(None).unwrap().contains("pij directory <verb> --help"));
         assert!(help(Some("nope")).is_none());
         assert!(help(Some("memory")).unwrap().contains("no delete verb"));
-        // F35, F38: the required flags, the shortest add, one commit per add.
-        let add = help(Some("add")).unwrap();
-        assert!(
-            add.contains("at least one --rule, and one of --packet or"),
-            "{add}"
-        );
-        assert!(add.contains("Each add is its own commit"), "{add}");
         assert!(help(None).unwrap().contains("pij directory memory <role>"));
         assert!(
             help(Some("add"))
@@ -218,5 +211,24 @@ mod tests {
         assert_eq!(shell_word("it's"), "'it'\\''s'");
         assert_eq!(shell_word("$(x)"), "'$(x)'");
         assert_eq!(shell_word(""), "''");
+    }
+
+    /// Plan 209, F35: add --help names the required flags and the shortest add.
+    #[test]
+    fn add_help_names_the_required_flags() {
+        let add = help(Some("add")).unwrap();
+        assert!(
+            add.contains("at least one --rule, and one of --packet or\n--brief"),
+            "{add}"
+        );
+        assert!(add.contains("The shortest add:"), "{add}");
+    }
+
+    /// Plan 209, F38: add --help says each add commits on its own.
+    #[test]
+    fn add_help_says_each_add_is_its_own_commit() {
+        let add = help(Some("add")).unwrap();
+        assert!(add.contains("Each add is its own commit"), "{add}");
+        assert!(add.contains("--batch <dir> is all or nothing"), "{add}");
     }
 }

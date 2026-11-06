@@ -30,6 +30,7 @@
 | bp-0008 | AC8: docs and states | ph-00d1 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
 | bp-0009 | AC9 | ph-00d1 | BUILD | computational | BUILD: shim_forward a_memory_add_with_its_body_on_stdin_reaches_pij_rs (F30: through pij, a memory add with --body-file - reaches pij-rs with its body on stdin, which pij-rs sends as --body); unit tests for the memory add line, the slug cap, the add help, the role refusal flags and the Delivers line; the shared-build test covers HUP; CI runs pij-skill-check. | [ ] unchecked | — | — | crates/ |
 | bp-0010 | AC10 | ph-00d1 | BUILD | computational | BUILD: memory tests: a given slug names the file and a bad one refuses; a long title is cut on a word; the CLI unit test for the memory add line; F32 a note stamped at 23:30 UTC on a +10:00 machine is filed under the next local day (injected clock). | [ ] unchecked | — | — | crates/ |
+| bp-0011 | AC11 | ph-00d1 | BUILD | computational | BUILD: one test each: pij-core add_help_names_the_required_flags (F35) and add_help_says_each_add_is_its_own_commit (F38); pij-daemon community::ddocs a_role_refusal_names_the_flag_for_each_gap_not_a_hand_edit (F36) and a_role_refusal_lists_every_gap_at_once (F37), through the refusal text. | [ ] unchecked | — | — | crates/ |
 
 <a id="sensors"></a>
 

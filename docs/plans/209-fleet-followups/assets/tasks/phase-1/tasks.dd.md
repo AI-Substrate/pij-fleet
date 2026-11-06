@@ -46,6 +46,7 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | tk-0009 | Cost, docs and states | — | ph-00d1 | [ ] unchecked | — | — | [tk-0009](tasks.dd.md#done-when) | Cost receipts per bp-0007; difficulties.md records F26, F27, F28 resolved; ddocs-check passes; PR body has a Delivers line. | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0010 | Ledger items owned by 209 (F30-F51) | — | ph-00d1 | [ ] unchecked | — | — | [tk-0010](tasks.dd.md#done-when) | Each item in ac-0009 is fixed with a test, or measured (F44), or moved with a reason (F32 to #138). | pm-001 18:15 added F49-F51. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0011 | s07 dogfood: local note dates, the add line, --slug | — | ph-00d1 | [ ] unchecked | — | — | [tk-0011](tasks.dd.md#done-when) | F31 and F34 land now; F32 follows #138 and reuses its clock. | — | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0012 | directory add papercuts (F35-F38) | — | ph-00d1 | [ ] unchecked | — | — | [tk-0012](tasks.dd.md#done-when) | Each of F35, F36, F37 and F38 has its fix and one test. | — | [ac-0011](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -116,6 +117,12 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0011 | The tests in bp-0010 pass in CI. | [ ] unchecked | [bp-0010](../../backpressure.dd.md#rows) |
+
+### tk-0012
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0012 | The four tests in bp-0011 pass in CI. | [ ] unchecked | [bp-0011](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

@@ -241,10 +241,8 @@ mod tests {
 
     use super::*;
 
-    /// F36, F37: every missing role field in one refusal, each with the flag
-    /// that sets it, and no hand edit suggested.
-    #[test]
-    fn a_role_refusal_names_every_gap_and_the_flags_that_fill_them() {
+    /// ddocs' refusal of a role missing kind, scope and its standing packet.
+    fn three_gaps() -> String {
         let envelope = serde_json::json!({
             "error": {
                 "message": "missing required field \"kind\"",
@@ -256,8 +254,13 @@ mod tests {
             },
             "next_action": "Fix role.dd.json at $.sections[meta].value.kind, then re-run `ddocs validate`.",
         });
-        let message = ddocs_message(envelope.to_string().as_bytes(), b"");
-        assert!(message.contains("$.sections[scope]: missing"), "{message}");
+        ddocs_message(envelope.to_string().as_bytes(), b"")
+    }
+
+    /// Plan 209, F36: the next step names the flags to add, never a hand edit.
+    #[test]
+    fn a_role_refusal_names_the_flag_for_each_gap_not_a_hand_edit() {
+        let message = three_gaps();
         assert!(
             message.ends_with(
                 "Nothing was written. Add --kind specialist|general, --rule <text>, \
@@ -266,6 +269,19 @@ mod tests {
             "{message}"
         );
         assert!(!message.contains("Fix role.dd.json"), "{message}");
+    }
+
+    /// Plan 209, F37: one refusal lists every missing section.
+    #[test]
+    fn a_role_refusal_lists_every_gap_at_once() {
+        let message = three_gaps();
+        for gap in [
+            "$.sections[meta].value.kind: missing",
+            "$.sections[scope]: missing",
+            "$.sections[standing_packet]: missing",
+        ] {
+            assert!(message.contains(gap), "{gap}: {message}");
+        }
     }
 
     fn tool(dir: &Path, name: &str, mode: u32) -> PathBuf {
