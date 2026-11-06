@@ -51,3 +51,7 @@ No timer, poll or new launch site: regeneration rides the role write's existing 
 ## Review fix: F001 (pij-usual-seahorse at dcc3e52)
 
 Replaying one compact request (same caller-chosen `msg_id`) queued one compact but held a second routing table, because the callback ran on the deduplicated receipt and each hold took a fresh id. The compact's FYI is now keyed `routes-after-compact:<msg_id>`; the FYI store inserts an id once (`INSERT OR IGNORE` on `(origin, id)`, rows never deleted), so a replay holds nothing new, while the first is held or after it is claimed. The reviewer's regression is adopted as `reviewer_compact_request_replay_does_not_duplicate_routes`, with a third attempt after a claim. Built and tested by CI only, under the fleet build backoff.
+
+## Review fix: F002 (pij-usual-seahorse at 9d2a746)
+
+The FYI id is global (`(origin, id)`), so `routes-after-compact:<msg_id>` let a second seat compacted with the same caller-chosen msg_id lose its table to `INSERT OR IGNORE`. The id is now `routes-after-compact:<seat>:<msg_id>`; `one_compact_msg_id_to_two_seats_gives_each_its_own_table_once` compacts two holders with one msg_id, twice: each has exactly one compact table. The same push carries 1623200 (security's #130 note: control characters dropped, overlap warnings on one line). CI only, under the backoff.

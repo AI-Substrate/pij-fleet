@@ -2057,8 +2057,9 @@ pub(crate) async fn send_control(
         Ok(receipt) => {
             if compact {
                 // Held for the first turn after the compact (plan 202).
-                // Keyed to the compact's id: a replay holds nothing new.
-                let id = format!("routes-after-compact:{}", receipt.msg_id);
+                // Keyed to the compact's recipient and id: a replay holds nothing new,
+                // and another seat's compact with the same id still gets its own.
+                let id = format!("routes-after-compact:{}:{}", target.id, receipt.msg_id);
                 routes::deliver(
                     &state.services,
                     &target.id,

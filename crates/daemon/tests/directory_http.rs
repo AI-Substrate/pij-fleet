@@ -199,7 +199,8 @@ async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: 
         (SEAT, Some(PANE), None),
         ("pij-holder", Some("%51"), Some(SEAT)),
         ("pij-second", None, Some(SEAT)),
-        ("pij-dormant", None, Some(SEAT)),
+        // A recorded pane tmux does not have: a compact target, and dead for revive.
+        ("pij-dormant", Some("%61"), Some(SEAT)),
     ] {
         let mut seat = SeatDescriptor::new(id, Harness::Omp, "/tmp");
         seat.pane = pane.map(str::to_string);
@@ -1787,5 +1788,57 @@ async fn reviewer_compact_request_replay_does_not_duplicate_routes() {
         );
     }
     pool.close().await;
+    rig.server.abort();
+}
+
+/// Review of #130, F002: the FYI id is global, so the compact's routes FYI is
+/// keyed to its recipient too. Two seats compacted with one caller-chosen
+/// msg_id each get exactly one table, and a replay to either adds none.
+#[tokio::test]
+async fn one_compact_msg_id_to_two_seats_gives_each_its_own_table_once() {
+    let repo = repo("pij-pr130-review-two-seats");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    for seat in ["pij-holder", "pij-dormant"] {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", "delivery", seat, "--why", "own it"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["ok"], true, "{assigned}");
+    }
+    for attempt in 1..=2 {
+        for seat in ["pij-holder", "pij-dormant"] {
+            let response: Value = reqwest::Client::new()
+                .post(format!("http://{}/v1/send", rig.addr))
+                .bearer_auth(KEY)
+                .json(&json!({
+                    "from": SEAT,
+                    "to": {"seat": seat},
+                    "body": "",
+                    "command": "compact",
+                    "msg_id": "one-shared-compact",
+                    "caller": {"tmuxPane": PANE, "cwd": repo.main},
+                }))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(response["ok"], true, "{seat}: {response}");
+        }
+        for seat in ["pij-holder", "pij-dormant"] {
+            let held = fyis(&rig, seat).await;
+            assert_eq!(
+                held.len(),
+                2,
+                "attempt {attempt}, {seat}: its assign table and one compact table: {held:?}"
+            );
+        }
+    }
     rig.server.abort();
 }
