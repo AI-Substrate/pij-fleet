@@ -2080,3 +2080,27 @@ async fn status_lists_only_live_pas_and_opt_ins() {
         .collect();
     assert_eq!(optins, ["pij-worker"], "{listing}");
 }
+
+/// Plan 209 (#129's digest scope): the PA's own projects, else its prime's,
+/// else every project only under the designated prime, else none.
+#[test]
+fn the_digest_reads_the_pas_projects_then_its_primes_then_all_only_for_the_designated_prime() {
+    let names = |list: &[&str]| {
+        list.iter()
+            .map(|name| (*name).to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        super::digest_scope(names(&["pij"]), names(&["osk"]), true),
+        Some(names(&["pij"]))
+    );
+    assert_eq!(
+        super::digest_scope(Vec::new(), names(&["osk"]), true),
+        Some(names(&["osk"]))
+    );
+    assert_eq!(super::digest_scope(Vec::new(), Vec::new(), true), None);
+    assert_eq!(
+        super::digest_scope(Vec::new(), Vec::new(), false),
+        Some(Vec::new())
+    );
+}
