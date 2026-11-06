@@ -430,7 +430,10 @@ async fn a_held_self_compact_or_close_does_not_act_on_a_revived_seat() {
     take_turn(&rig, "prime", &prompt).await;
     let turn = turn_event(&rig, "prime").await;
     assert!(turn["then"].as_str().unwrap().contains("revived"), "{turn}");
-    assert!(!compact_queued(&rig, "prime").await, "no compact for the new process");
+    assert!(
+        !compact_queued(&rig, "prime").await,
+        "no compact for the new process"
+    );
     rig.server.abort();
 
     let rig = rig_again().await;
@@ -441,7 +444,10 @@ async fn a_held_self_compact_or_close_does_not_act_on_a_revived_seat() {
     take_turn(&rig, "prime", &prompt).await;
     let turn = turn_event(&rig, "prime").await;
     assert!(turn["then"].as_str().unwrap().contains("revived"), "{turn}");
-    assert!(!tombstoned(&rig, "prime").await, "the revived seat stays open");
+    assert!(
+        !tombstoned(&rig, "prime").await,
+        "the revived seat stays open"
+    );
     rig.server.abort();
 }
 

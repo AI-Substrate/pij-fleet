@@ -3659,19 +3659,19 @@ mod tests {
     #[test]
     fn a_held_compact_reply_decodes_as_a_receipt_and_keeps_its_memory_turn() {
         let raw = r#"{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"m1","outcome":{"outcome":"held","reason":"memory-turn"},"at":5,"held":"memory-turn","memory_turn":{"action":"compact","bound_ms":300000}}}"#;
-        let mut typed: Envelope<pij_core::model::Receipt> =
+        let mut typed: pij_core::model::Envelope<pij_core::model::Receipt> =
             serde_json::from_str(raw).expect("the client's typed decode");
         typed.raw_json = None;
-        let shown = with_memory_turn(&typed, Some(raw)).expect("a held compact");
+        let shown = super::with_memory_turn(&typed, Some(raw)).expect("a held compact");
         let data = shown.data.expect("data");
         assert_eq!(data["msg_id"], "m1");
         assert_eq!(data["outcome"]["outcome"], "held");
         assert_eq!(data["held"], "memory-turn");
         assert_eq!(data["memory_turn"]["bound_ms"], 300_000);
-        assert!(with_memory_turn(&typed, None).is_none());
+        assert!(super::with_memory_turn(&typed, None).is_none());
         let plain = r#"{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"m2","outcome":{"outcome":"queued"},"at":5}}"#;
         assert!(
-            with_memory_turn(&typed, Some(plain)).is_none(),
+            super::with_memory_turn(&typed, Some(plain)).is_none(),
             "an ordinary receipt prints as before"
         );
     }
