@@ -369,7 +369,7 @@ fn a_missing_pij_rs_is_named() {
         .unwrap();
     assert_eq!(output.status.code(), Some(127), "{output:?}");
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("pij-rs is not on PATH"),
+        String::from_utf8_lossy(&output.stderr).contains("pij-rs: it is not on PATH"),
         "{output:?}"
     );
 }
