@@ -133,8 +133,8 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
     let before = head(&repo);
     for (argv, needle) in [
         (
-            &["add", "qa", "--from", "template:qa", "--why", "w"][..],
-            "\"qa\"",
+            &["add", "pilot", "--from", "template:astronaut", "--why", "w"][..],
+            "\"astronaut\"",
         ),
         (
             &["add", "pm-002", "--from", "template:pm@v9", "--why", "w"][..],
@@ -163,7 +163,7 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
     let unknown = directory(
         addr,
         &repo,
-        &["add", "qa", "--from", "template:qa", "--why", "w"],
+        &["add", "pilot", "--from", "template:astronaut", "--why", "w"],
     )
     .await;
     let message = unknown["meta"].as_str().unwrap_or_default();
