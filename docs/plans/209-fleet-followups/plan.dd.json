@@ -40,7 +40,8 @@
           "id": "ac-0001",
           "claim": "F27, flakes. Each of these is fixed at its root cause (or, if the cause is outside pij, made deterministic with a named reason): claude_heal_scripts copilot_status_line_hands_the_payload_to_pij_rs_in_one_process (BrokenPipe writing a child's stdin: treat EPIPE after the child has read its payload as success); pane_observer real_tmux; pij-cli claude_inbound daemon_boot_repairs_once_and_publishes_one_change_event (an isolated daemon child exits non-zero); the TS watchdog smoke's private-daemon teardown (exit null); the reaper tests under load.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "note": "Reaper tests dropped (pm-001 20:21): the 13 reaper:: tests passed 50 runs in a row niced (load 29 to 51) and in three full daemon-lib runs under taskpolicy -b (load 25 to 49); no flake to fix."
         },
         {
           "id": "ac-0002",

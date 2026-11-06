@@ -37,7 +37,7 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | tk-0001 | F27: the Rust flakes at their roots | — | ph-00d1 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | claude_heal_scripts: EPIPE on a payload the script never needed is not a failure; claude_inbound: the daemon installs its SIGINT handler before printing readiness (production race); pane_observer: teardown asserts no server is left, not kill-server's status; control_mode (found on main, run 42154126103): the test window is named so automatic-rename cannot move it. | Causes from CI logs: runs 42146286413, 42147270960, 42137015642, 42154126103. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0002 | F27: the watchdog smoke's private-daemon teardown | — | ph-00d1 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | The fixture's daemon stop waits longer than the daemon's own 5 s drain (SHUTDOWN_DRAIN_TIMEOUT) before SIGKILL; other children keep the 3 s bound. | Run 42147635271: the daemon printed shutting down, then was SIGKILLed 3 s after SIGINT (status null). TS proof is CI-only (C25). | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | F27: the reaper tests under load | — | ph-00d1 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | The reaper tests named by pm-001 pass 50 in a row under load, fixed at the root. | Awaiting pm-001's names for the tests. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | F27: the reaper tests under load | — | ph-00d1 | [x] na | Dropped (pm-001 20:21): the 13 reaper:: tests passed 50 runs in a row niced and three full daemon-lib runs under taskpolicy -b; no flake to fix. | — | [tk-0003](tasks.dd.md#done-when) | The reaper tests named by pm-001 pass 50 in a row under load, fixed at the root. | Reaper tests dropped (pm-001 20:21): the 13 reaper:: tests passed 50 runs in a row niced (load 29 to 51) and in three full daemon-lib runs under taskpolicy -b (load 25 to 49); no flake to fix. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0004 | F28: one test-only time scale for real-child budgets | — | ph-00d1 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | pij_testkit::time::scaled and harness/driver/time-scale.ts read PIJ_TEST_TIME_SCALE (default 1; below 1 or not a number refuses). Real-child budgets use it (claude_heal, claude_inbound, control_mode, registration's real-ps tests through a cfg(test)-only observation deadline, the governance fixture). Production constants unchanged. AGENTS.md (resource cost item 5) and the shared-build header carry the nice-only rule. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | F26: the skill check passes and runs in the gate | — | ph-00d1 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | pij-skill-check.sh exits 0: markers plan 175 and 186 reworded are updated, the ones they reversed are retired with the reason in a comment, and routes/peer.md is back under its 150-line budget (reflowed, no text change). A pij-skill sensor runs it in harness checks, and just self-check runs it. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0006 | #131 N002: recorded_by from the newest record | — | ph-00d1 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | After #131 merges: the delivery card's recorded_by comes from the same row as its recorded_at. | Waits for #131. | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
@@ -64,9 +64,9 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 
 ### tk-0003
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0003 | 50 runs in a row under load, niced. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | note |
+| --- | --- | --- | --- | --- |
+| dw-0003 | 50 runs in a row under load, niced. | [x] na | [bp-0001](../../backpressure.dd.md#rows) | Dropped (pm-001 20:21): the 13 reaper:: tests passed 50 runs in a row niced and three full daemon-lib runs under taskpolicy -b; no flake to fix. |
 
 ### tk-0004
 

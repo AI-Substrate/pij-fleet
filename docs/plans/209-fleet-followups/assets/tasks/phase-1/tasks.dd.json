@@ -47,13 +47,14 @@
           "id": "tk-0003",
           "title": "F27: the reaper tests under load",
           "phase": "ph-00d1",
-          "state": "unchecked",
+          "state": "na",
           "success": "The reaper tests named by pm-001 pass 50 in a row under load, fixed at the root.",
-          "notes": "Awaiting pm-001's names for the tests.",
+          "notes": "Reaper tests dropped (pm-001 20:21): the 13 reaper:: tests passed 50 runs in a row niced (load 29 to 51) and in three full daemon-lib runs under taskpolicy -b (load 25 to 49); no flake to fix.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
-          "done": "tasks.dd.json#done_when/tk-0003"
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "note": "Dropped (pm-001 20:21): the 13 reaper:: tests passed 50 runs in a row niced and three full daemon-lib runs under taskpolicy -b; no flake to fix."
         },
         {
           "id": "tk-0004",
@@ -164,8 +165,9 @@
           {
             "id": "dw-0003",
             "assertion": "50 runs in a row under load, niced.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+            "state": "na",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001",
+            "note": "Dropped (pm-001 20:21): the 13 reaper:: tests passed 50 runs in a row niced and three full daemon-lib runs under taskpolicy -b; no flake to fix."
           }
         ],
         "tk-0004": [
