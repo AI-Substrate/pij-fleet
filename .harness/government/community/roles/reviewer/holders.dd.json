@@ -48,6 +48,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-many-tiglon",
 					"why": "reviewer for PR #129 (s05)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T00:51:51.703Z",
+					"harness": "copilot",
+					"harness_session": "3e7756cf-b339-46ac-9b12-46d3065045cc",
+					"instance_key": "130",
+					"machine": "ops.osk.lan",
+					"seat": "pij-usual-seahorse",
+					"why": "reviewer for PR #130 (s08)"
 				}
 			]
 		}
