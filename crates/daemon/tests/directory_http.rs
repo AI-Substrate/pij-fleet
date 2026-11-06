@@ -8,7 +8,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use pij_core::config::{AdapterChoice, Adapters, Config};
-use pij_core::model::{Harness, SeatDescriptor, SeatId};
+use pij_core::model::{Harness, PaneProcess, ProcIdentity, SeatDescriptor, SeatId};
 use pij_daemon::community::Refusal;
 use pij_daemon::community::ddocs::Validator;
 use pij_daemon::community::directory::{AfterAssign, DirectoryService, NoHook};
@@ -17,13 +17,18 @@ use pij_daemon::community::templates::Catalog;
 use pij_daemon::community::writer::{CommunityWriter, LOCK_RETRY};
 use pij_daemon::delivery::role_send::{DrainedAs, RoleQueueDrain};
 use pij_daemon::http::{HttpConfig, router_with_config};
-use pij_testkit::fakes::FakeTmux;
+use pij_testkit::fakes::{FakeLiveness, FakeTmux};
 use pij_testkit::{FreshStore, fresh_dir};
 use serde_json::{Value, json};
 
 const KEY: &str = "directory-test-key";
 const SEAT: &str = "pij-test-coder";
 const PANE: &str = "%41";
+/// The caller's process, live in its pane, so it may send controls.
+const CALLER_PROC: ProcIdentity = ProcIdentity {
+    pid: 910_041,
+    proc_start: 7,
+};
 
 /// Refuses a document holding `INVALID`; renders every other one.
 struct FakeDdocs;
@@ -234,8 +239,15 @@ async fn rig_inner(
     let writer = Arc::new(writer);
     let store = services.directory.store().clone();
     services.community = Arc::clone(&writer);
-    let tmux = Arc::new(FakeTmux::new());
+    let tmux = Arc::new(FakeTmux::new().with_pane_process(
+        PANE,
+        PaneProcess {
+            pid: CALLER_PROC.pid,
+            cwd: "/tmp".to_string(),
+        },
+    ));
     services.tmux = tmux.clone();
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(CALLER_PROC));
     let drain = hook.is_none().then(|| Arc::new(RoleQueueDrain::new()));
     let hook = hook.unwrap_or_else(|| {
         Arc::clone(drain.as_ref().expect("no hook given")) as Arc<dyn AfterAssign>
@@ -255,10 +267,21 @@ async fn rig_inner(
         (SEAT, Some(PANE), None),
         ("pij-holder", Some("%51"), Some(SEAT)),
         ("pij-second", None, Some(SEAT)),
+        // A recorded pane tmux does not have: a compact target, and dead for revive.
+        ("pij-dormant", Some("%61"), Some(SEAT)),
     ] {
         let mut seat = SeatDescriptor::new(id, Harness::Omp, "/tmp");
         seat.pane = pane.map(str::to_string);
         seat.parent = parent.map(SeatId::from);
+        seat.proc = match id {
+            SEAT => Some(CALLER_PROC),
+            // A process the liveness fake has never seen: observed dead.
+            "pij-dormant" => Some(ProcIdentity {
+                pid: 4242,
+                proc_start: 10,
+            }),
+            _ => None,
+        };
         services.registry.put(seat).await.expect("seed seat");
     }
     let roles = Arc::clone(&services.roles);
@@ -1140,6 +1163,8 @@ async fn add_adopts_a_hand_written_role_folder_and_writes_only_the_document() {
     assert_eq!(
         committed.lines().collect::<Vec<_>>(),
         [
+            // The first role write replaces any hand-written table (plan 202).
+            ".harness/government/community/ROUTES.md",
             ".harness/government/community/roles/coder/role.dd.json",
             ".harness/government/community/roles/coder/role.dd.md",
         ]
@@ -1638,9 +1663,481 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
 #[path = "pr122_review/mod.rs"]
 mod review;
 
+/// Every FYI held for `recipient`, as `(sender, body)`, oldest first.
+async fn fyis(rig: &Rig, recipient: &str) -> Vec<(String, String)> {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    let rows = sqlx::query_as(
+        "SELECT sender, body FROM fyis WHERE recipient = ?1 ORDER BY held_at_ms, id",
+    )
+    .bind(recipient)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    rows
+}
+
+/// Plan 201: a compact to a role holder is held for its memory turn and
+/// admitted in the background; the turn's `memory.turn` event is appended
+/// after that admission (and so after its routes FYI). Waits for `turns`.
+async fn memory_turns(rig: &Rig, seat: &str, turns: i64) {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let ended: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM spine_events WHERE kind = 'memory.turn' AND seat = ?1",
+        )
+        .bind(seat)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if ended >= turns {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{seat}: {ended} of {turns} memory turns ended"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    pool.close().await;
+}
+
+fn routes_md(repo: &Repo) -> String {
+    std::fs::read_to_string(repo.gov.join(pij_daemon::community::layout::ROUTES)).unwrap()
+}
+
+fn names_at_head(repo: &Repo) -> String {
+    git(&repo.gov, &["show", "--name-only", "--format=", "HEAD"])
+}
+
+async fn fleet_with_prime(rig: &Rig, repo: &Repo) {
+    let main = repo.main.to_str().unwrap();
+    let created = call(
+        rig.addr,
+        "/v1/project",
+        &[
+            "project",
+            "create",
+            "fleet",
+            "--repo",
+            main,
+            "--prime",
+            "pij-second",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+}
+
+async fn add_role(rig: &Rig, repo: &Repo, id: &str, path: &str, rule: &str) -> Value {
+    call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            id,
+            "--scope-path",
+            path,
+            "--rule",
+            rule,
+            "--packet",
+            "You hold it.",
+            "--why",
+            "routes test",
+        ],
+        &repo.main,
+    )
+    .await
+}
+
+/// Plan 202 AC1 and AC3: a role add rewrites ROUTES.md (adopting a hand-written
+/// one) in its own commit, warns on an overlap and tells the prime once per
+/// change; assign and release change no route and tell the prime nothing.
+#[tokio::test]
+async fn role_changes_regenerate_routes_in_their_commit_and_tell_the_prime_once() {
+    let repo = repo("pij-routes-regenerate");
+    let routes_path = repo.gov.join(pij_daemon::community::layout::ROUTES);
+    std::fs::create_dir_all(routes_path.parent().unwrap()).unwrap();
+    std::fs::write(&routes_path, "# Hand-written\n| merges | prime |\n").unwrap();
+    git(&repo.gov, &["add", "."]);
+    git(&repo.gov, &["commit", "-q", "-m", "hand-written routes"]);
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+
+    let added = add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    assert_eq!(added["ok"], true, "{added}");
+    let names = names_at_head(&repo);
+    assert!(names.contains("community/ROUTES.md"), "{names}");
+    assert!(names.contains("roles/delivery/role.dd.json"), "{names}");
+    let table = routes_md(&repo);
+    assert!(!table.contains("Hand-written"), "{table}");
+    assert!(
+        table.contains("| `crates/delivery/**` | role:delivery |\n| Owns sends. | role:delivery |"),
+        "{table}"
+    );
+    let routes = &added["data"]["routes"];
+    assert_eq!(routes["regenerated"], true, "{routes}");
+    assert_eq!(routes["added"].as_array().unwrap().len(), 2, "{routes}");
+    assert_eq!(routes["prime"]["sent"], "fyi", "{routes}");
+    assert!(added["data"].get("warnings").is_none(), "{added}");
+    let prime = fyis(&rig, "pij-second").await;
+    assert_eq!(prime.len(), 1, "{prime:?}");
+    assert_eq!(prime[0].0, "pij-bg");
+    assert!(
+        prime[0].1.starts_with("Routes changed in fleet")
+            && prime[0]
+                .1
+                .contains("+ `crates/delivery/**` -> role:delivery"),
+        "{}",
+        prime[0].1
+    );
+
+    let overlapping = add_role(
+        &rig,
+        &repo,
+        "storage",
+        "crates/delivery/queue.rs",
+        "Owns the queue.",
+    )
+    .await;
+    assert_eq!(overlapping["ok"], true, "{overlapping}");
+    assert_eq!(
+        overlapping["data"]["warnings"],
+        json!([
+            "W-ROUTES-OVERLAP: crates/delivery/** (role:delivery) overlaps crates/delivery/queue.rs (role:storage)"
+        ])
+    );
+    assert!(routes_md(&repo).contains("## Overlaps"));
+    assert_eq!(fyis(&rig, "pij-second").await.len(), 2);
+
+    // A change of holder: no route changes and the prime hears nothing.
+    let before = routes_md(&repo);
+    for leaf in ["assign", "release"] {
+        let held = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                leaf,
+                "delivery",
+                "pij-holder",
+                "--why",
+                "rotate",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(held["ok"], true, "{held}");
+        assert!(!names_at_head(&repo).contains("ROUTES.md"));
+    }
+    assert_eq!(routes_md(&repo), before);
+    assert_eq!(fyis(&rig, "pij-second").await.len(), 2);
+    rig.server.abort();
+}
+
+/// Plan 202 AC2 (on demand): `directory routes` prints the table with live
+/// holders and says whether ROUTES.md is stale; `--write` rewrites a stale one
+/// in one commit and writes nothing when it is current.
+#[tokio::test]
+async fn routes_on_demand_and_write_only_when_stale() {
+    let repo = repo("pij-routes-demand");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "delivery",
+            "pij-holder",
+            "--why",
+            "own it",
+        ],
+        &repo.main,
+    )
+    .await;
+
+    let shown = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(shown["ok"], true, "{shown}");
+    assert_eq!(shown["data"]["stale"], false);
+    let text = shown["data"]["text"].as_str().unwrap();
+    assert!(
+        text.contains("| `crates/delivery/**` | role:delivery | pij-holder |"),
+        "{text}"
+    );
+
+    let head_before = head(&repo);
+    let current = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes", "--write", "--why", "check"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(current["ok"], true, "{current}");
+    assert_eq!(current["data"]["written"]["regenerated"], false);
+    assert_eq!(head(&repo), head_before);
+
+    std::fs::write(
+        repo.gov.join(pij_daemon::community::layout::ROUTES),
+        "edited by hand\n",
+    )
+    .unwrap();
+    git(&repo.gov, &["commit", "-q", "-am", "a hand edit"]);
+    let stale = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(stale["data"]["stale"], true, "{stale}");
+    let written = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes", "--write", "--why", "adopt"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(written["ok"], true, "{written}");
+    assert_eq!(written["data"]["commit"], head(&repo));
+    assert_eq!(
+        names_at_head(&repo).trim(),
+        ".harness/government/community/ROUTES.md"
+    );
+    assert_eq!(written["data"]["stale"], false);
+    // No row changed, so the prime hears only of the one role add.
+    assert_eq!(fyis(&rig, "pij-second").await.len(), 1);
+
+    let refused = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "routes", "--write"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(refused["details"]["code"], "E-RS-ARG", "{refused}");
+    rig.server.abort();
+}
+
+/// Plan 202 AC2: assign, a compact control and a revive each hold the table
+/// once for a role holder; a seat holding no role gets nothing.
+#[tokio::test]
+async fn assign_compact_and_revive_each_send_a_holder_the_table_once() {
+    let repo = repo("pij-routes-triggers");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    for seat in ["pij-holder", "pij-dormant"] {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", "delivery", seat, "--why", "own it"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["data"]["routes"]["sent"], "fyi", "{assigned}");
+        assert_eq!(assigned["data"]["routes"]["projects"], json!(["fleet"]));
+    }
+    let held = fyis(&rig, "pij-holder").await;
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert_eq!(held[0].0, "pij-bg");
+    assert!(
+        held[0].1.starts_with("Routing table for fleet."),
+        "{}",
+        held[0].1
+    );
+    assert!(
+        held[0]
+            .1
+            .contains("| Owns sends. | role:delivery | pij-holder |"),
+        "{}",
+        held[0].1
+    );
+
+    let compact = call(
+        rig.addr,
+        "/v1/shim/send",
+        &["send", "pij-holder", "--command", "compact"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(compact["ok"], true, "{compact}");
+    assert_eq!(compact["data"]["held"], "memory-turn", "{compact}");
+    memory_turns(&rig, "pij-holder", 1).await;
+    assert_eq!(fyis(&rig, "pij-holder").await.len(), 2);
+    let own = call(rig.addr, "/v1/shim/send", &["compact-self"], &repo.main).await;
+    assert_eq!(own["ok"], true, "{own}");
+    assert!(fyis(&rig, SEAT).await.is_empty(), "holds no role");
+
+    let revived: Value = reqwest::Client::new()
+        .post(format!("http://{}/v1/revive", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({"id": "pij-dormant", "session": "fleet", "fresh": true}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(revived["ok"], true, "{revived}");
+    let dormant = fyis(&rig, "pij-dormant").await;
+    assert_eq!(dormant.len(), 2, "assign and revive: {dormant:?}");
+    assert!(dormant[1].1.starts_with("Routing table for fleet."));
+    rig.server.abort();
+}
+
 /// Plan 194 (s03): --from template and file, templates, drift and prompts.
 #[path = "templates_http/mod.rs"]
 mod templates;
+
+/// Review of #130, F001 (pij-usual-seahorse's regression, adopted): replaying
+/// one compact request, by its caller-chosen msg_id, queues one compact and
+/// holds one table, while the FYI is held and after it is claimed.
+#[tokio::test]
+async fn reviewer_compact_request_replay_does_not_duplicate_routes() {
+    let repo = repo("pij-pr130-review-replay");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    let added = add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    assert_eq!(added["ok"], true, "{added}");
+    let assigned = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "delivery",
+            "pij-holder",
+            "--why",
+            "own it",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    assert_eq!(fyis(&rig, "pij-holder").await.len(), 1);
+    let request = json!({
+        "from": SEAT,
+        "to": {"seat": "pij-holder"},
+        "body": "",
+        "command": "compact",
+        "msg_id": "reviewer-one-compact",
+        "caller": {"tmuxPane": PANE, "cwd": repo.main},
+    });
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    for attempt in 1..=3 {
+        if attempt == 3 {
+            // As if the seat's next turn claimed it.
+            sqlx::query("UPDATE fyis SET state = 'delivered' WHERE recipient = 'pij-holder'")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let response: Value = reqwest::Client::new()
+            .post(format!("http://{}/v1/send", rig.addr))
+            .bearer_auth(KEY)
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response["ok"], true, "{response}");
+        assert_eq!(response["data"]["msg_id"], "reviewer-one-compact");
+        // Each request is held for the holder's memory turn, then admitted.
+        memory_turns(&rig, "pij-holder", attempt).await;
+        let controls: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM jobs WHERE dedupe_key = 'reviewer-one-compact'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let held = fyis(&rig, "pij-holder").await;
+        assert_eq!(
+            controls, 1,
+            "attempt {attempt}: same request queues one compact"
+        );
+        assert_eq!(
+            held.len(),
+            2,
+            "attempt {attempt}: one assign FYI and one compact FYI, even on replay"
+        );
+    }
+    pool.close().await;
+    rig.server.abort();
+}
+
+/// Review of #130, F002: the FYI id is global, so the compact's routes FYI is
+/// keyed to its recipient too. Two seats compacted with one caller-chosen
+/// msg_id each get exactly one table, and a replay to either adds none.
+#[tokio::test]
+async fn one_compact_msg_id_to_two_seats_gives_each_its_own_table_once() {
+    let repo = repo("pij-pr130-review-two-seats");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    add_role(&rig, &repo, "delivery", "crates/delivery/**", "Owns sends.").await;
+    for seat in ["pij-holder", "pij-dormant"] {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", "delivery", seat, "--why", "own it"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["ok"], true, "{assigned}");
+    }
+    for attempt in 1..=2 {
+        for seat in ["pij-holder", "pij-dormant"] {
+            let response: Value = reqwest::Client::new()
+                .post(format!("http://{}/v1/send", rig.addr))
+                .bearer_auth(KEY)
+                .json(&json!({
+                    "from": SEAT,
+                    "to": {"seat": seat},
+                    "body": "",
+                    "command": "compact",
+                    "msg_id": "one-shared-compact",
+                    "caller": {"tmuxPane": PANE, "cwd": repo.main},
+                }))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(response["ok"], true, "{seat}: {response}");
+        }
+        for seat in ["pij-holder", "pij-dormant"] {
+            memory_turns(&rig, seat, attempt).await;
+            let held = fyis(&rig, seat).await;
+            assert_eq!(
+                held.len(),
+                2,
+                "attempt {attempt}, {seat}: its assign table and one compact table: {held:?}"
+            );
+        }
+    }
+    rig.server.abort();
+}
 
 /// Plan 208 F16: `assign --batch` records many holdings in one commit, and a
 /// file with any bad line writes nothing and names every one.
@@ -2221,10 +2718,17 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
         assert_eq!(request.holder.as_deref(), Some("pij-holder"), "{id}");
     }
     let head = inbox_bodies(&rig, "pij-holder").await;
+    let first = head.first().map(String::as_str).unwrap_or_default();
+    // Each assign holds the routing table for its holder (plan 202), and held
+    // FYIs ride along with the seat's next real message: this drained request.
+    let (request, riders) = first.split_once("\n\nAlso, ").unwrap_or((first, ""));
     assert_eq!(
-        head.first().map(String::as_str),
-        Some("[pij role:pm-001 request req-a from pij-test-coder · reply wake]\nplease req-a"),
+        request, "[pij role:pm-001 request req-a from pij-test-coder · reply wake]\nplease req-a",
         "the oldest request is first in the holder's queue"
+    );
+    assert!(
+        riders.is_empty() || riders.contains("Routing table for fleet."),
+        "only the routing table rides along: {first}"
     );
     let events = call(
         rig.addr,
@@ -2505,6 +3009,275 @@ async fn review_overlapping_assign_drains_must_deliver_an_unscoped_request_once(
     );
 }
 
+/// Plan 205 (s12), AC1 and AC2: a request past its limit with no card update
+/// gets exactly one check-in; a whole further limit with no card update since
+/// tells the project's PA exactly once. A card update restarts the clock, so a
+/// seat that keeps its card current is never checked in.
+#[tokio::test]
+async fn a_limit_checks_in_once_then_tells_the_pa_once_and_a_card_update_spares_it() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let repo = repo("pij-role-limits");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: Vec<&'static str>| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move { call(addr, "/v1/directory", &argv, &main).await }
+    };
+    for argv in [
+        vec![
+            "directory",
+            "add",
+            "pa",
+            "--title",
+            "pa",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        vec!["directory", "assign", "pa", "pij-second", "--why", "watch"],
+        vec![
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "lead",
+        ],
+    ] {
+        let done = dir(argv).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let limit = 10 * 60_000;
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-limit",
+        json!({"limit": "10m"}),
+    )
+    .await;
+    assert_eq!(sent["data"]["request"]["limit_ms"], limit, "{sent}");
+    let delivered = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .and_then(|request| request.delivered_at)
+        .expect("delivered");
+    let kinds = |actions: Vec<pij_daemon::delivery::role_send::LimitAction>| {
+        actions
+            .into_iter()
+            .map(|action| {
+                (
+                    action.request,
+                    action.kind,
+                    action.to.map(|seat| seat.to_string()),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        kinds(time_limits(&rig.services, delivered + limit - 1).await),
+        []
+    );
+    assert_eq!(
+        kinds(time_limits(&rig.services, delivered + limit).await),
+        [(
+            "req-limit".to_string(),
+            "check-in",
+            Some("pij-holder".to_string())
+        )]
+    );
+    assert_eq!(
+        kinds(time_limits(&rig.services, delivered + limit + 1).await),
+        [],
+        "one check-in"
+    );
+    let checked = delivered + limit;
+    assert_eq!(
+        kinds(time_limits(&rig.services, checked + limit - 1).await),
+        []
+    );
+    assert_eq!(
+        kinds(time_limits(&rig.services, checked + limit).await),
+        [(
+            "req-limit".to_string(),
+            "notice",
+            Some("pij-second".to_string())
+        )]
+    );
+    assert_eq!(
+        kinds(time_limits(&rig.services, checked + 3 * limit).await),
+        [],
+        "one notice"
+    );
+    // The holder's queue head is the request itself; the check-in shows as its
+    // own delivery outcome.
+    let events = call(
+        rig.addr,
+        "/v1/spine",
+        &["spine", "events", "--peer", "pij-holder"],
+        &repo.main,
+    )
+    .await;
+    let check_ins = events["data"]["events"]
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|event| event["kind"] == "delivery.outcome")
+        .filter(|event| {
+            event["payload"]
+                .as_str()
+                .is_some_and(|payload| payload.contains("role-limit-checkin-req-limit"))
+        })
+        .count();
+    assert_eq!(check_ins, 1, "one check-in reached the holder: {events}");
+    let notices = inbox_bodies(&rig, "pij-second").await;
+    let notice = notices.first().expect("the PA was told");
+    assert!(
+        notice.starts_with(
+            "[pij time limit] pij-holder has not answered the check-in for request req-limit"
+        ) && notice.contains("Nothing has been stopped"),
+        "{notice}"
+    );
+
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-card",
+        json!({"limit": "10m"}),
+    )
+    .await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    let delivered = rig
+        .store
+        .role_request("req-card")
+        .await
+        .unwrap()
+        .and_then(|request| request.delivered_at)
+        .expect("delivered");
+    for at in [
+        delivered + limit / 2,
+        delivered + limit,
+        delivered + 3 * limit / 2,
+    ] {
+        rig.services
+            .spine
+            .append(pij_core::model::Event {
+                seq: None,
+                v: 1,
+                at,
+                kind: "report.now".into(),
+                seat: Some(SeatId::from("pij-holder")),
+                payload: json!({"did": "work", "next": "more"}).to_string(),
+            })
+            .await
+            .expect("card");
+        assert_eq!(
+            kinds(time_limits(&rig.services, at + limit - 1).await),
+            [],
+            "each card update restarts the clock"
+        );
+    }
+    let request = rig
+        .store
+        .role_request("req-card")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(request.checkin_at, None, "never checked in");
+    rig.server.abort();
+}
+
+/// Plan 205, AC3: without --limit a role send stores the role's
+/// default_limit (C5); an explicit --limit wins; with neither there is no
+/// limit, and the round never checks the request in.
+#[tokio::test]
+async fn a_role_default_limit_applies_and_an_explicit_limit_wins() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let repo = repo("pij-role-default-limit");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: Vec<&'static str>| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move { call(addr, "/v1/directory", &argv, &main).await }
+    };
+    for argv in [
+        vec![
+            "directory",
+            "add",
+            "timed",
+            "--title",
+            "timed",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--default-limit",
+            "45m",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        vec!["directory", "assign", "timed", "pij-holder", "--why", "x"],
+        vec!["directory", "assign", "pm-001", "pij-second", "--why", "x"],
+    ] {
+        let done = dir(argv).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let default = send_to(rig.addr, &repo.main, "role:timed", "req-default", json!({})).await;
+    assert_eq!(
+        default["data"]["request"]["limit_ms"],
+        45 * 60_000,
+        "{default}"
+    );
+    let explicit = send_to(
+        rig.addr,
+        &repo.main,
+        "role:timed",
+        "req-explicit",
+        json!({"limit": "5m"}),
+    )
+    .await;
+    assert_eq!(
+        explicit["data"]["request"]["limit_ms"],
+        5 * 60_000,
+        "{explicit}"
+    );
+    let none = send_to(rig.addr, &repo.main, "role:pm-001", "req-none", json!({})).await;
+    assert_eq!(none["data"]["request"]["limit_ms"], Value::Null, "{none}");
+    let far = rig
+        .store
+        .role_request("req-none")
+        .await
+        .unwrap()
+        .and_then(|request| request.delivered_at)
+        .expect("delivered")
+        + 365 * 86_400_000;
+    let actions = time_limits(&rig.services, far).await;
+    assert!(
+        actions.iter().all(|action| action.request != "req-none"),
+        "{actions:?}"
+    );
+    rig.server.abort();
+}
+
 /// Security review of #129 (pij-wary-lynx). S1: a drain scheduled for A that
 /// runs after A's release must not consume a request queued after it; it stays
 /// queued for the next holder, who gets it once. S2: a drained wake to a cold
@@ -2730,6 +3503,9 @@ async fn a_claim_left_by_a_stopped_daemon_drains_once_after_restart() {
         holder: None,
         created_at: 1,
         delivered_at: None,
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
     };
     // The claims commit; the daemon stops before either is marked or released.
     // Delivery had already taken "taken" (an FYI held under its msg_id).
@@ -3126,4 +3902,425 @@ async fn requests_lists_and_withdraw_closes_a_queued_request_for_its_requester_o
     .await;
     assert_eq!(ids(&listed), ["req-held"]);
     rig.server.abort();
+}
+
+const LIMIT_MS: u64 = 10 * 60_000;
+
+/// The s12 rig: a `pa` role (held by `pij-second` when `pa`), `pm-001` held by
+/// `pij-holder`, and request `req-limit` to it with a 10m limit. Returns the
+/// request's delivery time.
+async fn limit_rig(name: &str, pa: bool) -> (Rig, Repo, u64) {
+    let repo = repo(name);
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let mut steps = vec![vec![
+        "directory",
+        "add",
+        "pa",
+        "--title",
+        "pa",
+        "--kind",
+        "general",
+        "--lifecycle",
+        "long-lived",
+        "--holders",
+        "one",
+        "--rule",
+        "r",
+        "--packet",
+        "p",
+        "--why",
+        "w",
+    ]];
+    if pa {
+        steps.push(vec![
+            "directory",
+            "assign",
+            "pa",
+            "pij-second",
+            "--why",
+            "watch",
+        ]);
+    }
+    steps.push(vec![
+        "directory",
+        "assign",
+        "pm-001",
+        "pij-holder",
+        "--why",
+        "lead",
+    ]);
+    for argv in steps {
+        let done = call(rig.addr, "/v1/directory", &argv, &repo.main).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-limit",
+        json!({"limit": "10m"}),
+    )
+    .await;
+    assert_eq!(sent["data"]["request"]["limit_ms"], LIMIT_MS, "{sent}");
+    let delivered = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .and_then(|request| request.delivered_at)
+        .expect("delivered");
+    (rig, repo, delivered)
+}
+
+/// Each action's request, kind, recipient and whether delivery admitted it.
+fn limit_acts(
+    actions: Vec<pij_daemon::delivery::role_send::LimitAction>,
+) -> Vec<(String, &'static str, Option<String>, bool)> {
+    actions
+        .into_iter()
+        .map(|action| {
+            (
+                action.request,
+                action.kind,
+                action.to.map(|seat| seat.to_string()),
+                action.admitted,
+            )
+        })
+        .collect()
+}
+
+/// How many delivery outcomes `seat` has for `msg_id`.
+async fn outcomes_for(rig: &Rig, repo: &Repo, seat: &str, msg_id: &str) -> usize {
+    let events = call(
+        rig.addr,
+        "/v1/spine",
+        &["spine", "events", "--peer", seat],
+        &repo.main,
+    )
+    .await;
+    events["data"]["events"]
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|event| event["kind"] == "delivery.outcome")
+        .filter(|event| {
+            event["payload"]
+                .as_str()
+                .is_some_and(|payload| payload.contains(msg_id))
+        })
+        .count()
+}
+
+/// Review of #133, F001: a request's step runs after the round's read and an
+/// await on the holder's card, so the read can be stale. An answer that lands
+/// in between wins at either stage: no check-in and no notice go out.
+#[tokio::test]
+async fn an_answer_after_the_rounds_read_stops_the_check_in_and_the_notice() {
+    use pij_daemon::delivery::role_send::{time_limit_step, time_limits};
+    let (rig, repo, delivered) = limit_rig("pij-limit-answered", true).await;
+    let due = delivered + LIMIT_MS;
+    let read = rig.store.open_limited_role_requests().await.unwrap();
+    assert_eq!(read.len(), 1);
+    assert!(
+        rig.store
+            .mark_role_request_answered("req-limit", due)
+            .await
+            .unwrap()
+    );
+    assert_eq!(time_limit_step(&rig.services, &read[0], due).await, None);
+
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-late",
+        json!({"limit": "10m"}),
+    )
+    .await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    let late = rig
+        .store
+        .role_request("req-late")
+        .await
+        .unwrap()
+        .and_then(|request| request.delivered_at)
+        .expect("delivered");
+    let checked = late + LIMIT_MS;
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, checked).await),
+        [(
+            "req-late".to_string(),
+            "check-in",
+            Some("pij-holder".to_string()),
+            true
+        )]
+    );
+    let read = rig.store.open_limited_role_requests().await.unwrap();
+    assert_eq!(read[0].checkin_at, Some(checked));
+    assert!(
+        rig.store
+            .mark_role_request_answered("req-late", checked + 1)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        time_limit_step(&rig.services, &read[0], checked + LIMIT_MS).await,
+        None
+    );
+
+    assert_eq!(
+        outcomes_for(&rig, &repo, "pij-holder", "role-limit-checkin-req-limit").await,
+        0
+    );
+    assert!(inbox_bodies(&rig, "pij-second").await.is_empty());
+}
+
+/// Review of #133, F002: a notice nobody could take is not spent. With no PA
+/// and no prime the round reports it unadmitted and keeps it open, without
+/// any second check-in; once a PA is assigned, the next round tells it once.
+#[tokio::test]
+async fn a_notice_nobody_took_is_retried_and_sent_once_someone_can() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let (rig, repo, delivered) = limit_rig("pij-limit-retry", false).await;
+    let checked = delivered + LIMIT_MS;
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, checked).await),
+        [(
+            "req-limit".to_string(),
+            "check-in",
+            Some("pij-holder".to_string()),
+            true
+        )]
+    );
+    for at in [checked + LIMIT_MS, checked + LIMIT_MS + 1] {
+        assert_eq!(
+            limit_acts(time_limits(&rig.services, at).await),
+            [("req-limit".to_string(), "notice", None, false)],
+            "nobody to tell yet"
+        );
+    }
+    let done = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "assign", "pa", "pij-second", "--why", "watch"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(done["ok"], true, "{done}");
+    let told = checked + 2 * LIMIT_MS;
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, told).await),
+        [(
+            "req-limit".to_string(),
+            "notice",
+            Some("pij-second".to_string()),
+            true
+        )]
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, told + LIMIT_MS).await),
+        []
+    );
+    assert_eq!(inbox_bodies(&rig, "pij-second").await.len(), 1);
+    assert_eq!(
+        outcomes_for(&rig, &repo, "pij-holder", "role-limit-checkin-req-limit").await,
+        1
+    );
+    let row = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(
+        (row.checkin_at, row.escalated_at),
+        (Some(checked), Some(told))
+    );
+}
+
+/// Review of #133, F002: a daemon that stopped after claiming a check-in, and
+/// before delivery admitted it, leaves only the claim. Rounds leave it alone
+/// while its lease runs, then send the check-in exactly once.
+#[tokio::test]
+async fn a_check_in_claimed_by_a_stopped_daemon_is_sent_once_after_its_lease() {
+    use pij_daemon::delivery::role_send::time_limits;
+    use pij_store::{LIMIT_CLAIM_LEASE_MS, LimitStage};
+    let (rig, repo, delivered) = limit_rig("pij-limit-stopped", true).await;
+    let due = delivered + LIMIT_MS;
+    assert!(
+        rig.store
+            .claim_role_request_limit("req-limit", LimitStage::CheckIn, due)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, due + LIMIT_CLAIM_LEASE_MS - 1).await),
+        []
+    );
+    let retried = due + LIMIT_CLAIM_LEASE_MS;
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, retried).await),
+        [(
+            "req-limit".to_string(),
+            "check-in",
+            Some("pij-holder".to_string()),
+            true
+        )]
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, retried + 1).await),
+        []
+    );
+    assert_eq!(
+        outcomes_for(&rig, &repo, "pij-holder", "role-limit-checkin-req-limit").await,
+        1
+    );
+    let row = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(row.checkin_at, Some(retried));
+}
+
+/// Plan 205 with the review of #133: a holder that is no longer live cannot be
+/// checked in, so once its limit passes the PA is told at once, saying so, and
+/// only once.
+#[tokio::test]
+async fn a_limit_on_a_holder_that_is_gone_tells_the_pa_at_once() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let (rig, _repo, delivered) = limit_rig("pij-limit-gone", true).await;
+    rig.services
+        .registry
+        .tombstone(&SeatId::from("pij-holder"), "gone")
+        .await
+        .unwrap();
+    let due = delivered + LIMIT_MS;
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, due).await),
+        [(
+            "req-limit".to_string(),
+            "notice",
+            Some("pij-second".to_string()),
+            true
+        )]
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, due + 3 * LIMIT_MS).await),
+        []
+    );
+    let notices = inbox_bodies(&rig, "pij-second").await;
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0].contains("its holder pij-holder is not live"),
+        "{}",
+        notices[0]
+    );
+    let row = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!((row.checkin_at, row.escalated_at), (None, Some(due)));
+}
+
+/// Review of #133, F002 residual: a stopped daemon claimed a notice, pinned
+/// PA pij-second and maybe reached it before the stamp. The PA then rotates to
+/// pij-third, and the claim's lease runs out. When pij-second already has the
+/// notice, the retry only stamps it: the new PA is not told again. When it
+/// never reached admission, the retry resolves afresh and tells pij-third.
+async fn a_rotated_pa_after_a_pinned_notice(name: &str, admitted: bool) {
+    use pij_daemon::delivery::role_send::time_limits;
+    use pij_store::{LIMIT_CLAIM_LEASE_MS, LimitStage};
+    let (rig, repo, delivered) = limit_rig(name, true).await;
+    let checked = delivered + LIMIT_MS;
+    assert_eq!(time_limits(&rig.services, checked).await.len(), 1);
+    let stopped = checked + LIMIT_MS;
+    let claim = rig
+        .store
+        .claim_role_request_limit("req-limit", LimitStage::Notice, stopped)
+        .await
+        .unwrap();
+    assert_eq!(claim.map(|claim| claim.pinned), Some(None));
+    assert!(
+        rig.store
+            .pin_role_request_limit("req-limit", stopped, "pij-second")
+            .await
+            .unwrap()
+    );
+    if admitted {
+        rig.delivery
+            .accept(pij_core::model::Msg {
+                from: SeatId::from("pij-bg"),
+                from_machine: None,
+                to: SeatId::from("pij-second"),
+                body: "[pij time limit] the stopped attempt's notice".into(),
+                msg_id: "role-limit-notice-req-limit".into(),
+                in_reply_to: None,
+                command: None,
+            })
+            .await
+            .unwrap();
+    }
+    let mut third = SeatDescriptor::new("pij-third", Harness::Omp, "/tmp");
+    third.parent = Some(SeatId::from(SEAT));
+    rig.services.registry.put(third).await.unwrap();
+    for argv in [
+        [
+            "directory",
+            "release",
+            "pa",
+            "pij-second",
+            "--why",
+            "rotate",
+        ],
+        ["directory", "assign", "pa", "pij-third", "--why", "rotate"],
+    ] {
+        let done = call(rig.addr, "/v1/directory", &argv, &repo.main).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let retried = stopped + LIMIT_CLAIM_LEASE_MS;
+    let expected = if admitted { "pij-second" } else { "pij-third" };
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, retried).await),
+        [(
+            "req-limit".to_string(),
+            "notice",
+            Some(expected.to_string()),
+            true
+        )]
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, retried + LIMIT_MS).await),
+        []
+    );
+    let told = |seat: &'static str| {
+        let (rig, repo) = (&rig, &repo);
+        async move { outcomes_for(rig, repo, seat, "role-limit-notice-req-limit").await }
+    };
+    assert_eq!(
+        (told("pij-second").await, told("pij-third").await),
+        if admitted { (1, 0) } else { (0, 1) }
+    );
+    let row = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(row.escalated_at, Some(retried));
+}
+
+#[tokio::test]
+async fn an_admitted_notice_is_not_sent_again_to_a_rotated_pa() {
+    a_rotated_pa_after_a_pinned_notice("pij-limit-rotated-admitted", true).await;
+}
+
+#[tokio::test]
+async fn a_pinned_notice_never_admitted_goes_to_the_current_pa() {
+    a_rotated_pa_after_a_pinned_notice("pij-limit-rotated-unsent", false).await;
 }

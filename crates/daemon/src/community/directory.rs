@@ -19,6 +19,7 @@ use serde_json::Value;
 use super::holders::{self, seat_role_for};
 use super::layout::RolePaths;
 use super::root::GovernanceRoot;
+use super::routes::{self, Regenerated};
 use super::templates::{self, Catalog};
 use super::writer::{CommunityWriter, Existing, NewFile, Written};
 use super::{E_GOV_GIT, Refusal, role};
@@ -482,23 +483,29 @@ impl DirectoryService {
         Ok((written, note.display().to_string()))
     }
 
-    /// Any other directory write (`directory add`): `files` plus the project's
-    /// pending close-ends, in one commit.
+    /// Any other directory write (`directory add`, `directory routes --write`):
+    /// `files` plus the project's pending close-ends, in one commit. When the
+    /// write changes the roles' scopes, or `ROUTES.md` is stale, the
+    /// regenerated `ROUTES.md` rides the same commit (plan 202).
     ///
     /// # Errors
-    /// Any writer refusal; nothing is written.
+    /// Any writer refusal, or [`super::E_NOTHING_TO_WRITE`] when there is
+    /// nothing at all to commit; nothing is written.
     pub async fn write(
         &self,
         project: &str,
         repo: PathBuf,
         files: Vec<NewFile>,
         message: String,
-    ) -> Result<Written, Refusal> {
+    ) -> Result<(Written, Regenerated), Refusal> {
         let pending = self.pending(project).await?;
         let (project_id, flush) = (project.to_string(), pending);
         let (written, built) = self
             .commit(repo, message, move |root, built| {
                 let mut files = files;
+                let regenerated = routes::regenerate(&root.worktree, &files);
+                files.extend(regenerated.file.clone());
+                built.routes = Some(regenerated);
                 files.extend(flush_files(
                     root,
                     &project_id,
@@ -506,11 +513,17 @@ impl DirectoryService {
                     &[],
                     &mut built.landed,
                 )?);
+                if files.is_empty() {
+                    return Err(Refusal::new(
+                        super::E_NOTHING_TO_WRITE,
+                        "nothing to write: ROUTES.md is current",
+                    ));
+                }
                 Ok(files)
             })
             .await?;
         self.flushed(&built.landed, &written).await?;
-        Ok(written)
+        Ok((written, built.routes.unwrap_or_default()))
     }
 
     /// Bind a live seat to an existing role: one holders commit, then the store
@@ -1203,6 +1216,7 @@ fn flush_files(
 struct Built {
     landed: Vec<Assignment>,
     row: Option<Assignment>,
+    routes: Option<Regenerated>,
     batch: Vec<(Assignment, Option<String>)>,
 }
 

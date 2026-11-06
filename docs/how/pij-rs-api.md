@@ -799,6 +799,12 @@ Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored
 
 Cost: a role send costs what an ordinary send costs, plus in-process reads (no launch) and one store write; a queued request adds one wake delivery; a drain one delivery per request, or one store write for a request its new holder sent. `pij requests` is one indexed store read per state (`role_requests_by_project`, `closed_role_requests_by_project`); `withdraw` is one write transaction. Nothing is launched. No timer or poll: the digest reads the queue once per nudge.
 
+### Time limits on role requests (plan 205)
+
+A role request with a limit (`--limit`, else the role's `default_limit`, C5; with neither, none) is checked inside the existing PA watchdog round, with no timer of its own. The clock starts at the later of the request's delivery and its holder's latest `report.now` card, so every card update restarts it; time spent queued for a holder does not count. Past the limit, the holder gets one check-in through the ordinary delivery path, with a cold wake audited as the watchdog does: write down what you have, update your card, and say why it needs longer. If a whole further limit passes after the check-in with no card update, the project's `pa` holder (else the prime) is told once. A holder that is no longer live cannot be checked in, so the PA is told as soon as the limit passes, with that reason. Nothing is ever stopped. Each step is first claimed (`limit_claim_at`, migration 0035) in one statement that also requires the request to be unanswered (`answered_at`, set by s06's outputs) and not yet told at that step, so an answer that lands mid-round wins and no two rounds send at once. The step's stamp (`checkin_at`, `escalated_at`) is written only once delivery admits the message (delivered, queued or held). When delivery refuses it, or there is nobody to tell, the claim is dropped and the next round tries again. Before sending, the attempt pins the seat it resolved (`limit_claim_target`). A claim left by a daemon that stopped mid-attempt expires after two minutes, and the retry first asks delivery whether the pinned seat already has the step's message (`role-limit-checkin-<id>` or `role-limit-notice-<id>`: a ledger row, delivery job or held FYI, as boot recovery reads). If it does, the retry only stamps; it never resolves a new recipient, so a PA that rotated meanwhile is not told twice. If it does not, the attempt never reached admission, and the retry resolves the recipient afresh.
+
+Cost per round: one indexed read of the open limited requests (delivered, limited, not escalated, not answered), plus one `LIMIT 1` card read per open request; a check-in or notice is one claim, one pin, one delivery and one stamp; a retry of a stopped daemon's claim adds up to two indexed admission probes. A notice with nobody to tell is retried each round, at one claim, one assignments read and one release per such request. No launch site and no timer.
+
 ## Governance route inventory
 
 All POST families below use argv/caller unless the typed alternative is named. Unknown leaves refuse; unsupported flags are not dropped. These are the daemon routes, not invented `/v1/report/<leaf>` endpoints.
@@ -825,7 +831,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/claims` | `claims [--project <slug>] [--open]` | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/delivered` | `delivered <pr> [--pm <seat>] [--project <slug>]` | — (`crates/daemon/tests/claims_http.rs`) |
@@ -919,7 +925,8 @@ also gets `memory/INDEX.md` and `outputs/`; an existing folder keeps its own.
 The commit message is `community: add role <id>` (or `community: import <n>
 roles`), then the `--why`, then `Pij-Seat` and `Pij-Project` trailers. The
 envelope returns `data.commit`, `data.paths` (repo-relative), `data.roles` as
-`[{id, path}]`, and for a single role `data.id` and `data.path`.
+`[{id, path}]`, for a single role `data.id` and `data.path`, and `data.routes`
+(see [Routing table](#routing-table-plan-202)).
 
 | Refusal | When | Next step in `details.next` |
 |---|---|---|
@@ -1108,6 +1115,58 @@ the human view's drift hint does the same. `guidance` states the PEC wording. Th
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
+
+### Routing table (plan 202)
+
+pij builds the routing table, "send it, don't do it", from every role's scope:
+one row per `scope.paths` entry and one per `scope.rules` entry, each sent to
+`role:<id>`, ordered by role id, paths first. It lives in
+`community/ROUTES.md`, which carries no holder names, so a change of holder never
+changes it. Two roles whose path claims can name one file (their literal path
+components agree up to where either ends or turns into a glob) give the warning
+`W-ROUTES-OVERLAP: <path> (role:<a>) overlaps <path> (role:<b>)`, listed under
+`## Overlaps` in the file.
+
+Every role write through the writer (`directory add` today) rewrites
+`ROUTES.md` in the same commit when its bytes change, so a regeneration is never
+a commit of its own. The first one replaces a hand-written `ROUTES.md`; the old
+text stays in the branch history. `data.routes` on the add carries `path`,
+`regenerated`, `added` and `removed` (rows as `{role, kind, what}`), `overlaps`
+and `prime`; overlap warnings are also in `data.warnings`.
+
+Delivery is one held FYI from `pij-bg`, never a wake:
+
+| Trigger | Who | What |
+|---|---|---|
+| a write changes rows | the project's prime (`projects.prime_id`, else the machine's current designated prime) | the added (`+`) and removed (`-`) rows and the commit |
+| `directory assign` lands (each seat of an `assign --batch` once) | the new holder | the table for that project, with live holders; `data.routes` on the assign (per seat for a batch) |
+| a `compact` control is admitted (`pij send <seat> --command compact`, `pij compact-self`; a compact the memory turn holds, when it runs) | the compacted seat | the table for each project it holds a role in |
+| `pij revive` relaunches a seat | the revived seat | the table for each project it holds a role in, else the project whose repo holds its folder |
+| `pij directory routes` | the caller | the table, in the reply |
+
+Assign and release never notify the prime. A seat in no project with roles, a
+project with no prime, or a prime that is not live gets nothing, and the receipt
+or the daemon log says why; a failed delivery never fails the assign, compact or
+revive. The compact's FYI is keyed to the compact's recipient and message id
+(`routes-after-compact:<seat>:<msg_id>`), and the FYI store holds an id once in
+any state, so replaying a compact request holds no second table, before or after
+the first is claimed, while another seat compacted with the same id still gets
+its own. Controls never carry FYIs, so the compact's FYI lands in the
+seat's first turn after the compact. Compactions the harness starts itself, or a person types,
+never reach the daemon and send nothing.
+
+`pij directory routes [--project <slug>]` returns `text` (the table with a Holder
+now column), `routes`, `overlaps`, `holders` and `stale` (whether `ROUTES.md`
+differs from the scopes). `--write --why <text>` rewrites a stale `ROUTES.md` in
+one writer commit (`community: routes`), returning `commit` and `written`; on a
+current file it writes nothing and says so. `--write` without `--why` refuses
+`E-RS-ARG`.
+
+Cost: regeneration adds no launch to the write that carries it; each delivery
+is a few store reads, an in-process read of the role documents and one held FYI,
+with no launch. `routes` without `--write` launches nothing. No timer or poll.
+
+Source: [`community/routes.rs`](../../crates/daemon/src/community/routes.rs), [`http/routes.rs`](../../crates/daemon/src/http/routes.rs).
 
 ### Role memory (plan 201)
 
