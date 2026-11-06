@@ -27,6 +27,7 @@
 | bp-0005 | AC5 | ph-00cb | BUILD | computational | BUILD: a many-holder role renders one holder per line; times show local with zone. | [ ] unchecked | — | — | crates/ |
 | bp-0006 | AC6: cost | ph-00cb | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | The view reads documents in-process and the store; it launches nothing. No timer or poll. | — | pij-rs --json ping |
 | bp-0007 | AC7: docs and states | ph-00cb | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0008 | AC8 | ph-00cb | BUILD | computational | BUILD: in a test project, each C28 condition (a recurring path with no owner, an idle role, an overloaded role, a step need) yields a prompt that names its signal; a prompt with no signal is impossible (the type requires it); the wording carries 'a role is not a seat' and says templates are examples. Docs-system verdict on the wording. | [ ] unchecked | — | — | crates/ |
 
 <a id="sensors"></a>
 
