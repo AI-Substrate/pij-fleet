@@ -63,7 +63,7 @@
         {
           "id": "ac-0005",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). One writer commit per output (about 9 launches: git 7, ddocs 2); notification is one delivery. No timer or poll.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
         {

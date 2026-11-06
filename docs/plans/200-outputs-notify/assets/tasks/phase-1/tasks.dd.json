@@ -84,7 +84,7 @@
           "id": "tk-0006",
           "title": "Cost receipts: spawn sites, private-daemon spawn deltas per verb, live before reading",
           "phase": "ph-00c8",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
           ],
