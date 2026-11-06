@@ -42,7 +42,7 @@ Example: `"delivers": ["../prds/001-daily-digest.dd.json#requirements/req-01"]`.
 ## States
 
 - Rows and steps start `planned`. The builder flips a row's state in the PR that delivers it (`in-progress`, then `shipped`; roadmap steps use `complete`), not in a later cleanup.
-- **Every PR body carries a `Delivers:` line** naming the full ddocs addresses it delivers, e.g. `Delivers: docs/project/prds/001-pij-community.dd.json#requirements/req-20, docs/project/roadmaps/001-pij-community.dd.json#steps/s11` A PR that delivers no row says `Delivers: none`.
+- **Every PR body carries a `Delivers:` line** naming the full ddocs addresses it delivers, e.g. `Delivers: docs/project/prds/001-pij-community.dd.json#requirements/req-20, docs/project/roadmaps/001-pij-community.dd.json#steps/s11`. A PR that delivers no row says `Delivers: none`.
 - **After the merge, the merger runs `pij delivered <pr>` once.** It records the delivery, posts it on the PM's card and prints the `ddocs set` edits (`delivered_by` and a step's `plan`); the PM puts them in its next docs PR. pij never edits or pushes these files itself.
 - Rows are amended, never deleted. To drop one, set its state to `dropped` (steps: `abandoned`) and say why in its `note`.
 - Ids are never reused. A new requirement takes the next free `req-NN`, even after a drop.
