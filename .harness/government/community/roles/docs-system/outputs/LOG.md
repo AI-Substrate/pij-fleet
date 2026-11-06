@@ -29,3 +29,4 @@
 2026-11-06 note dogfood-s05 dc9f2e4 done — s05 role sends: header ok; fyi to pm-001 delivered; security refuses listing both (advice loops, F52); scratch s05-probe queued + PA woken, drained by self-assign, released; F52-F59; PA wake text pending
 2026-11-06 deliverable pr:146 9f6282da6900749be27cc83ebc463c36b73cf263 opened — D-WB-45..58 (F47-F60): F47 follow-up, F48-51 plan 209, F52-60 plan 212 (F60 proposed)
 2026-11-06 note dogfood-s05 - updated — drain cause (pm-001): self-send refusal stranded request 01a1b003 as queued; F61 (medium, plan 212), for the next ledger PR
+2026-11-06 verdict pr:141 bfc5c54fb41e9a922e30b0863c2829ee13fd4eb2 pass — wording delta: two truths, memory at the boundary, call_on positional form, C30 attributions and 'searchable' all fixed; PRD 0/0
