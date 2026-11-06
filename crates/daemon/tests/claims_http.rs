@@ -85,13 +85,19 @@ fn git(dir: &Path, args: &[&str]) -> String {
         .env_remove("GIT_INDEX_FILE")
         .output()
         .expect("git");
-    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     String::from_utf8(output.stdout).unwrap()
 }
 
 fn document(sections: Value) -> String {
-    serde_json::to_string_pretty(&json!({"dd": {"schema": "x"}, "sections": sections, "references": []}))
-        .unwrap()
+    serde_json::to_string_pretty(
+        &json!({"dd": {"schema": "x"}, "sections": sections, "references": []}),
+    )
+    .unwrap()
 }
 
 /// A main checkout holding numbered folders, a PRD and a roadmap, committed.
@@ -181,7 +187,13 @@ async fn rig(name: &str, prs: Vec<(u64, PullRequest)>) -> Rig {
         .call(
             CODER,
             "/v1/project",
-            &["project", "create", "demo", "--repo", rig.main.to_str().unwrap()],
+            &[
+                "project",
+                "create",
+                "demo",
+                "--repo",
+                rig.main.to_str().unwrap(),
+            ],
         )
         .await;
     assert_eq!(created["ok"], true, "{created}");
@@ -238,7 +250,11 @@ async fn claims_take_numbers_after_the_checkout_list_and_release_by_owner() {
     assert_eq!(plan["data"]["seat"], CODER.0);
     assert_eq!(plan["data"]["project"], "demo");
     let migration = rig
-        .call(OTHER, "/v1/claim", &["claim", "migration", "--for", "m", "--project", "demo"])
+        .call(
+            OTHER,
+            "/v1/claim",
+            &["claim", "migration", "--for", "m", "--project", "demo"],
+        )
         .await;
     assert_eq!(migration["data"]["formatted"], "0033", "{migration}");
 
@@ -252,7 +268,11 @@ async fn claims_take_numbers_after_the_checkout_list_and_release_by_owner() {
         .await;
     assert_eq!(refused["details"]["code"], "E-RS-OWNERSHIP", "{refused}");
     let released = rig
-        .call(CODER, "/v1/claim", &["claim", "release", "plan", "196", "--why", "dropped"])
+        .call(
+            CODER,
+            "/v1/claim",
+            &["claim", "release", "plan", "196", "--why", "dropped"],
+        )
         .await;
     assert_eq!(released["ok"], true, "{released}");
     assert_eq!(released["data"]["release_reason"], "dropped");
@@ -263,23 +283,42 @@ async fn claims_take_numbers_after_the_checkout_list_and_release_by_owner() {
     let next = rig
         .call(CODER, "/v1/claim", &["claim", "plan", "--for", "next"])
         .await;
-    assert_eq!(next["data"]["number"], 197, "a released number stays burned");
+    assert_eq!(
+        next["data"]["number"], 197,
+        "a released number stays burned"
+    );
     let open = rig.call(CODER, "/v1/claims", &["claims", "--open"]).await;
-    assert_eq!(open["data"]["claims"].as_array().unwrap().len(), 2, "{open}");
+    assert_eq!(
+        open["data"]["claims"].as_array().unwrap().len(),
+        2,
+        "{open}"
+    );
 
     for (argv, code) in [
         (vec!["claim", "Plan", "--for", "x"], "E-RS-ARG"),
         (vec!["claim", "release", "--for", "x"], "E-RS-ARG"),
         (vec!["claim", "plan"], "E-RS-ARG"),
         (vec!["claim", "plan", "--for", "x", "--pm", "y"], "E-RS-ARG"),
-        (vec!["claim", "release", "plan", "999"], "E-RS-CLAIM-UNKNOWN"),
+        (
+            vec!["claim", "release", "plan", "999"],
+            "E-RS-CLAIM-UNKNOWN",
+        ),
     ] {
         let refused = rig.call(CODER, "/v1/claim", &argv).await;
         assert_eq!(refused["details"]["code"], code, "{argv:?}: {refused}");
     }
     let help = rig.call(CODER, "/v1/claims", &["claims", "--help"]).await;
-    assert!(help["data"]["help"].as_str().unwrap().contains("pij delivered <pr>"));
-    assert_eq!(rig.gh.calls.load(Ordering::SeqCst), 0, "claims never read gh");
+    assert!(
+        help["data"]["help"]
+            .as_str()
+            .unwrap()
+            .contains("pij delivered <pr>")
+    );
+    assert_eq!(
+        rig.gh.calls.load(Ordering::SeqCst),
+        0,
+        "claims never read gh"
+    );
 }
 
 fn body() -> String {
@@ -307,7 +346,11 @@ async fn delivered_records_once_prints_edits_and_posts_on_the_pm_card() {
     )
     .await;
     let migration = rig
-        .call(CODER, "/v1/claim", &["claim", "migration", "--for", "claims"])
+        .call(
+            CODER,
+            "/v1/claim",
+            &["claim", "migration", "--for", "claims"],
+        )
         .await;
     assert_eq!(migration["data"]["formatted"], "0033", "{migration}");
 
@@ -361,16 +404,30 @@ async fn delivered_records_once_prints_edits_and_posts_on_the_pm_card() {
         .await;
     assert_eq!(open["details"]["code"], "E-RS-PR-NOT-MERGED", "{open}");
     for number in ["132", "133"] {
-        let missing = rig.call(OTHER, "/v1/delivered", &["delivered", number]).await;
+        let missing = rig
+            .call(OTHER, "/v1/delivered", &["delivered", number])
+            .await;
         assert_eq!(missing["details"]["code"], "E-RS-DELIVERS", "{missing}");
     }
     let nobody = rig
-        .call(OTHER, "/v1/delivered", &["delivered", "130", "--pm", "pij-nobody"])
+        .call(
+            OTHER,
+            "/v1/delivered",
+            &["delivered", "130", "--pm", "pij-nobody"],
+        )
         .await;
     assert_eq!(nobody["details"]["code"], "E-RS-NOT-FOUND", "{nobody}");
 
-    assert_eq!(rig.gh.calls.load(Ordering::SeqCst), 5, "one gh read per call that got that far");
-    assert_eq!(git(&rig.main, &["status", "--porcelain"]), "", "no project file changed");
+    assert_eq!(
+        rig.gh.calls.load(Ordering::SeqCst),
+        5,
+        "one gh read per call that got that far"
+    );
+    assert_eq!(
+        git(&rig.main, &["status", "--porcelain"]),
+        "",
+        "no project file changed"
+    );
 }
 
 #[tokio::test]
@@ -379,7 +436,12 @@ async fn delivered_posts_on_the_live_pm_holder_and_without_one_says_nobody_was_t
         "pij-delivered-holder",
         vec![
             pr(140, "MERGED", &body(), &FILES),
-            pr(141, "MERGED", &format!("Delivers: {PRD}#requirements/req-21"), &FILES),
+            pr(
+                141,
+                "MERGED",
+                &format!("Delivers: {PRD}#requirements/req-21"),
+                &FILES,
+            ),
         ],
     )
     .await;
@@ -413,15 +475,23 @@ async fn delivered_posts_on_the_live_pm_holder_and_without_one_says_nobody_was_t
     assert_eq!(held["ok"], true, "{held}");
     assert_eq!(held["data"]["pm"], HOLDER.0);
     assert_eq!(held["data"]["pm_source"], "holder");
-    assert!(held["data"]["notes"][0].as_str().unwrap().contains("--pm"), "{held}");
+    assert!(
+        held["data"]["notes"][0].as_str().unwrap().contains("--pm"),
+        "{held}"
+    );
     assert_eq!(rig.card(HOLDER.0).await["data"]["deliveries"][0]["pr"], 140);
 
     // req-21 alone names no roadmap step, so no holder applies and no --pm was given.
-    let untold = rig.call(OTHER, "/v1/delivered", &["delivered", "141"]).await;
+    let untold = rig
+        .call(OTHER, "/v1/delivered", &["delivered", "141"])
+        .await;
     assert_eq!(untold["ok"], true, "{untold}");
     assert_eq!(untold["data"]["pm"], Value::Null);
     assert!(
-        untold["data"]["line"].as_str().unwrap().contains("no PM was told"),
+        untold["data"]["line"]
+            .as_str()
+            .unwrap()
+            .contains("no PM was told"),
         "{untold}"
     );
 }

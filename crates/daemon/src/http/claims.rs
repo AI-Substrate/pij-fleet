@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use pij_core::claims::{self, Address, Edit};
 use pij_core::model::{Envelope, ErrorKind, SeatId};
-use pij_store::{DeliveryRecord, ReleaseOutcome};
+use pij_store::{ClaimKey, DeliveryRecord, ReleaseOutcome};
 use serde_json::{Value, json};
 
 use super::directory::project_and_repo;
@@ -177,9 +177,7 @@ async fn claim(
         .await
         .map_err(store_refusal)?;
     let formatted = claims::format(kind, claim.number);
-    let line = format!(
-        "{kind} {formatted} claimed by {actor} for {subject:?} in {project}"
-    );
+    let line = format!("{kind} {formatted} claimed by {actor} for {subject:?} in {project}");
     let mut data = serde_json::to_value(&claim).expect("a claim serialises");
     data["formatted"] = json!(formatted);
     data["floor"] = json!(floor);
@@ -210,7 +208,17 @@ async fn release(
         .services
         .governance
         .store()
-        .release_claim(&project, kind, number, actor, prime.as_ref(), &reason, now()?)
+        .release_claim(
+            &ClaimKey {
+                project: project.clone(),
+                kind: kind.clone(),
+                number,
+            },
+            actor,
+            prime.as_ref(),
+            &reason,
+            now()?,
+        )
         .await
         .map_err(store_refusal)?;
     let named = format!("{kind} {} in {project}", claims::format(kind, number));
@@ -265,7 +273,10 @@ async fn list(state: &AppState, caller: &CallerContext, args: &[String]) -> Resu
             row
         })
         .collect();
-    let open = rows.iter().filter(|claim| claim.released_at.is_none()).count();
+    let open = rows
+        .iter()
+        .filter(|claim| claim.released_at.is_none())
+        .count();
     Ok(json!({"project": project, "open": open, "claims": claims}))
 }
 
@@ -307,10 +318,12 @@ async fn delivered(
         )
         .with_next("Run `pij delivered` after the merge, once."));
     }
-    let merge_commit = pull
-        .merge_commit
-        .clone()
-        .ok_or_else(|| Refusal::new(E_GH, format!("PR #{number} is merged but gh named no merge commit")))?;
+    let merge_commit = pull.merge_commit.clone().ok_or_else(|| {
+        Refusal::new(
+            E_GH,
+            format!("PR #{number} is merged but gh named no merge commit"),
+        )
+    })?;
     let addresses = claims::delivers(&pull.body)
         .map_err(|error| Refusal::new(E_DELIVERS, format!("PR #{number}: {error}")))?;
 
@@ -330,9 +343,10 @@ async fn delivered(
             "--pm {flag} not used: {told} holds the PM role for this roadmap"
         ));
     }
-    let releases: Vec<(String, u64)> = claims::numbers_in_paths(pull.files.iter().map(String::as_str))
-        .into_iter()
-        .collect();
+    let releases: Vec<(String, u64)> =
+        claims::numbers_in_paths(pull.files.iter().map(String::as_str))
+            .into_iter()
+            .collect();
     let edits = edits(&repo, &pull, &addresses, &mut notes);
 
     let record = DeliveryRecord {
@@ -442,7 +456,12 @@ async fn live_seat(state: &AppState, seat: &str) -> Result<Option<SeatId>, Refus
 /// The `ddocs set` edits for the PM's next docs PR: each requirement's
 /// `delivered_by` gains this PR, and each step's `plan` names the PR's plan
 /// folder. Current values are read in-process from the project's checkout.
-fn edits(repo: &Path, pull: &PullRequest, addresses: &[Address], notes: &mut Vec<String>) -> Vec<Edit> {
+fn edits(
+    repo: &Path,
+    pull: &PullRequest,
+    addresses: &[Address],
+    notes: &mut Vec<String>,
+) -> Vec<Edit> {
     let plans = claims::plan_folders(pull.files.iter().map(String::as_str));
     let mut edits = Vec::new();
     for address in addresses {
@@ -457,27 +476,35 @@ fn edits(repo: &Path, pull: &PullRequest, addresses: &[Address], notes: &mut Vec
             ));
         }
         let current = |field: &str| {
-            document
-                .as_ref()
-                .and_then(|document| claims::row_field(document, &address.section, &address.id, field))
+            document.as_ref().and_then(|document| {
+                claims::row_field(document, &address.section, &address.id, field)
+            })
         };
         match address.section.as_str() {
             "requirements" => {
                 match claims::delivered_by(current("delivered_by").as_deref(), pull.number) {
                     Some(value) => edits.push(Edit::set(address, "delivered_by", value)),
-                    None => notes.push(format!("{address}: delivered_by already names #{}", pull.number)),
+                    None => notes.push(format!(
+                        "{address}: delivered_by already names #{}",
+                        pull.number
+                    )),
                 }
             }
             "steps" => match plans.iter().collect::<Vec<_>>().as_slice() {
                 [plan] if current("plan").as_deref() == Some(plan.as_str()) => {}
                 [plan] => edits.push(Edit::set(address, "plan", (*plan).clone())),
-                [] => notes.push(format!("{address}: the PR touches no docs/plans/NNN-* folder; set its plan by hand")),
+                [] => notes.push(format!(
+                    "{address}: the PR touches no docs/plans/NNN-* folder; set its plan by hand"
+                )),
                 _ => notes.push(format!(
                     "{address}: the PR touches several plan folders ({}); set its plan by hand",
                     plans.iter().cloned().collect::<Vec<_>>().join(", ")
                 )),
             },
-            _ => notes.push(format!("{address}: recorded; no edit is printed for a {} row", address.section)),
+            _ => notes.push(format!(
+                "{address}: recorded; no edit is printed for a {} row",
+                address.section
+            )),
         }
     }
     edits
@@ -569,7 +596,11 @@ mod tests {
                 .message,
             "--for requires a value"
         );
-        assert!(Arguments::parse(&argv(&["--open"]), &CLAIMS_FLAGS, "u").unwrap().open);
+        assert!(
+            Arguments::parse(&argv(&["--open"]), &CLAIMS_FLAGS, "u")
+                .unwrap()
+                .open
+        );
         assert!(Arguments::parse(&argv(&["--open"]), &CLAIM_FLAGS, "u").is_err());
     }
 

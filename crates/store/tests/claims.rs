@@ -5,7 +5,15 @@ mod support;
 
 use pij_core::model::{Harness, SeatDescriptor, SeatId};
 use pij_core::ports::Registry;
-use pij_store::{DeliveryRecord, ReleaseOutcome, SqliteOrchestration, SqliteRegistry};
+use pij_store::{ClaimKey, DeliveryRecord, ReleaseOutcome, SqliteOrchestration, SqliteRegistry};
+
+fn key(number: u64) -> ClaimKey {
+    ClaimKey {
+        project: "pij".into(),
+        kind: "plan".into(),
+        number,
+    }
+}
 use pij_testkit::FreshStore;
 
 async fn store() -> (FreshStore, SqliteOrchestration, SqliteRegistry) {
@@ -88,16 +96,25 @@ async fn claims_release_by_owner_or_prime_and_a_released_number_is_never_reissue
         SeatId::from("pij-b"),
         SeatId::from("pij-prime"),
     );
-    let mine = store.claim_number("pij", "plan", &a, "x", 0, 1).await.unwrap();
-    let theirs = store.claim_number("pij", "plan", &b, "y", 0, 2).await.unwrap();
-
-    let refused = store
-        .release_claim("pij", "plan", mine.number, &b, None, "mine now", 3)
+    let mine = store
+        .claim_number("pij", "plan", &a, "x", 0, 1)
         .await
         .unwrap();
-    assert!(matches!(refused, ReleaseOutcome::NotOwner(_)), "{refused:?}");
+    let theirs = store
+        .claim_number("pij", "plan", &b, "y", 0, 2)
+        .await
+        .unwrap();
+
+    let refused = store
+        .release_claim(&key(mine.number), &b, None, "mine now", 3)
+        .await
+        .unwrap();
+    assert!(
+        matches!(refused, ReleaseOutcome::NotOwner(_)),
+        "{refused:?}"
+    );
     let released = store
-        .release_claim("pij", "plan", mine.number, &a, None, "abandoned", 4)
+        .release_claim(&key(mine.number), &a, None, "abandoned", 4)
         .await
         .unwrap();
     let ReleaseOutcome::Released(claim) = released else {
@@ -106,34 +123,37 @@ async fn claims_release_by_owner_or_prime_and_a_released_number_is_never_reissue
     assert_eq!(claim.release_reason.as_deref(), Some("abandoned"));
     assert!(matches!(
         store
-            .release_claim("pij", "plan", mine.number, &a, None, "again", 5)
+            .release_claim(&key(mine.number), &a, None, "again", 5)
             .await
             .unwrap(),
         ReleaseOutcome::AlreadyReleased(_)
     ));
     assert_eq!(
         store
-            .release_claim("pij", "plan", 99, &a, None, "none", 5)
+            .release_claim(&key(99), &a, None, "none", 5)
             .await
             .unwrap(),
         ReleaseOutcome::Unknown
     );
     assert!(matches!(
         store
-            .release_claim("pij", "plan", theirs.number, &a, Some(&prime), "x", 6)
+            .release_claim(&key(theirs.number), &a, Some(&prime), "x", 6)
             .await
             .unwrap(),
         ReleaseOutcome::NotOwner(_)
     ));
     assert!(matches!(
         store
-            .release_claim("pij", "plan", theirs.number, &prime, Some(&prime), "prime", 6)
+            .release_claim(&key(theirs.number), &prime, Some(&prime), "prime", 6)
             .await
             .unwrap(),
         ReleaseOutcome::Released(_)
     ));
 
-    let next = store.claim_number("pij", "plan", &a, "z", 0, 7).await.unwrap();
+    let next = store
+        .claim_number("pij", "plan", &a, "z", 0, 7)
+        .await
+        .unwrap();
     assert_eq!(next.number, 3, "released numbers stay burned");
     let listed = store.claims("pij").await.unwrap();
     assert_eq!(
@@ -149,17 +169,27 @@ async fn claims_release_by_owner_or_prime_and_a_released_number_is_never_reissue
 async fn tombstoning_the_claiming_seat_releases_its_open_claims() {
     let (_fresh, store, registry) = store().await;
     let (a, b) = (SeatId::from("pij-a"), SeatId::from("pij-b"));
-    store.claim_number("pij", "plan", &a, "x", 0, 1).await.unwrap();
+    store
+        .claim_number("pij", "plan", &a, "x", 0, 1)
+        .await
+        .unwrap();
     store
         .claim_number("pij", "migration", &a, "y", 0, 1)
         .await
         .unwrap();
-    store.claim_number("pij", "plan", &b, "z", 0, 1).await.unwrap();
+    store
+        .claim_number("pij", "plan", &b, "z", 0, 1)
+        .await
+        .unwrap();
     registry.tombstone(&a, "owner-close").await.unwrap();
     let claims = store.claims("pij").await.unwrap();
     for claim in &claims {
         if claim.seat == "pij-a" {
-            assert_eq!(claim.release_reason.as_deref(), Some("seat-closed"), "{claim:?}");
+            assert_eq!(
+                claim.release_reason.as_deref(),
+                Some("seat-closed"),
+                "{claim:?}"
+            );
             assert!(claim.released_at.is_some());
         } else {
             assert_eq!(claim.released_at, None, "{claim:?}");
@@ -172,7 +202,10 @@ async fn tombstoning_the_claiming_seat_releases_its_open_claims() {
 async fn deliveries_record_once_release_named_claims_and_reach_the_pm_card() {
     let (_fresh, store, _) = store().await;
     let a = SeatId::from("pij-a");
-    let plan = store.claim_number("pij", "plan", &a, "x", 195, 1).await.unwrap();
+    let plan = store
+        .claim_number("pij", "plan", &a, "x", 195, 1)
+        .await
+        .unwrap();
     let record = DeliveryRecord {
         project: "pij".into(),
         pr: 130,
@@ -190,10 +223,16 @@ async fn deliveries_record_once_release_named_claims_and_reach_the_pm_card() {
     assert_eq!(first.recorded.len(), 2);
     assert!(first.already.is_empty());
     assert_eq!(first.released.len(), 1);
-    assert_eq!(first.released[0].release_reason.as_deref(), Some("delivered #130"));
+    assert_eq!(
+        first.released[0].release_reason.as_deref(),
+        Some("delivered #130")
+    );
     assert_eq!(first.events.len(), 1);
     assert_eq!(first.events[0].kind, "delivered");
-    assert_eq!(first.events[0].seat.as_ref().map(SeatId::as_str), Some("pij-b"));
+    assert_eq!(
+        first.events[0].seat.as_ref().map(SeatId::as_str),
+        Some("pij-b")
+    );
     assert!(first.events[0].seq.is_some());
 
     let again = store.record_delivery_committed(&record).await.unwrap();
@@ -216,5 +255,11 @@ async fn deliveries_record_once_release_named_claims_and_reach_the_pm_card() {
         [133, 132, 131]
     );
     assert_eq!(card[0].addresses.len(), 2);
-    assert!(store.deliveries_for_pm("pij-a", 3).await.unwrap().is_empty());
+    assert!(
+        store
+            .deliveries_for_pm("pij-a", 3)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

@@ -6,11 +6,11 @@
 pub mod anomalies;
 mod auth;
 mod background;
+mod claims;
 mod client;
 mod codex_caller;
 pub(crate) mod cold_wake;
 pub mod decisions;
-mod claims;
 mod directory;
 mod double_seat;
 mod exposure;

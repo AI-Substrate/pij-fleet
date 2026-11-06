@@ -146,7 +146,8 @@ fn failure(stderr: &str) -> Refusal {
     let said = stderr.trim();
     let lower = said.to_ascii_lowercase();
     if lower.contains("gh auth login") || lower.contains("authentication") {
-        return Refusal::new(E_GH_AUTH, format!("gh is not signed in: {said}")).with_next(AUTH_STEP);
+        return Refusal::new(E_GH_AUTH, format!("gh is not signed in: {said}"))
+            .with_next(AUTH_STEP);
     }
     Refusal::new(E_GH, format!("gh pr view failed: {said}"))
 }
@@ -248,7 +249,9 @@ mod tests {
 
     #[test]
     fn pij_gh_wins_over_path_and_must_be_an_absolute_executable() {
-        let root = pij_testkit::fresh_dir("pij-gh-resolve").canonicalize().unwrap();
+        let root = pij_testkit::fresh_dir("pij-gh-resolve")
+            .canonicalize()
+            .unwrap();
         let on_path = tool(&root.join("bin"), "gh", "#!/bin/sh\n");
         let chosen = tool(&root.join("pinned"), "gh-pinned", "#!/bin/sh\n");
         let path = std::env::join_paths([root.join("bin")]).unwrap();
@@ -276,7 +279,9 @@ mod tests {
 
     #[test]
     fn a_launched_gh_is_read_and_its_refusals_are_named() {
-        let root = pij_testkit::fresh_dir("pij-gh-launch").canonicalize().unwrap();
+        let root = pij_testkit::fresh_dir("pij-gh-launch")
+            .canonicalize()
+            .unwrap();
         let ok = tool(
             &root.join("ok"),
             "gh",
@@ -299,7 +304,10 @@ mod tests {
             "gh",
             "#!/bin/sh\necho 'GraphQL: Could not resolve to a PullRequest' >&2\nexit 1\n",
         );
-        assert_eq!(Gh::Found(gone).view(&root, 7).expect_err("no PR").code, E_GH);
+        assert_eq!(
+            Gh::Found(gone).view(&root, 7).expect_err("no PR").code,
+            E_GH
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

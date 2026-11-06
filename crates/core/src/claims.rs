@@ -102,7 +102,7 @@ pub fn number_in_name(kind: &str, name: &str) -> Option<u64> {
     if !digits.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    if name[width..].chars().next() != Some(separator) {
+    if !name[width..].starts_with(separator) {
         return None;
     }
     digits.parse().ok()
@@ -429,7 +429,10 @@ mod tests {
             row_field(&document, "requirements", "req-20", "delivered_by").as_deref(),
             Some("#110")
         );
-        assert_eq!(row_field(&document, "requirements", "req-21", "delivered_by"), None);
+        assert_eq!(
+            row_field(&document, "requirements", "req-21", "delivered_by"),
+            None
+        );
         assert_eq!(row_field(&document, "steps", "s11", "plan"), None);
         let address = Address::parse("docs/x.dd.json#requirements/req-20").unwrap();
         let edit = Edit::set(&address, "delivered_by", "#110, #121".to_string());

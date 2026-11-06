@@ -432,10 +432,10 @@ answer = "Permanent readers consume stable complete v2 envelopes, daemon-owned a
 
 [[fixture]]
 path = "golden/api/state-card.json"
-sha256 = "b9aa0bdc727beb7d7b2069459b52a471f19736792b61aa32dc0e178c8c439b50"
-bytes = 2865
-note = "RECORDED by crates/daemon/src/http/card_tests.rs (the_card_wire_shape_matches_the_committed_golden) from a deterministic in-process daemon: fixed event times, no session, no process. Plan 188 added stateNoteAt and stateNoteSeq; every other key is main's card unchanged. Re-record with UPDATE_GOLDENS=1 and review the diff."
-answer = "One seat's POST /v1/state card (and its GET /v1/cards entry, the same function). stateNoteAt/stateNoteSeq are the report.state record's own time and cursor, present exactly when stateNote is; statusAt/statusSeq cite the newer card. A released hold is not in held."
+sha256 = "4ae97927a225fbed3232a80e4b6fa014565d6b605578ce97b57936a3b7afad28"
+bytes = 2885
+note = "RECORDED by crates/daemon/src/http/card_tests.rs (the_card_wire_shape_matches_the_committed_golden) from a deterministic in-process daemon: fixed event times, no session, no process. Plan 188 added stateNoteAt and stateNoteSeq; plan 196 added deliveries; every other key is main's card unchanged. Re-record with UPDATE_GOLDENS=1 and review the diff."
+answer = "One seat's POST /v1/state card (and its GET /v1/cards entry, the same function). stateNoteAt/stateNoteSeq are the report.state record's own time and cursor, present exactly when stateNote is; statusAt/statusSeq cite the newer card. A released hold is not in held. deliveries lists the PRs whose `pij delivered` named this seat as PM, [] when none."
 
 [[fixture]]
 path = "golden/api/governance-events.json"

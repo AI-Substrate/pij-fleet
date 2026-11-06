@@ -21,7 +21,7 @@ mod role_assertion;
 pub mod spine;
 pub mod status;
 
-pub use claims::{Claim, DeliveryCommit, DeliveryNote, DeliveryRecord, ReleaseOutcome};
+pub use claims::{Claim, ClaimKey, DeliveryCommit, DeliveryNote, DeliveryRecord, ReleaseOutcome};
 pub use community::{Assignment, AssignmentCommit, CommunityPointer};
 pub use governance::GovernanceOutcome;
 pub use migrate::{SCHEMA_VERSION, StorePool, open, require_current_schema, schema_version};

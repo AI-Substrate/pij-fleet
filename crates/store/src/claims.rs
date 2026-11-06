@@ -49,6 +49,17 @@ pub struct Claim {
     pub release_reason: Option<String>,
 }
 
+/// One claim's key: (project, kind, number).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClaimKey {
+    /// The project slug.
+    pub project: String,
+    /// The kind.
+    pub kind: String,
+    /// The number.
+    pub number: u64,
+}
+
 /// The outcome of a release request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReleaseOutcome {
@@ -144,13 +155,14 @@ impl SqliteOrchestration {
         let floor = sql_i64(floor, "the checkout floor")?;
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            let highest: Option<i64> =
-                sqlx::query_scalar("SELECT MAX(number) FROM claims WHERE project = ?1 AND kind = ?2")
-                    .bind(&project)
-                    .bind(&kind)
-                    .fetch_one(&mut *tx)
-                    .await
-                    .map_err(adapter_error)?;
+            let highest: Option<i64> = sqlx::query_scalar(
+                "SELECT MAX(number) FROM claims WHERE project = ?1 AND kind = ?2",
+            )
+            .bind(&project)
+            .bind(&kind)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
             let number = highest.unwrap_or(0).max(floor) + 1;
             sqlx::query(
                 "INSERT INTO claims (project, kind, number, seat, subject, claimed_at) \
@@ -185,9 +197,7 @@ impl SqliteOrchestration {
     /// (`project_prime`) or a designated prime may.
     pub async fn release_claim(
         &self,
-        project: &str,
-        kind: &str,
-        number: u64,
+        key: &ClaimKey,
         actor: &SeatId,
         project_prime: Option<&SeatId>,
         reason: &str,
@@ -195,7 +205,12 @@ impl SqliteOrchestration {
     ) -> Result<ReleaseOutcome> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
-        let (project, kind, reason) = (project.to_string(), kind.to_string(), reason.to_string());
+        let ClaimKey {
+            project,
+            kind,
+            number,
+        } = key.clone();
+        let reason = reason.to_string();
         let actor = actor.clone();
         let prime = project_prime.cloned();
         let number = sql_i64(number, "number")?;
@@ -250,7 +265,10 @@ impl SqliteOrchestration {
     /// named open claims, and append one `delivered` event (seat = the PM)
     /// when anything new was recorded. Hold the bus's publication boundary
     /// around this call and broadcast the returned events.
-    pub async fn record_delivery_committed(&self, record: &DeliveryRecord) -> Result<DeliveryCommit> {
+    pub async fn record_delivery_committed(
+        &self,
+        record: &DeliveryRecord,
+    ) -> Result<DeliveryCommit> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let record = record.clone();
@@ -375,7 +393,9 @@ impl SqliteOrchestration {
                 merge_commit: row.try_get("merge_commit").map_err(adapter_error)?,
                 addresses: vec![address],
                 recorded_by: row.try_get("recorded_by").map_err(adapter_error)?,
-                recorded_at: row.try_get::<i64, _>("recorded_at").map_err(adapter_error)? as u64,
+                recorded_at: row
+                    .try_get::<i64, _>("recorded_at")
+                    .map_err(adapter_error)? as u64,
             });
         }
         Ok(notes)

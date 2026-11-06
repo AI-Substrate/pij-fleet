@@ -186,7 +186,9 @@ pub(crate) fn resolve_tool(
     if Path::new(&found).is_absolute() {
         Ok(PathBuf::from(found))
     } else {
-        Err(format!("{name} is not on the daemon's PATH and {env} is unset"))
+        Err(format!(
+            "{name} is not on the daemon's PATH and {env} is unset"
+        ))
     }
 }
 
