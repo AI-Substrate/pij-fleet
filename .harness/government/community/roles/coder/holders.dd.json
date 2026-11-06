@@ -144,6 +144,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "plan 211 registration attempts (#145)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T08:44:43.213Z",
+					"harness": "copilot",
+					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
+					"instance_key": "213",
+					"machine": "ops.osk.lan",
+					"seat": "pij-following-marsupial",
+					"why": "plan 213 shim forwards community verbs (prime 18:43)"
 				}
 			]
 		}
