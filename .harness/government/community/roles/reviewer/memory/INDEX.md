@@ -65,5 +65,6 @@
 - [2026-11-06 PR 137 output identity review 4ab6460](2026-11-06-pr-137-output-identity-review-4ab6460.dd.md): When output paths or notification IDs cross project and delivery boundaries, verify the owning key namespace and dedupe behavior. (reviewer, outputs, identity, notifications, ci)
 - [2026-11-06 PR 147 forwarding repair 5c8ff97](2026-11-06-pr-147-forwarding-repair-5c8ff97.dd.md): Before changing a shim fast path, preserve clap-bound arity, verified paneless admission and global-option parity. (reviewer, shim, identity, repair, ci)
 - [2026-11-06 PR 147 shim forwarding boundaries 29488ca](2026-11-06-pr-147-shim-forwarding-boundaries-29488ca.dd.md): When a CLI bypasses routed registration, check native flag arity and a paneless child inheriting its parent seat ID. (reviewer, shim, identity, forwarding, ci)
+- [2026-11-06 Reviewer LOG single append needs no window](2026-11-06-reviewer-log-single-append-needs-no-window.dd.md): Before writing a reviewer verdict LOG line or requesting ledger serialization. (review, ledger, coordination)
 - [2026-11-06 Role lifecycle boundaries and scoped actions](2026-11-06-role-lifecycle-boundaries-and-scoped-actions.dd.md): Before reviewing role retirement, queued-admission recovery, or generated directory repair commands. (review, lifecycle, recovery, project-scope)
 <!-- /pij:generated -->
