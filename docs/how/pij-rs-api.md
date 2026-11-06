@@ -58,7 +58,18 @@ the processes this daemon has launched since it started, by `<program>.<site>`
 operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...); the
 `by_op` values sum to `total` (plan 180). `data.pid` is the daemon's own process
 id (plan 190): the spawn counter resets on restart, so two readings compare only
-when their pids match. `data.ddocs` is the ddocs path the daemon resolved once at
+when their pids match. `data.registrations:{total,ps,by_key,by_seat}` counts registration
+attempts since start (plan 211, issue #145): `by_key` is per
+`<path>.<mode>.<outcome>` with `{count,ps}`, where `ps` is the ancestry `ps`
+reads those attempts paid. `path` is the client's advisory `attempt` on
+`/v1/register` (`explicit`, `receive`, `heartbeat`, `shim`, `lease-retry`;
+`unspecified` when absent, `other` when unknown) or the daemon caller (`adopt`,
+`claude-bind`, `codex-bind`); `mode` is `pane` or `paneless`; `outcome` is
+`new`, `rebound`, `unchanged`, `refused`, `retired`, `retryable`,
+`session-hold`, `holder-current` or `error`. `by_seat` is per address (the
+resolved seat, else the claimed id, else `(unnamed)`), at most 64 of them, the
+rest under `(other)`. The counters are in-process: no launch, event or store
+write per attempt, and nothing reads them to decide anything. `data.ddocs` is the ddocs path the daemon resolved once at
 start (`PIJ_DDOCS`, which must be absolute, else PATH), or `null` when it found
 none; `just doctor` prints it. A relative or empty PATH entry is taken relative
 to the daemon's directory at start, so the kept path is always absolute. `data.gh` is

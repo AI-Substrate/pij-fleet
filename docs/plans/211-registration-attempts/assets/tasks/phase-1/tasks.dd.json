@@ -18,7 +18,75 @@
     },
     {
       "name": "tasks",
-      "value": []
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Counters: in-process registration attempts by path, mode and outcome, with ancestry ps reads, per seat (bounded), in ping beside spawns",
+          "phase": "ph-00d3",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "notes": "registration/attempts.rs; RegistrationService::register_via; advisory attempt on /v1/register; claude/codex bind and adopt name their paths."
+        },
+        {
+          "id": "tk-0002",
+          "title": "Clients label attempts: the Copilot extension (explicit, receive, heartbeat, lease-retry) and the shim's paneless preflight (shim)",
+          "phase": "ph-00d3",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "notes": "store.mjs register(attempt); generation-router.ts."
+        },
+        {
+          "id": "tk-0003",
+          "title": "Attribution: counters live on the fleet; performance names the paths and seats behind the residual ps rate, receipt on #145",
+          "phase": "ph-00d3",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "notes": "Needs a daemon from this head."
+        },
+        {
+          "id": "tk-0004",
+          "title": "Stop no-op repeats: skip the ancestry ps for a repeat that proves nothing changed; refuse retired or tombstoned retries cheaply, reason named once",
+          "phase": "ph-00d3",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "notes": "Keyed on bound identity plus the caller's verified pid and start, never a blanket positive cache (exec keeps pid and start)."
+        },
+        {
+          "id": "tk-0005",
+          "title": "Client side: no healthy timer re-registration; a non-retryable refusal ends the retry loop; the shim's per-call registration made a no-op through AC3 or removed",
+          "phase": "ph-00d3",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ]
+        },
+        {
+          "id": "tk-0006",
+          "title": "Cost: live BEFORE and AFTER (ping twice, 60 s apart, same pid); registration ps near 0/s at rest",
+          "phase": "ph-00d3",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
+        },
+        {
+          "id": "tk-0007",
+          "title": "Docs: pij-rs-api.md (ping registrations, attempt), PR body Delivers: none and Fixes #145",
+          "phase": "ph-00d3",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        }
+      ]
     },
     {
       "name": "done_when",
@@ -96,6 +164,5 @@
       "name": "execution_guardrails",
       "value": []
     }
-  ],
-  "references": []
+  ]
 }

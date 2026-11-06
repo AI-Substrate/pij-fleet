@@ -763,6 +763,9 @@ struct Health<'a> {
     gh: Option<String>,
     /// The processes this daemon has launched, by call site (plan 180).
     spawns: pij_core::spawns::SpawnCounts,
+    /// Registration attempts by path, mode and outcome, with the ancestry
+    /// `ps` reads they paid (plan 211).
+    registrations: crate::registration::attempts::AttemptCounts,
 }
 
 #[derive(serde::Serialize)]
@@ -796,6 +799,7 @@ async fn health(State(state): State<AppState>) -> Response {
             .path()
             .map(|path| path.display().to_string()),
         spawns: pij_core::spawns::snapshot(),
+        registrations: state.registration.attempts().snapshot(),
     };
     match checked {
         Ok(()) => envelope(StatusCode::OK, &Envelope::ok("pij ping", data)),
@@ -820,6 +824,11 @@ struct RegistrationRequest {
     harness_session: Option<String>,
     #[serde(default)]
     native_extension_delivery: bool,
+    /// Why the client is registering (plan 211): `explicit`, `receive`,
+    /// `heartbeat`, `shim` or `lease-retry`. Advisory: it labels the attempt
+    /// counters and decides nothing.
+    #[serde(default)]
+    attempt: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -981,20 +990,18 @@ async fn register(
             }
         }
     }
-    let registration = &state.registration;
-    let registered = if request.native_extension_delivery {
-        registration
-            .register_native(
-                request.claim,
-                request.harness_session,
-                state.services.tmux.as_ref(),
-            )
-            .await
-    } else {
-        registration
-            .register_with_harness_session(request.claim, request.harness_session)
-            .await
-    };
+    let path = crate::registration::attempts::Path::from_client(request.attempt.as_deref());
+    let registered = state
+        .registration
+        .register_via(
+            path,
+            request.claim,
+            request.harness_session,
+            request
+                .native_extension_delivery
+                .then_some(state.services.tmux.as_ref()),
+        )
+        .await;
     match registered {
         Ok((descriptor, report)) => {
             let meta = descriptor.pane.is_none().then(|| {

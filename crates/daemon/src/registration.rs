@@ -1,7 +1,10 @@
+pub(crate) mod attempts;
+
 use std::future::Future;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::error::PijError;
@@ -63,6 +66,8 @@ pub(crate) struct RegistrationService {
     /// Native receiver leases, which also hold each incarnation's reported
     /// precedence (plan 168); absent only in services that never see native claims.
     native_receivers: Option<Arc<DeliveryService>>,
+    /// Attempts by path, mode and outcome, with their ancestry reads (plan 211).
+    attempts: Arc<attempts::Attempts>,
 }
 
 struct NativeHandoff {
@@ -98,7 +103,88 @@ impl RegistrationService {
             roles,
             registration_lock: Arc::new(tokio::sync::Mutex::new(())),
             native_receivers: None,
+            attempts: Arc::default(),
         }
+    }
+
+    /// The registration counters `ping` reports (plan 211).
+    pub(crate) fn attempts(&self) -> &attempts::Attempts {
+        &self.attempts
+    }
+
+    /// Register `claim`, counting the attempt under `path` (plan 211): its
+    /// mode, its outcome and the ancestry `ps` reads it paid. `native` is the
+    /// tmux port for a native extension claim.
+    pub(crate) async fn register_via(
+        &self,
+        path: attempts::Path,
+        claim: Registration,
+        harness_session: Option<String>,
+        native: Option<&dyn TmuxPort>,
+    ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError> {
+        let mode = if claim.pane.is_some() {
+            attempts::Mode::Pane
+        } else {
+            attempts::Mode::Paneless
+        };
+        let claimed = claim.id.clone();
+        let reads = Arc::new(AtomicU64::new(0));
+        let result = match native {
+            Some(tmux) => {
+                self.register_native_with_observer(
+                    claim,
+                    harness_session,
+                    tmux,
+                    native_observer(Arc::clone(&reads)),
+                )
+                .await
+            }
+            None => {
+                self.register_session_with_observer(
+                    claim,
+                    harness_session,
+                    native_observer(Arc::clone(&reads)),
+                )
+                .await
+            }
+        };
+        self.count(path, mode, &claimed, &result, reads.load(Ordering::Relaxed));
+        result
+    }
+
+    fn count(
+        &self,
+        path: attempts::Path,
+        mode: attempts::Mode,
+        claimed: &str,
+        result: &std::result::Result<(SeatDescriptor, PutBinding), RegistrationError>,
+        ps: u64,
+    ) {
+        use attempts::Outcome;
+        let (outcome, seat) = match result {
+            Ok((descriptor, report)) => (
+                if report.inserted {
+                    Outcome::New
+                } else if report.previous_proc != descriptor.proc {
+                    Outcome::Rebound
+                } else {
+                    Outcome::Unchanged
+                },
+                descriptor.id.0.as_str(),
+            ),
+            Err(error) => (
+                match error {
+                    RegistrationError::Refused(_) => Outcome::Refused,
+                    RegistrationError::Retired { .. } => Outcome::Retired,
+                    RegistrationError::Retryable(_) => Outcome::Retryable,
+                    RegistrationError::NativeSessionHold(_) => Outcome::SessionHold,
+                    RegistrationError::NativeHolderCurrent(_) => Outcome::HolderCurrent,
+                    RegistrationError::Runtime(_) => Outcome::Error,
+                },
+                claimed,
+            ),
+        };
+        self.attempts.record(path, mode, outcome, seat, ps);
     }
 
     /// Share delivery's native exclusion and its receiver leases.
@@ -127,6 +213,8 @@ impl RegistrationService {
         }
     }
 
+    // Tests' entry; production names its path through `register_via`.
+    #[cfg(test)]
     pub(crate) async fn register(
         &self,
         claim: Registration,
@@ -136,11 +224,27 @@ impl RegistrationService {
             .map(|(descriptor, _)| descriptor)
     }
 
+    // Tests' entry; production names its path through `register_via`.
+    #[cfg(test)]
     pub(crate) async fn register_with_harness_session(
         &self,
         claim: Registration,
         harness_session: Option<String>,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError> {
+        self.register_via(attempts::Path::Explicit, claim, harness_session, None)
+            .await
+    }
+
+    async fn register_session_with_observer<F, Fut>(
+        &self,
+        claim: Registration,
+        harness_session: Option<String>,
+        observe: F,
+    ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError>
+    where
+        F: FnMut(u32) -> Fut,
+        Fut: Future<Output = std::result::Result<Option<NativeProcess>, RegistrationError>>,
+    {
         if claim.id.is_empty()
             && matches!(
                 Harness::parse(&claim.harness),
@@ -148,7 +252,7 @@ impl RegistrationService {
             )
         {
             return self
-                .register_paneless_with_observer(claim, harness_session, native_observer())
+                .register_paneless_with_observer(claim, harness_session, observe)
                 .await;
         }
         self.register_inner(claim, harness_session, RegistrationMode::Ordinary)
@@ -161,9 +265,17 @@ impl RegistrationService {
         &self,
         claim: Registration,
     ) -> std::result::Result<SeatDescriptor, RegistrationError> {
-        self.register_inner(claim, None, RegistrationMode::Reclaim)
-            .await
-            .map(|(descriptor, _)| descriptor)
+        let mode = if claim.pane.is_some() {
+            attempts::Mode::Pane
+        } else {
+            attempts::Mode::Paneless
+        };
+        let claimed = claim.id.clone();
+        let result = self
+            .register_inner(claim, None, RegistrationMode::Reclaim)
+            .await;
+        self.count(attempts::Path::Adopt, mode, &claimed, &result, 0);
+        result.map(|(descriptor, _)| descriptor)
     }
 
     async fn register_paneless_with_observer<F, Fut>(
@@ -278,6 +390,8 @@ impl RegistrationService {
         .await
     }
 
+    // Tests' entry; production names its path through `register_via`.
+    #[cfg(test)]
     /// Attest extension delivery only after observing the actual Copilot host.
     pub(crate) async fn register_native(
         &self,
@@ -285,7 +399,7 @@ impl RegistrationService {
         harness_session: Option<String>,
         tmux: &dyn TmuxPort,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError> {
-        self.register_native_with_observer(claim, harness_session, tmux, native_observer())
+        self.register_via(attempts::Path::Explicit, claim, harness_session, Some(tmux))
             .await
     }
 
@@ -1547,13 +1661,17 @@ type ObserveFuture = std::pin::Pin<
 
 /// One registration's ancestor observer. macOS: an [`AncestryReads`], so a
 /// registration launches at most one `ps` per host-named ancestor (ruling C27
-/// as amended). Linux: `/proc`, which launches nothing.
-fn native_observer() -> impl FnMut(u32) -> ObserveFuture {
+/// as amended), each counted in `reads` (plan 211). Linux: `/proc`, which
+/// launches nothing.
+fn native_observer(reads: Arc<AtomicU64>) -> impl FnMut(u32) -> ObserveFuture {
     #[cfg(not(target_os = "linux"))]
     {
         let ancestry = Arc::new(std::sync::Mutex::new(AncestryReads::new(
             pij_harnesses::proc::parent_and_name,
-            read_argv_with_ps,
+            move |pid| {
+                reads.fetch_add(1, Ordering::Relaxed);
+                read_argv_with_ps(pid)
+            },
         )));
         move |pid| -> ObserveFuture {
             let ancestry = Arc::clone(&ancestry);
@@ -1571,6 +1689,7 @@ fn native_observer() -> impl FnMut(u32) -> ObserveFuture {
     }
     #[cfg(target_os = "linux")]
     {
+        drop(reads);
         |pid| -> ObserveFuture { Box::pin(observe_native_process(pid)) }
     }
 }
@@ -4382,6 +4501,59 @@ mod tests {
             None,
             true,
         ));
+    }
+
+    /// Plan 211 (AC1): every attempt counts by path, mode and outcome, and a
+    /// refusal counts under the claimed id or `(unnamed)`.
+    #[tokio::test]
+    async fn attempts_count_each_registration_by_path_mode_and_outcome() {
+        let root = pij_testkit::fresh_dir("pij-registration-attempts");
+        let registry = Arc::new(FakeRegistry::new());
+        let liveness = Arc::new(
+            FakeLiveness::new().with_proc(pij_core::model::ProcIdentity {
+                pid: 4242,
+                proc_start: 126,
+            }),
+        );
+        let spine = Arc::new(FakeSpine::new());
+        let event_bus =
+            Arc::new(EventBus::new(Arc::clone(&spine) as Arc<dyn Spine>, 8).expect("event bus"));
+        let pool = pij_store::open("").await.expect("isolated in-memory roles");
+        let roles = Arc::new(RoleService::new(
+            registry.clone(),
+            pij_store::SqliteOrchestration::new(pool),
+            event_bus.clone(),
+        ));
+        let service = RegistrationService::new(registry, liveness, event_bus, Vec::new(), roles);
+        let mut claim = native_claim("pij-counted");
+        claim.harness = Harness::Omp.as_str().to_string();
+        claim.folder = root.display().to_string();
+        claim.pane = None;
+        claim.pid = Some(4242);
+        claim.proc_start = Some(126);
+        for _ in 0..2 {
+            service
+                .register_via(super::attempts::Path::Heartbeat, claim.clone(), None, None)
+                .await
+                .expect("registered");
+        }
+        let mut paneless = native_claim("");
+        paneless.pane = None;
+        assert!(
+            service
+                .register_via(super::attempts::Path::Shim, paneless, None, None)
+                .await
+                .is_err(),
+            "a paneless claim without a session is refused"
+        );
+        let counts = service.attempts().snapshot();
+        assert_eq!(counts.total, 3);
+        assert_eq!(counts.by_key["heartbeat.paneless.new"].count, 1);
+        assert_eq!(counts.by_key["heartbeat.paneless.unchanged"].count, 1);
+        assert_eq!(counts.by_key["shim.paneless.refused"].count, 1);
+        assert_eq!(counts.by_seat["pij-counted"].count, 2);
+        assert_eq!(counts.by_seat["(unnamed)"].count, 1);
+        assert_eq!(counts.ps, 0, "fakes and ordinary claims read no argv");
     }
 
     #[tokio::test]

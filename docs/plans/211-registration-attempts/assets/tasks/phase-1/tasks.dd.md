@@ -33,7 +33,15 @@ _Empty._
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Counters: in-process registration attempts by path, mode and outcome, with ancestry ps reads, per seat (bounded), in ping beside spawns | — | ph-00d3 | [ ] unchecked | — | — | — | — | registration/attempts.rs; RegistrationService::register_via; advisory attempt on /v1/register; claude/codex bind and adopt name their paths. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Clients label attempts: the Copilot extension (explicit, receive, heartbeat, lease-retry) and the shim's paneless preflight (shim) | — | ph-00d3 | [ ] unchecked | — | — | — | — | store.mjs register(attempt); generation-router.ts. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Attribution: counters live on the fleet; performance names the paths and seats behind the residual ps rate, receipt on #145 | — | ph-00d3 | [ ] unchecked | — | — | — | — | Needs a daemon from this head. | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Stop no-op repeats: skip the ancestry ps for a repeat that proves nothing changed; refuse retired or tombstoned retries cheaply, reason named once | — | ph-00d3 | [ ] unchecked | — | — | — | — | Keyed on bound identity plus the caller's verified pid and start, never a blanket positive cache (exec keeps pid and start). | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Client side: no healthy timer re-registration; a non-retryable refusal ends the retry loop; the shim's per-call registration made a no-op through AC3 or removed | — | ph-00d3 | [ ] unchecked | — | — | — | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Cost: live BEFORE and AFTER (ping twice, 60 s apart, same pid); registration ps near 0/s at rest | — | ph-00d3 | [ ] unchecked | — | — | — | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0007 | Docs: pij-rs-api.md (ping registrations, attempt), PR body Delivers: none and Fixes #145 | — | ph-00d3 | [ ] unchecked | — | — | — | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 

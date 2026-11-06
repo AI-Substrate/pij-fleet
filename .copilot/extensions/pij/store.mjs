@@ -1173,7 +1173,11 @@ export class NativeBridge {
 		this.receiverController.abort(error);
 		this.heartbeatController.abort();
 	}
-	async register() {
+	/**
+	 * `attempt` names why (plan 211): `explicit` (the first), `receive`,
+	 * `heartbeat` or `lease-retry` (after a standby). The daemon only counts it.
+	 */
+	async register(attempt = this.reconnectRegistration ? "receive" : "explicit") {
 		const signal = this.controller.signal;
 		const registration = this.registration;
 		// A boot-time history scan that failed retries here, bounded and stoppable;
@@ -1183,7 +1187,7 @@ export class NativeBridge {
 		});
 		const seat = await registerWithPrecedence(
 			this.client,
-			this.reconnectRegistration ?? registration,
+			{ ...(this.reconnectRegistration ?? registration), attempt },
 			signal,
 			this.precedence,
 		);
@@ -1207,6 +1211,7 @@ export class NativeBridge {
 		let retry = INITIAL_RETRY_MS;
 		let unavailable = false;
 		let reregister = false;
+		let stoodBy = false;
 		let observedAt = 0;
 		let observedSeq = 0;
 		while (!signal.aborted) {
@@ -1216,9 +1221,10 @@ export class NativeBridge {
 				// counters carry on and nothing is replayed as progress, so an older
 				// daemon's frozen-progress brake clears only on a genuinely live event.
 				if (reregister) {
-					await this.register();
+					await this.register(stoodBy ? "lease-retry" : "heartbeat");
 					throwIfStopped(signal);
 					reregister = false;
+					stoodBy = false;
 				}
 				if (this.observedSeq !== observedSeq) {
 					// One logical tick per changed report handles clock rollback;
@@ -1258,6 +1264,7 @@ export class NativeBridge {
 					// A newer same-process session holds the seat (plan 168): stand by
 					// quietly, re-attesting on this session's own next prompt.
 					reregister = true;
+					stoodBy = true;
 					try {
 						await this.standby(signal, this.heartbeatDelay);
 					} catch {
@@ -1354,7 +1361,9 @@ export class NativeBridge {
 			while (!signal.aborted) {
 				try {
 					if (!this.registered) {
-						await this.register();
+						await this.register(
+							!this.reconnectRegistration ? "explicit" : standingBy ? "lease-retry" : "receive",
+						);
 						if (holdStarted !== undefined || standingBy) {
 							this.emit("connection-ready");
 							retry = INITIAL_RETRY_MS;

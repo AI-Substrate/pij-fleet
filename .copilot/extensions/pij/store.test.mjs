@@ -2288,7 +2288,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 	};
 	first.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
-			assert.deepEqual(body, selected);
+			assert.deepEqual(body, { ...selected, attempt: "explicit" });
 			return registered;
 		}
 		if (path === "/v1/inbox/ack") {
@@ -2334,7 +2334,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 	const resumedRequest = second.client.request;
 	second.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
-			assert.deepEqual(body, resumed);
+			assert.deepEqual(body, { ...resumed, attempt: "explicit" });
 			return { ...registered, proc: { pid: resumed.pid, proc_start: resumed.proc_start } };
 		}
 		if (path === "/v1/inbox/ack") {

@@ -62,6 +62,49 @@ async fn ping_round_trips_over_localhost_with_the_boot_key() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Plan 211 (AC1): a registration's advisory `attempt` labels the counters
+/// ping reports, and a refused attempt counts too.
+#[tokio::test]
+async fn ping_counts_registration_attempts_by_path_mode_and_outcome() {
+    let dir = state_dir();
+    let daemon = pij_daemon::boot(&config(), dir.clone())
+        .await
+        .expect("boot");
+    let client = reqwest::Client::new();
+    let refused = client
+        .post(format!("http://{}/v1/register", daemon.addr))
+        .header(reqwest::header::AUTHORIZATION, daemon.key.header())
+        .json(&serde_json::json!({
+            "id": "", "harness": "copilot", "folder": dir.display().to_string(),
+            "relay": false, "attempt": "shim"
+        }))
+        .send()
+        .await
+        .expect("register");
+    assert!(!refused.status().is_success(), "no session: refused");
+    let body = client
+        .get(format!("http://{}/health", daemon.addr))
+        .header(reqwest::header::AUTHORIZATION, daemon.key.header())
+        .send()
+        .await
+        .expect("request")
+        .text()
+        .await
+        .expect("body");
+    let envelope: pij_core::model::Envelope<serde_json::Value> =
+        wire::decode_envelope(&body).expect("a v1 envelope");
+    let counts = envelope.data.expect("ping data")["registrations"].clone();
+    assert_eq!(counts["total"], 1, "{counts}");
+    assert_eq!(
+        counts["by_key"]["shim.paneless.refused"]["count"], 1,
+        "{counts}"
+    );
+    assert_eq!(counts["by_seat"]["(unnamed)"]["count"], 1, "{counts}");
+
+    daemon.shutdown().await.expect("shutdown");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// Plan 180 follow-up C: ping names the daemon's process launches by call site.
 #[tokio::test]
 async fn ping_counts_the_daemons_process_launches_by_operation() {

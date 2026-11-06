@@ -940,7 +940,12 @@ pub(crate) async fn adopt(
     let registered = match &reclaim {
         Some(_) => registration.reclaim(claim).await,
         None => registration
-            .register_with_harness_session(claim, harness_session)
+            .register_via(
+                crate::registration::attempts::Path::Adopt,
+                claim,
+                harness_session,
+                None,
+            )
             .await
             .map(|(descriptor, _)| descriptor),
     };

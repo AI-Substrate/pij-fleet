@@ -116,7 +116,16 @@ impl ClaudeBinder {
             relay: seat.relay,
             native_precedence: None,
         };
-        match self.registration.register(claim).await {
+        match self
+            .registration
+            .register_via(
+                crate::registration::attempts::Path::ClaudeBind,
+                claim,
+                None,
+                None,
+            )
+            .await
+        {
             Ok(_) => Ok(true),
             Err(error) => Err(pij_core::error::PijError::Adapter {
                 adapter: ADAPTER.to_string(),
