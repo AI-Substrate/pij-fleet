@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read before changing output answer finalization or forced requester notification.",
+				"tags": [
+					"outputs",
+					"authorization",
+					"notifications"
+				],
+				"title": "Output publication and answer authority"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Output publication permission is not request-answer authority.\n\nPM's explicit PR #137 ruling allows a flagged non-holder to publish an output. Using --answers to finalize a request or trigger its associated forced wake instead requires the writer to be the request's recorded holder, a live holder of its role, or that request project's prime.\n\nResolve these authorities from the stored request, not the output's declared context or its writer_holds_role flag. A project creator is not automatically its prime. A recorded holder remains independently permitted; do not replace the three-case rule with current-holder-only access.\n\nRefuse an ineligible --answers operation by name before any writer commit, stamp or notification. Explain the next step: get assigned or write without --answers. Do not silently downgrade an unauthorized answer into a published output.\n\nThe blocked snapshot 4ab6460fc70d4d0cf9dda07910d9664fb4f8546a has a passing CI test where the writer is the project creator but outside all three authorities; the handler still stamps answered_at and admits notification. The fake-ddocs HTTP test demonstrates state/notification admission, not a live cold-session wake. A mandatory cold audit is necessary but does not supply missing answer authorization.\n\nThat snapshot's external links have no scheme/control allowlist, but no own-code fetch/autolaunch was found. Do not upgrade this into demonstrated SSRF/XSS without a consumption path; real renderer safety remained unproved.\n\nThis note records policy and exact-snapshot evidence, not the disposition of a later repair or main retarget. Full report: .harness/government/community/roles/security/outputs/2026-11-06-pr-137-4ab6460-security.md.\n"
+		}
+	]
+}
