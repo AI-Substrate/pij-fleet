@@ -1097,11 +1097,10 @@ fn flush_files(
     Ok(files)
 }
 
-/// What a write's build reports back: a warning, the pending ends its files
-/// carry, and the holding row it wrote.
+/// What a write's build reports back: the pending ends its files carry, the
+/// holding row it wrote, and an assign batch's rows with their warnings.
 #[derive(Default)]
 struct Built {
-    warning: Option<String>,
     landed: Vec<Assignment>,
     row: Option<Assignment>,
     batch: Vec<(Assignment, Option<String>)>,
