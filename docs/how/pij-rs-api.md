@@ -1027,7 +1027,28 @@ id, path, commit, paths}`.
 | `E-RS-ARG` | no id, no `--why`, nothing to change, an edit that changes nothing, `--set` without `=`, a field `--set` cannot set, a field given twice, `--file` with flags, a document naming another id, or `--set` on any verb but edit |
 | `E-RS-DDOCS-INVALID` | ddocs refuses the edited document; nothing is committed |
 
-Cost: one writer commit per edit, the same as an add. No loop or timer.
+`pij directory retire <role> --why <text>` and `pij directory merge <from>
+--into <to> --why <text>` reshape the community as the work changes (req-28,
+C26). Retire sets the role's `meta.state` to `retired` with a changelog row.
+Merge retires `<from>` with `meta.merged_into: <to>` and adds a changelog row to
+both roles (`merged into <to>: <why>` and `<from> merged in: <why>`), in one
+commit. Nothing is moved or rewritten: a retired role's `role.dd.json`, memory,
+outputs and holders lineage stay where they are and stay readable. The view
+gives each role `state` (`active` or `retired`), `merged_into` (or null) and
+`merged_from` (the roles merged into it, derived from their `merged_into`), and
+the human view prints `retired, merged into <to>` and `merged from <from>`. A
+retired role no longer clears a core-role prompt (C22). `data` is `{project, id,
+state, merged_into, commit, paths}`.
+
+| Refusal | When |
+|---|---|
+| `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
+| `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign to a retired role refuses too, naming the merge target when there is one |
+| `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
+| `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |
+
+Cost: one writer commit per edit, retire or merge, the same as an add. No loop
+or timer.
 
 ## Canonical wire examples
 

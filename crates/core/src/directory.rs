@@ -8,6 +8,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         None => Some(OVERVIEW),
         Some("add") => Some(ADD),
         Some("edit") => Some(EDIT),
+        Some("retire" | "merge") => Some(RESHAPE),
         Some("assign" | "release") => Some(HOLD),
         Some("external") => Some(EXTERNAL),
         Some("rebuild") => Some(REBUILD),
@@ -54,6 +55,8 @@ Usage:
   pij directory add <id> --from template:<name>[@v<n>] --why <text> [role flags]
   pij directory add --batch <dir> --why <text> [--project <slug>]
   pij directory edit <id> --why <text> (--set <field>=<value>... | role flags | --file <json>)
+  pij directory retire <role> --why <text>             a role no longer in use
+  pij directory merge <from> --into <to> --why <text>  fold one role into another
   pij directory templates                             the role templates and versions
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
@@ -119,6 +122,20 @@ The role flags `add` takes work too (a repeated flag such as --rule replaces
 the whole list). --file replaces the whole document but keeps its changelog.
 Every edit adds one changelog row (--why) and commits through the writer; an
 edit that changes nothing, or a role that does not exist, refuses.";
+
+const RESHAPE: &str = "\
+pij directory retire | merge: reshape the community as the work changes (plan 206).
+
+Usage:
+  pij directory retire <role> --why <text> [--project <slug>]
+  pij directory merge <from> --into <to> --why <text> [--project <slug>]
+
+retire marks the role retired (meta.state) with a changelog row. merge retires
+<from> with meta.merged_into <to> and adds a changelog row to both. Each is one
+commit. Nothing is moved or rewritten: a retired role's memory, outputs and
+lineage stay readable, and the view lists a merged role under its target. A role
+with a live holder refuses (release it first); a retired role cannot be assigned,
+retired again or merged into.";
 
 const HOLD: &str = "\
 pij directory assign|release: a seat takes or leaves a role.
@@ -190,6 +207,12 @@ mod tests {
                 .contains("--set <field>=<value>")
         );
         assert!(help(None).unwrap().contains("pij directory edit <id>"));
+        assert_eq!(help(Some("retire")), help(Some("merge")));
+        assert!(
+            help(None)
+                .unwrap()
+                .contains("pij directory merge <from> --into <to>")
+        );
     }
 
     #[test]

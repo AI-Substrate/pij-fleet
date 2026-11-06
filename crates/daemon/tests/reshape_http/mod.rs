@@ -255,3 +255,153 @@ async fn template_diff_names_a_missing_version_and_the_edit_that_records_one() {
     assert_eq!(diff["data"]["version"], 1);
     server.abort();
 }
+
+fn role_in_view<'a>(view: &'a Value, id: &str) -> &'a Value {
+    view["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == id)
+        .unwrap_or_else(|| panic!("{id} not in the view: {view}"))
+}
+
+/// bp-0001, bp-0002 (req-28): retire refuses while a seat holds the role,
+/// then marks it retired with a changelog row; merge is one commit with a row
+/// on both roles and moves nothing; the view shows retired, merged-into and
+/// merged-from with the lineage intact; a retired role refuses assign,
+/// retire and being merged into.
+#[tokio::test]
+async fn retire_and_merge_reshape_roles_and_keep_their_history() {
+    let repo = repo("pij-directory-reshape");
+    let (addr, server, _fresh) = daemon().await;
+    fleet(addr, &repo).await;
+    for id in ["qa", "review", "sec"] {
+        let added = directory(
+            addr,
+            &repo,
+            &["add", id, "--rule", "r", "--packet", "p", "--why", "start"],
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{id}: {added}");
+    }
+    let assigned = directory(addr, &repo, &["assign", "qa", "pij-holder", "--why", "w"]).await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+
+    let before = head(&repo);
+    let held = directory(addr, &repo, &["retire", "qa", "--why", "done"]).await;
+    assert_eq!(
+        held["details"]["code"], "E-RS-DIRECTORY-ROLE-HELD",
+        "{held}"
+    );
+    assert_eq!(
+        held["details"]["next"],
+        "pij directory release qa pij-holder --why <text>"
+    );
+    assert_eq!(head(&repo), before, "a refused retire commits nothing");
+
+    let released = directory(addr, &repo, &["release", "qa", "pij-holder", "--why", "w"]).await;
+    assert_eq!(released["ok"], true, "{released}");
+    let retired = directory(addr, &repo, &["retire", "qa", "--why", "done"]).await;
+    assert_eq!(retired["ok"], true, "{retired}");
+    assert_eq!(retired["data"]["commit"], head(&repo));
+    let document = committed(&repo, "qa");
+    assert_eq!(section(&document, "meta")["state"], "retired");
+    let changelog = section(&document, "changelog");
+    assert_eq!(changelog.as_array().unwrap().last().unwrap()["why"], "done");
+
+    let memory = repo.gov.join(format!("{ROLES}/review/memory/INDEX.md"));
+    let memory_before = std::fs::read(&memory).unwrap();
+    let merged = directory(
+        addr,
+        &repo,
+        &["merge", "review", "--into", "sec", "--why", "folded"],
+    )
+    .await;
+    assert_eq!(merged["ok"], true, "{merged}");
+    let touched = git(&repo.gov, &["show", "--name-only", "--format=", "HEAD"]);
+    for path in ["review/role.dd.json", "sec/role.dd.json"] {
+        assert!(
+            touched.contains(path),
+            "{path} not in the commit: {touched}"
+        );
+    }
+    assert!(!touched.contains("memory"), "nothing moved: {touched}");
+    assert_eq!(std::fs::read(&memory).unwrap(), memory_before);
+    let from = committed(&repo, "review");
+    assert_eq!(section(&from, "meta")["state"], "retired");
+    assert_eq!(section(&from, "meta")["merged_into"], "sec");
+    let last = |document: &Value| {
+        section(document, "changelog")
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["why"]
+            .clone()
+    };
+    assert_eq!(last(&from), "merged into sec: folded");
+    assert_eq!(last(&committed(&repo, "sec")), "review merged in: folded");
+
+    let view = directory(addr, &repo, &[]).await;
+    assert_eq!(view["ok"], true, "{view}");
+    let qa = role_in_view(&view, "qa");
+    assert_eq!(qa["state"], "retired");
+    assert_eq!(
+        qa["lineage"].as_array().unwrap().len(),
+        1,
+        "lineage kept: {qa}"
+    );
+    assert_eq!(role_in_view(&view, "review")["merged_into"], "sec");
+    assert_eq!(role_in_view(&view, "sec")["merged_from"], json!(["review"]));
+    assert_eq!(role_in_view(&view, "sec")["state"], "active");
+
+    let before = head(&repo);
+    for (argv, code) in [
+        (
+            vec!["retire", "qa", "--why", "again"],
+            "E-RS-DIRECTORY-RETIRED",
+        ),
+        (
+            vec!["assign", "qa", "pij-holder", "--why", "w"],
+            "E-RS-DIRECTORY-RETIRED",
+        ),
+        (
+            vec!["merge", "sec", "--into", "review", "--why", "w"],
+            "E-RS-DIRECTORY-RETIRED",
+        ),
+        (
+            vec!["merge", "sec", "--into", "nobody", "--why", "w"],
+            "E-RS-DIRECTORY-ROLE-MISSING",
+        ),
+        (
+            vec!["retire", "nobody", "--why", "w"],
+            "E-RS-DIRECTORY-ROLE-MISSING",
+        ),
+        (
+            vec!["merge", "sec", "--into", "sec", "--why", "w"],
+            "E-RS-ARG",
+        ),
+        (vec!["merge", "sec", "--why", "w"], "E-RS-ARG"),
+        (
+            vec!["retire", "sec", "--into", "qa", "--why", "w"],
+            "E-RS-ARG",
+        ),
+        (vec!["retire", "sec"], "E-RS-ARG"),
+        (vec!["retire", "--why", "w"], "E-RS-ARG"),
+    ] {
+        let refused = directory(addr, &repo, &argv).await;
+        assert_eq!(refused["details"]["code"], code, "{argv:?}: {refused}");
+    }
+    let merged_away = directory(
+        addr,
+        &repo,
+        &["assign", "review", "pij-holder", "--why", "w"],
+    )
+    .await;
+    assert_eq!(
+        merged_away["details"]["next"], "Use sec instead.",
+        "{merged_away}"
+    );
+    assert_eq!(head(&repo), before, "no refusal committed");
+    assert_eq!(git(&repo.gov, &["status", "--porcelain"]), "");
+    server.abort();
+}

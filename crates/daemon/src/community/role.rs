@@ -1,5 +1,6 @@
 //! Build and stamp `pij/role` documents. Pure: no IO, no launches.
 
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use std::path::{Component, Path};
@@ -173,6 +174,61 @@ pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, R
     }
     if let Some(packet) = section(&overrides, "standing_packet") {
         *slot(sections, "standing_packet", json!({})) = packet.clone();
+    }
+    Ok(document)
+}
+
+/// `meta.state` for a role that is no longer in use (plan 206, req-28).
+pub const RETIRED: &str = "retired";
+
+/// Where a role stands (plan 206): active unless retired, and the role it was
+/// merged into, if any. What the view shows and the send path refuses on.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Standing {
+    /// `active` or `retired`; a role that records no state is active.
+    pub state: String,
+    /// The role a merged role now lives under.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merged_into: Option<String>,
+}
+
+impl Standing {
+    /// Whether the role is retired (a merged role is retired too).
+    pub fn retired(&self) -> bool {
+        self.state == RETIRED
+    }
+}
+
+/// The standing `document`'s meta records.
+pub fn standing(document: &Value) -> Standing {
+    let meta = section(document, "meta");
+    let text = |field: &str| {
+        meta.and_then(|meta| meta[field].as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    Standing {
+        state: text("state").unwrap_or_else(|| "active".to_string()),
+        merged_into: text("merged_into"),
+    }
+}
+
+/// `document` marked retired, and merged into `into` when given.
+///
+/// # Errors
+/// `E-RS-ARG` when the document has no sections array.
+pub fn retire(mut document: Value, into: Option<&str>) -> Result<Value, Refusal> {
+    let Some(sections) = document["sections"].as_array_mut() else {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "the role document has no sections array",
+        ));
+    };
+    let meta = slot(sections, "meta", json!({}));
+    meta["state"] = json!(RETIRED);
+    if let Some(into) = into {
+        meta["merged_into"] = json!(into);
     }
     Ok(document)
 }
@@ -367,6 +423,32 @@ fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standing_reads_active_retired_and_merged_and_retire_sets_them() {
+        let active = json!({"sections": [{"name": "meta", "value": {"id": "qa"}}]});
+        assert_eq!(
+            standing(&active),
+            Standing {
+                state: "active".into(),
+                merged_into: None
+            }
+        );
+        assert!(!standing(&active).retired());
+        let retired = retire(active.clone(), None).unwrap();
+        assert!(standing(&retired).retired());
+        assert_eq!(standing(&retired).merged_into, None);
+        let merged = retire(active, Some("security")).unwrap();
+        assert_eq!(
+            standing(&merged),
+            Standing {
+                state: "retired".into(),
+                merged_into: Some("security".into())
+            }
+        );
+        assert!(standing(&json!({})).state == "active", "no meta is active");
+        assert!(retire(json!({}), None).is_err());
+    }
 
     fn fields() -> RoleFields {
         RoleFields {

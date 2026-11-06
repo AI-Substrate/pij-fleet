@@ -26,8 +26,9 @@ use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{Refusal, pointer};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 22] = [
+const SINGLE: [&str; 23] = [
     "why",
+    "into",
     "from",
     "from-project",
     "role",
@@ -60,8 +61,9 @@ const REPEATED: [&str; 7] = [
     "output-kind",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 8] = [
+const CONTROL: [&str; 9] = [
     "why",
+    "into",
     "from",
     "project",
     "file",
@@ -91,6 +93,8 @@ impl Arguments {
                         leaf.as_str(),
                         "add"
                             | "edit"
+                            | "retire"
+                            | "merge"
                             | "assign"
                             | "release"
                             | "rebuild"
@@ -191,6 +195,30 @@ impl Arguments {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "merge" && call.single.contains_key("into") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --into belongs to `merge`", call.leaf),
+            ));
+        }
+        if matches!(call.leaf.as_str(), "retire" | "merge")
+            && (call.positions.len() != 1
+                || (call.leaf == "merge" && call.get("into").is_none())
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "why" | "project" | "actor" | "into"))
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                if call.leaf == "merge" {
+                    "usage: pij directory merge <from> --into <to> --why <text> [--project <slug>]"
+                } else {
+                    "usage: pij directory retire <role> --why <text> [--project <slug>]"
+                },
             ));
         }
         if call.leaf != "edit" && call.repeated.contains_key("set") {
@@ -337,6 +365,7 @@ pub(crate) async fn handle(
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
         "external" => external(&state, &actor.id, &request.caller, &call).await,
         "edit" => edit(&state, &actor.id, &request.caller, &call).await,
+        "retire" | "merge" => reshape(&state, &actor.id, &request.caller, &call).await,
         "templates" => Ok(json!({"templates": state.services.directory.templates().listing()})),
         "template-diff" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
@@ -660,7 +689,64 @@ async fn edit(
         .directory
         .edit(&project, repo, id, change, actor, &why)
         .await?;
-    let pointers = pointer::for_write(&project, &written.paths, &written.commit);
+    record_pointers(state, &project, &written).await?;
+    Ok(json!({
+        "project": project,
+        "id": id,
+        "path": paths.document.display().to_string(),
+        "commit": written.commit,
+        "paths": written.paths,
+    }))
+}
+
+/// `directory retire <role>` and `directory merge <from> --into <to>`
+/// (plan 206, req-28): one writer commit each.
+async fn reshape(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let id = &call.positions[0];
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                "--why <text> is required: it becomes the changelog row",
+            )
+        })?;
+    RolePaths::new(id)?;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let directory = &state.services.directory;
+    let into = call.get("into");
+    let written = match &into {
+        Some(into) => {
+            directory
+                .merge(&project, repo, id, into, actor, &why)
+                .await?
+        }
+        None => directory.retire(&project, repo, id, actor, &why).await?,
+    };
+    record_pointers(state, &project, &written).await?;
+    Ok(json!({
+        "project": project,
+        "id": id,
+        "state": "retired",
+        "merged_into": into,
+        "commit": written.commit,
+        "paths": written.paths,
+    }))
+}
+
+/// Index a landed write's paths (the pointer, plan 190).
+async fn record_pointers(
+    state: &AppState,
+    project: &str,
+    written: &Written,
+) -> Result<(), Refusal> {
+    let pointers = pointer::for_write(project, &written.paths, &written.commit);
     state
         .services
         .governance
@@ -675,14 +761,7 @@ async fn edit(
                     written.commit
                 ),
             )
-        })?;
-    Ok(json!({
-        "project": project,
-        "id": id,
-        "path": paths.document.display().to_string(),
-        "commit": written.commit,
-        "paths": written.paths,
-    }))
+        })
 }
 
 /// `directory assign|release <role>[/<instance>] <seat> --why <text>` (plan 195).
