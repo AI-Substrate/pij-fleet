@@ -168,6 +168,8 @@ async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: 
     let mut services = pij_daemon::build_services(&config, &signals)
         .await
         .expect("services");
+    // A closed holder gets a memory turn (plan 201); nothing here plays it.
+    services.memory_turn_bound = std::time::Duration::from_millis(50);
     let writer = Arc::new(writer);
     let store = services.directory.store().clone();
     services.community = Arc::clone(&writer);

@@ -17,6 +17,7 @@ mod fyi;
 pub mod governance;
 mod identity;
 mod lifecycle;
+pub mod memory_turn;
 mod report;
 mod revive;
 pub mod role;
@@ -2051,10 +2052,48 @@ pub(crate) async fn send_control(
         msg_id: request.msg_id,
         in_reply_to: request.in_reply_to,
     };
-    match state.services.delivery.accept_control(msg).await {
+    // Plan 201: a role holder writes its memory before it is compacted.
+    if msg.command.as_deref() == Some("compact") {
+        let holdings = memory_turn::holdings(state, &target.id).await;
+        if !holdings.is_empty() {
+            let bound = state.services.memory_turn_bound;
+            let action = memory_turn::Action::Compact;
+            if actor.id == target.id {
+                // The caller is mid-turn: it cannot wait on its own turn's end.
+                let seat = target.id.clone();
+                let held = memory_turn::held(action, &seat, &holdings, bound);
+                let background = state.clone();
+                tokio::spawn(async move {
+                    memory_turn::run(&background, &seat, holdings, action, bound).await;
+                    if let Err(error) = admit_control(&background, msg).await {
+                        eprintln!(
+                            "pij-rs: the compact of {seat} after its memory turn failed: {error}"
+                        );
+                    }
+                });
+                return envelope(StatusCode::OK, &Envelope::ok(name, held));
+            }
+            let report = memory_turn::run(state, &target.id, holdings, action, bound).await;
+            return match admit_control(state, msg).await {
+                Ok(receipt) => {
+                    let mut data = serde_json::to_value(&receipt).unwrap_or_default();
+                    data["memory_turn"] = serde_json::to_value(&report).unwrap_or_default();
+                    envelope(StatusCode::OK, &Envelope::ok(name, data))
+                }
+                Err(error) => send_failure(name, error),
+            };
+        }
+    }
+    match admit_control(state, msg).await {
         Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(name, receipt)),
         Err(error) => send_failure(name, error),
     }
+}
+
+/// Admit one authorized control: the single place a control enters delivery,
+/// so a compact held for a memory turn takes the same path when it runs.
+async fn admit_control(state: &AppState, msg: Msg) -> Result<pij_core::model::Receipt, PijError> {
+    state.services.delivery.accept_control(msg).await
 }
 
 /// Map a delivery failure onto the wire, once.

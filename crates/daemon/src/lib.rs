@@ -173,6 +173,9 @@ pub struct Services {
     pub community: Arc<community::writer::CommunityWriter>,
     /// Role holding: assign, release and close-ends (plan 195).
     pub directory: Arc<community::directory::DirectoryService>,
+    /// How long a compact or close of a role holder waits for its memory turn
+    /// (plan 201).
+    pub memory_turn_bound: std::time::Duration,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -608,6 +611,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         ddocs,
         community: community_writer,
         directory,
+        memory_turn_bound: http::memory_turn::BOUND,
         offline: config.is_fully_offline(),
     })
 }
