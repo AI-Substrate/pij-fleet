@@ -1029,8 +1029,11 @@ in the project's main checkout: `docs/plans/NNN-*` and `docs/plans/archive/NNN-*
 `BEGIN IMMEDIATE` transaction over a unique (project, kind, number) key, so
 concurrent claims get distinct consecutive numbers and projects never interact.
 `data.number`, `data.formatted` (`0033`) and `data.floor` (the checkout's highest)
-come back with the row. The checkout cannot see unmerged branches, so numbers
-handed out before claims existed are seeded once with `pij claim`.
+come back with the row. An absent folder counts as empty, but a checkout or
+folder that exists and cannot be read refuses `E-RS-CLAIM-SCAN` and claims
+nothing: an unread folder is not an empty one. The checkout cannot see unmerged
+branches, so numbers handed out before claims existed are seeded once with
+`pij claim`.
 
 A claim is released, and kept as history, when its seat is tombstoned (close,
 reap and revive all tombstone, in the same transaction), when `pij delivered`
@@ -1051,14 +1054,21 @@ new and appends no event. When it records anything it appends one `delivered`
 event whose seat is the PM. The PM is the live holder of the project's
 `pm-<roadmap number>` role for the roadmaps the step addresses belong to, else
 the live seat given by `--pm`; with neither, `data.pm` is `null` and the line
-says no PM was told.
+says no PM was told. `data.pm` is the card actually told: on a replay that
+records nothing new it is the PM the first call told (`earlier_pm`), never a
+different one asked for now; `data.requested_pm` is the one this call chose, and
+a note says when it was not told.
 
 It prints, and returns as `data.edits[]` (`{address, value, command}`), the
 `ddocs set` commands for the PM's next docs PR: each requirement's
-`delivered_by` gains `#<pr>` (a comma-separated list, appended and never
-overwritten; skipped when it already names the PR) and each step's `plan` names
-the one `docs/plans/NNN-*` folder the PR touched. Current values are read
-in-process from the checkout; `data.notes[]` says what was skipped and why.
+`delivered_by` gains every PR recorded as delivering it that the cell does not
+name yet (a comma-separated list, appended and never overwritten), so edits
+printed for several merges before the docs PR each carry all of them; and each
+step's `plan` names the one `docs/plans/NNN-*` folder the PR touched. Current
+values are read in-process from the checkout. A document that cannot be read
+or parsed, a row it does not have, or a cell that is not text gets no edit:
+pij never prints a replacement for a cell it cannot see. `data.notes[]` says
+what was skipped and why.
 `pij delivered` changes no file, commits nothing and pushes nothing.
 
 | Refusal | When |
@@ -1067,6 +1077,7 @@ in-process from the checkout; `data.notes[]` says what was skipped and why.
 | `E-RS-OWNERSHIP` | release by a seat that is neither the claimer nor the prime |
 | `E-RS-CLAIM-UNKNOWN` | release of a number nobody claimed |
 | `E-RS-CLAIM-RELEASED` | release of a claim already released |
+| `E-RS-CLAIM-SCAN` | the project's checkout, or a folder of that kind's numbers, exists but cannot be read; nothing is claimed |
 | `E-RS-NOT-FOUND` | `--pm` names no live seat, or `--project` no project |
 | `E-RS-PR-NOT-MERGED` | gh says the PR is open or closed unmerged |
 | `E-RS-DELIVERS` | the body has no `Delivers:` line, or names something that is not a ddocs address |

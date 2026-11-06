@@ -359,6 +359,22 @@ impl SqliteOrchestration {
         .await
     }
 
+    /// Every PR recorded as delivering `address` in `project`, oldest first.
+    /// One read on `deliveries_by_address`.
+    pub async fn delivered_prs(&self, project: &str, address: &str) -> Result<Vec<u64>> {
+        require_current_schema(&self.pool).await?;
+        let prs: Vec<i64> = sqlx::query_scalar(
+            "SELECT pr FROM deliveries WHERE project = ?1 AND address = ?2 \
+             ORDER BY recorded_at, pr",
+        )
+        .bind(project)
+        .bind(address)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        Ok(prs.into_iter().map(|pr| pr as u64).collect())
+    }
+
     /// The newest `limit` PRs whose delivery told `pm`, each with its
     /// addresses. One indexed read on `deliveries_by_pm`.
     pub async fn deliveries_for_pm(&self, pm: &str, limit: u32) -> Result<Vec<DeliveryNote>> {

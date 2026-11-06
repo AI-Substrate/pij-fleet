@@ -12,7 +12,7 @@ use std::path::Path;
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use pij_core::claims::{self, Address, Edit};
+use pij_core::claims::{self, Address, Cell, Edit};
 use pij_core::model::{Envelope, ErrorKind, SeatId};
 use pij_store::{ClaimKey, DeliveryRecord, ReleaseOutcome};
 use serde_json::{Value, json};
@@ -32,6 +32,8 @@ pub const E_DELIVERS: &str = "E-RS-DELIVERS";
 pub const E_CLAIM_UNKNOWN: &str = "E-RS-CLAIM-UNKNOWN";
 /// The claim was already released.
 pub const E_CLAIM_RELEASED: &str = "E-RS-CLAIM-RELEASED";
+/// The checkout could not be read, so the next number is unknown.
+pub const E_CLAIM_SCAN: &str = "E-RS-CLAIM-SCAN";
 
 /// Flags each verb takes; `--json` is always accepted and ignored here.
 const CLAIM_FLAGS: [&str; 2] = ["for", "project"];
@@ -167,7 +169,7 @@ async fn claim(
         )
     })?;
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
-    let floor = floor(&repo, kind);
+    let floor = floor(&repo, kind)?;
     let at = now()?;
     let claim = state
         .services
@@ -347,7 +349,6 @@ async fn delivered(
         claims::numbers_in_paths(pull.files.iter().map(String::as_str))
             .into_iter()
             .collect();
-    let edits = edits(&repo, &pull, &addresses, &mut notes);
 
     let record = DeliveryRecord {
         project: project.clone(),
@@ -369,13 +370,42 @@ async fn delivered(
         })
         .await
         .map_err(store_refusal)?;
+    // Built after the record, so every PR recorded for a row is in its edit.
+    let edits = edits(state, &project, &repo, &pull, &addresses, &mut notes).await?;
 
-    let told = match (&pm, commit.events.first()) {
-        _ if addresses.is_empty() => "it delivers no row (`Delivers: none`)".to_string(),
-        (Some(pm), Some(_)) => format!("posted on {pm}'s card"),
-        (Some(pm), None) => format!("already recorded; {pm}'s card was told the first time"),
-        (None, _) => "no PM was told: no live pm holder for this roadmap and no --pm".to_string(),
+    // The card a replay names is the one the first record told (review of
+    // #131, N001): a replay neither moves nor resends a delivery.
+    let replay = commit.recorded.is_empty();
+    let told_pm = if replay {
+        commit.earlier_pm.clone()
+    } else {
+        pm.as_ref().map(ToString::to_string)
     };
+    let told = if addresses.is_empty() {
+        "it delivers no row (`Delivers: none`)".to_string()
+    } else {
+        match (replay, &told_pm) {
+            (false, Some(pm)) => format!("posted on {pm}'s card"),
+            (false, None) => {
+                "no PM was told: no live pm holder for this roadmap and no --pm".to_string()
+            }
+            (true, Some(pm)) => format!("already recorded; {pm}'s card was told the first time"),
+            (true, None) => "already recorded; no PM was told the first time".to_string(),
+        }
+    };
+    if replay
+        && !addresses.is_empty()
+        && let Some(requested) = &pm
+        && told_pm.as_deref() != Some(requested.as_str())
+    {
+        notes.push(format!(
+            "{requested} was not told: PR #{number} was already recorded{}, and a replay does not resend it",
+            told_pm
+                .as_deref()
+                .map(|earlier| format!(" for {earlier}"))
+                .unwrap_or_default()
+        ));
+    }
     let line = format!(
         "PR #{number} ({}) delivered {} address(es) in {project}: {} new, {} already recorded; {} claim(s) released; {told}",
         merge_commit.get(..12).unwrap_or(&merge_commit),
@@ -393,7 +423,8 @@ async fn delivered(
         "recorded": commit.recorded,
         "already": commit.already,
         "released": commit.released,
-        "pm": pm,
+        "pm": told_pm,
+        "requested_pm": pm,
         "pm_source": pm_source,
         "earlier_pm": commit.earlier_pm,
         "event_seq": commit.events.first().and_then(|event| event.seq).map(|seq| seq.0),
@@ -454,45 +485,71 @@ async fn live_seat(state: &AppState, seat: &str) -> Result<Option<SeatId>, Refus
 }
 
 /// The `ddocs set` edits for the PM's next docs PR: each requirement's
-/// `delivered_by` gains this PR, and each step's `plan` names the PR's plan
-/// folder. Current values are read in-process from the project's checkout.
-fn edits(
+/// `delivered_by` gains every PR recorded for it that the cell does not name
+/// yet (so edits printed for several merges before the docs PR never drop one,
+/// F002), and each step's `plan` names the PR's plan folder. Current values are
+/// read in-process from the project's checkout; a cell that cannot be read is
+/// never replaced, only noted (F003).
+async fn edits(
+    state: &AppState,
+    project: &str,
     repo: &Path,
     pull: &PullRequest,
     addresses: &[Address],
     notes: &mut Vec<String>,
-) -> Vec<Edit> {
+) -> Result<Vec<Edit>, Refusal> {
     let plans = claims::plan_folders(pull.files.iter().map(String::as_str));
     let mut edits = Vec::new();
     for address in addresses {
-        let document = std::fs::read_to_string(repo.join(&address.path))
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok());
-        if document.is_none() {
-            notes.push(format!(
-                "{}: could not read it in {}; the edit assumes the cell is empty",
+        let document = match std::fs::read_to_string(repo.join(&address.path)) {
+            Ok(text) => serde_json::from_str::<Value>(&text)
+                .map_err(|error| format!("is not JSON ({error})")),
+            Err(error) => Err(format!("cannot be read ({error})")),
+        };
+        let current = |field: &str| match &document {
+            Ok(document) => claims::cell(document, &address.section, &address.id, field),
+            Err(why) => Cell::Unknown(why.clone()),
+        };
+        let skipped = |field: &str, why: &str| {
+            format!(
+                "{address}: no {field} edit printed: {} in {} {why}, and replacing a cell pij cannot see could erase what it holds; set it by hand",
                 address.path,
                 repo.display()
-            ));
-        }
-        let current = |field: &str| {
-            document.as_ref().and_then(|document| {
-                claims::row_field(document, &address.section, &address.id, field)
-            })
+            )
         };
         match address.section.as_str() {
             "requirements" => {
-                match claims::delivered_by(current("delivered_by").as_deref(), pull.number) {
+                let existing = match current("delivered_by") {
+                    Cell::Unknown(why) => {
+                        notes.push(skipped("delivered_by", &why));
+                        continue;
+                    }
+                    Cell::Text(text) => text,
+                    Cell::Empty => String::new(),
+                };
+                let mut prs = state
+                    .services
+                    .governance
+                    .store()
+                    .delivered_prs(project, &address.to_string())
+                    .await
+                    .map_err(store_refusal)?;
+                if !prs.contains(&pull.number) {
+                    prs.push(pull.number);
+                }
+                match claims::delivered_by(&existing, &prs) {
                     Some(value) => edits.push(Edit::set(address, "delivered_by", value)),
                     None => notes.push(format!(
-                        "{address}: delivered_by already names #{}",
-                        pull.number
+                        "{address}: delivered_by already names every recorded PR"
                     )),
                 }
             }
             "steps" => match plans.iter().collect::<Vec<_>>().as_slice() {
-                [plan] if current("plan").as_deref() == Some(plan.as_str()) => {}
-                [plan] => edits.push(Edit::set(address, "plan", (*plan).clone())),
+                [plan] => match current("plan") {
+                    Cell::Unknown(why) => notes.push(skipped("plan", &why)),
+                    Cell::Text(text) if text == **plan => {}
+                    _ => edits.push(Edit::set(address, "plan", (*plan).clone())),
+                },
                 [] => notes.push(format!(
                     "{address}: the PR touches no docs/plans/NNN-* folder; set its plan by hand"
                 )),
@@ -507,20 +564,42 @@ fn edits(
             )),
         }
     }
-    edits
+    Ok(edits)
 }
 
 /// The highest number of `kind` already in the project's main checkout, read
-/// in-process (no launch); 0 when there is none or the kind has no folder.
-fn floor(repo: &Path, kind: &str) -> u64 {
-    claims::folders(kind)
-        .iter()
-        .filter_map(|folder| std::fs::read_dir(repo.join(folder)).ok())
-        .flatten()
-        .filter_map(|entry| entry.ok())
-        .filter_map(|entry| claims::number_in_name(kind, &entry.file_name().to_string_lossy()))
-        .max()
-        .unwrap_or(0)
+/// in-process (no launch); 0 when the kind has no folder or its folders are
+/// absent. A checkout or folder that exists but cannot be read refuses: an
+/// unread folder is not an empty one (review of #131, F001).
+fn floor(repo: &Path, kind: &str) -> Result<u64, Refusal> {
+    let unreadable = |path: &Path, error: std::io::Error| {
+        Refusal::new(
+            E_CLAIM_SCAN,
+            format!(
+                "cannot read {} to find the highest {kind} number ({error}); nothing was claimed",
+                path.display()
+            ),
+        )
+        .with_next("Make the project's checkout readable by the daemon (or fix its recorded repo), then claim again.")
+    };
+    std::fs::read_dir(repo).map_err(|error| unreadable(repo, error))?;
+    let mut highest = 0;
+    for folder in claims::folders(kind) {
+        let dir = repo.join(folder);
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(unreadable(&dir, error)),
+        };
+        for entry in entries {
+            let entry = entry.map_err(|error| unreadable(&dir, error))?;
+            if let Some(number) = claims::number_in_name(kind, &entry.file_name().to_string_lossy())
+            {
+                highest = highest.max(number);
+            }
+        }
+    }
+    Ok(highest)
 }
 
 async fn project_prime(state: &AppState, project: &str) -> Result<Option<SeatId>, Refusal> {
@@ -616,10 +695,15 @@ mod tests {
             std::fs::create_dir_all(root.join(dir)).unwrap();
         }
         std::fs::write(root.join("crates/store/migrations/0032_x.sql"), "").unwrap();
-        assert_eq!(floor(&root, "plan"), 195);
-        assert_eq!(floor(&root, "migration"), 32);
-        assert_eq!(floor(&root, "prd"), 0);
-        assert_eq!(floor(&root, "adr"), 0);
+        assert_eq!(floor(&root, "plan").unwrap(), 195);
+        assert_eq!(floor(&root, "migration").unwrap(), 32);
+        assert_eq!(floor(&root, "prd").unwrap(), 0, "an absent folder is empty");
+        assert_eq!(floor(&root, "adr").unwrap(), 0);
+        assert_eq!(
+            floor(&root.join("missing"), "plan").unwrap_err().code,
+            E_CLAIM_SCAN,
+            "a checkout that is not there is not an empty one"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

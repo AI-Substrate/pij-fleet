@@ -265,35 +265,59 @@ pub fn delivers(body: &str) -> Result<Vec<Address>, DeliversError> {
     Ok(addresses)
 }
 
-/// `pr` appended to a `delivered_by` cell (a comma-separated PR list such as
-/// `#110, #113`), or `None` when the cell already names it. Never overwrites.
-pub fn delivered_by(existing: Option<&str>, pr: u64) -> Option<String> {
-    let reference = format!("#{pr}");
-    let mut list: Vec<&str> = existing
-        .unwrap_or_default()
+/// A `delivered_by` cell (a comma-separated PR list such as `#110, #113`)
+/// with every PR in `prs` it does not name appended, in order; `None` when it
+/// already names them all. Never drops what the cell holds: the caller passes
+/// every PR recorded for the row, so edits printed for several merges before
+/// the PM's docs PR each carry all of them (review of #131, F002).
+pub fn delivered_by(existing: &str, prs: &[u64]) -> Option<String> {
+    let mut list: Vec<String> = existing
         .split(',')
         .map(str::trim)
         .filter(|item| !item.is_empty())
+        .map(str::to_owned)
         .collect();
-    if list.contains(&reference.as_str()) {
-        return None;
+    let before = list.len();
+    for pr in prs {
+        let reference = format!("#{pr}");
+        if !list.contains(&reference) {
+            list.push(reference);
+        }
     }
-    list.push(&reference);
-    Some(list.join(", "))
+    (list.len() > before).then(|| list.join(", "))
 }
 
-/// A row's string field in a ddocs document, or `None` when the section,
-/// row or field is absent.
-pub fn row_field(document: &Value, section: &str, id: &str, field: &str) -> Option<String> {
-    document["sections"]
-        .as_array()?
-        .iter()
-        .find(|candidate| candidate["name"] == section)?["value"]
-        .as_array()?
-        .iter()
-        .find(|row| row["id"] == id)?[field]
-        .as_str()
-        .map(str::to_owned)
+/// What a row's field holds, as far as an edit may rely on it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Cell {
+    /// The row exists and the field is absent or empty.
+    Empty,
+    /// The row exists and the field is this text.
+    Text(String),
+    /// The field could not be established; an edit must not replace it
+    /// (review of #131, F003). Says why.
+    Unknown(String),
+}
+
+/// Row `id`'s `field` in section `section` of a ddocs document.
+pub fn cell(document: &Value, section: &str, id: &str, field: &str) -> Cell {
+    let Some(rows) = document["sections"].as_array().and_then(|sections| {
+        sections
+            .iter()
+            .find(|candidate| candidate["name"] == section)
+            .and_then(|found| found["value"].as_array())
+    }) else {
+        return Cell::Unknown(format!("has no {section} section"));
+    };
+    let Some(row) = rows.iter().find(|row| row["id"] == id) else {
+        return Cell::Unknown(format!("has no row {id} in {section}"));
+    };
+    match &row[field] {
+        Value::Null => Cell::Empty,
+        Value::String(text) if text.trim().is_empty() => Cell::Empty,
+        Value::String(text) => Cell::Text(text.clone()),
+        _ => Cell::Unknown(format!("holds a {field} that is not text")),
+    }
 }
 
 /// One printed ddocs edit.
@@ -406,34 +430,55 @@ mod tests {
     }
 
     #[test]
-    fn delivered_by_appends_and_never_overwrites_or_repeats() {
-        assert_eq!(delivered_by(None, 121).as_deref(), Some("#121"));
-        assert_eq!(delivered_by(Some(""), 121).as_deref(), Some("#121"));
+    fn delivered_by_appends_every_recorded_pr_and_never_overwrites_or_repeats() {
+        assert_eq!(delivered_by("", &[121]).as_deref(), Some("#121"));
+        assert_eq!(delivered_by("#110", &[121]).as_deref(), Some("#110, #121"));
+        assert_eq!(delivered_by("#110, #121", &[121]), None);
         assert_eq!(
-            delivered_by(Some("#110"), 121).as_deref(),
-            Some("#110, #121")
-        );
-        assert_eq!(delivered_by(Some("#110, #121"), 121), None);
-        assert_eq!(
-            delivered_by(Some("#110,#113"), 121).as_deref(),
+            delivered_by("#110,#113", &[121]).as_deref(),
             Some("#110, #113, #121")
+        );
+        assert_eq!(
+            delivered_by("#110", &[153, 154]).as_deref(),
+            Some("#110, #153, #154"),
+            "two merges before the docs PR: both kept"
+        );
+        assert_eq!(
+            delivered_by("#110, #153", &[153, 154]).as_deref(),
+            Some("#110, #153, #154")
         );
     }
 
     #[test]
     fn edits_read_the_row_and_quote_for_the_shell() {
         let document = json!({"sections": [
-            {"name": "requirements", "value": [{"id": "req-20", "delivered_by": "#110"}]}
+            {"name": "requirements", "value": [
+                {"id": "req-20", "delivered_by": "#110"},
+                {"id": "req-21"},
+                {"id": "req-22", "delivered_by": 7}
+            ]}
         ]});
         assert_eq!(
-            row_field(&document, "requirements", "req-20", "delivered_by").as_deref(),
-            Some("#110")
+            cell(&document, "requirements", "req-20", "delivered_by"),
+            Cell::Text("#110".into())
         );
         assert_eq!(
-            row_field(&document, "requirements", "req-21", "delivered_by"),
-            None
+            cell(&document, "requirements", "req-21", "delivered_by"),
+            Cell::Empty
         );
-        assert_eq!(row_field(&document, "steps", "s11", "plan"), None);
+        for (section, id) in [
+            ("requirements", "req-22"),
+            ("requirements", "req-99"),
+            ("steps", "s11"),
+        ] {
+            assert!(
+                matches!(
+                    cell(&document, section, id, "delivered_by"),
+                    Cell::Unknown(_)
+                ),
+                "{section}/{id} is not knowable"
+            );
+        }
         let address = Address::parse("docs/x.dd.json#requirements/req-20").unwrap();
         let edit = Edit::set(&address, "delivered_by", "#110, #121".to_string());
         assert_eq!(

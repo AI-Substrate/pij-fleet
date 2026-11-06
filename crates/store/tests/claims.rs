@@ -262,4 +262,17 @@ async fn deliveries_record_once_release_named_claims_and_reach_the_pm_card() {
             .unwrap()
             .is_empty()
     );
+    let address = "docs/project/prds/001-pij-community.dd.json#requirements/req-20";
+    assert_eq!(
+        store.delivered_prs("pij", address).await.unwrap(),
+        [130, 131, 132, 133],
+        "every PR recorded for the address, oldest first"
+    );
+    assert!(
+        store
+            .delivered_prs("osk", address)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
