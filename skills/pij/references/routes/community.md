@@ -60,7 +60,7 @@ pij delivered <pr>                               # the merger, once per merge: p
 
 ```bash
 pij directory memory <role> [--note <slug>]      # the index, or one note
-pij directory memory add <role> --title <t> --tags <a,b> --hook <one line> --body-file <path>
+pij directory memory add <role> --title <t> --hook <one line> [--tags <a,b>] --body-file <path>
 ```
 
 - Before a role holder is compacted or closed, pij gives it a memory turn and holds the compact or close until that turn ends. Check the note landed and that its INDEX line reads well.

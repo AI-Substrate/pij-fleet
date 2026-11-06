@@ -597,3 +597,104 @@ fn a_symlinked_rendered_sibling_or_schema_copy_refuses_before_anything_is_writte
         assert_refused_untouched(&scratch, refusal, link, &outside, &start);
     }
 }
+
+fn memory_note(title: &str) -> crate::community::memory::NoteFields {
+    crate::community::memory::NoteFields {
+        title: title.to_string(),
+        tags: vec!["plan-201".to_string()],
+        hook: format!("why {title}"),
+        body: "what was learned\n".to_string(),
+    }
+}
+
+/// Plan 201, AC1: each note is one commit of the note, its rendering and the
+/// INDEX; two adds at once serialise, and the INDEX keeps both lines and every
+/// hand-written one.
+#[test]
+fn two_memory_adds_at_once_land_as_two_commits_keeping_every_index_line() {
+    let scratch = Scratch::new("pij-memory-concurrent");
+    let writer = Arc::new(writer(vec![], &LOCK_RETRY));
+    writer
+        .write(&scratch.main, role("qa", "{}"), "add qa")
+        .expect("the role lands");
+    let index = RolePaths::new("qa").unwrap().memory_index;
+    let hand = "# qa memory\n\n- [2026-11-04-hand.md](2026-11-04-hand.md): written by hand\n";
+    std::fs::write(scratch.gov.join(&index), hand).unwrap();
+    scratch.git(&scratch.gov, &["commit", "-q", "-am", "hand index"]);
+    let start = head(&scratch);
+
+    let handles: Vec<_> = ["First lesson", "Second lesson"]
+        .into_iter()
+        .map(|title| {
+            let writer = Arc::clone(&writer);
+            let main = scratch.main.clone();
+            std::thread::spawn(move || {
+                writer.write_with(
+                    &main,
+                    |root| {
+                        crate::community::memory::files(
+                            &root.worktree,
+                            "qa",
+                            "2026-11-06",
+                            &memory_note(title),
+                        )
+                    },
+                    title,
+                )
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().unwrap().expect("each note lands");
+    }
+
+    let commits = scratch.git(&scratch.gov, &["rev-list", &format!("{start}..HEAD")]);
+    assert_eq!(commits.lines().count(), 2);
+    for commit in commits.lines() {
+        let names = scratch.git(&scratch.gov, &["show", "--name-only", "--format=", commit]);
+        assert_eq!(names.lines().count(), 3, "{names}");
+        assert!(names.contains("memory/INDEX.md"), "{names}");
+    }
+    let text = std::fs::read_to_string(scratch.gov.join(&index)).unwrap();
+    assert!(text.starts_with(hand), "{text}");
+    assert!(text.contains("(2026-11-06-first-lesson.dd.md): why First lesson (plan-201)"));
+    assert!(text.contains("(2026-11-06-second-lesson.dd.md): why Second lesson (plan-201)"));
+    assert_eq!(status(&scratch), "");
+}
+
+/// Plan 201: a built note is a valid pij/memory document to real ddocs.
+#[test]
+fn real_ddocs_accepts_a_memory_note() {
+    let ddocs = crate::community::ddocs::Ddocs::from_env();
+    if ddocs.path().is_none() {
+        eprintln!("SKIP real_ddocs_accepts_a_memory_note: ddocs is not installed here");
+        return;
+    }
+    let scratch = Scratch::new("pij-memory-real-ddocs");
+    let writer = CommunityWriter::new(Arc::new(ddocs), layout::schema_copies(), &LOCK_RETRY);
+    writer
+        .write(&scratch.main, review_real_role("qa", None), "add qa")
+        .expect("the role lands");
+    let written = writer
+        .write_with(
+            &scratch.main,
+            |root| {
+                crate::community::memory::files(
+                    &root.worktree,
+                    "qa",
+                    "2026-11-06",
+                    &memory_note("Real"),
+                )
+            },
+            "memory",
+        )
+        .expect("real ddocs accepts the note");
+    assert!(
+        written
+            .paths
+            .iter()
+            .any(|path| path.ends_with("memory/2026-11-06-real.dd.md")),
+        "{:?}",
+        written.paths
+    );
+}

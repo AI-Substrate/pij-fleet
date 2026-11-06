@@ -1,0 +1,94 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 201 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00c9",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a note lands with its INDEX line; an existing hand-written INDEX keeps its lines; two notes at once serialise.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00c9",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a role holder's compact shows the memory turn first, then the compact; a non-holder is compacted directly; the bounded wait proceeds with a named note.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00c9",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: list and read; no delete verb exists.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4: cost",
+          "phase": "ph-00c9",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "One writer commit per note. The memory turn costs one live subscription per pending memory turn (only for role holders being compacted or closed), one delivery and one deadline; no timer or poll (the hold waits on the turn-end event the daemon already sees)."
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5: docs and states",
+          "phase": "ph-00c9",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

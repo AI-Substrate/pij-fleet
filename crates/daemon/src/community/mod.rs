@@ -11,6 +11,7 @@ pub mod directory;
 mod git;
 pub mod holders;
 pub mod layout;
+pub mod memory;
 pub mod pointer;
 pub mod role;
 pub mod root;

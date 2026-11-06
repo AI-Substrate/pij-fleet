@@ -1371,6 +1371,7 @@ async fn run(cli: Cli) -> ExitCode {
             } else {
                 client.send(&request).await
             };
+            let raw = response.raw_json.clone();
             if response.ok {
                 response.meta = Some(format!("from {}; msg_id {}", request.from, request.msg_id));
                 // This is a CLI-derived receipt, not an unchanged daemon reply.
@@ -1382,7 +1383,10 @@ async fn run(cli: Cli) -> ExitCode {
                 println!("{held}");
                 return ExitCode::SUCCESS;
             }
-            emit(&response, cli.json)
+            match with_memory_turn(&response, raw.as_deref()).filter(|_| response.ok) {
+                Some(shown) => emit(&shown, cli.json),
+                None => emit(&response, cli.json),
+            }
         }
         Command::Activity {
             seat,
@@ -1468,9 +1472,12 @@ async fn run(cli: Cli) -> ExitCode {
                 reason: None,
             };
             let mut response = client.send_control(&request, &caller_context()).await;
+            let raw = response.raw_json.take();
             response.command = "pij compact-self".to_string();
-            response.raw_json = None;
-            emit(&response, cli.json)
+            match with_memory_turn(&response, raw.as_deref()) {
+                Some(shown) => emit(&shown, cli.json),
+                None => emit(&response, cli.json),
+            }
         }
         Command::Inbox {
             action,
@@ -1661,6 +1668,19 @@ async fn run(cli: Cli) -> ExitCode {
         }
         Command::Directory { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let args = match pij_cli::governance::inline_body_file(&args, |source| {
+                if source == "-" {
+                    std::io::read_to_string(std::io::stdin())
+                } else {
+                    std::fs::read_to_string(source)
+                }
+            }) {
+                Ok(args) => args,
+                Err(reason) => {
+                    eprintln!("pij directory: {reason}");
+                    return ExitCode::from(2);
+                }
+            };
             let response =
                 pij_cli::governance::governance(&client, "directory", &args, &caller_context())
                     .await;
@@ -1683,6 +1703,15 @@ async fn run(cli: Cli) -> ExitCode {
                 }
                 Some(data) if data.get("diff").is_some_and(Value::is_string) => {
                     println!("{}", render_template_diff(data));
+                    ExitCode::SUCCESS
+                }
+                // `directory memory <role>` and `--note`: the text itself.
+                Some(memory) if memory.get("index").is_some_and(Value::is_string) => {
+                    print!("{}", memory["index"].as_str().unwrap_or_default());
+                    ExitCode::SUCCESS
+                }
+                Some(memory) if memory.get("note").is_some() && memory.get("commit").is_none() => {
+                    println!("{}", render_memory_note(memory));
                     ExitCode::SUCCESS
                 }
                 _ => emit(&response, as_json),
@@ -2620,6 +2649,29 @@ fn system_time_ms() -> Result<u64, PijError> {
     })
 }
 
+/// A held compact's control receipt with what the typed `Receipt` drops put
+/// back: `held` and `memory_turn` (plan 201), read from the daemon's raw
+/// reply. `None` when the reply carries no memory turn, so every other receipt
+/// prints exactly as before.
+fn with_memory_turn(
+    response: &Envelope<pij_core::model::Receipt>,
+    raw: Option<&str>,
+) -> Option<Envelope<Value>> {
+    let daemon: Value = serde_json::from_str(raw?).ok()?;
+    let data = &daemon["data"];
+    if data["memory_turn"].is_null() {
+        return None;
+    }
+    let mut value = serde_json::to_value(response).ok()?;
+    if !value["data"].is_object() {
+        return None;
+    }
+    for key in ["held", "memory_turn"] {
+        value["data"][key] = data[key].clone();
+    }
+    serde_json::from_value(value).ok()
+}
+
 /// Is this send receipt an FYI held for the recipient's next turn?
 /// The human line for a held FYI, with the receipt's warning (plan 159) on
 /// the next line. `None` when the send was not held as an FYI.
@@ -2779,6 +2831,33 @@ fn render_template_diff(data: &Value) -> String {
             data["diff"].as_str().unwrap_or_default().trim_end()
         ),
     }
+}
+
+/// One memory note for a human: its title line, then the body as written.
+fn render_memory_note(note: &Value) -> String {
+    if let Some(text) = note["text"].as_str() {
+        return text.trim_end().to_string();
+    }
+    let meta = &note["meta"];
+    let tags: Vec<&str> = meta["tags"]
+        .as_array()
+        .map(|tags| tags.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let mut out = format!(
+        "# {}\n{} · {}",
+        meta["title"].as_str().unwrap_or("-"),
+        meta["date"].as_str().unwrap_or("-"),
+        meta["hook"].as_str().unwrap_or("-"),
+    );
+    if !tags.is_empty() {
+        let _ = write!(out, " ({})", tags.join(", "));
+    }
+    let _ = write!(
+        out,
+        "\n\n{}",
+        note["body"].as_str().unwrap_or_default().trim_end()
+    );
+    out
 }
 
 fn directory_help(args: &[String]) -> ExitCode {
@@ -3589,6 +3668,28 @@ mod tests {
                 "state",
                 "tail"
             ]
+        );
+    }
+
+    /// Review F002: a held compact's reply decodes as the typed control
+    /// receipt the client uses, and its memory_turn survives to the output.
+    #[test]
+    fn a_held_compact_reply_decodes_as_a_receipt_and_keeps_its_memory_turn() {
+        let raw = r#"{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"m1","outcome":{"outcome":"held","reason":"memory-turn"},"at":5,"held":"memory-turn","memory_turn":{"action":"compact","bound_ms":300000}}}"#;
+        let mut typed: pij_core::model::Envelope<pij_core::model::Receipt> =
+            serde_json::from_str(raw).expect("the client's typed decode");
+        typed.raw_json = None;
+        let shown = super::with_memory_turn(&typed, Some(raw)).expect("a held compact");
+        let data = shown.data.expect("data");
+        assert_eq!(data["msg_id"], "m1");
+        assert_eq!(data["outcome"]["outcome"], "held");
+        assert_eq!(data["held"], "memory-turn");
+        assert_eq!(data["memory_turn"]["bound_ms"], 300_000);
+        assert!(super::with_memory_turn(&typed, None).is_none());
+        let plain = r#"{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"m2","outcome":{"outcome":"queued"},"at":5}}"#;
+        assert!(
+            super::with_memory_turn(&typed, Some(plain)).is_none(),
+            "an ordinary receipt prints as before"
         );
     }
 
