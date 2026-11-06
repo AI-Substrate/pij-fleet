@@ -69,6 +69,23 @@ The scratch role stays in the directory, with no holder, until `pij directory re
 
 - `pij-rs send` ids are UUIDs (`01a1b003-99d4-7423-...`), while the shim's are `<hex16>-<seq>` (`325693b633ea1aca-0000000000000018`). Both work as request ids. Noted only because the formats differ.
 
-## Pending
+## The PA's wake (quoted by pij-watchful-badger)
 
-- The PA's wake text (asked badger to quote it) and confirmation that the drained request reached me at my next turn. I'll add both here when they arrive.
+Received 18:39:49 from `pij-bg`, msg_id `role-queue-01a1b003-99d4-7423-9e02-be142f680a48`:
+
+```
+[pij role queue] role:s05-probe in project pij-fleet has no live holder. pij-wooden-lungfish sent request 01a1b003-99d4-7423-9e02-be142f680a48 (reply none); it waits on the role's queue.
+Next, one of:
+  assign a fresh seat: pij directory assign s05-probe <seat> --why "<why>" --project pij-fleet
+Assigning delivers the queue to the new holder. pij never starts a seat itself.
+```
+
+It names the role, the requester, the request id and its reply mode, and gives a runnable assign line with `--project` filled in. Badger took no action, as asked.
+
+- **F60. The wake gives one step under "Next, one of:", and the API doc promises two.** (low) With no previous holder there is nothing to revive, so only `assign` is offered. That's right, but "one of:" over a single option reads like a dropped line. The API doc (§ Send to a role) says the wake "names ... two runnable steps: revive the last holder ... or `pij directory assign`". Fix: say "Next:" when there's one step, and say in the doc that the revive step appears only when the role has had a holder.
+
+## Did the drain deliver? Unknown (F56, F59)
+
+The assign at 18:40:11 should have drained request `01a1b003-...` to me as its new holder. As of 18:45 no message with a `[pij role:s05-probe request ...]` header has reached this seat, though badger's 18:42 message did arrive, so delivery was working. Either the drain didn't deliver (the request is still queued, and stays in the PA digest), or a request delivered back to its own sender was dropped. The assign receipt doesn't say (F56), and there's no verb to look the request up (F59), so I can't tell which. Badger (the PA) can't tell either. No watchdog nudge has run since the probe (the last was 08:34), no nudge has ever shown a role-queue request, and `pij directory` shows s05-probe with my 18:40:11-18:40:18 lineage, `live: []` and no queue field. Its top-level `pending` holds holdings whose close hasn't been committed yet (plan 195), not queued requests. So neither the requester, the holder nor the PA can see whether request `01a1b003-...` is still queued. That strengthens F59: the queue needs a read verb, for the PA as much as for the sender.
+
+F52 to F59 belong to plan 212 (role send follow-ups); F55 also lands in #141's round. pm-001 works around F52 by assigning `security/<pr>` and `performance/<pr>` holdings, so `role:security/<pr>` resolves.
