@@ -8,6 +8,11 @@
 # atomic mkdir lock for the whole batch, checks the disk floor, rebuilds the
 # caller's own sources, and always releases.
 #
+# Builds run niced. A test that times real child processes (ps, tmux, spawn
+# timing) may instead run from an already-built binary under `nice -n 19`
+# alone, its budgets stretched by PIJ_TEST_TIME_SCALE (plan 209, F28; AGENTS.md,
+# resource cost item 5).
+#
 #   PIJ_SHARED_TARGET=<absolute target dir> \
 #     just shared-build [--timeout <minutes>|<seconds>s] -- <cargo args> [--then <cargo args>]...
 #

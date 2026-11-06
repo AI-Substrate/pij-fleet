@@ -1635,6 +1635,19 @@ fn read_native_proc_file(path: &Path) -> std::result::Result<Option<Vec<u8>>, Re
 #[cfg(any(not(target_os = "linux"), test))]
 const PROCESS_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// Production's limit; unit tests that run a real `ps` stretch it by the one
+/// test-only scale (plan 209, F28), which production never reads.
+fn process_observation_timeout() -> Duration {
+    #[cfg(test)]
+    {
+        pij_testkit::time::scaled(PROCESS_OBSERVATION_TIMEOUT)
+    }
+    #[cfg(not(test))]
+    {
+        PROCESS_OBSERVATION_TIMEOUT
+    }
+}
+
 #[cfg(not(target_os = "linux"))]
 fn read_native_process(pid: u32) -> std::result::Result<Option<NativeProcess>, RegistrationError> {
     use std::process::Command;
@@ -1688,7 +1701,7 @@ fn read_native_process_using(
             .read_to_end(&mut output)
             .map(|_| output)
     });
-    let deadline = Instant::now() + PROCESS_OBSERVATION_TIMEOUT;
+    let deadline = Instant::now() + process_observation_timeout();
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
@@ -1698,7 +1711,7 @@ fn read_native_process_using(
                 let _ = child.wait();
                 break Err(RegistrationError::Retryable(format!(
                     "process observation for pid {pid} timed out after {}ms",
-                    PROCESS_OBSERVATION_TIMEOUT.as_millis(),
+                    process_observation_timeout().as_millis(),
                 )));
             }
             Err(error) => {
@@ -3906,7 +3919,7 @@ mod tests {
             )
             .await
             .expect_err("never-answering ps must refuse");
-        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(started.elapsed() < pij_testkit::time::scaled(Duration::from_secs(5)));
         assert!(
             error.to_string().contains(&format!("pid {}", HOST.pid)),
             "{error}"

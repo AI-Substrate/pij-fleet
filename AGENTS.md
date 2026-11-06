@@ -102,6 +102,7 @@ Any plan, PR or feature that adds or changes a **loop, poll, timer, hook, status
 2. **Measure it on the live fleet, before and after**, and keep the receipts: `pij-rs --json ping | jq .data.spawns` (two readings a known number of seconds apart; per call site) and `just spawn-rate --seconds 20` (whole machine). See [`docs/how/macos-defender.md`](docs/how/macos-defender.md) § Measure launches.
 3. **Launch nothing per tick per seat.** Prefer in-process work (read the file, call the syscall), the daemon's persistent tmux control client for tmux reads, or a cache with an explicit lifetime. Launch by **absolute path** (`/bin/ps`), never a bare name, in any repeated path.
 4. **Record every new daemon launch site** with the spawn counter; `crates/testkit/tests/spawn_sites.rs` fails if you don't.
+5. **Build niced; time real children honestly (F28).** Every build on the shared machine runs under `nice -n 19 taskpolicy -b` (macOS; `nice -n 19` elsewhere). Background QoS slows real child processes past wall-clock budgets, so a test that times a real `ps`, tmux or spawn may run from an already-built binary under `nice -n 19` alone. Write such a budget as `pij_testkit::time::scaled(...)` (TS: `scaled()` in `harness/driver/time-scale.ts`); `PIJ_TEST_TIME_SCALE` (default 1) stretches it on a loaded machine, and production constants never read it.
 
 Reviewers check cost explicitly, the same as correctness: name the loop, its rate, and its per-seat scaling, or say there is none.
 
@@ -150,7 +151,7 @@ citation disputes, all of which resolved as neither party being wrong.)
 3. Smoke: `just smoke` before merging.
 4. **Before declaring any task done — or before ship — run `harness checks`.**
    The engineering-harness gate: it runs the full deterministic **signal
-   inventory** (local-path portability → project docs (ddocs) → typecheck → lockfile allowlist → lint →
+   inventory** (local-path portability → project docs (ddocs) → pij skill structure → typecheck → lockfile allowlist → lint →
    test → Copilot native contracts → Rust gate → smoke → commit-trailer
    attribution) as individual stages and reports a per-sensor verdict — and
    unlike `just self-check` it runs **all** sensors, so one invocation surfaces
