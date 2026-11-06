@@ -30,7 +30,10 @@
 					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
 					"instance_key": "194",
 					"machine": "ops.osk.lan",
+					"release_why": "s03 merged (#126)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-following-marsupial",
+					"to": "2026-11-06T00:31:35.601Z",
 					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
 				},
 				{
