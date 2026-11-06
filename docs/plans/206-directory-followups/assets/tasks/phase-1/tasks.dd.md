@@ -41,7 +41,7 @@ Context brief. Purpose: reshape roles (req-28, s15): edit (F20), retire, merge, 
 | tk-0004 | Retire | — | ph-00ce | [x] checked | — | — | [tk-0004](tasks.dd.md#done-when) | `pij directory retire &lt;role&gt; --why &lt;text&gt;` sets meta.state retired with a changelog row in one writer commit; refuses while a live holder holds it (and, once s05 lands, while requests are queued), naming them. The view lists it as retired with its memory, outputs and lineage intact; --json carries state. | Depends on the schema task. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Merge | — | ph-00ce | [x] checked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij directory merge &lt;from&gt; --into &lt;to&gt; --why &lt;text&gt;` retires &lt;from&gt; with merged_into &lt;to&gt; and adds a changelog row to both, in one writer commit. Nothing is moved: the view lists &lt;from&gt; under &lt;to&gt; as merged-from, and both roles' memory, outputs and lineage stay readable. | Depends on the schema task. | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0006 | Retired and merged state for the send path | — | ph-00ce | [x] checked | — | — | [tk-0006](tasks.dd.md#done-when) | A directory read that says whether a role is retired and, if merged, into what, so s05's send to a role refuses by name (naming &lt;to&gt; after a merge). If s05 has merged first, the send path calls it here. | s05 (plan 199) is not on main yet; pm-001 asked. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) |
-| tk-0007 | Cost receipts | — | ph-00ce | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | Edit, retire and merge are one writer commit each (the same launches as add), measured on a private daemon with data.pid; nothing on a timer. | Private run like plan 196's. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0007 | Cost receipts | — | ph-00ce | [x] checked | — | — | [tk-0007](tasks.dd.md#done-when) | Edit, retire and merge are one writer commit each (the same launches as add), measured on a private daemon with data.pid; nothing on a timer. | Private run like plan 196's. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0008 | Docs, skill, difficulties and states | — | ph-00ce | [x] checked | — | — | [tk-0008](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents edit, retire and merge and their refusals; the skill row and directory help carry them; difficulties F19 and F20 resolved; roadmap 001 gains s15 (delivers req-28, depends on s04, plan cell, complete); req-28 shipped; the PR body has a Delivers line. | ddocs set then biome format. | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -86,9 +86,9 @@ Context brief. Purpose: reshape roles (req-28, s15): edit (F20), retire, merge, 
 
 ### tk-0007
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0007 | Receipts in assets/evidence show each verb's spawn delta equals one writer commit, and rest is 0. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0007 | Receipts in assets/evidence show each verb's spawn delta equals one writer commit, and rest is 0. | [x] checked | [bp-0006](../../backpressure.dd.md#rows) | assets/evidence/private-run.txt (private daemon, debug pij-rs at 3621220): rest 0 launches in 60 s; add 9 (2 ddocs + 7 git); edit 9 (2 + 7); retire 9 (2 + 7); merge 11 (4 ddocs for its two documents + 7 git, one commit); retire --drop-queued 9 (2 + 7); a refused retire (queued request) 0; a send to a retired role 0; a queued role send 0; the view 0. Every verb is one writer commit, nothing on a timer. |
 
 ### tk-0008
 

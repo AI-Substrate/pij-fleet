@@ -97,7 +97,7 @@
           "id": "tk-0007",
           "title": "Cost receipts",
           "phase": "ph-00ce",
-          "state": "unchecked",
+          "state": "checked",
           "success": "Edit, retire and merge are one writer commit each (the same launches as add), measured on a private daemon with data.pid; nothing on a timer.",
           "notes": "Private run like plan 196's.",
           "satisfies": [
@@ -181,8 +181,9 @@
           {
             "id": "dw-0007",
             "assertion": "Receipts in assets/evidence show each verb's spawn delta equals one writer commit, and rest is 0.",
-            "state": "unchecked",
-            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006",
+            "receipt": "assets/evidence/private-run.txt (private daemon, debug pij-rs at 3621220): rest 0 launches in 60 s; add 9 (2 ddocs + 7 git); edit 9 (2 + 7); retire 9 (2 + 7); merge 11 (4 ddocs for its two documents + 7 git, one commit); retire --drop-queued 9 (2 + 7); a refused retire (queued request) 0; a send to a retired role 0; a queued role send 0; the view 0. Every verb is one writer commit, nothing on a timer."
           }
         ],
         "tk-0008": [

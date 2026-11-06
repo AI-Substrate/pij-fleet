@@ -1,0 +1,92 @@
+private daemon pid=85633 port=18171 tmux=-L pij-206-85552
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-wildcat","harness":"omp","sessio
+
+$ pij-rs project create demo --repo $S/main --prime pij-scratch-wildcat
+pij project: ok — {"project":{"created_at":1793963369138,"created_by":"pij-scratch-wildcat","description":"demo","plan_path":null,"prime_id":"pij-scratch-wildcat","repo":"$S/main","slug":"demo"},"seq":8}
+exit=0
+reading rest-1: pid=85633 total=6 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+reading rest-2: pid=85633 total=6 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory add qa --title qa --kind general --lifecycle long-lived --holders one --rule r --packet p --why start
+pij directory: ok — {"commit":"4727e251769c97f302be50a08354511aafb382b7","id":"qa","path":".harness/government/community/roles/qa/role.dd.json","paths":[".dd/schemas/pij/external/schema.json",".dd/schemas/pij/holders/schema.json",".dd/schemas/pij/memory/schema.json",".dd/schemas/pij/output/schema.json",".dd/schemas/pij/role/schema.json",".harness/government/community/roles/qa/memory/INDEX.md",".harness/government/community/roles/qa/outputs/.gitkeep",".harness/government/community/roles/qa/role.dd.json",".harness/government/community/roles/qa/role.dd.md"],"project":"demo","roles":[{"id":"qa","path":".harness/government/community/roles/qa/role.dd.json"}],"worktree":"$S/gov"}
+exit=0
+reading after-add-qa: pid=85633 total=15 by_op={"ddocs.community": 2, "git.community": 7, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory add review --title review --kind general --lifecycle long-lived --holders one --rule r --packet p --why start
+pij directory: ok — {"commit":"2bdd2ab8b8434ee961546814ddabf0c13a25c489","id":"review","path":".harness/government/community/roles/review/role.dd.json","paths":[".harness/government/community/roles/review/memory/INDEX.md",".harness/government/community/roles/review/outputs/.gitkeep",".harness/government/community/roles/review/role.dd.json",".harness/government/community/roles/review/role.dd.md"],"project":"demo","roles":[{"id":"review","path":".harness/government/community/roles/review/role.dd.json"}],"worktree":"$S/gov"}
+exit=0
+reading after-add-review: pid=85633 total=24 by_op={"ddocs.community": 4, "git.community": 14, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory add sec --title sec --kind general --lifecycle long-lived --holders one --rule r --packet p --why start
+pij directory: ok — {"commit":"ec3a5dd9daad59c6c81f2ee7fc8013b14dc9c807","id":"sec","path":".harness/government/community/roles/sec/role.dd.json","paths":[".harness/government/community/roles/sec/memory/INDEX.md",".harness/government/community/roles/sec/outputs/.gitkeep",".harness/government/community/roles/sec/role.dd.json",".harness/government/community/roles/sec/role.dd.md"],"project":"demo","roles":[{"id":"sec","path":".harness/government/community/roles/sec/role.dd.json"}],"worktree":"$S/gov"}
+exit=0
+reading after-add-sec: pid=85633 total=33 by_op={"ddocs.community": 6, "git.community": 21, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory add ops --title ops --kind general --lifecycle long-lived --holders one --rule r --packet p --why start
+pij directory: ok — {"commit":"e4b96d8fce47fa17fcf236a1e88cc63fb5db290c","id":"ops","path":".harness/government/community/roles/ops/role.dd.json","paths":[".harness/government/community/roles/ops/memory/INDEX.md",".harness/government/community/roles/ops/outputs/.gitkeep",".harness/government/community/roles/ops/role.dd.json",".harness/government/community/roles/ops/role.dd.md"],"project":"demo","roles":[{"id":"ops","path":".harness/government/community/roles/ops/role.dd.json"}],"worktree":"$S/gov"}
+exit=0
+reading after-add-ops: pid=85633 total=42 by_op={"ddocs.community": 8, "git.community": 28, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory edit qa --set summary=edited --why cost run
+pij directory: ok — {"commit":"49ca5aecd1c4453a898b3a26e8ec9ba8ac193e8f","id":"qa","path":".harness/government/community/roles/qa/role.dd.json","paths":[".harness/government/community/roles/qa/role.dd.json",".harness/government/community/roles/qa/role.dd.md"],"project":"demo"}
+exit=0
+reading after-edit: pid=85633 total=51 by_op={"ddocs.community": 10, "git.community": 35, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory retire qa --why cost run
+pij directory: ok — {"commit":"05ffd58492e5a2dc9299500c8f0603c085a918c3","id":"qa","merged_into":null,"paths":[".harness/government/community/roles/qa/role.dd.json",".harness/government/community/roles/qa/role.dd.md"],"project":"demo","state":"retired","withdrawn":[]}
+exit=0
+reading after-retire: pid=85633 total=60 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory merge review --into sec --why cost run
+pij directory: ok — {"commit":"3df8dfd02104941890fe2d82662d6e557c853b56","id":"review","merged_into":"sec","paths":[".harness/government/community/roles/review/role.dd.json",".harness/government/community/roles/review/role.dd.md",".harness/government/community/roles/sec/role.dd.json",".harness/government/community/roles/sec/role.dd.md"],"project":"demo","state":"retired","withdrawn":[]}
+exit=0
+reading after-merge: pid=85633 total=71 by_op={"ddocs.community": 16, "git.community": 49, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs send --to role:qa --body to a retired role
+pij send: FAILED — E-RS-DIRECTORY-RETIRED role qa in project demo is retired; nothing was sent
+pij directory view --project demo
+exit=2
+reading after-send-retired: pid=85633 total=71 by_op={"ddocs.community": 16, "git.community": 49, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs send --to role:ops --body queued: ops has no holder
+pij send: ok — {"at":1793963444128,"msg_id":"01a1b08d-c79f-7222-a315-8ca903294c7b","outcome":{"outcome":"queued","reason":"no live holder of role:ops in project demo: queued as request 01a1b08d-c79f-7222-a315-8ca903294c7b until a seat is assigned"},"request":{"holder":null,"id":"01a1b08d-c79f-7222-a315-8ca903294c7b","instance":"","limit_ms":null,"project":"demo","reply":"wake","role":"ops","state":"queued"},"woke":{"outcome":"no live PA or prime to wake","seat":null}} — from pij-scratch-wildcat; request 01a1b08d-c79f-7222-a315-8ca903294c7b queued (reply wake)
+exit=0
+reading after-send-queued: pid=85633 total=71 by_op={"ddocs.community": 16, "git.community": 49, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory retire ops --why cost run
+pij directory: FAILED — E-RS-DIRECTORY-ROLE-QUEUED role "ops" has 1 request(s) queued for a holder: 01a1b08d-c79f-7222-a315-8ca903294c7b from pij-scratch-wildcat (0m old); nothing was written
+Assign a holder to take them (pij directory assign ops <seat> --why <text>), release it, then retire ops again; or run pij directory retire ops --why <text> --drop-queued to withdraw them (each requester is told once).
+exit=2
+reading after-retire-refused: pid=85633 total=71 by_op={"ddocs.community": 16, "git.community": 49, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory retire ops --why cost run --drop-queued
+pij directory: ok — {"commit":"f4c827a79e4f1e880d33e76bacbc178c09f8c2a6","id":"ops","merged_into":null,"paths":[".harness/government/community/roles/ops/role.dd.json",".harness/government/community/roles/ops/role.dd.md"],"project":"demo","state":"retired","withdrawn":[{"created_at":1793963444128,"id":"01a1b08d-c79f-7222-a315-8ca903294c7b","requester":"pij-scratch-wildcat","told":"self"}]}
+exit=0
+reading after-retire-drop-queued: pid=85633 total=80 by_op={"ddocs.community": 18, "git.community": 56, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ pij-rs directory
+demo: 4 role(s)
+  ops (general, one): retired
+  qa (general, one): retired
+  review (general, one): retired, merged into sec
+  sec (general, one): no holder
+    merged from review
+
+Pij Emergent Communities (PEC): the prime and the humans build whatever community the work needs now, and reshape it as the work changes. The templates are examples, not a checklist: start from one when it fits and edit it freely, or write a role no template describes. Nothing here is created for you.
+Not yet in this directory:
+  prime (core): pij directory add prime --from template:prime --why "core role from the prime template" --project demo
+  pm (core): pij directory add pm --from template:pm --why "core role from the pm template" --project demo
+  pa (core): pij directory add pa --from template:pa --why "core role from the pa template" --project demo
+  coder (core): pij directory add coder --from template:coder --why "core role from the coder template" --project demo
+  reviewer (core): pij directory add reviewer --from template:reviewer --why "core role from the reviewer template" --project demo
+  security (recommended): pij directory add security --from template:security --why "recommended role from the security template" --project demo
+exit=0
+reading after-view: pid=85633 total=80 by_op={"ddocs.community": 18, "git.community": 56, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+f4c827a community: retire role ops
+3df8dfd community: merge role review into sec
+05ffd58 community: retire role qa
+49ca5ae community: edit role qa
+e4b96d8 community: add role ops
+ec3a5dd community: add role sec
+2bdd2ab community: add role review
+4727e25 community: add role qa
