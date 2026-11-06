@@ -1596,6 +1596,34 @@ async fn fyis(rig: &Rig, recipient: &str) -> Vec<(String, String)> {
     rows
 }
 
+/// Plan 201: a compact to a role holder is held for its memory turn and
+/// admitted in the background; the turn's `memory.turn` event is appended
+/// after that admission (and so after its routes FYI). Waits for `turns`.
+async fn memory_turns(rig: &Rig, seat: &str, turns: i64) {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let ended: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM spine_events WHERE kind = 'memory.turn' AND seat = ?1",
+        )
+        .bind(seat)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if ended >= turns {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{seat}: {ended} of {turns} memory turns ended"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    pool.close().await;
+}
+
 fn routes_md(repo: &Repo) -> String {
     std::fs::read_to_string(repo.gov.join(pij_daemon::community::layout::ROUTES)).unwrap()
 }
@@ -1867,6 +1895,8 @@ async fn assign_compact_and_revive_each_send_a_holder_the_table_once() {
     )
     .await;
     assert_eq!(compact["ok"], true, "{compact}");
+    assert_eq!(compact["data"]["held"], "memory-turn", "{compact}");
+    memory_turns(&rig, "pij-holder", 1).await;
     assert_eq!(fyis(&rig, "pij-holder").await.len(), 2);
     let own = call(rig.addr, "/v1/shim/send", &["compact-self"], &repo.main).await;
     assert_eq!(own["ok"], true, "{own}");
@@ -1950,6 +1980,8 @@ async fn reviewer_compact_request_replay_does_not_duplicate_routes() {
             .unwrap();
         assert_eq!(response["ok"], true, "{response}");
         assert_eq!(response["data"]["msg_id"], "reviewer-one-compact");
+        // Each request is held for the holder's memory turn, then admitted.
+        memory_turns(&rig, "pij-holder", attempt).await;
         let controls: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM jobs WHERE dedupe_key = 'reviewer-one-compact'",
         )
@@ -2012,6 +2044,7 @@ async fn one_compact_msg_id_to_two_seats_gives_each_its_own_table_once() {
             assert_eq!(response["ok"], true, "{seat}: {response}");
         }
         for seat in ["pij-holder", "pij-dormant"] {
+            memory_turns(&rig, seat, attempt).await;
             let held = fyis(&rig, seat).await;
             assert_eq!(
                 held.len(),
