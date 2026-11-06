@@ -60,3 +60,5 @@
 
 2026-11-06 verdict pr:131 09653d32a47224a61f0e2957b3862001b869e218 pass-with-notes - Explicitly requested SNAPSHOT ONLY; project labels preserved in JSON/human cards, fixes/quote/auth proof checked, CI green; live API/Git ref 93ca2b1 is NOT approved and owner notified; no local validation under backoff; 2026-11-06-pr-131-09653d3-security.md.
 
+2026-11-06 verdict pr:131 93ca2b1c3dc80d3ea609438e9864d9593b7e35f5 pass-with-notes - PM explicitly re-pinned live head; complete five-file indexed state-only read delta safe, PM selection/project labels retained; 48-row display completeness limit recorded; four CI jobs green, identical-tree 1914-case proof; no local validation under backoff; 2026-11-06-pr-131-93ca2b1-security.md.
+
