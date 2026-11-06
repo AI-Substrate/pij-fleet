@@ -179,7 +179,8 @@ impl CommunityWriter {
                 ),
             )
             .with_next(format!(
-                "Commit or remove those edits in {}, then retry.",
+                "The prime commits or removes hand edits in the governance worktree ({}): \
+                 send it these paths, then retry once they are committed.",
                 top.display()
             )));
         }

@@ -1780,6 +1780,18 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_memory_note(memory));
                     ExitCode::SUCCESS
                 }
+                // `directory memory add`: one line, the JSON is for --json (F31).
+                Some(added)
+                    if args.first().map(String::as_str) == Some("memory")
+                        && args.get(1).map(String::as_str) == Some("add")
+                        && added.get("commit").is_some_and(Value::is_string) =>
+                {
+                    println!(
+                        "{}",
+                        render_memory_added(args.get(2).map_or("-", String::as_str), added)
+                    );
+                    ExitCode::SUCCESS
+                }
                 _ => emit(&response, as_json),
             }
         }
@@ -2900,6 +2912,21 @@ fn render_template_diff(data: &Value) -> String {
 }
 
 /// One memory note for a human: its title line, then the body as written.
+/// `pij directory memory add` in human mode (plan 209, F31).
+fn render_memory_added(role: &str, added: &Value) -> String {
+    let path = added["path"].as_str().unwrap_or_default();
+    let note = path
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(".dd.json");
+    let commit = added["commit"].as_str().unwrap_or_default();
+    format!(
+        "pij directory memory: wrote {role} memory {note} (commit {})",
+        &commit[..commit.len().min(7)]
+    )
+}
+
 fn render_memory_note(note: &Value) -> String {
     if let Some(text) = note["text"].as_str() {
         return text.trim_end().to_string();
@@ -3543,6 +3570,20 @@ mod tests {
         assert!(
             text.contains("pij directory template-diff qa --project 'my remote'"),
             "{text}"
+        );
+    }
+
+    /// Plan 209, F31: a memory add says what it wrote, not its envelope.
+    #[test]
+    fn a_memory_add_prints_one_line() {
+        let added = serde_json::json!({
+            "path": "community/roles/coder/memory/2026-11-06-shim-stdin.dd.json",
+            "commit": "0123456789abcdef",
+            "paths": [],
+        });
+        assert_eq!(
+            super::render_memory_added("coder", &added),
+            "pij directory memory: wrote coder memory 2026-11-06-shim-stdin (commit 0123456)"
         );
     }
 

@@ -14,8 +14,9 @@ use super::layout::RolePaths;
 use super::writer::{Existing, NewFile};
 use super::{Refusal, role};
 
-/// The longest slug a note's file name carries.
-pub const SLUG_MAX: usize = 60;
+/// The longest slug a note's file name carries; a longer one is cut back to
+/// a word boundary (plan 209, F34).
+pub const SLUG_MAX: usize = 40;
 /// A note with this date and slug already exists.
 pub const E_NOTE_EXISTS: &str = "E-RS-MEMORY-EXISTS";
 /// `--note` named no note in the role's memory.
@@ -57,7 +58,14 @@ pub fn slug(title: &str) -> Result<String, Refusal> {
             out.push('-');
         }
     }
-    out.truncate(SLUG_MAX);
+    if out.len() > SLUG_MAX {
+        // Cut mid-word only when the first word alone is too long.
+        let whole = out.as_bytes()[SLUG_MAX] == b'-';
+        out.truncate(SLUG_MAX);
+        if !whole && let Some(boundary) = out.rfind('-') {
+            out.truncate(boundary);
+        }
+    }
     let out = out.trim_end_matches('-').to_string();
     if out.is_empty() {
         return Err(Refusal::new(
@@ -471,6 +479,15 @@ mod tests {
         );
         assert_eq!(slug("--x--").unwrap(), "x");
         assert_eq!(slug(&"a".repeat(100)).unwrap().len(), SLUG_MAX);
+        // F34: a long title is cut back to a word boundary.
+        assert_eq!(
+            slug("Verdict: a schema change against the live documents").unwrap(),
+            "verdict-a-schema-change-against-the-live"
+        );
+        assert_eq!(
+            slug("Plan 202 routing table regeneration inside the writer").unwrap(),
+            "plan-202-routing-table-regeneration"
+        );
         for title in ["", "  ", "日本", "../.."] {
             assert_eq!(slug(title).unwrap_err().code, "E-RS-ARG", "{title:?}");
         }

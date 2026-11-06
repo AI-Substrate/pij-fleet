@@ -224,8 +224,13 @@ impl fmt::Display for Address {
 pub enum DeliversError {
     /// No `Delivers:` line, or one naming nothing.
     Missing,
-    /// A token that is not a ddocs address.
-    Bad(String),
+    /// A token that is not a ddocs address, and the line it is on.
+    Bad {
+        /// The token.
+        token: String,
+        /// The whole `Delivers:` line, as written (plan 209, F46).
+        line: String,
+    },
 }
 
 impl fmt::Display for DeliversError {
@@ -237,10 +242,12 @@ impl fmt::Display for DeliversError {
                  (e.g. `{DELIVERS} docs/project/prds/001-pij-community.dd.json#requirements/req-20`, \
                  or `{DELIVERS} none`)"
             ),
-            Self::Bad(token) => write!(
+            Self::Bad { token, line } => write!(
                 f,
-                "`{DELIVERS}` names {token:?}, which is not a ddocs address \
-                 (<path>.dd.json#<section>/<id>)"
+                "the line {line:?} names {token:?}, which is not a ddocs address; \
+                 write full addresses separated by commas, as \
+                 `{DELIVERS} docs/project/prds/001-pij-community.dd.json#requirements/req-20`, \
+                 or `{DELIVERS} none`"
             ),
         }
     }
@@ -257,8 +264,8 @@ impl fmt::Display for DeliversError {
 pub fn delivers(body: &str) -> Result<Vec<Address>, DeliversError> {
     let mut addresses = Vec::new();
     let mut none = false;
-    for line in body.lines() {
-        let line = line.trim().trim_start_matches(['-', '*', ' ']);
+    for written in body.lines() {
+        let line = written.trim().trim_start_matches(['-', '*', ' ']);
         let Some(rest) = line
             .get(..DELIVERS.len())
             .filter(|head| head.eq_ignore_ascii_case(DELIVERS))
@@ -275,7 +282,10 @@ pub fn delivers(body: &str) -> Result<Vec<Address>, DeliversError> {
                 none = true;
                 continue;
             }
-            let address = Address::parse(token).ok_or_else(|| DeliversError::Bad(token.into()))?;
+            let address = Address::parse(token).ok_or_else(|| DeliversError::Bad {
+                token: token.into(),
+                line: written.trim().into(),
+            })?;
             if !addresses.contains(&address) {
                 addresses.push(address);
             }
@@ -448,8 +458,16 @@ mod tests {
         assert_eq!(delivers("Delivers: none"), Ok(Vec::new()));
         assert_eq!(
             delivers("Delivers: req-20"),
-            Err(DeliversError::Bad("req-20".into()))
+            Err(DeliversError::Bad {
+                token: "req-20".into(),
+                line: "Delivers: req-20".into()
+            })
         );
+        // F46: #132's prose line is named whole, with the form to write.
+        let prose = "Delivers: roadmap 001 s07 (role memory); req-09 shipped.";
+        let refused = delivers(prose).unwrap_err().to_string();
+        assert!(refused.contains(&format!("{prose:?}")), "{refused}");
+        assert!(refused.contains("or `Delivers: none`"), "{refused}");
         for bad in [
             "/abs/x.dd.json#requirements/req-1",
             "../x.dd.json#requirements/req-1",

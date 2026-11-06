@@ -1050,7 +1050,7 @@ writer commit as any add. No loop or timer.
 <text>` writes one note, a `pij/memory` document (`meta.date`, `title`, `tags`,
 `hook`; `body`), to `community/roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json`,
 the slug taken from the title (lowercase ASCII letters and digits, other runs
-as one hyphen, at most 60). `--tags` repeats or takes a comma list.
+as one hyphen, at most 40, cut back to a word boundary). `--tags` repeats or takes a comma list.
 `--body-file <path>` reads the body from a file; the native CLI reads the file,
 or stdin for `-`, and sends it as `--body` (the `pij` shim runs `pij-rs` for
 `directory memory`, so both read stdin), while an HTTP caller's path is read by
@@ -1217,7 +1217,7 @@ what was skipped and why.
 | `E-RS-CLAIM-SCAN` | the project's checkout, or a folder of that kind's numbers, exists but cannot be read; nothing is claimed |
 | `E-RS-NOT-FOUND` | `--pm` names no live seat, or `--project` no project |
 | `E-RS-PR-NOT-MERGED` | gh says the PR is open or closed unmerged |
-| `E-RS-DELIVERS` | the body has no `Delivers:` line, or names something that is not a ddocs address |
+| `E-RS-DELIVERS` | the body has no `Delivers:` line, or names something that is not a ddocs address (the refusal quotes the whole line and shows the form to write) |
 | `E-RS-GH-MISSING` | gh is not installed or `PIJ_GH` is not an absolute executable; the next step installs it and restarts the daemon |
 | `E-RS-GH-AUTH` | gh is not signed in for the daemon's user; the next step is `gh auth login` |
 | `E-RS-GH` | gh refused (no such PR) or printed something unreadable |

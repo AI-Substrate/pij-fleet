@@ -81,6 +81,16 @@ Usage:
   pij directory add <id> --from template:<name>[@v<n>] --why <text> [flags]
   pij directory add --batch <dir> --why <text>
 
+Required, unless --file or --from template supplies them: --why, --title,
+--kind, --lifecycle, --holders, at least one --rule, and one of --packet or
+--brief. The shortest add:
+  pij directory add qa --why \"a QA role\" --title QA --kind specialist \\
+    --lifecycle long-lived --holders one --rule \"A verdict on every PR.\" \\
+    --packet \"Review each PR at its head.\"
+
+Each add is its own commit: a chain of adds that stops part-way leaves the
+earlier roles committed. --batch <dir> is all or nothing.
+
 Flags:
   --why <text>              required; becomes the changelog row
   --from template:<name>[@v<n>]   copy a template (latest by default); flags
@@ -185,6 +195,13 @@ mod tests {
         assert!(help(None).unwrap().contains("pij directory <verb> --help"));
         assert!(help(Some("nope")).is_none());
         assert!(help(Some("memory")).unwrap().contains("no delete verb"));
+        // F35, F38: the required flags, the shortest add, one commit per add.
+        let add = help(Some("add")).unwrap();
+        assert!(
+            add.contains("at least one --rule, and one of --packet or"),
+            "{add}"
+        );
+        assert!(add.contains("Each add is its own commit"), "{add}");
         assert!(help(None).unwrap().contains("pij directory memory <role>"));
         assert!(
             help(Some("add"))
