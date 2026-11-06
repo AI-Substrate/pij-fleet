@@ -1049,7 +1049,8 @@ daemon asks that seat to write what it learned. It reads the seat's open
 holdings (one indexed query; a seat with none is compacted or closed exactly
 as before), delivers one prompt from `pij-bg` naming each role and project and
 the `pij directory memory add` command, then holds the action until the prompt
-is delivered and the seat next publishes `idle`, or until the bound (5 minutes)
+is delivered and the seat next publishes `idle`, or until the bound (5 minutes;
+`PIJ_RS_MEMORY_TURN_SECS`, a positive integer read at daemon start, overrides it)
 passes, after which it proceeds anyway.
 
 - A caller compacting or closing another seat waits inline. The receipt (the

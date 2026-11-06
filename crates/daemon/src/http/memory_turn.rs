@@ -29,6 +29,18 @@ use crate::delivery::OUTCOME_EVENT_KIND;
 
 /// How long a compact or close waits for the memory turn to end.
 pub const BOUND: Duration = Duration::from_secs(5 * 60);
+/// Overrides [`BOUND`] in seconds, read once at daemon start.
+pub const BOUND_ENV: &str = "PIJ_RS_MEMORY_TURN_SECS";
+
+/// The bound this daemon uses: [`BOUND_ENV`] when it is a positive integer,
+/// else [`BOUND`].
+pub fn bound_from(value: Option<&str>) -> Duration {
+    value
+        .and_then(|secs| secs.trim().parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+        .map_or(BOUND, Duration::from_secs)
+}
+
 /// The spine event recording each memory turn and how it ended.
 pub const EVENT_KIND: &str = "memory.turn";
 const ACTIVITY: &str = "seat.activity";
@@ -389,6 +401,14 @@ mod tests {
         );
         let idle = event(ACTIVITY, json!({"state": "idle"}));
         assert_eq!(Watch::new("p", true).on(&idle), Some(Ended::TurnEnd));
+    }
+
+    #[test]
+    fn the_bound_is_overridden_only_by_a_positive_integer() {
+        assert_eq!(bound_from(Some("5")), Duration::from_secs(5));
+        for value in [None, Some(""), Some("0"), Some("-1"), Some("5m")] {
+            assert_eq!(bound_from(value), BOUND, "{value:?}");
+        }
     }
 
     #[test]

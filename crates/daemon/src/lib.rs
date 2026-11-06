@@ -611,7 +611,9 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         ddocs,
         community: community_writer,
         directory,
-        memory_turn_bound: http::memory_turn::BOUND,
+        memory_turn_bound: http::memory_turn::bound_from(
+            std::env::var(http::memory_turn::BOUND_ENV).ok().as_deref(),
+        ),
         offline: config.is_fully_offline(),
     })
 }
