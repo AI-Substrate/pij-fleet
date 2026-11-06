@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "When reviewing output storage/notice identities or locating closure of PR 137 F001, F002 and N001.",
+				"tags": [
+					"review",
+					"outputs",
+					"identity",
+					"repair",
+					"ci"
+				],
+				"title": "PR 137 output identity repair at 1fbe46c"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Output identity repair and merge proof\n\nPR 137 at 1fbe46c closes the original F001/F002/N001 review. The output table and conflict target both use project plus governance-relative path. The regression inserts an identical path into a second project and reads both records back, so a project-filter-only happy path cannot hide a namespace collision.\n\nNotice IDs derive from the output project and writer commit, never a clock reading. The HTTP regression checks both IDs and two held FYIs, not only distinct files. A committed identity remains useful even when notification continuations complete out of order.\n\nFor diagnostics, distinguish real absence from failed lookup. The guard returns an HTTP response whose meta carries adapter causes; decoding that cause preserves the error without sending after a refused audit. This was source-verified, not newly fault-injected.\n\nMerge verification used main-parent equality for main-owned role-request code and direct checks of shared endpoint/schema wiring. The last merge imported main routing-table code; it was not literally a documentation-only delta, but the s06 files were unchanged. Generic shim tests iterate the native manifest, so adding output/outputs makes them participate automatically.\n\nExact-head CI ran 2,021 tests successfully, including six output HTTP cases, the store boundary and shim controls. No local build or probe. Security's answer-authority verdict and performance remain separate.\n\nmagicWand fulfilled: committed regressions now test the owning namespace and actual notification effect. Preserve those boundaries when later changing output storage or delivery.\n"
+		}
+	]
+}
