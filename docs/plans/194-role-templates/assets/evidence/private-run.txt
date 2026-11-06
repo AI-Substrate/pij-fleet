@@ -1,0 +1,76 @@
+private daemon pid=26469 port=17904
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-marsupial","harness":"omp","session":null,"extension
+
+$ <worktree>/target/debug/pij-rs project create fleet --repo <tmp>/main --prime pij-scratch-marsupial
+pij project: ok — {"project":{"created_at":1793921831599,"created_by":"pij-scratch-marsupial","description":"fleet","plan_path":null,"prime_id":"pij-scratch-marsupial","repo":"<tmp>/main","slug":"fleet"},"seq":8}
+exit=0
+reading rest-1: pid=26469 total=6 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+reading rest-2: pid=26469 total=6 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ <worktree>/target/debug/pij-rs directory templates
+6 role template(s); examples to adapt, not a checklist
+  coder [v1] core: Builds one step from a packet, in its own worktree and branch.
+  pa [v1] core: Keeps seats healthy so work isn't lost.
+  pm [v1] core: Runs one roadmap. One instance per roadmap, named pm-<roadmap number>.
+  prime [v1] core: The project's prime: designated, never assigned. `pij directory assign` never applies to this role; the prime is set by designation (seat roles never re-role a prime).
+  reviewer [v1] core: Reviews one PR for correctness at its exact head.
+  security [v1]: Recommended for every community: a security verdict on every PR.
+exit=0
+reading after-templates: pid=26469 total=6 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ <worktree>/target/debug/pij-rs directory
+fleet: 0 role(s)
+
+Pij Emergent Communities (PEC): the prime and the humans build whatever community the work needs now, and reshape it as the work changes. The templates are examples, not a checklist: start from one when it fits and edit it freely, or write a role no template describes. Nothing here is created for you.
+Not yet in this directory:
+  prime (core): pij directory add prime --from template:prime --why "core role from the prime template"
+  pm (core): pij directory add pm --from template:pm --why "core role from the pm template"
+  pa (core): pij directory add pa --from template:pa --why "core role from the pa template"
+  coder (core): pij directory add coder --from template:coder --why "core role from the coder template"
+  reviewer (core): pij directory add reviewer --from template:reviewer --why "core role from the reviewer template"
+  security (recommended): pij directory add security --from template:security --why "recommended role from the security template"
+exit=0
+reading after-view: pid=26469 total=6 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ <worktree>/target/debug/pij-rs directory add security --from template:security --why recommended role from the security template
+pij directory: ok — {"commit":"bd347a2bc79caf2d10e06b46213183b64c0da60b","id":"security","path":".harness/government/community/roles/security/role.dd.json","paths":[".dd/schemas/pij/external/schema.json",".dd/schemas/pij/holders/schema.json",".dd/schemas/pij/memory/schema.json",".dd/schemas/pij/output/schema.json",".dd/schemas/pij/role/schema.json",".harness/government/community/roles/security/memory/INDEX.md",".harness/government/community/roles/security/outputs/.gitkeep",".harness/government/community/roles/security/role.dd.json",".harness/government/community/roles/security/role.dd.md"],"project":"fleet","roles":[{"id":"security","path":".harness/government/community/roles/security/role.dd.json"}],"worktree":"<tmp>/gov"}
+exit=0
+reading after-add-from-template: pid=26469 total=15 by_op={"ddocs.community": 2, "git.community": 7, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ <worktree>/target/debug/pij-rs directory template-diff security
+security: template security v1 is the latest
+exit=0
+reading after-template-diff: pid=26469 total=15 by_op={"ddocs.community": 2, "git.community": 7, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ <worktree>/target/debug/pij-rs directory
+fleet: 1 role(s)
+  security (specialist, one): no holder
+
+Pij Emergent Communities (PEC): the prime and the humans build whatever community the work needs now, and reshape it as the work changes. The templates are examples, not a checklist: start from one when it fits and edit it freely, or write a role no template describes. Nothing here is created for you.
+Not yet in this directory:
+  prime (core): pij directory add prime --from template:prime --why "core role from the prime template"
+  pm (core): pij directory add pm --from template:pm --why "core role from the pm template"
+  pa (core): pij directory add pa --from template:pa --why "core role from the pa template"
+  coder (core): pij directory add coder --from template:coder --why "core role from the coder template"
+  reviewer (core): pij directory add reviewer --from template:reviewer --why "core role from the reviewer template"
+exit=0
+reading after-view-2: pid=26469 total=15 by_op={"ddocs.community": 2, "git.community": 7, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 2, "tmux.control-client": 1, "tmux.pipe-pane attach": 1, "tmux.set-options tap owner": 1}
+
+$ git -C gov log
+bd347a2 community: add role security
+8d846b3 government
+1a7143b governance
+
+$ security meta at HEAD
+{
+ "default_limit": "1h",
+ "holders": "one",
+ "id": "security",
+ "kind": "specialist",
+ "lifecycle": "long-lived",
+ "summary": "Recommended for every community: a security verdict on every PR.",
+ "template": "security",
+ "template_version": "1",
+ "title": "Security"
+}
+docs/plans/194-role-templates/assets/evidence/private-run.sh: line 81: 26469 Terminated: 15          "$BIN" daemon --bind "127.0.0.1:$PORT" --state-dir "$PIJ_RS_STATE_DIR" >> "$S/daemon.log" 2>&1  (wd: <worktree>)

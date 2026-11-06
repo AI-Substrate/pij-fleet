@@ -19,6 +19,7 @@ use super::holders::{self, seat_role_for};
 use super::layout::RolePaths;
 use super::root::GovernanceRoot;
 use super::routes::{self, Regenerated};
+use super::templates::{self, Catalog};
 use super::writer::{CommunityWriter, Existing, NewFile, Written};
 use super::{E_GOV_GIT, Refusal, role};
 use crate::events::EventBus;
@@ -105,6 +106,7 @@ pub struct DirectoryService {
     event_bus: Arc<EventBus>,
     hook: Arc<dyn AfterAssign>,
     tmux: Arc<dyn TmuxPort>,
+    templates: Catalog,
 }
 
 impl DirectoryService {
@@ -124,7 +126,21 @@ impl DirectoryService {
             event_bus,
             hook,
             tmux,
+            templates: Catalog::shipped(),
         }
+    }
+
+    /// The same service with another template catalog (tests use fixtures;
+    /// the daemon keeps the shipped one).
+    #[must_use]
+    pub fn with_templates(mut self, templates: Catalog) -> Self {
+        self.templates = templates;
+        self
+    }
+
+    /// The role templates this service copies from and compares against.
+    pub fn templates(&self) -> &Catalog {
+        &self.templates
     }
 
     /// The store, for the view and the rebuild.
@@ -135,6 +151,8 @@ impl DirectoryService {
     /// `pij directory` (AC7): this project's roles, read in-process from the
     /// governance worktree, and their holders from the store. Launches
     /// nothing. Holders come from the store so a rebuild is a real round trip.
+    /// Plan 194: each role's template drift, and prompts for the missing core
+    /// roles and security (ruling C22), which create nothing.
     ///
     /// # Errors
     /// [`super::E_GOV_ABSENT`] without a governance worktree; `E-RS-STORE`.
@@ -155,6 +173,7 @@ impl DirectoryService {
             .collect();
         ids.sort();
         let mut roles = Vec::new();
+        let mut made_from = Vec::new();
         for id in &ids {
             let document: Value = std::fs::read(roles_dir.join(id).join("role.dd.json"))
                 .ok()
@@ -176,21 +195,76 @@ impl DirectoryService {
                 })
                 .collect();
             let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
+            made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
             roles.push(serde_json::json!({
                 "id": id,
                 "title": meta["title"],
                 "kind": meta["kind"],
                 "holders": meta["holders"],
+                "template": self.templates.drift(&meta),
                 "live": live,
                 "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
             }));
         }
+        let prompts = templates::prompts(project, &made_from);
         let pending: Vec<Value> = rows
             .iter()
             .filter(|row| row.end_pending)
             .map(|row| serde_json::json!({"role": row.role, "seat": row.seat, "instance": row.instance, "to": row.to}))
             .collect();
-        Ok(serde_json::json!({"project": project, "roles": roles, "pending": pending}))
+        let mut view = serde_json::json!({"project": project, "roles": roles, "pending": pending});
+        if !prompts.is_empty() {
+            view["prompts"] = serde_json::json!(prompts);
+            view["guidance"] = serde_json::json!(templates::GUIDANCE);
+        }
+        Ok(view)
+    }
+
+    /// `pij directory template-diff <id>` (plan 194, AC4): what changed
+    /// upstream between the template version role `id` came from and the
+    /// latest, computed in-process. Reads the role from the governance
+    /// worktree; writes and launches nothing.
+    ///
+    /// # Errors
+    /// [`super::E_GOV_ABSENT`]; [`E_ROLE_MISSING`]; `E-RS-ARG` for a template
+    /// or version this build does not ship.
+    pub fn template_diff(&self, repo: &std::path::Path, id: &str) -> Result<Value, Refusal> {
+        let paths = RolePaths::new(id)?;
+        let root = super::root::find(repo)?;
+        let document: Value = std::fs::read(root.worktree.join(&paths.document))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .ok_or_else(|| {
+                Refusal::new(
+                    E_ROLE_MISSING,
+                    format!("role {id:?} has no readable {}", paths.document.display()),
+                )
+            })?;
+        let meta = document["sections"]
+            .as_array()
+            .and_then(|sections| sections.iter().find(|section| section["name"] == "meta"))
+            .map_or(Value::Null, |meta| meta["value"].clone());
+        let Some(name) = meta["template"].as_str() else {
+            return Ok(
+                serde_json::json!({"id": id, "template": null, "behind": false, "diff": ""}),
+            );
+        };
+        let version = meta["template_version"].as_str().unwrap_or_default();
+        let from = templates::parse_version(version).ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!("role {id:?} records template_version {version:?}, not a version number"),
+            )
+        })?;
+        let (latest, diff) = self.templates.diff_to_latest(name, from)?;
+        Ok(serde_json::json!({
+            "id": id,
+            "template": name,
+            "version": from,
+            "latest": latest,
+            "behind": latest > from,
+            "diff": diff,
+        }))
     }
 
     /// Rebuild this project's pointer and holder rows from the governance

@@ -1,5 +1,7 @@
 //! `pij directory add` (plan 190, roadmap 001 s02): write a role into the
-//! community directory through the daemon's single writer.
+//! community directory through the daemon's single writer. Plan 194 (s03):
+//! `add --from template:<name>[@v<n>]|file:<brief>`, `templates` and
+//! `template-diff <id>`.
 //!
 //! The argv/caller wire is governance's ([`GovernanceRequest`]). Flags may
 //! repeat (`--rule`, `--scope-path`, …), which governance's parser refuses,
@@ -25,8 +27,9 @@ use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 21] = [
+const SINGLE: [&str; 22] = [
     "why",
+    "from",
     "from-project",
     "role",
     "project",
@@ -57,9 +60,10 @@ const REPEATED: [&str; 6] = [
     "output-kind",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 8] = [
+const CONTROL: [&str; 9] = [
     "write",
     "why",
+    "from",
     "project",
     "file",
     "batch",
@@ -86,7 +90,14 @@ impl Arguments {
                 if family == "directory"
                     && matches!(
                         leaf.as_str(),
-                        "add" | "assign" | "release" | "rebuild" | "external" | "routes"
+                        "add"
+                            | "assign"
+                            | "release"
+                            | "rebuild"
+                            | "external"
+                            | "routes"
+                            | "templates"
+                            | "template-diff"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -197,6 +208,25 @@ impl Arguments {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 "usage: pij directory routes [--project <slug>] [--write --why <text>]",
+            ));
+        }
+        if matches!(call.leaf.as_str(), "templates" | "template-diff")
+            && (call.positions.len() != usize::from(call.leaf == "template-diff")
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "project" | "actor"))
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "add" && call.single.contains_key("from") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --from belongs to `add`", call.leaf),
             ));
         }
         if matches!(call.leaf.as_str(), "view" | "rebuild")
@@ -321,6 +351,20 @@ pub(crate) async fn handle(
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
         "external" => external(&state, &actor.id, &request.caller, &call).await,
         "routes" => routes_leaf(&state, &actor.id, &request.caller, &call).await,
+        "templates" => Ok(json!({"templates": state.services.directory.templates().listing()})),
+        "template-diff" => {
+            match project_and_repo(&state, &request.caller, call.get("project")).await {
+                Ok((project, repo)) => state
+                    .services
+                    .directory
+                    .template_diff(&repo, &call.positions[0])
+                    .map(|mut data| {
+                        data["project"] = json!(project);
+                        data
+                    }),
+                Err(refusal) => Err(refusal),
+            }
+        }
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => {
@@ -355,6 +399,35 @@ async fn add(
         })?;
     let date = role::today();
     let batch = call.get("batch");
+    let mut fields = call.fields();
+    let from = call
+        .get("from")
+        .map(|from| Source::parse(&from))
+        .transpose()?;
+    match &from {
+        Some(_) if batch.is_some() || call.get("file").is_some() => {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "--from takes no --file or --batch: it is where the role comes from",
+            ));
+        }
+        Some(Source::File(_)) if fields.brief.is_some() => {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "--from file:<brief> is --brief <brief>: give one, not both",
+            ));
+        }
+        Some(Source::File(brief)) => fields.brief = Some(brief.clone()),
+        Some(Source::Template(..))
+            if fields.template.is_some() || fields.template_version.is_some() =>
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "--from template: records the template and version itself; drop --template and --template-version",
+            ));
+        }
+        _ => {}
+    }
     let documents = match (&batch, call.get("file"), call.positions.as_slice()) {
         (Some(dir), None, []) if !call.describes_a_role() => {
             read_batch(&caller_path(caller, dir)?)?
@@ -374,7 +447,17 @@ async fn add(
                 "give the role as --file <json> or as flags, not both",
             ));
         }
-        (None, None, [id]) => vec![(id.clone(), role::from_fields(id, &call.fields())?)],
+        (None, None, [id]) => match &from {
+            Some(Source::Template(name, version)) => {
+                let document = state
+                    .services
+                    .directory
+                    .templates()
+                    .role_from(name, *version, id)?;
+                vec![(id.clone(), role::apply_fields(document, &fields)?)]
+            }
+            _ => vec![(id.clone(), role::from_fields(id, &fields)?)],
+        },
         (None, _, _) => {
             return Err(Refusal::new(
                 "E-RS-ARG",
@@ -572,6 +655,31 @@ async fn routes_leaf(
     data["overlaps"] = json!(table.overlaps);
     data["holders"] = json!(holders);
     Ok(data)
+}
+
+/// Where `add --from` takes a role from (plan 194, req-13).
+#[derive(Debug)]
+enum Source {
+    /// `template:<name>[@v<n>]`: a copy of a shipped template version.
+    Template(String, Option<u32>),
+    /// `file:<brief>`: the spelling of `--brief`; referenced, not copied.
+    File(String),
+}
+
+impl Source {
+    fn parse(value: &str) -> Result<Self, Refusal> {
+        if let Some(spec) = value.strip_prefix("template:") {
+            let (name, version) = crate::community::templates::parse_spec(spec)?;
+            return Ok(Self::Template(name, version));
+        }
+        match value.strip_prefix("file:") {
+            Some(brief) if !brief.is_empty() => Ok(Self::File(brief.to_string())),
+            _ => Err(Refusal::new(
+                "E-RS-ARG",
+                format!("--from {value:?}: use template:<name>[@v<n>] or file:<brief>"),
+            )),
+        }
+    }
 }
 
 /// `directory assign|release <role>[/<instance>] <seat> --why <text>` (plan 195).
@@ -938,5 +1046,61 @@ mod tests {
         ]))
         .unwrap();
         assert!(!plain.describes_a_role());
+    }
+
+    #[test]
+    fn from_names_a_template_or_a_file_and_belongs_to_add() {
+        assert!(matches!(
+            Source::parse("template:pm@v2").unwrap(),
+            Source::Template(name, Some(2)) if name == "pm"
+        ));
+        assert!(matches!(
+            Source::parse("template:security").unwrap(),
+            Source::Template(name, None) if name == "security"
+        ));
+        assert!(matches!(
+            Source::parse("file:briefs/qa.md").unwrap(),
+            Source::File(brief) if brief == "briefs/qa.md"
+        ));
+        for bad in ["pm", "file:", "template:", "template:pm@next", "url:x"] {
+            assert_eq!(Source::parse(bad).unwrap_err().code, "E-RS-ARG", "{bad}");
+        }
+        let call = Arguments::parse(&argv(&[
+            "directory",
+            "add",
+            "pm-001",
+            "--from",
+            "template:pm",
+            "--title",
+            "PM 001",
+            "--why",
+            "w",
+        ]))
+        .unwrap();
+        assert_eq!(call.get("from").as_deref(), Some("template:pm"));
+        for refused in [
+            &["directory", "assign", "pm", "s", "--from", "template:pm"][..],
+            &["directory", "templates", "extra"][..],
+            &["directory", "template-diff"][..],
+            &["directory", "template-diff", "pm", "--title", "x"][..],
+        ] {
+            assert_eq!(
+                Arguments::parse(&argv(refused)).unwrap_err().code,
+                "E-RS-ARG",
+                "{refused:?}"
+            );
+        }
+        assert_eq!(
+            Arguments::parse(&argv(&["directory", "template-diff", "pm"]))
+                .unwrap()
+                .positions,
+            ["pm"]
+        );
+        assert_eq!(
+            Arguments::parse(&argv(&["directory", "templates"]))
+                .unwrap()
+                .leaf,
+            "templates"
+        );
     }
 }
