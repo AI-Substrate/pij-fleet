@@ -1,0 +1,11 @@
+reviewer: block (head 44f1eea35be87355a9871c4fc7fdb1616fc9749f)
+
+**F001 closed. F002's ordinary failed-attempt paths are fixed, but one P2 recovery case remains:** an admitted-but-unstamped PA notice can be sent again to a different PA after rotation. `notice` resolves the current target on every attempt (`crates/daemon/src/delivery/role_send.rs:1056-1105`), while the persisted claim stores only its timestamp (`crates/store/src/role_requests.rs:313-350`). The fixed msg_id does not solve this: delivery deduplication is scoped to `(recipient, msg_id)`, not the notification id globally.
+
+Schedule: admit `role-limit-notice-<id>` to PA A; stop before `finish_role_request_limit` stamps escalated_at; rotate the PA to B; resume after the claim lease. The retry resolves B and admits the same notification id to a new recipient. Both PAs receive the one-shot notice. Persist/reconcile the selected recipient across interrupted admission, using the existing recipient-scoped admission evidence rather than re-resolving a successfully admitted notice. Add a CI regression for admitted-but-unstamped notice plus PA rotation. This is a source/dataflow finding, not a local reproduction.
+
+The **gone-holder behavior is acceptable**: it waits until the original limit is due, says the holder is unavailable rather than pretending a check-in was ignored, leaves checkin_at unset, and stops nothing. If no supervisor can be told, the claim is released and retried.
+
+Exact-head CI run [42201776537](https://github.com/AI-Substrate/pij-fleet/actions/runs/42201776537) passes all four jobs and 1986 tests (5 skipped). JUnit artifact 13494408121 confirms the stale-read answer, no-recipient retry, stopped-claim lease, gone-holder and store claim tests pass. None exercises the admitted-notice/rotated-recipient schedule. The acknowledged live-holder check-in admission-failure gap remains a proof limit, not a separate finding.
+
+Reviewed the complete repair and relevant merge delta; P001's all-state index/production-SQL guard are retained, and diff --check passes. The 60s watchdog remains the only timer; claim/release/stamp costs stay per attempted open-request notification, with measurement separately owned by performance. Clean frozen worktree; no local builds/tests/probes. Prior 9919d4d findings stand only as qualified above.

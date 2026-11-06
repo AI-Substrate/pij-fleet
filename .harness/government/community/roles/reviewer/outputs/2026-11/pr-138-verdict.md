@@ -1,5 +1,30 @@
 # PR #138 correctness review
 
+## Merge-only re-review at 61ff55a
+
+**pass-with-notes** at `61ff55a8aa817a4bbb2c18d82733e4601c35bd00`. No new correctness finding. The `7c2b6b1` approval and non-blocking N001 diagnostic qualification below stand; this section approves only the subsequent merge resolution and F32 change.
+
+The requested detached checkout is clean and has parents `7c2b6b1` and `6d9de0c`. Exact-head CI run [42209555149](https://github.com/AI-Substrate/pij-fleet/actions/runs/42209555149) is green for all four jobs. GitHub reports the requested head and CLEAN. Incoming main features are not independently re-reviewed here.
+
+| Merge surface | Result |
+|---|---|
+| `http/directory.rs` | The 27 single-value flags are the union of both parents: lineage's `to` and memory's `hook`, `body`, `body-file`, `note` remain; repeated `tags` and memory validation remain |
+| `directory_http.rs` | Comparing against the second parent shows only the already-reviewed first-holding window assertion, the batch/lineage blocks and relocation of the single templates module; main's role-send/recovery tests are retained, not interleaved or truncated |
+| API table and SKILL row | Both batch/lineage and memory verbs remain, together with the incoming claims/delivered entries |
+| F32 | Both HTTP preflight and the writer use `holders::today`; the writer captures one date and passes it to the returned note path and `memory::files`, which uses it for the document, filename and generated INDEX label |
+
+`holders::local_date` converts the instant to the supplied offset before taking its calendar date. `today` reads the daemon host's current offset through the existing in-process harness adapter; holder timestamps remain UTC. At `2026-11-05T23:30:00Z`, the new injected-clock test expects `2026-11-06` at +600 minutes and `2026-11-05` at zero and -300 minutes. This directly distinguishes the F32 case from the old UTC-only date.
+
+Downloaded JUnit contains **1,984 tests, zero failures, errors or skips**, including the new local-date test, batch/lineage tests, retained retry/restart tests and templates tests. The Node 22 log records **2,200 passed, six skipped**, including all **15 shared-build tests**. The ddocs stage explicitly reports UNAVAILABLE, not document validation.
+
+**Proof ceiling:** the new regression exercises date conversion, not an end-to-end daemon write under a changed host timezone; the shared-date filing dataflow was source-checked. Offset lookup failure falls back to UTC. Security and performance retain their separate date-source/no-launch verdicts. No local builds, test suites, mutation runs or live-daemon operations were needed; no product edits, commits, pushes or checkout movement.
+
+Read-only evidence: `git show --diff-merges=remerge 61ff55a`, per-parent diffs, source reads, `gh pr view 138`, `gh run view 42209555149`, downloaded `junit-linux`, and the check (22) log. Retained artifacts: `<reviewer-session-files>/pr138-61ff55a-remerge.diff`, `pr138-61ff55a-tests-v-main.diff`, and `pr138-61ff55a-ci/junit.xml`.
+
+**Harness feedback:** F32 now has deterministic boundary proof without changing the machine clock or timezone. A merge-review recipe emitting the resolution diff and per-parent test manifest would reduce repeated manual preservation checks; no such tooling was added in this read-only review.
+
+## Historical review at 7c2b6b1
+
 ## A. Verdict
 
 **pass-with-notes** at `7c2b6b147d158746545699226343a3fd09b7bdeb`. No correctness-blocking finding. N001 is a non-blocking diagnostic/documentation qualification.

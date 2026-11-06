@@ -1,4 +1,56 @@
-# PR #130 correctness review: final delta
+# PR #130 correctness review
+
+## Merge-only re-review at 5d22029
+
+**pass-with-notes** at `5d2202949705b7345fd78177784ac29a4bd5282e`. No new correctness blocker. The `bfa8984` dispositions stand. Scope is merge `9156cfa` and test-only `5d22029`, not independent review of incoming main.
+
+The fresh detached checkout is clean and pinned correctly. Merge parents are `bfa8984` and `2c6fa1e`. The remerge diff preserves `Built.routes` and `Built.batch`, routes and lineage leaves, routes and role-send HTTP modules, the liveness fake and optional real queue-drain hook, both whole test blocks, and both API/SKILL entries. Comparing directory tests against the second parent confirms the incoming role-send/recovery tests remain, apart from the explicitly requested rider assertion adjustment.
+
+### Batch routes addition
+
+`hold` still returns directly into `assign_batch`, so it cannot also execute the single-assign routes callback. Batch input is validated and `assign_many` must succeed before any new routes delivery. The callback then uses the existing `Trigger::Assign`, explicit project, fresh FYI identity and unchanged `routes::deliver` implementation.
+
+The per-seat result map guards delivery before inserting each outcome. It suppresses repeated recipients even in non-adjacent A/B/A input; correctness does not depend on the preceding adjacent-only `Vec::dedup`. Each distinct seat gets one delivery attempt and one `data.routes[seat]` outcome, regardless of how many holdings it acquired. The existing helper holds one FYI from `pij-bg`, never a wake, and reports a failed hold without undoing the assignment.
+
+`admit_control` is verbatim unchanged from `bfa8984`: the compact callback remains after successful `accept_control`, with key `routes-after-compact:<seat>:<msg_id>`. Held memory turns still call this shared helper. The original same-recipient replay and two-recipient tests remain intact and pass.
+
+### Evidence and non-blocking limits
+
+Exact-head CI run [42219957763](https://github.com/AI-Substrate/pij-fleet/actions/runs/42219957763) passes all four jobs. Downloaded JUnit records **2,006 tests, zero failures, errors or skips**, including batch assignment, route regeneration/demand/triggers, both compact identity regressions, queue draining and interrupted-claim recovery. Node 22 records 2,200 passed and six skipped, including all 15 shared-build tests. The ddocs stage reports UNAVAILABLE, not document validation.
+
+The drain test still compares the exact oldest request prefix; it now permits an optional FYI suffix containing the routing-table marker. Its existing request state/order/event checks remain. The suffix check is marker-based, not an exhaustive parser of every rider.
+
+**Testing note, non-blocking:** the existing batch test executes the new path but does not assert `data.routes` or per-seat FYI counts. Once-per-distinct-seat cardinality is source-backed here, not a dedicated CI regression claim. The highest-leverage harness follow-up is an A/B/A batch with unique holdings, asserting two receipt keys and exactly one held routing FYI per seat, plus no FYI from a refused batch.
+
+The approved compact-context-consumption proof ceiling below remains unchanged. Security and performance retain their independent verdicts. Cost shape is one table build/hold per distinct seat per successful batch; no timer, poll or process-launch site is added.
+
+Read-only commands: exact HEAD/status and first-parent log, `git show --diff-merges=remerge 9156cfa`, per-parent/test diffs, source reads, `gh pr view 130`, `gh run view 42219957763`, `gh run download ... --name junit-linux`, and the check (22) log. Artifacts are retained under `<reviewer-session-files>/pr130-5d22029-{remerge.diff,tests-v-main.diff,ci/junit.xml}`. No local builds, test suites, mutations, live-daemon operations, product edits, commits, pushes or checkout movement. Final publication check is recorded with the verdict delivery.
+
+---
+
+# Historical merge-only verdict at bfa8984
+
+**pass-with-notes** at `bfa89846a1cb009b3094e263f14f85ce38a6cc9a`. The `8bfba9d` dispositions stand; no new correctness finding in merge `9bf1afc` and test-only `bfa8984`.
+
+The fresh detached `review-130-bfa8984` checkout is clean and pinned correctly. Review used the merge's remerge diff to isolate the eleven conflict resolutions rather than re-review incoming main. Directory help, the API table/sections, SKILL rows, source/rendered project states and both sides' changelog entries are retained. The directory-service merge preserves both memory_add and the route-regenerating writer.
+
+The compact hook is correctly located in shared `admit_control`, **after** `accept_control` succeeds. Immediate compacts call that helper from `send_control`; held compacts call it from memory-turn `proceed`. The held HTTP reply itself does not emit a routes FYI, and there is no duplicate hook left in `send_control`. This is post-admission placement, not a claim of terminal harness execution.
+
+The derived key remains exactly `routes-after-compact:<seat>:<msg_id>`: target now comes from the control's `Msg.to`, with the same recipient/message identity reviewed at `8bfba9d`. Existing FYI dedupe therefore retains same-seat replay suppression after claim and separation between recipients sharing a control ID.
+
+The three changed HTTP tests now wait for the required **count** of that seat's memory.turn completion events before inspecting control/FYI state. The provider appends that event after the shared admission helper returns, so this is a causal wait for the moved routes callback, not reuse of an earlier latest-event snapshot. The replay still checks one control and one compact table; the two-recipient test checks one table for each recipient across repeats.
+
+Exact-head CI run [42188192367](https://github.com/AI-Substrate/pij-fleet/actions/runs/42188192367) passes all four jobs. Downloaded JUnit has **1,967 tests, zero failures/errors**, including the three compact routes regressions and held parent/self compact cases. No local builds, tests, mutations or probes; no build lock acquired, product edits, commits, pushes or checkout movement.
+
+**Merge-state qualification:** despite the handoff's earlier MERGEABLE reading, GitHub currently reports **DIRTY / CONFLICTING** at this unchanged head. Existing head checks remain green. Reconcile against current main before merge; this verdict does not cover a later resolution.
+
+The original compact-context-consumption proof ceiling remains a non-blocking note under the approved held-FYI definition. Independent authorization and cost verdicts remain security/performance-owned. The move adds no new routes job, poll or process launch; it reuses the same keyed FYI hold at the correct shared seam.
+
+**magicWand fulfilled:** tests now wait for the composed memory-turn/admission boundary before asserting the routes invariant.
+
+---
+
+# Historical final-delta verdict at 8bfba9d
 
 ## Final verdict
 

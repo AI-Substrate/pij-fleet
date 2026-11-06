@@ -425,3 +425,4 @@
 2026-11-06 MERGED #130 3ebbd23 (s08 live, daemon 27104). Announced. F70 stale holdings: released 12 (dogfood); product part -> 212. F71 release --batch -> 212
 2026-11-06 handover written outputs/handover-pij-steady-otter-2026-11-06.md before PA compaction (552k); F72 routes self-write (prime)
 2026-11-06 post-compaction resume. pr-144 ready 464e061 (plan 209, CI green x2, CLEAN) -> seahorse (assigned reviewer/144, role send limit 90m), ibex, marten; full review; worktree review-144-464e061
+2026-11-06 F48 residual (EXIT-trap drain in shared-build; SIGKILL uncatchable) held for follow-up, not pushed to frozen #144

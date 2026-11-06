@@ -128,3 +128,5 @@
 
 2026-11-06 verdict pr:135 3ecec77f46ac335e6fe141ecf75baf5637378e7b block - HIGH9/10 S001 accepted batch holding-instance data becomes shell substitution in unquoted printed release command; concrete API/schema/persistence/render trace, no payload executed; gate/batch/privacy positives and tell-failure/cancellation/dedup qualifications retained; exact-tree 2005-case/four-green CI lacks hostile-word coverage; 2026-11-06-pr-135-3ecec77-security.md.
 
+2026-11-06 verdict pr:130 5d2202949705b7345fd78177784ac29a4bd5282e pass-with-notes - Batch routes FYI follows successful authorized assign_many, targets actual assigned seats/project, per-seat map dedups; unchanged local pij-bg/held/command-None producer and compact admission/key boundary retained; MERGEABLE/CLEAN/four green checks, 2006 JUnit cases; source-proven batch cardinality, no whole-tree equality claim; prior custom-ID/Markdown/live/ddocs limits stand; 2026-11-06-pr-130-5d22029-security.md.
+
