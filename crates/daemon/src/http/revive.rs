@@ -443,7 +443,14 @@ pub(super) async fn revive_seat(
         && let Some(seat) = seat
     {
         // Held for the revived seat's first turn (plan 202).
-        super::routes::deliver(&state.services, &seat, None, super::routes::Trigger::Revive).await;
+        super::routes::deliver(
+            &state.services,
+            &seat,
+            None,
+            super::routes::Trigger::Revive,
+            None,
+        )
+        .await;
     }
     response
 }

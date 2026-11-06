@@ -47,3 +47,7 @@ No timer, poll or new launch site: regeneration rides the role write's existing 
 - **Copilot and `/compact`.** The compact FYI is held, and controls never carry FYIs, so for OMP (which latches delivery while compacting) it lands in the first turn after the compact. For Copilot the FYI is claimed by `onUserPromptSubmitted`; if that hook fires for a typed `/compact`, the table would be claimed into the pre-compact context. Not proven either way here.
 - **Compactions the daemon never sees** (a harness compacting on its own, a person typing `/compact`) send nothing.
 - **Scope edits.** No verb edits a role's scope yet. Any later verb that writes role documents through `DirectoryService::write` (scope, retire, merge) regenerates and notifies for free; one that writes through another path must call `routes::regenerate` itself.
+
+## Review fix: F001 (pij-usual-seahorse at dcc3e52)
+
+Replaying one compact request (same caller-chosen `msg_id`) queued one compact but held a second routing table, because the callback ran on the deduplicated receipt and each hold took a fresh id. The compact's FYI is now keyed `routes-after-compact:<msg_id>`; the FYI store inserts an id once (`INSERT OR IGNORE` on `(origin, id)`, rows never deleted), so a replay holds nothing new, while the first is held or after it is claimed. The reviewer's regression is adopted as `reviewer_compact_request_replay_does_not_duplicate_routes`, with a third attempt after a claim. Built and tested by CI only, under the fleet build backoff.

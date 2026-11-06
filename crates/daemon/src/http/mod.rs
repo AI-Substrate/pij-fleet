@@ -2057,7 +2057,16 @@ pub(crate) async fn send_control(
         Ok(receipt) => {
             if compact {
                 // Held for the first turn after the compact (plan 202).
-                routes::deliver(&state.services, &target.id, None, routes::Trigger::Compact).await;
+                // Keyed to the compact's id: a replay holds nothing new.
+                let id = format!("routes-after-compact:{}", receipt.msg_id);
+                routes::deliver(
+                    &state.services,
+                    &target.id,
+                    None,
+                    routes::Trigger::Compact,
+                    Some(id),
+                )
+                .await;
             }
             envelope(StatusCode::OK, &Envelope::ok(name, receipt))
         }

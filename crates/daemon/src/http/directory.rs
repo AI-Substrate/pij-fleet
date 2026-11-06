@@ -738,9 +738,14 @@ async fn hold(
     let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
     if call.leaf == "assign" {
         // A change of holder changes no route; the new holder gets the table.
-        data["routes"] =
-            super::routes::deliver(&state.services, &seat_id, Some(&project), Trigger::Assign)
-                .await;
+        data["routes"] = super::routes::deliver(
+            &state.services,
+            &seat_id,
+            Some(&project),
+            Trigger::Assign,
+            None,
+        )
+        .await;
     }
     data["project"] = json!(project);
     data["role"] = json!(role);

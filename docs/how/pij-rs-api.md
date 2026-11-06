@@ -1037,8 +1037,11 @@ Delivery is one held FYI from `pij-bg`, never a wake:
 Assign and release never notify the prime. A seat in no project with roles, a
 project with no prime, or a prime that is not live gets nothing, and the receipt
 or the daemon log says why; a failed delivery never fails the assign, compact or
-revive. Controls never carry FYIs, so the compact's FYI lands in the seat's first
-turn after the compact. Compactions the harness starts itself, or a person types,
+revive. The compact's FYI is keyed to the compact's own message id
+(`routes-after-compact:<msg_id>`), and the FYI store holds an id once in any
+state, so replaying a compact request holds no second table, before or after the
+first is claimed. Controls never carry FYIs, so the compact's FYI lands in the
+seat's first turn after the compact. Compactions the harness starts itself, or a person types,
 never reach the daemon and send nothing.
 
 `pij directory routes [--project <slug>]` returns `text` (the table with a Holder

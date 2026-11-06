@@ -89,13 +89,18 @@ pub(crate) async fn live_holders(
 /// project the seat holds a role in, else (revive only) the project whose
 /// repo holds the seat's folder. One FYI however many projects. Never fails;
 /// the returned value says what happened.
+///
+/// `id` keys the held FYI to its trigger when the trigger can be replayed (a
+/// compact's own message id, review of #130 F001): the FYI store holds an id
+/// once, in any state, so a replay holds nothing new. `None` takes a fresh id.
 pub(crate) async fn deliver(
     services: &Services,
     seat: &SeatId,
     project: Option<&str>,
     trigger: Trigger,
+    id: Option<String>,
 ) -> Value {
-    match try_deliver(services, seat, project, trigger).await {
+    match try_deliver(services, seat, project, trigger, id).await {
         Ok(outcome) => outcome,
         Err(refusal) => {
             eprintln!("pij-rs could not send {seat} the routing table ({trigger:?}): {refusal}");
@@ -109,6 +114,7 @@ async fn try_deliver(
     seat: &SeatId,
     project: Option<&str>,
     trigger: Trigger,
+    id: Option<String>,
 ) -> Result<Value, Refusal> {
     let store = services.directory.store();
     let projects = store
@@ -155,7 +161,7 @@ async fn try_deliver(
     if texts.is_empty() {
         return Ok(json!({"sent": false, "reason": "the seat is in no project with roles"}));
     }
-    let receipt = hold(services, seat, texts.join("\n\n")).await?;
+    let receipt = hold(services, seat, texts.join("\n\n"), id).await?;
     Ok(json!({"sent": "fyi", "msg_id": receipt, "projects": sent}))
 }
 
@@ -219,13 +225,19 @@ async fn try_notify_prime(
         services,
         &prime,
         routes::change_notice(project, commit, change),
+        None,
     )
     .await?;
     Ok(json!({"sent": "fyi", "prime": prime, "msg_id": msg_id}))
 }
 
-async fn hold(services: &Services, to: &SeatId, body: String) -> Result<String, Refusal> {
-    let msg_id = services.delivery.next_message_id();
+async fn hold(
+    services: &Services,
+    to: &SeatId,
+    body: String,
+    id: Option<String>,
+) -> Result<String, Refusal> {
+    let msg_id = id.unwrap_or_else(|| services.delivery.next_message_id());
     services
         .delivery
         .hold_fyi(Msg {
