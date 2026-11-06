@@ -6,16 +6,16 @@
 		{
 			"name": "meta",
 			"value": {
-				"title": "Blueprint 001: pij community",
+				"title": "Blueprint 001: Pij Emergent Communities (PEC)",
 				"status": "draft",
-				"updated": "2026-11-04",
+				"updated": "2026-11-06",
 				"owner": "pij-far-jackal",
-				"summary": "How the community directory is built: governance-branch ddocs written only by pij, a rebuildable store index, role addressing in delivery, and prompts for the prime."
+				"summary": "How the PEC directory is built: governance-branch ddocs written only by pij, a rebuildable store index, role addressing in delivery, and prompts for the prime."
 			}
 		},
 		{
 			"name": "overview",
-			"value": "Definitions, memory and outputs are ddocs on the governance branch, written by one daemon-side writer through the ddocs CLI. The store holds pointers and live state (assignments, lineage, requests), and can be rebuilt from the branch. Delivery learns one new address form, `role:<id>`, and one new request field, the reply mode. Product docs (PRDs, blueprints, roadmaps) live on main under docs/project and are joined by ddocs links."
+			"value": "Pij Emergent Communities (PEC) rest on a per-project community directory that the prime and humans reshape as the work changes. Its definitions, memory and outputs are ddocs on the governance branch, written by one daemon-side writer through the ddocs CLI. The store holds pointers and live state (assignments, lineage, requests), and can be rebuilt from the branch. Delivery learns one new address form, `role:<id>`, and one new request field, the reply mode. Product docs (PRDs, blueprints, roadmaps) live on main under docs/project and are joined by ddocs links."
 		},
 		{
 			"name": "components",
@@ -158,7 +158,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-13",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
-					"state": "planned"
+					"state": "in-progress"
 				},
 				{
 					"id": "c-claims",
@@ -311,6 +311,16 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 195: c-store (assignments, migration 0032), c-verbs (assign, release, external add, rebuild, the view, help) and c-orient (the directory view) in-progress; later steps add the rest."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "docs-system",
+					"change": "Renamed forward per ruling C26: title, summary and overview name Pij Emergent Communities (PEC). Slugs and ids unchanged."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-following-marsupial",
+					"change": "c-templates in-progress: the core and security templates ship in plan 194, compiled into the daemon; the optional templates come in s10."
 				}
 			]
 		}
