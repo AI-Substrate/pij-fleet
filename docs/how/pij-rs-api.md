@@ -1056,7 +1056,9 @@ the `pij directory memory add` command, then holds the action until the prompt
 is delivered and the seat next publishes `idle`, or until the bound passes,
 after which it proceeds anyway. The bound is one constant, 5 minutes
 (`memory_turn::BOUND`), and it runs from the moment the request is held, not
-from the prompt's admission. `PIJ_RS_MEMORY_TURN_SECS`, a positive integer read
+from the prompt's admission. The prompt's admission is itself under the bound:
+a transport that holds it (Claude's socket grace) cannot stretch the turn past
+the deadline, which then ends as `bound`. `PIJ_RS_MEMORY_TURN_SECS`, a positive integer read
 at daemon start, may shorten it; a value above the 5-minute ceiling is clamped
 and an unusable one ignored, each with a warning on the daemon's stderr.
 

@@ -34,6 +34,15 @@ struct Rig {
 /// `prime` (pane `%prime`, a live proc) parents `holder` and `plain`; the
 /// seats in `holding` hold role pm-001 in project fleet.
 async fn rig(bound: Duration, holding: &[&str]) -> Rig {
+    rig_with(bound, holding, |_| {}).await
+}
+
+/// [`rig`], with `tune` applied to the services last, before they serve.
+async fn rig_with(
+    bound: Duration,
+    holding: &[&str],
+    tune: impl FnOnce(&mut pij_daemon::Services),
+) -> Rig {
     let store = FreshStore::new();
     let config = Config {
         adapters: Adapters {
@@ -97,6 +106,7 @@ async fn rig(bound: Duration, holding: &[&str]) -> Rig {
         .replace_assignments("fleet", &rows)
         .await
         .expect("seed holdings");
+    tune(&mut services);
     let (queue, registry, bus) = (
         services.queue.clone(),
         services.registry.clone(),
@@ -504,5 +514,76 @@ async fn a_repeat_request_while_one_is_held_is_refused_by_name() {
             .is_none(),
         "one prompt, no second turn"
     );
+    rig.server.abort();
+}
+
+/// A socket transport that takes `delay` to answer, as Claude's socket does
+/// while it holds a delivery for its grace window.
+struct SlowSocket {
+    delay: Duration,
+}
+
+#[async_trait::async_trait]
+impl pij_core::ports::Transport for SlowSocket {
+    fn name(&self) -> &str {
+        "slow-socket"
+    }
+
+    async fn can_deliver(&self, _: &SeatDescriptor, _: &Msg) -> pij_core::error::Result<bool> {
+        Ok(true)
+    }
+
+    async fn deliver(
+        &self,
+        _: &SeatDescriptor,
+        _: &Msg,
+    ) -> pij_core::error::Result<pij_core::model::DeliveryOutcome> {
+        tokio::time::sleep(self.delay).await;
+        Ok(pij_core::model::DeliveryOutcome::Delivered {
+            origin: pij_core::model::DeliveryOrigin::InjectedToTransport,
+        })
+    }
+}
+
+#[tokio::test]
+async fn an_admission_slower_than_the_bound_still_ends_at_the_bound() {
+    let rig = rig_with(Duration::from_millis(300), &["holder"], |services| {
+        services.delivery = Arc::new(
+            pij_daemon::delivery::DeliveryService::new(
+                services.registry.clone(),
+                services.queue.clone(),
+                Arc::new(SlowSocket {
+                    delay: Duration::from_secs(5),
+                }),
+                services.interaction.clone(),
+                Arc::clone(&services.event_bus),
+            )
+            .expect("delivery"),
+        );
+    })
+    .await;
+    // A Claude seat: its prompt goes to the socket, which holds it.
+    let mut holder = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    holder.harness = Harness::Claude;
+    rig.registry.put(holder).await.unwrap();
+
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let turn = turn_event(&rig, "holder").await;
+    assert_eq!(turn["ended"], "bound", "{turn}");
+    assert_eq!(turn["then"], "closed", "{turn}");
+    let waited = turn["waited_ms"].as_u64().unwrap();
+    assert!(
+        (300..2_000).contains(&waited),
+        "the turn ends at the 300 ms bound, not after the 5 s admission: {turn}"
+    );
+    assert!(
+        turn["note"]
+            .as_str()
+            .unwrap()
+            .contains("still being admitted"),
+        "{turn}"
+    );
+    assert!(tombstoned(&rig, "holder").await);
     rig.server.abort();
 }

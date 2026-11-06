@@ -459,9 +459,12 @@ async fn run(
         .subscribe_live(EventFilter::kinds([OUTCOME_EVENT_KIND, ACTIVITY]).for_seat(seat.clone()));
     let at = now_ms();
     let msg_id = format!("memory-turn-{seat}-{at}");
-    let sent = services
-        .delivery
-        .accept(Msg {
+    // Admission runs under the same deadline as the wait: a transport hold
+    // (Claude's socket grace) must not outlast the bound. Dropping the accept
+    // future only discards its reply; the admission itself runs to completion.
+    let sent = tokio::time::timeout_at(
+        deadline,
+        services.delivery.accept(Msg {
             from: SeatId::from(pij_core::BG_ACTOR),
             to: seat.clone(),
             body: prompt(action, &holdings, bound),
@@ -469,14 +472,19 @@ async fn run(
             from_machine: None,
             in_reply_to: None,
             command: None,
-        })
-        .await;
+        }),
+    )
+    .await;
     let (ended, why) = match sent {
-        Err(error) => (
+        Err(_elapsed) => (
+            Ended::Bound,
+            Some("the memory prompt was still being admitted".to_string()),
+        ),
+        Ok(Err(error)) => (
             Ended::Undelivered,
             Some(format!("the memory prompt could not be sent: {error}")),
         ),
-        Ok(receipt) => {
+        Ok(Ok(receipt)) => {
             if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
                 (
                     Ended::Undelivered,
@@ -505,8 +513,9 @@ async fn run(
     let note = match ended {
         Ended::TurnEnd => None,
         Ended::Bound => Some(format!(
-            "the seat's turn did not end within {}s; the {} proceeded without its memory turn",
+            "the seat's turn did not end within {}s{}; the {} proceeded without its memory turn",
             bound.as_secs(),
+            why.map(|why| format!(" ({why})")).unwrap_or_default(),
             verb(action)
         )),
         Ended::Undelivered => Some(format!(
