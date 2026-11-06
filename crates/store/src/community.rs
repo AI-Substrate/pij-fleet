@@ -226,6 +226,22 @@ impl SqliteOrchestration {
         .await
     }
 
+    /// Record a closed past holding (plan 208, F15): the row only. Unlike an
+    /// assign there is no live-seat check and no seat role: the seat may be
+    /// long gone. `false` when that holding is already recorded.
+    pub async fn record_history(&self, row: &Assignment) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let row = row.clone();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let inserted = insert(&mut tx, &row).await?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(inserted)
+        })
+        .await
+    }
+
     /// Record the ends of holdings (`to`, `released_by`, `release_why` and
     /// `end_pending`), matched by project, role, instance, seat and `from`.
     pub async fn end_assignments(&self, ends: &[Assignment]) -> Result<()> {

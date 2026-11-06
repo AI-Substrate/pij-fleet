@@ -68,6 +68,9 @@ function fixture(): Fixture {
 			'echo "start $1 target=$CARGO_TARGET_DIR incremental=$CARGO_INCREMENTAL" >> "$LOG"',
 			'cat "$CARGO_TARGET_DIR.lock/owner" >> "$LOG"',
 			'[ "$1" = drop ] && echo 1024 > "$FREE"',
+			// The scheduling cargo runs under: its niceness and the flag the
+			// fake taskpolicy passed down, if one wrapped it.
+			'[ -n "$NICENESS" ] && echo "niceness=$(ps -o nice= -p $$ | tr -d \' \') taskpolicy=$FAKE_TASKPOLICY" >> "$LOG"',
 			// A build child (rustc, a build script) that ticks into the log
 			// while alive; cargo waits for it, as cargo waits for rustc.
 			'[ -n "$WORKER" ] && ( i=0; while [ $i -lt 25 ]; do echo "tick $1" >> "$LOG"; sleep 0.2; i=$((i+1)); done ) </dev/null >/dev/null 2>&1 &',
@@ -100,12 +103,16 @@ function fixture(): Fixture {
 			PIJ_SHARED_TARGET: target,
 			PIJ_SHARED_BUILD_DF: df,
 			PIJ_SHARED_BUILD_POLL_SECONDS: "1",
+			// Absent unless a test supplies one, as on Linux.
+			PIJ_SHARED_BUILD_TASKPOLICY: join(root, "no-taskpolicy"),
 			PIJ_DISK_FLOOR_GB: "25",
 			PIJ_ID: "pij-test-seat",
 			LOG: log,
 			FREE: free,
 			NAP: "",
 			WORKER: "",
+			NICENESS: "",
+			FAKE_TASKPOLICY: "none",
 		},
 	};
 }
@@ -190,6 +197,55 @@ describe("just shared-build", () => {
 		);
 		expect(statSync(lib).mtimeMs).toBeGreaterThan(1_000_000_000);
 		expect(existsSync(f.lock)).toBe(false);
+	});
+
+	it("names the seat in the owner line from PIJ_SESSION_ID or whoami when PIJ_ID is unset, else the user", async () => {
+		const f = fixture();
+		const whoami = join(f.root, "fake-whoami");
+		writeFileSync(
+			whoami,
+			'#!/bin/sh\n[ "$1 $2" = "whoami --json" ] && echo \'{"ok":true,"data":{"id":"pij-whoami-seat","proc":{"id":"x"}}}\'\n',
+		);
+		chmodSync(whoami, 0o755);
+		const silent = join(f.root, "silent-whoami");
+		writeFileSync(silent, "#!/bin/sh\nexit 1\n");
+		chmodSync(silent, 0o755);
+		const owner = async (env: NodeJS.ProcessEnv) => {
+			writeFileSync(f.log, "");
+			expect((await run(f, ["--", "build"], env)).code).toBe(0);
+			return log(f)
+				.find((line) => line.startsWith("seat="))
+				?.split(" ")[0];
+		};
+		const unset = { PIJ_ID: undefined, PIJ_SESSION_ID: undefined };
+		expect(await owner({ ...unset, PIJ_SESSION_ID: "pij-session-seat" })).toBe(
+			"seat=pij-session-seat",
+		);
+		expect(await owner({ ...unset, PIJ_SHARED_BUILD_WHOAMI: whoami })).toBe("seat=pij-whoami-seat");
+		expect(await owner({ ...unset, PIJ_SHARED_BUILD_WHOAMI: silent, USER: "someone" })).toBe(
+			"seat=someone",
+		);
+	});
+
+	it("runs every cargo command under nice 19 and taskpolicy -b, and skips taskpolicy where it is absent", async () => {
+		const f = fixture();
+		const taskpolicy = join(f.root, "fake-taskpolicy");
+		executable(taskpolicy, 'FAKE_TASKPOLICY="$1"; export FAKE_TASKPOLICY; shift; exec "$@"');
+		const scheduling = async (env: NodeJS.ProcessEnv) => {
+			writeFileSync(f.log, "");
+			expect(
+				(await run(f, ["--", "build", "--then", "test"], { NICENESS: "1", ...env })).code,
+			).toBe(0);
+			return log(f).filter((line) => line.startsWith("niceness="));
+		};
+		expect(await scheduling({ PIJ_SHARED_BUILD_TASKPOLICY: taskpolicy })).toEqual([
+			"niceness=19 taskpolicy=-b",
+			"niceness=19 taskpolicy=-b",
+		]);
+		expect(await scheduling({})).toEqual([
+			"niceness=19 taskpolicy=none",
+			"niceness=19 taskpolicy=none",
+		]);
 	});
 
 	it("releases the lock when cargo fails and runs nothing after the failure", async () => {

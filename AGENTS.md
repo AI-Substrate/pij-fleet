@@ -180,8 +180,10 @@ citation disputes, all of which resolved as neither party being wrong.)
   Cargo names workspace artifacts by crate, so two trees building into one
   target overwrite each other mid-build. The recipe serialises builds with a
   lock, refuses under the disk floor (`PIJ_DISK_FLOOR_GB`, default 25), rebuilds
-  your own sources with `CARGO_INCREMENTAL=0`, and always releases. A stale lock
-  is reported with its clear command, never cleared for you (plan 198).
+  your own sources with `CARGO_INCREMENTAL=0`, runs every cargo command under
+  `nice -n 19` and (on macOS) `taskpolicy -b` so no build starves the machine,
+  and always releases. A stale lock is reported with its clear command, never
+  cleared for you (plans 198, 208).
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just doctor`** — read-only audit: CLI shim shape, `pij-rs` on PATH, skill

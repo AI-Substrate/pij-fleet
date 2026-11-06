@@ -6,6 +6,7 @@
 //! pending close-ends, so an end a refused close left behind reaches the branch
 //! with the next write.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -29,6 +30,9 @@ pub const E_ROLE_MISSING: &str = "E-RS-DIRECTORY-ROLE-MISSING";
 pub const E_HELD: &str = "E-RS-DIRECTORY-HELD";
 /// The seat does not hold that role (and instance).
 pub const E_NOT_HELD: &str = "E-RS-DIRECTORY-NOT-HELD";
+
+/// A past holding overlaps another holding of the same seat and instance.
+pub const E_OVERLAP: &str = "E-RS-DIRECTORY-OVERLAP";
 
 /// Called once after each assign lands (ruling C6); s05 drains the role queue
 /// through it.
@@ -436,7 +440,7 @@ impl DirectoryService {
         fields: super::memory::NoteFields,
         actor: &SeatId,
     ) -> Result<(Written, String), Refusal> {
-        let date = role::today();
+        let date = super::holders::today();
         let note = super::memory::note_path(role_id, &date, &fields)?;
         let pending = self.pending(project).await?;
         let message = format!(
@@ -499,122 +503,248 @@ impl DirectoryService {
     /// # Errors
     /// A named refusal; nothing is written.
     pub async fn assign(&self, request: AssignRequest) -> Result<HoldingReceipt, Refusal> {
-        if request.seat.tombstoned_at.is_some() {
+        let mut receipts = self.assign_many(vec![request]).await?;
+        Ok(receipts.remove(0))
+    }
+
+    /// Bind several live seats to existing roles in one holders commit, all or
+    /// nothing (F16): every request must name this project, repo, actor and
+    /// why. A refusal names every bad request. Then each holding gets what a
+    /// single assign gives it: its store row and seat role, the hook and the
+    /// window rule. Receipts come back in request order.
+    ///
+    /// # Errors
+    /// A named refusal; nothing is written.
+    pub async fn assign_many(
+        &self,
+        requests: Vec<AssignRequest>,
+    ) -> Result<Vec<HoldingReceipt>, Refusal> {
+        let Some(first) = requests.first().cloned() else {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                format!("seat {} is closed; assign a live seat", request.seat.id),
+                "an assign batch needs at least one line",
+            ));
+        };
+        let closed: Vec<String> = requests
+            .iter()
+            .filter(|request| request.seat.tombstoned_at.is_some())
+            .map(|request| request.seat.id.to_string())
+            .collect();
+        if !closed.is_empty() {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("closed seats cannot be assigned: {}", closed.join(", ")),
             ));
         }
-        let pending = self.pending(&request.project).await?;
-        let draft = Assignment {
-            project: request.project.clone(),
-            role: request.role.clone(),
-            instance: request.instance.clone(),
-            seat: request.seat.id.to_string(),
-            harness: Some(request.seat.harness.to_string()),
-            session: request.seat.harness_session.clone(),
-            machine: Some(request.machine.clone()),
-            from: String::new(),
-            to: None,
-            assigned_by: request.actor.to_string(),
-            released_by: None,
-            why: request.why.clone(),
-            release_why: None,
-            end_pending: false,
+        let pending = self.pending(&first.project).await?;
+        let drafts: Vec<Assignment> = requests
+            .iter()
+            .map(|request| Assignment {
+                project: request.project.clone(),
+                role: request.role.clone(),
+                instance: request.instance.clone(),
+                seat: request.seat.id.to_string(),
+                harness: Some(request.seat.harness.to_string()),
+                session: request.seat.harness_session.clone(),
+                machine: Some(request.machine.clone()),
+                from: String::new(),
+                to: None,
+                assigned_by: request.actor.to_string(),
+                released_by: None,
+                why: request.why.clone(),
+                release_why: None,
+                end_pending: false,
+            })
+            .collect();
+        let subject = match drafts.as_slice() {
+            [one] => format!(
+                "community: assign {}{} to {}",
+                one.role,
+                instance_suffix(&one.instance),
+                one.seat
+            ),
+            many => format!(
+                "community: assign {} holdings\n\n{}",
+                many.len(),
+                many.iter()
+                    .map(|row| format!(
+                        "{}{} {}",
+                        row.role,
+                        instance_suffix(&row.instance),
+                        row.seat
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
         };
         let message = format!(
-            "community: assign {}{} to {}\n\n{}\n\nPij-Seat: {}\nPij-Project: {}",
-            request.role,
-            instance_suffix(&request.instance),
-            request.seat.id,
-            request.why,
-            request.actor,
-            request.project
+            "{subject}\n\n{}\n\nPij-Seat: {}\nPij-Project: {}",
+            first.why, first.actor, first.project
         );
         let flush = pending;
         let (written, built) = self
-            .commit(request.repo.clone(), message, move |root, built| {
-                let mut new = draft;
-                let mut rows = read_holders(root, &new.project, &new.role)?;
-                built.landed = holders::apply_ends(&mut rows, &flush);
-                if rows
-                    .iter()
-                    .any(|held| open_for(held, &new.seat, &new.instance))
-                {
-                    return Err(Refusal::new(
-                        E_HELD,
-                        format!(
+            .commit(first.repo.clone(), message, move |root, built| {
+                let project = drafts[0].project.clone();
+                let mut roles: Vec<String> = drafts.iter().map(|row| row.role.clone()).collect();
+                roles.sort();
+                roles.dedup();
+                let mut problems = Vec::new();
+                let mut by_role = BTreeMap::new();
+                for role in &roles {
+                    match read_holders(root, &project, role) {
+                        Ok(mut rows) => {
+                            built.landed.extend(holders::apply_ends(&mut rows, &flush));
+                            by_role.insert(role.clone(), rows);
+                        }
+                        Err(refusal) if refusal.code == E_ROLE_MISSING => {
+                            problems.push(format!("role {role:?} does not exist"));
+                        }
+                        Err(refusal) => return Err(refusal),
+                    }
+                }
+                for draft in &drafts {
+                    let Some(rows) = by_role.get_mut(&draft.role) else {
+                        continue;
+                    };
+                    if rows
+                        .iter()
+                        .any(|held| open_for(held, &draft.seat, &draft.instance))
+                    {
+                        problems.push(format!(
                             "{} already holds {}{}",
-                            new.seat,
-                            new.role,
-                            instance_suffix(&new.instance)
-                        ),
-                    ));
+                            draft.seat,
+                            draft.role,
+                            instance_suffix(&draft.instance)
+                        ));
+                        continue;
+                    }
+                    let warning = (holders_mode(root, &draft.role)? == "one")
+                        .then(|| rows.iter().find(|held| held.to.is_none()))
+                        .flatten()
+                        .map(|other| {
+                            format!(
+                                "W-ONE-HOLDER: {} is a one-holder role and {} still holds it",
+                                draft.role, other.seat
+                            )
+                        });
+                    let mut new = draft.clone();
+                    new.from = holders::fresh_from(rows, &new.seat, &new.instance);
+                    rows.push(new.clone());
+                    built.batch.push((new, warning));
                 }
-                if holders_mode(root, &new.role)? == "one"
-                    && let Some(other) = rows.iter().find(|held| held.to.is_none())
-                {
-                    built.warning = Some(format!(
-                        "W-ONE-HOLDER: {} is a one-holder role and {} still holds it",
-                        new.role, other.seat
-                    ));
+                match problems.as_slice() {
+                    [] => {}
+                    [one] if drafts.len() == 1 => {
+                        let code = if one.contains("already holds") {
+                            E_HELD
+                        } else {
+                            E_ROLE_MISSING
+                        };
+                        let mut refusal = Refusal::new(code, one.clone());
+                        if code == E_ROLE_MISSING {
+                            refusal = refusal.with_next(format!(
+                                "Add it first: pij directory add {} --why <text> ...",
+                                drafts[0].role
+                            ));
+                        }
+                        return Err(refusal);
+                    }
+                    many => {
+                        let code = if many.iter().all(|problem| problem.contains("already holds")) {
+                            E_HELD
+                        } else {
+                            E_ROLE_MISSING
+                        };
+                        return Err(Refusal::new(
+                            code,
+                            format!("the batch wrote nothing: {}", many.join("; ")),
+                        ));
+                    }
                 }
-                new.from = holders::fresh_from(&rows, &new.seat, &new.instance);
-                rows.push(new.clone());
-                let mut files = vec![holders_file(&new.role, &rows)?];
+                let mut files = Vec::new();
+                for (role, rows) in &by_role {
+                    files.push(holders_file(role, rows)?);
+                }
+                let written: Vec<&str> = roles.iter().map(String::as_str).collect();
                 files.extend(flush_files(
                     root,
-                    &new.project,
+                    &project,
                     &flush,
-                    &[new.role.as_str()],
+                    &written,
                     &mut built.landed,
                 )?);
-                built.row = Some(new);
                 Ok(files)
             })
             .await?;
-        let row = built.row.clone().expect("a landed assign wrote its row");
-        let store = self.store.clone();
-        let indexed = row.clone();
-        let seat_role = seat_role_for(&row.role).to_string();
-        let at = system_ms();
-        let commit = self
-            .event_bus
-            .publish_committed_batch(async move {
-                let commit = store
-                    .record_assignment_committed(&indexed, Some(&seat_role), at)
-                    .await?;
-                Ok((commit.events.clone(), commit))
-            })
-            .await
-            .map_err(|error| store_refusal(&written, &error))?;
         self.flushed(&built.landed, &written).await?;
-        self.hook
-            .assigned(&row.project, &row.role, &row.instance, &request.seat.id);
-        let window = self.rename(&request.seat, &row).await;
-        Ok(HoldingReceipt {
-            commit: written.commit.clone(),
-            path: holders_path(&row.role)?,
-            row:
-                holders::to_document(&row.role, std::slice::from_ref(&row))["sections"][1]["value"]
-                    [0]
-                .clone(),
-            warning: built.warning,
-            seat_role: commit.seat_role,
-            flushed: built.landed.len(),
-            window: Some(window),
-        })
+        let mut receipts = Vec::new();
+        for ((row, warning), request) in built.batch.iter().zip(&requests) {
+            let store = self.store.clone();
+            let indexed = row.clone();
+            let seat_role = seat_role_for(&row.role).to_string();
+            let at = system_ms();
+            let commit = self
+                .event_bus
+                .publish_committed_batch(async move {
+                    let commit = store
+                        .record_assignment_committed(&indexed, Some(&seat_role), at)
+                        .await?;
+                    Ok((commit.events.clone(), commit))
+                })
+                .await
+                .map_err(|error| store_refusal(&written, &error))?;
+            self.hook
+                .assigned(&row.project, &row.role, &row.instance, &request.seat.id);
+            let window = self.rename(&request.seat, row).await;
+            receipts.push(
+                HoldingReceipt {
+                    commit: written.commit.clone(),
+                    path: holders_path(&row.role)?,
+                    row: holders::to_document(&row.role, std::slice::from_ref(row))["sections"][1]
+                        ["value"][0]
+                        .clone(),
+                    warning: warning.clone(),
+                    seat_role: commit.seat_role,
+                    flushed: built.landed.len(),
+                    window: Some(window),
+                },
+            );
+        }
+        Ok(receipts)
     }
 
     /// Name the holder's window `<project>:<role>`, or `<project>:<role>-<instance>`
-    /// (req-26, C16). One tmux launch, through the adapter's recorded site;
-    /// never the control client, whose allow-list stays reads only (S2).
+    /// (req-26, C16), for the seat's first open holding (F17): a second role
+    /// leaves the window as it is, with no launch. One tmux launch, through the
+    /// adapter's recorded site; never the control client, whose allow-list
+    /// stays reads only (S2).
     async fn rename(&self, seat: &SeatDescriptor, row: &Assignment) -> Value {
-        let name = if row.instance.is_empty() {
-            format!("{}:{}", row.project, row.role)
-        } else {
-            format!("{}:{}-{}", row.project, row.role, row.instance)
+        let name_of = |held: &Assignment| {
+            if held.instance.is_empty() {
+                format!("{}:{}", held.project, held.role)
+            } else {
+                format!("{}:{}-{}", held.project, held.role, held.instance)
+            }
         };
+        let name = name_of(row);
+        let open = self
+            .store
+            .open_assignments(seat.id.as_str())
+            .await
+            .unwrap_or_default();
+        let first = open
+            .iter()
+            .min_by_key(|held| (holders::parse_time(&held.from), held.from.clone()));
+        if let Some(first) = first.filter(|first| {
+            (&first.project, &first.role, &first.instance, &first.from)
+                != (&row.project, &row.role, &row.instance, &row.from)
+        }) {
+            let kept = name_of(first);
+            return serde_json::json!({
+                "name": kept, "renamed": false,
+                "reason": format!("the window keeps the seat's first open holding, {kept}"),
+            });
+        }
         let Some(pane) = seat.pane.as_deref() else {
             return serde_json::json!({"name": name, "renamed": false, "reason": "the seat has no pane"});
         };
@@ -624,6 +754,102 @@ impl DirectoryService {
                 serde_json::json!({"name": name, "renamed": false, "reason": error.to_string()})
             }
         }
+    }
+
+    /// Record a closed seat's past holding (plan 208, F15): `row` carries
+    /// `from`, `to`, `released_by` and the whys. One holders commit, then the
+    /// store row, with no live-seat check and no seat role. The caller checks
+    /// the actor is the prime.
+    ///
+    /// # Errors
+    /// [`E_OVERLAP`] when it overlaps a holding of the same seat and instance,
+    /// [`E_ROLE_MISSING`], or any writer refusal; nothing is written.
+    pub async fn lineage_add(
+        &self,
+        repo: PathBuf,
+        row: Assignment,
+        actor: &SeatId,
+    ) -> Result<HoldingReceipt, Refusal> {
+        let pending = self.pending(&row.project).await?;
+        let message = format!(
+            "community: lineage {}{} {} ({} to {})\n\n{}\n\nPij-Seat: {actor}\nPij-Project: {}",
+            row.role,
+            instance_suffix(&row.instance),
+            row.seat,
+            row.from,
+            row.to.as_deref().unwrap_or_default(),
+            row.why,
+            row.project
+        );
+        let flush = pending;
+        let draft = row.clone();
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let mut rows = read_holders(root, &draft.project, &draft.role)?;
+                built.landed = holders::apply_ends(&mut rows, &flush);
+                let span = |held: &Assignment| {
+                    (
+                        holders::parse_time(&held.from),
+                        held.to.as_deref().and_then(holders::parse_time),
+                    )
+                };
+                let (from, to) = span(&draft);
+                if let Some(other) = rows.iter().find(|held| {
+                    let (start, end) = span(held);
+                    held.seat == draft.seat
+                        && held.instance == draft.instance
+                        && start < to
+                        && end.is_none_or(|end| from < Some(end))
+                }) {
+                    return Err(Refusal::new(
+                        E_OVERLAP,
+                        format!(
+                            "{} held {}{} from {} to {}, which overlaps {} to {}",
+                            other.seat,
+                            other.role,
+                            instance_suffix(&other.instance),
+                            other.from,
+                            other.to.as_deref().unwrap_or("now"),
+                            draft.from,
+                            draft.to.as_deref().unwrap_or_default()
+                        ),
+                    ));
+                }
+                // Lineage reads in time order.
+                let at = rows
+                    .iter()
+                    .position(|held| holders::parse_time(&held.from) > from)
+                    .unwrap_or(rows.len());
+                rows.insert(at, draft.clone());
+                let mut files = vec![holders_file(&draft.role, &rows)?];
+                files.extend(flush_files(
+                    root,
+                    &draft.project,
+                    &flush,
+                    &[draft.role.as_str()],
+                    &mut built.landed,
+                )?);
+                built.row = Some(draft);
+                Ok(files)
+            })
+            .await?;
+        self.store
+            .record_history(&row)
+            .await
+            .map_err(|error| store_refusal(&written, &error))?;
+        self.flushed(&built.landed, &written).await?;
+        Ok(HoldingReceipt {
+            commit: written.commit.clone(),
+            path: holders_path(&row.role)?,
+            row:
+                holders::to_document(&row.role, std::slice::from_ref(&row))["sections"][1]["value"]
+                    [0]
+                .clone(),
+            warning: None,
+            seat_role: None,
+            flushed: built.landed.len(),
+            window: None,
+        })
     }
 
     /// End a seat's holding of a role: `to`, `released_by` and `release_why`.
@@ -927,13 +1153,13 @@ fn flush_files(
     Ok(files)
 }
 
-/// What a write's build reports back: a warning, the pending ends its files
-/// carry, and the holding row it wrote.
+/// What a write's build reports back: the pending ends its files carry, the
+/// holding row it wrote, and an assign batch's rows with their warnings.
 #[derive(Default)]
 struct Built {
-    warning: Option<String>,
     landed: Vec<Assignment>,
     row: Option<Assignment>,
+    batch: Vec<(Assignment, Option<String>)>,
 }
 
 fn store_refusal(written: &Written, error: &pij_core::error::PijError) -> Refusal {
