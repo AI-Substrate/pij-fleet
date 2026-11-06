@@ -91,6 +91,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-pleased-marmot",
 					"why": "reviewer for PR #134 (plan 207)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T03:30:49.080Z",
+					"harness": "copilot",
+					"harness_session": "3e7756cf-b339-46ac-9b12-46d3065045cc",
+					"instance_key": "138",
+					"machine": "ops.osk.lan",
+					"seat": "pij-usual-seahorse",
+					"why": "review #138 (plan 208)"
 				}
 			]
 		}
