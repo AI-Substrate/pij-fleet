@@ -122,3 +122,9 @@
 
 2026-11-06 verdict pr:135 e60be54872a25b624f86e8961b04684ec27e8b45 pass-with-notes - Prior 362 authority/privacy assessment carries; full four-file docs receipt delta clear with classified positive controls, script read only; exact-head CI42208383576 attempt2 all four green, reviewed files equal tested merge but no whole-tree/new-test-count claim; per-request/cross-system consistency notes retained; 2026-11-06-pr-135-e60be54-security.md.
 
+2026-11-06 verdict pr:138 61ff55a8aa817a4bbb2c18d82733e4601c35bd00 pass-with-notes - Merge/date delta adds no caller input/path/authority surface; system-time/in-process offset yields numeric date, UTC fallback explicit; prior marker/trusted-local limits stand; MERGEABLE/CLEAN, four green checks/exact tree/local-date test passed; native/live/validator limits retained; 2026-11-06-pr-138-61ff55a-security.md.
+
+2026-11-06 verdict pr:133 d9ce4ca99b020cf2ef11f7a515068076dcbd0392 pass-with-notes - Old pin only identifies admission evidence for bookkeeping, never dispatch authority; absent evidence resolves current route, owned pin/release/finish and local recipient-bound probes verified. Attempt2 four green checks/1989 cases; both rotation cases/store pin/index guard pass, sole attempt1 tmux flake passes rerun. Scoped source/test equality, not whole-tree equality; prior race/lease/retention/ACK limits stand; 2026-11-06-pr-133-d9ce4ca-security.md.
+
+2026-11-06 verdict pr:135 3ecec77f46ac335e6fe141ecf75baf5637378e7b block - HIGH9/10 S001 accepted batch holding-instance data becomes shell substitution in unquoted printed release command; concrete API/schema/persistence/render trace, no payload executed; gate/batch/privacy positives and tell-failure/cancellation/dedup qualifications retained; exact-tree 2005-case/four-green CI lacks hostile-word coverage; 2026-11-06-pr-135-3ecec77-security.md.
+
