@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: a prime records a closed seat's holding; a non-prime is refused; an overlapping row is refused.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md: directory_http the_prime_records_a_closed_seats_past_holding"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: eight holders in one commit; one bad line commits none.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md: directory_http a_batch_assign_is_one_commit_all_or_nothing"
         },
         {
           "id": "bp-0003",
@@ -41,8 +43,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: the test passes 50 runs in a row under load.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md: 50/50 runs under load"
         },
         {
           "id": "bp-0004",
@@ -51,8 +54,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: a written date round-trips with its zone; the view shows local time and zone.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md: holders times_parse_with_a_zone_or_as_a_utc_date_and_render_locally"
         },
         {
           "id": "bp-0005",
@@ -61,8 +65,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: a test holds a foreign index.lock while the writer commits (bounded retry, then a named refusal); the owner marker exists only during the writer's commit.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md: writer_tests a_held_index_lock_is_waited_for_then_refused_by_name_never_forced"
         },
         {
           "id": "bp-0006",
@@ -71,8 +76,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: assign a second role to a seat; the window name follows the documented rule.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md: directory_http assign_and_release_write_holders_set_seat_roles_and_call_the_hook_once_each"
         },
         {
           "id": "bp-0007",
@@ -81,8 +87,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: the shared-build test with a fake whoami shows the seat id in the owner line; with no seat, the user.",
-          "state": "unchecked",
-          "probe": "harness/scripts/shared-build.sh"
+          "state": "checked",
+          "probe": "harness/scripts/shared-build.sh",
+          "receipt": "assets/evidence/phase-1.md: shared-build.test.ts owner test"
         },
         {
           "id": "bp-0008",
@@ -93,7 +100,8 @@
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll."
+          "note": "Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll.",
+          "receipt": "assets/evidence/phase-1.md: private-run deltas, spawn_sites green, live before reading (1.23/s); the after-deploy reading is owed at merge"
         },
         {
           "id": "bp-0009",
@@ -112,8 +120,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: the shared-build test runs a fake cargo that reports its niceness (19) and the flag a fake taskpolicy passed down (-b) for each command of a --then batch, and with no taskpolicy still 19. Cost: one or two extra launches per cargo command (nice and taskpolicy each exec into the next), none at rest or per poll.",
-          "state": "unchecked",
-          "probe": "harness/scripts/shared-build.sh"
+          "state": "checked",
+          "probe": "harness/scripts/shared-build.sh",
+          "receipt": "assets/evidence/phase-1.md: shared-build.test.ts niceness test, CI 6e40ada"
         }
       ]
     },

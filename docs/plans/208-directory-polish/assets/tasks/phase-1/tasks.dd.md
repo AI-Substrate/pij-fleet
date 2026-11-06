@@ -35,16 +35,16 @@
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | F003: deterministic fresh_from and the same-second test | — | ph-00d0 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | holders::fresh_from takes its clock as an argument (fresh_from_at), so a unit test proves a collision moves `from` on by a millisecond without the wall clock. The #122 HTTP test drops the same-second precondition and keeps proving that assign, release and reassign make two distinct holdings that survive a rebuild. | If the prime's rule deletes the test on a CI failure first, this task restores it in its deterministic form. | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | F13: zoned dates written; local time with zone in the view | — | ph-00d0 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | Changelog rows the writer stamps carry a UTC timestamp to the millisecond with Z (like holders rows), so the date is never ambiguous; holders rows already carry Z. The human `pij directory` view prints each live holder's since in local time with its offset; --json keeps the stored UTC value. | UTC with Z in the documents costs no launch in the daemon; the CLI reads the local offset once per human view. | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | F17: a two-role seat's window keeps its first holding's name | — | ph-00d0 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | On assign, the window is renamed only when the new holding is the seat's earliest open holding; otherwise the rename is skipped (no launch) and data.window says which holding names it. Documented in pij-rs-api.md. | Release does not rename (unchanged). | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | F18: the writer's owner marker and its lock retry | — | ph-00d0 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | While the writer stages and commits, it keeps &lt;git dir&gt;/pij-writer.owner (daemon pid, time, commit subject), found in-process from the worktree's .git file, removed on every exit path. Its existing bounded retry on a foreign index.lock ends in E-RS-GOV-LOCKED naming the lock. The community procedures tell a human who sees the marker or an index.lock to retry after a moment. | The governance community README is the prime's; ask pm-001 to relay the one-line note there. | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | F15: pij directory lineage add | — | ph-00d0 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij directory lineage add &lt;role&gt;[/&lt;instance&gt;] &lt;seat&gt; --from &lt;time&gt; --to &lt;time&gt; --why &lt;text&gt;` (prime only) writes one closed row into the role's holders document in one writer commit and indexes it without touching seat roles; no live seat needed. Refuses a non-prime (E-RS-OWNERSHIP), from not before to, a time in the future, a bad time, and an overlap with any row of that seat and instance (E-RS-DIRECTORY-OVERLAP). | Times: RFC 3339 with Z or an offset, or a bare date (UTC midnight); stored as UTC ms Z. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | F16: pij directory assign --batch &lt;file&gt; | — | ph-00d0 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | `pij directory assign --batch &lt;file&gt; --why &lt;text&gt;` reads `&lt;role&gt;[/&lt;instance&gt;] &lt;seat&gt;` lines (blank and # lines skipped) and records every holding in one writer commit, all or nothing: an unknown role, an absent or closed seat, a holding already open or a repeated line refuses the whole batch naming every bad line. Each holding then gets the single assign's store row, seat role, hook and window rule. | Single assign becomes a batch of one, so both share one path. | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0007 | F24: shared-build's owner names the seat | — | ph-00d0 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | The owner line's seat is PIJ_ID, else PIJ_SESSION_ID (every harness seat has it), else the id `pij-rs whoami --json` returns (once per run, through a test seam), else $USER. | TS test proof is CI-only (C25); checked locally by running the script with a fake whoami. | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0008 | Cost receipts | — | ph-00d0 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | Batch assign is one writer commit for N holders; lineage add one commit; the lock retry is the existing bounded one; a skipped rename launches nothing. spawn_sites.rs passes; private-daemon ping deltas per verb and live at-rest readings are in the evidence. | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | F003: deterministic fresh_from and the same-second test | — | ph-00d0 | [x] checked | — | — | [tk-0001](tasks.dd.md#done-when) | holders::fresh_from takes its clock as an argument (fresh_from_at), so a unit test proves a collision moves `from` on by a millisecond without the wall clock. The #122 HTTP test drops the same-second precondition and keeps proving that assign, release and reassign make two distinct holdings that survive a rebuild. | If the prime's rule deletes the test on a CI failure first, this task restores it in its deterministic form. | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | F13: zoned dates written; local time with zone in the view | — | ph-00d0 | [x] checked | — | — | [tk-0002](tasks.dd.md#done-when) | Changelog rows the writer stamps carry a UTC timestamp to the millisecond with Z (like holders rows), so the date is never ambiguous; holders rows already carry Z. The human `pij directory` view prints each live holder's since in local time with its offset; --json keeps the stored UTC value. | UTC with Z in the documents costs no launch in the daemon; the CLI reads the local offset once per human view. | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | F17: a two-role seat's window keeps its first holding's name | — | ph-00d0 | [x] checked | — | — | [tk-0003](tasks.dd.md#done-when) | On assign, the window is renamed only when the new holding is the seat's earliest open holding; otherwise the rename is skipped (no launch) and data.window says which holding names it. Documented in pij-rs-api.md. | Release does not rename (unchanged). | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | F18: the writer's owner marker and its lock retry | — | ph-00d0 | [x] checked | — | — | [tk-0004](tasks.dd.md#done-when) | While the writer stages and commits, it keeps &lt;git dir&gt;/pij-writer.owner (daemon pid, time, commit subject), found in-process from the worktree's .git file, removed on every exit path. Its existing bounded retry on a foreign index.lock ends in E-RS-GOV-LOCKED naming the lock. The community procedures tell a human who sees the marker or an index.lock to retry after a moment. | The governance community README is the prime's; ask pm-001 to relay the one-line note there. | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | F15: pij directory lineage add | — | ph-00d0 | [x] checked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij directory lineage add &lt;role&gt;[/&lt;instance&gt;] &lt;seat&gt; --from &lt;time&gt; --to &lt;time&gt; --why &lt;text&gt;` (prime only) writes one closed row into the role's holders document in one writer commit and indexes it without touching seat roles; no live seat needed. Refuses a non-prime (E-RS-OWNERSHIP), from not before to, a time in the future, a bad time, and an overlap with any row of that seat and instance (E-RS-DIRECTORY-OVERLAP). | Times: RFC 3339 with Z or an offset, or a bare date (UTC midnight); stored as UTC ms Z. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | F16: pij directory assign --batch &lt;file&gt; | — | ph-00d0 | [x] checked | — | — | [tk-0006](tasks.dd.md#done-when) | `pij directory assign --batch &lt;file&gt; --why &lt;text&gt;` reads `&lt;role&gt;[/&lt;instance&gt;] &lt;seat&gt;` lines (blank and # lines skipped) and records every holding in one writer commit, all or nothing: an unknown role, an absent or closed seat, a holding already open or a repeated line refuses the whole batch naming every bad line. Each holding then gets the single assign's store row, seat role, hook and window rule. | Single assign becomes a batch of one, so both share one path. | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0007 | F24: shared-build's owner names the seat | — | ph-00d0 | [x] checked | — | — | [tk-0007](tasks.dd.md#done-when) | The owner line's seat is PIJ_ID, else PIJ_SESSION_ID (every harness seat has it), else the id `pij-rs whoami --json` returns (once per run, through a test seam), else $USER. | TS test proof is CI-only (C25); checked locally by running the script with a fake whoami. | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0008 | Cost receipts | — | ph-00d0 | [x] checked | — | — | [tk-0008](tasks.dd.md#done-when) | Batch assign is one writer commit for N holders; lineage add one commit; the lock retry is the existing bounded one; a skipped rename launches nothing. spawn_sites.rs passes; private-daemon ping deltas per verb and live at-rest readings are in the evidence. | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0009 | Docs and states | — | ph-00d0 | [ ] unchecked | — | — | [tk-0009](tasks.dd.md#done-when) | pij-rs-api.md documents lineage add, assign --batch, the zone rule, the window rule, the marker and the refusals; directory help and the skill's directory row carry them; difficulties.md marks F13, F15, F16 resolved and adds resolved rows for F17, F18, F24 and #122 F003; ddocs-check passes; PR body has a Delivers line. | No roadmap state changes. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0010 | Cost rule: shared-build runs cargo niced and in background QoS | — | ph-00d0 | [ ] unchecked | — | — | [tk-0010](tasks.dd.md#done-when) | Each cargo command runs as /usr/bin/nice -n 19 /usr/sbin/taskpolicy -b cargo ..., with taskpolicy skipped where absent (Linux CI); both paths are test seams. | TS test proof is CI-only (C25); checked locally with a fake cargo under a fake and the real taskpolicy. | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0010 | Cost rule: shared-build runs cargo niced and in background QoS | — | ph-00d0 | [x] checked | — | — | [tk-0010](tasks.dd.md#done-when) | Each cargo command runs as /usr/bin/nice -n 19 /usr/sbin/taskpolicy -b cargo ..., with taskpolicy skipped where absent (Linux CI); both paths are test seams. | TS test proof is CI-only (C25); checked locally with a fake cargo under a fake and the real taskpolicy. | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -52,51 +52,51 @@
 
 ### tk-0001
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0001 | holders unit test: fresh_from_at with a row already at that millisecond returns the next millisecond; the HTTP test passes 50 runs in a row under parallel load. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0001 | holders unit test: fresh_from_at with a row already at that millisecond returns the next millisecond; the HTTP test passes 50 runs in a row under parallel load. | [x] checked | [bp-0003](../../backpressure.dd.md#rows) | holders a_collision_moves_from_on_by_a_millisecond_without_the_wall_clock and directory_http review::review_reassign_keeps_both_holdings green; 50/50 under load (../../evidence/phase-1.md) |
 
 ### tk-0002
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0002 | A stamped changelog row and a holders row end in Z and round-trip; the local render of 2026-11-06T00:07:12.000Z at +600 is 2026-11-06 10:07:12 +10:00. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0002 | A stamped changelog row and a holders row end in Z and round-trip; the local render of 2026-11-06T00:07:12.000Z at +600 is 2026-11-06 10:07:12 +10:00. | [x] checked | [bp-0004](../../backpressure.dd.md#rows) | holders times_parse_with_a_zone_or_as_a_utc_date_and_render_locally green; role stamping test green (CI 69e9549) |
 
 ### tk-0003
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0003 | HTTP test: assigning a seat a second role leaves its window named for the first; the second receipt's window says renamed false with the reason. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0003 | HTTP test: assigning a seat a second role leaves its window named for the first; the second receipt's window says renamed false with the reason. | [x] checked | [bp-0006](../../backpressure.dd.md#rows) | directory_http assign_and_release_write_holders_set_seat_roles_and_call_the_hook_once_each: second role keeps the first name, renamed false (CI 69e9549); private run h1 kept fleet:delivery |
 
 ### tk-0004
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0004 | Writer test: with a foreign index.lock held, the marker exists while the writer retries and is gone after; a lock held past the retries refuses E-RS-GOV-LOCKED and leaves no marker. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0004 | Writer test: with a foreign index.lock held, the marker exists while the writer retries and is gone after; a lock held past the retries refuses E-RS-GOV-LOCKED and leaves no marker. | [x] checked | [bp-0005](../../backpressure.dd.md#rows) | writer_tests a_held_index_lock_is_waited_for_then_refused_by_name_never_forced green (CI 69e9549) |
 
 ### tk-0005
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0005 | HTTP test: the prime records a closed seat's past holding (one commit, row in the view's lineage, no seat role); a non-prime is refused; an overlapping row is refused; to before from is refused. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0005 | HTTP test: the prime records a closed seat's past holding (one commit, row in the view's lineage, no seat role); a non-prime is refused; an overlapping row is refused; to before from is refused. | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | directory_http the_prime_records_a_closed_seats_past_holding green (CI 69e9549) |
 
 ### tk-0006
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0006 | HTTP test: eight holders in one commit; a file with one bad line commits none and names it. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0006 | HTTP test: eight holders in one commit; a file with one bad line commits none and names it. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | directory_http a_batch_assign_is_one_commit_all_or_nothing green (CI 69e9549) |
 
 ### tk-0007
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0007 | shared-build.test.ts (CI) and a local run: with PIJ_ID and PIJ_SESSION_ID unset and a fake whoami, the owner line names the seat; with no whoami answer, the user. | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0007 | shared-build.test.ts (CI) and a local run: with PIJ_ID and PIJ_SESSION_ID unset and a fake whoami, the owner line names the seat; with no whoami answer, the user. | [x] checked | [bp-0007](../../backpressure.dd.md#rows) | shared-build.test.ts owner test green in CI 6e40ada (15 tests); local run with a fake whoami |
 
 ### tk-0008
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0008 | spawn_sites green; private-daemon deltas for lineage add, assign --batch and a skipped rename recorded; live at-rest readings recorded. | [ ] unchecked | [bp-0008](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0008 | spawn_sites green; private-daemon deltas for lineage add, assign --batch and a skipped rename recorded; live at-rest readings recorded. | [x] checked | [bp-0008](../../backpressure.dd.md#rows) | spawn_sites green; private-run deltas and live before reading (1.23/s) in ../../evidence/phase-1.md; after-deploy reading owed at merge |
 
 ### tk-0009
 
@@ -106,9 +106,9 @@
 
 ### tk-0010
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0010 | shared-build.test.ts (CI) and a local run: every command of a --then batch reports niceness 19 and taskpolicy -b; with no taskpolicy, niceness 19 and no wrapper. | [ ] unchecked | [bp-0010](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0010 | shared-build.test.ts (CI) and a local run: every command of a --then batch reports niceness 19 and taskpolicy -b; with no taskpolicy, niceness 19 and no wrapper. | [x] checked | [bp-0010](../../backpressure.dd.md#rows) | shared-build.test.ts niceness test green in CI 6e40ada; local run with fake and real taskpolicy (../../evidence/phase-1.md) |
 
 <a id="goals"></a>
 
