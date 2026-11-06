@@ -104,3 +104,9 @@
 
 2026-11-06 verdict pr:133 9919d4d9e5752ac9e5f942be268d61283daa0e04 pass-with-notes - S12 own commits/resolutions only; original-holder metadata check-ins and project-PA/prime escalations, mandatory audit-before-dispatch verified; attempt stamps not delivery proof, snapshot/answer race qualified; CLEAN/four green checks, identical-tree 1971-case evidence; upcoming #129 index merge excluded; 2026-11-06-pr-133-9919d4d-security.md.
 
+2026-11-06 verdict pr:130 bfa89846a1cb009b3094e263f14f85ce38a6cc9a pass-with-notes - Hook follows successful authorized admit_control; held target incarnation guards and same-recipient local command-None FYI preserved; four green checks, identical CI tree and ten targeted passing cases; current DIRTY/CONFLICTING, admission not execution/ACK; prior custom-ID/Markdown/live/ddocs limits stand; 2026-11-06-pr-130-bfa8984-security.md.
+
+2026-11-06 verdict pr:146 9f6282da6900749be27cc83ebc463c36b73cf263 pass - Docs-only public-safety delta: difficulties.md 14 additions clear; four positive/eleven allowed controls pass; exact head CLEAN and four green checks before publication; ownership/source correctness and possible future F61 push excluded; 2026-11-06-pr-146-9f6282d-security.md.
+
+2026-11-06 verdict pr:147 29488cad374621621303fe1153c695784cb914ce pass-with-notes - Array argv/inherited stdio/native downstream checks retained; PATH unpinned and caller-proof/signal equivalence explicitly not certified, no lower-trust exploit established; four green jobs/1976-case proof with code/test equivalence and 14-doc-line whole-tree difference; no local execution; 2026-11-06-pr-147-29488ca-security.md.
+
