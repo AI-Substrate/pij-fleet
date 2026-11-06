@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/role"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"holders": "one",
+				"id": "s05-probe",
+				"kind": "specialist",
+				"lifecycle": "per-task",
+				"title": "s05 probe (scratch)"
+			}
+		},
+		{
+			"name": "scope",
+			"value": {
+				"paths": [],
+				"rules": [
+					"Scratch role for the s05 dogfood; holds nothing and does no work."
+				]
+			}
+		},
+		{
+			"name": "standing_packet",
+			"value": {
+				"source": "inline",
+				"text": "Scratch role for the s05 dogfood. If you hold it, release it."
+			}
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"by": "pij-wooden-lungfish",
+					"date": "2026-11-06",
+					"why": "s05 dogfood: a role with no live holder, to probe the role queue; retire after #135 lands"
+				}
+			]
+		}
+	]
+}
