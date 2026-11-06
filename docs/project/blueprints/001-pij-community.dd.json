@@ -185,7 +185,7 @@
 					"where": "crates/daemon watchdog",
 					"responsibility": "Stores a limit on each request; in the existing watchdog round, sends one check-in when the limit passes without an output or card update, and tells the PA (else the prime) when it goes unanswered.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-22"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-skill",
