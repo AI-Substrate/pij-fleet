@@ -99,6 +99,22 @@ pub struct RoleRequest {
     pub delivered_at: Option<u64>,
 }
 
+/// Boot recovery's evidence that delivery already took a stranded claim:
+/// a ledger row, a `delivery:<holder>` job in any state, or a held FYI under
+/// its msg_id. Every probe is an indexed SEARCH (performance P001 on #129):
+/// the ledger's unique key, `jobs_by_dedupe` and the FYI primary key.
+const RECOVER_TAKEN_SQL: &str = "UPDATE role_requests SET state = 'delivered', delivered_at = ?1 \
+     WHERE state = 'delivering' AND holder IS NOT NULL AND ( \
+       EXISTS (SELECT 1 FROM delivered_messages AS ledger \
+         WHERE ledger.recipient = role_requests.holder AND ledger.sender_machine = '' \
+         AND ledger.msg_id = role_requests.id) \
+       OR EXISTS (SELECT 1 FROM jobs \
+         WHERE jobs.kind = 'delivery:' || role_requests.holder \
+         AND jobs.dedupe_origin = '' AND jobs.dedupe_key = role_requests.id) \
+       OR EXISTS (SELECT 1 FROM fyis \
+         WHERE fyis.origin = '' AND fyis.id = role_requests.id \
+         AND fyis.recipient = role_requests.holder))";
+
 const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
      limit_ms, state, holder, created_at, delivered_at";
 
@@ -321,24 +337,12 @@ impl SqliteOrchestration {
         let now = sql_i64(now_ms, "delivered_at")?;
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            let delivered = sqlx::query(
-                "UPDATE role_requests SET state = 'delivered', delivered_at = ?1 \
-                 WHERE state = 'delivering' AND holder IS NOT NULL AND ( \
-                   EXISTS (SELECT 1 FROM delivered_messages AS ledger \
-                     WHERE ledger.recipient = role_requests.holder AND ledger.msg_id = role_requests.id \
-                     AND ledger.sender_machine = '') \
-                   OR EXISTS (SELECT 1 FROM jobs \
-                     WHERE jobs.kind = 'delivery:' || role_requests.holder \
-                     AND jobs.dedupe_key = role_requests.id AND jobs.dedupe_origin = '') \
-                   OR EXISTS (SELECT 1 FROM fyis \
-                     WHERE fyis.origin = '' AND fyis.id = role_requests.id \
-                     AND fyis.recipient = role_requests.holder))",
-            )
-            .bind(now)
-            .execute(&mut *tx)
-            .await
-            .map_err(adapter_error)?
-            .rows_affected();
+            let delivered = sqlx::query(RECOVER_TAKEN_SQL)
+                .bind(now)
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected();
             let requeued = sqlx::query(
                 "UPDATE role_requests SET state = 'queued', holder = NULL \
                  WHERE state = 'delivering'",
@@ -419,4 +423,56 @@ fn role_request(row: &sqlx::sqlite::SqliteRow) -> Result<RoleRequest> {
             .map(|at| sql_u64(at, "delivered_at"))
             .transpose()?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::Row;
+
+    /// Performance P001 on #129: every evidence probe in boot recovery is an
+    /// indexed SEARCH, never a SCAN that grows with retained job history. The
+    /// outer read is the `role_requests_delivering` partial index.
+    #[tokio::test]
+    async fn boot_recovery_probes_are_indexed_searches() {
+        let pool = crate::open("").await.expect("memory");
+        let plan: Vec<String> =
+            sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::RECOVER_TAKEN_SQL))
+                .bind(0_i64)
+                .fetch_all(&pool)
+                .await
+                .expect("plan")
+                .iter()
+                .map(|row| row.get::<String, _>("detail"))
+                .collect();
+        let text = plan.join("\n");
+        // The outer read walks the partial index of stranded claims, which is
+        // normally empty; every probe inside it must be a SEARCH.
+        for (table, index) in [
+            ("role_requests", "role_requests_delivering"),
+            ("ledger", "sqlite_autoindex_delivered_messages_1"),
+            ("jobs", "jobs_by_dedupe"),
+            ("fyis", "sqlite_autoindex_fyis_1"),
+        ] {
+            assert!(
+                plan.iter()
+                    .any(|line| line.contains(&format!("{table} USING"))
+                        && line.contains(&format!("INDEX {index}"))),
+                "{table} does not use {index}:\n{text}"
+            );
+        }
+        for table in ["ledger", "jobs", "fyis"] {
+            assert!(
+                plan.iter()
+                    .any(|line| line.starts_with(&format!("SEARCH {table} "))),
+                "{table} is not a SEARCH:\n{text}"
+            );
+        }
+        assert!(
+            !plan
+                .iter()
+                .any(|line| line.starts_with("SCAN")
+                    && !line.contains("INDEX role_requests_delivering")),
+            "a probe scans:\n{text}"
+        );
+    }
 }
