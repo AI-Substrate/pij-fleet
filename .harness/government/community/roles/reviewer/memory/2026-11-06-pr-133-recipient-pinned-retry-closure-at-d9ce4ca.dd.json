@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read when final pin is d9ce4ca or reviewing recipient-scoped notification recovery",
+				"tags": [
+					"review",
+					"time-limits",
+					"recovery",
+					"dedupe"
+				],
+				"title": "PR 133 recipient-pinned retry closure at d9ce4ca"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR 133 correctness review passes with proof notes at d9ce4ca99b020cf2ef11f7a515068076dcbd0392. Complete seven-file delta from 44f1eea closes the F002 admitted-notice/PA-rotation residual; F001 remains closed.\n\nA limit attempt pins the recipient before sending. An expired claim retains that pin; retry checks the pinned recipient's ledger/job/FYI admission evidence first. An admitted notice only gets its final stamp, without notifying a replacement PA. An unadmitted pin permits fresh directory resolution. Probe failure keeps the pin for another leased retry rather than interpreting unknown admission as absent. Matching finish/release clears it. The CheckIn recovery path checks both the check-in and converted gone-holder notice ids.\n\nExact-head CI run 42209529237 attempt 2 and JUnit artifact 13498921432 confirm both PA-rotation twins, store pin semantics, indexed-search guard and prior answer/retry/lease/gone-holder cases pass; all 1989 tests passed. Attempt 1 artifact 13497064652 has exactly one failure, separate_adapters_cannot_both_reserve_one_pane in pij-tmux; that test passes on rerun. No local builds/tests, crash experiment or mutation run. Live-holder admission-failure fixture remains a proof gap, not an open finding.\n\nLesson: durable retry must remember both the operation id and the resolved recipient because message dedupe is recipient-scoped. Retarget only after establishing that the pinned recipient never admitted the message; unknown evidence is not absence.\n\nOutput: roles/reviewer/outputs/2026-11/pr-133-d9ce4ca-delta.md. Security owns entitlement review; performance owns pin/probe measurements.\n"
+		}
+	]
+}
