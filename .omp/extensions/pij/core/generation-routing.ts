@@ -28,10 +28,10 @@ export interface RsNativeRoute extends RouteIdentity {
 		| "commit-trailers"
 		| "fleet-report"
 		| "bg"
+		| "directory"
 		| "claim"
 		| "claims"
-		| "delivered"
-		| "directory";
+		| "delivered";
 }
 
 export interface RsUnportedRoute extends RouteIdentity {
@@ -272,7 +272,6 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		"node",
 		"orchestration",
 		"spine",
-		"directory",
 		"role",
 		"link",
 		"watchdog",
@@ -290,28 +289,21 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 			why: "Forward argv and caller to the existing shared daemon operation",
 		}),
 	),
-	// The native CLI owns these verbs' human output, --help and stdin
-	// (`--body-file -`); the shim used to print their raw JSON (plan 209: F30,
-	// F41, F42, F43, F50).
-	...(["claim", "claims", "delivered"] as const).map(
-		(verb): RsNativeRoute => ({
-			verb,
-			nativeCommand: verb,
-			why: "The native CLI renders claims and deliveries and owns their --help",
-		}),
-	),
-	{
-		verb: "directory",
-		leaf: "memory",
-		nativeCommand: "directory",
-		why: "The native CLI reads --body-file - from stdin and prints the memory INDEX as text",
-	},
 	{
 		verb: "commit-trailers",
 		nativeCommand: "commit-trailers",
 		why: "Forward the native trailer-only stdout, stderr and exit contract",
 	},
 	{ verb: "fleet-report", nativeCommand: "fleet-report", why: "Forward the native report writer" },
+	// Plan 213: pij-rs owns these verbs' grammar, help and output; the shim hands
+	// them over unchanged (harness/scripts/pij-native-verbs.json, the same list).
+	...(["directory", "claim", "claims", "delivered"] as const).map(
+		(verb): RsNativeRoute => ({
+			verb,
+			nativeCommand: verb,
+			why: "pij-rs owns this community verb's grammar, help and output",
+		}),
+	),
 	{
 		verb: "spawn",
 		unported: "shim spawn grammar is not native spawn grammar; use pij-rs spawn --help",

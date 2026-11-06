@@ -194,6 +194,9 @@ on_signal() {
 trap release EXIT
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
+# A closed terminal sends HUP: cargo runs in its own group and would otherwise
+# keep building, holding the lock's target, with nothing waiting (F48).
+trap 'on_signal 129' HUP
 
 # Free KiB on the volume holding the target (or its nearest existing parent).
 # Builtins only past the one df: this runs once per poll while waiting.

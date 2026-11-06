@@ -101,7 +101,7 @@
           "phase": "ph-00d1",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "BUILD: routing tests show the four verbs run native and other directory verbs keep the daemon route; unit tests for the memory add line, the slug cap, the add help, the role refusal flags and the Delivers line; CI runs pij-skill-check; F44 timed pij against pij-rs.",
+          "proof": "BUILD: unit tests for the memory add line, the slug cap, the add help, the role refusal flags and the Delivers line; the shared-build test covers HUP; CI runs pij-skill-check.",
           "state": "unchecked",
           "probe": "crates/"
         }

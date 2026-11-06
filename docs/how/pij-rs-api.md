@@ -39,9 +39,16 @@ AC4 asserts **JSON byte parity**, not exit-code parity. Existing client policies
 | `error: cursor_reset` | 5 | 4 |
 | `error: skew` or `adapter`; uncategorized envelope failure | 1 | 4 |
 | Native argument/usage error; shim named argument/unported refusal | 2 (Clap stderr, not necessarily JSON) | 4 (named refusal) |
-| `commit-trailers`, `fleet-report`, `claim`, `claims`, `delivered`, `directory memory` native pass-through | Native command status | Same native command status |
+| `commit-trailers`, `fleet-report` native pass-through | Native command status | Same native command status |
+| `directory`, `claim`, `claims`, `delivered`; `send` to a `role:` address, with `--to`, or `--help` ([shim forwarding](#shim-forwarding-plan-213)) | Native command status | Same native command status |
 
 Sources: [`exit_code`](../../crates/cli/src/lib.rs), [shim refusal/output handling](../../.omp/extensions/pij/cli.ts). The native-pass-through signal contract is also preserved; this table does not redefine OS signal termination.
+
+### Shim forwarding (plan 213)
+
+The `pij` shim ([`pij-cli.cjs`](../../harness/scripts/pij-cli.cjs)) hands pij-rs's community verbs to `pij-rs` before its TypeScript router loads: argv and stdin unchanged, and pij-rs's own stdout, stderr, help and exit code. Nothing is re-rendered or wrapped, so `pij <verb>` and `pij-rs <verb>` print the same bytes. The verbs are listed once, in [`pij-native-verbs.json`](../../harness/scripts/pij-native-verbs.json): exactly the pij-rs subcommands that own their grammar and help (clap's help flag disabled), today `directory`, `claim`, `claims` and `delivered`. `send` goes too, from a tmux pane, when its recipient is a `role:` address or it uses `--to`, and from anywhere for `--help`; `pij-rs send` takes the shim's positional form (`send <recipient> [<text>]`) as well as `--to`/`--body`. The shim finds the verb past pij-rs's global options (`--json`, `--state-dir`, `--addr`) and reads each send flag with its value, from value-flag tables in the same file, so a value that looks like `role:…` is never taken for the recipient. Sends to a seat, every paneless send (the router registers the observed host first and never trusts an inherited `PIJ_SESSION_ID`), the shim-only `--file`/`--caption`, and any explicit `PIJ_DAEMON_GENERATION` other than `rs` keep the routed path. `pij-rs` is spawned by absolute path, from the first absolute PATH entry that holds it (a relative entry is skipped, as the ddocs resolver does); with none, the shim exits 127 and names it. Native `send`, `compact-self` and `inbox` resolve the acting seat with the full caller context, so the daemon applies the same harness-session checks as on the routed path.
+
+Tests: `shim_forward_tests` in [`crates/cli/src/main.rs`](../../crates/cli/src/main.rs) holds the verb list equal to clap's verbs that own their help and the value-flag tables equal to clap's options (with new and stale entries as negative controls), and [`crates/cli/tests/shim_forward.rs`](../../crates/cli/tests/shim_forward.rs) runs the real shim: help byte-equal to `pij-rs`, and every flag pij-rs's help names reaching a recording `pij-rs` with argv, stdin, output and exit code unchanged, with the kept-path calls as negative controls. Cost: one `node` start and one `pij-rs` exec per call, where the routed path started node twice (the second through tsx); measured medians at load 36 were 0.085 s against 0.546 s (`claim --help`) and 0.115 s against 0.639 s (`claims`). Nothing runs per tick, and the daemon launches nothing new.
 
 ## Store health and daemon logs
 
@@ -774,7 +781,7 @@ Sources: [`cold_wake.rs`](../../crates/core/src/cold_wake.rs) (rule), [`http/col
 
 The receipt is the ordinary send receipt plus `request: {id, project, role, instance, reply, limit_ms, state, holder}`. The request id is the send's `msg_id` (C3); a queued receipt has `outcome: queued` and a `woke: {seat, outcome, cold_check}` object. Assigning a holder (`pij directory assign`) delivers that role's queued requests to it in order, each from its requester, and marks them delivered (C6); a refused assign drains nothing. A request for any holder drains to a holder of any instance; one for an instance drains only to that instance. Each request is claimed before it is delivered, in one store statement that also requires the seat to be live and to hold the role at that moment, so two drains never deliver one request and a drain that runs after its holder was released delivers nothing (the request stays queued). A drained non-FYI request is admitted like an immediate send: when the holder is cold, a `send.cold-wake-forced` audit naming the requester and the reason `role queue: drained to the role's new holder on assign` is written before the wake, and a failed audit sends nothing. A drain never refuses a cold holder: the assign is the deliberate act, and a refusal would strand the request until the next assign. A daemon that stops between a claim and its outcome leaves the request `delivering`. The next boot settles every such row before it serves anything: one the delivery path already took for its holder (ledger, delivery job or held FYI under its msg_id) is marked delivered, and any other goes back to `queued` with no holder, so the next assign drains it once and the PA digest lists it. Waking the requester when the holder answers (C4) is s06's; s05 only stores the reply mode.
 
-Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored for s06 to notify with) and `--limit <duration>` (`90s`, `45m`, `1h30m`; default the role's `default_limit`, C5; stored for s12). `--project <slug>`. All three ride `POST /v1/send` as top-level `reply`, `limit` and `project` beside the message, and the shim parses the same flags.
+Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored for s06 to notify with) and `--limit <duration>` (`90s`, `45m`, `1h30m`; default the role's `default_limit`, C5; stored for s12). `--project <slug>`. All three ride `POST /v1/send` as top-level `reply`, `limit` and `project` beside the message. The shim hands a role send to `pij-rs` unchanged ([shim forwarding](#shim-forwarding-plan-213)), so its receipt is pij-rs's: `from <seat>; request <id> <state> to <holder> (reply <mode>)`.
 
 | Refusal | When |
 |---|---|
@@ -1051,10 +1058,9 @@ writer commit as any add. No loop or timer.
 `hook`; `body`), to `community/roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json`,
 the slug taken from the title (lowercase ASCII letters and digits, other runs
 as one hyphen, at most 40, cut back to a word boundary). `--tags` repeats or takes a comma list.
-`--body-file <path>` reads the body from a file; the native CLI reads the file,
-or stdin for `-`, and sends it as `--body` (the `pij` shim runs `pij-rs` for
-`directory memory`, so both read stdin), while an HTTP caller's path is read by
-the daemon relative to `caller.cwd`. The same commit regenerates
+`--body-file <path>` reads the body from a file; the CLI (`pij` hands `directory`
+to `pij-rs`, plan 213) reads the file, or stdin for `-`, and sends it as `--body`,
+while a raw HTTP caller's path is read by the daemon relative to `caller.cwd`. The same commit regenerates
 `memory/INDEX.md`. pij's lines live in one fenced block,
 `<!-- pij:generated -->` … `<!-- /pij:generated -->`, rewritten whole with one
 line per pij note, oldest first:
@@ -1081,7 +1087,7 @@ in-process and launch nothing.
 | `E-RS-MEMORY-EXISTS` | a note with that date and slug exists; give another `--title` |
 | `E-RS-MEMORY-NOTE-MISSING` | `--note` names no note (HTTP 404) |
 | `E-RS-UNPORTED` | a memory verb other than `add` (`memory delete …`) |
-| `E-RS-ARG` | a missing or multi-line title, hook or tag, an empty body, `--body` with `--body-file`, `--body-file -` from an HTTP caller, write flags on a read, or a `--note` that matches several notes or is not a plain name |
+| `E-RS-ARG` | a missing or multi-line title, hook or tag, an empty body, `--body` with `--body-file`, `--body-file -` from a raw HTTP caller, write flags on a read, or a `--note` that matches several notes or is not a plain name |
 
 Plus every writer refusal above. Cost: one writer commit per note (git 7, ddocs
 2, as for any one-document write); reads launch nothing.

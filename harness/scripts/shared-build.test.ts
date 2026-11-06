@@ -203,6 +203,7 @@ describe("just shared-build", () => {
 	for (const [signal, code] of [
 		["SIGTERM", 143],
 		["SIGINT", 130],
+		["SIGHUP", 129],
 	] as const) {
 		it(`on ${signal}, stops cargo's whole process tree before another batch can enter`, async () => {
 			const f = fixture();

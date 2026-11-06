@@ -485,36 +485,6 @@ describe("cutover retains shipped rs surfaces without legacy reads", () => {
 		expect(host.requests).toEqual([]);
 	});
 
-	it.each([
-		[["claims", "--open"]],
-		[["claim", "plan", "--for", "plan 209"]],
-		[["delivered", "144"]],
-		[["directory", "memory", "add", "coder", "--title", "t", "--hook", "h", "--body-file", "-"]],
-		[["directory", "memory", "coder"]],
-	])("%j runs the native CLI, which owns its text, --help and stdin (plan 209)", async (argv) => {
-		const calls: string[][] = [];
-		const host = replying(HEALTH);
-		const deps = {
-			...host.deps,
-			runNative: async (args: readonly string[]) => {
-				calls.push([...args]);
-				return 0;
-			},
-		};
-		// As cli.ts parses it: the second word is a leaf unless it is a flag.
-		const leaf = argv[1]?.startsWith("-") ? undefined : argv[1];
-		const result = await routeVerb(argv[0] ?? "", leaf, argv, deps);
-		expect(calls).toEqual([["--state-dir", "/unused-u6-state", "--addr", ADDR, ...argv]]);
-		expect(result.outcome).toMatchObject({ kind: "rs-native", exitCode: 0 });
-		expect(host.requests).toEqual([]);
-	});
-
-	it("directory verbs other than memory keep the daemon route", () => {
-		expect(findRoute("directory", undefined)).toMatchObject({ rsPath: "/v1/directory" });
-		expect(findRoute("directory", "assign")).toMatchObject({ rsPath: "/v1/directory" });
-		expect(findRoute("directory", "memory")).toMatchObject({ nativeCommand: "directory" });
-	});
-
 	it("an unported verb cannot use native forwarding as another escape hatch", async () => {
 		let nativeCalls = 0;
 		const host = replying(HEALTH);
