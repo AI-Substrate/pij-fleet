@@ -148,6 +148,18 @@
 					"why": "reviewer for PR #126 (s03)"
 				},
 				{
+					"assigned_by": "pij-far-jackal",
+					"from": "2026-11-06T00:00:00.000Z",
+					"harness": "unknown",
+					"instance_key": "125",
+					"machine": "unknown",
+					"release_why": "lineage add",
+					"released_by": "pij-far-jackal",
+					"seat": "pij-interior-jellyfish",
+					"to": "2026-11-06T02:00:00.000Z",
+					"why": "reviewed #125 (PEC rename) LOG:150"
+				},
+				{
 					"assigned_by": "pij-steady-otter",
 					"from": "2026-11-06T00:37:37.656Z",
 					"harness": "copilot",
