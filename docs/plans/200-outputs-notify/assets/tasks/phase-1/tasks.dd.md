@@ -33,13 +33,63 @@ _Empty._
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Store: migration 0036 community_outputs (role, kind, subject, head, result, writer, holds_role, answers, path, commit, at) and its reads | — | ph-00c8 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | crates/store; indexed by (subject, head) and (role). Number from pm-001: 0036. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | Output document: build a pij/output ddoc per kind (verdict head/result/notes owed/evidence/link; deliverable, note, handover body) at roles/&lt;id&gt;/outputs/&lt;yyyy-mm&gt;/&lt;slug&gt;.dd.json | — | ph-00c8 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | crates/daemon/src/community/output.rs, pure. writer_holds_role from open_assignments. | [ac-0004](../../../plan.dd.md#acceptance-criteria) | [ac-0001](../../../plan.dd.md#acceptance-criteria) |
+| tk-0003 | pij output &lt;kind&gt; verb: write through the single writer (one commit), record the store fact and pointer, flag a non-holder writer | — | ph-00c8 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | New /v1/output route (argv+caller), CLI wiring, core help. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | pij outputs --subject pr:N --head &lt;sha&gt; and --role &lt;id&gt;: exact-head answers, none when the head moved | — | ph-00c8 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | [ac-0004](../../../plan.dd.md#acceptance-criteria) |
+| tk-0005 | Notify: --answers &lt;msg_id&gt; marks the request answered (s12 helper) and tells its requester in the stored reply mode; block or failed always wakes (forced, audited if cold, C4); unrequested goes FYI to the nearest seat above; one seat | — | ph-00c8 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | Uses role_requests (0034) and mark_role_request_answered (0035). | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Cost receipts: spawn sites, private-daemon spawn deltas per verb, live before reading | — | ph-00c8 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0007 | Docs and states: pij-rs-api.md, skill verb coverage (output, outputs), roadmap s06, req-08, req-10, c-notify | — | ph-00c8 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | A store test records outputs and reads them back by subject and head and by role; a second answer for one request does not re-mark it | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | Each kind builds a document real ddocs accepts as pij/output; a verdict without head or result is refused; a non-holder writer sets writer_holds_role false | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | A handover document holds its in-flight body and validates | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | In a scratch governance repo, two seats writing outputs at once produce two files in two commits and no conflict | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | A pass on head A is listed for head A and none is answered for head B | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0006 | pij outputs --role &lt;id&gt; lists a handover | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0007 | A default-mode requester is woken; a --reply fyi requester gets an FYI; a block verdict or failed result wakes an fyi requester; an unrequested output goes FYI to the PM, else the prime; exactly one seat is notified | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0008 | spawn_sites.rs passes; private-daemon spawn deltas per verb and a live before reading are in the evidence | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-0007
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0009 | ddocs-check and ddocs validate on docs/project pass; the API doc and skill tables name output and outputs and their refusals; s06 complete, req-08 and req-10 and c-notify shipped | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
