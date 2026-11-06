@@ -107,7 +107,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-07",
 						"../prds/001-pij-community.dd.json#requirements/req-08"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-notify",

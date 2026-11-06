@@ -111,6 +111,19 @@ pub struct SendRequest {
     /// Why a forced cold wake is worth it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// `--reply` on a send to `role:<id>` (plan 199).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply: Option<String>,
+    /// `--limit` on a send to `role:<id>` (plan 199).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<String>,
+    /// `--project` on a send to `role:<id>` (plan 199).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The caller, sent only with a role send so the daemon can find the
+    /// project from its cwd; a seat send's wire is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caller: Option<CallerContext>,
 }
 
 // StreamFrame is owned by the daemon wire module and re-exported here so the
@@ -208,6 +221,12 @@ impl DaemonClient {
 
     /// Durably enqueue one message.
     pub async fn send(&self, request: &SendRequest) -> Envelope<Receipt> {
+        self.post("pij send", "/v1/send", request).await
+    }
+
+    /// A send to `role:<id>` (plan 199): the receipt carries the request, so
+    /// it is read whole rather than as a seat receipt.
+    pub async fn send_role(&self, request: &SendRequest) -> Envelope<Value> {
         self.post("pij send", "/v1/send", request).await
     }
 
@@ -871,6 +890,10 @@ mod tests {
             fyi: false,
             force: false,
             reason: None,
+            reply: None,
+            limit: None,
+            project: None,
+            caller: None,
         };
 
         assert_eq!(
