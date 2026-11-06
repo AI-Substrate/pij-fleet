@@ -60,4 +60,5 @@
 - [2026-11-06 PR 129 F003 recovery closure at 314da13](2026-11-06-pr-129-f003-recovery-closure-at-314da13.dd.md): Read when reviewing durable delivery claims, interruption recovery or PR 129 closure (review, role-send, recovery, ci)
 - [2026-11-06 PR 131 C29 alias and merged head 599747c](2026-11-06-pr-131-c29-alias-and-merged-head-599747c.dd.md): When a claim kind is renamed, verify canonicalization at allocation, release, file-derived keys and PM lookup. (reviewer, claims, c29, workstreams, merge)
 - [2026-11-06 PR 133 s12 answered and notification admission review](2026-11-06-pr-133-s12-answered-and-notification-admission-review.dd.md): Read when reviewing role-request time limits, answered races or one-shot notification reliability (review, time-limits, notifications, ci)
+- [2026-11-06 PR 137 output identity review 4ab6460](2026-11-06-pr-137-output-identity-review-4ab6460.dd.md): When output paths or notification IDs cross project and delivery boundaries, verify the owning key namespace and dedupe behavior. (reviewer, outputs, identity, notifications, ci)
 <!-- /pij:generated -->
