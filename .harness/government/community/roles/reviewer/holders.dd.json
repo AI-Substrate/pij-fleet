@@ -38,6 +38,16 @@
 					"seat": "pij-subsequent-reindeer",
 					"to": "2026-11-06T00:27:56.160Z",
 					"why": "reviewer for PR #126 (s03)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T00:37:37.656Z",
+					"harness": "copilot",
+					"harness_session": "6a91000b-c9e9-45a3-a6cd-f83a462adb9a",
+					"instance_key": "129",
+					"machine": "ops.osk.lan",
+					"seat": "pij-many-tiglon",
+					"why": "reviewer for PR #129 (s05)"
 				}
 			]
 		}
