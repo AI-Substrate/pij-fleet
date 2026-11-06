@@ -58,3 +58,5 @@
 
 2026-11-06 verdict pr:134 d85c0f3adab39895dd6776422aaa5b3ad4048d8c pass-with-notes - Supported-name/argv/session guards and safe bounds retained; no first-party unsafe, fixed absolute ps argv; no macOS runtime certification or universal name/exec equivalence; global one-ps cap not enforced; identical-tree Linux CI proof, no local probes/builds; 2026-11-06-pr-134-d85c0f3-security.md.
 
+2026-11-06 verdict pr:131 09653d32a47224a61f0e2957b3862001b869e218 pass-with-notes - Explicitly requested SNAPSHOT ONLY; project labels preserved in JSON/human cards, fixes/quote/auth proof checked, CI green; live API/Git ref 93ca2b1 is NOT approved and owner notified; no local validation under backoff; 2026-11-06-pr-131-09653d3-security.md.
+
