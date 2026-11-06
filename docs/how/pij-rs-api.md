@@ -54,7 +54,9 @@ id (plan 190): the spawn counter resets on restart, so two readings compare only
 when their pids match. `data.ddocs` is the ddocs path the daemon resolved once at
 start (`PIJ_DDOCS`, which must be absolute, else PATH), or `null` when it found
 none; `just doctor` prints it. A relative or empty PATH entry is taken relative
-to the daemon's directory at start, so the kept path is always absolute. A failed or exhausted probe returns
+to the daemon's directory at start, so the kept path is always absolute. `data.gh` is
+the gh `pij delivered` launches, resolved the same way from `PIJ_GH`, else PATH,
+or `null` (plan 196). A failed or exhausted probe returns
 HTTP 503, `ok:false`, `error:"adapter"`, a diagnostic `meta`,
 `data.status:"unhealthy"` and `data.store.status:"unavailable"`.
 Pool acquisition and SQLite write-lock waits each have a two-second bound;
@@ -500,6 +502,14 @@ and held deliveries read only the seat's `delivery.held`/`released`/`outcome`
 rows. None reads the spine end to end, so a card costs the same on a 4M-row
 spine as on an empty one.
 
+`deliveries` lists the newest three PRs whose `pij delivered` named this seat
+as the PM, each `{project, pr, merge_commit, addresses, recorded_by,
+recorded_at}`; `[]` when none (plan 196). Every address of each PR is listed, however many.
+Only `POST /v1/state` reads it, in two bounded indexed reads with no sort: the
+three PRs by stepping down the covering `deliveries_by_pm` index, then each
+PR's addresses through the deliveries primary key. `GET /v1/cards`, which status lines and the PA read often, leaves it `[]`. Human
+`pij state` prints one `delivered:` line per PR.
+
 ### Every seat's card in one call
 
 `GET /v1/cards` returns `data: {cards: [...], unavailable: [...]}` in a
@@ -777,6 +787,9 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
 | POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
+| POST `/v1/claims` | `claims [--project <slug>] [--open]` | — (`crates/daemon/tests/claims_http.rs`) |
+| POST `/v1/delivered` | `delivered <pr> [--pm <seat>] [--project <slug>]` | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -1103,6 +1116,89 @@ turn or arrived during it.
 Cost: one live subscription per pending memory turn (only for role holders
 being compacted or closed), one delivery, one spine event and one deadline; no
 poll and no launch. Anyone else pays one store query.
+
+## Number claims and delivery at merge (plan 196)
+
+`pij claim <kind> --for <subject>` hands out the next number for the project and
+kind and records it with the calling seat, the subject and the time (migration
+0033). Kinds `plan`, `prd`, `workstream`, `blueprint` and `workshop` are three
+digits, `migration` four, and any other lowercase kind (letters, digits and `-`,
+starting with a letter; not `release`) three. `roadmap` is `workstream`'s old
+name (ruling C29): it claims, releases and records as `workstream`, from one
+sequence, scanning `docs/project/workstreams` and `docs/project/roadmaps`
+alike, so a number is never handed out under both names. The number is one more than the
+highest of every claim for that kind, open or released, and the highest already
+in the project's main checkout: `docs/plans/NNN-*` and `docs/plans/archive/NNN-*`,
+`docs/project/{prds,workstreams,roadmaps,blueprints,workshops}/NNN-*`, and
+`crates/store/migrations/NNNN_*`, read in-process. Each claim is one
+`BEGIN IMMEDIATE` transaction over a unique (project, kind, number) key, so
+concurrent claims get distinct consecutive numbers and projects never interact.
+`data.number`, `data.formatted` (`0033`) and `data.floor` (the checkout's highest)
+come back with the row. An absent folder counts as empty, but a checkout or
+folder that exists and cannot be read refuses `E-RS-CLAIM-SCAN` and claims
+nothing: an unread folder is not an empty one. The checkout cannot see unmerged
+branches, so numbers handed out before claims existed are seeded once with
+`pij claim`.
+
+A claim is released, and kept as history, when its seat is tombstoned (close,
+reap and revive all tombstone, in the same transaction), when `pij delivered`
+sees its number in the merged PR's files (`delivered #<pr>`), or by
+`pij claim release <kind> <number>` from the claiming seat, the project's prime
+or a designated prime. A released number is never handed out again.
+`pij claims [--open]` lists the project's claims with `released_at`,
+`released_by` and `release_reason`.
+
+`pij delivered <pr>` is the verb the merger runs once after a merge (ruling C23;
+no webhook, hook or poll). It reads the PR with one gh launch
+(`gh pr view <pr> --json number,state,mergeCommit,body,files,url`, with `--repo`
+taken from the checkout's `origin` when it is on github.com) and takes the
+delivered addresses from the body's `Delivers:` lines: full ddocs addresses
+separated by commas or spaces, or `none`. It records (project, PR, address,
+merge commit, recorded by, time, PM) once per address; a re-run records nothing
+new and appends no event. When it records anything it appends one `delivered`
+event whose seat is the PM. The PM is the live holder of the project's
+`pm-<workstream number>` role for the workstreams the step addresses belong to
+(`docs/project/workstreams/NNN-*#steps/...`, or the old `roadmaps` folder), else
+the live seat given by `--pm`; with neither, `data.pm` is `null` and the line
+says no PM was told. `data.pm` is the card actually told: on a replay that
+records nothing new it is the PM the first call told (`earlier_pm`), never a
+different one asked for now; `data.requested_pm` is the one this call chose, and
+a note says when it was not told.
+
+It prints, and returns as `data.edits[]` (`{address, value, command}`), the
+`ddocs set` commands for the PM's next docs PR: each requirement's
+`delivered_by` gains every PR recorded as delivering it that the cell does not
+name yet (a comma-separated list, appended and never overwritten), so edits
+printed for several merges before the docs PR each carry all of them; and each
+step's `plan` names the one `docs/plans/NNN-*` folder the PR touched. Current
+values are read in-process from the checkout. A document that cannot be read
+or parsed, a row it does not have, or a cell that is not text gets no edit:
+pij never prints a replacement for a cell it cannot see. `data.notes[]` says
+what was skipped and why.
+`pij delivered` changes no file, commits nothing and pushes nothing.
+
+| Refusal | When |
+|---|---|
+| `E-RS-ARG` | a kind that is not lowercase, `release` as a kind, a missing `--for`, a number or PR that does not parse, or a flag the verb does not take |
+| `E-RS-OWNERSHIP` | release by a seat that is neither the claimer nor the prime |
+| `E-RS-CLAIM-UNKNOWN` | release of a number nobody claimed |
+| `E-RS-CLAIM-RELEASED` | release of a claim already released |
+| `E-RS-CLAIM-SCAN` | the project's checkout, or a folder of that kind's numbers, exists but cannot be read; nothing is claimed |
+| `E-RS-NOT-FOUND` | `--pm` names no live seat, or `--project` no project |
+| `E-RS-PR-NOT-MERGED` | gh says the PR is open or closed unmerged |
+| `E-RS-DELIVERS` | the body has no `Delivers:` line, or names something that is not a ddocs address |
+| `E-RS-GH-MISSING` | gh is not installed or `PIJ_GH` is not an absolute executable; the next step installs it and restarts the daemon |
+| `E-RS-GH-AUTH` | gh is not signed in for the daemon's user; the next step is `gh auth login` |
+| `E-RS-GH` | gh refused (no such PR) or printed something unreadable |
+
+Cost: `claim`, `claim release` and `claims` launch nothing (store reads and one
+directory listing). `delivered` launches gh once per call, by absolute path,
+counted as `gh.delivered`. Nothing runs on a timer.
+
+Source: [`http/claims.rs`](../../crates/daemon/src/http/claims.rs),
+[`community/gh.rs`](../../crates/daemon/src/community/gh.rs),
+[`store/src/claims.rs`](../../crates/store/src/claims.rs),
+[`core/src/claims.rs`](../../crates/core/src/claims.rs).
 
 ## Canonical wire examples
 

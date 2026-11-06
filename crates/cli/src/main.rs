@@ -582,6 +582,24 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Take the next number for a kind, or release one (plan 196).
+    #[command(disable_help_flag = true)]
+    Claim {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// List a project's open and released number claims (plan 196).
+    #[command(disable_help_flag = true)]
+    Claims {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Record what a merged PR delivered; prints the ddocs edits (plan 196, C23).
+    #[command(disable_help_flag = true)]
+    Delivered {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// List registered seats; --here scopes to this process's cwd.
     List {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1183,6 +1201,14 @@ async fn run(cli: Cli) -> ExitCode {
     {
         return directory_help(args);
     }
+    // Claim help needs no daemon either (plan 196).
+    if let Command::Claim { args } | Command::Claims { args } | Command::Delivered { args } =
+        &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        print!("{}", pij_core::claims::HELP);
+        return ExitCode::SUCCESS;
+    }
     let client = match DaemonClient::new(&state_dir, &addr) {
         Ok(client) => client,
         Err(error) => {
@@ -1713,6 +1739,9 @@ async fn run(cli: Cli) -> ExitCode {
                 _ => emit(&response, as_json),
             }
         }
+        Command::Claim { args } => claims_verb(&client, "claim", &args, cli.json).await,
+        Command::Claims { args } => claims_verb(&client, "claims", &args, cli.json).await,
+        Command::Delivered { args } => claims_verb(&client, "delivered", &args, cli.json).await,
         Command::Project { args }
         | Command::Stream { args }
         | Command::Fence { args }
@@ -2860,6 +2889,67 @@ fn directory_help(args: &[String]) -> ExitCode {
     }
 }
 
+/// Forward `pij claim|claims|delivered` and render the answer (plan 196).
+async fn claims_verb(client: &DaemonClient, family: &str, args: &[String], json: bool) -> ExitCode {
+    let as_json = json || args.iter().any(|arg| arg == "--json");
+    let response = pij_cli::governance::governance(client, family, args, &caller_context()).await;
+    match response.data.as_ref().filter(|_| response.ok && !as_json) {
+        Some(data) => {
+            println!("{}", render_claims(family, data));
+            ExitCode::SUCCESS
+        }
+        None => emit(&response, as_json),
+    }
+}
+
+/// `pij claim`, `pij claims` and `pij delivered` for a human. `delivered`
+/// prints its ddocs edits as runnable lines (ruling C23: printed, not applied).
+fn render_claims(family: &str, data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+    match family {
+        "claims" => {
+            let rows = data["claims"].as_array().cloned().unwrap_or_default();
+            let mut out = format!(
+                "{}: {} open, {} listed",
+                text(&data["project"]),
+                data["open"],
+                rows.len()
+            );
+            for row in rows {
+                let state = match row["release_reason"].as_str() {
+                    Some(reason) => format!("released ({reason})"),
+                    None => "open".to_string(),
+                };
+                let _ = write!(
+                    out,
+                    "\n  {} {}  {}  {}  {}",
+                    text(&row["kind"]),
+                    text(&row["formatted"]),
+                    text(&row["seat"]),
+                    state,
+                    text(&row["subject"])
+                );
+            }
+            out
+        }
+        "delivered" => {
+            let mut out = text(&data["line"]);
+            let edits = data["edits"].as_array().cloned().unwrap_or_default();
+            if !edits.is_empty() {
+                out.push_str("\nddocs edits for the PM's next docs PR (not applied):");
+                for edit in edits {
+                    let _ = write!(out, "\n  {}", text(&edit["command"]));
+                }
+            }
+            for note in data["notes"].as_array().cloned().unwrap_or_default() {
+                let _ = write!(out, "\nnote: {}", text(&note));
+            }
+            out
+        }
+        _ => text(&data["line"]),
+    }
+}
+
 /// The human summary of a written fleet report.
 fn render_fleet_report(envelope: &Envelope<Value>) -> String {
     let data = envelope.data.clone().unwrap_or_default();
@@ -2927,6 +3017,17 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
         }
         if card.pending_fyis > 0 {
             let _ = write!(output, "\nFYIs held: {}", card.pending_fyis);
+        }
+        for note in &card.deliveries {
+            let _ = write!(
+                output,
+                "\ndelivered: {} #{} ({}) by {}: {}",
+                note.project,
+                note.pr,
+                note.merge_commit.get(..12).unwrap_or(&note.merge_commit),
+                note.recorded_by,
+                note.addresses.join(", ")
+            );
         }
         if let Some(block) = &card.session_status {
             let _ = write!(
@@ -3363,6 +3464,9 @@ impl Command {
             Command::Orchestration { .. } => "pij orchestration",
             Command::Spine { .. } => "pij spine",
             Command::Directory { .. } => "pij directory",
+            Command::Claim { .. } => "pij claim",
+            Command::Claims { .. } => "pij claims",
+            Command::Delivered { .. } => "pij delivered",
             Command::List { .. } => "pij list",
             Command::State { .. } => "pij state",
             Command::Tail { .. } => "pij tail",
@@ -3647,6 +3751,9 @@ mod tests {
                 "orchestration",
                 "spine",
                 "directory",
+                "claim",
+                "claims",
+                "delivered",
                 "list",
                 "state",
                 "tail"

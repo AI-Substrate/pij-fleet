@@ -4,7 +4,7 @@ A roadmap puts the work in order. Each step delivers requirement rows, builds co
 
 ## Steps
 
-1. Get the number from pm/001 and create `docs/project/roadmaps/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/roadmap"}`.
+1. Claim the number (`pij claim roadmap --for <slug>`) and create `docs/project/roadmaps/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/roadmap"}`.
 2. Fill the sections. Required ones are marked *.
    - **meta*** `title`, `status`, `updated`, `owner`.
    - **goal*** one sentence.
