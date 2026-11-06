@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "Store: migration 0036 community_outputs (role, kind, subject, head, result, writer, holds_role, answers, path, commit, at) and its reads",
           "phase": "ph-00c8",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies_toward": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
@@ -35,7 +35,7 @@
           "id": "tk-0002",
           "title": "Output document: build a pij/output ddoc per kind (verdict head/result/notes owed/evidence/link; deliverable, note, handover body) at roles/<id>/outputs/<yyyy-mm>/<slug>.dd.json",
           "phase": "ph-00c8",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies_toward": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
@@ -49,7 +49,7 @@
           "id": "tk-0003",
           "title": "pij output <kind> verb: write through the single writer (one commit), record the store fact and pointer, flag a non-holder writer",
           "phase": "ph-00c8",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
@@ -60,7 +60,7 @@
           "id": "tk-0004",
           "title": "pij outputs --subject pr:N --head <sha> and --role <id>: exact-head answers, none when the head moved",
           "phase": "ph-00c8",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -73,7 +73,7 @@
           "id": "tk-0005",
           "title": "Notify: --answers <msg_id> marks the request answered (s12 helper) and tells its requester in the stored reply mode; block or failed always wakes (forced, audited if cold, C4); unrequested goes FYI to the nearest seat above; one seat",
           "phase": "ph-00c8",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
@@ -109,7 +109,7 @@
           {
             "id": "dw-0001",
             "assertion": "A store test records outputs and reads them back by subject and head and by role; a second answer for one request does not re-mark it",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -117,13 +117,13 @@
           {
             "id": "dw-0002",
             "assertion": "Each kind builds a document real ddocs accepts as pij/output; a verdict without head or result is refused; a non-holder writer sets writer_holds_role false",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           },
           {
             "id": "dw-0003",
             "assertion": "A handover document holds its in-flight body and validates",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0004"
           }
         ],
@@ -131,7 +131,7 @@
           {
             "id": "dw-0004",
             "assertion": "In a scratch governance repo, two seats writing outputs at once produce two files in two commits and no conflict",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -139,13 +139,13 @@
           {
             "id": "dw-0005",
             "assertion": "A pass on head A is listed for head A and none is answered for head B",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           },
           {
             "id": "dw-0006",
             "assertion": "pij outputs --role <id> lists a handover",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0004"
           }
         ],
@@ -153,7 +153,7 @@
           {
             "id": "dw-0007",
             "assertion": "A default-mode requester is woken; a --reply fyi requester gets an FYI; a block verdict or failed result wakes an fyi requester; an unrequested output goes FYI to the PM, else the prime; exactly one seat is notified",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],

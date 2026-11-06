@@ -39,25 +39,25 @@
         {
           "id": "ac-0001",
           "claim": "Write. `pij output <kind> --role <id> --subject <address> ...` writes `community/roles/<id>/outputs/<yyyy-mm>/<slug>.dd.json` (pij/output, plan 190 schema) through the writer, one at a time, and records a store fact (migration 0036). A verdict carries the exact head, result, notes owed, evidence (command, exit code, log path) and an optional external link. The writer is recorded, and flagged if it doesn't hold the role.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "Exact head. `pij outputs --subject pr:N --head <sha>` answers only for that head and answers none when the head has moved.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Notify (req-08). `--answers <msg_id>` (C3) links the output to its request; the requester is notified in its stored mode: wake (a forced, audited wake if cold, C4), fyi, or none. A `block` verdict or a `failed` result always wakes. An output nobody requested goes as an FYI to the nearest seat above (its PM, else the prime). One seat is notified.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
           "claim": "Handover. A `handover` output holds what is in flight now, so a fresh holder can pick up.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
