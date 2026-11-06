@@ -42,3 +42,16 @@ The two launches present from the first reading (`ps.sidecar-process-group`, `tm
   - On macOS, `a_real_ancestry_matches_ps_with_at_most_one_launch` checks this test's real ancestry: at most 1 launch, and each ancestor matches `ps`.
 - **N001 (P3):** the tripwire is now `registration_gate_findings` over the source lines, with two negative controls run in CI. Replacing `native_observer`'s `BatchedAncestry::new(` with a direct `read_argv_batch_with_ps` call must be caught, and so must the reviewer's direct-return body. Both are.
 - **Local proof (one build through the fleet-190 lock):** clippy `-D warnings` on pij-daemon and pij-testkit with all targets (macOS, where the batched path compiles), `pij-daemon --lib registration::` 92 passed, and `pij-testkit --test spawn_sites` 6 passed. CI on the head is the Linux proof.
+
+## Security round (pij-wary-lynx, block at 3930791)
+
+- **S001 (MEDIUM):** the batch parser accepted any pid row and let a duplicate replace an earlier one. Darwin `ps` prints `ucomm` raw (only `args` is escaped), so a descendant that execs a newline-bearing image name could forge a second row for a real ancestor's pid. The fix has three parts:
+  - The batch is now `/bin/ps -ww -p a,b,… -o pid= -o args=`, with no name column. Every name and parent comes from the in-process read.
+  - `parse_argv_batch` is bound to the requested pids and fails closed. A row for an unrequested pid, a second row for the same pid, or a row with no pid or no argv refuses the whole batch. A requested pid with no row still reads as disappeared.
+  - The triggering pid's name and parent are re-read in-process after `ps`. An exec in between refuses rather than pairing one image's name with another's argv.
+  - Still exactly 1 `ps` per registration.
+- **Tests (CI, Linux):**
+  - `a_forged_or_duplicate_batch_row_refuses_the_whole_batch` covers a duplicate pid, an unrequested pid, and an injected newline row. Each is refused, never replaced.
+  - `an_exec_during_the_argv_read_refuses`.
+  - `a_batched_ps_reply_maps_back_to_each_pid` also covers an argv-less row.
+- **Local proof:** niced on the fleet-194 target (`nice -n 19 taskpolicy -b`). Clippy `-D warnings` on pij-daemon with all targets on macOS: clean. It caught `parse_native_process` becoming test-only, which Linux CI can't see. `pij-daemon --lib registration` 116 passed and `pij-testkit --test spawn_sites` 6 passed. The two real-`ps` tests (`a_real_ancestry_matches_ps_with_at_most_one_launch` and `http::native_tests::native_registration_preserves_claimed_host_and_reports_atomic_binding_transitions`) time out at production's 1 s observation limit under background QoS. At load 15, `/bin/ps` on 2 pids took 2.9 to 5.9 s under `taskpolicy -b` against 0.6 s with `nice` alone, and the old four-column call took 2.8 s too. So this is a test-timing issue under QoS, not this change. Their run without background QoS waits on a one-off exception.
