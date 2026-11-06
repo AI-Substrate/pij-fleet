@@ -35,14 +35,14 @@ Context brief. Purpose: reshape roles (req-28, s15): edit (F20), retire, merge, 
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | F19: template-diff names a missing template version | — | ph-00ce | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | template-diff on a role with meta.template and no template_version refuses with its own code, saying the role records no template version and naming `pij directory edit &lt;id&gt; --set template_version=&lt;n&gt; --why &lt;text&gt;`; a non-numeric version keeps E-RS-ARG with the same next step. | community/directory.rs template_diff, where unwrap_or_default made an empty version. | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | F20: pij directory edit | — | ph-00ce | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | `pij directory edit &lt;id&gt; --why &lt;text&gt;` with `--set &lt;field&gt;=&lt;value&gt;` (meta fields and the default seat and packet) and/or the role flags add takes, or `--file &lt;json&gt;` for the whole document. It reads the role under the writer lock, applies the change, keeps the changelog and adds one row, and commits through the writer (validate, build, commit, pointer). A missing role, a no-op edit, an unknown field or an invalid document refuses and commits nothing. | DirectoryService gains the read-modify-write; the HTTP parser gains the edit leaf and a repeatable --set. | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | pij/role state fields (pending pm-001 and docs-system) | — | ph-00ce | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | pij/role meta gains an optional state (active, retired) and merged_into; the writer's embedded schema copies refresh (C9). Waits on pm-001's answer about who writes the schema (C7). | Proposed to pm-001 on 2026-11-06; nothing written until answered. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) |
-| tk-0004 | Retire | — | ph-00ce | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | `pij directory retire &lt;role&gt; --why &lt;text&gt;` sets meta.state retired with a changelog row in one writer commit; refuses while a live holder holds it (and, once s05 lands, while requests are queued), naming them. The view lists it as retired with its memory, outputs and lineage intact; --json carries state. | Depends on the schema task. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | Merge | — | ph-00ce | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij directory merge &lt;from&gt; --into &lt;to&gt; --why &lt;text&gt;` retires &lt;from&gt; with merged_into &lt;to&gt; and adds a changelog row to both, in one writer commit. Nothing is moved: the view lists &lt;from&gt; under &lt;to&gt; as merged-from, and both roles' memory, outputs and lineage stay readable. | Depends on the schema task. | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | Retired and merged state for the send path | — | ph-00ce | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | A directory read that says whether a role is retired and, if merged, into what, so s05's send to a role refuses by name (naming &lt;to&gt; after a merge). If s05 has merged first, the send path calls it here. | s05 (plan 199) is not on main yet; pm-001 asked. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) |
+| tk-0001 | F19: template-diff names a missing template version | — | ph-00ce | [x] checked | — | — | [tk-0001](tasks.dd.md#done-when) | template-diff on a role with meta.template and no template_version refuses with its own code, saying the role records no template version and naming `pij directory edit &lt;id&gt; --set template_version=&lt;n&gt; --why &lt;text&gt;`; a non-numeric version keeps E-RS-ARG with the same next step. | community/directory.rs template_diff, where unwrap_or_default made an empty version. | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | F20: pij directory edit | — | ph-00ce | [x] checked | — | — | [tk-0002](tasks.dd.md#done-when) | `pij directory edit &lt;id&gt; --why &lt;text&gt;` with `--set &lt;field&gt;=&lt;value&gt;` (meta fields and the default seat and packet) and/or the role flags add takes, or `--file &lt;json&gt;` for the whole document. It reads the role under the writer lock, applies the change, keeps the changelog and adds one row, and commits through the writer (validate, build, commit, pointer). A missing role, a no-op edit, an unknown field or an invalid document refuses and commits nothing. | DirectoryService gains the read-modify-write; the HTTP parser gains the edit leaf and a repeatable --set. | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | pij/role state fields (pending pm-001 and docs-system) | — | ph-00ce | [x] checked | — | — | [tk-0003](tasks.dd.md#done-when) | pij/role meta gains an optional state (active, retired) and merged_into; the writer's embedded schema copies refresh (C9). Waits on pm-001's answer about who writes the schema (C7). | Proposed to pm-001 on 2026-11-06; nothing written until answered. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) |
+| tk-0004 | Retire | — | ph-00ce | [x] checked | — | — | [tk-0004](tasks.dd.md#done-when) | `pij directory retire &lt;role&gt; --why &lt;text&gt;` sets meta.state retired with a changelog row in one writer commit; refuses while a live holder holds it (and, once s05 lands, while requests are queued), naming them. The view lists it as retired with its memory, outputs and lineage intact; --json carries state. | Depends on the schema task. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Merge | — | ph-00ce | [x] checked | — | — | [tk-0005](tasks.dd.md#done-when) | `pij directory merge &lt;from&gt; --into &lt;to&gt; --why &lt;text&gt;` retires &lt;from&gt; with merged_into &lt;to&gt; and adds a changelog row to both, in one writer commit. Nothing is moved: the view lists &lt;from&gt; under &lt;to&gt; as merged-from, and both roles' memory, outputs and lineage stay readable. | Depends on the schema task. | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | Retired and merged state for the send path | — | ph-00ce | [x] checked | — | — | [tk-0006](tasks.dd.md#done-when) | A directory read that says whether a role is retired and, if merged, into what, so s05's send to a role refuses by name (naming &lt;to&gt; after a merge). If s05 has merged first, the send path calls it here. | s05 (plan 199) is not on main yet; pm-001 asked. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) |
 | tk-0007 | Cost receipts | — | ph-00ce | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | Edit, retire and merge are one writer commit each (the same launches as add), measured on a private daemon with data.pid; nothing on a timer. | Private run like plan 196's. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0008 | Docs, skill, difficulties and states | — | ph-00ce | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents edit, retire and merge and their refusals; the skill row and directory help carry them; difficulties F19 and F20 resolved; roadmap 001 gains s15 (delivers req-28, depends on s04, plan cell, complete); req-28 shipped; the PR body has a Delivers line. | ddocs set then biome format. | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0008 | Docs, skill, difficulties and states | — | ph-00ce | [x] checked | — | — | [tk-0008](tasks.dd.md#done-when) | docs/how/pij-rs-api.md documents edit, retire and merge and their refusals; the skill row and directory help carry them; difficulties F19 and F20 resolved; roadmap 001 gains s15 (delivers req-28, depends on s04, plan cell, complete); req-28 shipped; the PR body has a Delivers line. | ddocs set then biome format. | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -50,39 +50,39 @@ Context brief. Purpose: reshape roles (req-28, s15): edit (F20), retire, merge, 
 
 ### tk-0001
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0001 | A daemon test runs template-diff on a role with a template and no version and gets the named code and the edit next step. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0001 | A daemon test runs template-diff on a role with a template and no version and gets the named code and the edit next step. | [x] checked | [bp-0004](../../backpressure.dd.md#rows) | 2ef8461: reshape_http template_diff_names_a_missing_version_and_the_edit_that_records_one (E-RS-DIRECTORY-NO-TEMPLATE-VERSION, next step names directory edit); directory_http 33/33 at 574a8e8 |
 
 ### tk-0002
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0002 | directory_http: an edit commits one changelog row and the new field; a missing role, an unknown --set field, a no-op and an invalid document refuse with the branch head unchanged. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0002 | directory_http: an edit commits one changelog row and the new field; a missing role, an unknown --set field, a no-op and an invalid document refuse with the branch head unchanged. | [x] checked | [bp-0005](../../backpressure.dd.md#rows) | 2ef8461, d9fb6f2: reshape_http edit_changes_a_role_with_one_changelog_row_and_bad_edits_commit_nothing (missing role, unknown field, no-op, invalid and foreign documents refuse with the head unchanged); directory_http 33/33 at 574a8e8 |
 
 ### tk-0003
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0003 | ddocs validates a role with state retired and merged_into against the new schema; the schema fixtures pass. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0003 | ddocs validates a role with state retired and merged_into against the new schema; the schema fixtures pass. | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | 45e4d39, d9fb6f2: ddocs validate .dd/schemas/pij/role/fixtures/role-retired-merged.dd.json ok, role-bad-state.dd.json E407; docs-system pass-with-notes (pr-135-schema-verdict.md), notes folded at d9fb6f2 |
 
 ### tk-0004
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0004 | directory_http: retire with no holder commits with a changelog row; with a live holder it refuses naming the seat; the view shows state retired and the lineage. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0004 | directory_http: retire with no holder commits with a changelog row; with a live holder it refuses naming the seat; the view shows state retired and the lineage. | [x] checked | [bp-0001](../../backpressure.dd.md#rows) | 45e4d39, 574a8e8: reshape_http retire_and_merge_reshape_roles_and_keep_their_history (held refuses naming the seat, retire commits a row, view shows retired) and retire_waits_for_queued_requests_and_retired_roles_refuse_sends (queued requests refuse E-RS-DIRECTORY-ROLE-QUEUED until an assign drains them) |
 
 ### tk-0005
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0005 | directory_http: merge is one commit touching both role documents with a row each; the view shows merged-from under &lt;to&gt;; files under &lt;from&gt; are unchanged. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0005 | directory_http: merge is one commit touching both role documents with a row each; the view shows merged-from under &lt;to&gt;; files under &lt;from&gt; are unchanged. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | 45e4d39: retire_and_merge_reshape_roles_and_keep_their_history (one commit touches both role.dd.json, a row each, merged_from under &lt;to&gt;, memory INDEX unchanged); 574a8e8: merge's &lt;from&gt; refuses while requests are queued |
 
 ### tk-0006
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0006 | A unit test reads the state of an active, a retired and a merged role. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0006 | A unit test reads the state of an active, a retired and a merged role. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) | 45e4d39: role::tests standing_reads_active_retired_and_merged_and_retire_sets_them; 574a8e8: delivery/role_send.rs refuses E-RS-DIRECTORY-RETIRED on the send path, naming the merge target (Send to role:sec instead.), nothing queued (retire_waits_for_queued_requests_and_retired_roles_refuse_sends) |
 
 ### tk-0007
 
@@ -92,9 +92,9 @@ Context brief. Purpose: reshape roles (req-28, s15): edit (F20), retire, merge, 
 
 ### tk-0008
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0008 | ddocs validate is clean on the roadmap and PRD; just ddocs-check and the skill verb coverage tests pass; CI green on the head. | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | receipt |
+| --- | --- | --- | --- | --- |
+| dw-0008 | ddocs validate is clean on the roadmap and PRD; just ddocs-check and the skill verb coverage tests pass; CI green on the head. | [x] checked | [bp-0007](../../backpressure.dd.md#rows) | 574a8e8: s15 complete, req-28 shipped, changelog rows; ddocs validate and build ok on the roadmap, PRD and blueprint; tsx harness/scripts/ddocs-check.ts clean (7 documents); API doc refusal tables and skill row updated; clippy -p pij-store -p pij-daemon --all-targets -D warnings clean |
 
 <a id="goals"></a>
 
