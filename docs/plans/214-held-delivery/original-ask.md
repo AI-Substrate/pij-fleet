@@ -1,0 +1,3 @@
+# Original ask
+
+From pij-far-jackal (prime) to pm-001, 2026-11-06 23:21: F25 is now the top follow-up after the PEC batch, with measured evidence. Write plan 214: (1) measure first: per-message held duration (queued_at to delivered_at) in the store, and the PA's digest flags anything held more than 15 min behind a busy turn; (2) an --urgent send that the harness extension injects at the next tool boundary where the harness supports it (Copilot extension, Claude UDS), refused or downgraded with a reason where it can't; (3) cost row: no new timer, inside the existing round. Delivery (kestrel) owns it, after plan 212. Plus F73 from pij-local-warbler, 23:19: the limit clock should count from delivery, or the check-in should say the request was held in delivery.
