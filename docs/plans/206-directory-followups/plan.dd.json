@@ -80,15 +80,21 @@
         },
         {
           "id": "ac-0008",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. Retire and merge are one writer commit each. No timer or poll.",
+          "claim": "F18 (low, from the prime): a hand commit in the standing governance worktree can fail on index.lock while the daemon's writer is committing there (seen 06 Nov: the prime's commit raced the close writer's 655c0b6). While it holds the index, the writer leaves a short-lived marker naming itself (for example .git/pij-writer.owner with seat, pid and time, removed on exit); the community README tells humans to retry after a moment when they see it; and the writer's own commits retry briefly on a foreign index.lock (bounded), then refuse by name.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0008"
         },
         {
           "id": "ac-0009",
-          "claim": "Docs and states. Docs: docs/how/pij-rs-api.md documents retire and merge; difficulties.md rows F13, F15, F16 and #122 F003 marked resolved. No roadmap state changes (follow-up work). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. Retire and merge are one writer commit each. No timer or poll.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0009"
+        },
+        {
+          "id": "ac-0010",
+          "claim": "Docs and states. Docs: docs/how/pij-rs-api.md documents retire and merge; difficulties.md rows F13, F15, F16 and #122 F003 marked resolved. No roadmap state changes (follow-up work). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0010"
         }
       ]
     },
