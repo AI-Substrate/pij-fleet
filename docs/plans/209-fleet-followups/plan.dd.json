@@ -102,6 +102,18 @@
           "claim": "pij directory add papercuts from an external PEC dogfood (pm-001 21:25): F35 add --help marks the required flags (--why, --title, --kind, --lifecycle, --holders, at least one --rule, and --packet or --brief; the schema requires scope.rules, so --scope-path alone is not enough) and shows the shortest add; F36 a role ddocs refusal says nothing was written and names the flag for each gap, never a hand edit; F37 one refusal lists every missing section; F38 add --help says each add commits on its own and --batch is all or nothing.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0011"
+        },
+        {
+          "id": "ac-0012",
+          "claim": "F65 (pm-001 21:32): a PR body's Delivers: line is checked before the merge. pij-delivers-check (pij-testkit bin) reads the body with pij_core::claims::delivers, the parser pij delivered uses, and fails on anything but none or full ddocs addresses; .github/workflows/delivers.yml runs it on pull_request opened, edited, reopened, synchronize and ready_for_review, with the body passed in an env var. The PR template's placeholder fails until filled, and its example lists addresses separated by commas.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0012"
+        },
+        {
+          "id": "ac-0013",
+          "claim": "F67 (pm-001 21:32): pij directory lineage add --batch <file> --why <text> records many past holdings in one writer commit, all or nothing, like assign --batch; a bad time, a missing role or an overlap (with a committed holding or an earlier line) names every bad line and writes nothing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0013"
         }
       ]
     },

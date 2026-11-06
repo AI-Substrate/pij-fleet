@@ -770,86 +770,172 @@ impl DirectoryService {
         row: Assignment,
         actor: &SeatId,
     ) -> Result<HoldingReceipt, Refusal> {
-        let pending = self.pending(&row.project).await?;
+        let mut receipts = self.lineage_many(repo, vec![row], actor).await?;
+        Ok(receipts.remove(0))
+    }
+
+    /// Record several past holdings in one holders commit, all or nothing
+    /// (plan 209, F67): every row must name one project. A refusal names every
+    /// bad row: a missing role, or an overlap with a holding of the same seat
+    /// and instance, committed or earlier in the batch. Receipts come back in
+    /// row order.
+    ///
+    /// # Errors
+    /// [`E_OVERLAP`], [`E_ROLE_MISSING`], or any writer refusal; nothing is
+    /// written.
+    pub async fn lineage_many(
+        &self,
+        repo: PathBuf,
+        rows: Vec<Assignment>,
+        actor: &SeatId,
+    ) -> Result<Vec<HoldingReceipt>, Refusal> {
+        let Some(first) = rows.first().cloned() else {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "a lineage batch needs at least one line",
+            ));
+        };
+        let pending = self.pending(&first.project).await?;
+        let span_of = |row: &Assignment| {
+            format!(
+                "{}{} {} ({} to {})",
+                row.role,
+                instance_suffix(&row.instance),
+                row.seat,
+                row.from,
+                row.to.as_deref().unwrap_or_default()
+            )
+        };
+        let subject = match rows.as_slice() {
+            [one] => format!("community: lineage {}", span_of(one)),
+            many => format!(
+                "community: lineage {} holdings\n\n{}",
+                many.len(),
+                many.iter().map(span_of).collect::<Vec<_>>().join("\n")
+            ),
+        };
         let message = format!(
-            "community: lineage {}{} {} ({} to {})\n\n{}\n\nPij-Seat: {actor}\nPij-Project: {}",
-            row.role,
-            instance_suffix(&row.instance),
-            row.seat,
-            row.from,
-            row.to.as_deref().unwrap_or_default(),
-            row.why,
-            row.project
+            "{subject}\n\n{}\n\nPij-Seat: {actor}\nPij-Project: {}",
+            first.why, first.project
         );
         let flush = pending;
-        let draft = row.clone();
+        let drafts = rows.clone();
         let (written, built) = self
             .commit(repo, message, move |root, built| {
-                let mut rows = read_holders(root, &draft.project, &draft.role)?;
-                built.landed = holders::apply_ends(&mut rows, &flush);
+                let project = drafts[0].project.clone();
+                let mut roles: Vec<String> = drafts.iter().map(|row| row.role.clone()).collect();
+                roles.sort();
+                roles.dedup();
+                let mut problems: Vec<(&str, String)> = Vec::new();
+                let mut by_role = BTreeMap::new();
+                for role in &roles {
+                    match read_holders(root, &project, role) {
+                        Ok(mut held) => {
+                            built.landed.extend(holders::apply_ends(&mut held, &flush));
+                            by_role.insert(role.clone(), held);
+                        }
+                        Err(refusal) if refusal.code == E_ROLE_MISSING => {
+                            problems
+                                .push((E_ROLE_MISSING, format!("role {role:?} does not exist")));
+                        }
+                        Err(refusal) => return Err(refusal),
+                    }
+                }
                 let span = |held: &Assignment| {
                     (
                         holders::parse_time(&held.from),
                         held.to.as_deref().and_then(holders::parse_time),
                     )
                 };
-                let (from, to) = span(&draft);
-                if let Some(other) = rows.iter().find(|held| {
-                    let (start, end) = span(held);
-                    held.seat == draft.seat
-                        && held.instance == draft.instance
-                        && start < to
-                        && end.is_none_or(|end| from < Some(end))
-                }) {
-                    return Err(Refusal::new(
-                        E_OVERLAP,
-                        format!(
-                            "{} held {}{} from {} to {}, which overlaps {} to {}",
-                            other.seat,
-                            other.role,
-                            instance_suffix(&other.instance),
-                            other.from,
-                            other.to.as_deref().unwrap_or("now"),
-                            draft.from,
-                            draft.to.as_deref().unwrap_or_default()
-                        ),
-                    ));
+                for draft in &drafts {
+                    let Some(held) = by_role.get_mut(&draft.role) else {
+                        continue;
+                    };
+                    let (from, to) = span(draft);
+                    if let Some(other) = held.iter().find(|other| {
+                        let (start, end) = span(other);
+                        other.seat == draft.seat
+                            && other.instance == draft.instance
+                            && start < to
+                            && end.is_none_or(|end| from < Some(end))
+                    }) {
+                        problems.push((
+                            E_OVERLAP,
+                            format!(
+                                "{} held {}{} from {} to {}, which overlaps {} to {}",
+                                other.seat,
+                                other.role,
+                                instance_suffix(&other.instance),
+                                other.from,
+                                other.to.as_deref().unwrap_or("now"),
+                                draft.from,
+                                draft.to.as_deref().unwrap_or_default()
+                            ),
+                        ));
+                        continue;
+                    }
+                    // Lineage reads in time order.
+                    let at = held
+                        .iter()
+                        .position(|other| holders::parse_time(&other.from) > from)
+                        .unwrap_or(held.len());
+                    held.insert(at, draft.clone());
                 }
-                // Lineage reads in time order.
-                let at = rows
-                    .iter()
-                    .position(|held| holders::parse_time(&held.from) > from)
-                    .unwrap_or(rows.len());
-                rows.insert(at, draft.clone());
-                let mut files = vec![holders_file(&draft.role, &rows)?];
+                match problems.as_slice() {
+                    [] => {}
+                    [(code, one)] if drafts.len() == 1 => {
+                        return Err(Refusal::new(*code, one.clone()));
+                    }
+                    many => {
+                        let code = if many.iter().all(|(code, _)| *code == E_OVERLAP) {
+                            E_OVERLAP
+                        } else {
+                            E_ROLE_MISSING
+                        };
+                        let named: Vec<&str> = many.iter().map(|(_, text)| text.as_str()).collect();
+                        return Err(Refusal::new(
+                            code,
+                            format!("the batch wrote nothing: {}", named.join("; ")),
+                        ));
+                    }
+                }
+                let mut files = Vec::new();
+                for (role, held) in &by_role {
+                    files.push(holders_file(role, held)?);
+                }
+                let written: Vec<&str> = roles.iter().map(String::as_str).collect();
                 files.extend(flush_files(
                     root,
-                    &draft.project,
+                    &project,
                     &flush,
-                    &[draft.role.as_str()],
+                    &written,
                     &mut built.landed,
                 )?);
-                built.row = Some(draft);
                 Ok(files)
             })
             .await?;
-        self.store
-            .record_history(&row)
-            .await
-            .map_err(|error| store_refusal(&written, &error))?;
+        let mut receipts = Vec::with_capacity(rows.len());
+        for row in &rows {
+            self.store
+                .record_history(row)
+                .await
+                .map_err(|error| store_refusal(&written, &error))?;
+            receipts.push(
+                HoldingReceipt {
+                    commit: written.commit.clone(),
+                    path: holders_path(&row.role)?,
+                    row: holders::to_document(&row.role, std::slice::from_ref(row))["sections"][1]
+                        ["value"][0]
+                        .clone(),
+                    warning: None,
+                    seat_role: None,
+                    flushed: built.landed.len(),
+                    window: None,
+                },
+            );
+        }
         self.flushed(&built.landed, &written).await?;
-        Ok(HoldingReceipt {
-            commit: written.commit.clone(),
-            path: holders_path(&row.role)?,
-            row:
-                holders::to_document(&row.role, std::slice::from_ref(&row))["sections"][1]["value"]
-                    [0]
-                .clone(),
-            warning: None,
-            seat_role: None,
-            flushed: built.landed.len(),
-            window: None,
-        })
+        Ok(receipts)
     }
 
     /// End a seat's holding of a role: `to`, `released_by` and `release_why`.

@@ -825,7 +825,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/claims` | `claims [--project <slug>] [--open]` | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/delivered` | `delivered <pr> [--pm <seat>] [--project <slug>]` | — (`crates/daemon/tests/claims_http.rs`) |
@@ -983,6 +983,12 @@ instance refuses `E-RS-DIRECTORY-OVERLAP`. The row goes into the holders
 document in time order, with `released_by` the prime and `release_why`
 `lineage add`, in one writer commit; the store indexes it without a live-seat
 check and sets no seat role. The view shows it in the lineage.
+`pij directory lineage add --batch <file> --why <text>` (plan 209, F67) reads
+one `<role>[/<instance>] <seat> <from> <to>` per line (blank and `#` lines
+skipped) and records them all in one writer commit (`community: lineage <n>
+holdings`), all or nothing: a bad time, a missing role, or an overlap with a
+committed holding or an earlier line refuses the whole batch, naming every
+bad line, and writes nothing. The envelope carries `commit` and `holdings`.
 
 `pij close <seat>` ends every open holding of the seat with `release_why`
 `close`, and never fails because of the directory. The ends are stored as

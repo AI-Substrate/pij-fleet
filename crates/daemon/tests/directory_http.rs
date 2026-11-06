@@ -1667,6 +1667,113 @@ async fn a_batch_assign_is_one_commit_all_or_nothing() {
     rig.server.abort();
 }
 
+/// Plan 209 F67: `lineage add --batch` records many past holdings in one
+/// commit, and a file with any bad line (an overlap inside the batch, a
+/// missing role, a reversed span) writes nothing and names every one.
+#[tokio::test]
+async fn a_lineage_batch_is_one_commit_all_or_nothing() {
+    let repo = repo("pij-directory-lineage-batch");
+    let rig = rig(Arc::new(NoHook)).await;
+    let main = repo.main.to_str().unwrap();
+    let created = call(
+        rig.addr,
+        "/v1/project",
+        &[
+            "project", "create", "fleet", "--repo", main, "--prime", SEAT,
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    for id in ["docs-system", "reviewer"] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    let file = repo.root.join("lineage.txt");
+    let batch = |text: &str| {
+        std::fs::write(&file, text).unwrap();
+        let file = file.to_str().unwrap().to_string();
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move {
+            call(
+                addr,
+                "/v1/directory",
+                &[
+                    "directory",
+                    "lineage",
+                    "add",
+                    "--batch",
+                    file.as_str(),
+                    "--why",
+                    "from HOLDERS.md",
+                ],
+                &main,
+            )
+            .await
+        }
+    };
+    let start = head(&repo);
+    let bad = batch(
+        "docs-system pij-heron 2026-10-01 2026-10-05\n\
+         docs-system pij-heron 2026-10-04 2026-10-06\n\
+         qa pij-wren 2026-10-01 2026-10-02\n",
+    )
+    .await;
+    assert_eq!(bad["ok"], false, "{bad}");
+    let text = bad.to_string();
+    for named in ["overlaps", "role \\\"qa\\\" does not exist"] {
+        assert!(text.contains(named), "{named}: {bad}");
+    }
+    assert_eq!(head(&repo), start, "nothing written");
+    let reversed = batch("reviewer pij-wren 2026-10-02 2026-10-01\n").await;
+    assert!(
+        reversed
+            .to_string()
+            .contains("line 1: --from must be before --to"),
+        "{reversed}"
+    );
+    assert_eq!(head(&repo), start, "nothing written");
+
+    let landed = batch(
+        "# past holders\n\
+         docs-system pij-heron 2026-10-01 2026-10-05\n\
+         docs-system pij-heron 2026-10-06 2026-10-08\n\
+         reviewer/1 pij-wren 2026-10-01T09:00:00+10:00 2026-10-03\n",
+    )
+    .await;
+    assert_eq!(landed["ok"], true, "{landed}");
+    assert_eq!(landed["data"]["holdings"].as_array().unwrap().len(), 3);
+    assert_eq!(landed["data"]["commit"], head(&repo));
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{start}..HEAD")]
+        )
+        .trim(),
+        "1",
+        "one commit for three past holdings"
+    );
+    assert_eq!(holders_at_head(&repo, "docs-system").len(), 2);
+    assert_eq!(holders_at_head(&repo, "reviewer").len(), 1);
+    rig.server.abort();
+}
+
 /// Plan 208 F15: the prime records a closed seat's past holding; anyone else
 /// is refused, and so is an overlap or a reversed span.
 #[tokio::test]

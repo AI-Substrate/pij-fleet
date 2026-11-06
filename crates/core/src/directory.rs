@@ -59,6 +59,7 @@ Usage:
   pij directory assign --batch <file> --why <text>      many holdings, one commit
   pij directory release <role>[/<instance>] <seat> --why <text>
   pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
+  pij directory lineage add --batch <file> --why <text>   many past holdings, one commit
   pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]
   pij directory rebuild                               the store from the branch head
   pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>|--body-file <path|->
@@ -128,6 +129,7 @@ Usage:
   pij directory assign --batch <file> --why <text> [--project <slug>]
   pij directory release <role>[/<instance>] <seat> --why <text> [--project <slug>]
   pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
+  pij directory lineage add --batch <file> --why <text> [--project <slug>]
 
 assign appends a row to roles/<id>/holders.dd.json, sets the seat's role (pa,
 pm for pm-<n>, else worker; a prime keeps prime) and names its tmux window
@@ -139,7 +141,9 @@ the row. `pij close <seat>` ends every holding.
 
 lineage add (the prime only) records a closed seat's past holding: no live seat
 needed, no seat role set. Times are RFC 3339 with Z or an offset, or a date
-(UTC midnight); a holding that overlaps the seat's others is refused.";
+(UTC midnight); a holding that overlaps the seat's others is refused. --batch
+takes one `<role>[/<instance>] <seat> <from> <to>` per line and writes them all
+in one commit, or none.";
 
 const EXTERNAL: &str = "\
 pij directory external add: note a seat borrowed from another project.

@@ -124,6 +124,26 @@
           "proof": "BUILD: one test each: pij-core add_help_names_the_required_flags (F35) and add_help_says_each_add_is_its_own_commit (F38); pij-daemon community::ddocs a_role_refusal_names_the_flag_for_each_gap_not_a_hand_edit (F36) and a_role_refusal_lists_every_gap_at_once (F37), through the refusal text.",
           "state": "unchecked",
           "probe": "crates/"
+        },
+        {
+          "id": "bp-0012",
+          "criterion": "AC12",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: pij-testkit tests/delivers_check.rs runs the bin: addresses and none pass; #138's and #132's lines, a body with no line, and the template placeholder fail. The delivers workflow runs on this PR.",
+          "state": "unchecked",
+          "probe": "crates/testkit"
+        },
+        {
+          "id": "bp-0013",
+          "criterion": "AC13",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: directory_http a_lineage_batch_is_one_commit_all_or_nothing: three past holdings in one commit across two roles; an in-batch overlap plus a missing role, and a reversed span, write nothing and name the lines.",
+          "state": "unchecked",
+          "probe": "crates/daemon"
         }
       ]
     },

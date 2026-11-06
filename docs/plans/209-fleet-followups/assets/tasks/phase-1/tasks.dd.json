@@ -163,6 +163,30 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0011"
           ],
           "done": "tasks.dd.json#done_when/tk-0012"
+        },
+        {
+          "id": "tk-0013",
+          "title": "F65: check the Delivers line before the merge",
+          "phase": "ph-00d1",
+          "state": "unchecked",
+          "success": "See ac-0012.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0012"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0013"
+        },
+        {
+          "id": "tk-0014",
+          "title": "F67: lineage add --batch",
+          "phase": "ph-00d1",
+          "state": "unchecked",
+          "success": "See ac-0013.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0013"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0014"
         }
       ]
     },
@@ -264,6 +288,22 @@
             "assertion": "The four tests in bp-0011 pass in CI.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0011"
+          }
+        ],
+        "tk-0013": [
+          {
+            "id": "dw-0013",
+            "assertion": "tests/delivers_check.rs passes in CI and the delivers workflow is green on this PR.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0012"
+          }
+        ],
+        "tk-0014": [
+          {
+            "id": "dw-0014",
+            "assertion": "a_lineage_batch_is_one_commit_all_or_nothing passes in CI.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0013"
           }
         ]
       }

@@ -212,18 +212,25 @@ impl Arguments {
                 "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
             ));
         }
-        if call.leaf == "lineage"
-            && (call.positions.len() != 3
-                || call.positions[0] != "add"
-                || call.single.keys().any(|flag| {
-                    !matches!(flag.as_str(), "why" | "project" | "actor" | "from" | "to")
-                })
-                || !call.repeated.is_empty())
-        {
-            return Err(Refusal::new(
-                "E-RS-ARG",
-                "usage: pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text> [--project <slug>]",
-            ));
+        if call.leaf == "lineage" {
+            // One holding by flags, or a file of them with --batch (F67).
+            let batch = call.get("batch").is_some();
+            let flags = call.single.keys().all(|flag| {
+                matches!(flag.as_str(), "why" | "project" | "actor")
+                    || (batch && flag == "batch")
+                    || (!batch && matches!(flag.as_str(), "from" | "to"))
+            });
+            if !flags
+                || call.positions.first().map(String::as_str) != Some("add")
+                || call.positions.len() != if batch { 1 } else { 3 }
+                || !call.repeated.is_empty()
+            {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    "usage: pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text> [--project <slug>], \
+                     or pij directory lineage add --batch <file> --why <text> [--project <slug>]",
+                ));
+            }
         }
         if call.leaf != "lineage" && call.single.contains_key("to") {
             return Err(Refusal::new(
@@ -713,25 +720,111 @@ async fn hold(
 
 /// `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time>
 /// --why <text>` (plan 208, F15): the prime records a closed seat's past
-/// holding. No live seat is needed.
+/// holding. No live seat is needed. With `--batch <file>` (plan 209, F67), one
+/// `<role>[/<instance>] <seat> <from> <to>` per line, blank and `#` lines
+/// skipped, all in one writer commit or none; every bad line is named.
 async fn lineage(
     state: &AppState,
     actor: &SeatId,
     caller: &CallerContext,
     call: &Arguments,
 ) -> Result<Value, Refusal> {
-    use crate::community::holders::{parse_time, stamp};
     let why = call
         .get("why")
         .filter(|why| !why.trim().is_empty())
         .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
-    let (role, instance) = role_and_instance(&call.positions[1])?;
-    let seat = call.positions[2].clone();
-    let when = |flag: &str| -> Result<time::OffsetDateTime, Refusal> {
-        let given = call
-            .get(flag)
+    let batch = call.get("batch");
+    let single = match &batch {
+        Some(_) => None,
+        None => Some(past_holding(
+            actor,
+            &why,
+            &call.positions[1],
+            &call.positions[2],
+            call.get("from").as_deref(),
+            call.get("to").as_deref(),
+        )?),
+    };
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    require_prime(state, actor, &project).await?;
+    let directory = &state.services.directory;
+    let Some(file) = batch else {
+        let mut row = single.expect("a single lineage add parsed its row");
+        row.project.clone_from(&project);
+        let (role, seat) = (row.role.clone(), row.seat.clone());
+        let receipt = directory.lineage_add(repo, row, actor).await?;
+        let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+        data["project"] = json!(project);
+        data["role"] = json!(role);
+        data["seat"] = json!(seat);
+        return Ok(data);
+    };
+    let path = caller_path(caller, &file)?;
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("cannot read {}: {error}", path.display()),
+        )
+    })?;
+    let mut rows = Vec::new();
+    let mut problems = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let [target, seat, from, to] = fields.as_slice() else {
+            problems.push(format!(
+                "line {number}: want `<role>[/<instance>] <seat> <from> <to>`"
+            ));
+            continue;
+        };
+        match past_holding(actor, &why, target, seat, Some(from), Some(to)) {
+            Ok(mut row) => {
+                row.project.clone_from(&project);
+                rows.push(row);
+            }
+            Err(refusal) => problems.push(format!("line {number}: {}", refusal.message)),
+        }
+    }
+    if !problems.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("the batch wrote nothing: {}", problems.join("; ")),
+        ));
+    }
+    if rows.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{} names no holdings", path.display()),
+        ));
+    }
+    let receipts = directory.lineage_many(repo, rows, actor).await?;
+    Ok(json!({
+        "project": project,
+        "commit": receipts[0].commit,
+        "holdings": receipts,
+    }))
+}
+
+/// One closed holding, checked: RFC 3339 times (or a date), `from` before
+/// `to`, `to` not in the future. `project` is left for the caller.
+fn past_holding(
+    actor: &SeatId,
+    why: &str,
+    target: &str,
+    seat: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<pij_store::Assignment, Refusal> {
+    use crate::community::holders::{parse_time, stamp};
+    let (role, instance) = role_and_instance(target)?;
+    let when = |flag: &str, given: Option<&str>| -> Result<time::OffsetDateTime, Refusal> {
+        let given = given
             .ok_or_else(|| Refusal::new("E-RS-ARG", format!("--{flag} <time> is required")))?;
-        parse_time(&given).ok_or_else(|| {
+        parse_time(given).ok_or_else(|| {
             Refusal::new(
                 "E-RS-ARG",
                 format!(
@@ -740,7 +833,7 @@ async fn lineage(
             )
         })
     };
-    let (from, to) = (when("from")?, when("to")?);
+    let (from, to) = (when("from", from)?, when("to", to)?);
     if from >= to {
         return Err(Refusal::new("E-RS-ARG", "--from must be before --to"));
     }
@@ -750,7 +843,27 @@ async fn lineage(
             "--to is in the future; lineage add records holdings that have ended (use assign for a live seat)",
         ));
     }
-    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    Ok(pij_store::Assignment {
+        project: String::new(),
+        role: role.to_string(),
+        instance: instance.to_string(),
+        seat: seat.to_string(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: stamp(from),
+        to: Some(stamp(to)),
+        assigned_by: actor.to_string(),
+        released_by: Some(actor.to_string()),
+        why: why.to_string(),
+        release_why: Some("lineage add".to_string()),
+        end_pending: false,
+    })
+}
+
+/// Only the project's prime records past holdings: its `prime_id`, or for a
+/// project that names none, a seat whose role is prime.
+async fn require_prime(state: &AppState, actor: &SeatId, project: &str) -> Result<(), Refusal> {
     let project_prime = state
         .services
         .governance
@@ -761,8 +874,6 @@ async fn lineage(
         .into_iter()
         .find(|known| known.slug == project)
         .and_then(|known| known.prime_id);
-    // The project's own prime; a project that names none falls back to a
-    // seat whose role is prime.
     let is_prime = match &project_prime {
         Some(prime) => prime == actor,
         None => {
@@ -776,38 +887,14 @@ async fn lineage(
                 == Some("prime")
         }
     };
-    if !is_prime {
-        return Err(Refusal::new(
+    if is_prime {
+        Ok(())
+    } else {
+        Err(Refusal::new(
             "E-RS-OWNERSHIP",
             format!("only the prime records past holdings; {actor} is not the prime of {project}"),
-        ));
+        ))
     }
-    let row = pij_store::Assignment {
-        project: project.clone(),
-        role: role.to_string(),
-        instance: instance.to_string(),
-        seat: seat.clone(),
-        harness: None,
-        session: None,
-        machine: None,
-        from: stamp(from),
-        to: Some(stamp(to)),
-        assigned_by: actor.to_string(),
-        released_by: Some(actor.to_string()),
-        why: why.clone(),
-        release_why: Some("lineage add".to_string()),
-        end_pending: false,
-    };
-    let receipt = state
-        .services
-        .directory
-        .lineage_add(repo, row, actor)
-        .await?;
-    let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
-    data["project"] = json!(project);
-    data["role"] = json!(role);
-    data["seat"] = json!(seat);
-    Ok(data)
 }
 
 /// `<role>[/<instance>]`, checked.
