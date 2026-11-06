@@ -173,7 +173,10 @@
 					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
 					"instance_key": "213",
 					"machine": "ops.osk.lan",
+					"release_why": "#147 merged (F70 dogfood)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-following-marsupial",
+					"to": "2026-11-06T12:56:18.328Z",
 					"why": "plan 213 shim forwards community verbs (prime 18:43)"
 				},
 				{
