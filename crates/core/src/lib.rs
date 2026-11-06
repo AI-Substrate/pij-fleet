@@ -30,6 +30,7 @@ pub mod liveness;
 pub mod model;
 pub mod names;
 pub mod orchestration;
+pub mod outputs;
 pub mod pa_digest;
 pub mod ports;
 pub mod program;

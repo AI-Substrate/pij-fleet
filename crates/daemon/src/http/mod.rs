@@ -18,6 +18,7 @@ pub mod governance;
 mod identity;
 mod lifecycle;
 pub mod memory_turn;
+mod output;
 mod report;
 mod revive;
 pub mod role;
@@ -197,13 +198,17 @@ enum Endpoint {
     Spine,
     /// `pij directory add` (plan 190): the community directory's writer.
     Directory,
+    /// `pij output` (plan 200): a role's output, through the writer.
+    Output,
+    /// `pij outputs` (plan 200): a project's outputs by subject or role.
+    Outputs,
     /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
     /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
     BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 53] = [
+    const ALL: [Self; 55] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -256,6 +261,8 @@ impl Endpoint {
         Self::Orchestration,
         Self::Spine,
         Self::Directory,
+        Self::Output,
+        Self::Outputs,
         Self::BackgroundEmit,
     ];
 
@@ -308,6 +315,8 @@ impl Endpoint {
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
             Self::Directory => "/v1/directory",
+            Self::Output => "/v1/output",
+            Self::Outputs => "/v1/outputs",
             Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
@@ -359,6 +368,8 @@ impl Endpoint {
             | Self::Orchestration
             | Self::Spine
             | Self::Directory
+            | Self::Output
+            | Self::Outputs
             | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
@@ -594,6 +605,8 @@ fn router_with_optional_federation(
                     | Endpoint::Orchestration
                     | Endpoint::Spine
                     | Endpoint::Directory
+                    | Endpoint::Output
+                    | Endpoint::Outputs
                     | Endpoint::BackgroundEmit
             ) {
                 Method::POST
@@ -666,6 +679,9 @@ fn router_with_optional_federation(
             Endpoint::Orchestration => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Spine => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Directory => router.route(endpoint.path(), post(directory::handle)),
+            Endpoint::Output | Endpoint::Outputs => {
+                router.route(endpoint.path(), post(output::handle))
+            }
             Endpoint::ShimSend => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimCompactSelf => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),

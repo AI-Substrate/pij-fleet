@@ -181,7 +181,7 @@
 					"statement": "`--reply wake|fyi|none` on a send to a role, default `wake`, is stored on the request. The output that answers it notifies the requester with that mode. A `block` verdict or a `failed` result always wakes. An output nobody requested goes as an FYI to the nearest seat above (its PM, else the prime). One seat is notified; everyone else reads the record (req-10).",
 					"actor": "requester",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "An idle requester that sent with the default is woken by the output; one that sent `--reply fyi` is not woken; a block verdict wakes a `fyi` requester.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -201,7 +201,7 @@
 					"statement": "`pij output verdict|deliverable|note|handover --subject <address> ...` writes one ddoc per output under `community/roles/<id>/outputs/<yyyy-mm>/` and records a store fact. A verdict carries the exact head commit, the result, notes owed, the evidence of what ran (command, exit code, log path) and an optional external link (the PR comment). Every output records its writer and flags one who does not hold the role. `pij outputs --subject pr:N --head <sha>` answers for that exact head, and answers none when the head has moved. A handover output holds what is in flight right now. The daemon writes outputs one at a time.",
 					"actor": "worker seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A pass on head A answers none for head B; a verdict by a non-holder is flagged; two seats writing at once produce two files with no conflict.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},

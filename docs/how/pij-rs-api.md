@@ -807,6 +807,8 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
 | POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/output` | `output verdict\|deliverable\|note\|handover --role <id> --subject <address> [--head <sha>] [--result <r>] [--note-owed <text>]… [--evidence <json>]… [--link <url>] [--answers <msg_id>] [--body <text>\|--body-file <path>] [--project <slug>]`; `output --help`. See [Role outputs](#role-outputs-plan-200) | — (`crates/daemon/tests/output_http.rs`) |
+| POST `/v1/outputs` | `outputs --subject <address> [--head <sha>]`; `outputs --role <id> [--limit <n>]`; `outputs --help` | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -1133,6 +1135,48 @@ turn or arrived during it.
 Cost: one live subscription per pending memory turn (only for role holders
 being compacted or closed), one delivery, one spine event and one deadline; no
 poll and no launch. Anyone else pays one store query.
+
+### Role outputs (plan 200)
+
+`pij output <kind> --role <id> --subject <address>` writes one `pij/output`
+document to
+`community/roles/<id>/outputs/<yyyy-mm>/<dd>-<kind>-<subject>[-<head7>].dd.json`
+through the single writer, in one commit, then indexes it in the store
+(migration 0036) and records its pointer. The kinds are `verdict`,
+`deliverable`, `note` and `handover`. A verdict needs `--head <sha>`, the exact
+head it is for, and `--result pass|pass-with-notes|block`; other kinds may give
+a result such as `failed`. `--note-owed` and `--evidence` repeat (evidence is
+JSON: `{"command":…,"exit_code":…,"log":…}`); `--link` names an external review;
+the body is `--body` or `--body-file` (the native CLI reads the file, or stdin
+for `-`). A handover needs a body: what is in flight now, so a fresh holder can
+pick up. The path is chosen under the writer's lock, so two outputs at once
+land as two files (`-2`, `-3` …). The writer is recorded; one who does not hold
+the role is written with `writer_holds_role: false` and the answer carries a
+`warning`.
+
+`--answers <msg_id>` (ruling C3) names the role request it answers: the request
+is marked answered (s12's `answered_at`, so its time-limit check-ins stop) and
+its requester is told in the reply mode it asked for: `wake` (the default; a
+cold requester is woken as an audited forced wake, ruling C4), `fyi` (held for
+its next turn) or `none`. A `block` verdict or a `failed` result always wakes.
+An output nobody asked for goes as an FYI to the seat above the writer (its
+recorded parent when live, else the current prime). One seat is told; the
+answer's `data.notified` says who, in which mode, and what happened.
+
+`pij outputs --subject pr:N --head <sha>` lists the outputs about that subject
+for exactly that head, so a verdict on an older head answers none once the head
+moves; without `--head` it lists every head. `pij outputs --role <id>` lists a
+role's outputs newest first (`--limit`, default 50). Reads use the store and
+launch nothing.
+
+| Refusal | When |
+|---|---|
+| `E-RS-ARG` | an unknown kind, a missing subject, a verdict without `--head` or a known `--result`, a handover without a body, bad `--evidence` JSON, `--body` with `--body-file` |
+| `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json` |
+| `E-RS-NOT-FOUND` | `--answers` names no recorded request |
+
+Plus every writer refusal above. Cost: one writer commit per output (git 7,
+ddocs 2) and one delivery to the one seat told. No timer or poll.
 
 ## Canonical wire examples
 
