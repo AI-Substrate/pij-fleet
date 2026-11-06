@@ -20,10 +20,10 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1 | ph-00ca | BUILD | computational | BUILD: adding a role regenerates ROUTES.md; two roles claiming one path give an overlap warning. | [ ] unchecked | — | — | crates/ |
-| bp-0002 | AC2 | ph-00ca | BUILD | computational | BUILD: each of the four triggers delivers the table once. | [ ] unchecked | — | — | crates/ |
-| bp-0003 | AC3 | ph-00ca | BUILD | computational | BUILD: a scope change sends one FYI to the prime; a reassign sends nothing. | [ ] unchecked | — | — | crates/ |
-| bp-0004 | AC4: cost | ph-00ca | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | One writer commit per regeneration; one delivery per trigger. No timer or poll. | — | pij-rs --json ping |
+| bp-0001 | AC1 | ph-00ca | BUILD | computational | BUILD: adding a role regenerates ROUTES.md; two roles claiming one path give an overlap warning. | [x] checked | — | assets/evidence/phase-1.md | crates/ |
+| bp-0002 | AC2 | ph-00ca | BUILD | computational | BUILD: each of the four triggers delivers the table once. | [x] checked | — | assets/evidence/phase-1.md | crates/ |
+| bp-0003 | AC3 | ph-00ca | BUILD | computational | BUILD: a scope change sends one FYI to the prime; a reassign sends nothing. | [x] checked | — | assets/evidence/phase-1.md | crates/ |
+| bp-0004 | AC4: cost | ph-00ca | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | One writer commit per regeneration; one delivery per trigger. No timer or poll. | assets/evidence/phase-1.md: private-run deltas, spawn_sites green, live before reading (1.27/s); the after-deploy reading is owed at merge | pij-rs --json ping |
 | bp-0005 | AC5: docs and states | ph-00ca | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
 
 <a id="sensors"></a>

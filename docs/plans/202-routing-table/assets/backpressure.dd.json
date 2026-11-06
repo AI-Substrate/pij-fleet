@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: adding a role regenerates ROUTES.md; two roles claiming one path give an overlap warning.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: each of the four triggers delivers the table once.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
         },
         {
           "id": "bp-0003",
@@ -41,8 +43,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: a scope change sends one FYI to the prime; a reassign sends nothing.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
         },
         {
           "id": "bp-0004",
@@ -53,7 +56,8 @@
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "One writer commit per regeneration; one delivery per trigger. No timer or poll."
+          "note": "One writer commit per regeneration; one delivery per trigger. No timer or poll.",
+          "receipt": "assets/evidence/phase-1.md: private-run deltas, spawn_sites green, live before reading (1.27/s); the after-deploy reading is owed at merge"
         },
         {
           "id": "bp-0005",

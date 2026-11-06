@@ -39,32 +39,37 @@
         {
           "id": "ac-0001",
           "claim": "Build and write. From every role's scope (paths and rules) pij generates `community/ROUTES.md` through the writer on any role add or scope change, and warns on two roles claiming one path.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/phase-1.md: role adds rewrite ROUTES.md in their own commit; W-ROUTES-OVERLAP on an overlapping path (tests and private run)"
         },
         {
           "id": "ac-0002",
           "claim": "Deliver. The table reaches a seat when it is assigned to a role, after it is compacted, when a revived seat returns, and on demand (`pij directory routes`).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "assets/evidence/phase-1.md: assign, compact and revive each hold one table FYI (HTTP test); directory routes on demand"
         },
         {
           "id": "ac-0003",
           "claim": "Notify. When routes change, the changed rows go as one FYI to the prime only; reassigning a holder sends nothing.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "assets/evidence/phase-1.md: one FYI to the prime per changing add; assign and release send none (HTTP test and private run)"
         },
         {
           "id": "ac-0004",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). One writer commit per regeneration; one delivery per trigger. No timer or poll.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "receipt": "assets/evidence/phase-1.md: regeneration adds no launch to its role write; routes 0 launches; one held FYI per trigger; no timer or poll"
         },
         {
           "id": "ac-0005",
           "claim": "Docs and states. In this PR: roadmap s08 goes to complete (plan cell docs/plans/202-routing-table); req-11 goes to shipped; c-routes goes to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005",
+          "note": "Docs, skill row and project states are in the PR; CI and the three verdicts at the exact head close it."
         }
       ]
     },

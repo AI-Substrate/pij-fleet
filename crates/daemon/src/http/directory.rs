@@ -540,7 +540,9 @@ async fn routes_leaf(
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let root = root::find(&repo)?;
     let mut data = json!({"project": project, "path": crate::community::layout::ROUTES});
-    if let Some(why) = why {
+    let current = routes::regenerate(&root.worktree, &[]).file.is_none();
+    // Checked in-process first, so a current file costs no launch.
+    if let Some(why) = why.filter(|_| !current) {
         let message =
             format!("community: routes\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}");
         match state
@@ -559,6 +561,8 @@ async fn routes_leaf(
             }
             Err(refusal) => return Err(refusal),
         }
+    } else if write {
+        data["written"] = json!({"regenerated": false, "reason": "ROUTES.md is current"});
     }
     let table = routes::build(&routes::read_roles(&root.worktree));
     let holders = super::routes::live_holders(&state.services, &project).await?;
