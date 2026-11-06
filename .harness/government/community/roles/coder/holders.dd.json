@@ -114,6 +114,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-following-marsupial",
 					"why": "plan 204 s10 (route doc and templates first)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T03:20:15.814Z",
+					"harness": "copilot",
+					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
+					"instance_key": "203",
+					"machine": "ops.osk.lan",
+					"seat": "pij-back-tapir",
+					"why": "s09 prime prompts (plan 203); knows s06/s07"
 				}
 			]
 		}
