@@ -1,0 +1,173 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Role send follow-ups (s05 dogfood)",
+        "slug": "role-send-followups",
+        "ordinal": 212,
+        "complexity": "CS-3",
+        "summary": "Fix what the s05 dogfood found: the role-address refusal loop (F52), a silent drain on assign (F56), no way to see or withdraw a queued request (F59), the window rename on release (F57), and the shim's gaps around role sends (F53, F54, F55, F58).",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Source: governance roles/docs-system/outputs/2026-11/dogfood-s05.md (lungfish, 06 Nov). s05 shipped in #129 (dc9f2e4). The shim gaps overlap plan 209's F41-F44 and F50; coordinate so each fix lands once (209 owns the generic human-output rendering; this plan owns the role-send specifics)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Fix what the s05 dogfood found: the role-address refusal loop (F52), a silent drain on assign (F56), no way to see or withdraw a queued request (F59), the window rename on release (F57), and the shim's gaps around role sends (F53, F54, F55, F58)."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "F52, the refusal loop. E-RS-ROLE-HOLDERS (several holders) and E-RS-ROLE-ADDRESS (an instance on a role whose holders have no instances) never advise each other in a loop: the several-holders refusal lists each holder with its instance, or says the holders have no instances and gives the runnable fix (assign per-PR instances: pij directory assign <role>/<instance> <seat>); next is never null.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "F56, drain on assign is visible. The assign receipt lists the requests it drained (id, requester, reply mode), in human and --json output.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "F59, list and withdraw. `pij requests [--role <id>] [--state queued|delivering|delivered]` lists role requests; `pij requests withdraw <id> --why <text>` withdraws a queued one (requester, the PA or the prime only).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "F57, windows. Releasing a holding restores the window name the assign replaced (or the seat's default) when the seat holds no other role.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Shim parity for role sends (F53, F54, F55, F58). pij send --help shows role:<id>[/<instance>], --reply and --fyi; the human receipt prints the request id and reply mode; --body is accepted (or the help and every printed command say positional or --body-file only); directory add prints the human form.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch site. List and withdraw are store reads and writes; the receipt and window changes are in-process.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Docs and states. No workstream state changes (follow-ups); docs/how/pij-rs-api.md documents pij requests and the new receipt fields. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00d4",
+          "title": "Role send follow-ups (s05 dogfood)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-3.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: crates/daemon/src/delivery/role_send.rs, crates/daemon/src/http/role_send.rs, crates/store/src/role_requests.rs, the directory assign and release paths (window rename), and the pij shim (.omp or npm shim, wherever pij send's human output is rendered). Migration only if withdraw needs a state; 0034 is merged, so claim the next number with pij claim migration."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
