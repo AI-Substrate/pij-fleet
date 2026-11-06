@@ -76,7 +76,17 @@
         },
         {
           "id": "bp-0007",
-          "criterion": "AC7: cost",
+          "criterion": "AC7",
+          "phase": "ph-00d0",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: the shared-build test with a fake whoami shows the seat id in the owner line; with no seat, the user.",
+          "state": "unchecked",
+          "probe": "harness/scripts/shared-build.sh"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8: cost",
           "phase": "ph-00d0",
           "mode": "EXTEND",
           "tier": "computational",
@@ -86,8 +96,8 @@
           "note": "Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll."
         },
         {
-          "id": "bp-0008",
-          "criterion": "AC8: docs and states",
+          "id": "bp-0009",
+          "criterion": "AC9: docs and states",
           "phase": "ph-00d0",
           "mode": "EXISTS",
           "tier": "computational",

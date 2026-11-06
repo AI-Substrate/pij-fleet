@@ -74,15 +74,21 @@
         },
         {
           "id": "ac-0007",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll.",
+          "claim": "F24 (low, pm-001, 06 Nov): `just shared-build`'s owner file records `seat=<user>` because PIJ_ID is unset in harness seats, so a lock holder can't be told apart (seen: seat=jordanknight for warbler's run). The recipe takes the seat id from the pij registration of its caller (`pij whoami` or the daemon's view of the calling pid) when PIJ_ID is unset, and falls back to the user only outside a seat.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007"
         },
         {
           "id": "ac-0008",
-          "claim": "Docs and states. No roadmap state change (follow-up work). docs/difficulties.md: F13, F15, F16, F17, F18 and #122 F003 marked resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
+          "id": "ac-0009",
+          "claim": "Docs and states. No roadmap state change (follow-up work). docs/difficulties.md: F13, F15, F16, F17, F18 and #122 F003 marked resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0009"
         }
       ]
     },

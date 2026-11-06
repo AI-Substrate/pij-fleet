@@ -26,8 +26,9 @@
 | bp-0004 | AC4 | ph-00d0 | BUILD | computational | BUILD: a written date round-trips with its zone; the view shows local time and zone. | [ ] unchecked | — | — | crates/ |
 | bp-0005 | AC5 | ph-00d0 | BUILD | computational | BUILD: a test holds a foreign index.lock while the writer commits (bounded retry, then a named refusal); the owner marker exists only during the writer's commit. | [ ] unchecked | — | — | crates/ |
 | bp-0006 | AC6 | ph-00d0 | BUILD | computational | BUILD: assign a second role to a seat; the window name follows the documented rule. | [ ] unchecked | — | — | crates/ |
-| bp-0007 | AC7: cost | ph-00d0 | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll. | — | pij-rs --json ping |
-| bp-0008 | AC8: docs and states | ph-00d0 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0007 | AC7 | ph-00d0 | BUILD | computational | BUILD: the shared-build test with a fake whoami shows the seat id in the owner line; with no seat, the user. | [ ] unchecked | — | — | harness/scripts/shared-build.sh |
+| bp-0008 | AC8: cost | ph-00d0 | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll. | — | pij-rs --json ping |
+| bp-0009 | AC9: docs and states | ph-00d0 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
 
 <a id="sensors"></a>
 
