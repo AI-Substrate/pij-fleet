@@ -71,7 +71,10 @@
 					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
 					"instance_key": "201",
 					"machine": "ops.osk.lan",
+					"release_why": "#132 merged (F70 dogfood)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-back-tapir",
+					"to": "2026-11-06T12:56:17.532Z",
 					"why": "record the live holder (06 Nov roadmap push)"
 				},
 				{
