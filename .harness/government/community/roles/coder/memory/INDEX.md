@@ -4,5 +4,6 @@
 - [2026-11-06-marsupial-204-134.md](2026-11-06-marsupial-204-134.md): lane D handover: #134 (plan 207) frozen at 3930791 for verdicts and the AFTER reading; draft #136 (plan 204) waits on s09 for the AC3 canary, verb check and state flips; backoff build rules.
 
 <!-- pij:generated -->
+- [2026-11-06 Claim, send, stamp: one-shot notifications that survive races and restarts](2026-11-06-claim-send-stamp-one-shot-notifications-that-survive-races-a.dd.md): Open before writing any once-only send, notice, drain or watchdog step that must not double-send or be lost (concurrency, delivery, sqlite, s05, s12)
 - [2026-11-06 s06, s07 and s09 as built; \#137 and \#141 state](2026-11-06-s06-s07-and-s09-as-built-137-and-141-state.dd.md): Open before touching role memory, outputs or the directory view, or picking up \#137 or \#141 (s06, s07, s09, handover)
 <!-- /pij:generated -->
