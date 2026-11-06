@@ -776,7 +776,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}` | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates [--show <name>[@vN]]`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -966,7 +966,14 @@ as the work changes, and the templates are examples, not a checklist (C18).
 
 `pij directory templates` lists each template with its versions, the latest
 version's title, kind and summary, and whether it is a core role
-(`data.templates`).
+(`data.templates`). `pij directory templates --show <name>[@vN]` returns
+`data.template`: `{name, version, latest, path, body}`, where `body` is that
+version's exact embedded bytes (the latest by default) and `path` its place in
+pij's repo (`templates/roles/<name>/v<n>/role.dd.json`). An unknown name or
+version refuses with `E-RS-ARG`, listing what exists. Besides the core set and
+security, ten optional templates ship as examples (devcontainer, researcher,
+note-taker, topic-expert, docs-keeper, infra, release, qa, designer,
+transcriber; plan 204).
 
 `pij directory add <id> --from template:<name>[@v<n>] --why <text>` copies the
 named version (the latest by default) through the writer above. `meta.id`
