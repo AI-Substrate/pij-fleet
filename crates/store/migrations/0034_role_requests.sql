@@ -33,4 +33,9 @@ CREATE INDEX role_requests_queued
 CREATE INDEX role_requests_delivering
     ON role_requests (created_at) WHERE state = 'delivering';
 
+-- Boot recovery asks whether a delivery job of ANY state exists for a stranded
+-- claim's holder and msg_id; jobs_dedupe_live covers only live states.
+CREATE INDEX jobs_by_dedupe
+    ON jobs (kind, dedupe_origin, dedupe_key);
+
 PRAGMA user_version = 34;
