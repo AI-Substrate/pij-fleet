@@ -28,8 +28,11 @@
 | bp-0006 | AC6 | ph-00ce | BUILD | computational | BUILD: merge commits once with both changelog rows; the view shows the merge; a send to &lt;from&gt; names &lt;to&gt;. | [ ] unchecked | — | — | crates/ |
 | bp-0007 | AC7 | ph-00ce | BUILD | computational | EXISTS: `ddocs validate` on roadmap 001 and PRD 001; `just ddocs-check`. | [ ] unchecked | — | — | crates/ |
 | bp-0008 | AC8 | ph-00ce | BUILD | computational | BUILD: a test holds a foreign index.lock while the writer commits (bounded retry, then a named refusal); the owner marker exists only during the writer's commit. | [ ] unchecked | — | — | crates/daemon/src/community/ |
-| bp-0009 | AC9: cost | ph-00ce | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. No timer or poll. | — | pij-rs --json ping |
-| bp-0010 | AC10: docs and states | ph-00ce | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0009 | AC9 | ph-00ce | BUILD | computational | BUILD: assign a second role to a seat; the window name follows the documented rule. | [ ] unchecked | — | — | crates/ |
+| bp-0010 | AC10 | ph-00ce | BUILD | computational | BUILD: template-diff on a role with template and no version gives the named refusal and a next step. | [ ] unchecked | — | — | crates/ |
+| bp-0011 | AC11 | ph-00ce | BUILD | computational | BUILD: edit a role's field; the commit has a changelog row; an invalid edit refuses and commits nothing; an edit of a missing role refuses by name. | [ ] unchecked | — | — | crates/ |
+| bp-0012 | AC12: cost | ph-00ce | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. No timer or poll. | — | pij-rs --json ping |
+| bp-0013 | AC13: docs and states | ph-00ce | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
 
 <a id="sensors"></a>
 

@@ -86,15 +86,33 @@
         },
         {
           "id": "ac-0009",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. Retire and merge are one writer commit each. No timer or poll.",
+          "claim": "F17 (low): a seat holding two roles gets the last assign's window name. The window is named for the seat's primary holding (the earliest open one), or `<project>:<role1>+<role2>`; pick one, and say so in the docs.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0009"
         },
         {
           "id": "ac-0010",
-          "claim": "Docs and states. Docs: docs/how/pij-rs-api.md documents retire and merge; difficulties.md rows F13, F15, F16 and #122 F003 marked resolved. No roadmap state changes (follow-up work). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "claim": "F19 (medium, s03 dogfood): `pij directory template-diff <id>` on a role with a `template` but no `template_version` refuses with a misleading E-RS-ARG ('template_version \"\" is not a version number', next null; directory.rs:251 unwrap_or_default). It should say the role records no template version, and name the fix (record one with the edit verb from F20).",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0010"
+        },
+        {
+          "id": "ac-0011",
+          "claim": "F20 (medium, s03 dogfood; needed for reshape, req-28): `pij directory edit <id> --why <text> (--set <field>=<value>... | --file <json>)` changes an existing role through the writer (validate, build, commit, changelog row). Today add refuses an existing role, so imported roles can't be corrected without hand edits.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0011"
+        },
+        {
+          "id": "ac-0012",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. Retire and merge are one writer commit each. No timer or poll.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0012"
+        },
+        {
+          "id": "ac-0013",
+          "claim": "Docs and states. Docs: docs/how/pij-rs-api.md documents retire and merge; difficulties.md rows F13, F15, F16 and #122 F003 marked resolved. No roadmap state changes (follow-up work). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0013"
         }
       ]
     },

@@ -96,7 +96,37 @@
         },
         {
           "id": "bp-0009",
-          "criterion": "AC9: cost",
+          "criterion": "AC9",
+          "phase": "ph-00ce",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: assign a second role to a seat; the window name follows the documented rule.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0010",
+          "criterion": "AC10",
+          "phase": "ph-00ce",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: template-diff on a role with template and no version gives the named refusal and a next step.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0011",
+          "criterion": "AC11",
+          "phase": "ph-00ce",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: edit a role's field; the commit has a changelog row; an invalid edit refuses and commits nothing; an edit of a missing role refuses by name.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0012",
+          "criterion": "AC12: cost",
           "phase": "ph-00ce",
           "mode": "EXTEND",
           "tier": "computational",
@@ -106,8 +136,8 @@
           "note": "Batch assign is one writer commit for many holders (cheaper than one each); lineage add is one commit. No timer or poll."
         },
         {
-          "id": "bp-0010",
-          "criterion": "AC10: docs and states",
+          "id": "bp-0013",
+          "criterion": "AC13: docs and states",
           "phase": "ph-00ce",
           "mode": "EXISTS",
           "tier": "computational",
