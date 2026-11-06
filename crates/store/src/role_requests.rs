@@ -285,14 +285,24 @@ impl SqliteOrchestration {
     }
 
     /// Claim a queued request for `holder` before dispatching it: the one
-    /// atomic step that decides which drain delivers it. `false` when it is
-    /// no longer queued (another drain won, or it was delivered).
+    /// atomic step that decides which drain delivers it. In the same
+    /// statement, `holder` must be live and hold the request's role now (the
+    /// instance it names, or any for an instance-less request), so a drain
+    /// scheduled before a release can never deliver to the old holder
+    /// (security review of #129, S1). `false` when it is no longer queued,
+    /// another drain won, or `holder` does not hold the role now; the request
+    /// then stays queued.
     pub async fn claim_role_request(&self, id: &str, holder: &str) -> Result<bool> {
         self.transition(
             id,
             holder,
             "UPDATE role_requests SET state = 'delivering', holder = ?2 \
-             WHERE id = ?1 AND state = 'queued'",
+             WHERE id = ?1 AND state = 'queued' \
+             AND EXISTS (SELECT 1 FROM seats WHERE seats.id = ?2 AND seats.tombstoned_at IS NULL) \
+             AND EXISTS (SELECT 1 FROM community_assignments AS held \
+                 WHERE held.project = role_requests.project AND held.role = role_requests.role \
+                 AND held.seat = ?2 AND held.to_at IS NULL \
+                 AND (role_requests.instance = '' OR held.instance = role_requests.instance))",
             None,
         )
         .await

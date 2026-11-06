@@ -569,18 +569,16 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         &community::writer::LOCK_RETRY,
     ));
     // Ruling C6: an assign drains the role's queued requests (plan 199).
-    let role_queue = Arc::new(delivery::role_send::RoleQueueDrain::new(
-        directory_store.clone(),
-        Arc::clone(&delivery),
-    ));
+    // It drains through the built services, so it is bound to them below.
+    let role_queue = Arc::new(delivery::role_send::RoleQueueDrain::new());
     let directory = Arc::new(community::directory::DirectoryService::new(
         Arc::clone(&community_writer),
         directory_store,
         Arc::clone(&event_bus),
-        role_queue,
+        Arc::clone(&role_queue) as Arc<dyn community::directory::AfterAssign>,
         Arc::clone(&tmux),
     ));
-    Ok(Services {
+    let services = Services {
         registry,
         spine,
         event_bus,
@@ -614,7 +612,9 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         community: community_writer,
         directory,
         offline: config.is_fully_offline(),
-    })
+    };
+    role_queue.bind(services.clone());
+    Ok(services)
 }
 
 /// Does this config select any adapter that needs the store open?

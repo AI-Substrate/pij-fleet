@@ -25,7 +25,6 @@ use pij_core::session_status::SessionStatusBlock;
 use pij_store::{Assignment, ReplyMode, RequestState, RoleRequest, SqliteOrchestration};
 use serde_json::{Value, json};
 
-use super::DeliveryService;
 use crate::Services;
 use crate::community::directory::{AfterAssign, E_ROLE_MISSING};
 use crate::community::holders::seat_role_for;
@@ -642,28 +641,51 @@ async fn context_tokens(services: &Services, seat: &SeatId, now_ms: u64) -> Opti
     }
 }
 
+/// Why a drained request may wake a cold holder: the assign that triggered the
+/// drain is the deliberate act, and a refused wake would strand the request
+/// until the next assign. The wake is audited before it is sent, as every
+/// daemon-initiated wake is.
+pub const DRAIN_WAKE_REASON: &str = "role queue: drained to the role's new holder on assign";
+
 /// Ruling C6: after an assign lands, deliver the role's queued requests to the
 /// new holder, in order. The hook is synchronous, so the drain runs on its own
 /// task; an assign that was refused never calls it.
+///
+/// The drain needs the built [`Services`] (cold-wake verdicts, the audit bus),
+/// which own the directory that holds this hook, so they are bound once after
+/// they are built ([`RoleQueueDrain::bind`]). Before `bind`, an assign drains
+/// nothing and the requests stay queued.
+#[derive(Default)]
 pub struct RoleQueueDrain {
-    store: SqliteOrchestration,
-    delivery: Arc<DeliveryService>,
+    services: std::sync::OnceLock<Services>,
 }
 
 impl RoleQueueDrain {
-    /// Drain through `delivery`, reading and marking requests in `store`.
-    pub fn new(store: SqliteOrchestration, delivery: Arc<DeliveryService>) -> Self {
-        Self { store, delivery }
+    /// An unbound drain; see [`RoleQueueDrain::bind`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Drain through these services from now on. A second bind is ignored.
+    /// The drain keeps them with a hookless copy of the directory, so the
+    /// directory holding this hook is not held back by it: no reference cycle,
+    /// and a stopped daemon's services drop.
+    pub fn bind(&self, mut services: Services) {
+        services.directory = Arc::new(services.directory.without_hook());
+        let _ = self.services.set(services);
     }
 }
 
 impl AfterAssign for RoleQueueDrain {
     fn assigned(&self, project: &str, role: &str, instance: &str, seat: &SeatId) {
+        let Some(services) = self.services.get().cloned() else {
+            eprintln!("pij-rs: role queue for {role} not drained: services not bound");
+            return;
+        };
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             eprintln!("pij-rs: role queue for {role} not drained: no runtime");
             return;
         };
-        let (store, delivery) = (self.store.clone(), Arc::clone(&self.delivery));
         let (project, role, instance, seat) = (
             project.to_string(),
             role.to_string(),
@@ -671,7 +693,7 @@ impl AfterAssign for RoleQueueDrain {
             seat.clone(),
         );
         runtime.spawn(async move {
-            for (id, outcome) in drain(&store, &delivery, &project, &role, &instance, &seat).await {
+            for (id, outcome) in drain(&services, &project, &role, &instance, &seat).await {
                 if let Err(cause) = outcome {
                     eprintln!("pij-rs: role request {id} for {seat} not drained: {cause}");
                 }
@@ -681,25 +703,30 @@ impl AfterAssign for RoleQueueDrain {
 }
 
 /// Deliver `role`'s queued requests a holder of `instance` can take to `seat`,
-/// oldest first, each from its requester; mark each one delivered. Each is
-/// claimed before it is dispatched, so two drains never deliver one request;
-/// one whose delivery fails goes back on the queue for the next assign.
+/// oldest first, each from its requester; mark each one delivered.
+///
+/// Each is claimed before it is dispatched, and the claim holds only while
+/// `seat` is live and holds the role at that moment, so two drains never
+/// deliver one request and a drain scheduled before a release delivers nothing
+/// (reviews of #129: F002, security S1). A non-FYI delivery is admitted as an
+/// immediate send is (security S2): a cold holder's wake is audited first, as
+/// a forced send from the requester with [`DRAIN_WAKE_REASON`], and a failed
+/// audit sends nothing. An FYI is held, never a wake. One that is not
+/// delivered goes back on the queue for the next assign.
 pub async fn drain(
-    store: &SqliteOrchestration,
-    delivery: &Arc<DeliveryService>,
+    services: &Services,
     project: &str,
     role: &str,
     instance: &str,
     seat: &SeatId,
 ) -> Vec<(String, Result<(), String>)> {
+    let store = services.directory.store();
     let queued = match store.queued_role_requests(project, role, instance).await {
         Ok(queued) => queued,
         Err(cause) => return vec![(format!("{project}/{role}"), Err(cause.to_string()))],
     };
     let mut outcomes = Vec::new();
     for mut request in queued {
-        // The one atomic step that decides which drain delivers it: a second
-        // drain for the same role skips it (review of #129).
         match store.claim_role_request(&request.id, seat.as_str()).await {
             Ok(true) => {}
             Ok(false) => continue,
@@ -709,30 +736,14 @@ pub async fn drain(
             }
         }
         request.instance = instance.to_string();
-        let msg = Msg {
-            from: SeatId::from(request.requester.as_str()),
-            from_machine: None,
-            to: seat.clone(),
-            body: framed_body(&request),
-            msg_id: request.id.clone(),
-            in_reply_to: request.in_reply_to.clone(),
-            command: None,
-        };
-        let sent = if request.fyi {
-            delivery.hold_fyi(msg).await
-        } else {
-            delivery.accept(msg).await
-        };
-        let outcome = match sent {
-            Ok(receipt) if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) => {
-                Err(format!("refused: {:?}", receipt.outcome))
-            }
-            Ok(receipt) => store
-                .mark_role_request_delivered(&request.id, seat.as_str(), receipt.at)
+        let outcome = deliver_drained(services, &request, seat).await;
+        let outcome = match outcome {
+            Ok(at) => store
+                .mark_role_request_delivered(&request.id, seat.as_str(), at)
                 .await
                 .map(|_| ())
                 .map_err(|cause| cause.to_string()),
-            Err(cause) => Err(cause.to_string()),
+            Err(cause) => Err(cause),
         };
         if outcome.is_err() {
             // Back on the queue for the next assign.
@@ -743,6 +754,55 @@ pub async fn drain(
         outcomes.push((request.id, outcome));
     }
     outcomes
+}
+
+/// One claimed request to `seat`, through the admission an immediate send
+/// gets. The delivery time, or why nothing was delivered.
+async fn deliver_drained(
+    services: &Services,
+    request: &RoleRequest,
+    seat: &SeatId,
+) -> Result<u64, String> {
+    let msg = Msg {
+        from: SeatId::from(request.requester.as_str()),
+        from_machine: None,
+        to: seat.clone(),
+        body: framed_body(request),
+        msg_id: request.id.clone(),
+        in_reply_to: request.in_reply_to.clone(),
+        command: None,
+    };
+    let sent = if request.fyi {
+        services.delivery.hold_fyi(msg).await
+    } else {
+        let descriptor = match services.registry.get(seat).await {
+            Ok(Some(descriptor)) if descriptor.tombstoned_at.is_none() => descriptor,
+            Ok(_) => return Err(format!("{seat} is no longer live")),
+            Err(cause) => return Err(cause.to_string()),
+        };
+        let now_ms = crate::http::system_time_ms().map_err(|cause| cause.to_string())?;
+        let cold_check = crate::pa_watchdog::audit_cold_wake(
+            services,
+            &descriptor,
+            &request.requester,
+            &request.id,
+            DRAIN_WAKE_REASON,
+            now_ms,
+        )
+        .await
+        .map_err(|cause| format!("cold-wake audit failed, nothing sent: {cause}"))?;
+        services.delivery.accept(msg).await.map(|mut receipt| {
+            receipt.cold_check = Some(cold_check);
+            receipt
+        })
+    };
+    match sent {
+        Ok(receipt) if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) => {
+            Err(format!("refused: {:?}", receipt.outcome))
+        }
+        Ok(receipt) => Ok(receipt.at),
+        Err(cause) => Err(cause.to_string()),
+    }
 }
 
 /// What the time-limit pass did for one request (plan 205, s12).
