@@ -48,3 +48,5 @@
 
 2026-11-06 verdict pr:126 6b820d0e04c89a6c7980c5cbc94f8e5258baa6aa pass-with-notes - Seven-file project-quoting delta safe; all printed commands select viewed project; 29 values/58 inert argv roundtrips and identical-tree CI proof; real-ddocs limit carried; no build/replay; 2026-11-06-pr-126-6b820d0-security.md.
 
+2026-11-06 note pr:129 fd7bf4141420f132974ece403faa5ae8c64c9982 block - INTERIM stale assignment drain sends later requests to released holder, MEDIUM9/10, in-memory migrations/SELECT proof; no transport or old-head PR verdict; replacement head/CI and remaining review pending; 2026-11-06-pr-129-fd7bf41-interim-security.md.
+
