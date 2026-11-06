@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: pij-store tests for the next number from claims and from a scratch checkout's files; ten concurrent claims distinct and consecutive; two projects independent. `cargo test -p pij-store claims`.",
-          "state": "unchecked",
-          "probe": "crates/store/"
+          "state": "checked",
+          "probe": "crates/store/",
+          "receipt": "pij-store claims 5/5; claims_http claims test"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: tombstoning the claiming seat releases its open claims in the same transaction; a released number is never reissued; `pij claims` lists both states.",
-          "state": "unchecked",
-          "probe": "crates/store/src/registry.rs"
+          "state": "checked",
+          "probe": "crates/store/src/registry.rs",
+          "receipt": "store tombstone test; private-run close"
         },
         {
           "id": "bp-0003",
@@ -41,8 +43,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: pij-daemon tests with a fake gh: merged PR with a Delivers line records rows and prints ddocs set commands; re-run is idempotent; an unmerged PR and a missing line refuse by name; no file in the project changes (git status clean).",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/"
+          "state": "checked",
+          "probe": "crates/daemon/src/",
+          "receipt": "claims_http 3/3 with a fake gh"
         },
         {
           "id": "bp-0004",
@@ -51,8 +54,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: a private daemon shows the delivery on the PM seat's card after one call (via --pm, and via the pm-<n> holder if plan 195 is merged).",
-          "state": "unchecked",
-          "probe": "crates/daemon/src/http/mod.rs"
+          "state": "checked",
+          "probe": "crates/daemon/src/http/mod.rs",
+          "receipt": "claims_http card asserts; private-run.txt PM card"
         },
         {
           "id": "bp-0005",
@@ -61,8 +65,9 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: skill verb coverage tests; `just ddocs-check`; `ddocs validate` on the project docs; CI on the exact head; reviewer and security verdicts.",
-          "state": "unchecked",
-          "probe": "crates/cli/tests/skill_verb_coverage.rs"
+          "state": "checked",
+          "probe": "crates/cli/tests/skill_verb_coverage.rs",
+          "receipt": "skill_verb_coverage 4/4; ddocs-check 7 clean; TS and verdicts on the PR head"
         },
         {
           "id": "bp-0006",
@@ -71,9 +76,10 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: spawn_sites.rs covers the gh launch site. Private daemon: spawn counter delta around one claim (0), one claims list (0) and one delivered (1), with data.pid. Live fleet before and after deploy: `pij-rs --json ping | jq .data.spawns` twice 60 s apart and `just spawn-rate --seconds 20`; expected no change at rest.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
-          "note": "Expected cost. Loop, poll, timer, sweep: none. claim: 0 launches. delivered: 1 gh launch per call. Scales with verb calls only."
+          "note": "Expected cost. Loop, poll, timer, sweep: none. claim: 0 launches. delivered: 1 gh launch per call. Scales with verb calls only.",
+          "receipt": "private-run.txt deltas 0/0/1; spawn_sites 4/4"
         }
       ]
     },
