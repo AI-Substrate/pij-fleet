@@ -101,6 +101,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-usual-seahorse",
 					"why": "review #138 (plan 208)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T08:01:31.936Z",
+					"harness": "copilot",
+					"harness_session": "3e7756cf-b339-46ac-9b12-46d3065045cc",
+					"instance_key": "141",
+					"machine": "ops.osk.lan",
+					"seat": "pij-usual-seahorse",
+					"why": "review #141 (plan 203, s09)"
 				}
 			]
 		}
