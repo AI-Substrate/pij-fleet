@@ -20,15 +20,16 @@ use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope};
 use crate::community::layout::{RolePaths, exists};
-use crate::community::memory;
 use crate::community::role::{self, RoleFields};
 use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{Refusal, pointer};
+use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 26] = [
+const SINGLE: [&str; 27] = [
     "why",
     "from",
+    "to",
     "from-project",
     "role",
     "project",
@@ -109,6 +110,7 @@ impl Arguments {
                             | "release"
                             | "rebuild"
                             | "external"
+                            | "lineage"
                             | "templates"
                             | "template-diff"
                             | "memory"
@@ -208,7 +210,26 @@ impl Arguments {
                 "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
             ));
         }
-        if call.leaf != "add" && call.single.contains_key("from") {
+        if call.leaf == "lineage"
+            && (call.positions.len() != 3
+                || call.positions[0] != "add"
+                || call.single.keys().any(|flag| {
+                    !matches!(flag.as_str(), "why" | "project" | "actor" | "from" | "to")
+                })
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "lineage" && call.single.contains_key("to") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --to belongs to `lineage add`", call.leaf),
+            ));
+        }
+        if !matches!(call.leaf.as_str(), "add" | "lineage") && call.single.contains_key("from") {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 format!("directory {}: --from belongs to `add`", call.leaf),
@@ -233,13 +254,19 @@ impl Arguments {
         if matches!(call.leaf.as_str(), "assign" | "release")
             && (call.describes_a_role()
                 || call.get("file").is_some()
-                || call.get("batch").is_some())
+                || (call.get("batch").is_some()
+                    && (call.leaf == "release" || !call.positions.is_empty())))
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 format!(
-                    "directory {}: takes <role>[/<instance>] <seat> --why <text> [--project <slug>]",
-                    call.leaf
+                    "directory {}: takes <role>[/<instance>] <seat> --why <text> [--project <slug>]{}",
+                    call.leaf,
+                    if call.leaf == "assign" {
+                        ", or --batch <file> --why <text>"
+                    } else {
+                        ""
+                    }
                 ),
             ));
         }
@@ -391,6 +418,7 @@ pub(crate) async fn handle(
     let result = match call.leaf.as_str() {
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
         "external" => external(&state, &actor.id, &request.caller, &call).await,
+        "lineage" => lineage(&state, &actor.id, &request.caller, &call).await,
         "templates" => Ok(json!({"templates": state.services.directory.templates().listing()})),
         "template-diff" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
@@ -438,7 +466,8 @@ async fn add(
                 "--why <text> is required: it becomes the changelog row",
             )
         })?;
-    let date = role::today();
+    // UTC to the millisecond with its zone, like holders rows (F13).
+    let date = crate::community::holders::now();
     let batch = call.get("batch");
     let mut fields = call.fields();
     let from = call
@@ -629,6 +658,11 @@ async fn hold(
     caller: &CallerContext,
     call: &Arguments,
 ) -> Result<Value, Refusal> {
+    if call.leaf == "assign"
+        && let Some(file) = call.get("batch")
+    {
+        return assign_batch(state, actor, caller, call, &file).await;
+    }
     let [target, seat] = call.positions.as_slice() else {
         return Err(Refusal::new(
             "E-RS-ARG",
@@ -639,14 +673,7 @@ async fn hold(
         .get("why")
         .filter(|why| !why.trim().is_empty())
         .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
-    let (role, instance) = target.split_once('/').unwrap_or((target.as_str(), ""));
-    RolePaths::new(role)?;
-    if instance.contains('/') || instance.trim() != instance {
-        return Err(Refusal::new(
-            "E-RS-ARG",
-            format!("bad instance key {instance:?}"),
-        ));
-    }
+    let (role, instance) = role_and_instance(target)?;
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let seat_id = SeatId::from(seat.as_str());
     let directory = &state.services.directory;
@@ -680,6 +707,203 @@ async fn hold(
     data["role"] = json!(role);
     data["seat"] = json!(seat);
     Ok(data)
+}
+
+/// `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time>
+/// --why <text>` (plan 208, F15): the prime records a closed seat's past
+/// holding. No live seat is needed.
+async fn lineage(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    use crate::community::holders::{parse_time, stamp};
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let (role, instance) = role_and_instance(&call.positions[1])?;
+    let seat = call.positions[2].clone();
+    let when = |flag: &str| -> Result<time::OffsetDateTime, Refusal> {
+        let given = call
+            .get(flag)
+            .ok_or_else(|| Refusal::new("E-RS-ARG", format!("--{flag} <time> is required")))?;
+        parse_time(&given).ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "--{flag} {given:?}: give RFC 3339 with Z or an offset (2026-11-04T09:00:00+10:00), or a date (UTC midnight)"
+                ),
+            )
+        })
+    };
+    let (from, to) = (when("from")?, when("to")?);
+    if from >= to {
+        return Err(Refusal::new("E-RS-ARG", "--from must be before --to"));
+    }
+    if to > time::OffsetDateTime::now_utc() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "--to is in the future; lineage add records holdings that have ended (use assign for a live seat)",
+        ));
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let project_prime = state
+        .services
+        .governance
+        .store()
+        .list_projects()
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .into_iter()
+        .find(|known| known.slug == project)
+        .and_then(|known| known.prime_id);
+    // The project's own prime; a project that names none falls back to a
+    // seat whose role is prime.
+    let is_prime = match &project_prime {
+        Some(prime) => prime == actor,
+        None => {
+            state
+                .services
+                .roles
+                .read_role(actor)
+                .await
+                .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+                .as_deref()
+                == Some("prime")
+        }
+    };
+    if !is_prime {
+        return Err(Refusal::new(
+            "E-RS-OWNERSHIP",
+            format!("only the prime records past holdings; {actor} is not the prime of {project}"),
+        ));
+    }
+    let row = pij_store::Assignment {
+        project: project.clone(),
+        role: role.to_string(),
+        instance: instance.to_string(),
+        seat: seat.clone(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: stamp(from),
+        to: Some(stamp(to)),
+        assigned_by: actor.to_string(),
+        released_by: Some(actor.to_string()),
+        why: why.clone(),
+        release_why: Some("lineage add".to_string()),
+        end_pending: false,
+    };
+    let receipt = state
+        .services
+        .directory
+        .lineage_add(repo, row, actor)
+        .await?;
+    let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+    data["project"] = json!(project);
+    data["role"] = json!(role);
+    data["seat"] = json!(seat);
+    Ok(data)
+}
+
+/// `<role>[/<instance>]`, checked.
+fn role_and_instance(target: &str) -> Result<(&str, &str), Refusal> {
+    let (role, instance) = target.split_once('/').unwrap_or((target, ""));
+    RolePaths::new(role)?;
+    if instance.contains('/') || instance.trim() != instance {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("bad instance key {instance:?}"),
+        ));
+    }
+    Ok((role, instance))
+}
+
+/// `directory assign --batch <file> --why <text>` (plan 208, F16): one
+/// `<role>[/<instance>] <seat>` per line, blank and `#` lines skipped; every
+/// holding in one writer commit, all or nothing. Every bad line is named.
+async fn assign_batch(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+    file: &str,
+) -> Result<Value, Refusal> {
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let path = caller_path(caller, file)?;
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("cannot read {}: {error}", path.display()),
+        )
+    })?;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let mut requests = Vec::new();
+    let mut problems = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let [target, seat] = fields.as_slice() else {
+            problems.push(format!("line {number}: want `<role>[/<instance>] <seat>`"));
+            continue;
+        };
+        let (role, instance) = match role_and_instance(target) {
+            Ok(parsed) => parsed,
+            Err(refusal) => {
+                problems.push(format!("line {number}: {}", refusal.message));
+                continue;
+            }
+        };
+        let descriptor = state
+            .services
+            .registry
+            .get(&SeatId::from(*seat))
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+        match descriptor {
+            None => problems.push(format!("line {number}: seat {seat} does not exist")),
+            Some(descriptor) if descriptor.tombstoned_at.is_some() => {
+                problems.push(format!("line {number}: seat {seat} is closed"));
+            }
+            Some(descriptor) => requests.push(crate::community::directory::AssignRequest {
+                project: project.clone(),
+                repo: repo.clone(),
+                role: role.to_string(),
+                instance: instance.to_string(),
+                seat: descriptor,
+                actor: actor.clone(),
+                why: why.clone(),
+                machine: state.machine_alias.clone(),
+            }),
+        }
+    }
+    if !problems.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("the batch wrote nothing: {}", problems.join("; ")),
+        ));
+    }
+    if requests.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{} names no holdings", path.display()),
+        ));
+    }
+    let receipts = state.services.directory.assign_many(requests).await?;
+    Ok(json!({
+        "project": project,
+        "commit": receipts[0].commit,
+        "holdings": receipts,
+    }))
 }
 
 /// `directory external add <seat> --from-project <slug> --why <note>`.
@@ -777,7 +1001,7 @@ async fn memory(
         body,
     };
     // Refuse a bad note before taking the writer lock.
-    memory::note(&role::today(), &fields)?;
+    memory::note(&holders::today(), &fields)?;
     let (written, note) = state
         .services
         .directory
