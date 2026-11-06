@@ -281,6 +281,154 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
     );
 }
 
+/// Plan 207 (#127, #128): launches retired for in-process reads stay retired.
+/// Every launch must record itself (above), so a returning launch shows up
+/// either under its old operation name or as a new `/bin/date` launch.
+#[test]
+fn retired_launches_stay_retired() {
+    // (file the pattern is retired in, or every daemon file; pattern; why)
+    const RETIRED: [(Option<&str>, &str, &str); 2] = [
+        (
+            None,
+            "\"date.utc-offset\"",
+            "#127: the UTC offset is read in-process (pij_harnesses::proc::local_utc_offset_minutes)",
+        ),
+        (
+            Some("crates/harnesses/src/proc.rs"),
+            "Command::new(\"/bin/date\")",
+            "#127: the UTC-offset path launches no date",
+        ),
+    ];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().expect("the workspace root");
+    let mut files = Vec::new();
+    for krate in DAEMON_CRATES {
+        rust_files(&root.join("crates").join(krate).join("src"), &mut files);
+    }
+    // Guard against a vacuous pass: the in-process reader must be in the scan.
+    let proc_rs = root.join("crates/harnesses/src/proc.rs");
+    assert!(
+        production_lines(&proc_rs)
+            .iter()
+            .any(|line| line.contains("pub fn local_utc_offset_minutes()")),
+        "the scan no longer sees local_utc_offset_minutes; fix the scanner"
+    );
+    let mut returned = Vec::new();
+    for path in &files {
+        let file = path.strip_prefix(&root).unwrap().display().to_string();
+        for (index, line) in production_lines(path).iter().enumerate() {
+            for (only, pattern, why) in RETIRED {
+                if only.is_none_or(|only| only == file) && line.contains(pattern) {
+                    returned.push(format!("{file}:{}: {} ({why})", index + 1, line.trim()));
+                }
+            }
+        }
+    }
+    assert!(
+        returned.is_empty(),
+        "a retired launch came back:\n  {}",
+        returned.join("\n  ")
+    );
+}
+
+/// Plan 207 (#128, ruling C27 as amended; review of #134 N001): registration
+/// launches at most one single-pid `ps` per host-named ancestor. A TRIPWIRE
+/// over `crates/daemon/src/registration.rs`: the launch lives in
+/// `read_argv_with_ps` alone; only `native_observer` names it, and only to
+/// build the registration's `AncestryReads`, whose `observe` gates argv on
+/// `HOST_NAMES` and caches each read. The behaviour is counted by
+/// `registration::tests::*_launches_one_ps_per_host_named_ancestor` with the
+/// real spawn counter.
+fn registration_gate_findings(lines: &[String]) -> Vec<String> {
+    let mut function = String::new();
+    let mut records = Vec::new();
+    let mut mentions = Vec::new();
+    let mut builds_reads = false;
+    let mut observe_gated = false;
+    for line in lines {
+        if let Some(name) = fn_name(line) {
+            function = name;
+        }
+        let code = line.trim_start();
+        if code.starts_with("//") {
+            continue;
+        }
+        if line.contains("\"ps.registration-native-process\"") {
+            records.push(function.clone());
+        }
+        if line.contains("read_argv_with_ps") && fn_name(line).is_none() {
+            mentions.push(function.clone());
+        }
+        if function == "native_observer" && line.contains("AncestryReads::new(") {
+            builds_reads = true;
+        }
+        if function == "observe" && line.contains("HOST_NAMES.contains(") {
+            observe_gated = true;
+        }
+    }
+    let mut findings = Vec::new();
+    if records != ["read_argv_with_ps"] {
+        findings.push(format!(
+            "the registration ps is recorded in {records:?}, not only read_argv_with_ps"
+        ));
+    }
+    if mentions != ["native_observer"] {
+        findings.push(format!(
+            "read_argv_with_ps is named in {mentions:?}, not only native_observer"
+        ));
+    }
+    if !builds_reads {
+        findings.push("native_observer does not delegate through AncestryReads::new".to_string());
+    }
+    if !observe_gated {
+        findings.push(
+            "AncestryReads::observe no longer checks HOST_NAMES before reading argv".to_string(),
+        );
+    }
+    findings
+}
+
+#[test]
+fn registration_ps_runs_only_behind_the_host_name_gate() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lines = production_lines(&root.join("crates/daemon/src/registration.rs"));
+    let findings = registration_gate_findings(&lines);
+    assert!(findings.is_empty(), "{}", findings.join("\n"));
+
+    // Negative controls (review of #134, N001): the guard must reject an
+    // observer that reads argv for every pid, with the gated reader still present.
+    let start = lines
+        .iter()
+        .position(|line| line.contains("fn native_observer("))
+        .expect("native_observer");
+    let mut direct = lines.clone();
+    for line in &mut direct[start..] {
+        if line.contains("AncestryReads::new(") {
+            *line = "        let ancestry = read_argv_with_ps(pid);".to_string();
+            break;
+        }
+    }
+    assert!(
+        !registration_gate_findings(&direct).is_empty(),
+        "a native_observer that bypasses AncestryReads must be caught"
+    );
+    let end = lines[start + 1..]
+        .iter()
+        .position(|line| fn_name(line).is_some())
+        .map_or(lines.len(), |offset| start + 1 + offset);
+    let mut replaced = lines[..=start].to_vec();
+    replaced.push(
+        "    move |pid| -> ObserveFuture { Box::pin(async move { read_argv_with_ps(pid) }) }"
+            .to_string(),
+    );
+    replaced.push("}".to_string());
+    replaced.extend_from_slice(&lines[end..]);
+    assert!(
+        !registration_gate_findings(&replaced).is_empty(),
+        "the reviewer's direct-return replacement must be caught"
+    );
+}
+
 /// Plan 182 (pij-fleet#74): `git` and `tmux` live wherever the user installed
 /// them, so they cannot be named by a fixed path. The daemon launches them
 /// through `pij_core::program::launch`, which resolves PATH once and launches
