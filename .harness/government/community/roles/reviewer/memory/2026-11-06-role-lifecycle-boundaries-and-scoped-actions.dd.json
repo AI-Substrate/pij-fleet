@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Before reviewing role retirement, queued-admission recovery, or generated directory repair commands.",
+				"tags": [
+					"review",
+					"lifecycle",
+					"recovery",
+					"project-scope"
+				],
+				"title": "Role lifecycle boundaries and scoped actions"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Role lifecycle boundaries and scoped actions\n\nWhen reviewing retirement alongside queued sends, trace two separate flows: standing read through queued insertion, and queue preflight through writer commit and withdrawal. A sequential before/after test misses a send paused across either boundary. Ask for barrier-driven interleaving tests rather than another unprotected state read.\n\nGit-first writes need a supported continuation when store work fails after the commit. An already-retired refusal must not prevent finishing explicitly authorized cleanup. Trace notification admission separately from deleting the source row; a successful transaction does not prove the subsequent FYI survives interruption.\n\nTreat every suggested command as executable product output. Preserve project, role, instance and merge target; replay it from another project containing the same role. PR #126 already established the two-project invariant. Bare-role assignment does not drain a named-instance queue, and bare-role release does not match an instance holding.\n\nDo not invent a hard one-holder invariant: existing assignment code warns on overlap rather than refusing it. Review against the repository's actual policy.\n\nPR #135 at 3621220 supplied source counterexamples for these boundaries; CI's five sequential reshape tests passed. No local runtime reproduction was claimed. Exact-head JUnit verifies execution, but its log and artifact remain one CI origin.\n\nmagicWand: reuse a scoped directory-action constructor and replay its emitted commands in fixtures with two projects and named instances.\n\ndifficulties: lifecycle tests cover ordinary refusals but not admission interleavings or post-writer-commit recovery; shared reviewer LOG has multiple writers and no defined governance baton, so coordinate its append with the context owner.\n"
+		}
+	]
+}
