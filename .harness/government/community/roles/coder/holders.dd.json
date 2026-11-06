@@ -63,7 +63,10 @@
 					"harness_session": "92c00825-7025-4673-b7d6-8c3fb82fad45",
 					"instance_key": "202",
 					"machine": "ops.osk.lan",
+					"release_why": "s08 PR #130 out for verdicts",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-local-warbler",
+					"to": "2026-11-06T00:51:54.569Z",
 					"why": "record the live holder (06 Nov roadmap push)"
 				},
 				{

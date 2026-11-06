@@ -22,5 +22,5 @@
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 194 | 2026-11-05T23:09:45.659Z | 2026-11-06T00:31:35.601Z | pij-steady-otter | pij-steady-otter | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | s03 merged (#126) |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | 199 | 2026-11-05T23:17:59.982Z | — | pij-steady-otter | — | record the live holder (06 Nov roadmap push) | — |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | 201 | 2026-11-05T23:18:00.621Z | — | pij-steady-otter | — | record the live holder (06 Nov roadmap push) | — |
-| — | pij-local-warbler | copilot | 92c00825-7025-4673-b7d6-8c3fb82fad45 | ops.osk.lan | 202 | 2026-11-05T23:18:01.750Z | — | pij-steady-otter | — | record the live holder (06 Nov roadmap push) | — |
+| — | pij-local-warbler | copilot | 92c00825-7025-4673-b7d6-8c3fb82fad45 | ops.osk.lan | 202 | 2026-11-05T23:18:01.750Z | 2026-11-06T00:51:54.569Z | pij-steady-otter | pij-steady-otter | record the live holder (06 Nov roadmap push) | s08 PR #130 out for verdicts |
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 207 | 2026-11-06T00:31:36.106Z | — | pij-steady-otter | — | plan 207, issues #127 and #128 | — |
