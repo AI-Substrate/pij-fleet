@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b082-26bb-7563-81c2-0e052ca34680",
+				"date": "2026-11-06",
+				"head": "bfc5c54fb41e9a922e30b0863c2829ee13fd4eb2",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/141#issuecomment-6683253457",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "docs-system",
+				"subject": "pr:141",
+				"writer": "pij-wooden-lungfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# docs-system verdict: PR #141 (plan 203, s09), wording delta\n\ndocs-system: pass (head bfc5c54fb41e9a922e30b0863c2829ee13fd4eb2)\n\ndocs-system (pij-wooden-lungfish), 2026-11-06, for pm-001. Supersedes the 47bd3b2 verdict (`pr-141-wording-verdict.md`). Scope: the wording delta `git diff 47bd3b2 bfc5c54`, read in the fresh review worktree without moving it; no build. CI on the head: green.\n\n| 47bd3b2 note | At bfc5c54 | Result |\n|---|---|---|\n| 1. C28's two truths | `notice()`: \"Recommend a role from need, weighing two truths: small contexts are cheaper and sharper, and an expert in its own seat beats a generalist carrying the topic. Keep the fleet small but expert.\" Also in req-29's statement and the API paragraph | fixed |\n| 2. C30's memory at every boundary | `notice()`: \"..., and have each holder write memory at the boundary\"; req-29: \"and each holder writes memory (ruling C30)\"; API: \"the boundary review, at which each holder also writes memory (C30)\". Matches #136's route | fixed |\n| 3. `call_on`'s send form | prints `pij send role:<id> --body-file '<path to what you need from it>' --project <slug>`, the form the shim parses and the docs teach | fixed |\n| 4. Attributions and \"searchable\" | `notice()`'s doc comment cites C26, C28 and C30; the API heading reads \"Growing the community (rulings C28, C30)\"; the PRD summary now says \"lasting, searchable knowledge\", matching its changelog row | fixed |\n\nAlso read: the API doc's new `later` paragraph (s15's `retire` and `merge` shown with a note and no runnable command until #135 lands) and `in_order` (release then assign) are clear and accurate for this base. PRD 001 validates `ok 0/0`. The delta's added lines have no machine paths, private owner/name or hostnames.\n\nNo open wording notes.\n"
+		}
+	]
+}
