@@ -2841,7 +2841,8 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
         })
         .await
         .unwrap();
-    let roadmaps = repo.main.join("docs/project/roadmaps");
+    // Ruling C29: step documents live under workstreams (roadmaps is the fallback).
+    let roadmaps = repo.main.join("docs/project/workstreams");
     let blueprints = repo.main.join("docs/project/blueprints");
     std::fs::create_dir_all(&roadmaps).unwrap();
     std::fs::create_dir_all(&blueprints).unwrap();

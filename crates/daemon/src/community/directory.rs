@@ -173,12 +173,13 @@ impl DirectoryService {
     /// Plan 203 (s09): the project's designated prime; per role its waiting
     /// requests, latest output and memory freshness, and whether each holder's
     /// seat is live (`live` is the registered, untombstoned seats); `actions`
-    /// for the conditions that need the prime, roadmap needs and recurring
+    /// for the conditions that need the prime, workstream needs and recurring
     /// unowned paths folded into the prompts, the boundary `reviews`, each
     /// recommendation naming its C28 signal, and the standing PEC `notice`.
     /// Reads per call: assignments, the project, the queued requests and the
     /// newest outputs, one store query each; each role's document and memory
-    /// folder, the repo's roadmaps and their blueprints, in-process.
+    /// folder, the repo's workstreams (`picture::step_docs`) and their
+    /// blueprints, in-process.
     ///
     /// # Errors
     /// [`super::E_GOV_ABSENT`] without a governance worktree; `E-RS-STORE`.
@@ -327,7 +328,7 @@ impl DirectoryService {
         picture::fold_needs(
             project,
             &mut prompts,
-            &picture::roadmap_needs(repo),
+            &picture::step_needs(repo),
             &made_from,
             &self.templates,
         );

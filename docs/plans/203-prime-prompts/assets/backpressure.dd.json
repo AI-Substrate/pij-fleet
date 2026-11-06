@@ -73,7 +73,7 @@
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "The view launches nothing, per role or per seat; no timer or poll. Reads per call: store queries for the holdings, the project (its prime), the queued requests and each role's newest output (one window query), plus one registry list; in-process reads of each role's document and memory folder, the repo's roadmaps (docs/project/roadmaps/*.dd.json) and the blueprints their steps build."
+          "note": "The view launches nothing, per role or per seat; no timer or poll. Reads per call: store queries for the holdings, the project (its prime), the queued requests and each role's newest output (one window query), plus one registry list; in-process reads of each role's document and memory folder, the step documents (picture::step_docs: docs/project/workstreams, else docs/project/roadmaps) and the blueprints their steps build."
         },
         {
           "id": "bp-0007",

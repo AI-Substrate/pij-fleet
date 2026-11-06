@@ -20,7 +20,7 @@ needed, recurring) and review (two domains).
 Reads per call (from the code, bp-0006's note): store queries for the
 holdings, the project, the queued requests and each role's newest output (one
 window query), plus one registry list; in-process reads of each role's document
-and memory folder, the repo's roadmaps and the blueprints they build. Nothing
+and memory folder, the step documents (workstreams, else roadmaps) and the blueprints they build. Nothing
 per role or per seat launches, and nothing runs on a timer or poll. No new
 launch site, so `crates/testkit/tests/spawn_sites.rs` needs no change (green in
 CI).

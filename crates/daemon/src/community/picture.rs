@@ -16,10 +16,38 @@ use super::templates::Catalog;
 /// before the view prompts for one.
 pub const MEMORY_CLOSES: usize = 2;
 
-/// Where a project keeps its roadmaps, relative to its repo (s13's layout).
+/// Where a project keeps its workstream documents, relative to its repo
+/// (ruling C29).
+pub const WORKSTREAMS: &str = "docs/project/workstreams";
+
+/// The folder workstreams were kept in before C29, read when
+/// [`WORKSTREAMS`] has none.
 pub const ROADMAPS: &str = "docs/project/roadmaps";
 
-/// A path or system built by at least this many roadmap steps, with no role
+/// The project's workstream documents (`*.dd.json`), sorted: those in
+/// [`WORKSTREAMS`], else those in the older [`ROADMAPS`]. The one place the
+/// view finds step documents, so the folder move needs no other change.
+pub fn step_docs(repo: &Path) -> Vec<std::path::PathBuf> {
+    let list = |folder: &str| {
+        let mut files: Vec<_> = std::fs::read_dir(repo.join(folder))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.to_str().is_some_and(|p| p.ends_with(".dd.json")))
+            .collect();
+        files.sort();
+        files
+    };
+    let current = list(WORKSTREAMS);
+    if current.is_empty() {
+        list(ROADMAPS)
+    } else {
+        current
+    }
+}
+
+/// A path or system built by at least this many workstream steps, with no role
 /// whose scope covers it, recurs enough to want an owner (C28).
 pub const RECURRING_STEPS: usize = 3;
 
@@ -147,7 +175,7 @@ pub struct Recommendation {
     pub signal: Signal,
     /// The particulars, in words.
     pub detail: Option<String>,
-    /// Roadmap steps that need the role (`<roadmap> <step>`).
+    /// Workstream steps that need the role (`<workstream> <step>`).
     pub needed_by: Vec<String>,
     /// Runnable commands, the first the main one.
     pub commands: Vec<String>,
@@ -332,18 +360,11 @@ pub fn actions(
     out
 }
 
-/// Each role a not-complete roadmap step needs (`needs: ["role:<id>"]`), with
-/// the steps that need it, `<roadmap> <step>`. Reads the project repo's
-/// roadmap documents; an unreadable one is skipped.
-pub fn roadmap_needs(repo: &Path) -> Vec<(String, Vec<String>)> {
-    let mut files: Vec<_> = std::fs::read_dir(repo.join(ROADMAPS))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.to_str().is_some_and(|p| p.ends_with(".dd.json")))
-        .collect();
-    files.sort();
+/// Each role a not-complete workstream step needs (`needs: ["role:<id>"]`),
+/// with the steps that need it, `<workstream> <step>`. Reads [`step_docs`];
+/// an unreadable one is skipped.
+pub fn step_needs(repo: &Path) -> Vec<(String, Vec<String>)> {
+    let files = step_docs(repo);
     let mut needs: Vec<(String, Vec<String>)> = Vec::new();
     for file in files {
         let Some(document) = std::fs::read(&file)
@@ -381,7 +402,7 @@ pub fn roadmap_needs(repo: &Path) -> Vec<(String, Vec<String>)> {
     needs
 }
 
-/// Fold the roadmap needs into the missing-role `prompts` (req-24, req-27):
+/// Fold the workstream needs into the missing-role `prompts` (req-24, req-27):
 /// a needed role already prompted gains `needed_by`; any other needed role
 /// that does not exist gets a recommendation of kind `needed`, resting on
 /// [`Signal::Needed`], from its template when one ships, else as a new
@@ -441,19 +462,11 @@ fn covers(scope: &str, root: &str) -> bool {
     root == path || root.starts_with(&format!("{path}/")) || path.starts_with(&format!("{root}/"))
 }
 
-/// Paths or systems the roadmaps keep building, with the steps that build
+/// Paths or systems the workstreams keep building, with the steps that build
 /// them: each step's `builds` resolved to its blueprint component's `where`.
-/// Reads the repo's roadmaps and the blueprints they point at, in-process.
+/// Reads [`step_docs`] and the blueprints they point at, in-process.
 pub fn recurring_paths(repo: &Path) -> Vec<(String, Vec<String>)> {
-    let roadmaps = repo.join(ROADMAPS);
-    let mut files: Vec<_> = std::fs::read_dir(&roadmaps)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.to_str().is_some_and(|p| p.ends_with(".dd.json")))
-        .collect();
-    files.sort();
+    let files = step_docs(repo);
     let read = |path: &Path| {
         std::fs::read(path)
             .ok()
@@ -486,7 +499,7 @@ pub fn recurring_paths(repo: &Path) -> Vec<(String, Vec<String>)> {
                 else {
                     continue;
                 };
-                let blueprint = roadmaps.join(doc);
+                let blueprint = file.parent().unwrap_or(repo).join(doc);
                 let components = blueprints.entry(blueprint.clone()).or_insert_with(|| {
                     read(&blueprint)
                         .map(|d| section(&d, "components"))
@@ -898,7 +911,7 @@ mod tests {
     }
 
     #[test]
-    fn roadmap_needs_skip_complete_steps() {
+    fn step_needs_skip_complete_steps() {
         let dir = pij_testkit::fresh_dir("picture-needs");
         let roadmaps = dir.join(ROADMAPS);
         std::fs::create_dir_all(&roadmaps).unwrap();
@@ -914,7 +927,7 @@ mod tests {
         .unwrap();
         std::fs::write(roadmaps.join("broken.dd.json"), "{").unwrap();
         assert_eq!(
-            roadmap_needs(&dir),
+            step_needs(&dir),
             vec![
                 (
                     "qa".to_string(),
@@ -1111,5 +1124,43 @@ mod tests {
             assert!(notice.contains(words), "{words}: {notice}");
         }
         assert_eq!(idle_cutoff(1_793_934_000_000), "2026-10-07");
+    }
+
+    #[test]
+    fn step_docs_read_workstreams_first_and_fall_back_to_roadmaps() {
+        let dir = pij_testkit::fresh_dir("picture-step-docs");
+        let step = |id: &str, role: &str| {
+            json!({"sections": [{"name": "steps", "value": [
+                {"id": id, "state": "planned", "needs": [format!("role:{role}")]}
+            ]}]})
+            .to_string()
+        };
+        assert!(step_docs(&dir).is_empty(), "neither folder");
+        std::fs::create_dir_all(dir.join(ROADMAPS)).unwrap();
+        std::fs::write(
+            dir.join(ROADMAPS).join("001-old.dd.json"),
+            step("s01", "qa"),
+        )
+        .unwrap();
+        assert_eq!(
+            step_needs(&dir),
+            vec![("qa".to_string(), vec!["001-old s01".to_string()])]
+        );
+        std::fs::create_dir_all(dir.join(WORKSTREAMS)).unwrap();
+        assert_eq!(
+            step_docs(&dir).len(),
+            1,
+            "an empty workstreams folder falls back"
+        );
+        std::fs::write(
+            dir.join(WORKSTREAMS).join("001-new.dd.json"),
+            step("s02", "docs"),
+        )
+        .unwrap();
+        assert_eq!(
+            step_needs(&dir),
+            vec![("docs".to_string(), vec!["001-new s02".to_string()])],
+            "workstreams win once they hold a document"
+        );
     }
 }

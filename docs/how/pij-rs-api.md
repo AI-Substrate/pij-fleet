@@ -1060,14 +1060,18 @@ project:
 | `two-live-holders` | a one-holder role has two or more live holders | `pij directory release` for each but the newest |
 | `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file -` |
 
-A missing core or security role stays in `prompts` (s03). A roadmap step that
-is not complete and lists `needs: ["role:<id>"]` (the project repo's
-`docs/project/roadmaps/*.dd.json`) adds `needed_by` (`<roadmap> <step>`) to that
-role's prompt, or, for a role that is neither there nor prompted, a prompt of
+A missing core or security role stays in `prompts` (s03). A workstream step
+that is not complete and lists `needs: ["role:<id>"]` adds `needed_by`
+(`<workstream> <step>`) to that role's prompt, or, for a role that is neither there nor prompted, a prompt of
 kind `needed`: from its template when one ships, else as a new definition with
 `<title>` and `<what it always does>` to fill in. Adding the role clears it.
 `data.notice` always asks the prime to notice a need no role covers, in the PEC
 wording.
+
+Step documents are found by one helper, `picture::step_docs` (ruling C29):
+the project repo's `docs/project/workstreams/*.dd.json`, or, while that folder
+holds none, the older `docs/project/roadmaps/*.dd.json`. `needs` names roles
+(req-24); `depends_on` is the ordering, which the view does not read.
 
 #### Growing the community (ruling C28)
 
@@ -1078,7 +1082,7 @@ Each one in `prompts` (create) and `reviews` (split, merge, retire) carries
 
 | signal `code` | says | used by |
 |---|---|---|
-| `recurring` | the same system or paths keep coming up across tasks | a path built by at least three roadmap steps (`RECURRING_STEPS`; each step's `builds` resolved to its blueprint component's `where`) that no role's `scope.paths` covers: create its owner |
+| `recurring` | the same system or paths keep coming up across tasks | a path built by at least three workstream steps (`RECURRING_STEPS`; each step's `builds` resolved to its blueprint component's `where`) that no role's `scope.paths` covers: create its owner |
 | `re-derived` | knowledge is re-derived (the same finding twice) | taught in the notice |
 | `independent-judgment` | a judgment must be independent of the author | the reviewer and security prompts |
 | `two-domains` | a seat is bloating because it carries two domains | a live seat holding two or more roles: split each later role onto its own seat (release, then assign) |
@@ -1101,7 +1105,7 @@ its own line, then the next actions and the prompts.
 
 Cost: per call, one query each for the holdings, the project, the queued
 requests and each role's newest output (one window query), and one registry
-list; each role's document and memory folder, the repo's roadmaps and the
+list; each role's document and memory folder, the repo's workstreams and the
 blueprints they point at are read in-process. It launches nothing, per role or
 per seat, and has no timer or poll.
 
