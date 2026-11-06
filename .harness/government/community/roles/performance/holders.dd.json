@@ -30,6 +30,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-thrifty-marten",
 					"why": "second performance holder for parallel verdicts (prime 18:06)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T09:12:51.035Z",
+					"harness": "copilot",
+					"harness_session": "fcc65013-77f1-4b8f-8bce-8c6a57b45201",
+					"instance_key": "147",
+					"machine": "ops.osk.lan",
+					"seat": "pij-thrifty-marten",
+					"why": "verdict on #147 (plan 213)"
 				}
 			]
 		}
