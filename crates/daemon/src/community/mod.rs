@@ -15,6 +15,7 @@ pub mod layout;
 pub mod pointer;
 pub mod role;
 pub mod root;
+pub mod templates;
 pub mod writer;
 
 use serde::Serialize;

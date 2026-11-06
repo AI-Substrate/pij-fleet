@@ -1699,6 +1699,14 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_directory(view));
                     ExitCode::SUCCESS
                 }
+                Some(data) if data.get("templates").is_some_and(Value::is_array) => {
+                    println!("{}", render_templates(&data["templates"]));
+                    ExitCode::SUCCESS
+                }
+                Some(data) if data.get("diff").is_some_and(Value::is_string) => {
+                    println!("{}", render_template_diff(data));
+                    ExitCode::SUCCESS
+                }
                 _ => emit(&response, as_json),
             }
         }
@@ -2709,8 +2717,80 @@ fn render_directory(view: &Value) -> String {
                 holders.join("; ")
             }
         );
+        let template = &role["template"];
+        if template["behind"] == true {
+            let _ = write!(
+                out,
+                "\n    template {} v{} is behind v{}: pij directory template-diff {} --project {}",
+                text(&template["name"]),
+                text(&template["version"]),
+                template["latest"],
+                pij_core::directory::shell_word(&text(&role["id"])),
+                pij_core::directory::shell_word(&text(&view["project"])),
+            );
+        }
+    }
+    if let Some(prompts) = view["prompts"].as_array().filter(|p| !p.is_empty()) {
+        let _ = write!(
+            out,
+            "\n\n{}\nNot yet in this directory:",
+            text(&view["guidance"])
+        );
+        for prompt in prompts {
+            let _ = write!(
+                out,
+                "\n  {} ({}): {}",
+                text(&prompt["role"]),
+                text(&prompt["kind"]),
+                text(&prompt["command"])
+            );
+        }
     }
     out
+}
+
+/// `pij directory templates` for a human.
+fn render_templates(templates: &Value) -> String {
+    let rows = templates.as_array().map(Vec::as_slice).unwrap_or_default();
+    let mut out = format!(
+        "{} role template(s); examples to adapt, not a checklist",
+        rows.len()
+    );
+    for row in rows {
+        let versions: Vec<String> = row["versions"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .map(|v| format!("v{v}"))
+            .collect();
+        let _ = write!(
+            out,
+            "\n  {} [{}]{}: {}",
+            row["name"].as_str().unwrap_or("-"),
+            versions.join(", "),
+            if row["core"] == true { " core" } else { "" },
+            row["summary"].as_str().unwrap_or("-"),
+        );
+    }
+    out
+}
+
+/// `pij directory template-diff <id>` for a human.
+fn render_template_diff(data: &Value) -> String {
+    let id = data["id"].as_str().unwrap_or("-");
+    match data["template"].as_str() {
+        None => format!("{id}: not made from a template"),
+        Some(name) if data["behind"] != true => {
+            format!("{id}: template {name} v{} is the latest", data["version"])
+        }
+        Some(name) => format!(
+            "{id}: template {name} moved from v{} to v{} (nothing applied)\n{}",
+            data["version"],
+            data["latest"],
+            data["diff"].as_str().unwrap_or_default().trim_end()
+        ),
+    }
 }
 
 fn directory_help(args: &[String]) -> ExitCode {
@@ -3317,6 +3397,22 @@ impl Command {
 
 #[cfg(test)]
 mod tests {
+    /// Review of #126, F001: the drift hint names the viewed project.
+    #[test]
+    fn the_drift_hint_names_the_viewed_project() {
+        let view = serde_json::json!({
+            "project": "my remote",
+            "pending": [],
+            "roles": [{"id": "qa", "kind": "general", "holders": "one", "live": [],
+                "template": {"name": "qa", "version": "1", "latest": 2, "behind": true}}],
+        });
+        let text = super::render_directory(&view);
+        assert!(
+            text.contains("pij directory template-diff qa --project 'my remote'"),
+            "{text}"
+        );
+    }
+
     #[test]
     fn open_file_targets_lift_a_launchd_default_within_the_hard_limit() {
         // launchd: soft 256, hard unlimited.
