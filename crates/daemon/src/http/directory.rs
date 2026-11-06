@@ -25,9 +25,10 @@ use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{Refusal, pointer};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 22] = [
+const SINGLE: [&str; 23] = [
     "why",
     "from",
+    "show",
     "from-project",
     "role",
     "project",
@@ -58,9 +59,10 @@ const REPEATED: [&str; 6] = [
     "output-kind",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 8] = [
+const CONTROL: [&str; 9] = [
     "why",
     "from",
+    "show",
     "project",
     "file",
     "batch",
@@ -179,15 +181,21 @@ impl Arguments {
         }
         if matches!(call.leaf.as_str(), "templates" | "template-diff")
             && (call.positions.len() != usize::from(call.leaf == "template-diff")
-                || call
-                    .single
-                    .keys()
-                    .any(|flag| !matches!(flag.as_str(), "project" | "actor"))
+                || call.single.keys().any(|flag| {
+                    !(matches!(flag.as_str(), "project" | "actor")
+                        || (flag == "show" && call.leaf == "templates"))
+                })
                 || !call.repeated.is_empty())
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
+                "usage: pij directory templates [--show <name>[@vN]] | pij directory template-diff <id> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "templates" && call.single.contains_key("show") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --show belongs to `templates`", call.leaf),
             ));
         }
         if call.leaf != "add" && call.single.contains_key("from") {
@@ -317,7 +325,10 @@ pub(crate) async fn handle(
     let result = match call.leaf.as_str() {
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
         "external" => external(&state, &actor.id, &request.caller, &call).await,
-        "templates" => Ok(json!({"templates": state.services.directory.templates().listing()})),
+        "templates" => match call.get("show") {
+            Some(spec) => state.services.directory.templates().show(&spec),
+            None => Ok(json!({"templates": state.services.directory.templates().listing()})),
+        },
         "template-diff" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) => state
@@ -961,5 +972,23 @@ mod tests {
                 .leaf,
             "templates"
         );
+        assert_eq!(
+            Arguments::parse(&argv(&["directory", "templates", "--show", "pm@v1"]))
+                .unwrap()
+                .get("show")
+                .as_deref(),
+            Some("pm@v1")
+        );
+        for refused in [
+            &["directory", "template-diff", "pm", "--show", "pm"][..],
+            &["directory", "add", "pm", "--show", "pm", "--why", "w"][..],
+            &["directory", "--show", "pm"][..],
+        ] {
+            assert_eq!(
+                Arguments::parse(&argv(refused)).unwrap_err().code,
+                "E-RS-ARG",
+                "{refused:?}"
+            );
+        }
     }
 }

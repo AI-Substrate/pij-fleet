@@ -185,6 +185,32 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
     server.abort();
 }
 
+/// Plan 204 (F23, bp-0004): `templates --show` prints a shipped template's
+/// exact bytes and its path; an unknown name or version refuses by name.
+#[tokio::test]
+async fn templates_show_prints_the_exact_embedded_body() {
+    let repo = repo("pij-templates-show");
+    let (addr, server, _fresh) = daemon().await;
+    project(addr, &repo).await;
+    let shown = directory(addr, &repo, &["templates", "--show", "security@v1"]).await;
+    assert_eq!(shown["ok"], true, "{shown}");
+    let template = &shown["data"]["template"];
+    assert_eq!(template["path"], "templates/roles/security/v1/role.dd.json");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../templates/roles/security/v1/role.dd.json");
+    assert_eq!(
+        template["body"].as_str().unwrap(),
+        std::fs::read_to_string(file).unwrap()
+    );
+    for (spec, needle) in [("nope", "coder, designer"), ("pm@v9", "v1")] {
+        let refused = directory(addr, &repo, &["templates", "--show", spec]).await;
+        assert_eq!(refused["details"]["code"], "E-RS-ARG", "{refused}");
+        let message = refused["meta"].as_str().unwrap_or_default();
+        assert!(message.contains(needle), "{spec}: {message}");
+    }
+    server.abort();
+}
+
 /// req-13: `--from file:<brief>` is the spelling of `--brief <brief>`.
 #[tokio::test]
 async fn from_file_is_the_brief_spelling() {

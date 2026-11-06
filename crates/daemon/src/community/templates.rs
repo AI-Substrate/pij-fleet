@@ -232,6 +232,24 @@ impl Catalog {
         json!(rows)
     }
 
+    /// `pij directory templates --show <name>[@vN]` (plan 204, F23): one
+    /// template's exact embedded body and its path in pij's repository, so a
+    /// prime can read it before `add --from template:`. Launches nothing.
+    ///
+    /// # Errors
+    /// [`parse_spec`]'s or [`Self::get`]'s refusal, naming what exists.
+    pub fn show(&self, spec: &str) -> Result<Value, Refusal> {
+        let (name, version) = parse_spec(spec)?;
+        let template = self.get(&name, version)?;
+        Ok(json!({"template": {
+            "name": template.name,
+            "version": template.version,
+            "latest": self.latest(&name),
+            "path": format!("templates/roles/{}/v{}/role.dd.json", template.name, template.version),
+            "body": String::from_utf8_lossy(&template.bytes),
+        }}))
+    }
+
     /// Where a role made from a template stands against the latest version:
     /// `{name, version, latest, behind}`, or `None` for a role from no
     /// template. A template this build does not ship has `latest: null` and is
@@ -519,6 +537,32 @@ mod tests {
             "the template's changelog is not the role's"
         );
         assert!(Catalog::shipped().role_from("pm", None, "pm-001").is_ok());
+    }
+
+    /// Plan 204 (F23): --show gives the exact embedded body and its path, and
+    /// refuses an unknown name or version by name.
+    #[test]
+    fn show_gives_the_exact_body_and_path() {
+        let catalog = fixture();
+        let shown = catalog.show("qa@v1").unwrap();
+        let template = &shown["template"];
+        assert_eq!(template["version"], 1);
+        assert_eq!(template["latest"], 2);
+        assert_eq!(template["path"], "templates/roles/qa/v1/role.dd.json");
+        assert_eq!(
+            template["body"].as_str().unwrap().as_bytes(),
+            &*catalog.get("qa", Some(1)).unwrap().bytes
+        );
+        assert_eq!(catalog.show("qa").unwrap()["template"]["version"], 2);
+        assert!(catalog.show("nope").unwrap_err().message.contains("qa"));
+        assert!(
+            catalog
+                .show("qa@v9")
+                .unwrap_err()
+                .message
+                .contains("v1, v2")
+        );
+        assert_eq!(catalog.show("qa@next").unwrap_err().code, "E-RS-ARG");
     }
 
     #[test]

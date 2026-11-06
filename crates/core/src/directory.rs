@@ -52,7 +52,7 @@ Usage:
   pij directory add <id> --why <text> [role flags | --file <json>] [--project <slug>]
   pij directory add <id> --from template:<name>[@v<n>] --why <text> [role flags]
   pij directory add --batch <dir> --why <text> [--project <slug>]
-  pij directory templates                             the role templates and versions
+  pij directory templates [--show <name>[@vN]]        the role templates, or one's body
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
   pij directory release <role>[/<instance>] <seat> --why <text>
@@ -130,9 +130,11 @@ pij directory templates | template-diff: the role templates pij ships.
 
 Usage:
   pij directory templates
+  pij directory templates --show <name>[@vN]
   pij directory template-diff <id> [--project <slug>]
 
-templates lists each template with its versions. Templates are examples to
+templates lists each template with its versions; --show prints one
+template's exact body (the latest version by default) and its path. Templates are examples to
 adapt, not a checklist. template-diff shows what changed between the template
 version role <id> came from and the latest one. Nothing is ever applied: the
 role keeps its own edits, and you copy any change you want by hand.";
