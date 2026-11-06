@@ -29,6 +29,7 @@ description: Route pij platform jobs — adopt a seat and wait (/pij ready), spa
 | `ops` | daemon health, registry & tmux hygiene — and **recovering a prime after a reboot** ("revive our prime") | `references/routes/ops.md` |
 | `node` | work durable project/stream/dispatch truth, node states, adoption repair, and anomaly queries | `references/routes/node.md` |
 | `prime` | govern many agents in one repo: one o-prime seat, streams below, platform-store facts and single-writer documents | `references/routes/prime.md` |
+| `community` | run a Pij Emergent Community (PEC): roles built from the work's needs and reshaped as it changes, assignments, role sends, outputs and memory | `references/routes/community.md` |
 | `watch` | file-change subscription intent | *no route module — rs CLI unported: named refusal; see Unsupported status below* |
 
 Module missing at its path → say so and stop. Never improvise a route from memory.
@@ -98,6 +99,7 @@ primitive. `baton` is the other orchestration subcommand.
 | "run flowspace search" / "ask an agent" | `/pij agent` (named refusal; offers ordinary delegation) |
 | "have a peer run /X on …" / "run a skill in a peer" | `/pij skill` |
 | "stand up an o-prime" / "govern this repo" | `/pij prime` |
+| "set up a community" / "PEC" / "add a role" / "assign a seat to a role" | `/pij community` |
 
 ## References
 

@@ -44,7 +44,7 @@ done <<< "$registry_rows"
 for f in "$SKILL"/references/routes/*.md; do
   [ -e "$f" ] || continue
   self=$(basename "$f" .md)
-  for r in ready pair delegate agent skill peer ops prime watch node; do
+  for r in ready pair delegate agent skill peer ops prime watch node community; do
     [ "$r" = "$self" ] && continue
     hits=$(grep -En "routes/$r\.md|/pij $r\b" "$f" 2>/dev/null || true)
     if [ "$self" = prime ] && { [ "$r" = pair ] || [ "$r" = peer ]; }; then
@@ -67,6 +67,8 @@ budget "$SKILL/SKILL.md" 150
 budget "$SKILL/references/00-routing.md" 250
 budget "$SKILL/references/routes/pair.md" 350
 for m in ready peer agent skill ops delegate node; do budget "$SKILL/references/routes/$m.md" 150; done
+# Plan 204: the community route stays token-lean.
+budget "$SKILL/references/routes/community.md" 100
 
 soft_budget() {
   [ -f "$1" ] || return 0
