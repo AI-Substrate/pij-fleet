@@ -4,7 +4,7 @@
 
 **Job**: run the project's community of roles. The prime and the humans build whatever community the work needs now and reshape it as the work changes (ruling C26). Templates are examples, not a checklist (C18): start from one when it fits, edit it freely, or write a role no template describes. Nothing is created for you (C22).
 
-**Why**: a PEC builds lasting knowledge of its problem space. Specialist roles hold what the fleet learns, in memory and outputs that outlive any seat, and are called on later: revived, or a fresh seat that reads the role. Long-running specialists are a feature, and none of this is engineering-specific: a design workshop, research or operations grows a PEC the same way (C30).
+**Why**: a PEC builds lasting knowledge of its problem space. Specialist roles hold what the fleet learns, in memory and outputs that outlive any seat, and are called on later: revived, or a fresh seat that reads the role. Long-running specialists are a feature, not a cost to minimise away, and none of this is engineering-specific: a design workshop, research or operations grows a PEC the same way (C30).
 
 A **workstream** orders PRD rows and blueprint pieces into steps (filed under `docs/project/roadmaps/` until the rename); it nests (`part_of`) and maps to 0..n lanes. A **pij stream** is one lane of a workstream (C29).
 
@@ -38,7 +38,7 @@ Keep the fleet small but expert. Small contexts are cheaper and sharper, and an 
 - **For a new role**: it would be worth remembering (C30); the same system or paths keep coming up across tasks; a finding is re-derived (the same one twice); a judgment must be independent of the author (security, performance); a seat is bloating because it carries two domains; a path or system needs one owner.
 - **Against**: one-off work; overlap with an existing role (extend that one); nothing worth remembering; it would mostly sit idle.
 - **A role is not a seat.** Roles can be many and cold: their memory, lineage and queue wait, and a holder is assigned when work arrives. Live seats stay few.
-- **Review at boundaries** (wave end, compact, PR merge): split an overloaded role, merge or retire idle ones (item 3 above).
+- **Review at boundaries** (wave end, compact, PR merge): split an overloaded role, merge or retire idle ones (item 3 above), and have each holder write memory at the boundary.
 - **Name the signal.** Every recommendation says which signal it rests on, and the `--why` carries it: `--why "same finding twice: pane reads in s07 and s09"`.
 
 ## PM: staff a workstream's steps
