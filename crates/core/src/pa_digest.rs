@@ -35,7 +35,8 @@ pub struct FleetAnomaly {
 }
 
 /// A request sent to a role with no live holder (plan 199): it waits on the
-/// role's queue until a seat is assigned.
+/// role's queue until a seat is assigned. Or one claimed for a holder and
+/// never settled (`delivering_to`), which the PA must be able to see.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueuedRequest {
     /// `role:<id>` or `role:<id>/<instance>`.
@@ -48,6 +49,8 @@ pub struct QueuedRequest {
     pub requester: SeatId,
     /// How long it has waited, in ms.
     pub waiting_ms: u64,
+    /// The holder it was claimed for, when it is stuck `delivering`.
+    pub delivering_to: Option<SeatId>,
 }
 
 /// A PA's fleet: every live seat sharing its prime's repository.
@@ -153,9 +156,13 @@ impl FleetView {
         }
         // Said out loud so a short list is never read as "no anomalies".
         text.push_str("\n  (anomalies here are stale cards only; `pij anomalies` has every kind)");
-        if !self.queued.is_empty() {
+        let (stuck, queued): (Vec<&QueuedRequest>, Vec<&QueuedRequest>) = self
+            .queued
+            .iter()
+            .partition(|request| request.delivering_to.is_some());
+        if !queued.is_empty() {
             text.push_str("\nQueued role requests (no live holder; assigning one delivers them):");
-            for request in &self.queued {
+            for request in queued {
                 let _ = write!(
                     text,
                     "\n  {} in {}: request {} from {}, waiting {}",
@@ -163,6 +170,23 @@ impl FleetView {
                     request.project,
                     request.id,
                     request.requester,
+                    human_duration(request.waiting_ms)
+                );
+            }
+        }
+        if !stuck.is_empty() {
+            text.push_str(
+                "\nRole requests stuck delivering (claimed, never confirmed; a daemon restart re-queues them):",
+            );
+            for request in stuck {
+                let _ = write!(
+                    text,
+                    "\n  {} in {}: request {} from {} to {}, waiting {}",
+                    request.address,
+                    request.project,
+                    request.id,
+                    request.requester,
+                    request.delivering_to.as_ref().map_or("?", SeatId::as_str),
                     human_duration(request.waiting_ms)
                 );
             }

@@ -126,6 +126,41 @@ struct Rig {
     tmux: Arc<FakeTmux>,
     delivery: Arc<pij_daemon::delivery::DeliveryService>,
     services: pij_daemon::Services,
+    bus: Arc<pij_daemon::events::EventBus>,
+}
+
+/// `pij close <seat>`, and when the seat holds a role (plan 201: the close is
+/// held for its memory turn, bounded at 50 ms here) the close's own receipt
+/// data once it has landed.
+async fn close_landed(rig: &Rig, cwd: &Path, seat: &str) -> Value {
+    let answer: Value = reqwest::Client::new()
+        .post(format!("http://{}/v1/close", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({"seat": seat, "reason": "done", "caller": {"TMUX_PANE": PANE, "cwd": cwd}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(answer["ok"], true, "{answer}");
+    if answer["data"]["held"] != "memory-turn" {
+        return answer["data"].clone();
+    }
+    for _ in 0..500 {
+        if let Some(event) = rig
+            .bus
+            .latest_matching(&seat.into(), &["memory.turn"])
+            .await
+            .unwrap()
+        {
+            let turn: Value = serde_json::from_str(&event.payload).unwrap();
+            assert_eq!(turn["then"], "closed", "{turn}");
+            return turn["closed"].clone();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the held close of {seat} never landed");
 }
 
 /// Counts after-assign calls (ruling C6).
@@ -186,6 +221,8 @@ async fn rig_inner(
     let mut services = pij_daemon::build_services(&config, &signals)
         .await
         .expect("services");
+    // A closed holder gets a memory turn (plan 201); nothing here plays it.
+    services.memory_turn_bound = std::time::Duration::from_millis(50);
     let writer = Arc::new(writer);
     let store = services.directory.store().clone();
     services.community = Arc::clone(&writer);
@@ -221,6 +258,7 @@ async fn rig_inner(
         drain.bind(services.clone());
     }
     let kept = services.clone();
+    let bus = Arc::clone(&services.event_bus);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = router_with_config(services, HttpConfig::local(KEY.to_string()));
@@ -234,6 +272,7 @@ async fn rig_inner(
         tmux,
         delivery,
         services: kept,
+        bus,
     }
 }
 
@@ -782,18 +821,9 @@ async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_writ
         let assigned = call(rig.addr, "/v1/directory", argv, &repo.main).await;
         assert_eq!(assigned["ok"], true, "{assigned}");
     }
-    let close = |seat: &str| {
-        reqwest::Client::new()
-            .post(format!("http://{}/v1/close", rig.addr))
-            .bearer_auth(KEY)
-            .json(&json!({"seat": seat, "reason": "done", "caller": {"TMUX_PANE": PANE, "cwd": repo.main}}))
-            .send()
-    };
-
-    let closed: Value = close("pij-holder").await.unwrap().json().await.unwrap();
-    assert_eq!(closed["ok"], true, "{closed}");
+    let closed = close_landed(&rig, &repo.main, "pij-holder").await;
     assert_eq!(
-        closed["data"]["directory"]["committed"][0]["project"], "fleet",
+        closed["directory"]["committed"][0]["project"], "fleet",
         "{closed}"
     );
     let row = &holders_at_head(&repo, "pm-001")[0];
@@ -806,14 +836,13 @@ async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_writ
         &repo.main,
         &["worktree", "remove", "--force", repo.gov.to_str().unwrap()],
     );
-    let pending: Value = close("pij-second").await.unwrap().json().await.unwrap();
-    assert_eq!(
-        pending["ok"], true,
+    let pending = close_landed(&rig, &repo.main, "pij-second").await;
+    assert!(
+        pending["tombstoned_at"].is_number(),
         "the close never fails on the directory: {pending}"
     );
-    assert!(pending["data"]["tombstoned_at"].is_number(), "{pending}");
     assert_eq!(
-        pending["data"]["directory"]["pending"][0]["code"], "E-RS-GOV-ABSENT",
+        pending["directory"]["pending"][0]["code"], "E-RS-GOV-ABSENT",
         "{pending}"
     );
     let stored = rig.store.assignments("fleet").await.unwrap();
@@ -1244,6 +1273,157 @@ async fn a_linked_worktree_finds_its_project_and_an_unknown_repo_names_the_regis
 }
 
 /// AC9 (req-16): external entries append to community/external.dd.json.
+/// Plan 201, AC1 and AC3: a note is one commit with its INDEX line, the
+/// INDEX keeps hand-written lines, reads print the INDEX or one note, and there
+/// is no way to delete.
+#[tokio::test]
+async fn memory_add_writes_one_note_per_commit_and_reads_back() {
+    let repo = repo("pij-directory-memory");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let index = repo
+        .gov
+        .join(".harness/government/community/roles/reviewer/memory/INDEX.md");
+    let hand = "# reviewer memory\n\n- [old.md](old.md): by hand\n";
+    std::fs::write(&index, hand).unwrap();
+    std::fs::write(index.with_file_name("old.md"), "kept\n").unwrap();
+    git(&repo.gov, &["add", "."]);
+    git(&repo.gov, &["commit", "-q", "-m", "hand memory"]);
+    let before = head(&repo);
+
+    let add = |title: &'static str| {
+        vec![
+            "directory",
+            "memory",
+            "add",
+            "reviewer",
+            "--title",
+            title,
+            "--tags",
+            "pr,cost",
+            "--tags",
+            "spine",
+            "--hook",
+            "open for the fix",
+            "--body",
+            "the body\n",
+        ]
+    };
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &add("PR 200: what broke"),
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    let note = ".harness/government/community/roles/reviewer/memory/";
+    let path = added["data"]["path"].as_str().unwrap();
+    assert!(
+        path.starts_with(note) && path.ends_with("-pr-200-what-broke.dd.json"),
+        "{path}"
+    );
+    assert_eq!(added["data"]["commit"], head(&repo));
+    let changed = git(&repo.gov, &["show", "--name-only", "--format=", "HEAD"]);
+    assert_eq!(changed.lines().count(), 3, "{changed}");
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{before}..HEAD")]
+        )
+        .trim(),
+        "1"
+    );
+    let text = std::fs::read_to_string(&index).unwrap();
+    assert!(text.starts_with(hand), "{text}");
+    assert!(
+        text.contains("PR 200: what broke](") && text.contains("(pr, cost, spine)"),
+        "{text}"
+    );
+
+    let again = call(
+        rig.addr,
+        "/v1/directory",
+        &add("PR 200: what broke"),
+        &repo.main,
+    )
+    .await;
+    assert_eq!(again["details"]["code"], "E-RS-MEMORY-EXISTS", "{again}");
+
+    let read = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "memory", "reviewer"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(read["data"]["index"], text, "{read}");
+    let one = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "memory",
+            "reviewer",
+            "--note",
+            "pr-200-what-broke",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(
+        one["data"]["meta"]["tags"],
+        json!(["pr", "cost", "spine"]),
+        "{one}"
+    );
+    assert_eq!(one["data"]["body"], "the body\n");
+    let hand_note = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "memory", "reviewer", "--note", "old"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(hand_note["data"]["text"], "kept\n", "{hand_note}");
+
+    for (argv, code) in [
+        (
+            &["directory", "memory", "delete", "reviewer"][..],
+            "E-RS-UNPORTED",
+        ),
+        (
+            &["directory", "memory", "reviewer", "--note", "nope"][..],
+            "E-RS-MEMORY-NOTE-MISSING",
+        ),
+        (
+            &["directory", "memory", "ghost"][..],
+            "E-RS-DIRECTORY-ROLE-MISSING",
+        ),
+        (
+            &[
+                "directory",
+                "memory",
+                "add",
+                "reviewer",
+                "--title",
+                "t",
+                "--hook",
+                "h",
+            ][..],
+            "E-RS-ARG",
+        ),
+        (
+            &["directory", "memory", "reviewer", "--body", "x"][..],
+            "E-RS-ARG",
+        ),
+    ] {
+        let refused = call(rig.addr, "/v1/directory", argv, &repo.main).await;
+        assert_eq!(refused["details"]["code"], code, "{argv:?}: {refused}");
+    }
+    assert_eq!(git(&repo.gov, &["status", "--porcelain"]), "");
+    rig.server.abort();
+}
+
 #[tokio::test]
 async fn external_add_creates_then_appends_dated_entries() {
     let repo = repo("pij-directory-external");
@@ -2476,4 +2656,147 @@ async fn security_a_released_holder_never_drains_and_a_cold_drain_is_audited() {
         1
     );
     rig.server.abort();
+}
+
+/// Review of #129: a daemon that stops after a claim commits and before the
+/// request is delivered or released leaves it `delivering`. The next boot
+/// re-queues it (or marks it delivered when delivery already took it), and the
+/// next assign's drain delivers it exactly once.
+#[tokio::test]
+async fn a_claim_left_by_a_stopped_daemon_drains_once_after_restart() {
+    use pij_daemon::delivery::role_send::drain;
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+
+    let fresh = FreshStore::new();
+    let state = PathBuf::from(fresh.path()).with_extension("restart-state");
+    std::fs::create_dir_all(&state).unwrap();
+    let config = Config {
+        adapters: Adapters {
+            registry: AdapterChoice::Real,
+            spine: AdapterChoice::Real,
+            queue: AdapterChoice::Real,
+            ..Adapters::default()
+        },
+        store_path: fresh.path(),
+        bind_addr: "127.0.0.1:0".into(),
+        ..Config::default()
+    };
+    let services = pij_daemon::build_services(&config, &state.join("pane-signals"))
+        .await
+        .expect("services");
+    for id in ["pij-old", "pij-next"] {
+        services
+            .registry
+            .put(SeatDescriptor::new(id, Harness::Omp, "/tmp"))
+            .await
+            .unwrap();
+    }
+    let store = services.directory.store().clone();
+    let hold = |seat: &str| pij_store::Assignment {
+        project: "fleet".into(),
+        role: "coder".into(),
+        instance: String::new(),
+        seat: seat.into(),
+        harness: Some("omp".into()),
+        session: None,
+        machine: Some("local".into()),
+        from: "2026-11-06T00:00:00Z".into(),
+        to: None,
+        assigned_by: "pij-pm".into(),
+        released_by: None,
+        why: "test".into(),
+        release_why: None,
+        end_pending: false,
+    };
+    store
+        .record_assignment_committed(&hold("pij-old"), Some("worker"), 1)
+        .await
+        .unwrap();
+    let request = |id: &str| RoleRequest {
+        id: id.into(),
+        project: "fleet".into(),
+        role: "coder".into(),
+        instance: String::new(),
+        requester: SEAT.into(),
+        body: format!("please {id}"),
+        in_reply_to: None,
+        fyi: false,
+        reply: ReplyMode::Wake,
+        limit_ms: None,
+        state: RequestState::Queued,
+        holder: None,
+        created_at: 1,
+        delivered_at: None,
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
+    };
+    // The claims commit; the daemon stops before either is marked or released.
+    // Delivery had already taken "taken" (an FYI held under its msg_id).
+    for id in ["crashed", "taken"] {
+        store.record_role_request(&request(id)).await.unwrap();
+        assert!(store.claim_role_request(id, "pij-old").await.unwrap());
+    }
+    services
+        .delivery
+        .hold_fyi(pij_core::model::Msg {
+            from: SeatId::from(SEAT),
+            from_machine: None,
+            to: SeatId::from("pij-old"),
+            body: "please taken".into(),
+            msg_id: "taken".into(),
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .unwrap();
+
+    let daemon = pij_daemon::boot(&config, state.clone())
+        .await
+        .expect("boot");
+    let row = |id: &'static str| {
+        let store = store.clone();
+        async move { store.role_request(id).await.unwrap().expect("row") }
+    };
+    let crashed = row("crashed").await;
+    assert_eq!(
+        (crashed.state, crashed.holder),
+        (RequestState::Queued, None)
+    );
+    assert_eq!(row("taken").await.state, RequestState::Delivered);
+    daemon.shutdown().await.unwrap();
+
+    // The next assign drains it, once, to the new holder.
+    let mut released = hold("pij-old");
+    released.to = Some("2026-11-06T00:01:00Z".into());
+    released.released_by = Some("pij-pm".into());
+    store.end_assignments(&[released]).await.unwrap();
+    store
+        .record_assignment_committed(&hold("pij-next"), Some("worker"), 3)
+        .await
+        .unwrap();
+    let next = SeatId::from("pij-next");
+    assert_eq!(
+        drain(&services, "fleet", "coder", "", &next).await,
+        [("crashed".to_string(), Ok(()))]
+    );
+    assert!(
+        drain(&services, "fleet", "coder", "", &next)
+            .await
+            .is_empty()
+    );
+    let after = row("crashed").await;
+    assert_eq!(
+        (after.state, after.holder.as_deref()),
+        (RequestState::Delivered, Some("pij-next"))
+    );
+    let inbox = services.delivery.peek_inbox(&next).await.unwrap();
+    assert_eq!(
+        inbox
+            .iter()
+            .filter(|claim| claim.message.msg_id == "crashed")
+            .count(),
+        1
+    );
+    let _ = std::fs::remove_dir_all(&state);
 }

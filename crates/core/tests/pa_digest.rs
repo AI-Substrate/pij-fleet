@@ -181,6 +181,7 @@ fn digest_lists_queued_role_requests_only_when_there_are_some() {
         id: "req-a".into(),
         requester: SeatId::from("pij-asker".to_string()),
         waiting_ms: 5 * 60_000,
+        delivering_to: None,
     }];
     let digest = waiting.digest();
     assert!(
@@ -188,5 +189,27 @@ fn digest_lists_queued_role_requests_only_when_there_are_some() {
             "\nQueued role requests (no live holder; assigning one delivers them):\n  role:pm-001 in fleet: request req-a from pij-asker, waiting 5m"
         ),
         "{digest}"
+    );
+    assert!(!digest.contains("stuck delivering"), "{digest}");
+
+    // Review of #129, F003: a claim never settled is shown with its holder.
+    waiting.queued.push(QueuedRequest {
+        address: "role:reviewer".into(),
+        project: "fleet".into(),
+        id: "req-b".into(),
+        requester: SeatId::from("pij-asker".to_string()),
+        waiting_ms: 20 * 60_000,
+        delivering_to: Some(SeatId::from("pij-holder".to_string())),
+    });
+    let digest = waiting.digest();
+    assert!(
+        digest.contains(
+            "\nRole requests stuck delivering (claimed, never confirmed; a daemon restart re-queues them):\n  role:reviewer in fleet: request req-b from pij-asker to pij-holder, waiting 20m"
+        ),
+        "{digest}"
+    );
+    assert!(
+        !digest.contains("request req-b from pij-asker, waiting"),
+        "a stuck request is not listed as queued: {digest}"
     );
 }

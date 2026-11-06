@@ -422,6 +422,46 @@ impl DirectoryService {
         Ok((written, entry))
     }
 
+    /// `pij directory memory add` (plan 201, AC1): one note and the
+    /// regenerated INDEX in one commit, built under the writer lock so two adds
+    /// to one role each keep the other's INDEX line. Returns the note's path.
+    ///
+    /// # Errors
+    /// Any writer or [`super::memory`] refusal; nothing is written.
+    pub async fn memory_add(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        role_id: &str,
+        fields: super::memory::NoteFields,
+        actor: &SeatId,
+    ) -> Result<(Written, String), Refusal> {
+        let date = role::today();
+        let note = super::memory::note_path(role_id, &date, &fields.title)?;
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: memory {role_id}: {}\n\n{}\n\nPij-Seat: {actor}\nPij-Project: {project}",
+            fields.title.trim(),
+            fields.hook.trim()
+        );
+        let (project_id, role_id) = (project.to_string(), role_id.to_string());
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let mut files = super::memory::files(&root.worktree, &role_id, &date, &fields)?;
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        Ok((written, note.display().to_string()))
+    }
+
     /// Any other directory write (`directory add`): `files` plus the project's
     /// pending close-ends, in one commit.
     ///

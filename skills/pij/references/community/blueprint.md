@@ -4,7 +4,7 @@ A blueprint says how the PRD is built: the components, the decisions behind them
 
 ## Steps
 
-1. Get the number from pm/001 and create `docs/project/blueprints/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/blueprint"}`.
+1. Claim the number (`pij claim blueprint --for <slug>`) and create `docs/project/blueprints/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/blueprint"}`.
 2. Fill the sections. Required ones are marked *.
    - **meta*** `title`, `status`, `updated`, `owner`, `summary`.
    - **overview** one paragraph on the shape of the build.

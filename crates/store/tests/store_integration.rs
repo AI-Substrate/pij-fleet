@@ -2037,3 +2037,111 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
         "a checked-in request stays open until escalated or answered"
     );
 }
+
+/// Review of #129: a daemon that stopped between a claim and its outcome
+/// leaves requests `delivering`. Boot recovery marks one the delivery path
+/// already took (a ledger row or a held FYI under its msg_id) delivered, puts
+/// any other back on the queue with no holder, and touches nothing else.
+#[tokio::test]
+async fn role_requests_left_delivering_are_recovered_at_boot() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool.clone());
+    let request = |id: &str, state: RequestState| RoleRequest {
+        id: id.into(),
+        project: "pij".into(),
+        role: "coder".into(),
+        instance: String::new(),
+        requester: "pij-asker".into(),
+        body: format!("please {id}"),
+        in_reply_to: None,
+        fyi: false,
+        reply: ReplyMode::Wake,
+        limit_ms: None,
+        state,
+        holder: (state != RequestState::Queued).then(|| "pij-coder".to_string()),
+        created_at: 1,
+        delivered_at: (state == RequestState::Delivered).then_some(2),
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
+    };
+    for row in [
+        request("crashed", RequestState::Delivering),
+        request("in-ledger", RequestState::Delivering),
+        request("held-fyi", RequestState::Delivering),
+        request("waiting", RequestState::Queued),
+        request("done", RequestState::Delivered),
+    ] {
+        store.record_role_request(&row).await.expect("record");
+    }
+    sqlx::query(
+        "INSERT INTO delivered_messages (recipient, msg_id, origin) \
+         VALUES ('pij-coder', 'in-ledger', 'injected-to-transport'), \
+                ('pij-other', 'crashed', 'injected-to-transport')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO fyis (origin, id, recipient, sender, body, held_at_ms, state) \
+         VALUES ('', 'held-fyi', 'pij-coder', 'pij-asker', 'b', 1, 'pending')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let unsettled = store.unsettled_role_requests().await.unwrap();
+    assert_eq!(
+        unsettled
+            .iter()
+            .map(|row| (row.id.as_str(), row.state, row.body.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("crashed", RequestState::Delivering, ""),
+            ("held-fyi", RequestState::Delivering, ""),
+            ("in-ledger", RequestState::Delivering, ""),
+            ("waiting", RequestState::Queued, ""),
+        ],
+        "the digest sees stuck claims as well as queued requests, without bodies"
+    );
+
+    assert_eq!(
+        store.recover_delivering_role_requests(50).await.unwrap(),
+        (2, 1)
+    );
+    let state = |id: &'static str| {
+        let store = store.clone();
+        async move {
+            let row = store.role_request(id).await.unwrap().expect("row");
+            (row.state, row.holder, row.delivered_at)
+        }
+    };
+    let delivered = (
+        RequestState::Delivered,
+        Some("pij-coder".to_string()),
+        Some(50),
+    );
+    assert_eq!(state("in-ledger").await, delivered);
+    assert_eq!(state("held-fyi").await, delivered);
+    assert_eq!(
+        state("crashed").await,
+        (RequestState::Queued, None, None),
+        "another seat's ledger row does not count; it is re-queued"
+    );
+    assert_eq!(state("waiting").await, (RequestState::Queued, None, None));
+    assert_eq!(
+        state("done").await,
+        (
+            RequestState::Delivered,
+            Some("pij-coder".to_string()),
+            Some(2)
+        )
+    );
+    assert_eq!(
+        store.recover_delivering_role_requests(60).await.unwrap(),
+        (0, 0),
+        "a second recovery finds nothing"
+    );
+}
