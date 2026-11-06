@@ -9,7 +9,7 @@ How to write the docs under `docs/project/`. One procedure per type, plus one fo
 | order the work into steps and plans | [roadmap.md](roadmap.md) |
 | change the docs after a ruling | [fold-a-ruling.md](fold-a-ruling.md) |
 
-Worked examples: a small linked set in [examples/](examples/) (`prds/`, `blueprints/`, `roadmaps/` `001-daily-digest`). The full-size set is pij's own: `docs/project/prds/001-pij-community.dd.json`, `docs/project/blueprints/001-pij-community.dd.json`, `docs/project/roadmaps/001-pij-community.dd.json`.
+Worked examples: a small linked set in [examples/](examples/) (`prds/`, `blueprints/`, `roadmaps/` `001-daily-digest`). The full-size set is pij's own, for Pij Emergent Communities (PEC): `docs/project/prds/001-pij-community.dd.json`, `docs/project/blueprints/001-pij-community.dd.json`, `docs/project/roadmaps/001-pij-community.dd.json`.
 
 ## Who writes
 
@@ -50,4 +50,4 @@ Example: `"delivers": ["../prds/001-daily-digest.dd.json#requirements/req-01"]`.
 
 ## Role documents
 
-Roles under `<government-root>/community/roles/` are written only by `pij directory add`, which adds the changelog row and runs `ddocs validate` and `ddocs build` itself. Don't pre-validate a role document with ddocs: `pij/role` requires a `changelog` section that only the writer adds, so a hand check always fails on it.
+A pij emergent community (PEC) is built from whatever roles the work needs now and reshaped as the work changes; templates are examples, not a checklist. Its roles under `<government-root>/community/roles/` are written only by `pij directory add`, which adds the changelog row and runs `ddocs validate` and `ddocs build` itself. Don't pre-validate a role document with ddocs: `pij/role` requires a `changelog` section that only the writer adds, so a hand check always fails on it.
