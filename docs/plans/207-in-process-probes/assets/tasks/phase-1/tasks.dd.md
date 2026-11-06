@@ -33,13 +33,48 @@ _Empty._
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | #127: local UTC offset in-process (time local_offset_at, refresh_tz on macOS) | — | ph-00cf | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | local_utc_offset_minutes reads the offset with the time crate (libc localtime_r, the ADR 0001 path) and launches nothing; every caller gets the same minutes as date +%z. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | Spike: macOS process args in-process without unsafe (sysctl KERN_PROCARGS2 via the smallest safe crate) | — | ph-00cf | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | A probe reads ppid, ucomm and argv for this process, its parent and pid 1 in-process and the result is compared with ps -o ppid= -o ucomm= -o args=; the dependency choice and the unreadable-args fallback are recorded. | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) |
+| tk-0003 | #128: registration ancestry in-process on macOS, 32-ancestor cap kept | — | ph-00cf | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | read_native_process on macOS reads parent, kernel accounting name and argv in-process; native and paneless registration give the same results; no /bin/ps launch. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0004 | spawn_sites guards for date.utc-offset and ps.registration-native-process | — | ph-00cf | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | crates/testkit/tests/spawn_sites.rs fails if either launch returns. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Readings, docs and PR: private-daemon deltas, difficulties row, PR closing #127 and #128 | — | ph-00cf | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | Private-daemon counter deltas recorded; docs/difficulties.md resolved row; the performance seat takes the live before and after (AC4); gates pass; PR with Delivers line. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | A test compares local_utc_offset_minutes with date +%z now, and local_offset_at with a fixed TZ across a DST boundary, from a multithreaded process; the spawn counter does not move. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | The probe output for self, parent and pid 1 is recorded in assets/evidence with the ps line beside it, and the chosen crate, its licence, release date and new transitive crates are named. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | The existing registration tests pass unchanged; a test walks this test process's real ancestry in-process and matches ps for each ancestor's parent, name and argv; the counter stays 0. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | Reintroducing either launch in a scratch copy fails the guard; restoring passes. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | Private-daemon readings show date.utc-offset and ps.registration-native-process at 0 across claude_bind ticks with a pending Claude seat and a registration; the live before and after pair is the performance seat's. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+| dw-0006 | just ddocs-check passes; the PR body has a Delivers line and closes #127 and #128. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
