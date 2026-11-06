@@ -28,3 +28,4 @@
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | 206 | 2026-11-06T01:01:56.479Z | — | pij-steady-otter | — | plan 206 reshape (s15) | — |
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 204 | 2026-11-06T01:25:15.218Z | — | pij-steady-otter | — | plan 204 s10 (route doc and templates first) | — |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | 203 | 2026-11-06T03:20:15.814Z | — | pij-steady-otter | — | s09 prime prompts (plan 203); knows s06/s07 | — |
+| — | pij-local-warbler | copilot | 92c00825-7025-4673-b7d6-8c3fb82fad45 | ops.osk.lan | 209 | 2026-11-06T03:32:27.640Z | — | pij-steady-otter | — | plan 209 fleet follow-ups | — |
