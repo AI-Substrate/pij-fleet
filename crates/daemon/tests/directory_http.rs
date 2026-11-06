@@ -13,6 +13,7 @@ use pij_daemon::community::Refusal;
 use pij_daemon::community::ddocs::Validator;
 use pij_daemon::community::directory::{AfterAssign, DirectoryService, NoHook};
 use pij_daemon::community::layout::rendered;
+use pij_daemon::community::templates::Catalog;
 use pij_daemon::community::writer::{CommunityWriter, LOCK_RETRY};
 use pij_daemon::delivery::role_send::RoleQueueDrain;
 use pij_daemon::http::{HttpConfig, router_with_config};
@@ -146,16 +147,29 @@ async fn daemon() -> (SocketAddr, tokio::task::JoinHandle<()>, FreshStore) {
 
 async fn rig(hook: Arc<dyn AfterAssign>) -> Rig {
     let writer = CommunityWriter::new(Arc::new(FakeDdocs), vec![], &LOCK_RETRY);
-    rig_with(Some(hook), writer).await
+    rig_with(hook, writer).await
 }
 
 /// The daemon's own after-assign hook: the role queue drain (plan 199, C6).
 async fn draining_rig() -> Rig {
     let writer = CommunityWriter::new(Arc::new(FakeDdocs), vec![], &LOCK_RETRY);
-    rig_with(None, writer).await
+    rig_inner(None, writer, Catalog::shipped()).await
 }
 
-async fn rig_with(hook: Option<Arc<dyn AfterAssign>>, writer: CommunityWriter) -> Rig {
+async fn rig_with(hook: Arc<dyn AfterAssign>, writer: CommunityWriter) -> Rig {
+    rig_full(hook, writer, Catalog::shipped()).await
+}
+
+async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: Catalog) -> Rig {
+    rig_inner(Some(hook), writer, catalog).await
+}
+
+/// `None` installs the daemon's own drain, which needs the built services.
+async fn rig_inner(
+    hook: Option<Arc<dyn AfterAssign>>,
+    writer: CommunityWriter,
+    catalog: Catalog,
+) -> Rig {
     let fresh = FreshStore::new();
     let config = Config {
         adapters: Adapters {
@@ -183,13 +197,16 @@ async fn rig_with(hook: Option<Arc<dyn AfterAssign>>, writer: CommunityWriter) -
         ))
     });
     let delivery = Arc::clone(&services.delivery);
-    services.directory = Arc::new(DirectoryService::new(
-        writer,
-        store.clone(),
-        Arc::clone(&services.event_bus),
-        hook,
-        tmux.clone(),
-    ));
+    services.directory = Arc::new(
+        DirectoryService::new(
+            writer,
+            store.clone(),
+            Arc::clone(&services.event_bus),
+            hook,
+            tmux.clone(),
+        )
+        .with_templates(catalog),
+    );
     for (id, pane, parent) in [
         (SEAT, Some(PANE), None),
         ("pij-holder", Some("%51"), Some(SEAT)),
@@ -1307,7 +1324,7 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
         pij_daemon::community::layout::schema_copies(),
         &LOCK_RETRY,
     );
-    let rig = rig_with(Some(Arc::new(NoHook)), writer).await;
+    let rig = rig_with(Arc::new(NoHook), writer).await;
     let main = repo.main.to_str().unwrap();
     call(
         rig.addr,
@@ -1781,3 +1798,6 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
     );
     rig.server.abort();
 }
+/// Plan 194 (s03): --from template and file, templates, drift and prompts.
+#[path = "templates_http/mod.rs"]
+mod templates;

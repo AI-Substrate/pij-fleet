@@ -59,14 +59,15 @@
 				{
 					"id": "s03",
 					"title": "Core and security templates",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-13",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-templates"],
 					"depends_on": ["#steps/s02"],
-					"done_when": "A new directory has the five core roles; security comes from its template; a template bump shows a diff."
+					"done_when": "A new directory prompts for the five core roles and security and creates nothing (C22); a role made from a template records it; a template bump shows a diff.",
+					"plan": "docs/plans/194-role-templates"
 				},
 				{
 					"id": "s04",
@@ -254,6 +255,11 @@
 					"date": "2026-11-06",
 					"by": "docs-system",
 					"change": "Renamed forward per ruling C26: title and goal name Pij Emergent Communities (PEC). Slugs and step ids unchanged."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-following-marsupial",
+					"change": "s03 complete (plan 194); its done_when now says the core roles are prompted, not created (ruling C22)."
 				}
 			]
 		}

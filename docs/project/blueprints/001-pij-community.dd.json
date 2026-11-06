@@ -158,7 +158,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-13",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
-					"state": "planned"
+					"state": "in-progress"
 				},
 				{
 					"id": "c-claims",
@@ -316,6 +316,11 @@
 					"date": "2026-11-06",
 					"by": "docs-system",
 					"change": "Renamed forward per ruling C26: title, summary and overview name Pij Emergent Communities (PEC). Slugs and ids unchanged."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-following-marsupial",
+					"change": "c-templates in-progress: the core and security templates ship in plan 194, compiled into the daemon; the optional templates come in s10."
 				}
 			]
 		}
