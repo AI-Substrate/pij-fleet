@@ -773,10 +773,10 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | GET and POST `/v1/anomalies` | `anomalies [--here] [--project <slug>]`; GET `here=<absolute-path>&project=<slug>` | `anomalies-list`, `anomalies-argv` |
 | GET and POST `/v1/decisions` | `decisions [--state <open/answered/all>] [--asked_by <seat>] [--parent <seat>]`; GET keys `state`, `asked_by`, `parent` (literal underscore; `--asked-by` refuses) | `decisions-list`, `decisions-argv` |
 | POST `/v1/answer` | `answer [--supersede] <decision> <answer>`; typed `{decision, answer, supersede?, caller}` | `decision-answer`, `decision-answer-supersede` |
-| POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}` | `seat-close` |
+| POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -1004,6 +1004,105 @@ the human view's drift hint does the same. `guidance` states the PEC wording. Th
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
+
+### Role memory (plan 201)
+
+`pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body
+<text>` writes one note, a `pij/memory` document (`meta.date`, `title`, `tags`,
+`hook`; `body`), to `community/roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json`,
+the slug taken from the title (lowercase ASCII letters and digits, other runs
+as one hyphen, at most 60). `--tags` repeats or takes a comma list.
+`--body-file <path>` reads the body from a file; the native CLI reads the file,
+or stdin for `-`, and sends it as `--body`, while a shim caller's path is read by
+the daemon relative to `caller.cwd`. The same commit regenerates
+`memory/INDEX.md`. pij's lines live in one fenced block,
+`<!-- pij:generated -->` … `<!-- /pij:generated -->`, rewritten whole with one
+line per pij note, oldest first:
+`- [<date> <title>](<stem>.dd.md): <hook> (<tags>)`, with Markdown in the title,
+hook and tags escaped. Everything outside the block is kept as written (only
+pij's own empty-index placeholder goes); the fence, never a line's shape, is how
+pij knows a line is its own, so a hand-written line that looks generated is
+kept. An INDEX with no block gets one appended. The files are built under
+the writer's lock, so two adds at once land as two commits and each keeps the
+other's line. The commit message is `community: memory <role>: <title>`, then
+the hook and the `Pij-Seat` and `Pij-Project` trailers. The envelope returns
+`data.path` (the note), `data.commit` and `data.paths`. Notes are never capped,
+pruned, replaced or deleted; there is no delete verb.
+
+`pij directory memory <role>` prints `memory/INDEX.md` (`--json`: `data.index`
+and `data.notes`, every note's file name). `--note <slug>` prints one note,
+found by file name, stem, or the slug after its date; a hand-written `.md` note
+comes back as `data.text`, a pij note as `data.meta` and `data.body`. Reads run
+in-process and launch nothing.
+
+| Refusal | When |
+|---|---|
+| `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json` (reads also accept a folder with `memory/`) |
+| `E-RS-MEMORY-EXISTS` | a note with that date and slug exists; give another `--title` |
+| `E-RS-MEMORY-NOTE-MISSING` | `--note` names no note (HTTP 404) |
+| `E-RS-UNPORTED` | a memory verb other than `add` (`memory delete …`) |
+| `E-RS-ARG` | a missing or multi-line title, hook or tag, an empty body, `--body` with `--body-file`, `--body-file -` from a shim caller, write flags on a read, or a `--note` that matches several notes or is not a plain name |
+
+Plus every writer refusal above. Cost: one writer commit per note (git 7, ddocs
+2, as for any one-document write); reads launch nothing.
+
+#### The memory turn
+
+Before a `compact` control or `pij close` of a seat that holds a role, the
+daemon asks that seat to write what it learned. It reads the seat's open
+holdings (one indexed query; a seat with none is compacted or closed exactly
+as before), delivers one prompt from `pij-bg` naming each role and project and
+the `pij directory memory add` command, then holds the action until the prompt
+is delivered and the seat next publishes `idle`, or until the bound passes,
+after which it proceeds anyway. The bound is one constant, 5 minutes
+(`memory_turn::BOUND`), and it runs from the moment the request is held, not
+from the prompt's admission. The prompt's admission is itself under the bound:
+a transport that holds it (Claude's socket grace) cannot stretch the turn past
+the deadline, which then ends as `bound`. `PIJ_RS_MEMORY_TURN_SECS`, a positive integer read
+at daemon start, may shorten it; a value above the 5-minute ceiling is clamped
+and an unusable one ignored, each with a warning on the daemon's stderr.
+
+The caller is answered at once with `data.held: "memory-turn"` and
+`data.memory_turn` (`action`, `holdings`, `bound_ms`, `note`), and the compact or
+close runs in the daemon. A held compact's answer is still a control receipt
+(`msg_id` the control's own, `outcome` `{"outcome":"held","reason":"memory-turn"}`,
+`at`), so every client decodes it as it decodes any send; a held close carries
+`data.seat`. So no client's request timeout can cut the hold
+short (the Copilot extension gives up after 65 s, Node's fetch after 300 s), and
+a seat compacting or closing itself, which is mid-turn, is handled the same
+way. A held close therefore has no `tombstoned_at` in its answer: the tombstone
+lands when the turn ends. Before the action runs the daemon reads the seat
+once and skips the action if the seat was closed, or a revive put another
+incarnation in it (its process or pane changed), during the turn: a brake, so
+an old action never gains authority over a replacement that reuses the seat
+id. A held close also rechecks authority: the closer must still be the seat or
+its recorded parent, so a seat reparented during the turn is not closed. Each
+skip is named in the `memory.turn` event's `then`. A close then compares-and-sets against that same read, so the seat's
+ordinary activity changes during the turn do not block it. The native CLI's
+`send --command compact` and `compact-self` print the held receipt with its
+`held` and `memory_turn`.
+
+A seat has at most one memory turn pending. A second compact or close for it
+while one is held is refused with `E-RS-MEMORY-TURN-PENDING` (HTTP 409); it is
+never a second turn or a second action.
+
+Every turn records one `memory.turn` spine event on the seat: `action`,
+`holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or
+`undelivered` when the prompt was refused or could not be sent), `waited_ms`,
+`bound_ms`, a `note` whenever the action proceeded without the turn, and `then`
+(`closed`, `compact admitted`, `skipped: …` or `failed: …`). The wait is a live
+subscription to the seat's `delivery.outcome` and `seat.activity` events with one
+deadline: no poll, no timer, no launch. The turn starts at the prompt's own
+`delivery.outcome` in the event stream, never at the send's receipt, so an idle
+that was published before the prompt was delivered (and is still buffered when
+a direct delivery returns) belongs to the previous turn and is ignored. An idle
+is only published on a change from working, so the first idle after that
+boundary ends the turn that read the prompt, whether the prompt started that
+turn or arrived during it.
+
+Cost: one live subscription per pending memory turn (only for role holders
+being compacted or closed), one delivery, one spine event and one deadline; no
+poll and no launch. Anyone else pays one store query.
 
 ## Canonical wire examples
 
