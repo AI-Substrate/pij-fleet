@@ -27,7 +27,7 @@
 
 ## Summary
 
-Delivers req-15 and the rest of req-13 and req-27; builds c-skill and finishes c-templates. Depends on s03 (templates) and s09 (prompts). Wording is PEC (C26, C18): build what the work needs now, reshape as it changes; templates are examples. Workers are told what to do by their packets, not the route.
+Delivers req-15, req-29 (C28, growing a PEC from need) and the rest of req-13 and req-27; builds c-skill and finishes c-templates. Depends on s03 (templates) and s09 (prompts). Wording is PEC (C26, C18): build what the work needs now, reshape as it changes; templates are examples. Workers are told what to do by their packets, not the route.
 
 <a id="goals"></a>
 
@@ -52,7 +52,8 @@ Delivers req-15 and the rest of req-13 and req-27; builds c-skill and finishes c
 | ac-0003 | Fresh-prime canary. A seat with no prior context follows only the route and stands up a directory with core roles and a security role in a scratch project; where it hesitated is fixed or recorded. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 | ac-0004 | F23 (low, s03 dogfood): `pij directory templates --show &lt;name&gt;[@vN]` prints a template's body (and its embedded path), so a prime can read a template before `add --from template:`. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
 | ac-0005 | Cost (AGENTS.md, resource cost is a correctness property). Docs and embedded templates only: no launch, loop or timer. | [ ] unchecked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
-| ac-0006 | Docs and states. In this PR: roadmap s10 goes to complete (plan cell docs/plans/204-community-route); req-13, req-15 and req-27 go to shipped; c-skill and c-templates go to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line. | [ ] unchecked | — | — | [bp-0006](assets/backpressure.dd.md#rows) | — |
+| ac-0006 | Docs and states. In this PR: roadmap s10 goes to complete (plan cell docs/plans/204-community-route); req-13, req-15, req-27 and req-29 go to shipped (s09 adds the req-29 row); c-skill and c-templates go to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line. | [ ] unchecked | — | — | [bp-0006](assets/backpressure.dd.md#rows) | — |
+| ac-0007 | Growing a PEC (ruling C28, req-29). The route teaches the prime and PMs to recommend roles from need and keep the fleet small but expert: the signals for a new role (the same system or paths across tasks, a finding re-derived, a judgment that must be independent of the author, a seat carrying two domains, a path needing one owner) and against (one-off work, overlap with an existing role, nothing worth remembering, mostly idle); a role is not a seat (many cold roles, few live seats); boundary reviews (split, merge, retire); every recommendation names its signal; templates stay examples. The route stays within its 100-line budget; lungfish gives a docs-system verdict on the wording before the PR is marked ready. | [ ] unchecked | — | — | [bp-0007](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 

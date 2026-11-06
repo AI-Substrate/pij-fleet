@@ -40,6 +40,7 @@ _Empty._
 | tk-0003 | pij directory templates --show &lt;name&gt;[@vN] (F23) | — | ph-00cc | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | --show prints the embedded body with its repo path; unknown names and versions refuse by name and list what exists; nothing launches. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
 | tk-0004 | Fresh-prime canary (after s09 merges) | — | ph-00cc | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | An OMP seat with no prior context, in a plain scratch clone, follows only the route and stands up a directory with core roles and security; hesitations fixed or recorded in assets/evidence/. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Docs, states and cost | — | ph-00cc | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | pij-rs-api.md documents --show; the skill verb table carries it; s10 complete, req-13, req-15, req-27 shipped, c-skill and c-templates shipped; no launch, loop or timer added; ddocs-check clean; PR has a Delivers line. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | C28 in the community route: recommend roles from need | — | ph-00cc | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | The route's prime section teaches C28: signals for and against a new role, a role is not a seat, boundary reviews (split, merge, retire), every recommendation names its signal, templates stay examples; within the route's 100-line budget. | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -74,6 +75,12 @@ _Empty._
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0005 | just ddocs-check passes; the skill verb coverage tests pass in CI; no new launch site (spawn_sites green in CI). | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0006 | The route carries each C28 point and stays within 100 lines (wc -l and pij-skill-check's budget); lungfish's docs-system verdict on the wording is recorded before the PR is marked ready. | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

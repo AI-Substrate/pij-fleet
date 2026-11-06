@@ -26,6 +26,7 @@
 | bp-0004 | AC4 | ph-00cc | BUILD | computational | BUILD: --show prints the exact embedded body; an unknown name or version refuses and lists what exists. | [ ] unchecked | — | — | crates/ |
 | bp-0005 | AC5: cost | ph-00cc | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | Docs and embedded templates only: no launch, loop or timer. | — | pij-rs --json ping |
 | bp-0006 | AC6: docs and states | ph-00cc | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0007 | AC7: C28 in the route | ph-00cc | BUILD | human-judgement | BUILD: the route names each C28 point (signals for and against, role is not a seat, boundary reviews, named signal, templates as examples); pij-skill-check's 100-line budget for the route holds; lungfish's docs-system verdict on the wording. | [ ] unchecked | — | — | skills/pij/references/routes/community.md |
 
 <a id="sensors"></a>
 

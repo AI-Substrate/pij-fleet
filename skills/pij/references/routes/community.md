@@ -19,13 +19,23 @@ pij directory release <role>[/<instance>] <seat> --why <text>
 pij directory template-diff <id>                 # upstream change since the role's version; never applied
 ```
 
-1. **Start from the work.** Read the roadmap's steps and their `needs`, then the view's prompts. Each prompt prints a runnable line. Add a role when a need has no owner, not because a template exists.
+1. **Start from the work.** Read the roadmap's steps and their `needs`, then the view's prompts. Each prompt prints a runnable line. Add a role when a need has no owner, not because a template exists ([when to recommend one](#when-to-recommend-a-role-c28)).
 2. **The core roles are prompted, not required.** prime, pm, pa, coder and reviewer are prompted until each exists, and security until a security role exists. A role counts when its id or its template matches (`pm-001` from `pm`). The prime is designated, never assigned (C24).
 3. **Reshape as needs shift.** Add a role for a new need. To merge two roles, add the merged one, assign it and release the old holders. To retire a role, release its holders and say why; its document and lineage stay as history. Reassign rather than respawn.
 4. **Drift is advice.** A role whose template moved ahead is marked; read `template-diff` and copy what you want by hand.
 5. **Borrowed seats**: `pij directory external add <seat> --from-project <slug> --why <note>`.
 6. **Routing**: `pij directory routes` prints who owns which paths (generated from role scopes); the prime gets one FYI when it changes.
 7. **Project docs** (PRDs, blueprints, roadmaps, rulings): follow [the doc procedures](../community/README.md).
+
+### When to recommend a role (C28)
+
+Keep the fleet small but expert. Small contexts are cheaper and sharper, and an expert in its own seat beats a generalist carrying the topic. The prime and PMs recommend roles as the work reveals them; templates stay examples.
+
+- **For a new role**: the same system or paths keep coming up across tasks; a finding is re-derived (the same one twice); a judgment must be independent of the author (security, performance); a seat is bloating because it carries two domains; a path or system needs one owner.
+- **Against**: one-off work; overlap with an existing role (extend that one); nothing worth remembering; it would mostly sit idle.
+- **A role is not a seat.** Roles can be many and cold: their memory, lineage and queue wait, and a holder is assigned when work arrives. Live seats stay few.
+- **Review at boundaries** (wave end, compact, PR merge): split an overloaded role, merge or retire idle ones (step 3).
+- **Name the signal.** Every recommendation says which signal it rests on, and the `--why` carries it: `--why "same finding twice: pane reads in s07 and s09"`.
 
 ## PM: staff the roadmap's work
 

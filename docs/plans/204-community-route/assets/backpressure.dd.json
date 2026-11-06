@@ -74,6 +74,16 @@
           "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
           "state": "unchecked",
           "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: C28 in the route",
+          "phase": "ph-00cc",
+          "mode": "BUILD",
+          "tier": "human-judgement",
+          "proof": "BUILD: the route names each C28 point (signals for and against, role is not a seat, boundary reviews, named signal, templates as examples); pij-skill-check's 100-line budget for the route holds; lungfish's docs-system verdict on the wording.",
+          "state": "unchecked",
+          "probe": "skills/pij/references/routes/community.md"
         }
       ]
     },

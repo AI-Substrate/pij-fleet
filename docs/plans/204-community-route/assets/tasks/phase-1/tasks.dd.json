@@ -77,6 +77,17 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0006"
           ],
           "done": "tasks.dd.json#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "C28 in the community route: recommend roles from need",
+          "phase": "ph-00cc",
+          "state": "unchecked",
+          "success": "The route's prime section teaches C28: signals for and against a new role, a role is not a seat, boundary reviews (split, merge, retire), every recommendation names its signal, templates stay examples; within the route's 100-line budget.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006"
         }
       ]
     },
@@ -121,6 +132,14 @@
             "assertion": "just ddocs-check passes; the skill verb coverage tests pass in CI; no new launch site (spawn_sites green in CI).",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "The route carries each C28 point and stays within 100 lines (wc -l and pij-skill-check's budget); lungfish's docs-system verdict on the wording is recorded before the PR is marked ready.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007"
           }
         ]
       }
