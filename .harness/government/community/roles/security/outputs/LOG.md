@@ -96,3 +96,11 @@
 
 2026-11-06 verdict pr:129 314da13a19d8d233e8c7b6d48d3de0991635b47e pass-with-notes - Historical stale-holder MEDIUM closed by current-holder atomic claim; request-bound cold audit precedes wake; local holder/origin-bound transactional boot admission recovery and metadata-only digest verified; startup continues on logged recovery error, no universal exactly-once/model-completion claim; four green checks and identical-tree 1968-case proof, CI-only; 2026-11-06-pr-129-314da13-security.md.
 
+2026-11-06 verdict pr:141 47bd3b2a9cb2fe45d0311a34b04cfc6210d3aa9f block - HIGH9/10 unescaped document text in step/unowned recommendation --why permits shell injection when printed actions are run; S001 picture.rs:437-442,570; own commits only, read-only view/refusal boundaries retained; exact head CLEAN/four green checks, identical-tree 1994-case proof lacks adversarial reason tests; 2026-11-06-pr-141-47bd3b2-security.md.
+
+2026-11-06 verdict pr:137 4ab6460fc70d4d0cf9dda07910d9664fb4f8546a block - MEDIUM10/10 ineligible writer can finalize another holder's request and enter requester notification/forced-wake path; PM's recorded-holder/live-role-holder/request-project-prime ruling, positive CI witness outside all three; 35-file own s06 scope, identical-tree 1916-case CI/fake-ddocs limits; early draft only, no later integration approval; 2026-11-06-pr-137-4ab6460-security.md.
+
+2026-11-06 verdict pr:129 f2e7741dc4801a5824d08d66206468ef9070bc41 pass-with-notes - Complete two-file recovery-index/test delta checked; non-unique all-states index and SQL conjunct reordering preserve prior S1/S2/recovery semantics; four green jobs, identical-tree 1969-case proof including index-plan test; prior admission/error/exactly-once limits stand, no local checks; 2026-11-06-pr-129-f2e7741-security.md.
+
+2026-11-06 verdict pr:133 9919d4d9e5752ac9e5f942be268d61283daa0e04 pass-with-notes - S12 own commits/resolutions only; original-holder metadata check-ins and project-PA/prime escalations, mandatory audit-before-dispatch verified; attempt stamps not delivery proof, snapshot/answer race qualified; CLEAN/four green checks, identical-tree 1971-case evidence; upcoming #129 index merge excluded; 2026-11-06-pr-133-9919d4d-security.md.
+
