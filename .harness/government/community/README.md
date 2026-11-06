@@ -1,12 +1,13 @@
 # Pij emergent community directory
 
-Dogfood of PRD 001, Pij Emergent Communities (PEC): the prime and humans build whatever community the work needs now and reshape it as the work changes, adding, merging or retiring roles as needs shift (C26). Templates stay examples (C18). Each role is `roles/<id>/role.md`, with `memory/` (one note per file plus `INDEX.md`) and `outputs/LOG.md`.
+Dogfood of PRD 001, Pij Emergent Communities (PEC): the prime and humans build whatever community the work needs now and reshape it as the work changes, adding, merging or retiring roles as needs shift (C26). Templates stay examples (C18). Each role is `roles/<id>/role.dd.json` (the hand-written `role.md` beside it is pre-s02 history), with `memory/` (one note per file plus `INDEX.md`) and `outputs/LOG.md`.
 
 Roles and holders are written by pij (s02, s04): `pij directory`, `pij directory add`, `assign` and `release`. Never hand-edit role files or holders; `HOLDERS.md` keeps only pre-s04 history.
 
+Memory is written by pij (s07): `pij directory memory add <role> --title <t> --hook <when to read it> [--tags a,b] --body-file -`, one commit per note, and `INDEX.md` is regenerated inside its `pij:generated` block (lines outside it are kept). Read with `pij directory memory <role> [--note <slug>]`. Never hand-write a note. Before a compact or close, pij gives a role holder a memory turn; `pij compact-self` runs it for a self-compaction.
+
 **Until the remaining verbs exist:**
 - **Outputs:** append one line to the role's `outputs/LOG.md`: `<date> <kind> <subject> <head> <result> — <notes>`. Verdicts are also posted on the PR as `<role>: pass|pass-with-notes|block (head <full-sha>)` followed by the notes.
-- **Memory:** before any compact or close, write a note `memory/<yyyy-mm-dd>-<slug>.md` (title, tags, one-line hook, body) and add one line to `memory/INDEX.md`.
 - **Numbers:** migration numbers are claimed from pm/001 before writing a migration.
 - **Routing:** see `ROUTES.md`. Send owned work, don't do it.
 
