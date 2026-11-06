@@ -1805,6 +1805,271 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
 #[path = "templates_http/mod.rs"]
 mod templates;
 
+/// Review of #129 (pij-many-tiglon), F001 control: an identical retry to the
+/// same holder is one delivery.
+#[tokio::test]
+async fn review_single_holder_retry_is_deduplicated_control() {
+    let repo = repo("pij-review-role-replay-control");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let assigned = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "first",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    for _ in 0..2 {
+        let sent = send_to(
+            rig.addr,
+            &repo.main,
+            "role:pm-001",
+            "same-holder",
+            json!({}),
+        )
+        .await;
+        assert_eq!(sent["ok"], true, "{sent}");
+        assert_eq!(sent["data"]["request"]["holder"], "pij-holder", "{sent}");
+    }
+    let inbox = inbox_bodies(&rig, "pij-holder").await;
+    rig.server.abort();
+    assert_eq!(inbox.len(), 1, "{inbox:?}");
+}
+
+/// Review of #129, F001: a retry after the role rotated is answered from the
+/// stored request (the original holder) and never reaches the new holder.
+#[tokio::test]
+async fn review_replay_after_reassignment_must_not_reach_a_second_holder() {
+    let repo = repo("pij-review-role-replay");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: Vec<&'static str>| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move { call(addr, "/v1/directory", &argv, &main).await }
+    };
+    let assigned = dir(vec![
+        "directory",
+        "assign",
+        "pm-001",
+        "pij-holder",
+        "--why",
+        "first",
+    ])
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let first = send_to(rig.addr, &repo.main, "role:pm-001", "replay-id", json!({})).await;
+    assert_eq!(first["ok"], true, "{first}");
+    for argv in [
+        vec![
+            "directory",
+            "release",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "rotate",
+        ],
+        vec![
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-second",
+            "--why",
+            "second",
+        ],
+    ] {
+        let done = dir(argv).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let replay = send_to(rig.addr, &repo.main, "role:pm-001", "replay-id", json!({})).await;
+    let stored = rig.store.role_request("replay-id").await.unwrap().unwrap();
+    let second_inbox = inbox_bodies(&rig, "pij-second").await;
+    assert!(
+        second_inbox.is_empty(),
+        "replaying one request delivered it to a second holder: {second_inbox:?}"
+    );
+    assert_eq!(replay["ok"], true, "{replay}");
+    assert_eq!(replay["data"]["replay"], true, "{replay}");
+    assert_eq!(
+        replay["data"]["request"]["holder"], "pij-holder",
+        "{replay}"
+    );
+    assert_eq!(stored.holder.as_deref(), Some("pij-holder"));
+    let conflicting = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "replay-id",
+        json!({"body": "a different request"}),
+    )
+    .await;
+    assert_eq!(
+        refusal_code(&conflicting),
+        "E-RS-ROLE-REQUEST-EXISTS",
+        "{conflicting}"
+    );
+    rig.server.abort();
+}
+
+/// Holds each `get` until two callers arrive, or briefly when only one does:
+/// with the fix only the drain that won the claim dispatches.
+struct ReviewBarrierRegistry {
+    inner: Arc<dyn pij_core::ports::Registry>,
+    gate: tokio::sync::Barrier,
+}
+
+#[async_trait::async_trait]
+impl pij_core::ports::Registry for ReviewBarrierRegistry {
+    async fn get(&self, seat: &SeatId) -> pij_core::error::Result<Option<SeatDescriptor>> {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), self.gate.wait()).await;
+        self.inner.get(seat).await
+    }
+    async fn put(
+        &self,
+        descriptor: SeatDescriptor,
+    ) -> pij_core::error::Result<pij_core::model::Seq> {
+        self.inner.put(descriptor).await
+    }
+    async fn put_reporting(
+        &self,
+        d: SeatDescriptor,
+    ) -> pij_core::error::Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting(d).await
+    }
+    async fn put_reporting_keeping_parent(
+        &self,
+        d: SeatDescriptor,
+    ) -> pij_core::error::Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
+        self.inner.put_reporting_keeping_parent(d).await
+    }
+    async fn list(
+        &self,
+        f: pij_core::ports::SeatFilter,
+    ) -> pij_core::error::Result<Vec<SeatDescriptor>> {
+        self.inner.list(f).await
+    }
+    async fn tombstone(
+        &self,
+        seat: &SeatId,
+        reason: &str,
+    ) -> pij_core::error::Result<pij_core::model::Seq> {
+        self.inner.tombstone(seat, reason).await
+    }
+    async fn tombstone_if_unchanged(
+        &self,
+        expected: SeatDescriptor,
+        reason: String,
+    ) -> pij_core::error::Result<pij_core::model::Seq> {
+        self.inner.tombstone_if_unchanged(expected, reason).await
+    }
+    async fn set_activity(
+        &self,
+        seat: &SeatId,
+        state: pij_core::model::SystemState,
+        reason: Option<&str>,
+    ) -> pij_core::error::Result<Option<pij_core::model::Seq>> {
+        self.inner.set_activity(seat, state, reason).await
+    }
+}
+
+/// Review of #129, F002: two overlapping drains for an instance-less request
+/// deliver it once. Without the claim both reached delivery.
+#[tokio::test]
+async fn review_overlapping_assign_drains_must_deliver_an_unscoped_request_once() {
+    let repo = repo("pij-review-role-double-drain");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let queued = send_to(
+        rig.addr,
+        &repo.main,
+        "role:reviewer",
+        "double-drain",
+        json!({}),
+    )
+    .await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+    for (target, seat) in [("reviewer/a", "pij-holder"), ("reviewer/b", "pij-second")] {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", target, seat, "--why", "review"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["ok"], true, "{assigned}");
+    }
+    let gated_registry = Arc::new(ReviewBarrierRegistry {
+        inner: rig.services.registry.clone(),
+        gate: tokio::sync::Barrier::new(2),
+    });
+    let delivery = Arc::new(
+        pij_daemon::delivery::DeliveryService::new(
+            gated_registry,
+            rig.services.queue.clone(),
+            rig.services.transport.clone(),
+            rig.services.interaction.clone(),
+            rig.services.event_bus.clone(),
+        )
+        .unwrap(),
+    );
+    let first_seat = SeatId::from("pij-holder");
+    let second_seat = SeatId::from("pij-second");
+    let drained = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        tokio::join!(
+            pij_daemon::delivery::role_send::drain(
+                &rig.store,
+                &delivery,
+                "fleet",
+                "reviewer",
+                "a",
+                &first_seat
+            ),
+            pij_daemon::delivery::role_send::drain(
+                &rig.store,
+                &delivery,
+                "fleet",
+                "reviewer",
+                "b",
+                &second_seat
+            )
+        )
+    })
+    .await
+    .expect("both drains complete");
+    let first_inbox = inbox_bodies(&rig, "pij-holder").await;
+    let second_inbox = inbox_bodies(&rig, "pij-second").await;
+    let stored = rig
+        .store
+        .role_request("double-drain")
+        .await
+        .unwrap()
+        .unwrap();
+    rig.server.abort();
+    assert_eq!(
+        first_inbox.len() + second_inbox.len(),
+        1,
+        "one request reached two assigned holders: {drained:?}"
+    );
+    assert_eq!(stored.state, pij_store::RequestState::Delivered);
+    let winner = if first_inbox.is_empty() {
+        "pij-second"
+    } else {
+        "pij-holder"
+    };
+    assert_eq!(
+        stored.holder.as_deref(),
+        Some(winner),
+        "the row names the holder that got it"
+    );
+}
+
 /// Plan 205 (s12), AC1 and AC2: a request past its limit with no card update
 /// gets exactly one check-in; a whole further limit with no card update since
 /// tells the project's PA exactly once. A card update restarts the clock, so a

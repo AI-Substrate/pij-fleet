@@ -1798,6 +1798,33 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
     );
 
     assert!(
+        !store
+            .mark_role_request_delivered("r-early", "pij-coder", 39)
+            .await
+            .unwrap(),
+        "only a claimed request can be delivered"
+    );
+    assert!(
+        store
+            .claim_role_request("r-early", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .claim_role_request("r-early", "pij-other")
+            .await
+            .unwrap(),
+        "one claim: a second drain skips it"
+    );
+    assert!(
+        !store
+            .mark_role_request_delivered("r-early", "pij-other", 40)
+            .await
+            .unwrap(),
+        "only the claiming holder delivers it"
+    );
+    assert!(
         store
             .mark_role_request_delivered("r-early", "pij-coder", 40)
             .await
@@ -1810,6 +1837,47 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
             .unwrap(),
         "a delivered request is never delivered twice"
     );
+    assert!(
+        store
+            .claim_role_request("r-late", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .release_role_request_claim("r-late", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store
+            .role_request("r-late")
+            .await
+            .unwrap()
+            .map(|row| (row.state, row.holder)),
+        Some((RequestState::Queued, None)),
+        "a failed dispatch gives the request back to the queue"
+    );
+    assert!(
+        store
+            .claim_role_request("r-fyi", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .abandon_role_request("r-fyi", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(store.role_request("r-fyi").await.unwrap().is_none());
+    assert!(
+        !store
+            .abandon_role_request("r-late", "pij-coder")
+            .await
+            .unwrap(),
+        "abandon never touches a queued request"
+    );
     let delivered = store.role_request("r-early").await.unwrap().expect("row");
     assert_eq!(
         (
@@ -1821,7 +1889,7 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
     );
     assert_eq!(
         ids(store.all_queued_role_requests().await.unwrap()),
-        ["r-other-role", "r-other-instance", "r-late", "r-fyi"]
+        ["r-other-role", "r-other-instance", "r-late"]
     );
 }
 
