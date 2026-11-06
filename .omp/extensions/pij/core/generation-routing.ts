@@ -31,7 +31,9 @@ export interface RsNativeRoute extends RouteIdentity {
 		| "directory"
 		| "claim"
 		| "claims"
-		| "delivered";
+		| "delivered"
+		| "output"
+		| "outputs";
 }
 
 export interface RsUnportedRoute extends RouteIdentity {
@@ -272,8 +274,6 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		"node",
 		"orchestration",
 		"spine",
-		"output",
-		"outputs",
 		"role",
 		"link",
 		"watchdog",
@@ -299,7 +299,7 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 	{ verb: "fleet-report", nativeCommand: "fleet-report", why: "Forward the native report writer" },
 	// Plan 213: pij-rs owns these verbs' grammar, help and output; the shim hands
 	// them over unchanged (harness/scripts/pij-native-verbs.json, the same list).
-	...(["directory", "claim", "claims", "delivered"] as const).map(
+	...(["directory", "claim", "claims", "delivered", "output", "outputs"] as const).map(
 		(verb): RsNativeRoute => ({
 			verb,
 			nativeCommand: verb,

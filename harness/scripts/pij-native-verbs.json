@@ -1,6 +1,6 @@
 {
 	"why": "Plan 213: the pij shim hands these pij-rs verbs to pij-rs with argv and stdin unchanged and prints its output, help and exit code. `verbs` is exactly the pij-rs subcommands that own their grammar and help (clap's help flag disabled). send goes too, from a tmux pane, when its recipient is a role: address or it uses --to, and always for --help. The value-taking flag tables let the shim find the verb and recipient without misreading a flag's value. crates/cli/src/main.rs tests every list against clap.",
-	"verbs": ["claim", "claims", "delivered", "directory"],
+	"verbs": ["claim", "claims", "delivered", "directory", "output", "outputs"],
 	"global_value_flags": ["--addr", "--state-dir"],
 	"send_value_flags": [
 		"--body",
