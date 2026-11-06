@@ -277,7 +277,10 @@
 					"harness_session": "95615f7f-89fc-4639-ac6b-c838fe5e1ac3",
 					"instance_key": "147",
 					"machine": "ops.osk.lan",
+					"release_why": "#147 merged (F70 dogfood)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-pleased-marmot",
+					"to": "2026-11-06T12:56:24.989Z",
 					"why": "verdict on #147 (plan 213)"
 				},
 				{
