@@ -1015,10 +1015,14 @@ as one hyphen, at most 60). `--tags` repeats or takes a comma list.
 `--body-file <path>` reads the body from a file; the native CLI reads the file,
 or stdin for `-`, and sends it as `--body`, while a shim caller's path is read by
 the daemon relative to `caller.cwd`. The same commit regenerates
-`memory/INDEX.md`: every line pij did not generate is kept as it was (a
-hand-written index keeps its links, bare names and dotted rows), the empty
-placeholder goes, and one line per pij note follows, oldest first:
-`- [<date> <title>](<stem>.dd.md): <hook> (<tags>)`. The files are built under
+`memory/INDEX.md`. pij's lines live in one fenced block,
+`<!-- pij:generated -->` … `<!-- /pij:generated -->`, rewritten whole with one
+line per pij note, oldest first:
+`- [<date> <title>](<stem>.dd.md): <hook> (<tags>)`, with Markdown in the title,
+hook and tags escaped. Everything outside the block is kept as written (only
+pij's own empty-index placeholder goes); the fence, never a line's shape, is how
+pij knows a line is its own, so a hand-written line that looks generated is
+kept. An INDEX with no block gets one appended. The files are built under
 the writer's lock, so two adds at once land as two commits and each keeps the
 other's line. The commit message is `community: memory <role>: <title>`, then
 the hook and the `Pij-Seat` and `Pij-Project` trailers. The envelope returns

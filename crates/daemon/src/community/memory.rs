@@ -22,6 +22,10 @@ pub const E_NOTE_EXISTS: &str = "E-RS-MEMORY-EXISTS";
 pub const E_NOTE_MISSING: &str = "E-RS-MEMORY-NOTE-MISSING";
 /// The line an empty generated INDEX carries; dropped once a note lands.
 const PLACEHOLDER: &str = "No notes yet. pij adds one line per note.";
+/// Opens the block of INDEX lines pij writes; everything outside it is kept.
+pub const FENCE_OPEN: &str = "<!-- pij:generated -->";
+/// Closes it.
+pub const FENCE_CLOSE: &str = "<!-- /pij:generated -->";
 const INDEX: &str = "INDEX.md";
 const NOTE: &str = ".dd.json";
 const RENDERED: &str = ".dd.md";
@@ -163,30 +167,40 @@ pub fn files(
     ])
 }
 
-/// The INDEX for `role_id`: every line of `existing` that pij did not
-/// generate, as it was, then one line per pij note, oldest first.
+/// The INDEX for `role_id`: everything in `existing` outside pij's generated
+/// block, as written, then the block, rewritten whole with one line per note,
+/// oldest first. The block's fence is how pij knows a line is its own; no line
+/// outside it is ever judged by its shape, moved or removed (review F004). The
+/// only text pij drops outside it is its own empty-index placeholder line.
 pub fn index(role_id: &str, existing: Option<&str>, notes: &[(String, Value)]) -> String {
-    let mut lines: Vec<String> = existing
-        .map_or_else(
-            || format!("# {role_id} memory\n"),
-            std::string::ToString::to_string,
-        )
-        .lines()
-        .filter(|line| line.trim() != PLACEHOLDER && !generated(line))
-        .map(str::to_string)
-        .collect();
-    while lines.last().is_some_and(|line| line.trim().is_empty()) {
-        lines.pop();
-    }
+    let text = existing.map_or_else(|| format!("# {role_id} memory\n"), str::to_string);
     if notes.is_empty() {
-        lines.extend([String::new(), PLACEHOLDER.to_string()]);
-    } else if !lines.last().is_some_and(|line| line.starts_with("- ")) {
-        lines.push(String::new());
+        return match existing {
+            Some(existing) => existing.to_string(),
+            None => format!("{}\n{PLACEHOLDER}\n", text),
+        };
     }
-    lines.extend(notes.iter().map(|(stem, document)| line(stem, document)));
-    let mut text = lines.join("\n");
-    text.push('\n');
-    text
+    let (before, after) = match (text.find(FENCE_OPEN), text.find(FENCE_CLOSE)) {
+        (Some(open), Some(close)) if close > open => {
+            (&text[..open], &text[close + FENCE_CLOSE.len()..])
+        }
+        _ => (text.as_str(), "\n"),
+    };
+    let before: Vec<&str> = before
+        .lines()
+        .filter(|line| line.trim() != PLACEHOLDER)
+        .collect();
+    let mut out = before.join("\n").trim_end().to_string();
+    out.push_str("\n\n");
+    out.push_str(FENCE_OPEN);
+    out.push('\n');
+    for (stem, document) in notes {
+        out.push_str(&line(stem, document));
+        out.push('\n');
+    }
+    out.push_str(FENCE_CLOSE);
+    out.push_str(if after.is_empty() { "\n" } else { after });
+    out
 }
 
 /// `pij directory memory <role>`: the INDEX and every note's file name.
@@ -389,15 +403,15 @@ fn line(stem: &str, document: &Value) -> String {
     } else {
         label
     };
-    let mut out = format!("- [{label}]({stem}{RENDERED})");
+    let mut out = format!("- [{}]({stem}{RENDERED})", escape(&label));
     let hook = text("hook");
     if !hook.is_empty() {
         out.push_str(": ");
-        out.push_str(&hook);
+        out.push_str(&escape(&hook));
     }
-    let tags: Vec<&str> = meta["tags"]
+    let tags: Vec<String> = meta["tags"]
         .as_array()
-        .map(|tags| tags.iter().filter_map(Value::as_str).collect())
+        .map(|tags| tags.iter().filter_map(Value::as_str).map(escape).collect())
         .unwrap_or_default();
     if !tags.is_empty() {
         out.push_str(&format!(" ({})", tags.join(", ")));
@@ -405,15 +419,20 @@ fn line(stem: &str, document: &Value) -> String {
     out
 }
 
-/// Whether an INDEX line is one pij generated: a bullet linking a rendered
-/// note in the same folder. Hand-written notes are plain `.md`.
-fn generated(line: &str) -> bool {
-    let Some(rest) = line.trim_start().strip_prefix("- [") else {
-        return false;
-    };
-    rest.split_once("](")
-        .and_then(|(_, target)| target.split_once(')'))
-        .is_some_and(|(target, _)| target.ends_with(RENDERED) && !target.contains('/'))
+/// Markdown's punctuation escaped, so a title, hook or tag renders as text
+/// and can never close or open a link.
+fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if matches!(
+            ch,
+            '\\' | '[' | ']' | '(' | ')' | '*' | '_' | '`' | '<' | '>' | '!' | '#' | '|'
+        ) {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -476,44 +495,104 @@ mod tests {
         assert_eq!(note("d", &fields(" ")).unwrap_err().code, "E-RS-ARG");
     }
 
+    fn first() -> (String, Value) {
+        (
+            "2026-11-06-first".to_string(),
+            note("2026-11-06", &fields("First")).unwrap(),
+        )
+    }
+
     #[test]
     fn regenerating_keeps_every_hand_written_line_and_adds_one_line_per_note() {
         let hand = "# pa memory\n\n\
             - [2026-11-04-a.md](2026-11-04-a.md): linked\n\n\
             - 2026-11-04-b.md: bare name\n\
             - 2026-11-04 · Dotted · tags · hook\n";
-        let one = (
-            "2026-11-06-first".to_string(),
-            note("2026-11-06", &fields("First")).unwrap(),
-        );
-        let text = index("pa", Some(hand), std::slice::from_ref(&one));
-        for kept in hand.lines() {
-            assert!(text.contains(kept), "{kept:?} kept in\n{text}");
-        }
-        assert!(text.ends_with(
-            "- [2026-11-06 First](2026-11-06-first.dd.md): why to open it (cost, spine)\n"
-        ));
-        // Regenerating again with a second note keeps one line per note.
+        let text = index("pa", Some(hand), &[first()]);
+        assert!(text.starts_with(hand), "{text}");
+        assert!(text.ends_with(&format!(
+            "{FENCE_OPEN}\n- [2026-11-06 First](2026-11-06-first.dd.md): why to open it (cost, spine)\n{FENCE_CLOSE}\n"
+        )));
         let two = (
             "2026-11-06-second".to_string(),
             note("2026-11-06", &fields("Second")).unwrap(),
         );
-        let again = index("pa", Some(&text), &[one, two]);
+        let again = index("pa", Some(&text), &[first(), two]);
         assert_eq!(again.matches("2026-11-06-first.dd.md").count(), 1);
         assert_eq!(again.matches("2026-11-06-second.dd.md").count(), 1);
-        assert!(again.starts_with(hand.trim_end()));
+        assert!(again.starts_with(hand));
+    }
+
+    /// Review F004 (a): a hand-written bullet linking a `.dd.md` is the
+    /// writer's, not pij's, and is kept.
+    #[test]
+    fn a_hand_written_line_shaped_like_a_generated_one_is_kept() {
+        let hand =
+            "# qa memory\n\n- [Read first](historical.dd.md): keep this hand-written explanation\n";
+        let once = index("qa", Some(hand), &[first()]);
+        let twice = index("qa", Some(&once), &[first()]);
+        assert!(twice.starts_with(hand), "{twice}");
+        assert_eq!(twice, once, "a second regeneration changes nothing");
+    }
+
+    /// Review F004 (b): a title with Markdown in it is escaped and its note
+    /// keeps exactly one line however often the INDEX is regenerated.
+    #[test]
+    fn a_title_with_a_link_in_it_is_escaped_and_never_duplicated() {
+        let tricky = (
+            "2026-11-06-read-delivery-flow".to_string(),
+            note("2026-11-06", &fields("Read [delivery](flow)")).unwrap(),
+        );
+        let once = index("qa", None, std::slice::from_ref(&tricky));
+        assert!(
+            once.contains(
+                r"- [2026-11-06 Read \[delivery\]\(flow\)](2026-11-06-read-delivery-flow.dd.md)"
+            ),
+            "{once}"
+        );
+        let twice = index("qa", Some(&once), std::slice::from_ref(&tricky));
+        let thrice = index("qa", Some(&twice), &[tricky]);
+        assert_eq!(
+            thrice
+                .matches("2026-11-06-read-delivery-flow.dd.md")
+                .count(),
+            1
+        );
+        assert_eq!(thrice, once);
+    }
+
+    /// Review F004: everything outside the block, before and after it, is kept
+    /// exactly across two regenerations, and edits inside it are replaced.
+    #[test]
+    fn a_hand_written_index_keeps_every_line_across_two_regenerations() {
+        let hand = format!(
+            "# reviewer memory\n\nIntro, by hand.\n\n- [x](x.dd.md): looks generated, is not\n\n{FENCE_OPEN}\n- stale line edited by hand\n{FENCE_CLOSE}\n\n## Later\nKept after the block.\n"
+        );
+        let once = index("reviewer", Some(&hand), &[first()]);
+        let twice = index("reviewer", Some(&once), &[first()]);
+        assert_eq!(twice, once);
+        for kept in [
+            "Intro, by hand.",
+            "- [x](x.dd.md): looks generated, is not",
+            "## Later",
+            "Kept after the block.",
+        ] {
+            assert_eq!(twice.matches(kept).count(), 1, "{kept:?} in\n{twice}");
+        }
+        assert!(!twice.contains("stale line edited by hand"));
+        assert!(twice.ends_with(&format!(
+            "{FENCE_CLOSE}\n\n## Later\nKept after the block.\n"
+        )));
     }
 
     #[test]
     fn the_empty_placeholder_goes_when_the_first_note_lands() {
         let empty = RolePaths::empty_memory_index("qa");
-        let first = (
-            "2026-11-06-x".to_string(),
-            note("2026-11-06", &fields("X")).unwrap(),
-        );
-        let text = index("qa", Some(&empty), &[first]);
+        let text = index("qa", Some(&empty), &[first()]);
         assert!(!text.contains(PLACEHOLDER));
-        assert!(text.starts_with("# qa memory\n\n- [2026-11-06 X]"));
+        assert!(text.starts_with(&format!(
+            "# qa memory\n\n{FENCE_OPEN}\n- [2026-11-06 First]"
+        )));
         assert_eq!(
             index("qa", None, &[]),
             format!("# qa memory\n\n{PLACEHOLDER}\n")
