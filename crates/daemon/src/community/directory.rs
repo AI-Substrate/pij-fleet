@@ -427,6 +427,55 @@ impl DirectoryService {
         Ok((written, entry))
     }
 
+    /// `pij output` (plan 200, AC1): one pij/output document in one commit,
+    /// its path chosen under the writer lock so two outputs at once never share
+    /// a file. Returns the commit and the document's path.
+    ///
+    /// # Errors
+    /// Any writer or [`super::output`] refusal; nothing is written.
+    pub async fn output_add(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        fields: super::output::OutputFields,
+        writer: &SeatId,
+        holds_role: bool,
+    ) -> Result<(Written, String), Refusal> {
+        let date = super::holders::today();
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: {} {} on {}\n\nPij-Seat: {writer}\nPij-Project: {project}",
+            fields.role, fields.kind, fields.subject
+        );
+        let (project_id, by) = (project.to_string(), writer.to_string());
+        let chosen = Arc::new(std::sync::Mutex::new(String::new()));
+        let path_out = Arc::clone(&chosen);
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let (mut files, path) =
+                    super::output::files(&root.worktree, &fields, &by, holds_role, &date)?;
+                *path_out
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    path.display().to_string();
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        let path = chosen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        Ok((written, path))
+    }
+
     /// `pij directory memory add` (plan 201, AC1): one note and the
     /// regenerated INDEX in one commit, built under the writer lock so two adds
     /// to one role each keep the other's INDEX line. Returns the note's path.

@@ -46,7 +46,7 @@ Sources: [`exit_code`](../../crates/cli/src/lib.rs), [shim refusal/output handli
 
 ### Shim forwarding (plan 213)
 
-The `pij` shim ([`pij-cli.cjs`](../../harness/scripts/pij-cli.cjs)) hands pij-rs's community verbs to `pij-rs` before its TypeScript router loads: argv and stdin unchanged, and pij-rs's own stdout, stderr, help and exit code. Nothing is re-rendered or wrapped, so `pij <verb>` and `pij-rs <verb>` print the same bytes. The verbs are listed once, in [`pij-native-verbs.json`](../../harness/scripts/pij-native-verbs.json): exactly the pij-rs subcommands that own their grammar and help (clap's help flag disabled), today `directory`, `claim`, `claims` and `delivered`. `send` goes too, from a tmux pane, when its recipient is a `role:` address or it uses `--to`, and from anywhere for `--help`; `pij-rs send` takes the shim's positional form (`send <recipient> [<text>]`) as well as `--to`/`--body`. The shim finds the verb past pij-rs's global options (`--json`, `--state-dir`, `--addr`) and reads each send flag with its value, from value-flag tables in the same file, so a value that looks like `role:…` is never taken for the recipient. Sends to a seat, every paneless send (the router registers the observed host first and never trusts an inherited `PIJ_SESSION_ID`), the shim-only `--file`/`--caption`, and any explicit `PIJ_DAEMON_GENERATION` other than `rs` keep the routed path. `pij-rs` is spawned by absolute path, from the first absolute PATH entry that holds it (a relative entry is skipped, as the ddocs resolver does); with none, the shim exits 127 and names it. Native `send`, `compact-self` and `inbox` resolve the acting seat with the full caller context, so the daemon applies the same harness-session checks as on the routed path.
+The `pij` shim ([`pij-cli.cjs`](../../harness/scripts/pij-cli.cjs)) hands pij-rs's community verbs to `pij-rs` before its TypeScript router loads: argv and stdin unchanged, and pij-rs's own stdout, stderr, help and exit code. Nothing is re-rendered or wrapped, so `pij <verb>` and `pij-rs <verb>` print the same bytes. The verbs are listed once, in [`pij-native-verbs.json`](../../harness/scripts/pij-native-verbs.json): exactly the pij-rs subcommands that own their grammar and help (clap's help flag disabled), today `directory`, `claim`, `claims`, `delivered`, `output` and `outputs`. `send` goes too, from a tmux pane, when its recipient is a `role:` address or it uses `--to`, and from anywhere for `--help`; `pij-rs send` takes the shim's positional form (`send <recipient> [<text>]`) as well as `--to`/`--body`. The shim finds the verb past pij-rs's global options (`--json`, `--state-dir`, `--addr`) and reads each send flag with its value, from value-flag tables in the same file, so a value that looks like `role:…` is never taken for the recipient. Sends to a seat, every paneless send (the router registers the observed host first and never trusts an inherited `PIJ_SESSION_ID`), the shim-only `--file`/`--caption`, and any explicit `PIJ_DAEMON_GENERATION` other than `rs` keep the routed path. `pij-rs` is spawned by absolute path, from the first absolute PATH entry that holds it (a relative entry is skipped, as the ddocs resolver does); with none, the shim exits 127 and names it. Native `send`, `compact-self` and `inbox` resolve the acting seat with the full caller context, so the daemon applies the same harness-session checks as on the routed path.
 
 Tests: `shim_forward_tests` in [`crates/cli/src/main.rs`](../../crates/cli/src/main.rs) holds the verb list equal to clap's verbs that own their help and the value-flag tables equal to clap's options (with new and stale entries as negative controls), and [`crates/cli/tests/shim_forward.rs`](../../crates/cli/tests/shim_forward.rs) runs the real shim: help byte-equal to `pij-rs`, and every flag pij-rs's help names reaching a recording `pij-rs` with argv, stdin, output and exit code unchanged, with the kept-path calls as negative controls. Cost: one `node` start and one `pij-rs` exec per call, where the routed path started node twice (the second through tsx); measured medians at load 36 were 0.085 s against 0.546 s (`claim --help`) and 0.115 s against 0.639 s (`claims`). Nothing runs per tick, and the daemon launches nothing new.
 
@@ -826,6 +826,8 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
 | POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/output` | `output verdict\|deliverable\|note\|handover --role <id> --subject <address> [--head <sha>] [--result <r>] [--note-owed <text>]… [--evidence <json>]… [--link <url>] [--answers <msg_id>] [--body <text>\|--body-file <path>] [--project <slug>]`; `output --help`. See [Role outputs](#role-outputs-plan-200) | — (`crates/daemon/tests/output_http.rs`) |
+| POST `/v1/outputs` | `outputs --subject <address> [--head <sha>]`; `outputs --role <id> [--limit <n>]`; `outputs --help` | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/claims` | `claims [--project <slug>] [--open]` | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/delivered` | `delivered <pr> [--pm <seat>] [--project <slug>]` | — (`crates/daemon/tests/claims_http.rs`) |
@@ -1110,6 +1112,59 @@ the human view's drift hint does the same. `guidance` states the PEC wording. Th
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
+
+### Role outputs (plan 200)
+
+`pij output <kind> --role <id> --subject <address>` writes one `pij/output`
+document to
+`community/roles/<id>/outputs/<yyyy-mm>/<dd>-<kind>-<subject>[-<head7>].dd.json`
+through the single writer, in one commit, then indexes it in the store
+(migration 0036, keyed by project and path, since a path is relative to its
+project's governance worktree) and records its pointer. The kinds are `verdict`,
+`deliverable`, `note` and `handover`. A verdict needs `--head <sha>`, the exact
+head it is for, and `--result pass|pass-with-notes|block`; other kinds may give
+a result such as `failed`. `--note-owed` and `--evidence` repeat (evidence is
+JSON: `{"command":…,"exit_code":…,"log":…}`); `--link` names an external review;
+the body is `--body` or `--body-file` (pij-rs, which the shim forwards
+`output` to, reads the file, or stdin for `-`). A handover needs a body: what is in flight now, so a fresh holder can
+pick up. The path is chosen under the writer's lock, so two outputs at once
+land as two files (`-2`, `-3` …). The writer is recorded; one who does not hold
+the role is written with `writer_holds_role: false` and the answer carries a
+`warning`.
+
+`--answers <msg_id>` (ruling C3) names the role request it answers. Anyone may
+publish an output, but only the request's recorded holder, a live holder of the
+request's role, or the request project's prime may answer it; anyone else is
+refused with `E-RS-OUTPUT-NOT-HOLDER` before anything is written, stamped or
+sent (next: get assigned, or drop `--answers` to publish without answering).
+The request is marked answered (s12's `answered_at`, so its time-limit check-ins stop) and
+its requester is told in the reply mode it asked for: `wake` (the default; a
+cold requester is woken as an audited forced wake, ruling C4), `fyi` (held for
+its next turn) or `none`. A `block` verdict or a `failed` result always wakes.
+An output nobody asked for goes as an FYI to the seat above the writer (its
+recorded parent when live, else the current prime). One seat is told; the
+answer's `data.notified` says who, in which mode, the notice's `msg_id` and
+what happened. The `msg_id` is `output-<project>-<commit>`, from the output's
+own commit, so two outputs never share one and a replayed notice keeps its id.
+A failed lookup of the seat above or a refused forced-wake audit is reported
+in `outcome` with its cause (`not delivered: …`); nothing is sent after a
+refused audit.
+
+`pij outputs --subject pr:N --head <sha>` lists the outputs about that subject
+for exactly that head, so a verdict on an older head answers none once the head
+moves; without `--head` it lists every head. `pij outputs --role <id>` lists a
+role's outputs newest first (`--limit`, default 50). Reads use the store and
+launch nothing.
+
+| Refusal | When |
+|---|---|
+| `E-RS-ARG` | an unknown kind, a missing subject, a verdict without `--head` or a known `--result`, a handover without a body, bad `--evidence` JSON, `--body` with `--body-file` |
+| `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json` |
+| `E-RS-NOT-FOUND` | `--answers` names no recorded request |
+| `E-RS-OUTPUT-NOT-HOLDER` (403) | `--answers` from a writer that is not the request's recorded holder, a live holder of its role or its project's prime |
+
+Plus every writer refusal above. Cost: one writer commit per output (git 7,
+ddocs 2) and one delivery to the one seat told. No timer or poll.
 
 ### Routing table (plan 202)
 

@@ -2054,6 +2054,110 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
     );
 }
 
+/// Plan 200 (migration 0036): outputs are read back by exact head, so a moved
+/// head answers none, and by role, newest first; a path is indexed once.
+#[tokio::test]
+async fn outputs_answer_for_their_exact_head_and_list_by_role() {
+    use pij_store::CommunityOutput;
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let output = |path: &str, kind: &str, head: Option<&str>, at: u64| CommunityOutput {
+        path: path.into(),
+        project: "pij".into(),
+        role: "reviewer".into(),
+        kind: kind.into(),
+        subject: "pr:132".into(),
+        head: head.map(Into::into),
+        result: head.map(|_| "pass".into()),
+        writer: "pij-reviewer".into(),
+        holds_role: true,
+        answers: Some("req-1".into()),
+        commit: "c0ffee".into(),
+        created_at: at,
+    };
+    let verdict = output(
+        "roles/reviewer/outputs/2026-11/a.dd.json",
+        "verdict",
+        Some("aaa"),
+        1,
+    );
+    store.record_output(&verdict).await.unwrap();
+    store
+        .record_output(&output(
+            "roles/reviewer/outputs/2026-11/h.dd.json",
+            "handover",
+            None,
+            2,
+        ))
+        .await
+        .unwrap();
+    store
+        .record_output(&verdict)
+        .await
+        .expect("a path is indexed once");
+
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![verdict.clone()]
+    );
+    assert!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("bbb"))
+            .await
+            .unwrap()
+            .is_empty(),
+        "a moved head answers none"
+    );
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", None)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    let listed = store.outputs_for_role("pij", "reviewer", 10).await.unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["handover", "verdict"]
+    );
+    assert!(
+        store
+            .outputs_for_role("other", "reviewer", 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    // Review of #137 (F001): a path is relative to its project's governance
+    // worktree, so another project's output at the same path is its own row.
+    let mut elsewhere = verdict.clone();
+    elsewhere.project = "other".into();
+    elsewhere.commit = "beef".into();
+    store.record_output(&elsewhere).await.unwrap();
+    assert_eq!(
+        store
+            .outputs_for_subject("other", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![elsewhere]
+    );
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![verdict],
+        "the first project's row is untouched"
+    );
+}
+
 /// Review of #133 (F001, F002): a limit claim is the one atomic step that
 /// decides a notification. It refuses a request answered after the round's
 /// read, at either stage; it blocks a second attempt while live; a failed

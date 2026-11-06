@@ -1400,7 +1400,7 @@ fn canonical(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn caller_path(caller: &CallerContext, path: &str) -> Result<PathBuf, Refusal> {
+pub(super) fn caller_path(caller: &CallerContext, path: &str) -> Result<PathBuf, Refusal> {
     let path = PathBuf::from(path);
     if path.is_absolute() {
         return Ok(path);
@@ -1461,10 +1461,10 @@ fn read_batch(dir: &Path) -> Result<Vec<(String, Value)>, Refusal> {
         .collect()
 }
 
-fn refused(refusal: &Refusal) -> Response {
+pub(super) fn refused(refusal: &Refusal) -> Response {
     let status = match refusal.code {
         "E-RS-ARG" | "E-RS-UNPORTED" => StatusCode::BAD_REQUEST,
-        "E-RS-OWNERSHIP" => StatusCode::FORBIDDEN,
+        "E-RS-OWNERSHIP" | "E-RS-OUTPUT-NOT-HOLDER" => StatusCode::FORBIDDEN,
         "E-RS-NOT-FOUND" | memory::E_NOTE_MISSING => StatusCode::NOT_FOUND,
         "E-RS-STORE" | crate::community::E_GOV_GIT => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::CONFLICT,
