@@ -33,13 +33,48 @@ _Empty._
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Limit state on the request store | — | ph-00cd | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | role_requests gains checkin_at, escalated_at and answered_at (migration number from pm-001) with a partial index on open limited requests (delivered, limit set, not escalated, not answered). The store lists them in one indexed query and records a check-in, an escalation and an answer, each at most once. | answered_at is set by s06 through mark_role_request_answered. |  | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | Check-in and escalation in the watchdog round | — | ph-00cd | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | Inside the existing PA watchdog round: for each open limited request, the clock starts at the later of its delivery and its holder's latest card. Past the limit with no check-in, the holder gets one check-in (write what you have, update your card, say why it needs longer), delivered the ordinary way with a cold wake audited. After a check-in, a whole further limit with no card update since it raises one notice to the project's PA (else the prime). Answered requests are skipped. Nothing is stopped. | Card = latest report.now, one indexed LIMIT 1 read per open request. Check-in and notice are each one delivery, recorded before sending (persist before mutate). | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Defaults: the role default_limit and an explicit --limit | — | ph-00cd | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | Without --limit a role send stores the role's default_limit (C5); an explicit --limit wins; with neither the request has no limit and is never checked in. | The default is resolved at send time by s05's route; this task proves it end to end. | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Cost readings | — | ph-00cd | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | No new timer or launch site: spawn_sites green; the PR states the round's added cost (one indexed query for open limited requests, plus one LIMIT 1 card read per open request; one delivery per check-in or notice). | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Docs and states | — | ph-00cd | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | pij-rs-api.md documents limits, check-ins and notices; roadmap s12 complete with its plan cell, req-22 shipped, c-limits shipped, edited in place; ddocs-check passes; PR body has Delivers:. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | pij-store tests: open limited requests exclude queued, unlimited, escalated and answered ones; check-in, escalation and answer each record once. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | pij-daemon tests: a seat past its limit with no card update gets exactly one check-in over several rounds; a seat that updates its card is never checked in. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | An ignored check-in raises exactly one PA notice; a card update after the check-in raises none. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | pij-daemon test: a role with default_limit stores it on a send without --limit; --limit overrides it; a role without one stores none. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | spawn_sites green with no new site; the performance verdict records the at-rest readings. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0006 | ddocs-check green; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

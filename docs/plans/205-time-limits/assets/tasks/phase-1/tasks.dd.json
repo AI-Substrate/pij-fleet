@@ -18,11 +18,123 @@
     },
     {
       "name": "tasks",
-      "value": []
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Limit state on the request store",
+          "phase": "ph-00cd",
+          "state": "unchecked",
+          "success": "role_requests gains checkin_at, escalated_at and answered_at (migration number from pm-001) with a partial index on open limited requests (delivered, limit set, not escalated, not answered). The store lists them in one indexed query and records a check-in, an escalation and an answer, each at most once.",
+          "notes": "answered_at is set by s06 through mark_role_request_answered.",
+          "satisfies": [],
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Check-in and escalation in the watchdog round",
+          "phase": "ph-00cd",
+          "state": "unchecked",
+          "success": "Inside the existing PA watchdog round: for each open limited request, the clock starts at the later of its delivery and its holder's latest card. Past the limit with no check-in, the holder gets one check-in (write what you have, update your card, say why it needs longer), delivered the ordinary way with a cold wake audited. After a check-in, a whole further limit with no card update since it raises one notice to the project's PA (else the prime). Answered requests are skipped. Nothing is stopped.",
+          "notes": "Card = latest report.now, one indexed LIMIT 1 read per open request. Check-in and notice are each one delivery, recorded before sending (persist before mutate).",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Defaults: the role default_limit and an explicit --limit",
+          "phase": "ph-00cd",
+          "state": "unchecked",
+          "success": "Without --limit a role send stores the role's default_limit (C5); an explicit --limit wins; with neither the request has no limit and is never checked in.",
+          "notes": "The default is resolved at send time by s05's route; this task proves it end to end.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Cost readings",
+          "phase": "ph-00cd",
+          "state": "unchecked",
+          "success": "No new timer or launch site: spawn_sites green; the PR states the round's added cost (one indexed query for open limited requests, plus one LIMIT 1 card read per open request; one delivery per check-in or notice).",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Docs and states",
+          "phase": "ph-00cd",
+          "state": "unchecked",
+          "success": "pij-rs-api.md documents limits, check-ins and notices; roadmap s12 complete with its plan cell, req-22 shipped, c-limits shipped, edited in place; ddocs-check passes; PR body has Delivers:.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        }
+      ]
     },
     {
       "name": "done_when",
-      "value": {}
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "pij-store tests: open limited requests exclude queued, unlimited, escalated and answered ones; check-in, escalation and answer each record once.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "pij-daemon tests: a seat past its limit with no card update gets exactly one check-in over several rounds; a seat that updates its card is never checked in.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0003",
+            "assertion": "An ignored check-in raises exactly one PA notice; a card update after the check-in raises none.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0004",
+            "assertion": "pij-daemon test: a role with default_limit stores it on a send without --limit; --limit overrides it; a role without one stores none.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0005",
+            "assertion": "spawn_sites green with no new site; the performance verdict records the at-rest readings.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0006",
+            "assertion": "ddocs-check green; CI on the exact head; reviewer, security and performance verdicts.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ]
+      }
     },
     {
       "name": "goals",
@@ -96,6 +208,5 @@
       "name": "execution_guardrails",
       "value": []
     }
-  ],
-  "references": []
+  ]
 }
