@@ -14,7 +14,7 @@
 | ordinal | — |
 | status | draft |
 | complexity | — |
-| summary | — |
+| summary | The pij shim execs pij-rs for the verbs pij-rs owns help for, and for role and --to sends, before tsx loads; one list, one contract test, latency receipts. |
 | backpressure | — |
 | log | — |
 | mode | — |
@@ -33,13 +33,47 @@ _Empty._
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Shim fast path: community verbs and role sends exec pij-rs unchanged | — | ph-00d5 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | harness/scripts/pij-cli.cjs execs pij-rs for every verb in harness/scripts/pij-native-verbs.json and for send to role:, with --to or --help, with argv, stdin, output and exit code unchanged; everything else and any non-rs generation keeps the routed path; the TS route table marks the same verbs nativeCommand. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | pij-rs send takes the shim's positional form; help is pij-rs's | — | ph-00d5 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | pij-rs send accepts send &lt;recipient&gt; [&lt;text&gt;] as well as --to/--body (mutually exclusive), and its help shows role sends, --reply and --fyi; pij &lt;verb&gt; --help prints pij-rs's help for every forwarded verb. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | One contract test from clap, with negative controls | — | ph-00d5 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | The shim's verb list equals clap's subcommands that own their help; a new unlisted verb and a stale listed verb each fail the check; calls outside the contract (a seat send, a paneless role send, a flag value that looks like a role, a non-rs generation, an unowned verb) never reach pij-rs. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Latency before and after (F44) | — | ph-00d5 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | Per-call latency of the shim against native pij-rs, before and after, interleaved under the same load, with the load noted. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Docs, cost and states | — | ph-00d5 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | docs/how/pij-rs-api.md has the shim forwarding section and exit row; SKILL.md says the shim forwards; F30, F42, F43 and F44 name plan 213; the PR body has Delivers: none; no workstream state changes; no new launch site, timer or poll. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | Through the shim, every listed verb and every flag its pij-rs help names reaches a recording pij-rs with argv and stdin unchanged, and the shim prints its output and exit code (crates/cli/tests/shim_forward.rs, CI). | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | shim_forward_tests::send_takes_the_shims_positional_form passes, and help through the shim is byte-equal to pij-rs help for every forwarded verb and send (CI). | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | shim_forward_tests::the_shim_forwards_exactly_the_verbs_that_own_their_help and shim_forward::calls_outside_the_contract_keep_the_routed_path pass, each with its negative controls (CI). | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | assets/evidence/latency.md holds the receipts. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | just ddocs-check passes; spawn_sites unchanged (no daemon launch site added); CI green on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

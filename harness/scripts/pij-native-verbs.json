@@ -1,0 +1,4 @@
+{
+	"why": "Plan 213: the pij shim hands these pij-rs verbs to pij-rs with argv and stdin unchanged and prints its output, help and exit code. They are exactly the pij-rs subcommands that own their own grammar and help (clap's help flag disabled); crates/cli/src/main.rs tests the two lists are equal. send goes too when its recipient is a role: address or it uses --to, --help or -h.",
+	"verbs": ["claim", "claims", "delivered", "directory"]
+}
