@@ -4,6 +4,8 @@ Dogfood of PRD 001, Pij Emergent Communities (PEC): the prime and humans build w
 
 Roles and holders are written by pij (s02, s04): `pij directory`, `pij directory add`, `assign` and `release`. Never hand-edit role files or holders; `HOLDERS.md` keeps only pre-s04 history.
 
+Holders are written only by `pij directory assign` (one, or many with `--batch <file>` in one commit) and `release`; the prime records a closed seat's past holding with `pij directory lineage add <role> <seat> --from <time> --to <time> --why <text>`. If your own commit in the standing governance worktree fails on `index.lock`, pij's writer may be committing there: its git dir holds `pij-writer.owner` while it does. Retry in a moment; never delete the lock.
+
 Memory is written by pij (s07): `pij directory memory add <role> --title <t> --hook <when to read it> [--tags a,b] --body-file <path>` (not `-` until plan 209 fixes F30: the `pij` shim refuses stdin), one commit per note, and `INDEX.md` is regenerated inside its `pij:generated` block (lines outside it are kept). Read with `pij directory memory <role> [--note <slug>]`. Never hand-write a note. Before a compact or close, pij gives a role holder a memory turn; `pij compact-self` runs it for a self-compaction.
 
 **Until the remaining verbs exist:**
