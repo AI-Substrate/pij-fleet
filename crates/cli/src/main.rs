@@ -2964,6 +2964,9 @@ fn render_directory_at(
                 }
             }
         }
+        if let Some(call) = role["call_on"].as_str() {
+            let _ = write!(out, "\n    cold, with memory to call on: {call}");
+        }
         let template = &role["template"];
         if template["behind"] == true {
             let _ = write!(
@@ -3674,7 +3677,9 @@ mod tests {
                  "memory": {"notes": 3, "latest": "2026-11-05"}},
                 {"id": "pm", "kind": "specialist", "holders": "one",
                  "live": [{"seat": "pij-c", "instance": "", "since": "2026-11-05T23:30:00Z", "machine": "m", "seat_live": true}],
-                 "requests": null, "latest_output": null, "memory": {"notes": 0, "latest": null}}
+                 "requests": null, "latest_output": null, "memory": {"notes": 0, "latest": null}},
+                {"id": "historian", "kind": "specialist", "holders": "one", "live": [],
+                 "memory": {"notes": 12, "latest": "2026-10-01"}, "call_on": "pij send --to role:historian --body x"}
             ],
             "actions": [{"role": "pm", "condition": "memory-stale", "says": "pm's last 2 closes left no memory note", "commands": ["pij directory memory add pm --project fleet"]}],
             "prompts": [
@@ -3690,7 +3695,7 @@ mod tests {
         let ten = time::UtcOffset::from_hms(10, 0, 0).unwrap();
         let text = super::render_directory_at(&view, |_| ten);
         let expected = "\
-fleet: 2 role(s); prime: pij-prime
+fleet: 3 role(s); prime: pij-prime
   reviewer (general, many): 2 holders
     pij-a (114) since 2026-11-06 13:07 +10:00 on m
     pij-b (115) since 2026-11-06 14:00 +10:00 on m, seat not live
@@ -3699,6 +3704,9 @@ fleet: 2 role(s); prime: pij-prime
     memory: 3 note(s), newest 2026-11-05
   pm (specialist, one): pij-c since 2026-11-06 09:30 +10:00 on m
     memory: no notes
+  historian (specialist, one): no holder
+    memory: 12 note(s), newest 2026-10-01
+    cold, with memory to call on: pij send --to role:historian --body x
 
 Next actions:
   pm's last 2 closes left no memory note

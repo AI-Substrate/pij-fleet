@@ -1048,7 +1048,11 @@ role also carries:
 - `requests`: `{count, oldest_at}` of its queued requests (s05), or `null`;
 - `latest_output`: its newest output (s06) `{kind, subject, head, result, writer, at, path}`, or `null`;
 - `memory`: `{notes, latest}`, the number of memory notes (s07) and the newest
-  dated note's `yyyy-mm-dd`.
+  dated note's `yyyy-mm-dd`;
+- `call_on`: for a cold role with memory (no live holder, at least one note),
+  the command that calls on it, `pij send --to role:<id> --body "<what you need
+  from it>"` (ruling C30: a cold specialist with rich memory is someone to call
+  on, not to retire); otherwise `null`.
 
 `data.actions` lists what needs the prime (req-12), each
 `{role, condition, says, commands}` with runnable commands that name the
@@ -1087,14 +1091,19 @@ Each one in `prompts` (create) and `reviews` (split, merge, retire) carries
 | `independent-judgment` | a judgment must be independent of the author | the reviewer and security prompts |
 | `two-domains` | a seat is bloating because it carries two domains | a live seat holding two or more roles: split each later role onto its own seat (release, then assign) |
 | `one-owner` | a path or system needs one owner | taught in the notice |
+| `worth-remembering` | this would be worth remembering: knowledge that should outlive the seat (ruling C30) | taught in the notice |
 | `core` | a core role a PEC starts from (C22); its template is an example | the other core prompts |
 | `step-needs` | a workstream step names this role in its needs | the `needed` prompts |
 | `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (the s15 verbs) |
 
 A cold role with memory is never put up for retirement: a role is not a seat.
 `data.reviews` is the boundary review the prime runs at a wave end, a compact
-or a PR merge. `data.notice` teaches all of it from the same signals: recommend
-roles from need and keep the fleet small but expert, the signals for and
+or a PR merge. `data.notice` teaches all of it from the same signals. It opens
+with why a PEC exists (ruling C30): it builds lasting knowledge of its problem
+space, whatever the work (an engineering project, a design workshop, research,
+operations), held by specialist roles in memory and outputs that outlive any
+seat and are called on later, so a long-running specialist is a feature, not a
+cost. Then: recommend roles from need and keep the fleet small but expert, the signals for and
 against, that a role is not a seat (roles can be many and cold, live seats
 few), the boundary review, and that templates are examples. The human view
 prints each recommendation's signal under it.

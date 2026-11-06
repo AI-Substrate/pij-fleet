@@ -309,6 +309,15 @@ impl DirectoryService {
                 },
                 &cutoff,
             ));
+            let call_on = picture::call_on(
+                project,
+                id,
+                mine.iter()
+                    .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                memory["notes"]
+                    .as_u64()
+                    .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+            );
             let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
             made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
             roles.push(serde_json::json!({
@@ -321,6 +330,7 @@ impl DirectoryService {
                 "requests": waiting,
                 "latest_output": picture::latest_output(id, &outputs),
                 "memory": memory,
+                "call_on": call_on,
                 "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
             }));
         }

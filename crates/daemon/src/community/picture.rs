@@ -70,6 +70,8 @@ pub enum Signal {
     TwoDomains,
     /// For: a path or system needs one owner.
     OneOwner,
+    /// For: this would be worth remembering (ruling C30).
+    WorthRemembering,
     /// For: a core role every PEC starts from (ruling C22).
     Core,
     /// For: a workstream step names the role in its needs.
@@ -86,12 +88,13 @@ pub enum Signal {
 
 impl Signal {
     /// C28's signals for a new role, in its order.
-    pub const FOR: [Self; 5] = [
+    pub const FOR: [Self; 6] = [
         Self::Recurring,
         Self::Rederived,
         Self::Independent,
         Self::TwoDomains,
         Self::OneOwner,
+        Self::WorthRemembering,
     ];
     /// C28's signals against one.
     pub const AGAINST: [Self; 4] = [
@@ -109,6 +112,7 @@ impl Signal {
             Self::Independent => "independent-judgment",
             Self::TwoDomains => "two-domains",
             Self::OneOwner => "one-owner",
+            Self::WorthRemembering => "worth-remembering",
             Self::Core => "core",
             Self::Needed => "step-needs",
             Self::OneOff => "one-off",
@@ -126,6 +130,9 @@ impl Signal {
             Self::Independent => "a judgment must be independent of the author",
             Self::TwoDomains => "a seat is bloating because it carries two domains",
             Self::OneOwner => "a path or system needs one owner",
+            Self::WorthRemembering => {
+                "this would be worth remembering: knowledge that should outlive the seat"
+            }
             Self::Core => "a core role a PEC starts from (C22); its template is an example",
             Self::Needed => "a workstream step names this role in its needs",
             Self::OneOff => "one-off work",
@@ -239,7 +246,7 @@ pub fn notice() -> String {
             .join("; ")
     };
     format!(
-        "Growing this community (PEC): is the work asking for something no role here covers? Recommend a role from need, and keep the fleet small but expert. Signals for a new role: {}. Signals against: {}. A role is not a seat: roles can be many and cold (memory, lineage and queue, revived on demand), while live seats stay few. At each boundary (a wave end, a compact, a PR merge), review: split an overloaded role, merge or retire an idle one. Templates are examples, not a checklist. Each recommendation here names the signal it rests on. The community is whatever the work needs now.",
+        "Why a PEC: it builds lasting knowledge of its problem space, whatever the work (an engineering project, a design workshop, research, operations). Specialist roles hold that knowledge in memory and outputs that outlive any seat, and are called on later, revived or read by a fresh seat; a long-running specialist is a feature, not a cost. Growing this community: is the work asking for something no role here covers? Recommend a role from need, and keep the fleet small but expert. Signals for a new role: {}. Signals against: {}. A role is not a seat: roles can be many and cold (memory, lineage and queue, revived on demand), while live seats stay few, and a cold specialist with rich memory is someone to call on, not to retire. At each boundary (a wave end, a compact, a PR merge), review: split an overloaded role, merge or retire an idle one with nothing to remember. Templates are examples, not a checklist. Each recommendation here names the signal it rests on. The community is whatever the work needs now.",
         list(&Signal::FOR),
         list(&Signal::AGAINST)
     )
@@ -686,6 +693,20 @@ pub fn idle(project: &str, role: &RoleActivity<'_>, cutoff: &str) -> Option<Reco
     Some(prompt)
 }
 
+/// For a cold role with memory (no live holder, at least one note), the
+/// command that calls on it (ruling C30): a request to the role, which waits
+/// on its queue and wakes the PA (else the prime) to revive or assign a
+/// holder. `None` otherwise.
+pub fn call_on(project: &str, role: &str, live_holder: bool, notes: usize) -> Option<String> {
+    (!live_holder && notes > 0).then(|| {
+        format!(
+            "pij send --to role:{} --body \"<what you need from it>\" --project {}",
+            shell_word(role),
+            shell_word(project)
+        )
+    })
+}
+
 /// `yyyy-mm-dd` of `now_ms` minus [`IDLE_DAYS`], UTC.
 pub fn idle_cutoff(now_ms: u64) -> String {
     let seconds = i64::try_from(now_ms / 1000).unwrap_or(i64::MAX)
@@ -1120,10 +1141,26 @@ mod tests {
             "split an overloaded role, merge or retire an idle one",
             "no role here covers",
             "whatever the work needs now",
+            "builds lasting knowledge of its problem space",
+            "a design workshop, research, operations",
+            "a long-running specialist is a feature",
+            "a cold specialist with rich memory is someone to call on, not to retire",
         ] {
             assert!(notice.contains(words), "{words}: {notice}");
         }
         assert_eq!(idle_cutoff(1_793_934_000_000), "2026-10-07");
+        assert_eq!(
+            call_on("fleet", "qa", false, 3).as_deref(),
+            Some("pij send --to role:qa --body \"<what you need from it>\" --project fleet")
+        );
+        assert!(
+            call_on("fleet", "qa", true, 3).is_none(),
+            "a live holder is asked directly"
+        );
+        assert!(
+            call_on("fleet", "qa", false, 0).is_none(),
+            "nothing to call on"
+        );
     }
 
     #[test]
