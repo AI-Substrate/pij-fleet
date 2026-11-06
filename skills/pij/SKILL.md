@@ -38,7 +38,7 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 | CLI verb | lives in |
 |---|---|
 | `spawn` `revive` | peer route — shim refuses `E-RS-UNPORTED`; use native `pij-rs spawn` / `pij-rs revive` grammar, never legacy flags |
-| `send` `compact-self` `adopt` `whoami` `state` `inbox` (`check`/`register`; native `pij-rs inbox release`) | peer route — rs; `send --fyi` holds text the seat's next action doesn't depend on; `send --force --reason` wakes a cold seat past `E-RS-COLD-WAKE` (§ C1); verified external inbox register/wait supported, extension-owned receivers unchanged |
+| `send` `compact-self` `adopt` `whoami` `state` `inbox` (`check`/`register`; native `pij-rs inbox release`) | peer route — rs; `send --fyi` holds text the seat's next action doesn't depend on; `send --force --reason` wakes a cold seat past `E-RS-COLD-WAKE` (§ C1); `send role:<id>[/<instance>]` goes through the project's directory: one live holder delivers, none queues and wakes the PA, several refuse; `--reply wake|fyi|none`, `--limit <d>`; verified external inbox register/wait supported, extension-owned receivers unchanged |
 | `list` `sessions` | peer route — rs-only; list supports boolean --here plus exact harness/folder/parent/scope=local shim filters; sessions has no filters or legacy union |
 | `tail` | peer route — shim `E-RS-UNPORTED`; native `pij-rs tail` is daemon events, not a transcript |
 | `link` | peer route — rs; `link <seat> --role <pm, worker or pa>` takes a seat with no live parent or re-roles your own child |
@@ -57,6 +57,8 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 | `agent` (`list/run/spawn/show/new/check/eject/report`) `path` `models` `tree` `watch` `unwatch` `chore` `focus` | named `E-RS-UNPORTED` refusals, no native verb, no legacy escape. agent → agent route; models → § C4; tree → read `pij node show <seat>` |
 
 `pij generation [verb]` is a shim-local, read-only routing diagnostic, not an rs route.
+
+The shim hands `directory`, `claim`, `claims` and `delivered`, and a `send` to `role:<id>`, with `--to` or `--help`, to `pij-rs` unchanged: the same output, help and exit code ([shim forwarding](../../docs/how/pij-rs-api.md#shim-forwarding-plan-213), plan 213).
 
 `/pij prime` selects the skill route; `pij orchestration prime` invokes its CLI
 primitive. `baton` is the other orchestration subcommand.

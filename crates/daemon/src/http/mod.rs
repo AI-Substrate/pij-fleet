@@ -5,7 +5,7 @@
 
 pub mod anomalies;
 mod auth;
-mod background;
+pub(crate) mod background;
 mod claims;
 mod client;
 mod codex_caller;
@@ -22,6 +22,7 @@ pub mod memory_turn;
 mod report;
 mod revive;
 pub mod role;
+mod role_send;
 mod shim;
 mod types;
 mod watchdog;
@@ -1733,6 +1734,15 @@ struct SendBodyRequest {
     command: Option<String>,
     #[serde(default)]
     caller: Option<CallerContext>,
+    /// `--reply wake|fyi|none` on a send to `role:<id>` (plan 199).
+    #[serde(default)]
+    reply: Option<String>,
+    /// `--limit <duration>` on a send to `role:<id>` (plan 199).
+    #[serde(default)]
+    limit: Option<String>,
+    /// `--project <slug>`: whose directory resolves `role:<id>` (plan 199).
+    #[serde(default)]
+    project: Option<String>,
 }
 
 async fn send(
@@ -1793,6 +1803,33 @@ async fn send(
                 return refusal;
             }
         }
+    }
+    // A send to `role:<id>` resolves through the directory first (plan 199).
+    if let Some(response) = role_send::route(
+        &state,
+        role_send::RoleSendCall {
+            command: "pij send",
+            from: &request.message.from,
+            to: &request.message.to,
+            body: &request.message.body,
+            msg_id: &request.message.msg_id,
+            in_reply_to: request.message.in_reply_to.as_deref(),
+            fyi: request.message.fyi,
+            control: request.command.is_some(),
+            force: request.message.force,
+            reason: request.message.reason.as_deref(),
+            forwarded: request.message.from_machine.is_some(),
+            project: request.project.clone(),
+            options: crate::delivery::role_send::RoleOptions {
+                reply: request.reply.clone(),
+                limit: request.limit.clone(),
+            },
+            caller: request.caller.as_ref(),
+        },
+    )
+    .await
+    {
+        return response;
     }
     if request.message.fyi {
         return hold_fyi(&state, request).await;
