@@ -1089,7 +1089,7 @@ project:
 
 | condition | when | commands |
 |---|---|---|
-| `no-live-holder` | requests wait and no holder's seat is live | `pij-rs revive <last holder>` (when there was one), `pij directory assign <role> '<seat>' --why '<why>'` |
+| `no-live-holder` | requests wait and no holder's seat is live: one action per `instance` of the waiting requests (`""` for any holder, which waits only while the role has no live holder at all) | `pij-rs revive <last holder of that instance>` (when there was one), `pij directory assign <role>[/<instance>] '<seat>' --why '<why>'`, so the assign drains those requests |
 | `two-live-holders` | a one-holder role has two or more live holders | `pij directory release <role>[/<instance>] <seat>` for each but the newest |
 | `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file '<path to the note>'` |
 

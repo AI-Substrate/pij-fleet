@@ -1805,6 +1805,92 @@ async fn several_holders_refuse_by_name_and_an_instance_reaches_only_its_holder(
 /// too, C2) and wakes the project's PA once, naming the last holder to revive
 /// and the assign command. A refused assign drains nothing; an assign delivers
 /// the queue to the new holder in order and marks each request delivered (C6).
+/// Review of #141 (F006), end to end: a request queued on `role:reviewer/141`
+/// with no holder gets a view action naming the instance, and running the
+/// assign it prints drains the request to the new holder.
+#[tokio::test]
+async fn the_views_assign_for_a_queued_instance_drains_it() {
+    let repo = repo("pij-picture-instance-drain");
+    let rig = draining_rig().await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: Vec<String>| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move {
+            let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+            call(addr, "/v1/directory", &argv, &main).await
+        }
+    };
+    let words = |text: &str| -> Vec<String> { text.split(' ').map(str::to_string).collect() };
+    for argv in [
+        "directory add pa --title pa --kind general --lifecycle long-lived --holders one --rule r --packet p --why w",
+        "directory assign pa pij-second --why watch",
+    ] {
+        let done = dir(words(argv)).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let queued = send_to(
+        rig.addr,
+        &repo.main,
+        "role:reviewer/141",
+        "req-141",
+        json!({}),
+    )
+    .await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+
+    let viewed = dir(words("directory")).await;
+    let action = viewed["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["role"] == "reviewer" && action["condition"] == "no-live-holder")
+        .unwrap_or_else(|| panic!("no action: {viewed}"))
+        .clone();
+    assert_eq!(action["instance"], "141", "{action}");
+    let printed = action["commands"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        printed,
+        "pij directory assign reviewer/141 '<seat>' --why '<why>' --project fleet"
+    );
+    // Fill the placeholders, as the prime would, and run it.
+    let filled = printed
+        .replace("'<seat>'", "pij-holder")
+        .replace("'<why>'", "take-141");
+    let run = words(&filled);
+    assert_eq!(&run[..2], ["pij", "directory"]);
+    let assigned = dir(run[1..].to_vec()).await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let mut drained = false;
+    for _ in 0..100 {
+        let request = rig
+            .store
+            .role_request("req-141")
+            .await
+            .unwrap()
+            .expect("row");
+        if request.holder.as_deref() == Some("pij-holder") {
+            drained = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(drained, "the printed assign drained the instance's request");
+    assert!(
+        rig.store
+            .queued_role_requests("fleet", "reviewer", "141")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    rig.server.abort();
+}
+
 #[tokio::test]
 async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
     let repo = repo("pij-role-send-queue");

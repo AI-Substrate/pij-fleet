@@ -3897,7 +3897,7 @@ PEC notice";
             "one",
             &[&gone],
             &std::collections::HashSet::new(),
-            1,
+            &[""],
             None,
         );
         let revive = actions[0]["commands"][0].as_str().unwrap();

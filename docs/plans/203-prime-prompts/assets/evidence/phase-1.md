@@ -77,3 +77,15 @@ and performance's two cheap notes, in one push:
 - Cost: the view reads the project's queued requests without bodies, filtered
   in SQL (`queued_role_request_heads`), and parses the step documents once per
   call (`read_step_docs`) for both needs and recurring paths.
+
+## F006 on bfc5c54
+
+The no-live-holder action is built per instance of the waiting requests: an
+instance with no live holder prints `pij directory assign <role>/<instance>`
+and revives that instance's last holder; requests for any holder wait only
+while the role has no live holder at all.
+`picture::tests::requests_on_an_instance_name_it_in_the_assign_and_revive`
+covers the grouping, and
+`directory_http::the_views_assign_for_a_queued_instance_drains_it` queues on
+`role:reviewer/141`, runs the assign the view prints, and the request drains
+to the new holder.

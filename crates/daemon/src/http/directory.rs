@@ -1112,7 +1112,7 @@ mod tests {
             "one",
             &rows,
             &HashSet::new(),
-            1,
+            &["", "115"],
             None,
         ));
         take(picture::actions(
@@ -1121,7 +1121,7 @@ mod tests {
             "one",
             &rows,
             &seats,
-            0,
+            &[],
             Some("2026-11-05"),
         ));
         let mut prompts = templates::recommendations(project, &[]);

@@ -265,9 +265,11 @@ impl DirectoryService {
                 meta["holders"].as_str().unwrap_or("one"),
                 &mine,
                 live_seats,
-                waiting["count"]
-                    .as_u64()
-                    .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                &queued
+                    .iter()
+                    .filter(|request| request.role == *id)
+                    .map(|request| request.instance.as_str())
+                    .collect::<Vec<_>>(),
                 memory["latest"].as_str(),
             ));
             let section = |name: &str| {

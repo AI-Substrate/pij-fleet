@@ -359,17 +359,19 @@ pub fn latest_output(role: &str, outputs: &[CommunityOutput]) -> Value {
         })
 }
 
-/// The next actions for one role (req-12): no live holder while requests
-/// wait; two live holders on a one-holder role; its last [`MEMORY_CLOSES`]
-/// closes left no memory note. `rows` are the role's holdings, `live` the
-/// registered, untombstoned seats, `memory_latest` its newest note's date.
+/// The next actions for one role (req-12): no live holder of an instance
+/// while requests for it wait; two live holders on a one-holder role; its last
+/// [`MEMORY_CLOSES`] closes left no memory note. `rows` are the role's
+/// holdings, `live` the registered, untombstoned seats, `queued` the instance
+/// of each queued request (`""` for any holder), `memory_latest` its newest
+/// note's date.
 pub fn actions(
     project: &str,
     role: &str,
     holders: &str,
     rows: &[&Assignment],
     live: &HashSet<String>,
-    waiting: usize,
+    queued: &[&str],
     memory_latest: Option<&str>,
 ) -> Vec<Value> {
     let mut out = Vec::new();
@@ -380,10 +382,30 @@ pub fn actions(
         .collect();
     holding.sort_by(|a, b| a.from.cmp(&b.from));
 
-    if holding.is_empty() && waiting > 0 {
+    // One action per instance with requests waiting and no live holder of
+    // it: a request for an instance drains only to a holder of that instance,
+    // one for any holder (instance "") to any holder (review of #141, F006).
+    let mut instances: Vec<&str> = Vec::new();
+    for instance in queued {
+        if !instances.contains(instance) {
+            instances.push(instance);
+        }
+    }
+    for instance in instances {
+        let held = |row: &&Assignment| instance.is_empty() || row.instance == instance;
+        if holding.iter().any(held) {
+            continue;
+        }
+        let waiting = queued.iter().filter(|queued| **queued == instance).count();
+        let address = if instance.is_empty() {
+            role.to_string()
+        } else {
+            format!("{role}/{instance}")
+        };
         let mut commands = Vec::new();
         let last = rows
             .iter()
+            .filter(|row| held(row))
             .max_by(|a, b| {
                 a.to.as_deref()
                     .unwrap_or(&a.from)
@@ -397,7 +419,7 @@ pub fn actions(
             "pij",
             "directory",
             "assign",
-            role,
+            &address,
             "<seat>",
             "--why",
             "<why>",
@@ -406,9 +428,10 @@ pub fn actions(
         ]));
         out.push(json!({
             "role": role,
+            "instance": instance,
             "condition": "no-live-holder",
             "says": format!(
-                "{role} has no live holder and {waiting} request(s) waiting; revive its last holder or assign a seat (assigning delivers the queue)"
+                "{address} has no live holder and {waiting} request(s) waiting; revive its last holder or assign a seat (assigning delivers the queue)"
             ),
             "commands": commands,
         }));
@@ -945,7 +968,15 @@ mod tests {
         );
         let dead = row("pij-dead", "2026-11-03T00:00:00Z", None, None);
         let rows = [&old, &dead];
-        let acts = actions("fleet", "reviewer", "one", &rows, &live(&[]), 2, None);
+        let acts = actions(
+            "fleet",
+            "reviewer",
+            "one",
+            &rows,
+            &live(&[]),
+            &["", ""],
+            None,
+        );
         assert_eq!(conditions(&acts), ["no-live-holder"]);
         assert_eq!(
             acts[0]["commands"],
@@ -954,7 +985,7 @@ mod tests {
                 "pij directory assign reviewer '<seat>' --why '<why>' --project fleet"
             ])
         );
-        assert!(actions("fleet", "reviewer", "one", &rows, &live(&[]), 0, None).is_empty());
+        assert!(actions("fleet", "reviewer", "one", &rows, &live(&[]), &[], None).is_empty());
         assert!(
             actions(
                 "fleet",
@@ -962,10 +993,74 @@ mod tests {
                 "one",
                 &rows,
                 &live(&["pij-dead"]),
-                2,
+                &["", ""],
                 None
             )
             .is_empty()
+        );
+    }
+
+    /// Review of #141 (F006): requests queued on an instance get an action
+    /// that names it, so the assign it prints drains them; one for any holder
+    /// waits only while the role has no live holder at all.
+    #[test]
+    fn requests_on_an_instance_name_it_in_the_assign_and_revive() {
+        let mut gone = row(
+            "pij-141",
+            "2026-11-01T00:00:00Z",
+            Some("2026-11-02T00:00:00Z"),
+            Some("release"),
+        );
+        gone.instance = "141".into();
+        let mut other = row("pij-140", "2026-11-03T00:00:00Z", None, None);
+        other.instance = "140".into();
+        let rows = [&gone, &other];
+        let acts = actions(
+            "fleet",
+            "reviewer",
+            "many",
+            &rows,
+            &live(&["pij-140"]),
+            &["141", "", "141", "140"],
+            None,
+        );
+        assert_eq!(
+            acts.len(),
+            1,
+            "140 is held and any-holder requests drain to it: {acts:?}"
+        );
+        assert_eq!(acts[0]["instance"], "141");
+        assert_eq!(
+            acts[0]["commands"],
+            json!([
+                "pij-rs revive pij-141",
+                "pij directory assign reviewer/141 '<seat>' --why '<why>' --project fleet"
+            ])
+        );
+        assert!(
+            acts[0]["says"]
+                .as_str()
+                .unwrap()
+                .starts_with("reviewer/141 has no live holder and 2 request(s)")
+        );
+        let none = actions(
+            "fleet",
+            "reviewer",
+            "many",
+            &rows,
+            &live(&[]),
+            &["", "141"],
+            None,
+        );
+        assert_eq!(
+            none.iter()
+                .map(|act| act["instance"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["", "141"]
+        );
+        assert_eq!(
+            none[0]["commands"][0], "pij-rs revive pij-140",
+            "any holder's last seat"
         );
     }
 
@@ -980,7 +1075,7 @@ mod tests {
             "one",
             &rows,
             &live(&["pij-a", "pij-b"]),
-            0,
+            &[],
             None,
         );
         assert_eq!(conditions(&acts), ["two-live-holders"]);
@@ -997,7 +1092,7 @@ mod tests {
                 "many",
                 &rows,
                 &live(&["pij-a", "pij-b"]),
-                0,
+                &[],
                 None
             )
             .is_empty()
@@ -1009,7 +1104,7 @@ mod tests {
                 "one",
                 &rows,
                 &live(&["pij-a"]),
-                0,
+                &[],
                 None
             )
             .is_empty()
@@ -1038,7 +1133,7 @@ mod tests {
                 "one",
                 &rows,
                 &live(&[]),
-                0,
+                &[],
                 latest,
             ))
             .contains(&"memory-stale")
@@ -1050,12 +1145,20 @@ mod tests {
             "a note on a close's day covers it"
         );
         assert!(
-            !actions("fleet", "reviewer", "one", &rows[..1], &live(&[]), 0, None)
-                .iter()
-                .any(|a| a["condition"] == "memory-stale"),
+            !actions(
+                "fleet",
+                "reviewer",
+                "one",
+                &rows[..1],
+                &live(&[]),
+                &[],
+                None
+            )
+            .iter()
+            .any(|a| a["condition"] == "memory-stale"),
             "one close is not a pattern"
         );
-        let acts = actions("fleet", "reviewer", "one", &rows, &live(&[]), 0, None);
+        let acts = actions("fleet", "reviewer", "one", &rows, &live(&[]), &[], None);
         assert!(
             acts[0]["commands"][0]
                 .as_str()
