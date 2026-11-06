@@ -212,6 +212,22 @@ async fn compact_queued(rig: &Rig, seat: &str) -> bool {
         })
 }
 
+/// A held compact's answer decodes as the CLI decodes a control answer
+/// (`Envelope<Receipt>`): its own msg_id, outcome held.
+fn held_compact_receipt(answer: &Value, msg_id: &str) {
+    let envelope: pij_core::model::Envelope<pij_core::model::Receipt> =
+        serde_json::from_value(answer.clone()).expect("a control receipt");
+    let receipt = envelope.data.expect("receipt data");
+    assert_eq!(receipt.msg_id, msg_id);
+    assert_eq!(
+        receipt.outcome,
+        pij_core::model::DeliveryOutcome::Held {
+            reason: "memory-turn".to_string()
+        }
+    );
+    assert!(receipt.at > 0);
+}
+
 /// The `memory.turn` spine event for `seat`, once the held action has run.
 async fn turn_event(rig: &Rig, seat: &str) -> Value {
     for _ in 0..500 {
@@ -323,6 +339,7 @@ async fn a_parents_compact_of_a_holder_is_held_and_admitted_after_the_turn() {
     let rig = rig(Duration::from_secs(30), &["holder"]).await;
     let held = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
     assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    held_compact_receipt(&held, "compact-holder");
     let prompt = prompt_for(&rig, "holder").await;
     take_turn(&rig, "holder", &prompt).await;
     let turn = turn_event(&rig, "holder").await;
@@ -359,6 +376,7 @@ async fn a_holder_closing_or_compacting_itself_is_held_until_its_turn_ends() {
     let compacted = post(rig.addr, "/v1/send", compact("prime", "prime")).await;
     assert_eq!(compacted["ok"], true, "{compacted}");
     assert_eq!(compacted["data"]["held"], "memory-turn", "{compacted}");
+    held_compact_receipt(&compacted, "compact-prime");
     let prompt = prompt_for(&rig, "prime").await;
     assert!(!compact_queued(&rig, "prime").await);
     take_turn(&rig, "prime", &prompt).await;

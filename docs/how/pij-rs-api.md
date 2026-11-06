@@ -1056,7 +1056,10 @@ daemon start, overrides it.
 
 The caller is answered at once with `data.held: "memory-turn"` and
 `data.memory_turn` (`action`, `holdings`, `bound_ms`, `note`), and the compact or
-close runs in the daemon. So no client's request timeout can cut the hold
+close runs in the daemon. A held compact's answer is still a control receipt
+(`msg_id` the control's own, `outcome` `{"outcome":"held","reason":"memory-turn"}`,
+`at`), so every client decodes it as it decodes any send; a held close carries
+`data.seat`. So no client's request timeout can cut the hold
 short (the Copilot extension gives up after 65 s, Node's fetch after 300 s), and
 a seat compacting or closing itself, which is mid-turn, is handled the same
 way. A held close therefore has no `tombstoned_at` in its answer: the tombstone

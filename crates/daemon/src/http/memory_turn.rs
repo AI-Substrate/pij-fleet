@@ -25,7 +25,7 @@
 use std::time::{Duration, Instant};
 
 use pij_core::events::EventFilter;
-use pij_core::model::{Event, Msg, SeatDescriptor, SeatId};
+use pij_core::model::{DeliveryOutcome, Event, Msg, Receipt, SeatDescriptor, SeatId};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio_stream::StreamExt;
@@ -47,6 +47,9 @@ pub fn bound_from(value: Option<&str>) -> Duration {
         .filter(|secs| *secs > 0)
         .map_or(BOUND, Duration::from_secs)
 }
+
+/// The `held` value, and the held compact receipt's outcome reason.
+pub const HELD: &str = "memory-turn";
 
 /// The spine event recording each memory turn and how it ended.
 pub const EVENT_KIND: &str = "memory.turn";
@@ -137,7 +140,23 @@ pub(crate) fn hold(
 ) -> Value {
     let bound = state.services.memory_turn_bound;
     let action = then.action();
-    let answer = held(action, &seat.id, &holdings, bound);
+    // A held compact answers as a control receipt (the clients decode one, and
+    // Copilot's checks its msg_id); a held close answers with the seat.
+    let mut answer = match &then {
+        Then::Compact(msg) => serde_json::to_value(Receipt {
+            msg_id: msg.msg_id.clone(),
+            outcome: DeliveryOutcome::Held {
+                reason: HELD.to_string(),
+            },
+            at: now_ms(),
+            cold_check: None,
+            warning: None,
+        })
+        .unwrap_or_default(),
+        Then::Close { .. } => json!({"seat": seat.id}),
+    };
+    answer["held"] = json!(HELD);
+    answer["memory_turn"] = held(action, &holdings, bound);
     let state = state.clone();
     tokio::spawn(async move {
         let mut report = run(&state, &seat.id, holdings, action, bound).await;
@@ -351,14 +370,8 @@ async fn run(
             Some(format!("the memory prompt could not be sent: {error}")),
         ),
         Ok(receipt) => {
-            let delivered = matches!(
-                receipt.outcome,
-                pij_core::model::DeliveryOutcome::Delivered { .. }
-            );
-            if matches!(
-                receipt.outcome,
-                pij_core::model::DeliveryOutcome::Refused { .. }
-            ) {
+            let delivered = matches!(receipt.outcome, DeliveryOutcome::Delivered { .. });
+            if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
                 (
                     Ended::Undelivered,
                     Some("the seat refused the memory prompt".to_string()),
@@ -410,21 +423,17 @@ async fn run(
     }
 }
 
-/// What a holder's compact or close answers with at once.
-fn held(action: Action, seat: &SeatId, holdings: &[Holding], bound: Duration) -> Value {
+/// The `memory_turn` a holder's compact or close answers with at once.
+fn held(action: Action, holdings: &[Holding], bound: Duration) -> Value {
     json!({
-        "seat": seat,
-        "held": "memory-turn",
-        "memory_turn": {
-            "action": action,
-            "holdings": holdings,
-            "bound_ms": millis(bound),
-            "note": format!(
-                "this seat holds a role, so pij asked it to write its memory; the {} runs when its turn ends, or after {}s",
-                verb(action),
-                bound.as_secs()
-            ),
-        },
+        "action": action,
+        "holdings": holdings,
+        "bound_ms": millis(bound),
+        "note": format!(
+            "this seat holds a role, so pij asked it to write its memory; the {} runs when its turn ends, or after {}s",
+            verb(action),
+            bound.as_secs()
+        ),
     })
 }
 
