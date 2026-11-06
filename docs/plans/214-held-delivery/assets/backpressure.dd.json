@@ -66,7 +66,17 @@
         },
         {
           "id": "bp-0006",
-          "criterion": "AC6: cost",
+          "criterion": "AC6",
+          "phase": "ph-00d6",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "s12 test: a limited request answered by --in-reply-to from its holder gets no check-in; one from a non-holder still does; replaying the reply is a no-op.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: cost",
           "phase": "ph-00d6",
           "mode": "EXTEND",
           "tier": "computational",
@@ -76,8 +86,8 @@
           "note": "No new timer, poll or launch. The held-time record is one column on a write the delivery already makes. The PA flag is one indexed query inside the existing PA digest round, constant per digest, not per seat per tick. The Copilot hook reads an in-memory list the extension's existing stream fills; it makes no daemon call on a tool boundary unless an urgent body is pending. State the per-tool-call cost (expected: a map lookup) and measure the live fleet before and after."
         },
         {
-          "id": "bp-0007",
-          "criterion": "AC7: docs and states",
+          "id": "bp-0008",
+          "criterion": "AC8: docs and states",
           "phase": "ph-00d6",
           "mode": "EXISTS",
           "tier": "computational",

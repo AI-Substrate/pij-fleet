@@ -6,7 +6,7 @@
     {
       "name": "meta",
       "value": {
-        "title": "Held delivery and urgent sends (F25, F73)",
+        "title": "Held delivery and urgent sends (F25, F73, F68)",
         "slug": "held-delivery",
         "ordinal": 214,
         "complexity": "CS-3",
@@ -19,7 +19,7 @@
     },
     {
       "name": "summary",
-      "value": "Messages to a seat in a long turn wait for that turn to end. Today that cost hours (F25). This plan measures the wait per message, has the PA flag waits over 15 minutes, adds `--urgent` for the few messages a working seat must see now (Copilot through onPostToolUse; OMP/Pi already steer; others downgrade with a reason), and makes s12 limits count from delivery (F73). Owner: delivery (pij-swift-kestrel), after plan 212."
+      "value": "Messages to a seat in a long turn wait for that turn to end. Today that cost hours (F25). This plan measures the wait per message, has the PA flag waits over 15 minutes, adds `--urgent` for the few messages a working seat must see now (Copilot through onPostToolUse; OMP/Pi already steer; others downgrade with a reason), and makes s12 limits count from delivery (F73), and a reply with --in-reply-to answers a request (F68, moved from plan 212's follow-ups). Owner: delivery (pij-swift-kestrel). Order (prime, 23:25): 214 comes before any further 212 work; it is the biggest drag on the fleet's speed."
     },
     {
       "name": "goals",
@@ -31,7 +31,6 @@
       "name": "non_goals",
       "value": [
         "Changing FYI semantics or the cold-wake rule.",
-        "F68 (--in-reply-to counts as an answer): plan 212.",
         "Any new delivery timer or poll."
       ]
     },
@@ -64,21 +63,27 @@
         },
         {
           "id": "ac-0005",
-          "claim": "F73: limits count from delivery. A role request's `--limit` clock starts when the request reaches the holder's session, not when it was created; until then the request has no check-in. If a check-in fires, it says how long the request was held in delivery. (A reply with --in-reply-to counting as an answer is F68, plan 212; don't duplicate it here.)",
+          "claim": "F73: limits count from delivery. A role request's `--limit` clock starts when the request reaches the holder's session, not when it was created; until then the request has no check-in. If a check-in fires, it says how long the request was held in delivery. (F68 is AC6.)",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
         {
           "id": "ac-0006",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch. The held-time record is one column on a write the delivery already makes. The PA flag is one indexed query inside the existing PA digest round, constant per digest, not per seat per tick. The Copilot hook reads an in-memory list the extension's existing stream fills; it makes no daemon call on a tool boundary unless an urgent body is pending. State the per-tool-call cost (expected: a map lookup) and measure the live fleet before and after.",
+          "claim": "F68: a reply answers. A send from the request's holder with `--in-reply-to <request id>` sets the request's answered_at and stops its check-in and escalation; a send without it, or from another seat, does not. If s06's `pij output --answers` (#137) has landed, both paths set the same field, and neither double-counts.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
         },
         {
           "id": "ac-0007",
-          "claim": "Docs and states. docs/how/pij-rs-api.md: --urgent, the downgrade warning, E-RS-URGENT-FYI, the held-time fields and the limit clock. The pij skill and the pij_send tool description say when to use urgent (the recipient is mid-turn and its current work is wrong without this message) and when not to (everything else; prefer normal or fyi). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch. The held-time record is one column on a write the delivery already makes. The PA flag is one indexed query inside the existing PA digest round, constant per digest, not per seat per tick. The Copilot hook reads an in-memory list the extension's existing stream fills; it makes no daemon call on a tool boundary unless an urgent body is pending. State the per-tool-call cost (expected: a map lookup) and measure the live fleet before and after.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Docs and states. docs/how/pij-rs-api.md: --urgent, the downgrade warning, E-RS-URGENT-FYI, the held-time fields and the limit clock. The pij skill and the pij_send tool description say when to use urgent (the recipient is mid-turn and its current work is wrong without this message) and when not to (everything else; prefer normal or fyi). docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
         }
       ]
     },
@@ -87,7 +92,7 @@
       "value": [
         {
           "id": "ph-00d6",
-          "title": "Held delivery and urgent sends (F25, F73)",
+          "title": "Held delivery and urgent sends (F25, F73, F68)",
           "state": "unchecked",
           "brief": "All ACs. One coder. CS-3.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
