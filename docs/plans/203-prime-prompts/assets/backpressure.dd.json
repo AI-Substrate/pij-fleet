@@ -46,7 +46,27 @@
         },
         {
           "id": "bp-0004",
-          "criterion": "AC4: cost",
+          "criterion": "AC4",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: the view shows the designated prime seat; with no prime role document, the prompt says the role document is missing, not the prime.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-00cb",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a many-holder role renders one holder per line; times show local with zone.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: cost",
           "phase": "ph-00cb",
           "mode": "EXTEND",
           "tier": "computational",
@@ -56,8 +76,8 @@
           "note": "The view reads documents in-process and the store; it launches nothing. No timer or poll."
         },
         {
-          "id": "bp-0005",
-          "criterion": "AC5: docs and states",
+          "id": "bp-0007",
+          "criterion": "AC7: docs and states",
           "phase": "ph-00cb",
           "mode": "EXISTS",
           "tier": "computational",

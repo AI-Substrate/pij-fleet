@@ -56,15 +56,27 @@
         },
         {
           "id": "ac-0004",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). The view reads documents in-process and the store; it launches nothing. No timer or poll.",
+          "claim": "F21 (low, s03 dogfood): the view names the project's designated prime (the seat the project records as prime), so a missing `prime` role document doesn't read like a missing prime.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
-          "claim": "Docs and states. In this PR: roadmap s09 goes to complete (plan cell docs/plans/203-prime-prompts); req-12 and req-24 go to shipped; req-27 goes to in-progress (s10 finishes it); c-orient goes to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "claim": "F22 (low, s03 dogfood): view polish. Holder times show local time with zone (the writer's zoned dates come from plan 206's F13), and a many-holder role's row wraps to one line per holder instead of one very long line.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). The view reads documents in-process and the store; it launches nothing. No timer or poll.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Docs and states. In this PR: roadmap s09 goes to complete (plan cell docs/plans/203-prime-prompts); req-12 and req-24 go to shipped; req-27 goes to in-progress (s10 finishes it); c-orient goes to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
         }
       ]
     },
