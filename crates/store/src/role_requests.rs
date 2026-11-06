@@ -199,7 +199,32 @@ impl SqliteOrchestration {
         .collect()
     }
 
-    /// Every queued request, oldest first: the PA digest's list.
+    /// Every request not yet settled, queued or stuck `delivering`, oldest
+    /// first: the PA digest's list (review of #129, F003). Bodies are not
+    /// read (blank here); the digest never shows them. Two partial-index reads.
+    pub async fn unsettled_role_requests(&self) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        let columns = COLUMNS.replace("body", "'' AS body");
+        let mut rows = Vec::new();
+        for (index, state) in [
+            ("role_requests_queued", "queued"),
+            ("role_requests_delivering", "delivering"),
+        ] {
+            let read = sqlx::query(&format!(
+                "SELECT {columns} FROM role_requests INDEXED BY {index} WHERE state = '{state}'"
+            ))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+            for row in &read {
+                rows.push(role_request(row)?);
+            }
+        }
+        rows.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+        Ok(rows)
+    }
+
+    /// Every queued request, oldest first.
     pub async fn all_queued_role_requests(&self) -> Result<Vec<RoleRequest>> {
         require_current_schema(&self.pool).await?;
         sqlx::query(&format!(
@@ -279,6 +304,52 @@ impl SqliteOrchestration {
             "DELETE FROM role_requests WHERE id = ?1 AND state = 'delivering' AND holder = ?2",
             None,
         )
+        .await
+    }
+
+    /// Settle every request a stopped daemon left `delivering`: claimed, but
+    /// neither marked delivered nor released (review of #129). Run once at
+    /// boot, before anything claims. One the delivery path already took for
+    /// its holder (a ledger row, a delivery job, or a held FYI under its
+    /// msg_id) is marked delivered at `now_ms`, so it is never sent twice. Any
+    /// other goes back to `queued` with no holder: the next assign drains it
+    /// and the PA digest lists it. One write transaction. Returns how many
+    /// were marked delivered and how many re-queued.
+    pub async fn recover_delivering_role_requests(&self, now_ms: u64) -> Result<(u64, u64)> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let now = sql_i64(now_ms, "delivered_at")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let delivered = sqlx::query(
+                "UPDATE role_requests SET state = 'delivered', delivered_at = ?1 \
+                 WHERE state = 'delivering' AND holder IS NOT NULL AND ( \
+                   EXISTS (SELECT 1 FROM delivered_messages AS ledger \
+                     WHERE ledger.recipient = role_requests.holder AND ledger.msg_id = role_requests.id \
+                     AND ledger.sender_machine = '') \
+                   OR EXISTS (SELECT 1 FROM jobs \
+                     WHERE jobs.kind = 'delivery:' || role_requests.holder \
+                     AND jobs.dedupe_key = role_requests.id AND jobs.dedupe_origin = '') \
+                   OR EXISTS (SELECT 1 FROM fyis \
+                     WHERE fyis.origin = '' AND fyis.id = role_requests.id \
+                     AND fyis.recipient = role_requests.holder))",
+            )
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected();
+            let requeued = sqlx::query(
+                "UPDATE role_requests SET state = 'queued', holder = NULL \
+                 WHERE state = 'delivering'",
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected();
+            tx.commit().await.map_err(adapter_error)?;
+            Ok((delivered, requeued))
+        })
         .await
     }
 

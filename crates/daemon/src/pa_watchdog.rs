@@ -1037,7 +1037,7 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
 /// read per digest, so the queue rides the round with no timer of its own.
 /// A failed read leaves the list empty rather than holding up the nudge.
 async fn queued_requests(services: &Services, now_ms: u64) -> Vec<QueuedRequest> {
-    match services.governance.store().all_queued_role_requests().await {
+    match services.governance.store().unsettled_role_requests().await {
         Ok(requests) => requests
             .into_iter()
             .map(|request| QueuedRequest {
@@ -1050,6 +1050,9 @@ async fn queued_requests(services: &Services, now_ms: u64) -> Vec<QueuedRequest>
                 id: request.id,
                 requester: SeatId::from(request.requester.as_str()),
                 waiting_ms: now_ms.saturating_sub(request.created_at),
+                delivering_to: (request.state == pij_store::RequestState::Delivering)
+                    .then(|| request.holder.as_deref().map(SeatId::from))
+                    .flatten(),
             })
             .collect(),
         Err(cause) => {

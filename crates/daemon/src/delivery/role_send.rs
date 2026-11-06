@@ -753,6 +753,31 @@ pub async fn drain(
     outcomes
 }
 
+/// At boot, settle the requests a stopped daemon left `delivering` (review
+/// of #129): one delivery already took is marked delivered, any other is
+/// re-queued for the next assign. A failure is logged; boot carries on.
+pub async fn recover_requests(services: &Services) {
+    let now_ms = match crate::http::system_time_ms() {
+        Ok(now) => now,
+        Err(cause) => {
+            eprintln!("pij-rs: role requests not recovered: {cause}");
+            return;
+        }
+    };
+    match services
+        .directory
+        .store()
+        .recover_delivering_role_requests(now_ms)
+        .await
+    {
+        Ok((0, 0)) => {}
+        Ok((delivered, requeued)) => eprintln!(
+            "pij-rs: role requests left delivering: {delivered} marked delivered, {requeued} re-queued"
+        ),
+        Err(cause) => eprintln!("pij-rs: role requests not recovered: {cause}"),
+    }
+}
+
 /// One claimed request to `seat`, through the admission an immediate send
 /// gets. The delivery time, or why nothing was delivered.
 async fn deliver_drained(

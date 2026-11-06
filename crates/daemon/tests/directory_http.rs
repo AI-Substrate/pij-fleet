@@ -2208,3 +2208,143 @@ async fn security_a_released_holder_never_drains_and_a_cold_drain_is_audited() {
     );
     rig.server.abort();
 }
+
+/// Review of #129: a daemon that stops after a claim commits and before the
+/// request is delivered or released leaves it `delivering`. The next boot
+/// re-queues it (or marks it delivered when delivery already took it), and the
+/// next assign's drain delivers it exactly once.
+#[tokio::test]
+async fn a_claim_left_by_a_stopped_daemon_drains_once_after_restart() {
+    use pij_daemon::delivery::role_send::drain;
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+
+    let fresh = FreshStore::new();
+    let state = PathBuf::from(fresh.path()).with_extension("restart-state");
+    std::fs::create_dir_all(&state).unwrap();
+    let config = Config {
+        adapters: Adapters {
+            registry: AdapterChoice::Real,
+            spine: AdapterChoice::Real,
+            queue: AdapterChoice::Real,
+            ..Adapters::default()
+        },
+        store_path: fresh.path(),
+        bind_addr: "127.0.0.1:0".into(),
+        ..Config::default()
+    };
+    let services = pij_daemon::build_services(&config, &state.join("pane-signals"))
+        .await
+        .expect("services");
+    for id in ["pij-old", "pij-next"] {
+        services
+            .registry
+            .put(SeatDescriptor::new(id, Harness::Omp, "/tmp"))
+            .await
+            .unwrap();
+    }
+    let store = services.directory.store().clone();
+    let hold = |seat: &str| pij_store::Assignment {
+        project: "fleet".into(),
+        role: "coder".into(),
+        instance: String::new(),
+        seat: seat.into(),
+        harness: Some("omp".into()),
+        session: None,
+        machine: Some("local".into()),
+        from: "2026-11-06T00:00:00Z".into(),
+        to: None,
+        assigned_by: "pij-pm".into(),
+        released_by: None,
+        why: "test".into(),
+        release_why: None,
+        end_pending: false,
+    };
+    store
+        .record_assignment_committed(&hold("pij-old"), Some("worker"), 1)
+        .await
+        .unwrap();
+    let request = |id: &str| RoleRequest {
+        id: id.into(),
+        project: "fleet".into(),
+        role: "coder".into(),
+        instance: String::new(),
+        requester: SEAT.into(),
+        body: format!("please {id}"),
+        in_reply_to: None,
+        fyi: false,
+        reply: ReplyMode::Wake,
+        limit_ms: None,
+        state: RequestState::Queued,
+        holder: None,
+        created_at: 1,
+        delivered_at: None,
+    };
+    // The claims commit; the daemon stops before either is marked or released.
+    // Delivery had already taken "taken" (an FYI held under its msg_id).
+    for id in ["crashed", "taken"] {
+        store.record_role_request(&request(id)).await.unwrap();
+        assert!(store.claim_role_request(id, "pij-old").await.unwrap());
+    }
+    services
+        .delivery
+        .hold_fyi(pij_core::model::Msg {
+            from: SeatId::from(SEAT),
+            from_machine: None,
+            to: SeatId::from("pij-old"),
+            body: "please taken".into(),
+            msg_id: "taken".into(),
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .unwrap();
+
+    let daemon = pij_daemon::boot(&config, state.clone())
+        .await
+        .expect("boot");
+    let row = |id: &'static str| {
+        let store = store.clone();
+        async move { store.role_request(id).await.unwrap().expect("row") }
+    };
+    let crashed = row("crashed").await;
+    assert_eq!(
+        (crashed.state, crashed.holder),
+        (RequestState::Queued, None)
+    );
+    assert_eq!(row("taken").await.state, RequestState::Delivered);
+    daemon.shutdown().await.unwrap();
+
+    // The next assign drains it, once, to the new holder.
+    let mut released = hold("pij-old");
+    released.to = Some("2026-11-06T00:01:00Z".into());
+    released.released_by = Some("pij-pm".into());
+    store.end_assignments(&[released]).await.unwrap();
+    store
+        .record_assignment_committed(&hold("pij-next"), Some("worker"), 3)
+        .await
+        .unwrap();
+    let next = SeatId::from("pij-next");
+    assert_eq!(
+        drain(&services, "fleet", "coder", "", &next).await,
+        [("crashed".to_string(), Ok(()))]
+    );
+    assert!(
+        drain(&services, "fleet", "coder", "", &next)
+            .await
+            .is_empty()
+    );
+    let after = row("crashed").await;
+    assert_eq!(
+        (after.state, after.holder.as_deref()),
+        (RequestState::Delivered, Some("pij-next"))
+    );
+    let inbox = services.delivery.peek_inbox(&next).await.unwrap();
+    assert_eq!(
+        inbox
+            .iter()
+            .filter(|claim| claim.message.msg_id == "crashed")
+            .count(),
+        1
+    );
+    let _ = std::fs::remove_dir_all(&state);
+}

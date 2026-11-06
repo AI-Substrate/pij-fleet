@@ -28,4 +28,9 @@ CREATE TABLE role_requests (
 CREATE INDEX role_requests_queued
     ON role_requests (project, role, created_at) WHERE state = 'queued';
 
+-- Claimed and not yet settled: normally empty, read by the PA digest and by
+-- boot recovery of a stopped daemon's claims.
+CREATE INDEX role_requests_delivering
+    ON role_requests (created_at) WHERE state = 'delivering';
+
 PRAGMA user_version = 34;
