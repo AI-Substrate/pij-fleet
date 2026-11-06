@@ -128,3 +128,169 @@
 2026-11-04 note pr-122-review e452777 pass-with-notes — mammal: F001/F002 closed; F003 P3 test-only latent flake (same-second precondition) -> follow-up, not blocking
 2026-11-04 note pr-122-perf e452777 pass-with-notes — wombat: launches unchanged; note check_rows O(H^2) in lineage rows
 2026-11-04 note pr-121-review 2ecbd26 pass-with-notes — salamander: F001/F002 closed; normalisation mutation detected; awaiting security + perf delta
+2026-11-04 note pr-121-perf 2ecbd26 pass-with-notes — wombat: normalisation adds no launch
+2026-11-06 deliverable docs-system-2-packet 41b2d4b sent — fresh docs-system seat pij-wooden-lungfish (heron cold at 611k); packet doubles as handover; first job: import re-run after #122 deploys
+2026-11-06 note pr-122-ready e452777 ready — reviewer, security, perf all pass-with-notes; sent to prime (migration 0032: back up store, bounce)
+2026-11-06 note pr-121-security 2ecbd26 block — lynx MEDIUM: lock dir 0775 under umask 002, owner-file symlink plant; routed to kestrel (mkdir -m 0700, noclobber owner, regression)
+2026-11-06 note pr-121 eff6286758eae1d8f825805f3ceda04dbf6c8ffb sent — security fix (mkdir -m 0700, noclobber owner); lynx re-check, reviewer + perf delta in fleet-review-121d
+2026-11-06 note pr-121-review eff6286 pass-with-notes — salamander delta; both guard mutations detected; awaiting security + perf
+2026-11-06 note pr-121-perf eff6286 pass-with-notes — wombat: no new launch
+2026-11-06 note retired - done — pij-brisk-marten (s04 done, cold 40h) and pij-substantial-mammal (#122 reviewer) closed + killed; review worktrees 122/122b removed; fleet-190 worktree kept (shared target)
+2026-11-06 deliverable coder-194 d35186e sent — s03 coder pij-following-marsupial (window pij:coder-194, own target); C26 folded into plan 194
+2026-11-06 note pr-121-ready eff6286 ready — all verdicts pass-with-notes; sent to prime; reviewer salamander retired; 121 worktrees removed
+2026-11-06 note pr-121-merged db407b4 merged — shared-target rule now `just shared-build` (lock at <target>.lock); /tmp lock retired; wildcat told to merge main and switch; kestrel's loan ended
+2026-11-06 note holders-assigned 46b38eb done — 8 live holders recorded via pij directory assign (pm-001, pa, delivery, docs-system, security, performance, coder/194, coder/196); windows renamed pij-fleet:<role>; F15 closed seats can't enter lineage; F16 no batch assign
+2026-11-06 deliverable docs-system-job2 5a174e0 sent — lungfish: PEC rename-forward docs PR (C26) + F12-F16 difficulties
+2026-11-06 note holders-md - rewritten — HOLDERS.md now points to pij directory; pre-verb tables kept as frozen history; prime to commit
+2026-11-06 note holders-md - reverted — prime had committed 910e7ac; pm-001's stale overwrite restored to HEAD (single path); no diff
+2026-11-06 note holders-md - fix — 41867b7 committed pm-001's broken edit (tables lost); working copy restored to 910e7ac content; prime to commit
+2026-11-06 note claim:plans-199-206 6ccd4d8 claimed — 199 s05, 200 s06, 201 s07, 202 s08, 203 s09, 204 s10, 205 s12, 206 s04 follow-ups; migrations 0034 (s05), 0035 (s06), 0036 reserved (s12 if needed)
+2026-11-06 deliverable wave-c-plans de6592e..59c97c6 done — 8 short plans pushed; lanes: A kestrel 199→205, B pij-back-tapir 201→200, C pij-local-warbler 202→203, D marsupial 194→204, E wildcat 196→206; packet outputs/2026-11/001-wave-c-coder-packet.md
+2026-11-06 note holders-pending - held — assigns for coder/199 kestrel, coder/201 tapir, coder/202 warbler wait until wombat's at-rest window reports
+2026-11-06 deliverable review-125 9384397 sent — PEC rename PR: reviewer pij-interior-jellyfish (window pij:review-125), security
+2026-11-06 deliverable plan-206 d97a234 done — req-28 retire/merge + roadmap s15 added to plan 206 (lane E); bootstrap.md:46 PEC to s10
+2026-11-06 note holders-assigned-2 43852c2 done — coder/199 kestrel, coder/201 tapir, coder/202 warbler, reviewer/125 jellyfish; F17 (low): a seat holding two roles gets the last assign's window name (kestrel delivery -> pij-fleet:coder-199)
+2026-11-06 note perf-at-rest 92221 flagged — s04 sites flat; daemon total 1.15/s vs 0.52/s (registration-native-process +60/min, date.utc-offset +7); attribution asked of wombat; prime told
+2026-11-06 note lane-e 86ca954 restarted — wildcat had no s11 tasks/code since 04 Nov read-in (stalled across the gap); starting now; not critical path
+2026-11-06 note dogfood-rule - recorded — fleet switches to each step at merge+bounce; packets name live verbs; dogfood note per step
+2026-11-06 note pr-125-review 9384397 pass-with-notes — jellyfish; P3 merge keeps both roles' data -> plan 206 AC6 (push to plan/206 rejected by GitHub commit_refs; wording handed to wildcat); reviewer retired
+2026-11-06 note pr-125-ready 9384397 ready — reviewer pass-with-notes, security pass; sent to prime; worktree removed
+2026-11-06 note pr-125-merge - NOT merged — gh says OPEN; main still db407b4; prime told (GitHub commit_refs errors)
+2026-11-06 note pr-125-merged 0eebb69 merged — verified (gh MERGED, origin/main 0eebb69)
+2026-11-06 note s07-design - approved — memory turn via live event subscription, 5 min bound constant, inline wait vs held self path; client timeout check; shared compact-admission helper with warbler
+2026-11-06 deliverable review-126 04144d1 sent — s03 PR: reviewer pij-subsequent-reindeer (assigned via directory), security, perf; disk 123 GB
+2026-11-06 note builds - changed — disk 123 GB: lanes B, C, E to own targets; kestrel alone on shared target via just shared-build
+2026-11-06 note spawn-attribution - reported — claude_bind per-pending-seat /bin/date every 5s (forbidden shape, pre-existing); registration ps per ancestor; recommended in-process replacements as one small plan; prime asked to rule
+2026-11-06 note issues-127-128 - opened — #127 claude_bind /bin/date per pending seat; #128 registration ps per ancestor; plan 207 in-process-probes (owner: first free lane; kestrel reviews bind change)
+2026-11-06 note plan-207 c86d960 done — in-process-probes plan for #127 #128; queued for first free lane
+2026-11-06 note pr-126-review 04144d1 block — reindeer F001 P2 prompts/template-diff hint drop --project; routed to marsupial; F003 test fails alone locally -> prime asked about flaky-test rule
+2026-11-06 note pr-126-security 04144d1 pass-with-notes — lynx: lookups confined, templates public-safe; note real-ddocs not proven in CI (UNAVAILABLE)
+2026-11-06 note f003-rule - ruled — delete the #122 same-second test in a one-line PR on its first CI failure; else plan 206 replaces it. Load ~40/16 cores: reviewers prefer CI evidence; no 6th builder
+2026-11-06 note pr-126-perf 04144d1 pass-with-notes — wombat: no launch; LCS diff O(MN) CPU note
+2026-11-06 note pr-126 6b820d0e04c89a6c7980c5cbc94f8e5258baa6aa sent — F001 fix (always --project, shell_word); delta verdicts in fleet-review-126b
+2026-11-06 note pr-126-perf 6b820d0 pass-with-notes — wombat delta; CI green
+2026-11-06 note pr-126-review 6b820d0 pass-with-notes — reindeer: F001 closed (replay red at old head, green at fix); awaiting security delta
+2026-11-06 note pr-126-ready 6b820d0 ready — all verdicts pass-with-notes; sent to prime (bounce needed); reviewer retired; worktrees removed
+2026-11-06 note pr-126-merged 1035c80 merged — s03 live (daemon 93273); fleet told; 3-build rule: targets fleet-190 (kestrel, wildcat), fleet-201 (tapir, warbler), fleet-194 (marsupial)
+2026-11-06 deliverable plan-207-assign c86d960 sent — marsupial on plan 207 (#127 #128); directory: release coder/194, assign coder/207; lungfish s03 dogfood note
+2026-11-06 note f18 - folded — writer vs hand commit index.lock race -> plan 206 AC (owner marker, bounded retry)
+2026-11-06 note dogfood-s03 - folded — lungfish F17-F21 renumbered F19-F23; F17/F18/F19/F20 -> 206 (19d1c39), F21/F22 -> 203 (a94f769), F23 -> 204 (ac419d8)
+2026-11-06 note split-206 - done — 206 (a5857ec) reshape: edit/retire/merge/s15/F19 (wildcat); 208 (0b87bb2) polish: F13/F15/F16/F17/F18/F003 (marsupial after 207); claim:plan-208
+2026-11-06 deliverable review-129 fd7bf41 sent — s05 PR (critical path): reviewer pij-many-tiglon (assigned), security, perf; F003 flake rule applies
+2026-11-06 note plan-207-ruling - asked — #128 argv needs unsafe sysctl(KERN_PROCARGS2) (A, recommended with conditions) vs ps only for harness-host ancestors (B); prime to rule
+2026-11-06 note pr-129 fd7bf41 dirty — conflicts with main after #126; no CI; kestrel merging main; verdict seats hold post until new head
+2026-11-06 note c27 - folded — #128: forbid stays; name/parent in-process, ps argv only for harness-host ancestors, assert <=1 ps per registration; marsupial rewords plan 207 AC2
+2026-11-06 note warbler-target - corrected — warbler built on fleet-190 (old rule); moved to fleet-201; F24 shared-build owner shows user not seat -> plan 208
+2026-11-06 note pr-129 da23eb7566844c93857ecb11ba58c4da6947c605 green — merge of main; CI green; verdict seats re-pinned in fleet-review-129b
+2026-11-06 note migrations - reassigned — 0035 to s12 (kestrel; answered_at + mark_role_request_answered), 0036 to s06 (tapir); plan 200 updated
+2026-11-06 deliverable review-130 dcc3e52 sent — s08 PR: reviewer pij-usual-seahorse, security, perf; warbler moved to plan 208 (coder/208), marsupial 207 then 204
+2026-11-06 note pr-129-review fd7bf41 block — tiglon F001 replay after holder rotation dispatches twice; F002 competing drains dispatch before CAS; routed to kestrel (pause 205)
+2026-11-06 note pr-129-security fd7bf41 interim-block — lynx MEDIUM stale drain to released holder (role_send.rs:585-644) + drain bypasses cold guard/audit (:637); folded into kestrel's fix push with F001/F002
+2026-11-06 note pr-129-shape - prime — one transaction claims a row only for the current holder (assignment id/generation in the same statement), send after commit, replay checks id first; tests red on fd7bf41 first
+2026-11-06 note pr-129-perf fd7bf41 note — wombat: PA digest not per-tick/per-seat; global queued scan incl bodies -> optional slim in kestrel's push
+2026-11-06 note tapir-target - corrected — tapir built on fleet-190 (old rule); told fleet-201
+2026-11-06 note pr-129-perf fd7bf41 pass-with-notes — wombat; delta check needed on fix head
+2026-11-06 deliverable review-131 a00a4cf sent — s11 PR: reviewer pij-pleased-marmot, security, perf; wildcat to 206 (coder/206)
+2026-11-06 note pr-129-perf da23eb7 pass-with-notes — wombat (merge head); will need delta on kestrel's fix head
+2026-11-06 note backoff - in-force 11:03 — one cargo build fleet-wide via fleet-190 lock; kestrel #129 first; verdict seats CI-only; no new seats; 12 seats told; load 84/67/51
+2026-11-06 note s11-ruling - prime — pij delivered prints delivered_by + plan cell only; PRs flip own states; README claim line after #131 deploys
+2026-11-06 note plan-206-calls - answered — wildcat makes pij/role schema change (meta.state, merged_into) with docs-system verdict (C7); send-path refusal after #129 merges
+2026-11-06 note backoff-enforce 11:08 — stopped tapir, marsupial builds and #130/#131 reviewer probe waiters via shared-build TERM; only kestrel's build runs
+2026-11-06 note backoff-hold 11:11 — pm-001 holds fleet-194 and fleet-201 target locks (owner BACKOFF-HOLD) so fleet-190 is the only slot; release when prime lifts
+2026-11-06 note pr-130-review dcc3e52 block — seahorse F001 P2 compact replay adds a routes FYI (send_control callback on deduped receipts); routed to warbler (pause 208); CI-only under backoff
+2026-11-06 note pr-130-perf dcc3e52 pass-with-notes — wombat: costs confirmed; notes on table build scaling; delta check owed on warbler's fix
+2026-11-06 deliverable review-132 5fbcfbd sent — s07 PR: reviewer seahorse reused (no new seats), security, perf CI-only; warbler told admit_control hook
+2026-11-06 note pr-131-review a00a4cf block — marmot F001 scan-from-zero, F002 lost pending receipts, F003 overwrite, N001 P3; F004 dropped per prime ruling; routed to wildcat (pause 206)
+2026-11-06 note pr-132 5fbcfbd unfreeze — tapir one push: compacts always held/background (65s extension timeout), incarnation check, bound_ms, cost wording; verdict seats hold
+2026-11-06 note pr-131-perf note — wombat: deliveries lookup per seat on /v1/cards; folded into wildcat's fix push
+2026-11-06 note pr-131-perf a00a4cf pass-with-notes — wombat; cards lookup note (folded into wildcat fix); no gh deadline noted
+2026-11-06 note pr-132-review second-blocker — held answer not a Receipt (CLI decode fails); added to tapir's push
+2026-11-06 note pr-130-security dcc3e52 pass-with-notes — lynx; optional control-char sanitising to warbler
+2026-11-06 deliverable review-134 d85c0f3 sent — plan 207 PR: reviewer marmot (reused), security, perf (+ live BEFORE), kestrel bind review after #129
+2026-11-06 note pr-132-review 5fbcfbd block — seahorse F001 incarnation brake, F002 receipt shape + inline memory_turn dropped, F003 stale idle before prompt delivery, N001 bound_ms; all to tapir's push
+2026-11-06 note pr-135 ca33d01 draft — plan 206 (edit, F19, schema state/merged_into, retire, merge); not for review until #129 merges; #131 fix still owed first (queued)
+2026-11-06 note pr-132-review addendum — seahorse F004 INDEX regeneration by Markdown shape (removes/duplicates); fenced generated block + escaping; to tapir's push
+2026-11-06 note critical-path slip — kestrel opened #133 (s12, stacked on #129) instead of fixing #129 (still da23eb7); top-priority resend; prime told
+2026-11-06 note answered-helper - decided — tapir adds mark_role_request_answered in s06 (column from #133's 0035); #132 push first
+2026-11-06 note pr-132-perf 5fbcfbd pass-with-notes — wombat; delta owed on tapir's push
+2026-11-06 note f25 - recorded — mid-turn messages read too late (kestrel slip; perf holds twice); follow-up plan candidate; practice: verdicts only on final heads
+2026-11-06 note pr-132 f232351 not-final — conditions in; F002/F003/F004/N001 still owed; one more round; no verdict request until final
+2026-11-06 ruling-pm pr-131 delivery card stays seat-global (AC6 card is per seat; groups carry project label); told lynx
+2026-11-06 route pr-135 schema verdict -> lungfish at ca33d01 (worktree review-135-ca33d01); wildcat -> #131 fix
+2026-11-06 verdict pr-134 d85c0f3 reviewer BLOCK (F001 one ps per registration, batch; N001 tripwire) -> marsupial
+2026-11-06 perf-before pr-134 pid 93273 60s: date.utc-offset +12, ps.registration +60, total +74 (1.23/s); pending-Claude unproven
+2026-11-06 verdict pr-135 ca33d01 docs-system pass-with-notes (schema); notes queued to wildcat
+2026-11-06 progress plan-204 draft PR #136 dcf053f (AC1 route, AC2 10 templates, AC4 --show); AC3+flips wait s09. F26: harness/scripts/pij-skill-check.sh fails 20 checks on main, not in CI (marsupial) -> follow-up plan
+2026-11-06 verdict pr-134 d85c0f3 perf pass-with-notes; AC4 pending leg closed on source+CI (pm call); re-pin after marsupial batched-ps head
+2026-11-06 security interim pr-132 5fbcfbd (S1 authority recheck+CAS, S2 300s ceiling, S3 bound from hold, S4 repeat request, S5 path) -> tapir final round
+2026-11-06 pr-129 16b0724 F001/F002 fixed; S1 (claim not holder-checked) + S2 (drain bypasses cold guard/audit) open; CI red on F003 flake -> kestrel one-line F003 PR + S1/S2 push
+2026-11-06 pr-132 2a4f2cd F002 fixed; remaining F003 F004 N001 S1-S5 consolidated to tapir
+2026-11-06 pr-131 final 09653d3 (CI green, CLEAN) -> marmot, lynx, wombat; worktree review-131-09653d3
+2026-11-06 verdict pr-134 d85c0f3 security pass-with-notes (no repair; ps count not <=1 at this head — batched fix coming). Re-pin at marsupial's final head
+2026-11-06 pr-131 head moved 93ca2b1 (perf fold of /v1/cards note) -> re-pin marmot lynx wombat, delta only; worktree review-131-93ca2b1; wildcat frozen
+2026-11-06 verdict pr-131 09653d3 reviewer pass-with-notes; delta to 93ca2b1 pending (packet queued)
+2026-11-06 flakes seen in CI: claude_heal_scripts copilot_status_line BrokenPipe (#132 run), pane_observer real_tmux (main). F27 candidate. #132 2a4f2cd still not final (tapir17 checklist queued). #138 draft green 69e9549
+2026-11-06 pr-134 final 3930791 (CI green, CLEAN) -> marmot lynx wombat; worktree review-134-3930791
+2026-11-06 verdict pr-131 93ca2b1 reviewer pass-with-notes (final). Waiting lynx, wombat
+2026-11-06 ctx prime order: memory note + pij compact-self -> kestrel (after #129 S1/S2 push), marsupial, wildcat, warbler, tapir (now). Rule: compact >400k at boundary; fresh seat per plan
+2026-11-06 verdict pr-131 93ca2b1 perf BLOCK (LIMIT 48 truncates before PR grouping) -> wildcat: two indexed reads, full 3-PR contract, 49-address regression
+2026-11-06 verdict pr-134 3930791 reviewer pass-with-notes (final). Waiting lynx, wombat
+2026-11-06 verdict pr-134 3930791 perf pass-with-notes (final). Waiting lynx
+2026-11-06 pr-130 final 9d2a746 (CI green, CLEAN) -> seahorse lynx wombat; worktree review-130-9d2a746
+2026-11-06 flake F27 += pij-cli claude_inbound daemon_boot_repairs_once (#130 run)
+2026-11-06 pr-130 9d2a746 reviewer F002 (FYI id lacks recipient) -> warbler, with sanitising 1623200 in same push; lynx/wombat told skip
+2026-11-06 verdict pr-131 09653d3 security pass-with-notes (snapshot; next head after cap fix still owed)
+2026-11-06 verdict pr-130 9d2a746 perf BLOCK (same F002). memory: final = no queued asks to coder
+2026-11-06 verdict pr-131 93ca2b1 security pass-with-notes (head will move for perf cap fix; re-pin delta then)
+2026-11-06 BACKOFF LIFTED (prime 12:19): released fleet-194/201 BACKOFF-HOLD locks; all builds niced (nice -n 19 taskpolicy -b); targets 190 kestrel+wildcat, 201 tapir, 194 marsupial+warbler; 208 += shared-build applies nice itself; told all seats
+2026-11-06 ctx wildcat 569k -> 60k (compacted), resuming #131 cap fix
+2026-11-06 ctx marsupial 584k -> 40k (compacted); #134 frozen, #136 waits s09
+2026-11-06 pr-130 final 8bfba9d -> seahorse lynx wombat; worktree review-130-8bfba9d
+2026-11-06 verdict pr-130 8bfba9d reviewer pass-with-notes (final). Waiting lynx, wombat
+2026-11-06 verdict pr-130 8bfba9d perf pass-with-notes (final). Waiting lynx
+2026-11-06 verdict pr-134 3930791 security BLOCK S001 (batch parse fail-open, ucomm newline injection) -> marsupial: drop name col, bind PID set, fail closed, CI negatives
+2026-11-06 pr-132 final 2851637 (CI green, CLEAN) -> seahorse lynx wombat; worktree review-132-2851637
+2026-11-06 pr-132 2851637 reviewer F005 (accept outside deadline) -> tapir after compact; lynx/wombat continue, delta re-pin after
+2026-11-06 verdict pr-132 2851637 reviewer BLOCK F005 only (deadline over admission; cancellation-safe)
+2026-11-06 verdict pr-132 2851637 perf pass-with-notes; re-pin F005 delta later
+2026-11-06 pr-129 a560297 S1+S2 pushed (CI running); F003 PR still not opened -> re-asked kestrel
+2026-11-06 pr-131 final c6aa07b (perf cap fix) -> marmot lynx wombat; worktree review-131-c6aa07b
+2026-11-06 pr-129 final a560297 (CI green) -> tiglon lynx wombat; worktree review-129-a560297
+2026-11-06 verdict pr-131 c6aa07b reviewer pass-with-notes (N002 P3 recorded_by provenance -> follow-up). Waiting lynx, wombat
+2026-11-06 verdict pr-131 c6aa07b perf pass-with-notes. Waiting lynx
+2026-11-06 pr-129 a560297 tiglon pre-warning: delivering rows stranded on daemon stop (no startup recovery) -> kestrel early
+2026-11-06 verdict pr-129 a560297 reviewer BLOCK F003 (delivering recovery + PA visibility) -> kestrel
+2026-11-06 pr-129 digest: column trim folds into F003 push; project scoping -> follow-up plan
+2026-11-06 verdict pr-134 3930791 kestrel bind review PASS (claude_bind unchanged). #134 still blocked by security S001 (marsupial fixing)
+2026-11-06 verdict pr-129 a560297 perf pass-with-notes (re-pin F003 delta later)
+2026-11-06 F003: kestrel opens delete PR now; #138 re-adds clock-injected rewrite on merge (warbler told)
+2026-11-06 ctx warbler 502k -> 30k (compacted), resuming 208
+2026-11-06 pr-134 S001 fix written (marsupial); asked prime one-off exception: 2 real-ps tests nice-only (QoS makes ps 2.9-5.9s vs 1s limit). F28 logged
+2026-11-06 prime: nice-only exception for wall-clock real-child tests (builds stay taskpolicy -b); told marsupial + coders
+2026-11-06 F003 delete = PR #139 cf07268 -> prime to merge
+2026-11-06 pr-132 final bd8331e (F005) -> seahorse lynx wombat; worktree review-132-bd8331e
+2026-11-06 pr-132 F005 cancellation: keep bd8331e; B (record late admission) only if reviewer blocks, else follow-up; A rejected (port change)
+2026-11-06 verdict pr-132 bd8331e reviewer pass-with-notes (final). Waiting lynx, wombat. B (late admission record) -> follow-up
+2026-11-06 #139 merged f23c34e (F003 flake gone); coders merge main on next natural push only
+2026-11-06 verdict pr-132 bd8331e perf pass-with-notes (final). Waiting lynx
+2026-11-06 pr-134 61a1c8d: batched ps -p a,b costs 0.6s sys (macOS); held verdicts; asked prime C27 reading A (1 ps per host-named ancestor)
+2026-11-06 C27 amended (prime): <=1 ps -p per host-named ancestor, never batched/census, args only, fail closed -> marsupial
+2026-11-06 #137 4ab6460 AC5 done (output = 1 commit, 9 launches; notify 0). trailers: amend on retarget push only; #132 untouched
+2026-11-06 assign coder/203 tapir; s09 (plan 203) started on main + 205/201/200 branches
+2026-11-06 spawn pij-alert-ibex (copilot gpt-6.1-sol high, --role worker, parent otter) + assign security (W-ONE-HOLDER warning -> F29). ibex: #132,#130,#131; lynx: #129,#134
+2026-11-06 C28 folded: plan 203 ac-0008/bp-0008 + req-29 (eac6b6f pushed); tapir told; marsupial queued (204 AC); lungfish queued verdict
+2026-11-06 pr-134 final c54aeb5 (C27 amended + S001) -> marmot lynx wombat; worktree review-134-c54aeb5
+2026-11-06 pr-138 final 7c2b6b1 (plan 208) -> seahorse (reviewer/138) lynx wombat; worktree review-138-7c2b6b1
+2026-11-06 plan 209 fleet follow-ups pushed; assign coder/209 warbler; AC1-3 now, AC4-6 after #131/#129/#132
+2026-11-06 verdict pr-134 c54aeb5 reviewer pass-with-notes (final). Waiting lynx, wombat. warbler started 209
+2026-11-06 C29 workstreams: #131 unfreeze one round (workstream kind + alias scan both, delivered lookup) -> wildcat; #136 wording -> marsupial; 203 one helper -> tapir; ibex skip #131. Rename plan = 210 (claimed)
+2026-11-06 plan 210 workstreams pushed (plan/210-workstreams); waits for batch merge + #135
+2026-11-06 READY pr-132 bd8331e (seahorse, ibex, wombat pass-with-notes) -> prime
+2026-11-06 READY pr-130 8bfba9d (seahorse, ibex, wombat pass-with-notes) -> prime
+2026-11-06 C30 relayed: tapir (PRD 001 summary + s09 prompts), marsupial (route + template README), lungfish (wording verdict with C28)
+2026-11-06 verdict pr-131 c6aa07b security (ibex) pass-with-notes; all three passed c6aa07b; C29 delta round pending (wildcat) -> delta re-check by marmot, ibex, wombat
+2026-11-06 #138 security moved lynx -> ibex (ibex idle)
+2026-11-06 verdict pr-136 cac2f91 docs-system pass-with-notes (C28 wording); notes -> marsupial; retire/merge verb sequencing with #135 tracked
+2026-11-06 verdict pr-134 c54aeb5 perf pass-with-notes (final). Waiting lynx
+2026-11-06 MERGED #132 9527d9e (s07 live, daemon 93991). Announced memory verb + memory turn to 13 seats; lungfish dogfood s07; #130 DIRTY -> warbler merge main
+2026-11-06 verdict pr-138 7c2b6b1 reviewer pass-with-notes (N001 P3); #138 DIRTY after #132 -> warbler merge main after ibex/wombat report

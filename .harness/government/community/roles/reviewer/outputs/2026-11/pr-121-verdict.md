@@ -1,6 +1,6 @@
 # PR 121 correctness review
 
-**Latest:** pass-with-notes at `2ecbd26a8437593f03e27b1b7e412862d7900baf`; see [final verdict](pr-121-final-verdict.md). F001 and F002 are closed. The text below is the historical initial-head review.
+**Latest:** pass-with-notes at `eff6286758eae1d8f825805f3ceda04dbf6c8ffb`; see [owner-hardening delta verdict](pr-121-owner-fix-verdict.md). F001 and F002 remain closed. The text below is the historical initial-head review.
 
 ## A. Verdict
 

@@ -22,3 +22,10 @@
 - `ddocs set` on `docs/project/*.dd.json` rewrites the whole tab-indented file; edit the field text in place, then `ddocs build` and `ddocs validate`.
 - `directory_http::review::review_reassign_within_one_second_keeps_both_holdings` (#122) fails locally under load when assign/release/reassign cross a second boundary; it passed in CI.
 - Builds: `PIJ_SHARED_TARGET=… just shared-build -- …`; other lanes hold the lock for minutes, so batch with `--then`.
+
+## Security fixes S1, S2 (#129 at a560297)
+
+- **Claim = holder check.** `claim_role_request` is one UPDATE that also requires the seat to be live (`seats.tombstoned_at IS NULL`) and to hold the role, and the instance, in `community_assignments` now (`to_at IS NULL`). A drain carrying a stale holder claims nothing, and the row stays queued. Any future drain path must claim through it.
+- **Drain admission.** A drained non-FYI request goes through `pa_watchdog::audit_cold_wake(services, seat, from=requester, msg_id, DRAIN_WAKE_REASON, now)`, and a failed audit sends nothing. It never refuses cold: a refusal would strand the request until the next assign.
+- **Trap: a hook that needs `Services` makes a reference cycle** (Services -> directory -> hook -> Services). The services never drop, so a "stopped" daemon's background service keeps running. `background_http`'s restart tests time out at `wait_done` (line 106). Bind a copy with `DirectoryService::without_hook()`.
+- Load flakes seen at load 30-53, all passing alone: #122 `review_reassign_within_one_second_keeps_both_holdings`, and `reaper::tests::reap_recycled_pid_*` / `reap_unknown_recorded_pane_*`.

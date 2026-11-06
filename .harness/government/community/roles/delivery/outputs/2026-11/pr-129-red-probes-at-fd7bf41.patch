@@ -1,0 +1,222 @@
+diff --git a/crates/daemon/tests/directory_http.rs b/crates/daemon/tests/directory_http.rs
+index da0006f..46a78f6 100644
+--- a/crates/daemon/tests/directory_http.rs
++++ b/crates/daemon/tests/directory_http.rs
+@@ -117,6 +117,7 @@ fn repo(name: &str) -> Repo {
+ }
+ 
+ struct Rig {
++    services: pij_daemon::Services,
+     addr: SocketAddr,
+     server: tokio::task::JoinHandle<()>,
+     _fresh: FreshStore,
+@@ -203,9 +204,10 @@ async fn rig_with(hook: Option<Arc<dyn AfterAssign>>, writer: CommunityWriter) -
+     let roles = Arc::clone(&services.roles);
+     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+     let addr = listener.local_addr().unwrap();
+-    let router = router_with_config(services, HttpConfig::local(KEY.to_string()));
++    let router = router_with_config(services.clone(), HttpConfig::local(KEY.to_string()));
+     let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+     Rig {
++        services,
+         addr,
+         server,
+         _fresh: fresh,
+@@ -1380,7 +1382,8 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
+ 
+ /// PR #122 review regressions (pij-substantial-mammal): same-role writes
+ /// flush pending close-ends, and a same-second reassign keeps both holdings.
+-#[path = "pr122_review/mod.rs"]
++#[path = "/Users/jordanknight/pi-hacking/fleet-review-129/crates/daemon/tests/pr122_review/mod.rs"]
++#[cfg(any())]
+ mod review;
+ 
+ async fn send_to(addr: SocketAddr, cwd: &Path, to: &str, msg_id: &str, extra: Value) -> Value {
+@@ -1410,6 +1413,123 @@ fn refusal_code(response: &Value) -> &str {
+     response["details"]["code"].as_str().unwrap_or_default()
+ }
+ 
++#[tokio::test]
++async fn review_single_holder_retry_is_deduplicated_control() {
++    let repo = repo("pij-review-role-replay-control");
++    let rig = rig(Arc::new(NoHook)).await;
++    with_roles(rig.addr, &repo).await;
++    let assigned = call(rig.addr, "/v1/directory",
++        &["directory", "assign", "pm-001", "pij-holder", "--why", "first"],
++        &repo.main).await;
++    assert_eq!(assigned["ok"], true, "{assigned}");
++    for _ in 0..2 {
++        let sent = send_to(rig.addr, &repo.main, "role:pm-001", "same-holder", json!({})).await;
++        assert_eq!(sent["ok"], true, "{sent}");
++        assert_eq!(sent["data"]["request"]["holder"], "pij-holder", "{sent}");
++    }
++    let inbox = inbox_bodies(&rig, "pij-holder").await;
++    rig.server.abort();
++    assert_eq!(inbox.len(), 1, "{inbox:?}");
++}
++
++#[tokio::test]
++async fn review_replay_after_reassignment_must_not_reach_a_second_holder() {
++    let repo = repo("pij-review-role-replay");
++    let rig = rig(Arc::new(NoHook)).await;
++    with_roles(rig.addr, &repo).await;
++    let assigned = call(rig.addr, "/v1/directory",
++        &["directory", "assign", "pm-001", "pij-holder", "--why", "first"],
++        &repo.main).await;
++    assert_eq!(assigned["ok"], true, "{assigned}");
++    let first = send_to(rig.addr, &repo.main, "role:pm-001", "replay-id", json!({})).await;
++    assert_eq!(first["ok"], true, "{first}");
++    let released = call(rig.addr, "/v1/directory",
++        &["directory", "release", "pm-001", "pij-holder", "--why", "rotate"],
++        &repo.main).await;
++    assert_eq!(released["ok"], true, "{released}");
++    let assigned = call(rig.addr, "/v1/directory",
++        &["directory", "assign", "pm-001", "pij-second", "--why", "second"],
++        &repo.main).await;
++    assert_eq!(assigned["ok"], true, "{assigned}");
++    let replay = send_to(rig.addr, &repo.main, "role:pm-001", "replay-id", json!({})).await;
++    let stored = rig.store.role_request("replay-id").await.unwrap().unwrap();
++    let first_inbox = inbox_bodies(&rig, "pij-holder").await;
++    let second_inbox = inbox_bodies(&rig, "pij-second").await;
++    eprintln!("REPLAY: first={first}; replay={replay}; stored_holder={:?}; inboxes={first_inbox:?}/{second_inbox:?}", stored.holder);
++    rig.server.abort();
++    assert!(second_inbox.is_empty(), "replaying one request delivered it to a second holder");
++}
++
++struct ReviewBarrierRegistry {
++    inner: Arc<dyn pij_core::ports::Registry>,
++    gate: tokio::sync::Barrier,
++}
++
++#[async_trait::async_trait]
++impl pij_core::ports::Registry for ReviewBarrierRegistry {
++    async fn get(&self, seat: &SeatId) -> pij_core::error::Result<Option<SeatDescriptor>> {
++        self.gate.wait().await;
++        self.inner.get(seat).await
++    }
++    async fn put(&self, descriptor: SeatDescriptor) -> pij_core::error::Result<pij_core::model::Seq> {
++        self.inner.put(descriptor).await
++    }
++    async fn put_reporting(&self, d: SeatDescriptor) -> pij_core::error::Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
++        self.inner.put_reporting(d).await
++    }
++    async fn put_reporting_keeping_parent(&self, d: SeatDescriptor) -> pij_core::error::Result<(pij_core::model::Seq, pij_core::ports::PutBinding)> {
++        self.inner.put_reporting_keeping_parent(d).await
++    }
++    async fn list(&self, f: pij_core::ports::SeatFilter) -> pij_core::error::Result<Vec<SeatDescriptor>> {
++        self.inner.list(f).await
++    }
++    async fn tombstone(&self, seat: &SeatId, reason: &str) -> pij_core::error::Result<pij_core::model::Seq> {
++        self.inner.tombstone(seat, reason).await
++    }
++    async fn tombstone_if_unchanged(&self, expected: SeatDescriptor, reason: String) -> pij_core::error::Result<pij_core::model::Seq> {
++        self.inner.tombstone_if_unchanged(expected, reason).await
++    }
++    async fn set_activity(&self, seat: &SeatId, state: pij_core::model::SystemState, reason: Option<&str>) -> pij_core::error::Result<Option<pij_core::model::Seq>> {
++        self.inner.set_activity(seat, state, reason).await
++    }
++}
++
++#[tokio::test]
++async fn review_overlapping_assign_drains_must_deliver_an_unscoped_request_once() {
++    let repo = repo("pij-review-role-double-drain");
++    let rig = rig(Arc::new(NoHook)).await;
++    with_roles(rig.addr, &repo).await;
++    let queued = send_to(rig.addr, &repo.main, "role:reviewer", "double-drain", json!({})).await;
++    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
++    for (target, seat) in [("reviewer/a", "pij-holder"), ("reviewer/b", "pij-second")] {
++        let assigned = call(rig.addr, "/v1/directory",
++            &["directory", "assign", target, seat, "--why", "review"],
++            &repo.main).await;
++        assert_eq!(assigned["ok"], true, "{assigned}");
++    }
++    let gated_registry = Arc::new(ReviewBarrierRegistry {
++        inner: rig.services.registry.clone(),
++        gate: tokio::sync::Barrier::new(2),
++    });
++    let delivery = Arc::new(pij_daemon::delivery::DeliveryService::new(
++        gated_registry, rig.services.queue.clone(), rig.services.transport.clone(),
++        rig.services.interaction.clone(), rig.services.event_bus.clone()).unwrap());
++    let first_seat = SeatId::from("pij-holder");
++    let second_seat = SeatId::from("pij-second");
++    let drained = tokio::time::timeout(std::time::Duration::from_secs(30), async {
++        tokio::join!(
++            pij_daemon::delivery::role_send::drain(&rig.store, &delivery, "fleet", "reviewer", "a", &first_seat),
++            pij_daemon::delivery::role_send::drain(&rig.store, &delivery, "fleet", "reviewer", "b", &second_seat)
++        )
++    }).await.expect("both drains complete");
++    let first_inbox = inbox_bodies(&rig, "pij-holder").await;
++    let second_inbox = inbox_bodies(&rig, "pij-second").await;
++    let stored = rig.store.role_request("double-drain").await.unwrap().unwrap();
++    eprintln!("DOUBLE-DRAIN: outcomes={drained:?}; stored_holder={:?}; inboxes={first_inbox:?}/{second_inbox:?}", stored.holder);
++    rig.server.abort();
++    assert_eq!(first_inbox.len() + second_inbox.len(), 1, "one request reached two assigned holders");
++}
++
+ async fn inbox_bodies(rig: &Rig, seat: &str) -> Vec<String> {
+     rig.delivery
+         .peek_inbox(&SeatId::from(seat))
+@@ -1781,3 +1901,63 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
+     );
+     rig.server.abort();
+ }
++
++/// Red proof at fd7bf41 for #129 security S1: a drain for a released holder
++/// must not consume a request queued after its release.
++#[tokio::test]
++async fn security_s1_released_holder_never_drains() {
++    let repo = repo("pij-security-s1");
++    let rig = rig(Arc::new(NoHook)).await;
++    with_roles(rig.addr, &repo).await;
++    for argv in [
++        ["directory", "assign", "pm-001", "pij-holder", "--why", "lead"],
++        ["directory", "release", "pm-001", "pij-holder", "--why", "done"],
++    ] {
++        let done = call(rig.addr, "/v1/directory", &argv, &repo.main).await;
++        assert_eq!(done["ok"], true, "{done}");
++    }
++    let queued = send_to(rig.addr, &repo.main, "role:pm-001", "after-release", json!({})).await;
++    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
++    let old = SeatId::from("pij-holder");
++    let stale = pij_daemon::delivery::role_send::drain(&rig.store, &rig.delivery, "fleet", "pm-001", "", &old).await;
++    rig.server.abort();
++    assert!(stale.is_empty(), "the released holder claimed: {stale:?}");
++}
++
++/// Red proof at fd7bf41 for #129 security S2: a drained wake to a cold holder
++/// is audited before delivery.
++#[tokio::test]
++async fn security_s2_cold_drain_is_audited() {
++    use pij_core::session_status::{Fact, SeatStatus, SessionStatusReply};
++    use pij_testkit::fakes::FakeSessionStatus;
++    let repo = repo("pij-security-s2");
++    let rig = rig(Arc::new(NoHook)).await;
++    with_roles(rig.addr, &repo).await;
++    let queued = send_to(rig.addr, &repo.main, "role:pm-001", "cold-drain", json!({})).await;
++    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
++    let next = SeatId::from("pij-second");
++    let mut seat = rig.services.registry.get(&next).await.unwrap().unwrap();
++    seat.harness_session = Some("cold-session".into());
++    rig.services.registry.put(seat).await.unwrap();
++    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
++    let mut cold = rig.services.clone();
++    cold.session_status = Arc::new(FakeSessionStatus::new().with_reply(
++        "cold-session",
++        SessionStatusReply::Status(SeatStatus {
++            model: Fact::native("claude-opus-5-5".to_string()),
++            context_used_tokens: Fact::derived(720_000),
++            last_call_at_ms: Fact::native(now - 2 * 60 * 60 * 1_000),
++            ..SeatStatus::unknown()
++        }),
++    ));
++    let assigned = call(rig.addr, "/v1/directory",
++        &["directory", "assign", "pm-001", "pij-second", "--why", "next"], &repo.main).await;
++    assert_eq!(assigned["ok"], true, "{assigned}");
++    let drained = pij_daemon::delivery::role_send::drain(&rig.store, &cold.delivery, "fleet", "pm-001", "", &next).await;
++    let audit = rig.services.spine
++        .latest_matching(&next, &[pij_core::cold_wake::COLD_WAKE_FORCED_KIND])
++        .await
++        .unwrap();
++    rig.server.abort();
++    assert!(audit.is_some(), "a cold drained wake went out unaudited: {drained:?}");
++}

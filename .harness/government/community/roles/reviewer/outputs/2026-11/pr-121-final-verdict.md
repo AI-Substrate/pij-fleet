@@ -1,5 +1,7 @@
 # PR 121 final correctness review
 
+**Later head:** the [owner-hardening delta review](pr-121-owner-fix-verdict.md) passes with notes at `eff6286758eae1d8f825805f3ceda04dbf6c8ffb`. This file records the earlier normalization-fix review.
+
 **reviewer: pass-with-notes (head 2ecbd26a8437593f03e27b1b7e412862d7900baf)**
 
 F001 and F002 are closed. No remaining correctness finding or code change owed. This supersedes both earlier blocking verdicts.

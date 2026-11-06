@@ -44,3 +44,51 @@
 
 2026-11-04 verdict pr-121 2ecbd26a8437593f03e27b1b7e412862d7900baf pass-with-notes - F001/F002 closed; exact trailing-slash reproducer and four separator/symlink variants serialize, normalization mutation detected; final two-file delta clean, exact-head CI four jobs/11 tests green; local quick gate tooling-limited, no real cargo or product edits, no correctness changes owed.
 
+2026-11-06 verdict pr-121 eff6286758eae1d8f825805f3ceda04dbf6c8ffb pass-with-notes - owner-hardening delta only; 0700 under umask 002, occupied-owner refusal across five node kinds, waiter/failure behavior and mkdir failure pass; both new guard mutations detected, exact-head CI four jobs/13 tests green; local quick gate tooling-limited, security seam verdict independently owned, no correctness changes owed.
+
+2026-11-06 verdict pr-125 9384397762d2e7955ceff0de373640b85553227b pass-with-notes - C26 forward-only rename preserves all prior ids, rows and changelogs; four ddocs validate/render clean, F12-F16 corroborated, exact-head CI four jobs green; P3 merge-source preservation acceptance note, no blocker; local quick gate tooling-limited, no cargo or product edits.
+
+2026-11-06 verdict pr-126 04144d1ca39130106202322d3479273c636a388a block - F001 P2 generated commands drop --project and can commit roles into the wrong governance branch; two-project replay reproduces, scoped control passes; templates/version/drift/embedding mutation and restore pass, CI four jobs green; unchanged #122 test-clock precondition fails, local quick gate tooling-limited.
+
+2026-11-06 verdict pr-126 6b820d0e04c89a6c7980c5cbc94f8e5258baa6aa pass-with-notes - F001 closed; scoped prompts and drift hint, independent real-shell two-project replay and old-head regression negative control pass; six template HTTP tests, exact native hint test, core/shell round trips and exact-head CI green; no correctness changes owed, local quick gate tooling-limited.
+
+2026-11-06 verdict pr-129 fd7bf4141420f132974ece403faa5ae8c64c9982 block - F001 P2 request replay dispatches to a rotated holder while the stored holder remains old; F002 P2 overlapping instance drains both dispatch one queued request before CAS; both reproduced, unchanged-holder control and three committed HTTP cases pass; project docs validate/render, exact-head CI absent, local quick gate tooling-limited.
+
+2026-11-06 verdict pr-129 da23eb7566844c93857ecb11ba58c4da6947c605 block - re-pinned after main merge; test-rig conflict resolution preserves template catalog and real drain hook, s05 implementation blobs unchanged, F001/F002 reproduction evidence carries forward; exact-head CI four jobs green, merged docs validate/render, both worktrees stay frozen and clean.
+
+2026-11-06 verdict pr-129 a560297ec107c4f7168cc4400a4224d689f59b05 block - original F001/F002 closed with adopted regressions passing in exact-head JUnit; new P2 F003: committed delivering claim is not recovered after daemon interruption and vanishes from assign drains/PA feed; source-dataflow proof, no local runtime claim; CI four jobs green, 1900 tests passed, merge rig and enabled #122 case verified, no local builds/tests.
+
+2026-11-06 verdict pr-131 a00a4cfbb287efb4bc60b292b1b168404a94677e block - P2 incomplete-scan allocation, pending receipt overwrite, unreadable-cell replacement and omitted C23 printed states; P3 changed-PM replay wording; core/store 10/10, migration-key mutation and exact-head CI pass, seven docs clean; additional HTTP probes unexecuted after two interrupted shared-lock waits, no product edits.
+
+2026-11-06 verdict pr-130 dcc3e526043b2aa3206eae0ea036876183fb9d99 block - F001 P2 compact request replay creates duplicate routing-table FYIs although the control deduplicates; real-SQLite HTTP regression reproduces, three ordinary routing HTTP controls and exact-head CI pass, docs validate/render; compact consumption proof is qualified, mutation deferred under fleet backoff before lock acquisition/cargo, local gate tooling-limited.
+
+2026-11-06 correction pr-131 a00a4cfbb287efb4bc60b292b1b168404a94677e block - F004 withdrawn per prime's settled design call (5), relayed by pm-001: delivered prints delivered_by and plan, not state flips. Three P2s remain (F001-F003), plus N001 P3; verdict, memory and proposed regression file corrected, state-edit test removed; CI-only backoff acknowledged, no further local runs.
+
+2026-11-06 clarification pr-131 a00a4cfbb287efb4bc60b292b1b168404a94677e block - final verdict rests on source review plus exact-head CI; HTTP proof explicitly deferred because of backoff. PM confirmed the waiting builds were intentionally stopped as a safety brake, not a PR defect; no reviewer build window requested or needed, no further local runs.
+
+2026-11-06 verdict pr-132 5fbcfbdc0323af2546c0c9b17a89e3a0f0e2ae22 block - three source-proven P2s: delayed actions affect revived incarnations, native held compact receipt fails typed decoding and a buffered old idle can finish the memory turn; N001 missing bound_ms; exact-head CI 4/4 and 1,909 tests pass, ddocs unavailable, no local builds/tests/probes under backoff.
+
+2026-11-06 addendum pr-132 5fbcfbdc0323af2546c0c9b17a89e3a0f0e2ae22 block - F004 P2 in unchanged memory-note logic: Markdown-shape ownership strips hand-written .dd.md rows and unescaped linked titles accumulate duplicate generated rows; source trace only, no local execution; posted verdict held pending PM's new exact head/worktree.
+
+2026-11-06 verdict pr-134 d85c0f3adab39895dd6776422aaa5b3ad4048d8c block - F001 P2 one ps per host-named ancestor does not implement at most one per registration; valid two-node/launcher chains need multiple reads, count fixture only has one candidate; N001 P3 standalone gate-tripwire false-negative shape; UTC/DST and unchanged identity checks sound, exact-head CI 4/4 and 1,896 tests pass, no local builds/tests/probes under backoff.
+
+2026-11-06 verdict pr-131 09653d32a47224a61f0e2957b3862001b869e218 pass-with-notes - complete seven-file repair closes F001-F003 and N001; four adopted HTTP regressions pass, exact-head CI 4/4 and 1,913 tests green; F004 remains withdrawn. Final pin check found later GitHub head 93ca2b1, explicitly not approved; frozen worktree unchanged, CI/source only, no local runs under backoff.
+
+2026-11-06 verdict pr-131 93ca2b1c3dc80d3ea609438e9864d9593b7e35f5 pass-with-notes - authorized five-file card/index delta reviewed; bulk cards skip delivery reads, singular state walks at most 48 indexed rows without SQL history sort/grouping; exact-head CI 4/4 and 1,914 tests pass including new query-plan guard and all four regressions; no blocker, bounded-summary qualification, no local runs under backoff.
+
+2026-11-06 verdict pr-134 39307919c43cfb23f8a5728b371234025ce37d1c pass-with-notes - nine-file repair closes F001/N001: one registration-scoped argv batch and production-delegation guard with two negatives; exact-head CI 4/4 and 1,899 tests pass; fixture counter versus Mac receipt/live AFTER proof limits explicit, no local reviewer builds/tests/probes under backoff.
+
+2026-11-06 verdict pr-130 9d2a746b222f53e86383d6739db01a3ec18efa5a block - seven-file delta closes F001 but introduces F002 cross-recipient FYI collision: control identity includes recipient, derived global FYI key does not; source/SQL proof and exact-head CI 4/4 with 1,900 tests, no local runs; final pin found later 1623200, explicitly not reviewed/approved, detached worktree unchanged.
+
+2026-11-06 verdict pr-130 8bfba9de1206a0f781bd853827df38abc961ca08 pass-with-notes - five-file final delta closes F002 and retains F001 closure; recipient-scoped stable FYI key, two identity-scope regressions and cell/warning sanitizing tests pass; exact-head CI 4/4 and 1,901 tests green, no local checks needed/run; compact-consumption proof ceiling remains non-blocking, fresh worktree frozen/clean.
+
+2026-11-06 verdict pr-132 2851637fd10be349d30329e0f49704eb12519f69 block - fourteen-file repair closes F001-F004/N001; new F005 P2 hold deadline is not enforced during prompt admission (supported short override versus UDS hold grace); source/transport proof, exact-head CI 4/4 and 1,919 tests pass, no local runs; pending task/deadline CI case required.
+
+2026-11-06 verdict pr-131 c6aa07bfeb7316ee277f7325f873c3684e8eb4fa pass-with-notes - four-file covering-index repair closes row-window truncation; newest three distinct PRs and all addresses, both query plans and 60-address regression pass exact-head CI 4/4 with 1,915 tests; original findings remain closed, N002 nonblocking aggregate retry-provenance note, no local checks needed/run.
+
+2026-11-06 verdict pr-132 bd8331e09db997e1ab68938a037fc72d7791a29e pass-with-notes - three-file F005 repair bounds admission and event wait with the original deadline, preserves service-owned continuation and adds delayed-admission HTTP coverage; F001-F005/N001 closed, exact-head CI 4/4 and 1,920 tests green, no local checks needed/run; fresh worktree frozen/clean.
+
+2026-11-06 verdict pr-134 c54aeb51438ef0f20845ec5e7d560a7a2fefc02c pass-with-notes - amended C27 verified: cached single-PID per-host args reads, strict PID/row parsing and post-read kernel recheck; expected 2/2/1/0 controls and gate negatives pass, exact-head CI 4/4 with 1,900 tests; old F001 ceiling superseded, N001 closed, reported Mac receipts separate and live AFTER deferred, no local reviewer runs.
+
+2026-11-06 verdict pr-138 7c2b6b147d158746545699226343a3fd09b7bdeb pass-with-notes - lineage/batch/window/marker/zone and shared-build owner/QoS changes verified, deterministic F003 rewrite retained; N001 P3 mixed-invalid batch diagnostics are phase-local; exact-head CI 4/4 with 1,894 Rust and 15 shared-build tests pass, no local runs, security/performance proof separately owned; final pin unchanged but GitHub DIRTY, reconciliation not approved.
+

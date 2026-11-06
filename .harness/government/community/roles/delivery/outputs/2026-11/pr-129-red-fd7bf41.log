@@ -1,0 +1,16 @@
+test security_s2_cold_drain_is_audited ... FAILED
+test review_single_holder_retry_is_deduplicated_control ... ok
+test review_overlapping_assign_drains_must_deliver_an_unscoped_request_once ... FAILED
+test security_s1_released_holder_never_drains ... FAILED
+test review_replay_after_reassignment_must_not_reach_a_second_holder ... FAILED
+thread 'security_s2_cold_drain_is_audited' (335262281) panicked at crates/daemon/tests/directory_http.rs:1962:5:
+a cold drained wake went out unaudited: [("cold-drain", Ok(()))]
+thread 'review_overlapping_assign_drains_must_deliver_an_unscoped_request_once' (335262277) panicked at crates/daemon/tests/directory_http.rs:1530:5:
+assertion `left == right` failed: one request reached two assigned holders
+  left: 2
+ right: 1
+thread 'security_s1_released_holder_never_drains' (335262280) panicked at crates/daemon/tests/directory_http.rs:1924:5:
+the released holder claimed: [("after-release", Ok(()))]
+thread 'review_replay_after_reassignment_must_not_reach_a_second_holder' (335262278) panicked at crates/daemon/tests/directory_http.rs:1460:5:
+replaying one request delivered it to a second holder
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 14 filtered out; finished in 1.42s

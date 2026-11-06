@@ -1,0 +1,97 @@
+{
+  "head": "eff6286758eae1d8f825805f3ceda04dbf6c8ffb",
+  "results": [
+    {
+      "name": "0700-under-umask-002-with-waiter-and-failure",
+      "status": "pass",
+      "details": {
+        "mode": "0o700",
+        "serialized": true,
+        "owner_readable": true,
+        "failure_releases": true
+      }
+    },
+    {
+      "name": "owner-refusal-symlink",
+      "status": "pass",
+      "details": {
+        "kind": "symlink",
+        "code": 2,
+        "named_refusal": true,
+        "victim_untouched": true,
+        "cargo_not_run": true,
+        "lock_released": true
+      }
+    },
+    {
+      "name": "owner-refusal-dangling",
+      "status": "pass",
+      "details": {
+        "kind": "dangling",
+        "code": 2,
+        "named_refusal": true,
+        "victim_untouched": true,
+        "cargo_not_run": true,
+        "lock_released": true
+      }
+    },
+    {
+      "name": "owner-refusal-regular",
+      "status": "pass",
+      "details": {
+        "kind": "regular",
+        "code": 2,
+        "named_refusal": true,
+        "victim_untouched": true,
+        "cargo_not_run": true,
+        "lock_released": true
+      }
+    },
+    {
+      "name": "owner-refusal-directory",
+      "status": "pass",
+      "details": {
+        "kind": "directory",
+        "code": 2,
+        "named_refusal": true,
+        "victim_untouched": true,
+        "cargo_not_run": true,
+        "lock_released": true
+      }
+    },
+    {
+      "name": "owner-refusal-fifo",
+      "status": "pass",
+      "details": {
+        "kind": "fifo",
+        "code": 2,
+        "named_refusal": true,
+        "victim_untouched": true,
+        "cargo_not_run": true,
+        "lock_released": true
+      }
+    },
+    {
+      "name": "mkdir-seam-failure-refusal",
+      "status": "pass",
+      "details": "failed mkdir refuses without cargo or an orphaned lock"
+    },
+    {
+      "name": "private-mode-regression-mutation",
+      "status": "pass",
+      "details": {
+        "mutation_detected": true,
+        "observed_mode": "0o775"
+      }
+    },
+    {
+      "name": "owner-create-regression-mutation",
+      "status": "pass",
+      "details": {
+        "mutation_detected": true,
+        "scratch_victim_overwritten": true,
+        "cargo_started": true
+      }
+    }
+  ]
+}

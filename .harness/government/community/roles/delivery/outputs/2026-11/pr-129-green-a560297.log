@@ -1,0 +1,9 @@
+test templates::prompts_list_missing_core_roles_and_security_and_create_nothing ... ok
+test review_single_holder_retry_is_deduplicated_control ... ok
+test review::review_assign_same_role_flushes_a_foreign_edit_blocked_close ... ok
+test security_a_released_holder_never_drains_and_a_cold_drain_is_audited ... ok
+test review_replay_after_reassignment_must_not_reach_a_second_holder ... ok
+test review::review_release_same_role_flushes_another_holders_pending_close ... ok
+test review::review_reassign_within_one_second_keeps_both_holdings ... ok
+test review_overlapping_assign_drains_must_deliver_an_unscoped_request_once ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 3.82s

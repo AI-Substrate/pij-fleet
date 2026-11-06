@@ -64,3 +64,11 @@
 
 2026-11-06 verdict pr:134 39307919c43cfb23f8a5728b371234025ce37d1c block - MEDIUM9/10 raw-ucomm row injection plus duplicate PID overwrite can substitute ancestor harness/session evidence; source-derived exec-window case, no local exploit; one-call/tripwire fixes present, green identical-tree CI lacks parser negatives and macOS compile coverage; 2026-11-06-pr-134-3930791-security.md.
 
+2026-11-06 verdict pr:132 bd8331e09db997e1ab68938a037fc72d7791a29e pass-with-notes - Prior delayed-close MEDIUM resolved; S1-S5 and F005 verified, authority/incarnation/CAS and shared admission deadline retained; four green CI checks, identical-tree 1920-case proof; restart/timing/ddocs limits explicit; 2026-11-06-pr-132-bd8331e-security.md.
+
+2026-11-06 verdict pr:130 8bfba9de1206a0f781bd853827df38abc961ca08 pass-with-notes - F001/F002 recipient-qualified replay key and control/bidi filtering verified; held-FYI/auth/writer boundaries retained; four green CI checks, identical-tree 1901-case proof; Markdown/admission timing/ddocs limits explicit; 2026-11-06-pr-130-8bfba9d-security.md.
+
+2026-11-06 verdict pr:131 c6aa07bfeb7316ee277f7325f873c3684e8eb4fa pass-with-notes - Covering-index newest-three project/PR selection and complete PK address reads verified; seat-global PM scope and per-group project labels retained; four green CI checks, identical-tree 1915-case proof including 60-address regression; ddocs/static cross-project limits explicit; 2026-11-06-pr-131-c6aa07b-security.md.
+
+2026-11-06 note pr:131 c6aa07bfeb7316ee277f7325f873c3684e8eb4fa held-for-next-head - PM C29 round arrived after publication; existing verdict covers this snapshot only, not C29/replacement; further review waits for fresh PM pin/worktree; #132/#130 unchanged and complete.
+
