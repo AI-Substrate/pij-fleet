@@ -43,6 +43,8 @@ pub const E_ROLE_HOLDERS: &str = "E-RS-ROLE-HOLDERS";
 pub const E_ROLE_MISMATCH: &str = "E-RS-ROLE-MISMATCH";
 /// `--reply` or `--limit` on a send that is not to a role.
 pub const E_ROLE_ONLY: &str = "E-RS-ROLE-ONLY";
+/// A msg_id that already names a different request.
+pub const E_ROLE_REQUEST_EXISTS: &str = "E-RS-ROLE-REQUEST-EXISTS";
 
 /// How long the last holder's context size may take to read.
 const STATUS_WAIT: Duration = Duration::from_secs(3);
@@ -137,14 +139,24 @@ pub struct RoleSend {
 /// Where a role send goes.
 #[derive(Debug)]
 pub enum Routed {
-    /// Exactly one live holder: send `body` to `seat` the ordinary way, then
-    /// [`record_delivered`] the request.
+    /// One holder: record `request` (claimed for `seat`, unless `recorded`),
+    /// send `body` to `seat` the ordinary way, then mark it delivered, or
+    /// abandon the claim when the send does not go through.
     Holder {
         /// The holder.
         seat: SeatId,
         /// The body with its request header.
         body: String,
-        /// The request, ready to record as delivered.
+        /// The request, `delivering` to `seat`.
+        request: RoleRequest,
+        /// Already recorded: a send interrupted after its claim resumes to
+        /// the holder it claimed, never a new one.
+        recorded: bool,
+    },
+    /// A retry of a request already queued or delivered: nothing is sent
+    /// again, and the stored request is the answer.
+    Replay {
+        /// The stored request.
         request: RoleRequest,
     },
     /// No live holder: the request is queued and the wake was attempted.
@@ -165,6 +177,16 @@ pub enum Routed {
 /// or more holders, or a C1 mismatch. Nothing is recorded or sent.
 pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<Routed, Refusal> {
     let store = services.governance.store().clone();
+    // A request id is admitted once (review of #129): a retry is answered from
+    // the stored request before any holder is resolved, so a rotation between
+    // the two can never send it to a second holder.
+    if let Some(existing) = store
+        .role_request(&send.msg_id)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+    {
+        return replay(&send, existing);
+    }
     let document = role_document(&send.repo, &send.project, &send.address.role)?;
     let meta = section(&document, "meta");
     if !send.address.instance.is_empty()
@@ -231,10 +253,13 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     };
     match live.as_slice() {
         [] => {
-            store
-                .record_role_request(&request)
-                .await
-                .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+            if let Err(error) = store.record_role_request(&request).await {
+                // An identical send recorded it first: answer from that one.
+                if let Ok(Some(existing)) = store.role_request(&request.id).await {
+                    return replay(&send, existing);
+                }
+                return Err(Refusal::new("E-RS-STORE", error.to_string()));
+            }
             let woke = wake(services, &store, &request, &assignments, now_ms).await;
             let receipt = Receipt {
                 msg_id: request.id.clone(),
@@ -260,13 +285,14 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
         }
         [(row, seat)] => {
             check_seat_role(&store, &send.address.role, &seat.id).await?;
-            request.state = RequestState::Delivered;
+            request.state = RequestState::Delivering;
             request.holder = Some(seat.id.to_string());
             request.instance.clone_from(&row.instance);
             Ok(Routed::Holder {
                 seat: seat.id.clone(),
                 body: framed_body(&request),
                 request,
+                recorded: false,
             })
         }
         several => Err(Refusal::new(
@@ -291,22 +317,69 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     }
 }
 
-/// Record a request its holder accepted. A refused delivery records nothing;
-/// a retried msg_id that is already recorded is not an error.
-pub async fn record_delivered(
-    store: &SqliteOrchestration,
-    mut request: RoleRequest,
-    receipt: &Receipt,
-    now_ms: u64,
-) -> Result<RoleRequest, String> {
-    if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
-        return Err("the holder refused the delivery; no request was recorded".to_string());
+/// Answer a send whose msg_id is already a request: the same request again
+/// is a replay; anything else reusing the id refuses by name.
+fn replay(send: &RoleSend, existing: RoleRequest) -> Result<Routed, Refusal> {
+    let same = existing.project == send.project
+        && existing.role == send.address.role
+        && (send.address.instance.is_empty() || existing.instance == send.address.instance)
+        && existing.requester == send.from.as_str()
+        && existing.body == send.body
+        && existing.fyi == send.fyi;
+    if !same {
+        return Err(Refusal::new(
+            E_ROLE_REQUEST_EXISTS,
+            format!(
+                "msg_id {} already names a different request ({} in {} from {}); send this one with a new msg_id",
+                existing.id,
+                RoleAddress {
+                    role: existing.role.clone(),
+                    instance: existing.instance.clone(),
+                }
+                .display(),
+                existing.project,
+                existing.requester
+            ),
+        ));
     }
-    request.delivered_at = Some(now_ms);
-    match store.record_role_request(&request).await {
-        Ok(()) => Ok(request),
-        Err(error) if error.to_string().contains("E-RS-ROLE-REQUEST-EXISTS") => Ok(request),
-        Err(error) => Err(error.to_string()),
+    match (existing.state, existing.holder.clone()) {
+        (RequestState::Delivering, Some(holder)) => Ok(Routed::Holder {
+            seat: SeatId::from(holder.as_str()),
+            body: framed_body(&existing),
+            request: existing,
+            recorded: true,
+        }),
+        _ => Ok(Routed::Replay { request: existing }),
+    }
+}
+
+/// The receipt for a replay: nothing was sent again.
+pub fn replay_receipt(request: &RoleRequest, now_ms: u64) -> Receipt {
+    let reason = match (request.state, request.holder.as_deref()) {
+        (RequestState::Delivered, Some(holder)) => format!(
+            "replay: request {} was already delivered to {holder}; not sent again",
+            request.id
+        ),
+        _ => format!(
+            "replay: request {} is still queued for a holder; not sent again",
+            request.id
+        ),
+    };
+    let outcome = if request.state == RequestState::Delivered {
+        DeliveryOutcome::Held { reason }
+    } else {
+        DeliveryOutcome::Queued {
+            reason: Some(reason),
+            next_retry_at: None,
+            draft_sha: None,
+        }
+    };
+    Receipt {
+        msg_id: request.id.clone(),
+        outcome,
+        at: now_ms,
+        cold_check: None,
+        warning: None,
     }
 }
 
@@ -605,8 +678,9 @@ impl AfterAssign for RoleQueueDrain {
 }
 
 /// Deliver `role`'s queued requests a holder of `instance` can take to `seat`,
-/// oldest first, each from its requester; mark each one delivered. A request
-/// whose delivery fails stays queued for the next assign.
+/// oldest first, each from its requester; mark each one delivered. Each is
+/// claimed before it is dispatched, so two drains never deliver one request;
+/// one whose delivery fails goes back on the queue for the next assign.
 pub async fn drain(
     store: &SqliteOrchestration,
     delivery: &Arc<DeliveryService>,
@@ -621,6 +695,16 @@ pub async fn drain(
     };
     let mut outcomes = Vec::new();
     for mut request in queued {
+        // The one atomic step that decides which drain delivers it: a second
+        // drain for the same role skips it (review of #129).
+        match store.claim_role_request(&request.id, seat.as_str()).await {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(cause) => {
+                outcomes.push((request.id, Err(cause.to_string())));
+                continue;
+            }
+        }
         request.instance = instance.to_string();
         let msg = Msg {
             from: SeatId::from(request.requester.as_str()),
@@ -647,6 +731,12 @@ pub async fn drain(
                 .map_err(|cause| cause.to_string()),
             Err(cause) => Err(cause.to_string()),
         };
+        if outcome.is_err() {
+            // Back on the queue for the next assign.
+            let _ = store
+                .release_role_request_claim(&request.id, seat.as_str())
+                .await;
+        }
         outcomes.push((request.id, outcome));
     }
     outcomes
