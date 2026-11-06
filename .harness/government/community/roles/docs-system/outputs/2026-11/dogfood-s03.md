@@ -35,4 +35,4 @@ Cost: `git.community` stayed at 14 and `ddocs.community` at 4 across every comma
 
 ## For the ledger
 
-Renumbered by pm-001 to F19 to F23, since F17 (the two-role window name) and F18 (the writer and a hand commit racing on index.lock) were already taken. F17 to F23 go into `docs/difficulties.md` as D-WB-14 to D-WB-20 in the next docs PR, each naming its plan.
+Renumbered by pm-001 to F19 to F23, since F17 (the two-role window name) and F18 (the writer and a hand commit racing on index.lock) were already taken. In `docs/difficulties.md`, F19 to F23 are D-WB-18 to D-WB-22 (#140); F17 and F18 are D-WB-14 and D-WB-15 (#138).
