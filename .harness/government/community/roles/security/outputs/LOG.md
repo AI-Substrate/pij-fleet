@@ -112,3 +112,13 @@
 
 2026-11-06 verdict pr:147 5c8ff97a8cb021e4f862afdde137713c50658c05 pass-with-notes - Reviewer F002 normal parent-ID inheritance acknowledged and repaired by pane-only non-help forwarding/full whoami context; absolute-entry resolver and clap-derived value lexer verified; no binary authenticity/universal identity certificate; four green jobs/1978 cases, code/test equality with 14-doc-line tree difference; no local execution; 2026-11-06-pr-147-5c8ff97-security.md.
 
+2026-11-06 verdict pr:133 44f1eea35be87355a9871c4fc7fdb1616fc9749f pass-with-notes - Atomic two-minute claim lease/release and admission-only stamps verified; gone-holder metadata goes to project PA/prime with mandatory audit retained; live-holder refusal static-only, clock/answer-after-claim/exactly-once limits explicit. Four green checks and five relevant passed cases; tested merge differs only in CLI/OMP/shim/docs, s12 source/tests/Cargo inputs identical, no whole-tree equality claim; 2026-11-06-pr-133-44f1eea-security.md.
+
+2026-11-06 verdict pr:141 bfc5c54fb41e9a922e30b0863c2829ee13fd4eb2 pass-with-notes - HIGH S001 closed by complete-argument per-word quoting across command emitters; hostile shell split uses constant printf with canary/word-roundtrip assertions, no recommended operations invoked; exact-tree 1996-case/four-green CI proof; s15 deferred/parser refusals and live/ddocs limits retained; OPEN/DRAFT MERGEABLE/CLEAN; 2026-11-06-pr-141-bfc5c54-security.md.
+
+2026-11-06 verdict pr:135 3621220d5ecac6e80b5f70ed4d36cf6b77eb8b15 pass-with-notes - Any-seat local lifecycle/drop authority retained; queued project/role deletion plus body-free spine append atomic, refusal metadata-only and body FYI exact-requester/local/held; per-request notification and cross-Git/DB/race limits explicit; four green checks/1985 cases with reviewed security-path equivalence, not whole trees; no local execution or tk-0007 dependency; 2026-11-06-pr-135-3621220-security.md.
+
+2026-11-06 note pr:135 3621220d5ecac6e80b5f70ed4d36cf6b77eb8b15 publication-held - Pre-post guard found newer e60be54872a25b624f86e8961b04684ec27e8b45 and created no comment; no verdict line sent. PM asked for final pin/worktree; completed source assessment is this snapshot only, not approval of the replacement.
+
+2026-11-06 verdict pr:135 e60be54872a25b624f86e8961b04684ec27e8b45 pass-with-notes - Prior 362 authority/privacy assessment carries; full four-file docs receipt delta clear with classified positive controls, script read only; exact-head CI42208383576 attempt2 all four green, reviewed files equal tested merge but no whole-tree/new-test-count claim; per-request/cross-system consistency notes retained; 2026-11-06-pr-135-e60be54-security.md.
+
