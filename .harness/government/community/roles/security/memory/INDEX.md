@@ -11,4 +11,5 @@
 - [2026-11-06 Native forwarding trust and proof boundaries](2026-11-06-native-forwarding-trust-and-proof-boundaries.dd.md): Read before changing shim/native forwarding, executable selection or caller identity. (native-forwarding, identity, proof)
 - [2026-11-06 Output publication and answer authority](2026-11-06-output-publication-and-answer-authority.dd.md): Read before changing output answer finalization or forced requester notification. (outputs, authorization, notifications)
 - [2026-11-06 Role queue claims and recovery admission](2026-11-06-role-queue-claims-and-recovery-admission.dd.md): Read before changing role-send claiming, boot recovery or cold-drain audits. (role-queue, recovery, audit)
+- [2026-11-06 Role withdrawal authority and body privacy](2026-11-06-role-withdrawal-authority-and-body-privacy.dd.md): Read before changing role lifecycle withdrawal, refusal projections or body-echo FYIs. (role-lifecycle, privacy, withdrawal)
 <!-- /pij:generated -->

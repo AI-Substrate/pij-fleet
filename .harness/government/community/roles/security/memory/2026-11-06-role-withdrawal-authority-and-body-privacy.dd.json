@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read before changing role lifecycle withdrawal, refusal projections or body-echo FYIs.",
+				"tags": [
+					"role-lifecycle",
+					"privacy",
+					"withdrawal"
+				],
+				"title": "Role withdrawal authority and body privacy"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Role lifecycle and withdrawal review lesson from PR #135, source head 3621220 and final receipt-only head e60be54872a25b624f86e8961b04684ec27e8b45.\n\nEdit, retire, merge and explicit drop-queued use the existing any-seat local directory-management authority. Do not infer a new holder-/prime-only restriction from examples of human/prime usage. This does not relax distinct authorities for lineage changes or output --answers, and does not create cryptographic per-seat authentication.\n\nWithdrawal selects project + role + queued state across that role's instances. Delivering/delivered rows are excluded. Deletion and body-free role.request.withdrawn events share one DB transaction, but the prior Git role commit and later pointer/FYI operations are not in that transaction. Races, cancellation and notification failures can leave consistency work; do not claim global atomic cancellation.\n\nRefusal output projects request ID, requester and age. Never substitute serialization of the complete body-bearing request row. Both withdrawal and FYI-held spine events remain body-free. Original body echo is only in the exact stored requester's local held FYI, with routing/control fields fixed. Opaque seat names are direct lookups, not role/remote addresses.\n\nActual notification granularity is one per non-self request, not grouped per requester; self is reported separately. Several messages from one requester can therefore produce several FYIs. This is a cost/consistency qualification, not a new disclosure by itself.\n\nFor private-run evidence, classify positive detector hits: generic temporary templates, parameterized loopback URLs, synthetic scratch identities, reserved-domain email and permitted own-project layout are not automatically private disclosures. Variable references to scratch key files are not literal credential values. Do not copy real sensitive candidates while reporting file/line/category.\n\nThe receipt script was inspected only as text. Code security, receipt fidelity and performance counts are different grades. Fake/unavailable ddocs and imported CLI differences in tested merge trees must stay explicit; they are not whole-tree validation proof.\n\nReports: .harness/government/community/roles/security/outputs/2026-11-06-pr-135-3621220-security.md and 2026-11-06-pr-135-e60be54-security.md.\n"
+		}
+	]
+}
