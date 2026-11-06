@@ -24,3 +24,4 @@
 2026-11-06 verdict pr:136 4249044c29e7250545f2db7bf77b0b580153f3d1 pass-with-notes — wording re-check 2: C30 now present in route and templates README (block cleared); C28, C29 unchanged pass; notes: memory at every boundary (l.41), item 3 retire/merge after #135, '(step 3)'
 2026-11-06 deliverable pr:143 fdb0b2745c4a194227f0d405b99a089a4e92c39c opened — D-WB-33..44 (F35-F46) at table end, owners 209 (F35-38, F40-44, F46), 203 (F39), F45 accepted; merge-tree clean with #138
 2026-11-06 verdict pr:136 0764dc8a09737af2773dfe7b71dc48e3f44dc70b pass-with-notes — wording re-check 3: '(item 3 above)' and 'worker and specialist' folded; C28-C30 pass; open: C30 memory at every boundary (l.41), item 3 retire/merge waits on #135 order
+2026-11-06 verdict pr:136 9f9641017c624c13c0d8cad234bbbccaba6ac169 pass — wording re-check 4: C30 complete (not a cost to minimise away; memory at the boundary); C28, C29 pass; follow-up only: item 3 retire/merge if #135 merges first
