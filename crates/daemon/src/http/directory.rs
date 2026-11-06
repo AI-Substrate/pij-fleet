@@ -650,7 +650,7 @@ async fn lineage(
         .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
     let (role, instance) = role_and_instance(&call.positions[1])?;
     let seat = call.positions[2].clone();
-    let time = |flag: &str| -> Result<time::OffsetDateTime, Refusal> {
+    let when = |flag: &str| -> Result<time::OffsetDateTime, Refusal> {
         let given = call
             .get(flag)
             .ok_or_else(|| Refusal::new("E-RS-ARG", format!("--{flag} <time> is required")))?;
@@ -663,7 +663,7 @@ async fn lineage(
             )
         })
     };
-    let (from, to) = (time("from")?, time("to")?);
+    let (from, to) = (when("from")?, when("to")?);
     if from >= to {
         return Err(Refusal::new("E-RS-ARG", "--from must be before --to"));
     }

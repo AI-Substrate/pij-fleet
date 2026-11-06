@@ -1407,17 +1407,23 @@ async fn a_batch_assign_is_one_commit_all_or_nothing() {
             call(
                 addr,
                 "/v1/directory",
-                &["directory", "assign", "--batch", &file, "--why", "import"],
+                &[
+                    "directory",
+                    "assign",
+                    "--batch",
+                    file.as_str(),
+                    "--why",
+                    "import",
+                ],
                 &main,
             )
             .await
         }
     };
     let start = head(&repo);
-    let bad = batch(
-        "# holders\npm-001 pij-holder\nqa pij-second\nreviewer/1 pij-nobody\nreviewer/2\n",
-    )
-    .await;
+    let bad =
+        batch("# holders\npm-001 pij-holder\nqa pij-second\nreviewer/1 pij-nobody\nreviewer/2\n")
+            .await;
     assert_eq!(bad["ok"], false, "{bad}");
     let message = bad["meta"].as_str().unwrap_or_default().to_string() + &bad.to_string();
     for named in ["line 4: seat pij-nobody does not exist", "line 5:"] {
@@ -1438,7 +1444,11 @@ async fn a_batch_assign_is_one_commit_all_or_nothing() {
     assert_eq!(landed["data"]["holdings"].as_array().unwrap().len(), 8);
     assert_eq!(landed["data"]["commit"], head(&repo));
     assert_eq!(
-        git(&repo.gov, &["rev-list", "--count", &format!("{start}..HEAD")]).trim(),
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{start}..HEAD")]
+        )
+        .trim(),
         "1",
         "one commit for eight holdings"
     );
@@ -1458,7 +1468,9 @@ async fn the_prime_records_a_closed_seats_past_holding() {
     let created = call(
         rig.addr,
         "/v1/project",
-        &["project", "create", "fleet", "--repo", main, "--prime", SEAT],
+        &[
+            "project", "create", "fleet", "--repo", main, "--prime", SEAT,
+        ],
         &repo.main,
     )
     .await;
@@ -1467,7 +1479,17 @@ async fn the_prime_records_a_closed_seats_past_holding() {
         let added = call(
             rig.addr,
             "/v1/directory",
-            &["directory", "add", id, "--rule", "r", "--packet", "p", "--why", "w"],
+            &[
+                "directory",
+                "add",
+                id,
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
             &repo.main,
         )
         .await;
@@ -1481,8 +1503,17 @@ async fn the_prime_records_a_closed_seats_past_holding() {
                 addr,
                 "/v1/directory",
                 &[
-                    "directory", "lineage", "add", "docs-system", "pij-careful-heron", "--from",
-                    &from, "--to", &to, "--why", "from HOLDERS.md",
+                    "directory",
+                    "lineage",
+                    "add",
+                    "docs-system",
+                    "pij-careful-heron",
+                    "--from",
+                    from.as_str(),
+                    "--to",
+                    to.as_str(),
+                    "--why",
+                    "from HOLDERS.md",
                 ],
                 &main,
             )
@@ -1521,7 +1552,11 @@ async fn the_prime_records_a_closed_seats_past_holding() {
 
     let after = head(&repo);
     for (from, to, code) in [
-        ("2026-11-05", "2026-11-07T00:00:00Z", "E-RS-DIRECTORY-OVERLAP"),
+        (
+            "2026-11-05",
+            "2026-11-05T12:00:00Z",
+            "E-RS-DIRECTORY-OVERLAP",
+        ),
         ("2026-11-05", "2026-11-04", "E-RS-ARG"),
         ("2026-11-01", "2999-01-01", "E-RS-ARG"),
         ("last tuesday", "2026-11-04", "E-RS-ARG"),

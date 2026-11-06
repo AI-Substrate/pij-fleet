@@ -464,7 +464,10 @@ impl DirectoryService {
         requests: Vec<AssignRequest>,
     ) -> Result<Vec<HoldingReceipt>, Refusal> {
         let Some(first) = requests.first().cloned() else {
-            return Err(Refusal::new("E-RS-ARG", "an assign batch needs at least one line"));
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "an assign batch needs at least one line",
+            ));
         };
         let closed: Vec<String> = requests
             .iter()
@@ -508,7 +511,12 @@ impl DirectoryService {
                 "community: assign {} holdings\n\n{}",
                 many.len(),
                 many.iter()
-                    .map(|row| format!("{}{} {}", row.role, instance_suffix(&row.instance), row.seat))
+                    .map(|row| format!(
+                        "{}{} {}",
+                        row.role,
+                        instance_suffix(&row.instance),
+                        row.seat
+                    ))
                     .collect::<Vec<_>>()
                     .join("\n")
             ),
@@ -632,17 +640,19 @@ impl DirectoryService {
             self.hook
                 .assigned(&row.project, &row.role, &row.instance, &request.seat.id);
             let window = self.rename(&request.seat, row).await;
-            receipts.push(HoldingReceipt {
-                commit: written.commit.clone(),
-                path: holders_path(&row.role)?,
-                row: holders::to_document(&row.role, std::slice::from_ref(row))["sections"][1]
-                    ["value"][0]
-                    .clone(),
-                warning: warning.clone(),
-                seat_role: commit.seat_role,
-                flushed: built.landed.len(),
-                window: Some(window),
-            });
+            receipts.push(
+                HoldingReceipt {
+                    commit: written.commit.clone(),
+                    path: holders_path(&row.role)?,
+                    row: holders::to_document(&row.role, std::slice::from_ref(row))["sections"][1]
+                        ["value"][0]
+                        .clone(),
+                    warning: warning.clone(),
+                    seat_role: commit.seat_role,
+                    flushed: built.landed.len(),
+                    window: Some(window),
+                },
+            );
         }
         Ok(receipts)
     }
@@ -775,8 +785,9 @@ impl DirectoryService {
         Ok(HoldingReceipt {
             commit: written.commit.clone(),
             path: holders_path(&row.role)?,
-            row: holders::to_document(&row.role, std::slice::from_ref(&row))["sections"][1]
-                ["value"][0]
+            row:
+                holders::to_document(&row.role, std::slice::from_ref(&row))["sections"][1]["value"]
+                    [0]
                 .clone(),
             warning: None,
             seat_role: None,
