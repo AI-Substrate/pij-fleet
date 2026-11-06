@@ -47,7 +47,7 @@ Delivers req-10 and the notify half of req-08. Rulings: C3 (`pij output ... --an
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | Write. `pij output &lt;kind&gt; --role &lt;id&gt; --subject &lt;address&gt; ...` writes `community/roles/&lt;id&gt;/outputs/&lt;yyyy-mm&gt;/&lt;slug&gt;.dd.json` (pij/output, plan 190 schema) through the writer, one at a time, and records a store fact (migration 0035). A verdict carries the exact head, result, notes owed, evidence (command, exit code, log path) and an optional external link. The writer is recorded, and flagged if it doesn't hold the role. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | Write. `pij output &lt;kind&gt; --role &lt;id&gt; --subject &lt;address&gt; ...` writes `community/roles/&lt;id&gt;/outputs/&lt;yyyy-mm&gt;/&lt;slug&gt;.dd.json` (pij/output, plan 190 schema) through the writer, one at a time, and records a store fact (migration 0036). A verdict carries the exact head, result, notes owed, evidence (command, exit code, log path) and an optional external link. The writer is recorded, and flagged if it doesn't hold the role. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
 | ac-0002 | Exact head. `pij outputs --subject pr:N --head &lt;sha&gt;` answers only for that head and answers none when the head has moved. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
 | ac-0003 | Notify (req-08). `--answers &lt;msg_id&gt;` (C3) links the output to its request; the requester is notified in its stored mode: wake (a forced, audited wake if cold, C4), fyi, or none. A `block` verdict or a `failed` result always wakes. An output nobody requested goes as an FYI to the nearest seat above (its PM, else the prime). One seat is notified. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 | ac-0004 | Handover. A `handover` output holds what is in flight now, so a fresh holder can pick up. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
@@ -78,7 +78,7 @@ _No fields._
 
 ## Research Context
 
-Code to read first: crates/daemon/src/community/ (writer, layout), the pij/output schema (.dd/schemas/pij/output), s05's request store (plan 199). Migration 0035 is claimed for this plan.
+Code to read first: crates/daemon/src/community/ (writer, layout), the pij/output schema (.dd/schemas/pij/output), s05's request store (plan 199). Migration 0036 is claimed for this plan (0035 went to s12, which merges first and adds role_requests.answered_at plus mark_role_request_answered(id, at); `--answers` calls that helper).
 
 <a id="testing-strategy"></a>
 

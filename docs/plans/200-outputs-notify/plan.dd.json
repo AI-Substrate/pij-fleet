@@ -38,7 +38,7 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "Write. `pij output <kind> --role <id> --subject <address> ...` writes `community/roles/<id>/outputs/<yyyy-mm>/<slug>.dd.json` (pij/output, plan 190 schema) through the writer, one at a time, and records a store fact (migration 0035). A verdict carries the exact head, result, notes owed, evidence (command, exit code, log path) and an optional external link. The writer is recorded, and flagged if it doesn't hold the role.",
+          "claim": "Write. `pij output <kind> --role <id> --subject <address> ...` writes `community/roles/<id>/outputs/<yyyy-mm>/<slug>.dd.json` (pij/output, plan 190 schema) through the writer, one at a time, and records a store fact (migration 0036). A verdict carries the exact head, result, notes owed, evidence (command, exit code, log path) and an optional external link. The writer is recorded, and flagged if it doesn't hold the role.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
@@ -96,7 +96,7 @@
     },
     {
       "name": "research_context",
-      "value": "Code to read first: crates/daemon/src/community/ (writer, layout), the pij/output schema (.dd/schemas/pij/output), s05's request store (plan 199). Migration 0035 is claimed for this plan."
+      "value": "Code to read first: crates/daemon/src/community/ (writer, layout), the pij/output schema (.dd/schemas/pij/output), s05's request store (plan 199). Migration 0036 is claimed for this plan (0035 went to s12, which merges first and adds role_requests.answered_at plus mark_role_request_answered(id, at); `--answers` calls that helper)."
     },
     {
       "name": "testing_strategy",
