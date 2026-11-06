@@ -141,6 +141,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-pleased-marmot",
 					"why": "verdict on #147 (plan 213)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T10:59:57.375Z",
+					"harness": "copilot",
+					"harness_session": "95615f7f-89fc-4639-ac6b-c838fe5e1ac3",
+					"instance_key": "135",
+					"machine": "ops.osk.lan",
+					"seat": "pij-pleased-marmot",
+					"why": "review #135 (plan 206)"
 				}
 			]
 		}
