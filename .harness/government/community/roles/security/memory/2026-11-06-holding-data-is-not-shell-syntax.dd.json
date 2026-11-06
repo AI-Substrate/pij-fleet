@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read before generating repair commands from holdings, instance keys or imported assignment data.",
+				"tags": [
+					"shell-quoting",
+					"role-lifecycle",
+					"trust-boundary"
+				],
+				"title": "Holding data is not shell syntax"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Printed repair commands cross a data-to-code boundary even when directory management is trusted local authority.\n\nPR #135 head 3ecec77f46ac335e6fe141ecf75baf5637378e7b is blocked for an unquoted holding instance in a release recommendation. The literal instance x$(id) is accepted as batch-assignment data: the role is restricted, but the holding-instance parser rejects only slash/surrounding whitespace, holders schema instance_key is string, later holder checks do not exclude shell syntax, and storage preserves it. This literal is evidence data, not a command to execute.\n\nThe stricter role-send instance grammar is not applied to holding assignment. Never infer that every role/instance value is shell-safe because one parser validates it.\n\nA contributor can supply a data file that an authorized operator imports; that is not permission to execute its contents. Rendering the stored role/instance unquoted in a recommendation causes shell substitution before pij's parser runs. Blanket trusted-machine reasoning must not dismiss this separate data-authoring boundary.\n\nUse the existing per-word shell_word helper on complete dynamic arguments: combined role/instance target, seat and project. A whitespace-split/simple-name replay test is not a shell word-round-trip test. Do not invoke the recommended mutation or an adversarial payload while reviewing.\n\nThe gate and body-privacy checks otherwise retained their reviewed protections. Tell-first currently attempts FYI holding before deletion, but a returned not-told failure does not stop withdrawal. That is a separate consistency qualification, not a second security finding in this snapshot. Cancellation-wide gate ownership and universal notification atomicity were not proved.\n\nThe block is source/schema trace with exact-tree green CI (2005 cases), not a locally executed exploit. It is specific to this head; follow later repair evidence rather than assuming it remains open forever.\n\nFinal replies should retain the original request correlation. This verdict was sent with --in-reply-to for the actual role request, not as an unrelated status update. Receipt acceptance is not model completion or independent clock-state verification.\n\nReport: .harness/government/community/roles/security/outputs/2026-11-06-pr-135-3ecec77-security.md.\n"
+		}
+	]
+}

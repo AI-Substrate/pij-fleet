@@ -7,6 +7,7 @@
 - [2026-11-06-ibex-pr-138-marker-boundary.md](2026-11-06-ibex-pr-138-marker-boundary.md): #138 advisory marker/local-authority boundaries; exact-head pass-with-notes, DIRTY integration qualification and publication receipt.
 
 <!-- pij:generated -->
+- [2026-11-06 Holding data is not shell syntax](2026-11-06-holding-data-is-not-shell-syntax.dd.md): Read before generating repair commands from holdings, instance keys or imported assignment data. (shell-quoting, role-lifecycle, trust-boundary)
 - [2026-11-06 Native forwarding repair and inherited identity](2026-11-06-native-forwarding-repair-and-inherited-identity.dd.md): Read when reviewing paneless sender attribution or changing native forwarding gates. (native-forwarding, identity, correction)
 - [2026-11-06 Native forwarding trust and proof boundaries](2026-11-06-native-forwarding-trust-and-proof-boundaries.dd.md): Read before changing shim/native forwarding, executable selection or caller identity. (native-forwarding, identity, proof)
 - [2026-11-06 Output publication and answer authority](2026-11-06-output-publication-and-answer-authority.dd.md): Read before changing output answer finalization or forced requester notification. (outputs, authorization, notifications)
