@@ -14,7 +14,8 @@
 # Environment:
 #   PIJ_SHARED_TARGET   required, absolute; exported as CARGO_TARGET_DIR
 #   PIJ_DISK_FLOOR_GB   refuse under this many GiB free on the target's volume (25)
-#   PIJ_ID              seat id for the owner line (falls back to $USER)
+#   PIJ_ID              seat id for the owner line; else $PIJ_SESSION_ID (set in
+#                       every harness seat), else `pij-rs whoami`, else $USER
 #
 # Exit: cargo's status, or 2 usage, 3 disk floor, 4 --timeout, 5 stale lock.
 # A stale lock (its owner pid is gone) is reported with the command that clears
@@ -29,6 +30,7 @@ set -uo pipefail
 DF="${PIJ_SHARED_BUILD_DF:-/bin/df}"         # test seam
 MKDIR="${PIJ_SHARED_BUILD_MKDIR:-/bin/mkdir}" # test seam
 POLL="${PIJ_SHARED_BUILD_POLL_SECONDS:-20}"  # test seam
+WHOAMI="${PIJ_SHARED_BUILD_WHOAMI-}"          # test seam; default: pij-rs on PATH
 FLOOR_GB="${PIJ_DISK_FLOOR_GB:-25}"
 
 refuse() {
@@ -147,7 +149,22 @@ done
 commands+=("$(printf '%q ' "${current[@]}")")
 
 worktree=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-seat="${PIJ_ID:-${USER:-unknown}}"
+# The owner line names the seat, so waiting seats can tell holders apart
+# (plan 208, F24). whoami is asked at most once per run, never per poll.
+seat_id() {
+	local id="${PIJ_ID:-${PIJ_SESSION_ID:-}}"
+	if [ -z "$id" ]; then
+		local whoami="${WHOAMI:-$(command -v pij-rs 2>/dev/null)}"
+		if [ -n "$whoami" ] && [ -x "$whoami" ]; then
+			id=$("$whoami" whoami --json 2>/dev/null | grep -o '"id":"[^"]*"' | head -n 1 | cut -d '"' -f 4)
+		fi
+	fi
+	case "$id" in
+	"" | *[!A-Za-z0-9._-]*) id="${USER:-unknown}" ;;
+	esac
+	printf '%s' "$id"
+}
+seat=$(seat_id)
 
 held=0
 child=""

@@ -192,6 +192,34 @@ describe("just shared-build", () => {
 		expect(existsSync(f.lock)).toBe(false);
 	});
 
+	it("names the seat in the owner line from PIJ_SESSION_ID or whoami when PIJ_ID is unset, else the user", async () => {
+		const f = fixture();
+		const whoami = join(f.root, "fake-whoami");
+		writeFileSync(
+			whoami,
+			'#!/bin/sh\n[ "$1 $2" = "whoami --json" ] && echo \'{"ok":true,"data":{"id":"pij-whoami-seat","proc":{"id":"x"}}}\'\n',
+		);
+		chmodSync(whoami, 0o755);
+		const silent = join(f.root, "silent-whoami");
+		writeFileSync(silent, "#!/bin/sh\nexit 1\n");
+		chmodSync(silent, 0o755);
+		const owner = async (env: NodeJS.ProcessEnv) => {
+			writeFileSync(f.log, "");
+			expect((await run(f, ["--", "build"], env)).code).toBe(0);
+			return log(f)
+				.find((line) => line.startsWith("seat="))
+				?.split(" ")[0];
+		};
+		const unset = { PIJ_ID: undefined, PIJ_SESSION_ID: undefined };
+		expect(await owner({ ...unset, PIJ_SESSION_ID: "pij-session-seat" })).toBe(
+			"seat=pij-session-seat",
+		);
+		expect(await owner({ ...unset, PIJ_SHARED_BUILD_WHOAMI: whoami })).toBe("seat=pij-whoami-seat");
+		expect(await owner({ ...unset, PIJ_SHARED_BUILD_WHOAMI: silent, USER: "someone" })).toBe(
+			"seat=someone",
+		);
+	});
+
 	it("releases the lock when cargo fails and runs nothing after the failure", async () => {
 		const f = fixture();
 		const result = await run(f, ["--", "fail", "--then", "build"]);
