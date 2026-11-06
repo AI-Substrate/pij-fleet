@@ -216,6 +216,12 @@ pub(crate) struct SendCall {
     pub reason: Option<String>,
     /// `--file <path> [--caption <text>]`, served only for `pij-telegram`.
     pub attachment: Option<Attachment>,
+    /// `--reply wake|fyi|none` on a send to `role:<id>` (plan 199).
+    pub reply: Option<String>,
+    /// `--limit <duration>` on a send to `role:<id>` (plan 199).
+    pub limit: Option<String>,
+    /// `--project <slug>` resolving `role:<id>` (plan 199).
+    pub project: Option<String>,
 }
 
 /// The recipient whose renderer is Telegram: it is not a seat, it is the
@@ -261,6 +267,9 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
     let mut reason = None;
     let mut file: Option<String> = None;
     let mut caption: Option<String> = None;
+    let mut reply: Option<String> = None;
+    let mut limit: Option<String> = None;
+    let mut project: Option<String> = None;
     let mut rest = tokens.collect::<Vec<_>>().into_iter().peekable();
     while let Some(token) = rest.next() {
         let flag = token
@@ -333,6 +342,23 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
                     .filter(|value| !value.trim().is_empty() && !value.starts_with("--"))
                     .ok_or_else(|| "--in-reply-to needs a message id".to_string())?;
                 in_reply_to = Some(value.to_string());
+            }
+            "reply" | "limit" | "project" => {
+                let slot = match name {
+                    "reply" => &mut reply,
+                    "limit" => &mut limit,
+                    _ => &mut project,
+                };
+                if slot.is_some() {
+                    return Err(format!("--{name} may be supplied only once"));
+                }
+                let value = token
+                    .split_once('=')
+                    .map(|(_, value)| value)
+                    .or_else(|| rest.next())
+                    .filter(|value| !value.trim().is_empty() && !value.starts_with("--"))
+                    .ok_or_else(|| format!("--{name} needs a value"))?;
+                *slot = Some(value.to_string());
             }
             "file" | "caption" => {
                 let slot = if name == "file" {
@@ -426,6 +452,9 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
             force: false,
             reason: None,
             attachment: None,
+            reply,
+            limit,
+            project,
         });
     }
     // The two body channels are exclusive, and BOTH must be refused rather than
@@ -471,6 +500,9 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
         force,
         reason,
         attachment: None,
+        reply,
+        limit,
+        project,
     })
 }
 
@@ -525,6 +557,9 @@ fn attachment_call(
         force: false,
         reason: None,
         attachment: Some(attachment),
+        reply: None,
+        limit: None,
+        project: None,
     })
 }
 
@@ -674,6 +709,33 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         Err(response) => return *response,
     };
     let msg_id = state.services.delivery.next_message_id();
+    // A send to `role:<id>` resolves through the directory first (plan 199).
+    if let Some(response) = super::role_send::route(
+        &state,
+        super::role_send::RoleSendCall {
+            command: SEND,
+            from: &from,
+            to: &call.to,
+            body: &call.body,
+            msg_id: &msg_id,
+            in_reply_to: call.in_reply_to.as_deref(),
+            fyi: call.fyi,
+            control: false,
+            force: call.force,
+            reason: call.reason.as_deref(),
+            forwarded: false,
+            project: call.project.clone(),
+            options: crate::delivery::role_send::RoleOptions {
+                reply: call.reply.clone(),
+                limit: call.limit.clone(),
+            },
+            caller: request.caller.as_ref(),
+        },
+    )
+    .await
+    {
+        return response;
+    }
     // `seat@machine`: the receiving daemon applies its own cold-wake guard and
     // holds its own FYIs (plan 164 ruling 6); this one only forwards.
     if call.to.machine.is_some() {
@@ -1079,5 +1141,53 @@ async fn subject(
             Ok(descriptor)
         }
         Resolved::Refusal(response) => Err(Box::new(response)),
+    }
+}
+
+#[cfg(test)]
+mod role_flag_tests {
+    use super::parse_send;
+
+    fn argv(tokens: &[&str]) -> Vec<String> {
+        tokens.iter().map(ToString::to_string).collect()
+    }
+
+    /// Plan 199: the shim carries `--reply`, `--limit` and `--project` to the
+    /// role route, in either spelling, once each.
+    #[test]
+    fn role_flags_parse_once_each_in_either_spelling() {
+        let call = parse_send(
+            &argv(&[
+                "send",
+                "role:pm-001",
+                "hello",
+                "--reply",
+                "fyi",
+                "--limit=45m",
+                "--project",
+                "fleet",
+            ]),
+            None,
+        )
+        .expect("parses");
+        assert_eq!(call.to.seat.as_str(), "role:pm-001");
+        assert_eq!(
+            (
+                call.reply.as_deref(),
+                call.limit.as_deref(),
+                call.project.as_deref()
+            ),
+            (Some("fyi"), Some("45m"), Some("fleet"))
+        );
+        let twice = parse_send(
+            &argv(&["send", "role:pm", "x", "--reply", "wake", "--reply", "none"]),
+            None,
+        );
+        assert_eq!(
+            twice.err().as_deref(),
+            Some("--reply may be supplied only once")
+        );
+        let empty = parse_send(&argv(&["send", "role:pm", "x", "--limit"]), None);
+        assert_eq!(empty.err().as_deref(), Some("--limit needs a value"));
     }
 }

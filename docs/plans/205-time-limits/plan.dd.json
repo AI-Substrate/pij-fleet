@@ -1,0 +1,161 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Time limits and check-ins",
+        "slug": "time-limits",
+        "ordinal": 205,
+        "complexity": "CS-3",
+        "summary": "Roadmap 001 s12: a request can carry `--limit`; without one the role's default_limit applies (C5); when the limit passes with no output and no card update, pij sends the seat one check-in, and tells the PA (else the prime) if it goes unanswered, all inside the existing watchdog round.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Delivers req-22; builds c-limits. Depends on s05 (the request store holds the limit). Nothing is ever stopped. The opt-in quiet-seat watchdog is unchanged."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Roadmap 001 s12: a request can carry `--limit`; without one the role's default_limit applies (C5); when the limit passes with no output and no card update, pij sends the seat one check-in, and tells the PA (else the prime) if it goes unanswered, all inside the existing watchdog round."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Check-in. In the existing watchdog round, a request whose limit has passed with no output (s06) and no card update since the request (each card update restarts it) gets one check-in to its seat, delivered as to any busy seat: write what you have, update your card, say why it needs longer.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Escalate. If the check-in goes unanswered (no output or card update by the next limit window), pij tells the PA (else the prime) once.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Defaults. Without --limit, the role's default_limit (pij/role, C5) applies; with neither, no limit.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer or launch: the check runs inside the existing watchdog round and costs a store query per open request with a limit; check-ins and notices are one delivery each. State the round's added query cost.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Docs and states. In this PR: roadmap s12 goes to complete (plan cell docs/plans/205-time-limits); req-22 goes to shipped; c-limits goes to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00cd",
+          "title": "Time limits and check-ins",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-3.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: pa_watchdog and the existing watchdog round, s05's request store (plan 199). If the request table needs a column beyond s05's, claim a migration number from pm-001."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}

@@ -84,3 +84,38 @@ async fn review_release_same_role_flushes_another_holders_pending_close() {
     );
     rig.server.abort();
 }
+
+/// #122 F003, made deterministic (plan 208): it no longer needs the three
+/// calls inside one wall-clock second. The collision rule itself is proven
+/// without the clock by `holders::fresh_from_at`'s unit test; this proves the
+/// HTTP path keeps two distinct holdings that survive a rebuild.
+#[tokio::test]
+async fn review_reassign_keeps_both_holdings() {
+    let repo = repo("pr122-review-fast-reassign");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let first = review_hold(&rig, &repo, "assign", "pm-001", "pij-holder").await;
+    assert_eq!(first["ok"], true, "{first}");
+    let released = review_hold(&rig, &repo, "release", "pm-001", "pij-holder").await;
+    assert_eq!(released["ok"], true, "{released}");
+    let second = review_hold(&rig, &repo, "assign", "pm-001", "pij-holder").await;
+    assert_eq!(second["ok"], true, "a reassign must succeed: {second}");
+    let rows = holders_at_head(&repo, "pm-001");
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_ne!(rows[0]["from"], rows[1]["from"], "two holdings, two froms");
+    assert!(
+        rows[0]["to"].is_string() && rows[1].get("to").is_none(),
+        "{rows:?}"
+    );
+    let rebuilt = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "rebuild"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(rebuilt["ok"], true, "{rebuilt}");
+    assert_eq!(rebuilt["data"]["holdings"], 2, "{rebuilt}");
+    assert_eq!(rig.store.assignments("fleet").await.unwrap().len(), 2);
+    rig.server.abort();
+}
