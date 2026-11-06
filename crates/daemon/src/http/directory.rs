@@ -89,6 +89,9 @@ const CONTROL: [&str; 8] = [
 #[derive(Debug, Default)]
 struct Arguments {
     leaf: String,
+    /// `--suggest` on the view: every role suggestion, not only those a need
+    /// or signal points at (F39).
+    suggest: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -141,6 +144,16 @@ impl Arguments {
                 continue;
             };
             if flag == "json" {
+                continue;
+            }
+            if flag == "suggest" {
+                if call.leaf != "view" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--suggest belongs to the view: pij directory --suggest",
+                    ));
+                }
+                call.suggest = true;
                 continue;
             }
             let (name, value) = match flag.split_once('=') {
@@ -409,7 +422,13 @@ pub(crate) async fn handle(
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
-                    Ok(live) => state.services.directory.view(&project, &repo, &live).await,
+                    Ok(live) => {
+                        state
+                            .services
+                            .directory
+                            .view(&project, &repo, &live, call.suggest)
+                            .await
+                    }
                     Err(refusal) => Err(refusal),
                 },
                 Ok((project, repo)) => state.services.directory.rebuild(&project, repo).await,

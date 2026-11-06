@@ -2948,9 +2948,25 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
     assert!(notice.contains("whatever the work needs now"), "{notice}");
 
     // AC4: the designated prime is named; the prime prompt is the document.
+    // F39: with nothing pointing at it, the prime prompt waits for --suggest.
     assert_eq!(viewed["data"]["prime"], SEAT);
+    assert_eq!(viewed["data"]["prime_document"], false);
+    assert!(prompt(&viewed, "prime").is_none(), "{viewed}");
+    assert!(
+        viewed["data"]["suggestions"]["roles"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("prime"))
+    );
+    let suggested = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "--suggest", "--json"],
+        &repo.main,
+    )
+    .await;
     assert_eq!(
-        prompt(&viewed, "prime").unwrap()["note"],
+        prompt(&suggested, "prime").unwrap()["note"],
         format!("the project's prime is {SEAT}; this adds the prime role's document")
     );
 
@@ -2964,7 +2980,7 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
     {
         assert!(item["signal"]["says"].is_string(), "{item}");
     }
-    assert_eq!(signal(prompt(&viewed, "prime").unwrap()), "core");
+    assert_eq!(signal(prompt(&suggested, "prime").unwrap()), "core");
     assert_eq!(
         signal(prompt(&viewed, "security").unwrap()),
         "independent-judgment"

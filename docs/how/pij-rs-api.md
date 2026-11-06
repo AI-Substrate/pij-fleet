@@ -806,7 +806,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [The prime's operating picture](#the-primes-operating-picture-plan-203) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>] [--suggest]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [The prime's operating picture](#the-primes-operating-picture-plan-203) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/output` | `output verdict\|deliverable\|note\|handover --role <id> --subject <address> [--head <sha>] [--result <r>] [--note-owed <text>]… [--evidence <json>]… [--link <url>] [--answers <msg_id>] [--body <text>\|--body-file <path>] [--project <slug>]`; `output --help`. See [Role outputs](#role-outputs-plan-200) | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/outputs` | `outputs --subject <address> [--head <sha>]`; `outputs --role <id> [--limit <n>]`; `outputs --help` | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
@@ -1040,8 +1040,19 @@ writer commit as any add. No loop or timer.
 ### The prime's operating picture (plan 203)
 
 `pij directory` names the project's designated prime (`data.prime`, the seat
-the project records; `null` when none), so a missing `prime` role document does
-not read as a missing prime: that prompt carries `note`, naming the prime. Each
+the project records; `null` when none), and `data.prime_document` says whether
+the prime role's document exists, so a project without one reads as that
+document missing (the human view: `prime: <seat> (no prime role document
+yet)`), not as a missing prime. The prime's prompt carries `note`, naming the
+prime.
+
+Suggestions nothing points at (F39), the core and security roles from s03 with
+no workstream step needing them, are not listed one by one in a bare view: it
+carries `data.suggestions: {roles, command}` (the human view prints one line
+naming them) and `command` is `pij directory --suggest --project <slug>`, which
+lists each in full in `prompts`. A prompt that a need or another C28 signal
+points at (`needed_by`, a `needed` or `recurring` prompt) always shows.
+`--suggest` belongs to the view; on any other verb it refuses with `E-RS-ARG`. Each
 role also carries:
 
 - `live[].seat_live`: whether the holder's seat is registered and not tombstoned;

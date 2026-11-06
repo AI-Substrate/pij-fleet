@@ -176,7 +176,11 @@ impl DirectoryService {
     /// for the conditions that need the prime, workstream needs and recurring
     /// unowned paths folded into the prompts, the boundary `reviews`, each
     /// recommendation naming its C28 signal, and the standing PEC `notice`.
-    /// Reads per call: assignments, the project, the queued requests and the
+    /// F39: a suggestion nothing points at (a core or security role with no
+    /// step need) is listed by name in `suggestions` and shown in full only
+    /// with `suggest`; `prime_document` says whether the prime role's
+    /// document exists, so a project without one reads as that document
+    /// missing (F21). Reads per call: assignments, the project, the queued requests and the
     /// newest outputs, one store query each; each role's document and memory
     /// folder, the repo's workstreams (`picture::step_docs`) and their
     /// blueprints, in-process.
@@ -188,6 +192,7 @@ impl DirectoryService {
         project: &str,
         repo: &std::path::Path,
         live_seats: &std::collections::HashSet<String>,
+        suggest: bool,
     ) -> Result<Value, Refusal> {
         let root = super::root::find(repo)?;
         let store_error =
@@ -359,11 +364,34 @@ impl DirectoryService {
             .filter(|row| row.end_pending)
             .map(|row| serde_json::json!({"role": row.role, "seat": row.seat, "instance": row.instance, "to": row.to}))
             .collect();
+        let prime_document = made_from
+            .iter()
+            .any(|(id, template)| id == "prime" || template.as_deref() == Some("prime"));
+        // F39: only what a need or a C28 signal points at shows unasked.
+        let (shown, held): (Vec<_>, Vec<_>) = prompts.into_iter().partition(|prompt| {
+            suggest
+                || !prompt.needed_by.is_empty()
+                || !matches!(
+                    prompt.signal,
+                    picture::Signal::Core | picture::Signal::Independent
+                )
+        });
+        let prompts = shown;
         let mut view = serde_json::json!({
-            "project": project, "prime": prime, "roles": roles, "pending": pending,
+            "project": project, "prime": prime, "prime_document": prime_document,
+            "roles": roles, "pending": pending,
             "actions": actions, "notice": picture::notice(),
             "reviews": reviews.iter().map(picture::Recommendation::json).collect::<Vec<_>>(),
         });
+        if !held.is_empty() {
+            view["suggestions"] = serde_json::json!({
+                "roles": held.iter().map(|prompt| prompt.role.clone()).collect::<Vec<_>>(),
+                "command": format!(
+                    "pij directory --suggest --project {}",
+                    pij_core::directory::shell_word(project)
+                ),
+            });
+        }
         if !prompts.is_empty() {
             view["prompts"] = prompts
                 .iter()

@@ -2883,6 +2883,10 @@ fn render_directory_at(
         }
         None => out.push_str("; no designated prime"),
     }
+    // F21: a missing prime role document is not a missing prime.
+    if view["prime_document"] == false {
+        out.push_str(" (no prime role document yet)");
+    }
     for role in &roles {
         let holders: Vec<String> = list(&role["live"])
             .iter()
@@ -3027,6 +3031,15 @@ fn render_directory_at(
         for prompt in &prompts {
             recommend(&mut out, prompt);
         }
+    }
+    let suggested = list(&view["suggestions"]["roles"]);
+    if !suggested.is_empty() {
+        let _ = write!(
+            out,
+            "\n\nSuggested roles not yet here: {}. See each with its command: {}",
+            suggested.iter().map(text).collect::<Vec<_>>().join(", "),
+            text(&view["suggestions"]["command"])
+        );
     }
     let reviews = list(&view["reviews"]);
     if !reviews.is_empty() {
@@ -3665,7 +3678,8 @@ mod tests {
     #[test]
     fn the_directory_view_renders_the_picture_in_local_time() {
         let view = serde_json::json!({
-            "project": "fleet", "prime": "pij-prime", "pending": [],
+            "project": "fleet", "prime": "pij-prime", "prime_document": false, "pending": [],
+            "suggestions": {"roles": ["pm", "pa"], "command": "pij directory --suggest --project fleet"},
             "roles": [
                 {"id": "reviewer", "kind": "general", "holders": "many",
                  "live": [
@@ -3695,7 +3709,7 @@ mod tests {
         let ten = time::UtcOffset::from_hms(10, 0, 0).unwrap();
         let text = super::render_directory_at(&view, |_| ten);
         let expected = "\
-fleet: 3 role(s); prime: pij-prime
+fleet: 3 role(s); prime: pij-prime (no prime role document yet)
   reviewer (general, many): 2 holders
     pij-a (114) since 2026-11-06 13:07 +10:00 on m
     pij-b (115) since 2026-11-06 14:00 +10:00 on m, seat not live
@@ -3720,6 +3734,8 @@ Roles to consider adding:
   docs-system (needed): pij directory add docs-system
     needed by 001 s09
     signal: a step needs it
+
+Suggested roles not yet here: pm, pa. See each with its command: pij directory --suggest --project fleet
 
 Boundary review (at a wave end, a compact or a PR merge):
   dusty (idle): pij directory retire dusty

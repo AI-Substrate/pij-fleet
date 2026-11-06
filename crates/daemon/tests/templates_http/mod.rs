@@ -320,7 +320,21 @@ async fn prompts_list_missing_core_roles_and_security_and_create_nothing() {
     let (addr, server, _fresh) = daemon().await;
     project(addr, &repo).await;
     let before = head(&repo);
-    let empty = view(addr, &repo).await;
+    // F39: a fresh project's bare view names the suggestions without listing
+    // five demands; `--suggest` shows each in full.
+    let bare = view(addr, &repo).await;
+    assert_eq!(bare["ok"], true, "{bare}");
+    assert!(bare["data"]["prompts"].is_null(), "{bare}");
+    assert_eq!(
+        bare["data"]["suggestions"]["roles"],
+        json!(["prime", "pm", "pa", "coder", "reviewer", "security"])
+    );
+    assert_eq!(
+        bare["data"]["suggestions"]["command"],
+        "pij directory --suggest --project fleet"
+    );
+    assert_eq!(bare["data"]["prime_document"], false);
+    let empty = directory(addr, &repo, &["--suggest"]).await;
     assert_eq!(empty["ok"], true, "{empty}");
     let prompted = |view: &Value| -> Vec<String> {
         view["data"]["prompts"]
@@ -376,7 +390,7 @@ async fn prompts_list_missing_core_roles_and_security_and_create_nothing() {
     )
     .await;
     assert_eq!(pm["ok"], true, "{pm}");
-    let after = view(addr, &repo).await;
+    let after = directory(addr, &repo, &["--suggest"]).await;
     assert_eq!(prompted(&after), ["prime", "pa", "coder", "reviewer"]);
     server.abort();
 }
@@ -434,7 +448,7 @@ async fn a_prompt_replayed_from_another_repo_writes_to_the_viewed_project() {
     )
     .await;
     assert_eq!(created["ok"], true, "{created}");
-    let viewed = directory(rig.addr, &local, &["--project", "remote"]).await;
+    let viewed = directory(rig.addr, &local, &["--project", "remote", "--suggest"]).await;
     assert_eq!(viewed["data"]["project"], "remote", "{viewed}");
     let prompts = viewed["data"]["prompts"].as_array().unwrap();
     assert!(
@@ -456,7 +470,7 @@ async fn a_prompt_replayed_from_another_repo_writes_to_the_viewed_project() {
     let path = format!("{ROLES}/security/role.dd.json");
     assert!(remote.gov.join(&path).is_file(), "written to remote");
     assert!(!local.gov.join(&path).exists(), "nothing written locally");
-    let after = directory(rig.addr, &local, &["--project", "remote"]).await;
+    let after = directory(rig.addr, &local, &["--project", "remote", "--suggest"]).await;
     assert!(
         after["data"]["prompts"]
             .as_array()
@@ -465,7 +479,7 @@ async fn a_prompt_replayed_from_another_repo_writes_to_the_viewed_project() {
             .all(|p| p["role"] != "security"),
         "{after}"
     );
-    let unscoped = directory(rig.addr, &local, &[]).await;
+    let unscoped = directory(rig.addr, &local, &["--suggest"]).await;
     assert!(
         unscoped["data"]["prompts"]
             .as_array()
