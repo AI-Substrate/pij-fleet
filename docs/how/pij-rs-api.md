@@ -1069,14 +1069,41 @@ kind `needed`: from its template when one ships, else as a new definition with
 `data.notice` always asks the prime to notice a need no role covers, in the PEC
 wording.
 
+#### Growing the community (ruling C28)
+
+Every recommendation to create, split, merge or retire a role is a
+`picture::Recommendation`, which cannot be built without the signal it rests on.
+Each one in `prompts` (create) and `reviews` (split, merge, retire) carries
+`act`, `signal: {code, says}`, `command` and `commands`, and may carry `detail`:
+
+| signal `code` | says | used by |
+|---|---|---|
+| `recurring` | the same system or paths keep coming up across tasks | a path built by at least three roadmap steps (`RECURRING_STEPS`; each step's `builds` resolved to its blueprint component's `where`) that no role's `scope.paths` covers: create its owner |
+| `re-derived` | knowledge is re-derived (the same finding twice) | taught in the notice |
+| `independent-judgment` | a judgment must be independent of the author | the reviewer and security prompts |
+| `two-domains` | a seat is bloating because it carries two domains | a live seat holding two or more roles: split each later role onto its own seat (release, then assign) |
+| `one-owner` | a path or system needs one owner | taught in the notice |
+| `core` | a core role a PEC starts from (C22); its template is an example | the other core prompts |
+| `step-needs` | a workstream step names this role in its needs | the `needed` prompts |
+| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (the s15 verbs) |
+
+A cold role with memory is never put up for retirement: a role is not a seat.
+`data.reviews` is the boundary review the prime runs at a wave end, a compact
+or a PR merge. `data.notice` teaches all of it from the same signals: recommend
+roles from need and keep the fleet small but expert, the signals for and
+against, that a role is not a seat (roles can be many and cold, live seats
+few), the boundary review, and that templates are examples. The human view
+prints each recommendation's signal under it.
+
 The human view prints times in local time with their zone
 (`2026-11-06 13:07 +10:00`), puts each holder of a role with more than one on
 its own line, then the next actions and the prompts.
 
 Cost: per call, one query each for the holdings, the project, the queued
 requests and each role's newest output (one window query), and one registry
-list; each role's document and memory folder and the repo's roadmaps are read
-in-process. It launches nothing, per role or per seat, and has no timer or poll.
+list; each role's document and memory folder, the repo's roadmaps and the
+blueprints they point at are read in-process. It launches nothing, per role or
+per seat, and has no timer or poll.
 
 ### Role memory (plan 201)
 

@@ -42,6 +42,7 @@ _Empty._
 | tk-0005 | F22: holder times render in local time with zone; a many-holder role renders one holder per line | — | ph-00cb | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | CLI render_directory; offset in-process (time local-offset), UTC when unknown. | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
 | tk-0006 | Cost receipts: spawn sites, private-daemon spawn deltas for the view, live before reading; reads per call stated in backpressure | — | ph-00cb | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) |
 | tk-0007 | Docs and states: pij-rs-api.md, skill verb coverage, roadmap s09 complete, req-12 and req-24 shipped, req-27 in-progress, c-orient shipped | — | ph-00cb | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) |
+| tk-0008 | Growing a PEC (C28, req-29): every create, split, merge or retire recommendation is a Recommendation with a required Signal; recurring unowned paths, a seat with two domains, an idle role with nothing to remember; the notice teaches the signals for and against, a role is not a seat, boundary reviews | — | ph-00cb | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | — | community/picture.rs; templates::recommendations; req-29 added to PRD 001. | [ac-0008](../../../plan.dd.md#acceptance-criteria) |
 
 <a id="done-when"></a>
 
@@ -88,6 +89,12 @@ _Empty._
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0007 | ddocs-check passes; CI is green on the exact head; the PR body has a Delivers line | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
+
+### tk-0008
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0008 | In a test project each C28 condition (a recurring path with no owner, an idle role, a seat carrying two domains, a step need) yields a recommendation naming its signal; the type requires a signal; the notice carries 'a role is not a seat' and that templates are examples | [ ] unchecked | [bp-0008](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

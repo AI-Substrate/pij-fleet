@@ -2987,28 +2987,49 @@ fn render_directory_at(
             }
         }
     }
+    // C28: every recommendation prints the signal it rests on.
+    let recommend = |out: &mut String, item: &Value| {
+        let commands = list(&item["commands"]);
+        let _ = write!(
+            out,
+            "\n  {} ({}): {}",
+            text(&item["role"]),
+            text(&item["kind"]),
+            commands
+                .first()
+                .map_or_else(|| text(&item["command"]), text)
+        );
+        for command in commands.iter().skip(1) {
+            let _ = write!(out, "\n    or: {}", text(command));
+        }
+        if let Some(detail) = item["detail"].as_str() {
+            let _ = write!(out, "\n    {detail}");
+        }
+        let needed: Vec<String> = list(&item["needed_by"]).iter().map(text).collect();
+        if !needed.is_empty() {
+            let _ = write!(out, "\n    needed by {}", needed.join(", "));
+        }
+        if let Some(note) = item["note"].as_str() {
+            let _ = write!(out, "\n    {note}");
+        }
+        let _ = write!(out, "\n    signal: {}", text(&item["signal"]["says"]));
+    };
     let prompts = list(&view["prompts"]);
     if !prompts.is_empty() {
         let _ = write!(
             out,
-            "\n\n{}\nRole documents not yet in this directory:",
+            "\n\n{}\nRoles to consider adding:",
             text(&view["guidance"])
         );
         for prompt in &prompts {
-            let _ = write!(
-                out,
-                "\n  {} ({}): {}",
-                text(&prompt["role"]),
-                text(&prompt["kind"]),
-                text(&prompt["command"])
-            );
-            let needed: Vec<String> = list(&prompt["needed_by"]).iter().map(text).collect();
-            if !needed.is_empty() {
-                let _ = write!(out, "\n    needed by {}", needed.join(", "));
-            }
-            if let Some(note) = prompt["note"].as_str() {
-                let _ = write!(out, "\n    {note}");
-            }
+            recommend(&mut out, prompt);
+        }
+    }
+    let reviews = list(&view["reviews"]);
+    if !reviews.is_empty() {
+        out.push_str("\n\nBoundary review (at a wave end, a compact or a PR merge):");
+        for review in &reviews {
+            recommend(&mut out, review);
         }
     }
     if let Some(notice) = view["notice"].as_str() {
@@ -3657,8 +3678,11 @@ mod tests {
             ],
             "actions": [{"role": "pm", "condition": "memory-stale", "says": "pm's last 2 closes left no memory note", "commands": ["pij directory memory add pm --project fleet"]}],
             "prompts": [
-                {"role": "prime", "kind": "core", "command": "pij directory add prime --from template:prime", "note": "the project's prime is pij-prime; this adds the prime role's document"},
-                {"role": "docs-system", "kind": "needed", "needed_by": ["001 s09"], "command": "pij directory add docs-system"}
+                {"role": "prime", "kind": "core", "command": "pij directory add prime --from template:prime", "commands": ["pij directory add prime --from template:prime"], "note": "the project's prime is pij-prime; this adds the prime role's document", "signal": {"code": "core", "says": "a core role"}},
+                {"role": "docs-system", "kind": "needed", "needed_by": ["001 s09"], "command": "pij directory add docs-system", "signal": {"code": "step-needs", "says": "a step needs it"}}
+            ],
+            "reviews": [
+                {"role": "dusty", "kind": "idle", "act": "retire", "commands": ["pij directory retire dusty", "pij directory merge dusty --into <role>"], "detail": "dusty is idle", "signal": {"code": "mostly-idle", "says": "it would mostly sit idle"}}
             ],
             "guidance": "PEC guidance",
             "notice": "PEC notice",
@@ -3681,11 +3705,19 @@ Next actions:
     pij directory memory add pm --project fleet
 
 PEC guidance
-Role documents not yet in this directory:
+Roles to consider adding:
   prime (core): pij directory add prime --from template:prime
     the project's prime is pij-prime; this adds the prime role's document
+    signal: a core role
   docs-system (needed): pij directory add docs-system
     needed by 001 s09
+    signal: a step needs it
+
+Boundary review (at a wave end, a compact or a PR merge):
+  dusty (idle): pij directory retire dusty
+    or: pij directory merge dusty --into <role>
+    dusty is idle
+    signal: it would mostly sit idle
 
 PEC notice";
         assert_eq!(text, expected);

@@ -19,8 +19,203 @@ pub const MEMORY_CLOSES: usize = 2;
 /// Where a project keeps its roadmaps, relative to its repo (s13's layout).
 pub const ROADMAPS: &str = "docs/project/roadmaps";
 
-/// The standing prompt to notice a need no role covers (PEC, C26).
-pub const NOTICE: &str = "Is the work asking for something no role here covers? Name the need and give it a role, from a template when one fits or as a new definition: pij directory add <id> --why \"<the need>\". The community is whatever the work needs now.";
+/// A path or system built by at least this many roadmap steps, with no role
+/// whose scope covers it, recurs enough to want an owner (C28).
+pub const RECURRING_STEPS: usize = 3;
+
+/// A role with nothing to remember and no activity for this many days is put
+/// up for retirement at the boundary review (C28).
+pub const IDLE_DAYS: u64 = 30;
+
+/// What a role recommendation rests on (ruling C28). Every recommendation to
+/// create, split, merge or retire a role names one: [`Recommendation`] cannot
+/// be built without it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Signal {
+    /// For: the same system or paths keep coming up across tasks.
+    Recurring,
+    /// For: the same finding is derived twice.
+    Rederived,
+    /// For: a judgment must be independent of the author.
+    Independent,
+    /// For: a seat is bloating because it carries two domains.
+    TwoDomains,
+    /// For: a path or system needs one owner.
+    OneOwner,
+    /// For: a core role every PEC starts from (ruling C22).
+    Core,
+    /// For: a workstream step names the role in its needs.
+    Needed,
+    /// Against: one-off work.
+    OneOff,
+    /// Against: it overlaps an existing role; extend that one instead.
+    Overlap,
+    /// Against: nothing worth remembering.
+    NothingToRemember,
+    /// Against: it would mostly sit idle.
+    MostlyIdle,
+}
+
+impl Signal {
+    /// C28's signals for a new role, in its order.
+    pub const FOR: [Self; 5] = [
+        Self::Recurring,
+        Self::Rederived,
+        Self::Independent,
+        Self::TwoDomains,
+        Self::OneOwner,
+    ];
+    /// C28's signals against one.
+    pub const AGAINST: [Self; 4] = [
+        Self::OneOff,
+        Self::Overlap,
+        Self::NothingToRemember,
+        Self::MostlyIdle,
+    ];
+
+    /// The stable code in the view's JSON.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Recurring => "recurring",
+            Self::Rederived => "re-derived",
+            Self::Independent => "independent-judgment",
+            Self::TwoDomains => "two-domains",
+            Self::OneOwner => "one-owner",
+            Self::Core => "core",
+            Self::Needed => "step-needs",
+            Self::OneOff => "one-off",
+            Self::Overlap => "overlap",
+            Self::NothingToRemember => "nothing-to-remember",
+            Self::MostlyIdle => "mostly-idle",
+        }
+    }
+
+    /// The signal in words.
+    pub const fn says(self) -> &'static str {
+        match self {
+            Self::Recurring => "the same system or paths keep coming up across tasks",
+            Self::Rederived => "knowledge is re-derived (the same finding twice)",
+            Self::Independent => "a judgment must be independent of the author",
+            Self::TwoDomains => "a seat is bloating because it carries two domains",
+            Self::OneOwner => "a path or system needs one owner",
+            Self::Core => "a core role a PEC starts from (C22); its template is an example",
+            Self::Needed => "a workstream step names this role in its needs",
+            Self::OneOff => "one-off work",
+            Self::Overlap => "overlap with an existing role (extend it instead)",
+            Self::NothingToRemember => "nothing worth remembering",
+            Self::MostlyIdle => "it would mostly sit idle",
+        }
+    }
+}
+
+/// What a recommendation asks the prime to do to a role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Move {
+    /// Add a role.
+    Create,
+    /// Give part of the load its own seat or role.
+    Split,
+    /// Fold a role into another.
+    Merge,
+    /// Retire a role.
+    Retire,
+}
+
+impl Move {
+    /// The word in the view's JSON.
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Split => "split",
+            Self::Merge => "merge",
+            Self::Retire => "retire",
+        }
+    }
+}
+
+/// One recommendation to create, split, merge or retire a role. The signal is
+/// a required field: there is no way to build one without it (C28).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recommendation {
+    /// The role it is about.
+    pub role: String,
+    /// `core`, `recommended`, `needed`, `recurring`, `two-domains` or `idle`.
+    pub kind: &'static str,
+    /// What to do.
+    pub act: Move,
+    /// What it rests on.
+    pub signal: Signal,
+    /// The particulars, in words.
+    pub detail: Option<String>,
+    /// Roadmap steps that need the role (`<roadmap> <step>`).
+    pub needed_by: Vec<String>,
+    /// Runnable commands, the first the main one.
+    pub commands: Vec<String>,
+    /// A note, such as who the designated prime is.
+    pub note: Option<String>,
+}
+
+impl Recommendation {
+    /// A recommendation resting on `signal`, with its runnable `command`.
+    pub fn new(
+        role: impl Into<String>,
+        kind: &'static str,
+        act: Move,
+        signal: Signal,
+        command: String,
+    ) -> Self {
+        Self {
+            role: role.into(),
+            kind,
+            act,
+            signal,
+            detail: None,
+            needed_by: Vec::new(),
+            commands: vec![command],
+            note: None,
+        }
+    }
+
+    /// The view's JSON: `{role, kind, act, signal: {code, says}, command,
+    /// commands}`, with `detail`, `needed_by` and `note` when set.
+    pub fn json(&self) -> Value {
+        let mut out = json!({
+            "role": self.role,
+            "kind": self.kind,
+            "act": self.act.word(),
+            "signal": {"code": self.signal.code(), "says": self.signal.says()},
+            "command": self.commands.first(),
+            "commands": self.commands,
+        });
+        if let Some(detail) = &self.detail {
+            out["detail"] = json!(detail);
+        }
+        if !self.needed_by.is_empty() {
+            out["needed_by"] = json!(self.needed_by);
+        }
+        if let Some(note) = &self.note {
+            out["note"] = json!(note);
+        }
+        out
+    }
+}
+
+/// The standing prompt that teaches how to grow a PEC (rulings C26, C28),
+/// built from the same [`Signal`]s the recommendations name.
+pub fn notice() -> String {
+    let list = |signals: &[Signal]| {
+        signals
+            .iter()
+            .map(|signal| signal.says())
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    format!(
+        "Growing this community (PEC): is the work asking for something no role here covers? Recommend a role from need, and keep the fleet small but expert. Signals for a new role: {}. Signals against: {}. A role is not a seat: roles can be many and cold (memory, lineage and queue, revived on demand), while live seats stay few. At each boundary (a wave end, a compact, a PR merge), review: split an overloaded role, merge or retire an idle one. Templates are examples, not a checklist. Each recommendation here names the signal it rests on. The community is whatever the work needs now.",
+        list(&Signal::FOR),
+        list(&Signal::AGAINST)
+    )
+}
 
 /// `role`'s queued requests: `{count, oldest_at}`, or `null` when none waits.
 pub fn waiting(role: &str, queued: &[RoleRequest]) -> Value {
@@ -188,11 +383,12 @@ pub fn roadmap_needs(repo: &Path) -> Vec<(String, Vec<String>)> {
 
 /// Fold the roadmap needs into the missing-role `prompts` (req-24, req-27):
 /// a needed role already prompted gains `needed_by`; any other needed role
-/// that does not exist gets a prompt of kind `needed`, from its template when
-/// one ships, else as a new definition to fill in.
+/// that does not exist gets a recommendation of kind `needed`, resting on
+/// [`Signal::Needed`], from its template when one ships, else as a new
+/// definition to fill in.
 pub fn fold_needs(
     project: &str,
-    prompts: &mut Vec<Value>,
+    prompts: &mut Vec<Recommendation>,
     needs: &[(String, Vec<String>)],
     roles: &[(String, Option<String>)],
     catalog: &Catalog,
@@ -205,8 +401,8 @@ pub fn fold_needs(
         if exists {
             continue;
         }
-        if let Some(prompt) = prompts.iter_mut().find(|prompt| prompt["role"] == *role) {
-            prompt["needed_by"] = json!(steps);
+        if let Some(prompt) = prompts.iter_mut().find(|prompt| &prompt.role == role) {
+            prompt.needed_by.clone_from(steps);
             continue;
         }
         let r = shell_word(role);
@@ -218,13 +414,280 @@ pub fn fold_needs(
                 "pij directory add {r} --title \"<title>\" --kind general --lifecycle long-lived --holders one --rule \"<what it always does>\" --why {why} --project {p}"
             )
         };
-        prompts.push(json!({
-            "role": role,
-            "kind": "needed",
-            "needed_by": steps,
-            "command": command,
-        }));
+        let mut prompt = Recommendation::new(role, "needed", Move::Create, Signal::Needed, command);
+        prompt.needed_by.clone_from(steps);
+        prompts.push(prompt);
     }
+}
+
+/// The path or system a blueprint component's `where` names: its first word,
+/// cut at any glob or brace, without a trailing slash; `None` for a
+/// placeholder such as `<government-root>/…`.
+fn root_of(place: &str) -> Option<String> {
+    let word = place.split_whitespace().next()?;
+    if word.contains('<') {
+        return None;
+    }
+    let cut = word.find(['*', '{']).map_or(word, |at| &word[..at]);
+    let root = cut.trim_end_matches('/');
+    (!root.is_empty()).then(|| root.to_string())
+}
+
+/// Whether a role scope path (a glob) covers `root`, or part of it.
+fn covers(scope: &str, root: &str) -> bool {
+    let Some(path) = root_of(scope) else {
+        return false;
+    };
+    root == path || root.starts_with(&format!("{path}/")) || path.starts_with(&format!("{root}/"))
+}
+
+/// Paths or systems the roadmaps keep building, with the steps that build
+/// them: each step's `builds` resolved to its blueprint component's `where`.
+/// Reads the repo's roadmaps and the blueprints they point at, in-process.
+pub fn recurring_paths(repo: &Path) -> Vec<(String, Vec<String>)> {
+    let roadmaps = repo.join(ROADMAPS);
+    let mut files: Vec<_> = std::fs::read_dir(&roadmaps)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.to_str().is_some_and(|p| p.ends_with(".dd.json")))
+        .collect();
+    files.sort();
+    let read = |path: &Path| {
+        std::fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+    };
+    let section = |document: &Value, name: &str| {
+        document["sections"]
+            .as_array()
+            .and_then(|sections| sections.iter().find(|s| s["name"] == name))
+            .and_then(|s| s["value"].as_array())
+            .cloned()
+            .unwrap_or_default()
+    };
+    let mut blueprints: std::collections::BTreeMap<std::path::PathBuf, Vec<Value>> =
+        std::collections::BTreeMap::new();
+    let mut paths: Vec<(String, Vec<String>)> = Vec::new();
+    for file in files {
+        let Some(document) = read(&file) else {
+            continue;
+        };
+        let name = file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map_or("", |n| n.trim_end_matches(".dd.json"))
+            .to_string();
+        for step in section(&document, "steps") {
+            let label = format!("{name} {}", step["id"].as_str().unwrap_or("?"));
+            for built in step["builds"].as_array().into_iter().flatten() {
+                let Some((doc, id)) = built.as_str().and_then(|b| b.split_once("#components/"))
+                else {
+                    continue;
+                };
+                let blueprint = roadmaps.join(doc);
+                let components = blueprints.entry(blueprint.clone()).or_insert_with(|| {
+                    read(&blueprint)
+                        .map(|d| section(&d, "components"))
+                        .unwrap_or_default()
+                });
+                let Some(root) = components
+                    .iter()
+                    .find(|component| component["id"] == id)
+                    .and_then(|component| component["where"].as_str())
+                    .and_then(root_of)
+                else {
+                    continue;
+                };
+                match paths.iter_mut().find(|(path, _)| *path == root) {
+                    Some((_, steps)) if steps.contains(&label) => {}
+                    Some((_, steps)) => steps.push(label.clone()),
+                    None => paths.push((root, vec![label.clone()])),
+                }
+            }
+        }
+    }
+    paths
+}
+
+/// A create recommendation for each path built by at least
+/// [`RECURRING_STEPS`] steps that no role's scope covers (C28: the same paths
+/// keep coming up, and a path needs one owner). `scopes` are each role's
+/// `(id, scope.paths)`.
+pub fn unowned(
+    project: &str,
+    recurring: &[(String, Vec<String>)],
+    scopes: &[(String, Vec<String>)],
+) -> Vec<Recommendation> {
+    let p = shell_word(project);
+    recurring
+        .iter()
+        .filter(|(_, steps)| steps.len() >= RECURRING_STEPS)
+        .filter(|(root, _)| {
+            !scopes
+                .iter()
+                .any(|(_, paths)| paths.iter().any(|scope| covers(scope, root)))
+        })
+        .map(|(root, steps)| {
+            let base: String = root
+                .rsplit('/')
+                .next()
+                .unwrap_or(root)
+                .chars()
+                .map(|ch| if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { '-' })
+                .collect::<String>()
+                .trim_matches('-')
+                .to_string();
+            let taken = scopes.iter().any(|(id, _)| *id == base) || base.is_empty();
+            let id = if taken { format!("{}-owner", if base.is_empty() { "path" } else { &base }) } else { base };
+            let mut prompt = Recommendation::new(
+                id.clone(),
+                "recurring",
+                Move::Create,
+                Signal::Recurring,
+                format!(
+                    "pij directory add {} --title \"<title>\" --kind specialist --lifecycle long-lived --holders one --scope-path {} --rule \"<what it always does>\" --why \"{root} recurs across {} steps and no role owns it\" --project {p}",
+                    shell_word(&id),
+                    shell_word(&format!("{root}/**")),
+                    steps.len()
+                ),
+            );
+            prompt.detail = Some(format!(
+                "{root} is built by {} steps ({}) and no role's scope covers it; it needs one owner",
+                steps.len(),
+                steps.join(", ")
+            ));
+            prompt
+        })
+        .collect()
+}
+
+/// A split recommendation for each live seat holding two or more roles at
+/// once (C28: a seat carrying two domains): give each later role its own seat.
+pub fn two_domains(
+    project: &str,
+    rows: &[Assignment],
+    live: &HashSet<String>,
+) -> Vec<Recommendation> {
+    let p = shell_word(project);
+    let mut seats: Vec<&str> = rows
+        .iter()
+        .filter(|row| row.to.is_none() && live.contains(&row.seat))
+        .map(|row| row.seat.as_str())
+        .collect();
+    seats.sort_unstable();
+    seats.dedup();
+    let mut out = Vec::new();
+    for seat in seats {
+        let mut held: Vec<&Assignment> = rows
+            .iter()
+            .filter(|row| row.to.is_none() && row.seat == seat)
+            .collect();
+        held.sort_by(|a, b| a.from.cmp(&b.from));
+        held.dedup_by(|a, b| a.role == b.role);
+        if held.len() < 2 {
+            continue;
+        }
+        let names: Vec<&str> = held.iter().map(|row| row.role.as_str()).collect();
+        for later in &held[1..] {
+            let r = shell_word(&later.role);
+            let mut prompt = Recommendation::new(
+                later.role.clone(),
+                "two-domains",
+                Move::Split,
+                Signal::TwoDomains,
+                format!(
+                    "pij directory release {r} {} --why \"{seat} carries {} roles; {} gets its own seat\" --project {p}",
+                    shell_word(seat),
+                    names.len(),
+                    later.role
+                ),
+            );
+            prompt.commands.push(format!(
+                "pij directory assign {r} <seat> --why \"its own seat, split from {seat}\" --project {p}"
+            ));
+            prompt.detail = Some(format!("{seat} holds {} at once", names.join(" and ")));
+            out.push(prompt);
+        }
+    }
+    out
+}
+
+/// What the view knows of one role for the idle check.
+pub struct RoleActivity<'a> {
+    /// The role id.
+    pub role: &'a str,
+    /// The role document's first changelog date, `yyyy-mm-dd`.
+    pub created: Option<&'a str>,
+    /// Its holdings.
+    pub rows: &'a [&'a Assignment],
+    /// Whether any holder's seat is live.
+    pub live_holder: bool,
+    /// Queued requests.
+    pub waiting: usize,
+    /// Whether it has any output.
+    pub has_output: bool,
+    /// Memory notes.
+    pub notes: usize,
+}
+
+/// A retire recommendation (merge as the alternative) for a role with nothing
+/// to remember and no activity for [`IDLE_DAYS`] (C28's signals against):
+/// no memory, no outputs, no waiting request, no live holder, and no holding
+/// started or ended (else the document's first date) since `today` minus
+/// [`IDLE_DAYS`]. A cold role with memory is kept: a role is not a seat.
+pub fn idle(project: &str, role: &RoleActivity<'_>, cutoff: &str) -> Option<Recommendation> {
+    if role.notes > 0 || role.has_output || role.waiting > 0 || role.live_holder {
+        return None;
+    }
+    let last = role
+        .rows
+        .iter()
+        .flat_map(|row| [Some(row.from.as_str()), row.to.as_deref()])
+        .flatten()
+        .filter_map(|at| at.get(..10))
+        .max()
+        .or(role.created)?;
+    if last >= cutoff {
+        return None;
+    }
+    let p = shell_word(project);
+    let r = shell_word(role.role);
+    let mut prompt = Recommendation::new(
+        role.role,
+        "idle",
+        Move::Retire,
+        Signal::MostlyIdle,
+        format!(
+            "pij directory retire {r} --why \"idle since {last}, nothing to remember\" --project {p}"
+        ),
+    );
+    prompt.commands.push(format!(
+        "pij directory merge {r} --into <role> --why \"folded into <role>: idle since {last}\" --project {p}"
+    ));
+    prompt.detail = Some(format!(
+        "{} has no memory, outputs, waiting requests or live holder, and nothing has happened since {last}",
+        role.role
+    ));
+    Some(prompt)
+}
+
+/// `yyyy-mm-dd` of `now_ms` minus [`IDLE_DAYS`], UTC.
+pub fn idle_cutoff(now_ms: u64) -> String {
+    let seconds = i64::try_from(now_ms / 1000).unwrap_or(i64::MAX)
+        - i64::try_from(IDLE_DAYS * 86_400).unwrap_or(0);
+    time::OffsetDateTime::from_unix_timestamp(seconds).map_or_else(
+        |_| "0000-00-00".to_string(),
+        |at| {
+            format!(
+                "{:04}-{:02}-{:02}",
+                at.year(),
+                u8::from(at.month()),
+                at.day()
+            )
+        },
+    )
 }
 
 #[cfg(test)]
@@ -401,18 +864,26 @@ mod tests {
             ),
             ("coder".to_string(), vec!["001 s10".to_string()]),
         ];
-        let mut prompts = vec![json!({"role": "security", "kind": "recommended", "command": "x"})];
+        let mut prompts = vec![Recommendation::new(
+            "security",
+            "recommended",
+            Move::Create,
+            Signal::Independent,
+            "x".into(),
+        )];
         let roles = vec![("coder".to_string(), None)];
         fold_needs("fleet", &mut prompts, &needs, &roles, &catalog);
-        assert_eq!(prompts[0]["needed_by"], json!(["001 s09"]));
+        assert_eq!(prompts[0].needed_by, ["001 s09"]);
         assert_eq!(
             prompts.len(),
             2,
             "coder exists; security was already prompted"
         );
-        assert_eq!(prompts[1]["role"], "docs-system");
-        assert_eq!(prompts[1]["kind"], "needed");
-        let command = prompts[1]["command"].as_str().unwrap();
+        let docs = prompts[1].json();
+        assert_eq!(docs["role"], "docs-system");
+        assert_eq!(docs["kind"], "needed");
+        assert_eq!(docs["signal"]["code"], "step-needs");
+        let command = docs["command"].as_str().unwrap();
         let expected_template = catalog.latest("docs-system").is_some();
         assert_eq!(
             command.contains("--from template:docs-system"),
@@ -452,5 +923,193 @@ mod tests {
                 ("docs".to_string(), vec!["001-x s02".to_string()]),
             ]
         );
+    }
+
+    #[test]
+    fn a_path_built_by_three_steps_with_no_owner_gets_a_create_resting_on_recurring() {
+        let dir = pij_testkit::fresh_dir("picture-recurring");
+        let roadmaps = dir.join(ROADMAPS);
+        let blueprints = dir.join("docs/project/blueprints");
+        std::fs::create_dir_all(&roadmaps).unwrap();
+        std::fs::create_dir_all(&blueprints).unwrap();
+        std::fs::write(
+            blueprints.join("001-x.dd.json"),
+            json!({"sections": [{"name": "components", "value": [
+                {"id": "c-a", "where": "crates/daemon delivery"},
+                {"id": "c-b", "where": "crates/daemon"},
+                {"id": "c-c", "where": "<government-root>/community/"},
+                {"id": "c-d", "where": "crates/cli"}
+            ]}]})
+            .to_string(),
+        )
+        .unwrap();
+        let build = |ids: &[&str]| -> Vec<String> {
+            ids.iter()
+                .map(|id| format!("../blueprints/001-x.dd.json#components/{id}"))
+                .collect()
+        };
+        std::fs::write(
+            roadmaps.join("001-x.dd.json"),
+            json!({"sections": [{"name": "steps", "value": [
+                {"id": "s01", "state": "complete", "builds": build(&["c-a", "c-c"])},
+                {"id": "s02", "builds": build(&["c-a", "c-b", "c-d"])},
+                {"id": "s03", "builds": build(&["c-b", "c-c"])}
+            ]}]})
+            .to_string(),
+        )
+        .unwrap();
+        let recurring = recurring_paths(&dir);
+        assert_eq!(
+            recurring,
+            vec![
+                (
+                    "crates/daemon".to_string(),
+                    vec!["001-x s01".into(), "001-x s02".into(), "001-x s03".into()]
+                ),
+                ("crates/cli".to_string(), vec!["001-x s02".into()]),
+            ],
+            "a placeholder where is skipped; a step counts once per path"
+        );
+        let found = unowned(
+            "fleet",
+            &recurring,
+            &[("coder".into(), vec!["docs/**".into()])],
+        );
+        assert_eq!(found.len(), 1);
+        let json = found[0].json();
+        assert_eq!(json["role"], "daemon");
+        assert_eq!(json["act"], "create");
+        assert_eq!(json["signal"]["code"], "recurring");
+        assert!(
+            json["detail"]
+                .as_str()
+                .unwrap()
+                .contains("built by 3 steps"),
+            "{json}"
+        );
+        assert!(
+            json["command"]
+                .as_str()
+                .unwrap()
+                .contains("--scope-path 'crates/daemon/**'"),
+            "{json}"
+        );
+        let owned = [(
+            "daemon-team".to_string(),
+            vec!["crates/daemon/src/**".to_string()],
+        )];
+        assert!(
+            unowned("fleet", &recurring, &owned).is_empty(),
+            "a role scoped inside it owns it"
+        );
+    }
+
+    #[test]
+    fn a_seat_holding_two_roles_gets_a_split_resting_on_two_domains() {
+        let mut pm = row("pij-a", "2026-11-01T00:00:00Z", None, None);
+        pm.role = "pm".into();
+        let reviewer = row("pij-a", "2026-11-02T00:00:00Z", None, None);
+        let other = row("pij-b", "2026-11-02T00:00:00Z", None, None);
+        let rows = vec![reviewer, pm, other];
+        let split = two_domains("fleet", &rows, &live(&["pij-a", "pij-b"]));
+        assert_eq!(split.len(), 1);
+        let json = split[0].json();
+        assert_eq!(json["role"], "reviewer", "the later role moves");
+        assert_eq!(json["act"], "split");
+        assert_eq!(json["signal"]["code"], "two-domains");
+        assert_eq!(json["detail"], "pij-a holds pm and reviewer at once");
+        assert!(
+            json["commands"][0]
+                .as_str()
+                .unwrap()
+                .starts_with("pij directory release reviewer pij-a ")
+        );
+        assert!(
+            two_domains("fleet", &rows, &live(&["pij-b"])).is_empty(),
+            "a dead seat is not bloating"
+        );
+    }
+
+    #[test]
+    fn only_a_role_with_nothing_to_remember_and_nothing_recent_is_put_up_for_retirement() {
+        let old = row(
+            "pij-x",
+            "2026-09-01T00:00:00Z",
+            Some("2026-09-02T00:00:00Z"),
+            Some("close"),
+        );
+        let rows = [&old];
+        let base = RoleActivity {
+            role: "qa",
+            created: Some("2026-08-01"),
+            rows: &rows,
+            live_holder: false,
+            waiting: 0,
+            has_output: false,
+            notes: 0,
+        };
+        let json = idle("fleet", &base, "2026-10-07").expect("idle").json();
+        assert_eq!(json["act"], "retire");
+        assert_eq!(json["signal"]["code"], "mostly-idle");
+        assert_eq!(
+            json["commands"][0],
+            "pij directory retire qa --why \"idle since 2026-09-02, nothing to remember\" --project fleet"
+        );
+        assert!(
+            json["commands"][1]
+                .as_str()
+                .unwrap()
+                .starts_with("pij directory merge qa --into <role> ")
+        );
+        let kept = RoleActivity { notes: 1, ..base };
+        assert!(
+            idle("fleet", &kept, "2026-10-07").is_none(),
+            "a role is not a seat: a cold role with memory stays"
+        );
+        assert!(
+            idle("fleet", &base, "2026-09-02").is_none(),
+            "recent enough"
+        );
+        let fresh = RoleActivity {
+            rows: &[],
+            created: Some("2026-11-01"),
+            ..base
+        };
+        assert!(
+            idle("fleet", &fresh, "2026-10-07").is_none(),
+            "a new role is not idle"
+        );
+        for busy in [
+            RoleActivity {
+                live_holder: true,
+                ..base
+            },
+            RoleActivity { waiting: 1, ..base },
+            RoleActivity {
+                has_output: true,
+                ..base
+            },
+        ] {
+            assert!(idle("fleet", &busy, "2026-10-07").is_none());
+        }
+    }
+
+    #[test]
+    fn the_notice_teaches_c28_from_the_same_signals_the_recommendations_name() {
+        let notice = notice();
+        for signal in Signal::FOR.iter().chain(&Signal::AGAINST) {
+            assert!(notice.contains(signal.says()), "{signal:?}: {notice}");
+        }
+        for words in [
+            "A role is not a seat",
+            "Templates are examples",
+            "a wave end, a compact, a PR merge",
+            "split an overloaded role, merge or retire an idle one",
+            "no role here covers",
+            "whatever the work needs now",
+        ] {
+            assert!(notice.contains(words), "{words}: {notice}");
+        }
+        assert_eq!(idle_cutoff(1_793_934_000_000), "2026-10-07");
     }
 }

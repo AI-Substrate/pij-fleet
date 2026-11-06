@@ -173,11 +173,12 @@ impl DirectoryService {
     /// Plan 203 (s09): the project's designated prime; per role its waiting
     /// requests, latest output and memory freshness, and whether each holder's
     /// seat is live (`live` is the registered, untombstoned seats); `actions`
-    /// for the conditions that need the prime, roadmap needs folded into the
-    /// prompts, and the standing PEC `notice`. Reads per call: assignments,
-    /// the project, the queued requests and the newest outputs, one store
-    /// query each; each role's document and memory folder, and the repo's
-    /// roadmaps, in-process.
+    /// for the conditions that need the prime, roadmap needs and recurring
+    /// unowned paths folded into the prompts, the boundary `reviews`, each
+    /// recommendation naming its C28 signal, and the standing PEC `notice`.
+    /// Reads per call: assignments, the project, the queued requests and the
+    /// newest outputs, one store query each; each role's document and memory
+    /// folder, the repo's roadmaps and their blueprints, in-process.
     ///
     /// # Errors
     /// [`super::E_GOV_ABSENT`] without a governance worktree; `E-RS-STORE`.
@@ -223,6 +224,14 @@ impl DirectoryService {
         ids.sort();
         let mut roles = Vec::new();
         let mut made_from = Vec::new();
+        let mut scopes: Vec<(String, Vec<String>)> = Vec::new();
+        let mut reviews = picture::two_domains(project, &rows, live_seats);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+            });
+        let cutoff = picture::idle_cutoff(now_ms);
         for id in &ids {
             let document: Value = std::fs::read(roles_dir.join(id).join("role.dd.json"))
                 .ok()
@@ -257,6 +266,48 @@ impl DirectoryService {
                     .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
                 memory["latest"].as_str(),
             ));
+            let section = |name: &str| {
+                document["sections"]
+                    .as_array()
+                    .and_then(|sections| sections.iter().find(|section| section["name"] == name))
+                    .map_or(Value::Null, |section| section["value"].clone())
+            };
+            scopes.push((
+                id.clone(),
+                section("scope")["paths"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|path| path.as_str().map(str::to_string))
+                    .collect(),
+            ));
+            let changelog = section("changelog");
+            let created = changelog
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|row| row["date"].as_str())
+                .filter_map(|date| date.get(..10))
+                .min();
+            reviews.extend(picture::idle(
+                project,
+                &picture::RoleActivity {
+                    role: id,
+                    created,
+                    rows: &mine,
+                    live_holder: mine
+                        .iter()
+                        .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                    waiting: waiting["count"]
+                        .as_u64()
+                        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                    has_output: outputs.iter().any(|output| &output.role == id),
+                    notes: memory["notes"]
+                        .as_u64()
+                        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                },
+                &cutoff,
+            ));
             let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
             made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
             roles.push(serde_json::json!({
@@ -272,7 +323,7 @@ impl DirectoryService {
                 "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
             }));
         }
-        let mut prompts = templates::prompts(project, &made_from);
+        let mut prompts = templates::recommendations(project, &made_from);
         picture::fold_needs(
             project,
             &mut prompts,
@@ -281,15 +332,17 @@ impl DirectoryService {
             &self.templates,
         );
         // F21: a missing prime role document is not a missing prime.
-        for prompt in prompts
-            .iter_mut()
-            .filter(|prompt| prompt["role"] == "prime")
-        {
-            prompt["note"] = serde_json::json!(match &prime {
+        for prompt in prompts.iter_mut().filter(|prompt| prompt.role == "prime") {
+            prompt.note = Some(match &prime {
                 Some(seat) => format!("the project's prime is {seat}; this adds the prime role's document"),
                 None => "this adds the prime role's document; the project records no designated prime either".to_string(),
             });
         }
+        prompts.extend(picture::unowned(
+            project,
+            &picture::recurring_paths(repo),
+            &scopes,
+        ));
         let pending: Vec<Value> = rows
             .iter()
             .filter(|row| row.end_pending)
@@ -297,10 +350,15 @@ impl DirectoryService {
             .collect();
         let mut view = serde_json::json!({
             "project": project, "prime": prime, "roles": roles, "pending": pending,
-            "actions": actions, "notice": picture::NOTICE,
+            "actions": actions, "notice": picture::notice(),
+            "reviews": reviews.iter().map(picture::Recommendation::json).collect::<Vec<_>>(),
         });
         if !prompts.is_empty() {
-            view["prompts"] = serde_json::json!(prompts);
+            view["prompts"] = prompts
+                .iter()
+                .map(picture::Recommendation::json)
+                .collect::<Vec<_>>()
+                .into();
             view["guidance"] = serde_json::json!(templates::GUIDANCE);
         }
         Ok(view)

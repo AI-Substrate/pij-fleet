@@ -146,7 +146,8 @@
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-12",
 						"../prds/001-pij-community.dd.json#requirements/req-14",
-						"../prds/001-pij-community.dd.json#requirements/req-24"
+						"../prds/001-pij-community.dd.json#requirements/req-24",
+						"../prds/001-pij-community.dd.json#requirements/req-29"
 					],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-orient"],
 					"depends_on": ["#steps/s05", "#steps/s06", "#steps/s07"],

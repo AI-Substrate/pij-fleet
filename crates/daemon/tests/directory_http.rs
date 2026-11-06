@@ -2782,6 +2782,14 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
         ][..],
         &[
             "directory",
+            "assign",
+            "reviewer/115",
+            "pij-holder",
+            "--why",
+            "a second domain",
+        ][..],
+        &[
+            "directory",
             "memory",
             "add",
             "reviewer",
@@ -2834,13 +2842,37 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
         .await
         .unwrap();
     let roadmaps = repo.main.join("docs/project/roadmaps");
+    let blueprints = repo.main.join("docs/project/blueprints");
     std::fs::create_dir_all(&roadmaps).unwrap();
+    std::fs::create_dir_all(&blueprints).unwrap();
+    std::fs::write(
+        blueprints.join("001-test.dd.json"),
+        json!({"sections": [{"name": "components", "value": [
+            {"id": "c-core", "where": "crates/engine"}
+        ]}]})
+        .to_string(),
+    )
+    .unwrap();
+    let engine = ["../blueprints/001-test.dd.json#components/c-core"];
     std::fs::write(
         roadmaps.join("001-test.dd.json"),
         json!({"sections": [{"name": "steps", "value": [
-            {"id": "s01", "state": "complete", "needs": ["role:ancient"]},
-            {"id": "s09", "state": "planned", "needs": ["role:docs-system", "role:security", "role:qa"]}
+            {"id": "s01", "state": "complete", "needs": ["role:ancient"], "builds": engine},
+            {"id": "s02", "state": "complete", "builds": engine},
+            {"id": "s09", "state": "planned", "needs": ["role:docs-system", "role:security", "role:qa"], "builds": engine}
         ]}]})
+        .to_string(),
+    )
+    .unwrap();
+    // A hand-made role, long cold, with nothing to remember.
+    let dusty = repo.gov.join(".harness/government/community/roles/dusty");
+    std::fs::create_dir_all(&dusty).unwrap();
+    std::fs::write(
+        dusty.join("role.dd.json"),
+        json!({"sections": [
+            {"name": "meta", "value": {"id": "dusty", "title": "dusty", "kind": "general", "holders": "one"}},
+            {"name": "changelog", "value": [{"date": "2025-01-01", "by": "prime", "change": "added"}]}
+        ]})
         .to_string(),
     )
     .unwrap();
@@ -2916,6 +2948,57 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
         prompt(&viewed, "prime").unwrap()["note"],
         format!("the project's prime is {SEAT}; this adds the prime role's document")
     );
+
+    // AC8 (C28): every recommendation names its signal; boundary reviews.
+    let signal = |item: &Value| item["signal"]["code"].as_str().unwrap().to_string();
+    for item in viewed["data"]["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(viewed["data"]["reviews"].as_array().unwrap())
+    {
+        assert!(item["signal"]["says"].is_string(), "{item}");
+    }
+    assert_eq!(signal(prompt(&viewed, "prime").unwrap()), "core");
+    assert_eq!(
+        signal(prompt(&viewed, "security").unwrap()),
+        "independent-judgment"
+    );
+    assert_eq!(signal(docs), "step-needs");
+    let engine = prompt(&viewed, "engine").expect("crates/engine recurs with no owner");
+    assert_eq!(signal(engine), "recurring");
+    assert_eq!(engine["act"], "create");
+    let review = |role: &str| {
+        viewed["data"]["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["role"] == role)
+            .unwrap_or_else(|| panic!("no review for {role}: {viewed}"))
+            .clone()
+    };
+    let split = review("reviewer");
+    assert_eq!(split["act"], "split");
+    assert_eq!(signal(&split), "two-domains");
+    assert_eq!(
+        split["detail"],
+        "pij-holder holds pm-001 and reviewer at once"
+    );
+    let retire = review("dusty");
+    assert_eq!(retire["act"], "retire");
+    assert_eq!(signal(&retire), "mostly-idle");
+    assert!(
+        viewed["data"]["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["role"] != "qa"),
+        "qa has requests waiting: not idle"
+    );
+    assert!(notice.contains("A role is not a seat"), "{notice}");
+    assert!(notice.contains("Templates are examples"), "{notice}");
+
+    std::fs::remove_dir_all(&dusty).unwrap();
 
     // Adding the needed role clears its prompt.
     let added = call(
