@@ -1,16 +1,7 @@
 use super::*;
 
 async fn review_close(rig: &Rig, repo: &Repo, seat: &str) -> Value {
-    reqwest::Client::new()
-        .post(format!("http://{}/v1/close", rig.addr))
-        .bearer_auth(KEY)
-        .json(&json!({"seat": seat, "reason": "done", "caller": {"TMUX_PANE": PANE, "cwd": repo.main}}))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap()
+    close_landed(rig, &repo.main, seat).await
 }
 
 async fn review_hold(rig: &Rig, repo: &Repo, verb: &str, role: &str, seat: &str) -> Value {
@@ -38,10 +29,9 @@ async fn review_assign_same_role_flushes_a_foreign_edit_blocked_close() {
     dirty.push(b'\n');
     std::fs::write(&path, &dirty).unwrap();
     let closed = review_close(&rig, &repo, "pij-holder").await;
-    assert_eq!(closed["ok"], true, "{closed}");
-    assert!(closed["data"]["tombstoned_at"].is_number(), "{closed}");
+    assert!(closed["tombstoned_at"].is_number(), "{closed}");
     assert_eq!(
-        closed["data"]["directory"]["pending"][0]["code"], "E-RS-GOV-FOREIGN-EDIT",
+        closed["directory"]["pending"][0]["code"], "E-RS-GOV-FOREIGN-EDIT",
         "{closed}"
     );
     assert_eq!(std::fs::read(&path).unwrap(), dirty);
@@ -78,10 +68,9 @@ async fn review_release_same_role_flushes_another_holders_pending_close() {
     dirty.push(b'\n');
     std::fs::write(&path, dirty).unwrap();
     let closed = review_close(&rig, &repo, "pij-holder").await;
-    assert_eq!(closed["ok"], true, "{closed}");
     assert_eq!(
-        closed["data"]["directory"]["pending"][0]["code"],
-        "E-RS-GOV-FOREIGN-EDIT"
+        closed["directory"]["pending"][0]["code"], "E-RS-GOV-FOREIGN-EDIT",
+        "{closed}"
     );
     std::fs::write(&path, original).unwrap();
     let next = review_hold(&rig, &repo, "release", "pm-001", "pij-second").await;
