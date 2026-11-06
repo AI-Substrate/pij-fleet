@@ -2302,6 +2302,7 @@ async fn resolve_command_seat(
     let derived = identity::resolve_acting_seat(
         std::env::var_os("PIJ_SESSION_ID"),
         std::env::var_os("TMUX_PANE"),
+        caller_context(),
         client,
     )
     .await
@@ -4523,13 +4524,59 @@ mod shim_forward_tests {
 
     use super::{Cli, Command};
 
-    /// The shim's list (`harness/scripts/pij-native-verbs.json`).
-    fn listed() -> Vec<String> {
+    /// One list from the shim's `harness/scripts/pij-native-verbs.json`.
+    fn shim_list(key: &str) -> Vec<String> {
         let file: serde_json::Value = serde_json::from_str(include_str!(
             "../../../harness/scripts/pij-native-verbs.json"
         ))
         .expect("pij-native-verbs.json is JSON");
-        serde_json::from_value(file["verbs"].clone()).expect("a verbs array")
+        serde_json::from_value(file[key].clone()).unwrap_or_else(|_| panic!("a {key} array"))
+    }
+
+    fn listed() -> Vec<String> {
+        shim_list("verbs")
+    }
+
+    /// `--long` options of `command` that take a value; `global` keeps only
+    /// options marked global.
+    fn value_flags(command: &clap::Command, global: bool) -> BTreeSet<String> {
+        command
+            .get_arguments()
+            .filter(|arg| arg.get_action().takes_values() && (!global || arg.is_global_set()))
+            .filter_map(|arg| arg.get_long().map(|long| format!("--{long}")))
+            .collect()
+    }
+
+    fn send_command() -> clap::Command {
+        Cli::command()
+            .find_subcommand("send")
+            .expect("a send subcommand")
+            .clone()
+    }
+
+    /// Review of #147, F001 and N001: the shim reads a flag's value as a value,
+    /// never as the verb or the recipient, because its value-flag tables are
+    /// clap's.
+    #[test]
+    fn the_shims_value_flag_tables_are_claps() {
+        let send = value_flags(&send_command(), false);
+        let listed: BTreeSet<String> = shim_list("send_value_flags").into_iter().collect();
+        assert_eq!(listed, send);
+        let global: BTreeSet<String> = shim_list("global_value_flags").into_iter().collect();
+        assert_eq!(global, value_flags(&Cli::command(), true));
+        for routed in shim_list("routed_send_value_flags") {
+            let long = routed.trim_start_matches("--");
+            assert!(
+                send_command()
+                    .get_arguments()
+                    .all(|arg| arg.get_long() != Some(long)),
+                "{routed} is a pij-rs send flag, so it is not shim-only"
+            );
+        }
+        // Negative control: a new value-taking send flag that the shim's table
+        // lacks is caught.
+        let grown = send_command().arg(clap::Arg::new("priority").long("priority"));
+        assert_ne!(listed, value_flags(&grown, false));
     }
 
     /// Verbs that own their grammar and help (clap's help flag disabled) but the

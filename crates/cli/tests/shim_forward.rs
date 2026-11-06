@@ -18,13 +18,19 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn native_verbs() -> Vec<String> {
+/// One list from `harness/scripts/pij-native-verbs.json`, whose tables
+/// `main.rs`'s `shim_forward_tests` holds equal to clap.
+fn shim_list(key: &str) -> Vec<String> {
     let file: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(root().join("harness/scripts/pij-native-verbs.json"))
             .expect("read pij-native-verbs.json"),
     )
     .expect("pij-native-verbs.json is JSON");
-    serde_json::from_value(file["verbs"].clone()).expect("a verbs array")
+    serde_json::from_value(file[key].clone()).unwrap_or_else(|_| panic!("a {key} array"))
+}
+
+fn native_verbs() -> Vec<String> {
+    shim_list("verbs")
 }
 
 /// A scratch dir holding a recording `pij-rs`: it writes its argv
@@ -200,6 +206,15 @@ fn every_community_verb_and_flag_reaches_pij_rs_unchanged() {
         }
         args.extend(["--body-file", "-"]);
         reaches(&recorder, &args, &[]).unwrap();
+        // Review of #147, N001: pij-rs's global options ahead of the verb.
+        reaches(&recorder, &["--json", verb.as_str(), "probe"], &[]).unwrap();
+        let addr = "--addr=127.0.0.1:9";
+        reaches(
+            &recorder,
+            &["--state-dir", "/state", addr, verb.as_str()],
+            &[],
+        )
+        .unwrap();
     }
 }
 
@@ -207,26 +222,49 @@ fn every_community_verb_and_flag_reaches_pij_rs_unchanged() {
 fn role_sends_and_the_native_send_form_reach_pij_rs_unchanged() {
     let recorder = Recorder::new("send");
     let pane = [("TMUX_PANE", "%9")];
-    let session = [("PIJ_SESSION_ID", "pij-probe")];
     let send_flags = flags("send");
     for flag in ["--reply", "--limit", "--project", "--fyi", "--to", "--body"] {
         assert!(send_flags.contains(flag), "pij-rs send --help lacks {flag}");
     }
+    // Review of #147, F001: every value-taking send flag (clap's table) ahead
+    // of the recipient is read with its value, in both spellings.
+    for flag in shim_list("send_value_flags") {
+        if flag == "--to" {
+            continue;
+        }
+        let args = ["send", &flag, "role:looks-like", "role:probe", "hello"];
+        reaches(&recorder, &args, &pane).unwrap();
+        let inline = format!("{flag}=pij-looks-like");
+        reaches(&recorder, &["send", &inline, "role:probe", "hello"], &pane).unwrap();
+    }
     for (args, env) in [
         (
-            &["send", "role:security/141", "hello there", "--reply", "fyi"][..],
+            &["send", "--body", "hello", "--to", "role:probe"][..],
             &pane[..],
+        ),
+        (
+            &["send", "--from", "pij-sender", "role:probe", "hello"],
+            &pane,
+        ),
+        (
+            &["send", "--msg-id", "id-147", "role:probe", "hello"],
+            &pane,
+        ),
+        (&["send", "--to=role:probe", "--body=-h"], &pane),
+        (
+            &["send", "role:security/141", "hello there", "--reply", "fyi"],
+            &pane,
         ),
         (&["send", "--fyi", "role:pa", "held"], &pane),
         (
             &["send", "--limit", "45m", "role:qa", "--body-file", "-"],
-            &session,
+            &pane,
         ),
         (&["send", "--to", "role:qa", "--body", "x"], &pane),
-        (
-            &["send", "--to=pij-peer", "--body", "x", "--json"],
-            &session,
-        ),
+        (&["send", "--to=pij-peer", "--body", "x", "--json"], &pane),
+        // N001: global options ahead of the verb.
+        (&["--json", "send", "role:probe", "hello"], &pane),
+        (&["--addr", "127.0.0.1:9", "--json", "send", "--help"], &[]),
         (&["send", "--help"], &[]),
         (&["send", "-h"], &[]),
     ] {
@@ -240,6 +278,32 @@ fn role_sends_and_the_native_send_form_reach_pij_rs_unchanged() {
 fn calls_outside_the_contract_keep_the_routed_path() {
     let recorder = Recorder::new("kept");
     let pane = [("TMUX_PANE", "%9")];
+    // Review of #147, F002: a paneless child of a live seat inherits the
+    // parent's PIJ_SESSION_ID beside its own harness session. Only the routed
+    // path registers the observed host and overrides the inherited id
+    // (generation-router.test.ts, "resolves ambient identity before
+    // forwarding"), so the shim keeps every paneless send there.
+    let inherited = [
+        ("PIJ_SESSION_ID", "pij-parent-fixture"),
+        (
+            "COPILOT_AGENT_SESSION_ID",
+            "00000000-0000-4000-8000-000000000147",
+        ),
+    ];
+    // F001: a value that looks like a role address is a value, not the recipient.
+    for flag in shim_list("send_value_flags") {
+        if flag == "--to" {
+            continue;
+        }
+        let args = ["send", &flag, "role:fake", "pij-peer", "x"];
+        let reached = reaches(&recorder, &args, &pane);
+        assert!(
+            reached
+                .as_ref()
+                .is_err_and(|why| why.contains("never reached")),
+            "{args:?} was forwarded: {reached:?}"
+        );
+    }
     for (args, env, why) in [
         (
             &["spine", "events"][..],
@@ -250,17 +314,33 @@ fn calls_outside_the_contract_keep_the_routed_path() {
         (
             &["send", "role:pa", "hello"],
             &[],
-            "a paneless role send needs registration first",
+            "a paneless role send needs registration",
         ),
         (
-            &["send", "--reason", "role:fake", "pij-peer", "x"],
-            &pane,
-            "a flag value is not the recipient",
+            &["send", "role:pa", "hello"],
+            &inherited,
+            "an inherited seat id is no identity",
         ),
+        (
+            &["send", "--to", "role:pa", "--body", "x"],
+            &inherited,
+            "nor with --to",
+        ),
+        (
+            &["send", "--msg-id", "role:fake", "pij-peer", "hi"],
+            &pane,
+            "the reviewer's oracle",
+        ),
+        (
+            &["send", "role:pa", "x", "--file", "/tmp/a.png"],
+            &pane,
+            "a shim-only flag",
+        ),
+        (&["--help"], &[], "no verb"),
         (
             &["directory"],
             &[("PIJ_DAEMON_GENERATION", "legacy")],
-            "an explicit non-rs generation",
+            "a non-rs generation",
         ),
     ] {
         let reached = reaches(&recorder, args, env);
@@ -292,4 +372,30 @@ fn a_missing_pij_rs_is_named() {
         String::from_utf8_lossy(&output.stderr).contains("pij-rs is not on PATH"),
         "{output:?}"
     );
+}
+
+/// Security review of #147: pij-rs comes from an absolute PATH entry only, as
+/// the ddocs resolver does; a relative entry (which resolves against the
+/// caller's cwd) is skipped.
+#[test]
+fn a_relative_path_entry_never_supplies_pij_rs() {
+    let recorder = Recorder::new("relative");
+    let node = Command::new("sh")
+        .args(["-c", "command -v node"])
+        .output()
+        .unwrap();
+    let node = PathBuf::from(String::from_utf8(node.stdout).unwrap().trim());
+    let output = Command::new(node)
+        .arg(root().join("harness/scripts/pij-cli.cjs"))
+        .arg("claims")
+        .current_dir(&recorder.dir)
+        .env("PATH", "bin:/nonexistent")
+        .env_remove("PIJ_DAEMON_GENERATION")
+        .output()
+        .unwrap();
+    assert!(
+        recorder.take().is_none(),
+        "a relative PATH entry supplied pij-rs"
+    );
+    assert_eq!(output.status.code(), Some(127), "{output:?}");
 }
