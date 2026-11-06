@@ -2746,10 +2746,26 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
         Ok(seat) => seat,
         Err(error) => return internal("pij state", error),
     };
-    match seat_card(&state, seat, None).await {
-        Ok(projection) => envelope(StatusCode::OK, &Envelope::ok("pij state", projection)),
-        Err(error) => internal("pij state", error),
+    let mut projection = match seat_card(&state, seat, None).await {
+        Ok(projection) => projection,
+        Err(error) => return internal("pij state", error),
+    };
+    // One seat only (plan 196, performance review of #131): `/v1/cards` is read
+    // often, by status lines and the PA, and never pays for the deliveries.
+    match state
+        .services
+        .governance
+        .store()
+        .deliveries_for_pm(
+            projection.card.id.as_str(),
+            pij_store::claims::CARD_DELIVERIES,
+        )
+        .await
+    {
+        Ok(deliveries) => projection.card.deliveries = deliveries,
+        Err(error) => return internal("pij state", error),
     }
+    envelope(StatusCode::OK, &Envelope::ok("pij state", projection))
 }
 
 /// `GET /v1/cards` — every local, untombstoned seat's `pij state` card in one
@@ -2847,9 +2863,9 @@ struct UnavailableCard {
 ///
 /// Shared by `/v1/state` and `/v1/cards`. Every store read here is bounded by
 /// the seat's own rows (plan 188): the card and the state note are each one
-/// newest-of-a-kind lookup on `(seat, kind)`, the held deliveries read only
-/// the seat's delivery events, and the PR deliveries naming it as PM are one
-/// read on `deliveries_by_pm` (plan 196). None of them reads the spine end to end.
+/// newest-of-a-kind lookup on `(seat, kind)`, and the held deliveries read only
+/// the seat's delivery events. None of them reads the spine end to end. The PR
+/// deliveries naming the seat as PM (plan 196) are read by `/v1/state` alone.
 ///
 /// `session_wait` bounds the seat's session-status read: `None` waits as
 /// `/v1/state` always has; the bulk read passes [`LIST_STATUS_WAIT`] so one
@@ -2920,12 +2936,6 @@ async fn seat_card(
     projection.card.held = active_holds(state, &id).await?;
     projection.card.delivery_deferrals = state.services.queue.delivery_deferrals(&id).await?;
     projection.card.pending_fyis = state.services.delivery.pending_fyi_count(&id).await?;
-    projection.card.deliveries = state
-        .services
-        .governance
-        .store()
-        .deliveries_for_pm(id.as_str(), pij_store::claims::CARD_DELIVERIES)
-        .await?;
     projection.card.native_receiver_reason = state
         .services
         .delivery

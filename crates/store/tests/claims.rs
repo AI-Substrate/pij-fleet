@@ -276,3 +276,34 @@ async fn deliveries_record_once_release_named_claims_and_reach_the_pm_card() {
             .is_empty()
     );
 }
+
+/// Performance review of #131: the card read walks `deliveries_by_pm` in
+/// index order with a bound, and never builds a temporary b-tree to group or
+/// sort the PM's whole history.
+#[tokio::test]
+async fn the_pm_card_read_walks_its_index_without_sorting_the_history() {
+    use sqlx::Row;
+
+    let (fresh, _store, _) = store().await;
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let plan: Vec<String> = sqlx::query(&format!(
+        "EXPLAIN QUERY PLAN {}",
+        pij_store::claims::DELIVERIES_FOR_PM_SQL
+    ))
+    .bind("pij-b")
+    .bind(48_i64)
+    .fetch_all(&pool)
+    .await
+    .expect("plan")
+    .iter()
+    .map(|row| row.get::<String, _>("detail"))
+    .collect();
+    assert!(
+        plan.iter().any(|step| step.contains("deliveries_by_pm")),
+        "{plan:?}"
+    );
+    assert!(
+        !plan.iter().any(|step| step.contains("TEMP B-TREE")),
+        "no sort or grouping: {plan:?}"
+    );
+}

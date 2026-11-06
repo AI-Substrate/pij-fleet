@@ -26,6 +26,16 @@ pub const DELIVERED_EVENT: &str = "delivered";
 /// Deliveries a PM's card shows, newest first.
 pub const CARD_DELIVERIES: u32 = 3;
 
+/// The most delivery rows one card read walks: the newest rows for the PM on
+/// `deliveries_by_pm`, enough for [`CARD_DELIVERIES`] PRs of ordinary size.
+/// Bounds the read whatever the PM's history (performance review of #131).
+pub const CARD_ROWS: u32 = 48;
+
+/// The card read: the PM's newest rows, straight off `deliveries_by_pm` in
+/// index order, with no grouping or sort; grouped into PRs in Rust.
+pub const DELIVERIES_FOR_PM_SQL: &str = "SELECT project, pr, merge_commit, recorded_by, recorded_at, address \
+     FROM deliveries WHERE pm = ?1 ORDER BY recorded_at DESC LIMIT ?2";
+
 /// One number handed out.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Claim {
@@ -376,21 +386,17 @@ impl SqliteOrchestration {
     }
 
     /// The newest `limit` PRs whose delivery told `pm`, each with its
-    /// addresses. One indexed read on `deliveries_by_pm`.
+    /// addresses: at most [`CARD_ROWS`] rows walked in `deliveries_by_pm`
+    /// order, no sort. A PR's rows share one `recorded_at` (one call records
+    /// them), so they arrive together.
     pub async fn deliveries_for_pm(&self, pm: &str, limit: u32) -> Result<Vec<DeliveryNote>> {
         require_current_schema(&self.pool).await?;
-        let rows = sqlx::query(
-            "SELECT project, pr, merge_commit, recorded_by, recorded_at, address FROM deliveries \
-             WHERE pm = ?1 AND (project, pr) IN ( \
-               SELECT project, pr FROM deliveries WHERE pm = ?1 \
-               GROUP BY project, pr ORDER BY MAX(recorded_at) DESC, pr DESC LIMIT ?2) \
-             ORDER BY recorded_at DESC, pr DESC, project, address",
-        )
-        .bind(pm)
-        .bind(i64::from(limit))
-        .fetch_all(&self.pool)
-        .await
-        .map_err(adapter_error)?;
+        let rows = sqlx::query(DELIVERIES_FOR_PM_SQL)
+            .bind(pm)
+            .bind(i64::from(CARD_ROWS))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?;
         let mut notes: Vec<DeliveryNote> = Vec::new();
         for row in &rows {
             let project: String = row.try_get("project").map_err(adapter_error)?;
@@ -403,6 +409,9 @@ impl SqliteOrchestration {
                 note.addresses.push(address);
                 continue;
             }
+            if notes.len() == limit as usize {
+                continue;
+            }
             notes.push(DeliveryNote {
                 project,
                 pr,
@@ -413,6 +422,9 @@ impl SqliteOrchestration {
                     .try_get::<i64, _>("recorded_at")
                     .map_err(adapter_error)? as u64,
             });
+        }
+        for note in &mut notes {
+            note.addresses.sort();
         }
         Ok(notes)
     }

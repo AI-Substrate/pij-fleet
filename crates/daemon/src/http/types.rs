@@ -609,7 +609,8 @@ pub struct StateCard {
     #[serde(default)]
     pub pending_fyis: u64,
     /// PRs whose delivery named this seat as the PM, newest first (plan 196,
-    /// AC6): `pij delivered` posts here. Empty when none.
+    /// AC6): `pij delivered` posts here. Read by `pij state <seat>` only;
+    /// `/v1/cards` leaves it empty so the bulk read stays cheap.
     #[serde(default)]
     pub deliveries: Vec<pij_store::DeliveryNote>,
     /// Session facts read from the seat's transcript (plan 157): context size,
