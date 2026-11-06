@@ -44,3 +44,5 @@
 
 2026-11-06 note prime-governance edf81257e776acf448f9aea71d0b2300b1adbb3b resolved - Reviewer artifact entries neutral; both original values absent across tracked fix/public-tip snapshots through 43852c29395ae72d203c2b247f9383c5dcc8910b; values omitted, no duplicate edit; PR125 and PR121 repair follow-up.
 
+2026-11-06 verdict pr:126 04144d1ca39130106202322d3479273c636a388a pass-with-notes - Embedded selectors and brief confinement safe; six packets public-safe; prompts/list/diff do not create or execute; CI merge tree equals head, Rust1887pass5skip; real-ddocs UNAVAILABLE/early-return limit explicit; no local build; 2026-11-06-pr-126-04144d1-security.md.
+
