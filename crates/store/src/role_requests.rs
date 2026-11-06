@@ -1,4 +1,4 @@
-//! Requests sent to a role (plan 199, migration 0034).
+//! Requests sent to a role (plan 199, migration 0034; limits: plan 205, 0035).
 //!
 //! Every `pij send role:<id>` is one row, keyed by the send's msg_id. A request
 //! no live holder could take waits as `queued` until an assign drains it; the
@@ -93,10 +93,16 @@ pub struct RoleRequest {
     pub created_at: u64,
     /// When it reached its holder.
     pub delivered_at: Option<u64>,
+    /// When its holder was sent the one time-limit check-in (s12).
+    pub checkin_at: Option<u64>,
+    /// When the PA (else the prime) was told the check-in went unanswered.
+    pub escalated_at: Option<u64>,
+    /// When an output answered it (s06).
+    pub answered_at: Option<u64>,
 }
 
 const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
-     limit_ms, state, holder, created_at, delivered_at";
+     limit_ms, state, holder, created_at, delivered_at, checkin_at, escalated_at, answered_at";
 
 impl SqliteOrchestration {
     /// Record a request, queued or already delivered.
@@ -111,7 +117,7 @@ impl SqliteOrchestration {
             let mut tx = begin_write(&pool).await?;
             let inserted = sqlx::query(&format!(
                 "INSERT INTO role_requests ({COLUMNS}) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, NULL, NULL) \
                  ON CONFLICT (id) DO NOTHING"
             ))
             .bind(&request.id)
@@ -210,6 +216,62 @@ impl SqliteOrchestration {
         .collect()
     }
 
+    /// Delivered requests with a limit that are not yet escalated or answered,
+    /// oldest delivery first: the watchdog round's one read (s12).
+    pub async fn open_limited_role_requests(&self) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_limited \
+             WHERE state = 'delivered' AND limit_ms IS NOT NULL \
+             AND escalated_at IS NULL AND answered_at IS NULL ORDER BY delivered_at, id"
+        ))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
+    /// Record the holder's check-in at `at`; `false` when one was recorded.
+    pub async fn mark_role_request_checked_in(&self, id: &str, at: u64) -> Result<bool> {
+        self.stamp_once(id, "checkin_at", at).await
+    }
+
+    /// Record the PA notice at `at`; `false` when one was recorded.
+    pub async fn mark_role_request_escalated(&self, id: &str, at: u64) -> Result<bool> {
+        self.stamp_once(id, "escalated_at", at).await
+    }
+
+    /// Record that an output answered the request at `at` (s06); `false`
+    /// when it was already answered or is unknown.
+    pub async fn mark_role_request_answered(&self, id: &str, at: u64) -> Result<bool> {
+        self.stamp_once(id, "answered_at", at).await
+    }
+
+    /// Set `column` once: a second call changes nothing and returns `false`.
+    async fn stamp_once(&self, id: &str, column: &'static str, at: u64) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let changed = sqlx::query(&format!(
+                "UPDATE role_requests SET {column} = ?2 WHERE id = ?1 AND {column} IS NULL"
+            ))
+            .bind(&id)
+            .bind(sql_i64(at, column)?)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
+    }
+
     /// Mark a queued request delivered to `holder` at `at`.
     ///
     /// Returns `false` when it was not queued (already delivered, or unknown),
@@ -252,6 +314,10 @@ fn role_request(row: &sqlx::sqlite::SqliteRow) -> Result<RoleRequest> {
     let limit_ms: Option<i64> = row.try_get("limit_ms").map_err(adapter_error)?;
     let created_at: i64 = row.try_get("created_at").map_err(adapter_error)?;
     let delivered_at: Option<i64> = row.try_get("delivered_at").map_err(adapter_error)?;
+    let stamp = |name: &str| -> Result<Option<u64>> {
+        let value: Option<i64> = row.try_get(name).map_err(adapter_error)?;
+        value.map(|at| sql_u64(at, "timestamp")).transpose()
+    };
     let corrupt = |field: &str, value: &str| PijError::Adapter {
         adapter: "store/role_requests".to_string(),
         message: format!("role request {field} {value:?} is not a known value"),
@@ -279,5 +345,8 @@ fn role_request(row: &sqlx::sqlite::SqliteRow) -> Result<RoleRequest> {
         delivered_at: delivered_at
             .map(|at| sql_u64(at, "delivered_at"))
             .transpose()?,
+        checkin_at: stamp("checkin_at")?,
+        escalated_at: stamp("escalated_at")?,
+        answered_at: stamp("answered_at")?,
     })
 }

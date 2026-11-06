@@ -127,6 +127,9 @@ pub(crate) fn interval_secs(configured: u64) -> Result<u64> {
 /// What one round did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RoundOutcome {
+    /// A role request's time limit sent its holder a check-in, or told the
+    /// PA (else the prime) the check-in went unanswered (plan 205, s12).
+    RequestLimit(crate::delivery::role_send::LimitAction),
     /// The PA's fleet went idle; the digest was handed to delivery.
     Nudged {
         /// The PA.
@@ -392,6 +395,13 @@ impl PaWatchdog {
         let mut outcomes = self.optin_round(services, &seats, now_ms).await;
         let stops = self.stops(services, &seats).await;
         outcomes.extend(self.limit_round(services, &seats, &stops, now_ms).await);
+        // Role request time limits ride this round: no timer of their own (s12).
+        outcomes.extend(
+            crate::delivery::role_send::time_limits(services, now_ms)
+                .await
+                .into_iter()
+                .map(RoundOutcome::RequestLimit),
+        );
 
         let pas: Vec<&SeatDescriptor> = seats.iter().filter(|seat| is_watched_pa(seat)).collect();
         // The designated prime is a supervisor whatever its role says: its

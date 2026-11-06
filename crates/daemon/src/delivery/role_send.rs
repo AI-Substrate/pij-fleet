@@ -228,6 +228,9 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
         holder: None,
         created_at: now_ms,
         delivered_at: None,
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
     };
     match live.as_slice() {
         [] => {
@@ -650,4 +653,204 @@ pub async fn drain(
         outcomes.push((request.id, outcome));
     }
     outcomes
+}
+
+/// What the time-limit pass did for one request (plan 205, s12).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LimitAction {
+    /// The request id.
+    pub request: String,
+    /// `check-in` to the holder, or `notice` to the PA (else the prime).
+    pub kind: &'static str,
+    /// Who it went to, `None` when nobody could be told.
+    pub to: Option<SeatId>,
+    /// Delivery's outcome word, or the error.
+    pub delivery: String,
+}
+
+/// The time-limit pass, run inside the existing PA watchdog round (s12):
+/// no timer of its own. One indexed read lists the open limited requests;
+/// each costs one `LIMIT 1` read of its holder's latest card.
+///
+/// A request's clock starts at the later of its delivery and its holder's
+/// latest card, so every card update restarts it. Past the limit, the holder
+/// gets one check-in. After it, a whole further limit with no card update
+/// tells the project's PA (else the prime) once. Each step is recorded before
+/// it is sent, so a round never sends one twice. Nothing is ever stopped.
+pub async fn time_limits(services: &Services, now_ms: u64) -> Vec<LimitAction> {
+    let store = services.governance.store().clone();
+    let open = match store.open_limited_role_requests().await {
+        Ok(open) => open,
+        Err(cause) => {
+            eprintln!("pij-rs: time limits: open requests unavailable: {cause}");
+            return Vec::new();
+        }
+    };
+    let mut actions = Vec::new();
+    for request in open {
+        let (Some(limit), Some(holder), Some(delivered_at)) = (
+            request.limit_ms,
+            request.holder.as_deref().map(SeatId::from),
+            request.delivered_at,
+        ) else {
+            continue;
+        };
+        let card_at = match services
+            .spine
+            .latest_matching(&holder, &["report.now"])
+            .await
+        {
+            Ok(card) => card.map_or(0, |card| card.at),
+            Err(cause) => {
+                eprintln!("pij-rs: time limits: card for {holder}: {cause}");
+                continue;
+            }
+        };
+        let action = match request.checkin_at {
+            None => {
+                if now_ms < delivered_at.max(card_at).saturating_add(limit) {
+                    continue;
+                }
+                check_in(services, &store, &request, &holder, limit, now_ms).await
+            }
+            Some(checked_in) => {
+                if now_ms < checked_in.max(card_at).saturating_add(limit) {
+                    continue;
+                }
+                notice(services, &store, &request, &holder, limit, now_ms).await
+            }
+        };
+        if let Some(action) = action {
+            actions.push(action);
+        }
+    }
+    actions
+}
+
+async fn check_in(
+    services: &Services,
+    store: &SqliteOrchestration,
+    request: &RoleRequest,
+    holder: &SeatId,
+    limit: u64,
+    now_ms: u64,
+) -> Option<LimitAction> {
+    match store
+        .mark_role_request_checked_in(&request.id, now_ms)
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => return None,
+        Err(cause) => {
+            eprintln!("pij-rs: time limits: check-in for {}: {cause}", request.id);
+            return None;
+        }
+    }
+    let address = RoleAddress {
+        role: request.role.clone(),
+        instance: request.instance.clone(),
+    }
+    .display();
+    let body = format!(
+        "[pij time limit] Request {} ({address} in {}, from {}) passed its limit of {} with no card update. \
+         Write down what you have, update your card (pij report now \"<what you did>\" \"<what is next>\"), \
+         and say why it needs longer. Nothing has been stopped.",
+        request.id,
+        request.project,
+        request.requester,
+        human_duration(limit)
+    );
+    let to = live_seat(services.registry.as_ref(), holder.as_str())
+        .await
+        .ok()
+        .flatten();
+    let delivery = match &to {
+        Some(seat) => {
+            crate::pa_watchdog::wake_pa(
+                services,
+                seat,
+                body,
+                format!("role-limit-checkin-{}", request.id),
+                "role-limit-check-in",
+                now_ms,
+            )
+            .await
+            .0
+        }
+        None => "holder gone".to_string(),
+    };
+    Some(LimitAction {
+        request: request.id.clone(),
+        kind: "check-in",
+        to: to.map(|seat| seat.id),
+        delivery,
+    })
+}
+
+async fn notice(
+    services: &Services,
+    store: &SqliteOrchestration,
+    request: &RoleRequest,
+    holder: &SeatId,
+    limit: u64,
+    now_ms: u64,
+) -> Option<LimitAction> {
+    match store.mark_role_request_escalated(&request.id, now_ms).await {
+        Ok(true) => {}
+        Ok(false) => return None,
+        Err(cause) => {
+            eprintln!("pij-rs: time limits: notice for {}: {cause}", request.id);
+            return None;
+        }
+    }
+    let target = match store.assignments(&request.project).await {
+        Ok(assignments) => wake_target(services, store, &assignments)
+            .await
+            .ok()
+            .flatten(),
+        Err(cause) => {
+            eprintln!(
+                "pij-rs: time limits: assignments for {}: {cause}",
+                request.project
+            );
+            None
+        }
+    };
+    let address = RoleAddress {
+        role: request.role.clone(),
+        instance: request.instance.clone(),
+    }
+    .display();
+    let body = format!(
+        "[pij time limit] {holder} has not answered the check-in for request {} ({address} in {}, from {}): \
+         no output and no card update for {} since. Nothing has been stopped. Next: look at it \
+         (pij state {holder}), or give the role another holder (pij directory release {} {holder} --why \"<why>\" --project {}).",
+        request.id,
+        request.project,
+        request.requester,
+        human_duration(limit),
+        address.trim_start_matches(ROLE_PREFIX),
+        request.project,
+    );
+    let delivery = match &target {
+        Some(seat) => {
+            crate::pa_watchdog::wake_pa(
+                services,
+                seat,
+                body,
+                format!("role-limit-notice-{}", request.id),
+                "role-limit-notice",
+                now_ms,
+            )
+            .await
+            .0
+        }
+        None => "no live PA or prime to tell".to_string(),
+    };
+    Some(LimitAction {
+        request: request.id.clone(),
+        kind: "notice",
+        to: target.map(|seat| seat.id),
+        delivery,
+    })
 }

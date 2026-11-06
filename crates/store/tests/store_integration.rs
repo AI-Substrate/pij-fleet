@@ -1740,6 +1740,9 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
         holder: None,
         created_at: at,
         delivered_at: None,
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
     };
     let mut fyi = request("r-fyi", "coder", "196", 30);
     fyi.fyi = true;
@@ -1819,5 +1822,94 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
     assert_eq!(
         ids(store.all_queued_role_requests().await.unwrap()),
         ["r-other-role", "r-other-instance", "r-late", "r-fyi"]
+    );
+}
+
+/// Plan 205 (migration 0035): the watchdog round reads only delivered,
+/// limited requests not yet escalated or answered, and each limit stamp is
+/// recorded once.
+#[tokio::test]
+async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let request =
+        |id: &str, state: RequestState, limit_ms: Option<u64>, delivered_at: u64| RoleRequest {
+            id: id.into(),
+            project: "pij".into(),
+            role: "coder".into(),
+            instance: String::new(),
+            requester: "pij-asker".into(),
+            body: "go".into(),
+            in_reply_to: None,
+            fyi: false,
+            reply: ReplyMode::Wake,
+            limit_ms,
+            state,
+            holder: (state == RequestState::Delivered).then(|| "pij-coder".to_string()),
+            created_at: 1,
+            delivered_at: (state == RequestState::Delivered).then_some(delivered_at),
+            checkin_at: None,
+            escalated_at: None,
+            answered_at: None,
+        };
+    for row in [
+        request("late", RequestState::Delivered, Some(60_000), 20),
+        request("early", RequestState::Delivered, Some(60_000), 10),
+        request("unlimited", RequestState::Delivered, None, 5),
+        request("queued", RequestState::Queued, Some(60_000), 0),
+        request("answered", RequestState::Delivered, Some(60_000), 3),
+        request("escalated", RequestState::Delivered, Some(60_000), 4),
+    ] {
+        store.record_role_request(&row).await.expect("record");
+    }
+    assert!(
+        store
+            .mark_role_request_answered("answered", 30)
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .mark_role_request_escalated("escalated", 31)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .mark_role_request_escalated("escalated", 32)
+            .await
+            .unwrap(),
+        "once"
+    );
+    let ids = |rows: Vec<RoleRequest>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(store.open_limited_role_requests().await.unwrap()),
+        ["early", "late"]
+    );
+
+    assert!(
+        store
+            .mark_role_request_checked_in("early", 40)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .mark_role_request_checked_in("early", 41)
+            .await
+            .unwrap(),
+        "one check-in"
+    );
+    let early = store.role_request("early").await.unwrap().expect("row");
+    assert_eq!(
+        (early.checkin_at, early.escalated_at, early.answered_at),
+        (Some(40), None, None)
+    );
+    assert_eq!(
+        ids(store.open_limited_role_requests().await.unwrap()),
+        ["early", "late"],
+        "a checked-in request stays open until escalated or answered"
     );
 }

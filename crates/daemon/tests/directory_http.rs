@@ -125,6 +125,7 @@ struct Rig {
     roles: Arc<pij_daemon::http::role::RoleService>,
     tmux: Arc<FakeTmux>,
     delivery: Arc<pij_daemon::delivery::DeliveryService>,
+    services: pij_daemon::Services,
 }
 
 /// Counts after-assign calls (ruling C6).
@@ -218,6 +219,7 @@ async fn rig_inner(
         services.registry.put(seat).await.expect("seed seat");
     }
     let roles = Arc::clone(&services.roles);
+    let kept = services.clone();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = router_with_config(services, HttpConfig::local(KEY.to_string()));
@@ -230,6 +232,7 @@ async fn rig_inner(
         roles,
         tmux,
         delivery,
+        services: kept,
     }
 }
 
@@ -1801,3 +1804,272 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
 /// Plan 194 (s03): --from template and file, templates, drift and prompts.
 #[path = "templates_http/mod.rs"]
 mod templates;
+
+/// Plan 205 (s12), AC1 and AC2: a request past its limit with no card update
+/// gets exactly one check-in; a whole further limit with no card update since
+/// tells the project's PA exactly once. A card update restarts the clock, so a
+/// seat that keeps its card current is never checked in.
+#[tokio::test]
+async fn a_limit_checks_in_once_then_tells_the_pa_once_and_a_card_update_spares_it() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let repo = repo("pij-role-limits");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: Vec<&'static str>| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move { call(addr, "/v1/directory", &argv, &main).await }
+    };
+    for argv in [
+        vec![
+            "directory",
+            "add",
+            "pa",
+            "--title",
+            "pa",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        vec!["directory", "assign", "pa", "pij-second", "--why", "watch"],
+        vec![
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "lead",
+        ],
+    ] {
+        let done = dir(argv).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let limit = 10 * 60_000;
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-limit",
+        json!({"limit": "10m"}),
+    )
+    .await;
+    assert_eq!(sent["data"]["request"]["limit_ms"], limit, "{sent}");
+    let delivered = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .and_then(|request| request.delivered_at)
+        .expect("delivered");
+    let kinds = |actions: Vec<pij_daemon::delivery::role_send::LimitAction>| {
+        actions
+            .into_iter()
+            .map(|action| {
+                (
+                    action.request,
+                    action.kind,
+                    action.to.map(|seat| seat.to_string()),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        kinds(time_limits(&rig.services, delivered + limit - 1).await),
+        []
+    );
+    assert_eq!(
+        kinds(time_limits(&rig.services, delivered + limit).await),
+        [(
+            "req-limit".to_string(),
+            "check-in",
+            Some("pij-holder".to_string())
+        )]
+    );
+    assert_eq!(
+        kinds(time_limits(&rig.services, delivered + limit + 1).await),
+        [],
+        "one check-in"
+    );
+    let checked = delivered + limit;
+    assert_eq!(
+        kinds(time_limits(&rig.services, checked + limit - 1).await),
+        []
+    );
+    assert_eq!(
+        kinds(time_limits(&rig.services, checked + limit).await),
+        [(
+            "req-limit".to_string(),
+            "notice",
+            Some("pij-second".to_string())
+        )]
+    );
+    assert_eq!(
+        kinds(time_limits(&rig.services, checked + 3 * limit).await),
+        [],
+        "one notice"
+    );
+    // The holder's queue head is the request itself; the check-in shows as its
+    // own delivery outcome.
+    let events = call(
+        rig.addr,
+        "/v1/spine",
+        &["spine", "events", "--peer", "pij-holder"],
+        &repo.main,
+    )
+    .await;
+    let check_ins = events["data"]["events"]
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|event| event["kind"] == "delivery.outcome")
+        .filter(|event| {
+            event["payload"]
+                .as_str()
+                .is_some_and(|payload| payload.contains("role-limit-checkin-req-limit"))
+        })
+        .count();
+    assert_eq!(check_ins, 1, "one check-in reached the holder: {events}");
+    let notices = inbox_bodies(&rig, "pij-second").await;
+    let notice = notices.first().expect("the PA was told");
+    assert!(
+        notice.starts_with(
+            "[pij time limit] pij-holder has not answered the check-in for request req-limit"
+        ) && notice.contains("Nothing has been stopped"),
+        "{notice}"
+    );
+
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pm-001",
+        "req-card",
+        json!({"limit": "10m"}),
+    )
+    .await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    let delivered = rig
+        .store
+        .role_request("req-card")
+        .await
+        .unwrap()
+        .and_then(|request| request.delivered_at)
+        .expect("delivered");
+    for at in [
+        delivered + limit / 2,
+        delivered + limit,
+        delivered + 3 * limit / 2,
+    ] {
+        rig.services
+            .spine
+            .append(pij_core::model::Event {
+                seq: None,
+                v: 1,
+                at,
+                kind: "report.now".into(),
+                seat: Some(SeatId::from("pij-holder")),
+                payload: json!({"did": "work", "next": "more"}).to_string(),
+            })
+            .await
+            .expect("card");
+        assert_eq!(
+            kinds(time_limits(&rig.services, at + limit - 1).await),
+            [],
+            "each card update restarts the clock"
+        );
+    }
+    let request = rig
+        .store
+        .role_request("req-card")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(request.checkin_at, None, "never checked in");
+    rig.server.abort();
+}
+
+/// Plan 205, AC3: without --limit a role send stores the role's
+/// default_limit (C5); an explicit --limit wins; with neither there is no
+/// limit, and the round never checks the request in.
+#[tokio::test]
+async fn a_role_default_limit_applies_and_an_explicit_limit_wins() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let repo = repo("pij-role-default-limit");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: Vec<&'static str>| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move { call(addr, "/v1/directory", &argv, &main).await }
+    };
+    for argv in [
+        vec![
+            "directory",
+            "add",
+            "timed",
+            "--title",
+            "timed",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--default-limit",
+            "45m",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        vec!["directory", "assign", "timed", "pij-holder", "--why", "x"],
+        vec!["directory", "assign", "pm-001", "pij-second", "--why", "x"],
+    ] {
+        let done = dir(argv).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let default = send_to(rig.addr, &repo.main, "role:timed", "req-default", json!({})).await;
+    assert_eq!(
+        default["data"]["request"]["limit_ms"],
+        45 * 60_000,
+        "{default}"
+    );
+    let explicit = send_to(
+        rig.addr,
+        &repo.main,
+        "role:timed",
+        "req-explicit",
+        json!({"limit": "5m"}),
+    )
+    .await;
+    assert_eq!(
+        explicit["data"]["request"]["limit_ms"],
+        5 * 60_000,
+        "{explicit}"
+    );
+    let none = send_to(rig.addr, &repo.main, "role:pm-001", "req-none", json!({})).await;
+    assert_eq!(none["data"]["request"]["limit_ms"], Value::Null, "{none}");
+    let far = rig
+        .store
+        .role_request("req-none")
+        .await
+        .unwrap()
+        .and_then(|request| request.delivered_at)
+        .expect("delivered")
+        + 365 * 86_400_000;
+    let actions = time_limits(&rig.services, far).await;
+    assert!(
+        actions.iter().all(|action| action.request != "req-none"),
+        "{actions:?}"
+    );
+    rig.server.abort();
+}
