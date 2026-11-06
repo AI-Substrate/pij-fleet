@@ -1,0 +1,179 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Directory polish: lineage import, batch assign, zones, window names, lock retry, the F003 flake",
+        "slug": "directory-polish",
+        "ordinal": 208,
+        "complexity": "CS-2",
+        "summary": "The s04 follow-ups split from plan 206 on the prime's instruction: record closed seats in lineage (F15), batch assign (F16), zoned dates (F13), the two-role window name (F17), the writer's index.lock marker and retry (F18), and the #122 same-second test (F003).",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Split from plan 206 (06 Nov). Sources: #122's review (F003), the wave B dogfood (F13, F15, F16), pm-001's holder assigns (F17), and the prime (F18). Under the prime's ruling, the F003 test is deleted in a one-line PR on its first CI failure; if that happens before this plan, AC for F003 restores a deterministic version."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "The s04 follow-ups split from plan 206 on the prime's instruction: record closed seats in lineage (F15), batch assign (F16), zoned dates (F13), the two-role window name (F17), the writer's index.lock marker and retry (F18), and the #122 same-second test (F003)."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "F15, lineage import. `pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>` lets the prime record a closed seat's past holding (no live seat needed), validated against overlaps; refused for anyone but the prime.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "F16, batch assign. `pij directory assign --batch <file>` (role, instance, seat lines) records many holders in one writer commit, all or nothing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "F003, the latent flake. The same-second HTTP test from #122 stops assuming a wall-clock second (inject the clock or drop the precondition) and keeps proving that rapid assign, release and reassign never collide.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "F13, zones. Changelog and holder dates written by the writer carry an explicit zone (RFC 3339 with offset or Z), and the view prints the local time with its zone.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "F18 (low, from the prime): a hand commit in the standing governance worktree can fail on index.lock while the daemon's writer is committing there (seen 06 Nov: the prime's commit raced the close writer's 655c0b6). While it holds the index, the writer leaves a short-lived marker naming itself (for example .git/pij-writer.owner with seat, pid and time, removed on exit); the community README tells humans to retry after a moment when they see it; and the writer's own commits retry briefly on a foreign index.lock (bounded), then refuse by name.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "F17 (low): a seat holding two roles gets the last assign's window name. The window is named for the seat's primary holding (the earliest open one), or `<project>:<role1>+<role2>`; pick one, and say so in the docs.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Docs and states. No roadmap state change (follow-up work). docs/difficulties.md: F13, F15, F16, F17, F18 and #122 F003 marked resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00d0",
+          "title": "Directory polish: lineage import, batch assign, zones, window names, lock retry, the F003 flake",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code: crates/daemon/src/community/ (holders, directory, writer), crates/daemon/tests/pr122_review/, the s03 and wave B dogfood notes (governance roles/docs-system/outputs/2026-11/). No migration expected."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
