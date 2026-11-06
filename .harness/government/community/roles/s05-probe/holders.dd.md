@@ -18,4 +18,4 @@
 
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| — | pij-wooden-lungfish | copilot | d03f4d10-553a-46bc-a460-95b077ecefa9 | ops.osk.lan | — | 2026-11-06T08:40:11.171Z | — | pij-wooden-lungfish | — | s05 dogfood: drain the probe request to my own seat | — |
+| — | pij-wooden-lungfish | copilot | d03f4d10-553a-46bc-a460-95b077ecefa9 | ops.osk.lan | — | 2026-11-06T08:40:11.171Z | 2026-11-06T08:40:18.538Z | pij-wooden-lungfish | pij-wooden-lungfish | s05 dogfood: drain the probe request to my own seat | s05 dogfood: probe drained; nothing to hold |
