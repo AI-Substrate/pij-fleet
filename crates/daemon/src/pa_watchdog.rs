@@ -61,7 +61,7 @@ use pij_core::model::{
     DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
 };
 use pij_core::orchestration::PrimeState;
-use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
+use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, QueuedRequest};
 use pij_core::ports::SeatFilter;
 use pij_core::ports::SpineWindow;
 use pij_core::report::CardRecord;
@@ -317,7 +317,7 @@ fn bg_msg(to: &SeatId, body: String, msg_id: String) -> Msg {
 /// Wake a PA through the ordinary delivery path, not held when it is cold:
 /// waking it is the point. A cold wake is audited first, with `reason`.
 /// Returns the delivery outcome word (or error) and the `cold_check` label.
-async fn wake_pa(
+pub(crate) async fn wake_pa(
     services: &Services,
     pa: &SeatDescriptor,
     body: String,
@@ -950,12 +950,14 @@ impl PaWatchdog {
             })
             .collect::<Vec<_>>();
         let anomalies = stale_cards(services, &rows, now_ms).await;
+        let queued = queued_requests(services, now_ms).await;
         FleetView {
             pa: pa.id.clone(),
             prime: prime.map(|prime| prime.id.clone()),
             scope,
             rows,
             anomalies,
+            queued,
             interval_ms: interval_secs * 1_000,
         }
     }
@@ -1019,6 +1021,32 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
         DeliveryOutcome::Queued { .. } => "queued",
         DeliveryOutcome::Held { .. } => "held",
         DeliveryOutcome::Refused { .. } => "refused",
+    }
+}
+
+/// Requests waiting on a role with no live holder (plan 199): one indexed
+/// read per digest, so the queue rides the round with no timer of its own.
+/// A failed read leaves the list empty rather than holding up the nudge.
+async fn queued_requests(services: &Services, now_ms: u64) -> Vec<QueuedRequest> {
+    match services.governance.store().all_queued_role_requests().await {
+        Ok(requests) => requests
+            .into_iter()
+            .map(|request| QueuedRequest {
+                address: crate::delivery::role_send::RoleAddress {
+                    role: request.role,
+                    instance: request.instance,
+                }
+                .display(),
+                project: request.project,
+                id: request.id,
+                requester: SeatId::from(request.requester.as_str()),
+                waiting_ms: now_ms.saturating_sub(request.created_at),
+            })
+            .collect(),
+        Err(cause) => {
+            eprintln!("pa watchdog: queued role requests unavailable: {cause}");
+            Vec::new()
+        }
     }
 }
 
