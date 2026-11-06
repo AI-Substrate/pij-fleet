@@ -6,15 +6,15 @@
 		{
 			"name": "meta",
 			"value": {
-				"title": "Roadmap 001: pij community",
+				"title": "Roadmap 001: Pij Emergent Communities (PEC)",
 				"status": "draft",
-				"updated": "2026-11-04",
+				"updated": "2026-11-06",
 				"owner": "pij-far-jackal"
 			}
 		},
 		{
 			"name": "goal",
-			"value": "Ship the pij community: a per-project directory of roles that outlive their seats, with memory, outputs, routing and prompts for the prime."
+			"value": "Ship Pij Emergent Communities (PEC): a per-project directory of roles that outlive their seats, grown from what the work needs and reshaped as it changes, with memory, outputs, routing and prompts for the prime."
 		},
 		{
 			"name": "steps",
@@ -249,6 +249,11 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 195: s04 complete (assign, release, close-ends, lineage, the view and rebuild; evidence in docs/plans/195-assign-lineage/assets/evidence/phase-2.md)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "docs-system",
+					"change": "Renamed forward per ruling C26: title and goal name Pij Emergent Communities (PEC). Slugs and step ids unchanged."
 				}
 			]
 		}
