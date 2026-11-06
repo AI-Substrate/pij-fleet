@@ -2692,11 +2692,12 @@ fn render_directory(view: &Value) -> String {
         if template["behind"] == true {
             let _ = write!(
                 out,
-                "\n    template {} v{} is behind v{}: pij directory template-diff {}",
+                "\n    template {} v{} is behind v{}: pij directory template-diff {} --project {}",
                 text(&template["name"]),
                 text(&template["version"]),
                 template["latest"],
-                text(&role["id"]),
+                pij_core::directory::shell_word(&text(&role["id"])),
+                pij_core::directory::shell_word(&text(&view["project"])),
             );
         }
     }
@@ -3292,6 +3293,22 @@ impl Command {
 
 #[cfg(test)]
 mod tests {
+    /// Review of #126, F001: the drift hint names the viewed project.
+    #[test]
+    fn the_drift_hint_names_the_viewed_project() {
+        let view = serde_json::json!({
+            "project": "my remote",
+            "pending": [],
+            "roles": [{"id": "qa", "kind": "general", "holders": "one", "live": [],
+                "template": {"name": "qa", "version": "1", "latest": 2, "behind": true}}],
+        });
+        let text = super::render_directory(&view);
+        assert!(
+            text.contains("pij directory template-diff qa --project 'my remote'"),
+            "{text}"
+        );
+    }
+
     #[test]
     fn open_file_targets_lift_a_launchd_default_within_the_hard_limit() {
         // launchd: soft 256, hard unlimited.

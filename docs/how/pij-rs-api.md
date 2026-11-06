@@ -996,8 +996,10 @@ pa, coder, reviewer) or security is missing (ruling C22). A role counts for a
 template when its id or its `meta.template` is that name, so `pm-001` made from
 `pm` clears the pm prompt. Each prompt is `{role, kind, command}`, `kind` core or
 recommended, and `command` a runnable line such as `pij directory add pm --from
-template:pm --why "core role from the pm template"`. `guidance` states the PEC
-wording. The view creates nothing; adding a role clears its prompt.
+template:pm --why "core role from the pm template" --project fleet`. Every
+printed command names the viewed project (shell-quoted when needed), so running
+it from another repo's directory still acts on the directory that printed it;
+the human view's drift hint does the same. `guidance` states the PEC wording. The view creates nothing; adding a role clears its prompt.
 
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same

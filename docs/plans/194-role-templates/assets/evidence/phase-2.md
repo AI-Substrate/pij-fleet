@@ -38,3 +38,9 @@ Steady-state cost: none. Templates are embedded bytes; listing, diffing and the 
 - TS proof (typecheck, vitest, the full `harness checks`) is CI on the PR head. No TS changed: the shim forwards `directory` argv unchanged.
 - Scoped Rust gate after merging main (0eebb69): `cargo test --locked --no-fail-fast -p pij-core -p pij-cli -p pij-daemon` ran 67 test binaries, 1270 passed, 5 failed at load average about 40: `http::native_tests` (three prebind/takeover cases), `http::tests::a_live_idle_claude_frame_under_a_long_stale_working_is_refused` and the flake below. None touch the directory code, and all five pass when re-run alone (`ok. 4 passed`, `ok. 1 passed`).
 - Known flake, not from this change: `pr122_review::review_reassign_within_one_second_keeps_both_holdings` fails its own same-second precondition when the machine is busy (1 of 2 runs alone); it passed in the full-file rerun.
+
+## Review round 1 (pij-subsequent-reindeer, block at 04144d1)
+
+- F001 (P2): a view selected with `--project remote` printed add prompts and a drift hint without `--project`, so replaying one from another project's repo wrote the role there. Now every printed command ends with `--project <slug>`, quoted with `pij_core::directory::shell_word`, always, so the view's output is the same whichever way the project was chosen. The private-daemon transcript above predates the repair; the cost is unchanged (no new launch).
+- Regression: `templates_http::a_prompt_replayed_from_another_repo_writes_to_the_viewed_project` shell-splits the printed security prompt, replays it from the other project's cwd and checks `data.project`, the remote file and no local file. `the_drift_hint_names_the_viewed_project` (pij-rs bin) checks the hint, with a project name that needs quoting.
+- After the repair: `directory_http templates` 6 passed; `community::templates` 6 passed; `pij-core directory` 2 passed; the CLI hint test passed.

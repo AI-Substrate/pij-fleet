@@ -22,6 +22,21 @@ pub fn wants_help(args: &[String]) -> bool {
         .any(|arg| arg == "--help" || arg == "-h")
 }
 
+/// `word` as one POSIX shell word, for commands pij prints to be run as they
+/// are (plan 194, review F001): bare when every character is plainly safe,
+/// else single-quoted with each `'` written as `'\''`.
+pub fn shell_word(word: &str) -> String {
+    let safe = !word.is_empty()
+        && word
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || "_-./:@%+=,".contains(ch));
+    if safe {
+        word.to_string()
+    } else {
+        format!("'{}'", word.replace('\'', "'\\''"))
+    }
+}
+
 /// The verb argv names: its first token that is not a flag.
 pub fn verb(args: &[String]) -> Option<&str> {
     args.first()
@@ -153,5 +168,14 @@ mod tests {
                 .contains("--from template:<name>")
         );
         assert_eq!(help(Some("templates")), help(Some("template-diff")));
+    }
+
+    #[test]
+    fn a_shell_word_is_bare_when_safe_and_single_quoted_otherwise() {
+        assert_eq!(shell_word("pij-fleet"), "pij-fleet");
+        assert_eq!(shell_word("a b"), "'a b'");
+        assert_eq!(shell_word("it's"), "'it'\\''s'");
+        assert_eq!(shell_word("$(x)"), "'$(x)'");
+        assert_eq!(shell_word(""), "''");
     }
 }

@@ -205,7 +205,7 @@ impl DirectoryService {
                 "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
             }));
         }
-        let prompts = templates::prompts(&made_from);
+        let prompts = templates::prompts(project, &made_from);
         let pending: Vec<Value> = rows
             .iter()
             .filter(|row| row.end_pending)

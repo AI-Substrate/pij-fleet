@@ -353,7 +353,7 @@ async fn prompts_list_missing_core_roles_and_security_and_create_nothing() {
     let line = empty["data"]["prompts"][5]["command"].as_str().unwrap();
     assert_eq!(
         line,
-        "pij directory add security --from template:security --why \"recommended role from the security template\""
+        "pij directory add security --from template:security --why \"recommended role from the security template\" --project fleet"
     );
     let added = directory(
         addr,
@@ -379,6 +379,102 @@ async fn prompts_list_missing_core_roles_and_security_and_create_nothing() {
     let after = view(addr, &repo).await;
     assert_eq!(prompted(&after), ["prime", "pa", "coder", "reviewer"]);
     server.abort();
+}
+
+/// A printed command split as a POSIX shell would: whitespace separates
+/// words; single quotes are literal; double quotes keep spaces.
+fn shell_split(line: &str) -> Vec<String> {
+    let (mut words, mut word, mut quote, mut started) = (Vec::new(), String::new(), None, false);
+    for ch in line.chars() {
+        match (quote, ch) {
+            (None, '\'' | '"') => {
+                quote = Some(ch);
+                started = true;
+            }
+            (Some(q), _) if ch == q => quote = None,
+            (None, ' ') => {
+                if started {
+                    words.push(std::mem::take(&mut word));
+                    started = false;
+                }
+            }
+            _ => {
+                word.push(ch);
+                started = true;
+            }
+        }
+    }
+    assert!(quote.is_none(), "unbalanced quote in {line:?}");
+    if started {
+        words.push(word);
+    }
+    words
+}
+
+/// Review of #126, F001 (pij-subsequent-reindeer): a view scoped with
+/// `--project remote`, read from another project's repo, prints commands that
+/// still act on `remote` when replayed from that same cwd.
+#[tokio::test]
+async fn a_prompt_replayed_from_another_repo_writes_to_the_viewed_project() {
+    let local = repo("pij-templates-replay-local");
+    let remote = repo("pij-templates-replay-remote");
+    let rig = rig(Arc::new(NoHook)).await;
+    project(rig.addr, &local).await;
+    let created = call(
+        rig.addr,
+        "/v1/project",
+        &[
+            "project",
+            "create",
+            "remote",
+            "--repo",
+            remote.main.to_str().unwrap(),
+        ],
+        &local.main,
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    let viewed = directory(rig.addr, &local, &["--project", "remote"]).await;
+    assert_eq!(viewed["data"]["project"], "remote", "{viewed}");
+    let prompts = viewed["data"]["prompts"].as_array().unwrap();
+    assert!(
+        prompts.iter().all(|p| p["command"]
+            .as_str()
+            .unwrap()
+            .ends_with(" --project remote")),
+        "{prompts:?}"
+    );
+    let security = prompts.iter().find(|p| p["role"] == "security").unwrap()["command"]
+        .as_str()
+        .unwrap();
+    let argv = shell_split(security);
+    assert_eq!(&argv[..2], ["pij", "directory"], "{argv:?}");
+    let argv: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    let replayed = call(rig.addr, "/v1/directory", &argv, &local.main).await;
+    assert_eq!(replayed["ok"], true, "{replayed}");
+    assert_eq!(replayed["data"]["project"], "remote");
+    let path = format!("{ROLES}/security/role.dd.json");
+    assert!(remote.gov.join(&path).is_file(), "written to remote");
+    assert!(!local.gov.join(&path).exists(), "nothing written locally");
+    let after = directory(rig.addr, &local, &["--project", "remote"]).await;
+    assert!(
+        after["data"]["prompts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["role"] != "security"),
+        "{after}"
+    );
+    let unscoped = directory(rig.addr, &local, &[]).await;
+    assert!(
+        unscoped["data"]["prompts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["role"] == "security"),
+        "the local directory still lacks security: {unscoped}"
+    );
+    rig.server.abort();
 }
 
 /// bp-0002 with the real ddocs and the embedded schemas: every shipped

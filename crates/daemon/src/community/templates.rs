@@ -289,10 +289,13 @@ pub fn parse_version(text: &str) -> Option<u32> {
     text.strip_prefix('v').unwrap_or(text).parse().ok()
 }
 
-/// The core-role and security prompts for a directory whose roles are
-/// `(id, meta.template)`: a role counts for a template when its id or its
-/// template is that name (C22). Each prompt carries a runnable add line.
-pub fn prompts(roles: &[(String, Option<String>)]) -> Vec<Value> {
+/// The core-role and security prompts for `project`'s directory, whose roles
+/// are `(id, meta.template)`: a role counts for a template when its id or its
+/// template is that name (C22). Each prompt carries a runnable add line that
+/// names the project, so replaying it from another repo's cwd still writes
+/// to this directory (review F001).
+pub fn prompts(project: &str, roles: &[(String, Option<String>)]) -> Vec<Value> {
+    let project = pij_core::directory::shell_word(project);
     let has = |name: &str| {
         roles
             .iter()
@@ -307,7 +310,7 @@ pub fn prompts(roles: &[(String, Option<String>)]) -> Vec<Value> {
                 "role": name,
                 "kind": kind,
                 "command": format!(
-                    "pij directory add {name} --from template:{name} --why \"{kind} role from the {name} template\""
+                    "pij directory add {name} --from template:{name} --why \"{kind} role from the {name} template\" --project {project}"
                 ),
             })
         })
@@ -550,7 +553,7 @@ mod tests {
 
     #[test]
     fn prompts_name_each_missing_core_role_and_security_until_it_exists() {
-        let all = prompts(&[]);
+        let all = prompts("fleet", &[]);
         let names: Vec<_> = all.iter().map(|p| p["role"].as_str().unwrap()).collect();
         assert_eq!(
             names,
@@ -558,16 +561,25 @@ mod tests {
         );
         assert_eq!(
             all[1]["command"],
-            "pij directory add pm --from template:pm --why \"core role from the pm template\""
+            "pij directory add pm --from template:pm --why \"core role from the pm template\" --project fleet"
         );
-        let some = prompts(&[
-            ("pm-001".into(), Some("pm".into())),
-            ("security".into(), None),
-            ("docs-system".into(), None),
-        ]);
+        assert!(
+            prompts("my fleet", &[])[0]["command"]
+                .as_str()
+                .unwrap()
+                .ends_with(" --project 'my fleet'")
+        );
+        let some = prompts(
+            "fleet",
+            &[
+                ("pm-001".into(), Some("pm".into())),
+                ("security".into(), None),
+                ("docs-system".into(), None),
+            ],
+        );
         let names: Vec<_> = some.iter().map(|p| p["role"].as_str().unwrap()).collect();
         assert_eq!(names, ["prime", "pa", "coder", "reviewer"]);
-        let from_template = prompts(&[("appsec".into(), Some("security".into()))]);
+        let from_template = prompts("fleet", &[("appsec".into(), Some("security".into()))]);
         assert!(from_template.iter().all(|p| p["role"] != "security"));
     }
 }
