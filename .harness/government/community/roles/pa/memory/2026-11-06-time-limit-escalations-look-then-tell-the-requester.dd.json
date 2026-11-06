@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "read when a [pij time limit] notice names a holder that hasn't answered",
+				"tags": [
+					"pa",
+					"s12",
+					"time-limit"
+				],
+				"title": "Time-limit escalations: look, then tell the requester"
+			}
+		},
+		{
+			"name": "body",
+			"value": "s12 (2026-11-06): a role request with --limit that the holder hasn't answered gets one check-in, then a PA notice, then the prime. The trigger is the unanswered limited request, not a stale card (pm-001's correction after I blamed tapir's card). Steps: pij-rs --json state <seat> (state, liveness, card) and capture the pane. If it is working, it isn't stalled: tell the requester (role:pm-001 --reply none) what it is doing, that it hasn't replied, and its ctx; don't release. Release or reassign is pm-001's call. Check the footer ctx while there; over 600k and mid-turn means the compact handshake waits for the seat's next idle. First two cases, 06 Nov 22:16 and 22:23: back-tapir coder/203 and local-warbler coder/209, both working."
+		}
+	]
+}
