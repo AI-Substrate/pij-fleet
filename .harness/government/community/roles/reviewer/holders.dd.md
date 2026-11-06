@@ -20,6 +20,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | — | pij-sharp-boa | unknown | — | unknown | 110 | 2026-11-04T00:00:00.000Z | 2026-11-05T00:00:00.000Z | pij-far-jackal | pij-far-jackal | reviewed #110 LOG:15,19 | lineage add |
 | — | pij-ambitious-anteater | unknown | — | unknown | 111 | 2026-11-04T00:00:00.000Z | 2026-11-05T00:00:00.000Z | pij-far-jackal | pij-far-jackal | reviewed #111 LOG:24,49 | lineage add |
+| — | pij-varied-fly | unknown | — | unknown | 113 | 2026-11-04T00:00:00.000Z | 2026-11-05T00:00:00.000Z | pij-far-jackal | pij-far-jackal | reviewed #113 LOG:32,49 | lineage add |
 | — | pij-interior-jellyfish | copilot | f673eaa8-37a9-4472-bf6d-4a29baa1c451 | ops.osk.lan | 125 | 2026-11-05T23:18:02.571Z | 2026-11-05T23:23:43.005Z | pij-steady-otter | pij-steady-otter | record the live holder (06 Nov roadmap push) | close |
 | — | pij-subsequent-reindeer | copilot | 235e5da8-b7fc-4331-b348-01c70ad05c95 | ops.osk.lan | 126 | 2026-11-05T23:50:25.403Z | 2026-11-06T00:27:56.160Z | pij-steady-otter | pij-steady-otter | reviewer for PR #126 (s03) | close |
 | — | pij-many-tiglon | copilot | 6a91000b-c9e9-45a3-a6cd-f83a462adb9a | ops.osk.lan | 129 | 2026-11-06T00:37:37.656Z | — | pij-steady-otter | — | reviewer for PR #129 (s05) | — |
