@@ -353,7 +353,7 @@ async fn handle(
                 .await
                 {
                     Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
-                    Err(response) => response,
+                    Err(response) => *response,
                 };
             }
             let held = memory_turn::hold(
@@ -380,21 +380,21 @@ pub(super) async fn close_seat(
     target: SeatId,
     reason: String,
     expected: Option<SeatDescriptor>,
-) -> std::result::Result<Value, Response> {
+) -> std::result::Result<Value, Box<Response>> {
     let expected = match expected {
         Some(expected) => expected,
         None => match state.services.registry.get(&target).await {
             Ok(Some(expected)) => expected,
             Ok(None) => {
-                return Err(runtime_failure(
+                return Err(Box::new(runtime_failure(
                     command,
                     PijError::NoRegistryEntry {
                         seat: target,
                         store: "the daemon's configured registry".to_string(),
                     },
-                ));
+                )));
             }
-            Err(error) => return Err(runtime_failure(command, error)),
+            Err(error) => return Err(Box::new(runtime_failure(command, error))),
         },
     };
     let receipt = if expected.tombstoned_at.is_some() {
@@ -427,13 +427,13 @@ pub(super) async fn close_seat(
             }
             Ok(data)
         }
-        Ok(None) => Err(runtime_failure(
+        Ok(None) => Err(Box::new(runtime_failure(
             command,
             PijError::Adapter {
                 adapter: "lifecycle/tombstone-receipt".to_string(),
                 message: format!("no matching durable tombstone event for {target}"),
             },
-        )),
-        Err(error) => Err(runtime_failure(command, error)),
+        ))),
+        Err(error) => Err(Box::new(runtime_failure(command, error))),
     }
 }
