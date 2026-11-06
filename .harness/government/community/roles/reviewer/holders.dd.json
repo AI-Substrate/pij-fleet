@@ -305,6 +305,16 @@
 					"seat": "pij-usual-seahorse",
 					"to": "2026-11-06T12:56:19.954Z",
 					"why": "review #130 merge delta"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T13:17:55.108Z",
+					"harness": "copilot",
+					"harness_session": "3e7756cf-b339-46ac-9b12-46d3065045cc",
+					"instance_key": "144",
+					"machine": "ops.osk.lan",
+					"seat": "pij-usual-seahorse",
+					"why": "first verdict on #144 (plan 209)"
 				}
 			]
 		}
