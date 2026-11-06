@@ -2646,8 +2646,14 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
 }
 
 /// `pij directory` for a human: each role, its mode and its live holders.
+/// Times are shown in local time with their offset (F13); `--json` keeps UTC.
 fn render_directory(view: &Value) -> String {
     let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    let offset = pij_harnesses::proc::local_utc_offset_minutes().ok();
+    let since = |value: &Value| match (value.as_str(), offset) {
+        (Some(stored), Some(minutes)) => pij_daemon::community::holders::local(stored, minutes),
+        _ => text(value),
+    };
     let roles = view["roles"]
         .as_array()
         .map(Vec::as_slice)
@@ -2666,7 +2672,7 @@ fn render_directory(view: &Value) -> String {
                     "{}{} since {} on {}{}",
                     text(&holder["seat"]),
                     instance.map(|key| format!(" ({key})")).unwrap_or_default(),
-                    text(&holder["since"]),
+                    since(&holder["since"]),
                     text(&holder["machine"]),
                     if holder["end_pending"] == true {
                         ", end pending"

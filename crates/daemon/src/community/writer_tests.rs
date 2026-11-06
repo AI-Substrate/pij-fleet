@@ -291,18 +291,41 @@ fn a_held_index_lock_is_waited_for_then_refused_by_name_never_forced() {
             .exists()
     );
 
-    // Released while the writer waits: the write lands.
+    let marker = git_dir(&scratch.gov).unwrap().join(MARKER);
+    assert_eq!(
+        marker.parent(),
+        lock.parent(),
+        "the marker sits beside the index.lock it explains"
+    );
+    assert!(!marker.exists(), "a refused write leaves no marker");
+
+    // Released while the writer waits: the write lands. The marker names the
+    // writer while it waits, and is gone after.
     let release = {
-        let lock = lock.clone();
+        let (lock, marker) = (lock.clone(), marker.clone());
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(150));
+            // The writer marks the index before its first `git add` attempt.
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !marker.exists() && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let named = std::fs::read_to_string(&marker).unwrap_or_default();
             std::fs::remove_file(lock).unwrap();
+            named
         })
     };
     writer(vec![], &LOCK_RETRY)
         .write(&scratch.main, role("qa", "{}"), "add")
         .expect("lands once the lock is released");
-    release.join().unwrap();
+    let named = release.join().unwrap();
+    assert!(
+        named.starts_with("pij-rs daemon pid=") && named.contains("writing \"add\""),
+        "{named:?}"
+    );
+    assert!(
+        !marker.exists(),
+        "the marker is removed when the write ends"
+    );
     assert_ne!(head(&scratch), start);
 }
 

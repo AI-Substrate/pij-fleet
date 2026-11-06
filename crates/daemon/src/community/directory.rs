@@ -551,14 +551,37 @@ impl DirectoryService {
     }
 
     /// Name the holder's window `<project>:<role>`, or `<project>:<role>-<instance>`
-    /// (req-26, C16). One tmux launch, through the adapter's recorded site;
-    /// never the control client, whose allow-list stays reads only (S2).
+    /// (req-26, C16), for the seat's first open holding (F17): a second role
+    /// leaves the window as it is, with no launch. One tmux launch, through the
+    /// adapter's recorded site; never the control client, whose allow-list
+    /// stays reads only (S2).
     async fn rename(&self, seat: &SeatDescriptor, row: &Assignment) -> Value {
-        let name = if row.instance.is_empty() {
-            format!("{}:{}", row.project, row.role)
-        } else {
-            format!("{}:{}-{}", row.project, row.role, row.instance)
+        let name_of = |held: &Assignment| {
+            if held.instance.is_empty() {
+                format!("{}:{}", held.project, held.role)
+            } else {
+                format!("{}:{}-{}", held.project, held.role, held.instance)
+            }
         };
+        let name = name_of(row);
+        let open = self
+            .store
+            .open_assignments(seat.id.as_str())
+            .await
+            .unwrap_or_default();
+        let first = open
+            .iter()
+            .min_by_key(|held| (holders::parse_time(&held.from), held.from.clone()));
+        if let Some(first) = first.filter(|first| {
+            (&first.project, &first.role, &first.instance, &first.from)
+                != (&row.project, &row.role, &row.instance, &row.from)
+        }) {
+            let kept = name_of(first);
+            return serde_json::json!({
+                "name": kept, "renamed": false,
+                "reason": format!("the window keeps the seat's first open holding, {kept}"),
+            });
+        }
         let Some(pane) = seat.pane.as_deref() else {
             return serde_json::json!({"name": name, "renamed": false, "reason": "the seat has no pane"});
         };

@@ -363,7 +363,8 @@ async fn add(
                 "--why <text> is required: it becomes the changelog row",
             )
         })?;
-    let date = role::today();
+    // UTC to the millisecond with its zone, like holders rows (F13).
+    let date = crate::community::holders::now();
     let batch = call.get("batch");
     let mut fields = call.fields();
     let from = call
