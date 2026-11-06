@@ -20,7 +20,9 @@ Native `pij-rs --json` also preserves the original response buffer after version
 
 `commit-trailers` is the deliberate CLI-only exception: `pij commit-trailers` forwards narrowly to `pij-rs commit-trailers`, preserving trailer-only stdout, native stderr (including the derivation-tier note), and exit status. There is no commit-trailers HTTP endpoint or JSON wrapper.
 
-`fleet-report` (plan 162) is the second native pass-through: `pij fleet-report <FOLDER>` forwards to `pij-rs fleet-report`, which folds the project's transcripts in-process through Unisphere, reads seats from the store **read-only** (never created, never migrated) and writes `index.html`, `report.json`, `report.js`, `manifest.json` and `tables/` to one folder. It never contacts the daemon. P1 refuses `--format parquet` (`E-RS-FLEET-FORMAT`) and `--prep-target` (`E-RS-FLEET-PREP-TARGET`) by name; the output folder carries names and paths unless `--anonymise`.
+`claim`, `claims`, `delivered` and `directory memory` (plan 209) also pass through: `pij` runs `pij-rs` for them, so the shim prints the native text (one line per claim, the delivered edits, the memory INDEX), the real `--help`, and reads `--body-file -` from stdin.
+
+`fleet-report` (plan 162) is another native pass-through: `pij fleet-report <FOLDER>` forwards to `pij-rs fleet-report`, which folds the project's transcripts in-process through Unisphere, reads seats from the store **read-only** (never created, never migrated) and writes `index.html`, `report.json`, `report.js`, `manifest.json` and `tables/` to one folder. It never contacts the daemon. P1 refuses `--format parquet` (`E-RS-FLEET-FORMAT`) and `--prep-target` (`E-RS-FLEET-PREP-TARGET`) by name; the output folder carries names and paths unless `--anonymise`.
 
 Known limit (plan 169): fleet-report prices every call at the default table; router sessions are not modelled per served model.
 
@@ -37,7 +39,7 @@ AC4 asserts **JSON byte parity**, not exit-code parity. Existing client policies
 | `error: cursor_reset` | 5 | 4 |
 | `error: skew` or `adapter`; uncategorized envelope failure | 1 | 4 |
 | Native argument/usage error; shim named argument/unported refusal | 2 (Clap stderr, not necessarily JSON) | 4 (named refusal) |
-| `commit-trailers`, `fleet-report` native pass-through | Native command status | Same native command status |
+| `commit-trailers`, `fleet-report`, `claim`, `claims`, `delivered`, `directory memory` native pass-through | Native command status | Same native command status |
 
 Sources: [`exit_code`](../../crates/cli/src/lib.rs), [shim refusal/output handling](../../.omp/extensions/pij/cli.ts). The native-pass-through signal contract is also preserved; this table does not redefine OS signal termination.
 
@@ -1026,7 +1028,8 @@ writer commit as any add. No loop or timer.
 the slug taken from the title (lowercase ASCII letters and digits, other runs
 as one hyphen, at most 60). `--tags` repeats or takes a comma list.
 `--body-file <path>` reads the body from a file; the native CLI reads the file,
-or stdin for `-`, and sends it as `--body`, while a shim caller's path is read by
+or stdin for `-`, and sends it as `--body` (the `pij` shim runs `pij-rs` for
+`directory memory`, so both read stdin), while an HTTP caller's path is read by
 the daemon relative to `caller.cwd`. The same commit regenerates
 `memory/INDEX.md`. pij's lines live in one fenced block,
 `<!-- pij:generated -->` … `<!-- /pij:generated -->`, rewritten whole with one
@@ -1054,7 +1057,7 @@ in-process and launch nothing.
 | `E-RS-MEMORY-EXISTS` | a note with that date and slug exists; give another `--title` |
 | `E-RS-MEMORY-NOTE-MISSING` | `--note` names no note (HTTP 404) |
 | `E-RS-UNPORTED` | a memory verb other than `add` (`memory delete …`) |
-| `E-RS-ARG` | a missing or multi-line title, hook or tag, an empty body, `--body` with `--body-file`, `--body-file -` from a shim caller, write flags on a read, or a `--note` that matches several notes or is not a plain name |
+| `E-RS-ARG` | a missing or multi-line title, hook or tag, an empty body, `--body` with `--body-file`, `--body-file -` from an HTTP caller, write flags on a read, or a `--note` that matches several notes or is not a plain name |
 
 Plus every writer refusal above. Cost: one writer commit per note (git 7, ddocs
 2, as for any one-document write); reads launch nothing.
@@ -1103,7 +1106,11 @@ Every turn records one `memory.turn` spine event on the seat: `action`,
 `holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or
 `undelivered` when the prompt was refused or could not be sent), `waited_ms`,
 `bound_ms`, a `note` whenever the action proceeded without the turn, and `then`
-(`closed`, `compact admitted`, `skipped: …` or `failed: …`). The wait is a live
+(`closed`, `compact admitted`, `skipped: …` or `failed: …`). When the bound
+passed while the prompt was still being admitted, the action runs at the bound
+and the turn keeps the admission: the event is recorded once it settles and
+adds `admission`, `delivered-late`, `queued`, `refused` or `failed: …` (plan
+209). Nothing is withdrawn. The wait is a live
 subscription to the seat's `delivery.outcome` and `seat.activity` events with one
 deadline: no poll, no timer, no launch. The turn starts at the prompt's own
 `delivery.outcome` in the event stream, never at the send's receipt, so an idle
