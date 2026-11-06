@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read when final pin is f2e7741 or checking role-recovery query-plan proof",
+				"tags": [
+					"review",
+					"recovery",
+					"query-plan"
+				],
+				"title": "PR 129 final indexed recovery delta"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR 129 passes with prior proof notes at f2e7741dc4801a5824d08d66206468ef9070bc41. Complete delta from 314da13 is two files: all-state jobs_by_dedupe on kind/origin/key, and extraction of equivalent recovery SQL into a const with an EXPLAIN guard on the actual production statement. No evidence semantics change; F001-F003 stay closed. CI run 42186187295 and JUnit artifact 13487483367 confirm the indexed-search guard and both restart/store recovery cases pass, 1969 tests overall, four jobs green. No local builds/tests or reviewer mutation run. Reported sqlite3 red/green not independently rerun. Output: roles/reviewer/outputs/2026-11/pr-129-f2e7741-delta.md. Performance owns P001 disposition."
+		}
+	]
+}
