@@ -1,0 +1,653 @@
+//! Sending to a role (plan 199, roadmap 001 s05: req-07 and the request half
+//! of req-08).
+//!
+//! `pij send role:<id>[/<instance>]` resolves through the project's directory
+//! (ruling C1), never through `seat_roles`: one live holder gets an ordinary
+//! send, recorded as a delivered request; none queues the request and wakes the
+//! project's PA (else the prime) once, with runnable next steps; several refuse
+//! with their names. An assign drains the queue to its new holder (C6). Every
+//! request carries the requester's reply mode and limit for s06 and s12.
+//!
+//! Cost: what a normal send costs, plus in-process reads (the governance
+//! worktree is found without launching git, the role document is one file
+//! read) and one store write. A queued request adds one wake delivery; a drain
+//! one delivery per request. No timer, poll or launch site.
+
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
+use pij_core::cold_wake::{human_duration, human_tokens};
+use pij_core::model::{DeliveryOutcome, Msg, Receipt, SeatDescriptor, SeatId};
+use pij_core::orchestration::PrimeState;
+use pij_core::ports::Registry;
+use pij_core::session_status::SessionStatusBlock;
+use pij_store::{Assignment, ReplyMode, RequestState, RoleRequest, SqliteOrchestration};
+use serde_json::{Value, json};
+
+use super::DeliveryService;
+use crate::Services;
+use crate::community::directory::{AfterAssign, E_ROLE_MISSING};
+use crate::community::holders::seat_role_for;
+use crate::community::layout::RolePaths;
+use crate::community::{Refusal, root};
+
+/// Every role address starts with this.
+pub const ROLE_PREFIX: &str = "role:";
+/// A role address that is malformed, remote, or names an instance of a
+/// one-holder role.
+pub const E_ROLE_ADDRESS: &str = "E-RS-ROLE-ADDRESS";
+/// Two or more live holders: the send cannot pick one.
+pub const E_ROLE_HOLDERS: &str = "E-RS-ROLE-HOLDERS";
+/// The directory and `seat_roles` disagree about the holder (ruling C1).
+pub const E_ROLE_MISMATCH: &str = "E-RS-ROLE-MISMATCH";
+/// `--reply` or `--limit` on a send that is not to a role.
+pub const E_ROLE_ONLY: &str = "E-RS-ROLE-ONLY";
+
+/// How long the last holder's context size may take to read.
+const STATUS_WAIT: Duration = Duration::from_secs(3);
+
+/// A parsed `role:<id>[/<instance>]`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleAddress {
+    /// The role id.
+    pub role: String,
+    /// The instance, or empty for any holder.
+    pub instance: String,
+}
+
+impl RoleAddress {
+    /// `None` when `to` is not a role address at all.
+    pub fn parse(to: &str) -> Option<Result<Self, Refusal>> {
+        let rest = to.strip_prefix(ROLE_PREFIX)?;
+        let (role, instance) = rest.split_once('/').unwrap_or((rest, ""));
+        let word = |text: &str| {
+            !text.is_empty()
+                && text
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+        };
+        if !word(role) || (rest.contains('/') && !word(instance)) {
+            return Some(Err(Refusal::new(
+                E_ROLE_ADDRESS,
+                format!("`{to}` is not role:<id> or role:<id>/<instance>"),
+            )));
+        }
+        Some(Ok(Self {
+            role: role.to_string(),
+            instance: instance.to_string(),
+        }))
+    }
+
+    /// `role:<id>` or `role:<id>/<instance>`.
+    pub fn display(&self) -> String {
+        if self.instance.is_empty() {
+            format!("{ROLE_PREFIX}{}", self.role)
+        } else {
+            format!("{ROLE_PREFIX}{}/{}", self.role, self.instance)
+        }
+    }
+}
+
+/// What a role send carries besides the message.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RoleOptions {
+    /// `--reply wake|fyi|none`.
+    pub reply: Option<String>,
+    /// `--limit <duration>`.
+    pub limit: Option<String>,
+}
+
+impl RoleOptions {
+    /// Refuse the options on a send that is not to a role.
+    pub fn refuse_on_seat_send(&self) -> Result<(), Refusal> {
+        match (&self.reply, &self.limit) {
+            (None, None) => Ok(()),
+            _ => Err(Refusal::new(
+                E_ROLE_ONLY,
+                "--reply and --limit apply to a send to role:<id>; a send to a seat has neither",
+            )),
+        }
+    }
+}
+
+/// One role send, after the caller resolved its project.
+#[derive(Clone, Debug)]
+pub struct RoleSend {
+    /// Who sent it.
+    pub from: SeatId,
+    /// The address.
+    pub address: RoleAddress,
+    /// The project whose directory holds the role.
+    pub project: String,
+    /// That project's repository, where its governance worktree is found.
+    pub repo: std::path::PathBuf,
+    /// The body as written.
+    pub body: String,
+    /// The send's msg_id: the request id.
+    pub msg_id: String,
+    /// The message it answers.
+    pub in_reply_to: Option<String>,
+    /// `--fyi`.
+    pub fyi: bool,
+    /// `--reply` and `--limit`.
+    pub options: RoleOptions,
+}
+
+/// Where a role send goes.
+#[derive(Debug)]
+pub enum Routed {
+    /// Exactly one live holder: send `body` to `seat` the ordinary way, then
+    /// [`record_delivered`] the request.
+    Holder {
+        /// The holder.
+        seat: SeatId,
+        /// The body with its request header.
+        body: String,
+        /// The request, ready to record as delivered.
+        request: RoleRequest,
+    },
+    /// No live holder: the request is queued and the wake was attempted.
+    Queued {
+        /// The receipt for the sender.
+        receipt: Receipt,
+        /// The queued request.
+        request: RoleRequest,
+        /// Who was woken, and how it went.
+        woke: Value,
+    },
+}
+
+/// Resolve a role send: refuse it, route it to its one holder, or queue it.
+///
+/// # Errors
+/// A [`Refusal`] naming what is wrong: the address, the role, the options, two
+/// or more holders, or a C1 mismatch. Nothing is recorded or sent.
+pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<Routed, Refusal> {
+    let store = services.governance.store().clone();
+    let document = role_document(&send.repo, &send.project, &send.address.role)?;
+    let meta = section(&document, "meta");
+    if !send.address.instance.is_empty()
+        && meta.and_then(|meta| meta["holders"].as_str()) == Some("one")
+    {
+        return Err(Refusal::new(
+            E_ROLE_ADDRESS,
+            format!(
+                "role {} has one holder and no instances; address it as {ROLE_PREFIX}{}",
+                send.address.role, send.address.role
+            ),
+        ));
+    }
+    let reply = match send.options.reply.as_deref() {
+        None => ReplyMode::Wake,
+        Some(text) => ReplyMode::parse(text).ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!("--reply takes wake, fyi or none, not `{text}`"),
+            )
+        })?,
+    };
+    let limit_ms = match send.options.limit.as_deref() {
+        Some(text) => Some(
+            crate::http::background::parse_duration_ms(text, "--limit")
+                .map_err(|message| Refusal::new("E-RS-ARG", message))?,
+        ),
+        // C5: the role's own default, when it states a readable one.
+        None => meta
+            .and_then(|meta| meta["default_limit"].as_str())
+            .and_then(|text| {
+                crate::http::background::parse_duration_ms(text, "default_limit").ok()
+            }),
+    };
+    let assignments = store
+        .assignments(&send.project)
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+    let mut live = Vec::new();
+    for row in assignments.iter().filter(|row| {
+        row.to.is_none()
+            && row.role == send.address.role
+            && (send.address.instance.is_empty() || row.instance == send.address.instance)
+    }) {
+        if let Some(seat) = live_seat(services.registry.as_ref(), &row.seat).await? {
+            live.push((row, seat));
+        }
+    }
+    let mut request = RoleRequest {
+        id: send.msg_id.clone(),
+        project: send.project.clone(),
+        role: send.address.role.clone(),
+        instance: send.address.instance.clone(),
+        requester: send.from.to_string(),
+        body: send.body.clone(),
+        in_reply_to: send.in_reply_to.clone(),
+        fyi: send.fyi,
+        reply,
+        limit_ms,
+        state: RequestState::Queued,
+        holder: None,
+        created_at: now_ms,
+        delivered_at: None,
+    };
+    match live.as_slice() {
+        [] => {
+            store
+                .record_role_request(&request)
+                .await
+                .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+            let woke = wake(services, &store, &request, &assignments, now_ms).await;
+            let receipt = Receipt {
+                msg_id: request.id.clone(),
+                outcome: DeliveryOutcome::Queued {
+                    reason: Some(format!(
+                        "no live holder of {} in project {}: queued as request {} until a seat is assigned",
+                        send.address.display(),
+                        send.project,
+                        request.id
+                    )),
+                    next_retry_at: None,
+                    draft_sha: None,
+                },
+                at: now_ms,
+                cold_check: None,
+                warning: None,
+            };
+            Ok(Routed::Queued {
+                receipt,
+                request,
+                woke,
+            })
+        }
+        [(row, seat)] => {
+            check_seat_role(&store, &send.address.role, &seat.id).await?;
+            request.state = RequestState::Delivered;
+            request.holder = Some(seat.id.to_string());
+            request.instance.clone_from(&row.instance);
+            Ok(Routed::Holder {
+                seat: seat.id.clone(),
+                body: framed_body(&request),
+                request,
+            })
+        }
+        several => Err(Refusal::new(
+            E_ROLE_HOLDERS,
+            format!(
+                "{} has {} live holders in project {}: {}; address one as {ROLE_PREFIX}{}/<instance>, or send to the seat",
+                send.address.display(),
+                several.len(),
+                send.project,
+                several
+                    .iter()
+                    .map(|(row, seat)| if row.instance.is_empty() {
+                        seat.id.to_string()
+                    } else {
+                        format!("{} ({})", seat.id, row.instance)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                send.address.role
+            ),
+        )),
+    }
+}
+
+/// Record a request its holder accepted. A refused delivery records nothing;
+/// a retried msg_id that is already recorded is not an error.
+pub async fn record_delivered(
+    store: &SqliteOrchestration,
+    mut request: RoleRequest,
+    receipt: &Receipt,
+    now_ms: u64,
+) -> Result<RoleRequest, String> {
+    if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
+        return Err("the holder refused the delivery; no request was recorded".to_string());
+    }
+    request.delivered_at = Some(now_ms);
+    match store.record_role_request(&request).await {
+        Ok(()) => Ok(request),
+        Err(error) if error.to_string().contains("E-RS-ROLE-REQUEST-EXISTS") => Ok(request),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// The request as the receipt shows it.
+pub fn request_json(request: &RoleRequest) -> Value {
+    json!({
+        "id": request.id,
+        "project": request.project,
+        "role": request.role,
+        "instance": request.instance,
+        "reply": request.reply.as_str(),
+        "limit_ms": request.limit_ms,
+        "state": request.state.as_str(),
+        "holder": request.holder,
+    })
+}
+
+/// The body a holder receives: one header line naming the role, the request
+/// and how the requester wants to hear back, then the body as written.
+pub fn framed_body(request: &RoleRequest) -> String {
+    let address = RoleAddress {
+        role: request.role.clone(),
+        instance: request.instance.clone(),
+    }
+    .display();
+    let limit = request
+        .limit_ms
+        .map_or_else(String::new, |ms| format!(" · limit {}", human_duration(ms)));
+    format!(
+        "[pij {address} request {} from {} · reply {}{limit}]\n{}",
+        request.id,
+        request.requester,
+        request.reply.as_str(),
+        request.body
+    )
+}
+
+/// The role's document in the project's governance worktree, found without
+/// launching anything.
+fn role_document(repo: &Path, project: &str, role: &str) -> Result<Value, Refusal> {
+    let root = root::find(repo)?;
+    let paths = RolePaths::new(role)?;
+    let path = root.worktree.join(&paths.document);
+    let missing = || {
+        Refusal::new(
+            E_ROLE_MISSING,
+            format!("project {project} has no role {role} in its directory"),
+        )
+        .with_next(format!("pij directory view --project {project}"))
+    };
+    let text = std::fs::read_to_string(&path).map_err(|_| missing())?;
+    serde_json::from_str(&text).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("{} is not a role document: {error}", path.display()),
+        )
+    })
+}
+
+fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
+    document["sections"]
+        .as_array()?
+        .iter()
+        .find(|section| section["name"] == name)
+        .map(|section| &section["value"])
+}
+
+async fn live_seat(registry: &dyn Registry, seat: &str) -> Result<Option<SeatDescriptor>, Refusal> {
+    let row = registry
+        .get(&SeatId::from(seat))
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+    Ok(row.filter(|row| row.tombstoned_at.is_none()))
+}
+
+/// Ruling C1: the directory decides, and an assign keeps `seat_roles` in step.
+/// A holder whose recorded role says otherwise refuses by name rather than
+/// receiving work its role does not match. A prime is never re-roled, and a
+/// seat with no recorded role has nothing to disagree with.
+async fn check_seat_role(
+    store: &SqliteOrchestration,
+    role: &str,
+    seat: &SeatId,
+) -> Result<(), Refusal> {
+    let expected = seat_role_for(role);
+    let recorded = store
+        .list_roles()
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .into_iter()
+        .find(|row| &row.seat == seat)
+        .map(|row| row.role);
+    match recorded.as_deref() {
+        Some(actual) if actual != expected && actual != "prime" => Err(Refusal::new(
+            E_ROLE_MISMATCH,
+            format!(
+                "{seat} holds {role} in the directory, which makes it a {expected}, but seat_roles records it as {actual}"
+            ),
+        )
+        .with_next(format!("pij role {seat} {expected}"))),
+        _ => Ok(()),
+    }
+}
+
+/// Wake the project's PA, else the prime, once for a queued request.
+async fn wake(
+    services: &Services,
+    store: &SqliteOrchestration,
+    request: &RoleRequest,
+    assignments: &[Assignment],
+    now_ms: u64,
+) -> Value {
+    let target = match wake_target(services, store, assignments).await {
+        Ok(Some(target)) => target,
+        Ok(None) => return json!({"seat": null, "outcome": "no live PA or prime to wake"}),
+        Err(cause) => return json!({"seat": null, "outcome": format!("error: {cause}")}),
+    };
+    let body = wake_body(services, request, assignments, now_ms).await;
+    let (outcome, cold_check) = crate::pa_watchdog::wake_pa(
+        services,
+        &target,
+        body,
+        format!("role-queue-{}", request.id),
+        "role-queue",
+        now_ms,
+    )
+    .await;
+    json!({"seat": target.id, "outcome": outcome, "cold_check": cold_check})
+}
+
+/// The project's live `pa` holder; else the current prime designation; else a
+/// live seat with the `prime` role. Ties go to the lowest seat id.
+async fn wake_target(
+    services: &Services,
+    store: &SqliteOrchestration,
+    assignments: &[Assignment],
+) -> Result<Option<SeatDescriptor>, Refusal> {
+    let store_error =
+        |error: pij_core::error::PijError| Refusal::new("E-RS-STORE", error.to_string());
+    let mut pas = Vec::new();
+    for row in assignments
+        .iter()
+        .filter(|row| row.to.is_none() && row.role == "pa")
+    {
+        if let Some(seat) = live_seat(services.registry.as_ref(), &row.seat).await? {
+            pas.push(seat);
+        }
+    }
+    if let Some(pa) = pas.into_iter().min_by(|a, b| a.id.cmp(&b.id)) {
+        return Ok(Some(pa));
+    }
+    if let Some(designation) = store
+        .prime()
+        .await
+        .map_err(store_error)?
+        .filter(|designation| designation.state == PrimeState::Current)
+        && let Some(seat) = live_seat(services.registry.as_ref(), designation.seat.as_str()).await?
+    {
+        return Ok(Some(seat));
+    }
+    let mut primes = Vec::new();
+    for row in store
+        .list_roles()
+        .await
+        .map_err(store_error)?
+        .into_iter()
+        .filter(|row| row.role == "prime")
+    {
+        if let Some(seat) = live_seat(services.registry.as_ref(), row.seat.as_str()).await? {
+            primes.push(seat);
+        }
+    }
+    Ok(primes.into_iter().min_by(|a, b| a.id.cmp(&b.id)))
+}
+
+/// The wake: the request, and the two ways to give the role a holder.
+async fn wake_body(
+    services: &Services,
+    request: &RoleRequest,
+    assignments: &[Assignment],
+    now_ms: u64,
+) -> String {
+    let address = RoleAddress {
+        role: request.role.clone(),
+        instance: request.instance.clone(),
+    };
+    let assign_target = if request.instance.is_empty() {
+        request.role.clone()
+    } else {
+        format!("{}/{}", request.role, request.instance)
+    };
+    let mut text = format!(
+        "[pij role queue] {} in project {} has no live holder. {} sent request {} (reply {}{}); it waits on the role's queue.\nNext, one of:",
+        address.display(),
+        request.project,
+        request.requester,
+        request.id,
+        request.reply.as_str(),
+        request
+            .limit_ms
+            .map_or_else(String::new, |ms| format!(", limit {}", human_duration(ms))),
+    );
+    if let Some(last) = last_holder(assignments, request) {
+        let context = context_tokens(services, &last, now_ms).await.map_or_else(
+            || "context unknown".to_string(),
+            |tokens| format!("context {}", human_tokens(tokens)),
+        );
+        text.push_str(&format!(
+            "\n  revive the last holder {last} ({context}): pij-rs revive {last}"
+        ));
+    }
+    text.push_str(&format!(
+        "\n  assign a fresh seat: pij directory assign {assign_target} <seat> --why \"<why>\" --project {}",
+        request.project
+    ));
+    text.push_str(
+        "\nAssigning delivers the queue to the new holder. pij never starts a seat itself.",
+    );
+    text
+}
+
+/// The seat that held the addressed role (and instance) most recently.
+fn last_holder(assignments: &[Assignment], request: &RoleRequest) -> Option<SeatId> {
+    assignments
+        .iter()
+        .filter(|row| {
+            row.role == request.role
+                && (request.instance.is_empty() || row.instance == request.instance)
+        })
+        .max_by(|a, b| {
+            a.to.as_deref()
+                .unwrap_or(&a.from)
+                .cmp(b.to.as_deref().unwrap_or(&b.from))
+        })
+        .map(|row| SeatId::from(row.seat.as_str()))
+}
+
+/// The seat's context size from its session facts, as the cold-wake verdict
+/// reads them, bounded by the same wait.
+async fn context_tokens(services: &Services, seat: &SeatId, now_ms: u64) -> Option<u64> {
+    let descriptor = services.registry.get(seat).await.ok()??;
+    let block = tokio::time::timeout(
+        STATUS_WAIT,
+        crate::http::session_status_block(
+            services.session_status.as_ref(),
+            &descriptor.id,
+            descriptor.harness,
+            descriptor.harness_session.clone(),
+            now_ms,
+        ),
+    )
+    .await
+    .ok()?;
+    match block {
+        SessionStatusBlock::Known { status, .. } => status.context_used_tokens.value().copied(),
+        _ => None,
+    }
+}
+
+/// Ruling C6: after an assign lands, deliver the role's queued requests to the
+/// new holder, in order. The hook is synchronous, so the drain runs on its own
+/// task; an assign that was refused never calls it.
+pub struct RoleQueueDrain {
+    store: SqliteOrchestration,
+    delivery: Arc<DeliveryService>,
+}
+
+impl RoleQueueDrain {
+    /// Drain through `delivery`, reading and marking requests in `store`.
+    pub fn new(store: SqliteOrchestration, delivery: Arc<DeliveryService>) -> Self {
+        Self { store, delivery }
+    }
+}
+
+impl AfterAssign for RoleQueueDrain {
+    fn assigned(&self, project: &str, role: &str, instance: &str, seat: &SeatId) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            eprintln!("pij-rs: role queue for {role} not drained: no runtime");
+            return;
+        };
+        let (store, delivery) = (self.store.clone(), Arc::clone(&self.delivery));
+        let (project, role, instance, seat) = (
+            project.to_string(),
+            role.to_string(),
+            instance.to_string(),
+            seat.clone(),
+        );
+        runtime.spawn(async move {
+            for (id, outcome) in drain(&store, &delivery, &project, &role, &instance, &seat).await {
+                if let Err(cause) = outcome {
+                    eprintln!("pij-rs: role request {id} for {seat} not drained: {cause}");
+                }
+            }
+        });
+    }
+}
+
+/// Deliver `role`'s queued requests a holder of `instance` can take to `seat`,
+/// oldest first, each from its requester; mark each one delivered. A request
+/// whose delivery fails stays queued for the next assign.
+pub async fn drain(
+    store: &SqliteOrchestration,
+    delivery: &Arc<DeliveryService>,
+    project: &str,
+    role: &str,
+    instance: &str,
+    seat: &SeatId,
+) -> Vec<(String, Result<(), String>)> {
+    let queued = match store.queued_role_requests(project, role, instance).await {
+        Ok(queued) => queued,
+        Err(cause) => return vec![(format!("{project}/{role}"), Err(cause.to_string()))],
+    };
+    let mut outcomes = Vec::new();
+    for mut request in queued {
+        request.instance = instance.to_string();
+        let msg = Msg {
+            from: SeatId::from(request.requester.as_str()),
+            from_machine: None,
+            to: seat.clone(),
+            body: framed_body(&request),
+            msg_id: request.id.clone(),
+            in_reply_to: request.in_reply_to.clone(),
+            command: None,
+        };
+        let sent = if request.fyi {
+            delivery.hold_fyi(msg).await
+        } else {
+            delivery.accept(msg).await
+        };
+        let outcome = match sent {
+            Ok(receipt) if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) => {
+                Err(format!("refused: {:?}", receipt.outcome))
+            }
+            Ok(receipt) => store
+                .mark_role_request_delivered(&request.id, seat.as_str(), receipt.at)
+                .await
+                .map(|_| ())
+                .map_err(|cause| cause.to_string()),
+            Err(cause) => Err(cause.to_string()),
+        };
+        outcomes.push((request.id, outcome));
+    }
+    outcomes
+}

@@ -750,6 +750,30 @@ pij-rs send --to <seat> --force --reason '<why>' --body 'text'   # native form
 
 Sources: [`cold_wake.rs`](../../crates/core/src/cold_wake.rs) (rule), [`http/cold_wake.rs`](../../crates/daemon/src/http/cold_wake.rs) (guard and audit).
 
+## Send to a role (plan 199)
+
+`pij send role:<id>` (or `role:<id>/<instance>` for a many-holder role) is resolved by the project's community directory, never by `seat_roles` (ruling C1). The project is `--project <slug>`, else the one whose repo holds the caller's cwd. The role document is found in the governance worktree without launching git. Live holders are open holdings whose seat is registered and not tombstoned.
+
+| Live holders | What happens |
+|---|---|
+| one | An ordinary send (or `--fyi` hold) to that seat, through the cold-wake guard. The body gains one header line, `[pij role:<id>[/<instance>] request <id> from <seat> · reply <mode>[ · limit <d>]]`. The request is recorded `delivered` with its holder. |
+| none | The request is recorded `queued` (an `--fyi` send too, C2), and the project's `pa` holder, else the current prime designation, else a live `prime`-role seat, is woken once through the ordinary delivery path (a cold wake is audited, as the PA watchdog does). The wake names the request and two runnable steps: revive the last holder (with its context size) or `pij directory assign`. pij never starts a seat. Queued requests are listed in the PA watchdog digest until drained. |
+| two or more | Refused `E-RS-ROLE-HOLDERS`, naming each seat and instance. |
+
+The receipt is the ordinary send receipt plus `request: {id, project, role, instance, reply, limit_ms, state, holder}`. The request id is the send's `msg_id` (C3); a queued receipt has `outcome: queued` and a `woke: {seat, outcome, cold_check}` object. Assigning a holder (`pij directory assign`) delivers that role's queued requests to it in order, each from its requester, and marks them delivered (C6); a refused assign drains nothing. A request for any holder drains to a holder of any instance; one for an instance drains only to that instance.
+
+Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored for s06 to notify with) and `--limit <duration>` (`90s`, `45m`, `1h30m`; default the role's `default_limit`, C5; stored for s12). `--project <slug>`. All three ride `POST /v1/send` as top-level `reply`, `limit` and `project` beside the message, and the shim parses the same flags.
+
+| Refusal | When |
+|---|---|
+| `E-RS-ROLE-ONLY` | `--reply`, `--limit` or `--project` on a send to a seat |
+| `E-RS-ROLE-ADDRESS` | a malformed address, an instance on a one-holder role, `role:<id>@<machine>` or a forwarded role send (role addresses are local and never forwarded), or `--command` to a role |
+| `E-RS-DIRECTORY-ROLE-MISSING` | the project's directory has no such role (next: `pij directory view`) |
+| `E-RS-ROLE-HOLDERS` | two or more live holders |
+| `E-RS-ROLE-MISMATCH` | the holder's `seat_roles` role disagrees with the directory (a `pm`, `pa` or `worker` role other than the one the directory implies; a prime is never re-roled). Next: `pij role <seat> <role>` |
+
+Cost: a role send costs what an ordinary send costs, plus in-process reads (no launch) and one store write; a queued request adds one wake delivery; a drain one delivery per request. No timer or poll: the digest reads the queue once per nudge.
+
 ## Governance route inventory
 
 All POST families below use argv/caller unless the typed alternative is named. Unknown leaves refuse; unsupported flags are not dropped. These are the daemon routes, not invented `/v1/report/<leaf>` endpoints.
@@ -776,7 +800,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}` | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
 | POST `/v1/register` | Existing verified registration plus optional asserted role; failed admission cannot commit a role | `register-with-role` |
 
@@ -954,6 +978,56 @@ Cost: assign costs one writer commit plus the rename (about 10 launches: git 7,
 ddocs 2, tmux 1); release and a close that ends holdings cost one writer commit
 (about 9). The view and help launch nothing. A rebuild
 costs three git launches plus one per holders document, on demand only.
+
+### Role templates (plan 194)
+
+pij ships versioned role templates (`templates/roles/<name>/v<n>/role.dd.json`:
+prime, pm, pa, coder, reviewer and security), compiled into the daemon with
+`include_bytes!` like the schema copies; a test fails if a file there is not
+compiled in. They support Pij Emergent Communities (PEC, ruling C26): the
+prime and the humans build whatever community the work needs now and reshape it
+as the work changes, and the templates are examples, not a checklist (C18).
+
+`pij directory templates` lists each template with its versions, the latest
+version's title, kind and summary, and whether it is a core role
+(`data.templates`).
+
+`pij directory add <id> --from template:<name>[@v<n>] --why <text>` copies the
+named version (the latest by default) through the writer above. `meta.id`
+becomes `<id>`, `meta.template` and `meta.template_version` record the template
+and version, and the template's own changelog is dropped so the role's first row
+is the add's. Role flags given alongside override the template's fields: a
+single flag replaces that field, a repeated flag replaces the whole list, and
+`--packet` or `--brief` replaces the standing packet. `--template` and
+`--template-version` cannot be combined with `--from template:`.
+`--from file:<brief>` is the spelling of `--brief <brief>` (the brief is
+referenced, not copied); giving both refuses. `--from` takes no `--file` or
+`--batch`. An unknown template or version refuses with `E-RS-ARG`, naming it and
+listing the templates or versions that exist, and writes nothing.
+
+`pij directory` gives each role `template`: `{name, version, latest, behind}`, or
+null for a role from no template (`latest` is null for a template this build
+does not ship). A role whose template has moved on (`behind: true`) is marked in
+the human view with its `template-diff` line. `pij directory template-diff <id>`
+returns `{id, template, version, latest, behind, diff}`: `diff` is a unified diff
+of the template between the role's version and the latest, computed in-process,
+and empty when the role is current or came from no template. Nothing is ever
+applied: the role file is untouched. A role without `role.dd.json` refuses with
+`E-RS-DIRECTORY-ROLE-MISSING`.
+
+The view also carries `prompts` and `guidance` while any core role (prime, pm,
+pa, coder, reviewer) or security is missing (ruling C22). A role counts for a
+template when its id or its `meta.template` is that name, so `pm-001` made from
+`pm` clears the pm prompt. Each prompt is `{role, kind, command}`, `kind` core or
+recommended, and `command` a runnable line such as `pij directory add pm --from
+template:pm --why "core role from the pm template" --project fleet`. Every
+printed command names the viewed project (shell-quoted when needed), so running
+it from another repo's directory still acts on the directory that printed it;
+the human view's drift hint does the same. `guidance` states the PEC wording. The view creates nothing; adding a role clears its prompt.
+
+Cost: listing, diffing and the view read embedded bytes and the governance
+worktree in-process and launch nothing; an add from a template costs the same
+writer commit as any add. No loop or timer.
 
 ## Canonical wire examples
 

@@ -17,6 +17,7 @@ pub mod orchestration;
 pub mod queue;
 pub mod registry;
 mod role_assertion;
+pub mod role_requests;
 pub mod spine;
 pub mod status;
 
@@ -29,4 +30,5 @@ pub use orchestration::{
 pub use queue::SqliteQueue;
 pub use registry::SqliteRegistry;
 pub use role_assertion::{Placement, PlacementCommit};
+pub use role_requests::{ReplyMode, RequestState, RoleRequest};
 pub use spine::SqliteSpine;

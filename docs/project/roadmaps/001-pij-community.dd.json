@@ -6,15 +6,15 @@
 		{
 			"name": "meta",
 			"value": {
-				"title": "Roadmap 001: pij community",
+				"title": "Roadmap 001: Pij Emergent Communities (PEC)",
 				"status": "draft",
-				"updated": "2026-11-04",
+				"updated": "2026-11-06",
 				"owner": "pij-far-jackal"
 			}
 		},
 		{
 			"name": "goal",
-			"value": "Ship the pij community: a per-project directory of roles that outlive their seats, with memory, outputs, routing and prompts for the prime."
+			"value": "Ship Pij Emergent Communities (PEC): a per-project directory of roles that outlive their seats, grown from what the work needs and reshaped as it changes, with memory, outputs, routing and prompts for the prime."
 		},
 		{
 			"name": "steps",
@@ -59,14 +59,15 @@
 				{
 					"id": "s03",
 					"title": "Core and security templates",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-13",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-templates"],
 					"depends_on": ["#steps/s02"],
-					"done_when": "A new directory has the five core roles; security comes from its template; a template bump shows a diff."
+					"done_when": "A new directory prompts for the five core roles and security and creates nothing (C22); a role made from a template records it; a template bump shows a diff.",
+					"plan": "docs/plans/194-role-templates"
 				},
 				{
 					"id": "s04",
@@ -90,14 +91,15 @@
 				{
 					"id": "s05",
 					"title": "Send to a role, the role queue and reply modes",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-07",
 						"../prds/001-pij-community.dd.json#requirements/req-08"
 					],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-send-role"],
 					"depends_on": ["#steps/s04"],
-					"done_when": "The 0, 1 and 2 holder cases, instances, the PA wake and the three reply modes behave as the PRD says."
+					"done_when": "The 0, 1 and 2 holder cases, instances, the PA wake and the three reply modes behave as the PRD says.",
+					"plan": "docs/plans/199-send-to-role"
 				},
 				{
 					"id": "s06",
@@ -248,6 +250,16 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 195: s04 complete (assign, release, close-ends, lineage, the view and rebuild; evidence in docs/plans/195-assign-lineage/assets/evidence/phase-2.md)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "docs-system",
+					"change": "Renamed forward per ruling C26: title and goal name Pij Emergent Communities (PEC). Slugs and step ids unchanged."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-following-marsupial",
+					"change": "s03 complete (plan 194); its done_when now says the core roles are prompted, not created (ruling C22)."
 				}
 			]
 		}

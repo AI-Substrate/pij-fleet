@@ -1,5 +1,7 @@
 //! Runtime message delivery over the frozen registry, queue, transport, and spine ports.
 
+pub mod role_send;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
