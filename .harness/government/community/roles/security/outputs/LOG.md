@@ -56,3 +56,5 @@
 
 2026-11-06 note pr:132 5fbcfbdc0323af2546c0c9b17a89e3a0f0e2ae22 block - INTERIM delayed-close authorization/incarnation discarded, MEDIUM9/10; bound/held-task gaps and evidence-path candidate routed for pending design; no old-head post or new-head verdict; CI/source only; 2026-11-06-pr-132-5fbcfbd-interim-security.md.
 
+2026-11-06 verdict pr:134 d85c0f3adab39895dd6776422aaa5b3ad4048d8c pass-with-notes - Supported-name/argv/session guards and safe bounds retained; no first-party unsafe, fixed absolute ps argv; no macOS runtime certification or universal name/exec equivalence; global one-ps cap not enforced; identical-tree Linux CI proof, no local probes/builds; 2026-11-06-pr-134-d85c0f3-security.md.
+
