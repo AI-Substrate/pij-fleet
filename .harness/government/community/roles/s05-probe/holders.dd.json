@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "s05-probe"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"assigned_by": "pij-wooden-lungfish",
+					"from": "2026-11-06T08:40:11.171Z",
+					"harness": "copilot",
+					"harness_session": "d03f4d10-553a-46bc-a460-95b077ecefa9",
+					"machine": "ops.osk.lan",
+					"seat": "pij-wooden-lungfish",
+					"why": "s05 dogfood: drain the probe request to my own seat"
+				}
+			]
+		}
+	]
+}
