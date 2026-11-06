@@ -35,10 +35,10 @@ _Empty._
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Memory store: note document, slug, INDEX regeneration that keeps hand-written lines, list and read | — | ph-00c9 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | crates/daemon/src/community/memory.rs, pure (no git, no launch). Tests target it. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) |
-| tk-0002 | pij directory memory verbs: add (writer, one commit), view INDEX, --note; help text; CLI wiring | — | ph-00c9 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | http/directory.rs, core/directory.rs help, cli main.rs. add builds files inside write_with so two adds serialise on the worktree lock. | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | The memory turn before compact and close of a role holder | — | ph-00c9 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | send_control (compact) and lifecycle close. Waits on seat.activity idle after the prompt's delivery.outcome, bounded. Design pending pm-001 confirmation (self vs other caller). | [ac-0002](../../../plan.dd.md#acceptance-criteria) | [ac-0004](../../../plan.dd.md#acceptance-criteria) |
-| tk-0004 | Cost receipts: spawn sites and private-daemon spawn deltas per verb | — | ph-00c9 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Memory store: note document, slug, INDEX regeneration that keeps hand-written lines, list and read | — | ph-00c9 | [x] checked | — | — | [tk-0001](tasks.dd.md#done-when) | — | crates/daemon/src/community/memory.rs, pure (no git, no launch). Tests target it. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | pij directory memory verbs: add (writer, one commit), view INDEX, --note; help text; CLI wiring | — | ph-00c9 | [x] checked | — | — | [tk-0002](tasks.dd.md#done-when) | — | http/directory.rs, core/directory.rs help, cli main.rs. add builds files inside write_with so two adds serialise on the worktree lock. | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | The memory turn before compact and close of a role holder | — | ph-00c9 | [x] checked | — | — | [tk-0003](tasks.dd.md#done-when) | — | send_control (compact) and lifecycle close. Waits on seat.activity idle after the prompt's delivery.outcome, bounded. Design pending pm-001 confirmation (self vs other caller). | [ac-0002](../../../plan.dd.md#acceptance-criteria) | [ac-0004](../../../plan.dd.md#acceptance-criteria) |
+| tk-0004 | Cost receipts: spawn sites and private-daemon spawn deltas per verb | — | ph-00c9 | [ ] unchecked | Open only for the live after-deploy reading. | — | [tk-0004](tasks.dd.md#done-when) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0005 | Docs and states: pij-rs-api.md, skill verb coverage, roadmap s07, req-09, c-memory-hook | — | ph-00c9 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -49,35 +49,35 @@ _Empty._
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | A unit test regenerates an INDEX holding hand-written lines (links, bare names, dot rows) and keeps every one, drops the empty placeholder, and adds exactly one line per pij note | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
-| dw-0002 | A built note validates as pij/memory and its file name is &lt;yyyy-mm-dd&gt;-&lt;slug&gt;.dd.json; a title that slugs to nothing or escapes the folder is refused | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0001 | A unit test regenerates an INDEX holding hand-written lines (links, bare names, dot rows) and keeps every one, drops the empty placeholder, and adds exactly one line per pij note | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0002 | A built note validates as pij/memory and its file name is &lt;yyyy-mm-dd&gt;-&lt;slug&gt;.dd.json; a title that slugs to nothing or escapes the folder is refused | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | In a scratch governance repo, memory add commits the note, its .dd.md and INDEX.md in one commit; two concurrent adds land as two commits and both INDEX lines survive | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
-| dw-0004 | memory &lt;role&gt; prints the INDEX and --note &lt;slug&gt; prints one note; there is no delete verb and an unknown memory verb is refused by name | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0003 | In a scratch governance repo, memory add commits the note, its .dd.md and INDEX.md in one commit; two concurrent adds land as two commits and both INDEX lines survive | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0004 | memory &lt;role&gt; prints the INDEX and --note &lt;slug&gt; prints one note; there is no delete verb and an unknown memory verb is refused by name | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0005 | With a fake bus, compact of a role holder delivers the memory prompt first and admits the compact only after the seat's next idle; a non-holder is compacted with no prompt | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
-| dw-0006 | When the bound passes with no turn end, the compact or close proceeds and its receipt says so (ended: bound) | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
-| dw-0007 | Close of a role holder runs the memory turn before the tombstone; close of a non-holder is unchanged | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0005 | With a fake bus, compact of a role holder delivers the memory prompt first and admits the compact only after the seat's next idle; a non-holder is compacted with no prompt | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0006 | When the bound passes with no turn end, the compact or close proceeds and its receipt says so (ended: bound) | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0007 | Close of a role holder runs the memory turn before the tombstone; close of a non-holder is unchanged | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 
-| id | assertion | state | pressure |
-| --- | --- | --- | --- |
-| dw-0008 | spawn_sites.rs passes with any new launch site recorded; private-daemon spawn deltas per verb and live at-rest readings before and after are in the evidence | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| id | assertion | state | pressure | note |
+| --- | --- | --- | --- | --- |
+| dw-0008 | spawn_sites.rs passes with any new launch site recorded; private-daemon spawn deltas per verb and live at-rest readings before and after are in the evidence | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) | Private-daemon deltas and the live before reading are in assets/evidence/phase-1.md; spawn_sites.rs passes. The live after reading belongs to the deploy. |
 
 ### tk-0005
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0009 | just ddocs-check and ddocs validate on docs/project pass; pij-rs-api.md and the skill verb tables name the memory verbs and refusals; roadmap s07 complete, req-09 and c-memory-hook shipped | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+| dw-0009 | just ddocs-check and ddocs validate on docs/project pass; pij-rs-api.md and the skill verb tables name the memory verbs and refusals; roadmap s07 complete, req-09 and c-memory-hook shipped | [x] checked | [bp-0005](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

@@ -39,19 +39,19 @@
         {
           "id": "ac-0001",
           "claim": "Write a note. `pij directory memory add <role> --title --tags --hook --body|--body-file` writes `roles/<id>/memory/<yyyy-mm-dd>-<slug>.dd.json` (pij/memory) through the writer and regenerates `memory/INDEX.md` with one line per note, keeping lines for existing hand-written notes.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "The memory turn. Before `pij compact` or `pij close` of a seat that holds a role, pij delivers a memory prompt to that seat and holds the compact or close until that turn ends (or a bounded wait passes, after which it proceeds and says so). A seat holding no role is compacted or closed directly.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Read. `pij directory memory <role>` prints the INDEX and `--note <slug>` one note; nothing is ever deleted.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
