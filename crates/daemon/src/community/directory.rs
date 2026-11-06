@@ -116,6 +116,24 @@ pub struct CloseEnds {
     pub pending: Vec<Value>,
 }
 
+/// How a retire or merge goes (plan 206).
+#[derive(Clone, Copy, Debug)]
+pub struct Retirement<'a> {
+    /// The changelog row's reason.
+    pub why: &'a str,
+    /// Withdraw requests still queued for the role instead of refusing.
+    pub drop_queued: bool,
+}
+
+/// A landed retire or merge, with any requests `--drop-queued` withdrew.
+#[derive(Debug)]
+pub struct Reshaped {
+    /// The writer commit.
+    pub written: Written,
+    /// The withdrawn requests, oldest first, each recorded on the spine.
+    pub withdrawn: Vec<pij_store::RoleRequest>,
+}
+
 /// The daemon's role-holding service.
 pub struct DirectoryService {
     writer: Arc<CommunityWriter>,
@@ -531,19 +549,21 @@ impl DirectoryService {
     ///
     /// # Errors
     /// [`E_ROLE_MISSING`]; [`E_RETIRED`] when it already is; [`E_ROLE_HELD`]
-    /// while a seat holds it; any writer refusal. Nothing is written.
+    /// while a seat holds it; [`E_ROLE_QUEUED`] while requests wait queued
+    /// for it, unless `drop_queued`; any writer refusal. Nothing is written.
     pub async fn retire(
         &self,
         project: &str,
         repo: PathBuf,
         id: &str,
         actor: &SeatId,
-        why: &str,
-    ) -> Result<Written, Refusal> {
+        how: Retirement<'_>,
+    ) -> Result<Reshaped, Refusal> {
+        let why = how.why;
         let message = format!(
             "community: retire role {id}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
         );
-        self.reshape(project, repo, message, id, None, actor, why)
+        self.reshape(project, repo, message, id, None, actor, how)
             .await
     }
 
@@ -562,8 +582,9 @@ impl DirectoryService {
         from: &str,
         into: &str,
         actor: &SeatId,
-        why: &str,
-    ) -> Result<Written, Refusal> {
+        how: Retirement<'_>,
+    ) -> Result<Reshaped, Refusal> {
+        let why = how.why;
         RolePaths::new(into)?;
         if from == into {
             return Err(Refusal::new(
@@ -574,7 +595,7 @@ impl DirectoryService {
         let message = format!(
             "community: merge role {from} into {into}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
         );
-        self.reshape(project, repo, message, from, Some(into), actor, why)
+        self.reshape(project, repo, message, from, Some(into), actor, how)
             .await
     }
 
@@ -588,27 +609,21 @@ impl DirectoryService {
         id: &str,
         into: Option<&str>,
         actor: &SeatId,
-        why: &str,
-    ) -> Result<Written, Refusal> {
+        how: Retirement<'_>,
+    ) -> Result<Reshaped, Refusal> {
+        let why = how.why;
+        let (role_id, reason) = (id.to_string(), why.to_string());
         let paths = RolePaths::new(id)?;
         // Read before the writer lock (the store is async, the commit is not).
         // Once the retirement lands the send path refuses the role, so a send
         // can only slip in between this read and the commit.
         let queued = self
             .store
-            .queued_role_request_count(project, id)
+            .queued_for_role(project, id)
             .await
             .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
-        if queued > 0 {
-            return Err(Refusal::new(
-                E_ROLE_QUEUED,
-                format!(
-                    "role {id:?} has {queued} request(s) queued for a holder; retiring it would strand them"
-                ),
-            )
-            .with_next(format!(
-                "Assign a holder to drain them (pij directory assign {id} <seat> --why <text>), release it, then retire."
-            )));
+        if !queued.is_empty() && !how.drop_queued {
+            return Err(queued_refusal(id, into, &queued, system_ms()));
         }
         let pending = self.pending(project).await?;
         let (project_id, id, into, by, why) = (
@@ -679,7 +694,35 @@ impl DirectoryService {
             })
             .await?;
         self.flushed(&built.landed, &written).await?;
-        Ok(written)
+        let mut withdrawn = Vec::new();
+        if how.drop_queued {
+            // After the commit, so a request that slipped in before the send
+            // path saw the retirement is withdrawn too.
+            let (store, project, by, at) = (
+                self.store.clone(),
+                project.to_string(),
+                actor.to_string(),
+                system_ms(),
+            );
+            withdrawn = self
+                .event_bus
+                .publish_committed_batch(async move {
+                    store
+                        .withdraw_queued_role_requests(&project, &role_id, &by, &reason, at)
+                        .await
+                })
+                .await
+                .map_err(|error| {
+                    Refusal::new(
+                        "E-RS-STORE",
+                        format!(
+                            "committed {} but could not withdraw the queued requests: {error}",
+                            written.commit
+                        ),
+                    )
+                })?;
+        }
+        Ok(Reshaped { written, withdrawn })
     }
 
     /// `pij directory edit <id>` (plan 206, F20): change an existing role in
@@ -1173,6 +1216,43 @@ fn check_merge_target(root: &GovernanceRoot, file: &NewFile) -> Result<(), Refus
         ));
     }
     read_role(root, &into).map(|_| ())
+}
+
+/// Refuse to retire `id` (merged into `into`, if given) while requests wait
+/// queued for it, listing each by id, requester and age.
+fn queued_refusal(
+    id: &str,
+    into: Option<&str>,
+    queued: &[pij_store::RoleRequest],
+    now_ms: u64,
+) -> Refusal {
+    let listed: Vec<String> = queued
+        .iter()
+        .map(|request| {
+            format!(
+                "{} from {} ({} old)",
+                request.id,
+                request.requester,
+                pij_core::cold_wake::human_duration(now_ms.saturating_sub(request.created_at))
+            )
+        })
+        .collect();
+    let verb = match into {
+        Some(into) => format!("merge {id} --into {into}"),
+        None => format!("retire {id}"),
+    };
+    Refusal::new(
+        E_ROLE_QUEUED,
+        format!(
+            "role {id:?} has {} request(s) queued for a holder: {}; nothing was written",
+            queued.len(),
+            listed.join(", ")
+        ),
+    )
+    .with_next(format!(
+        "Assign a holder to take them (pij directory assign {id} <seat> --why <text>), release it, then {verb} again; \
+         or run pij directory {verb} --why <text> --drop-queued to withdraw them (each requester is told once)."
+    ))
 }
 
 /// Refuse a write to a retired role, naming where a merged one went.

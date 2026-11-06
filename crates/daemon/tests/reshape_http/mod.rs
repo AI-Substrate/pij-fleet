@@ -504,9 +504,11 @@ async fn the_writer_holds_merged_into_to_retired_roles_and_edit_keeps_state() {
     server.abort();
 }
 
-/// Plan 206 with s05 (#129): a role with requests queued for a holder cannot
-/// be retired or merged away, and a retired or merged role takes no sends,
-/// the merged one naming where its work went. Nothing is queued for either.
+/// Plan 206 with s05 (#129): a role with requests queued for a holder is not
+/// retired or merged away silently. The refusal lists each request's id,
+/// requester and age; `--drop-queued` withdraws them (row gone, one spine
+/// event, the requester told once by FYI); an assign drains them instead. A
+/// retired or merged role takes no sends, the merged one naming its target.
 #[tokio::test]
 async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
     let repo = repo("pij-directory-reshape-sends");
@@ -522,8 +524,15 @@ async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
         .await;
         assert_eq!(added["ok"], true, "{id}: {added}");
     }
-    for (role, msg) in [("qa", "req-qa"), ("review", "req-review")] {
-        let queued = send_to(addr, &repo.main, &format!("role:{role}"), msg, json!({})).await;
+    // pij-holder asks qa (so the withdrawal tells someone other than the
+    // retiring seat); the test seat asks review.
+    let from_holder =
+        json!({"from": "pij-holder", "caller": {"TMUX_PANE": "%51", "cwd": repo.main}});
+    for (role, msg, extra) in [
+        ("qa", "req-qa", from_holder),
+        ("review", "req-review", json!({})),
+    ] {
+        let queued = send_to(addr, &repo.main, &format!("role:{role}"), msg, extra).await;
         assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
     }
 
@@ -534,8 +543,16 @@ async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
         "E-RS-DIRECTORY-ROLE-QUEUED",
         "{retire}"
     );
+    let text = retire.to_string();
     assert!(
-        retire.to_string().contains("1 request(s) queued"),
+        text.contains("1 request(s) queued") && text.contains("req-qa from pij-holder (0m old)"),
+        "{retire}"
+    );
+    assert!(
+        retire["details"]["next"]
+            .as_str()
+            .unwrap()
+            .contains("pij directory retire qa --why <text> --drop-queued"),
         "{retire}"
     );
     let merge = directory(
@@ -549,17 +566,70 @@ async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
         "E-RS-DIRECTORY-ROLE-QUEUED",
         "{merge}"
     );
+    assert!(
+        merge.to_string().contains("req-review from pij-test-coder"),
+        "{merge}"
+    );
     assert_eq!(head(&repo), before, "a refused reshape commits nothing");
+    let misplaced = directory(
+        addr,
+        &repo,
+        &[
+            "edit",
+            "qa",
+            "--set",
+            "summary=s",
+            "--why",
+            "w",
+            "--drop-queued",
+        ],
+    )
+    .await;
+    assert_eq!(refusal_code(&misplaced), "E-RS-ARG", "{misplaced}");
 
-    // Assigning drains the queue to the holder; then the role can go.
-    for role in ["qa", "review"] {
-        for verb in ["assign", "release"] {
-            let done = directory(addr, &repo, &[verb, role, "pij-holder", "--why", "w"]).await;
-            assert_eq!(done["ok"], true, "{verb} {role}: {done}");
-        }
+    // --drop-queued: retired, the request withdrawn and recorded, its
+    // requester told once.
+    let dropped = directory(
+        addr,
+        &repo,
+        &["retire", "qa", "--why", "done", "--drop-queued"],
+    )
+    .await;
+    assert_eq!(dropped["ok"], true, "{dropped}");
+    assert_eq!(dropped["data"]["withdrawn"][0]["id"], "req-qa", "{dropped}");
+    assert_eq!(dropped["data"]["withdrawn"][0]["requester"], "pij-holder");
+    assert_eq!(dropped["data"]["withdrawn"][0]["told"], "held", "{dropped}");
+    assert!(rig.store.role_request("req-qa").await.unwrap().is_none());
+    let event = rig
+        .services
+        .spine
+        .latest_matching(&SeatId::from("pij-holder"), &[pij_store::WITHDRAWN_EVENT])
+        .await
+        .unwrap()
+        .expect("the withdrawal is on the spine");
+    let payload: Value = serde_json::from_str(&event.payload).unwrap();
+    assert_eq!(
+        (
+            payload["id"].as_str(),
+            payload["withdrawn_by"].as_str(),
+            payload["why"].as_str()
+        ),
+        (Some("req-qa"), Some(SEAT), Some("done"))
+    );
+    assert_eq!(
+        rig.delivery
+            .pending_fyi_count(&SeatId::from("pij-holder"))
+            .await
+            .unwrap(),
+        1,
+        "told once"
+    );
+
+    // An assign drains review's request instead; then the merge lands.
+    for verb in ["assign", "release"] {
+        let done = directory(addr, &repo, &[verb, "review", "pij-holder", "--why", "w"]).await;
+        assert_eq!(done["ok"], true, "{verb} review: {done}");
     }
-    let retired = directory(addr, &repo, &["retire", "qa", "--why", "done"]).await;
-    assert_eq!(retired["ok"], true, "{retired}");
     let merged = directory(
         addr,
         &repo,
@@ -567,6 +637,7 @@ async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
     )
     .await;
     assert_eq!(merged["ok"], true, "{merged}");
+    assert_eq!(merged["data"]["withdrawn"], json!([]));
 
     let to_retired = send_to(addr, &repo.main, "role:qa", "req-retired", json!({})).await;
     assert_eq!(

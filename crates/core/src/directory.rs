@@ -130,15 +130,20 @@ const RESHAPE: &str = "\
 pij directory retire | merge: reshape the community as the work changes (plan 206).
 
 Usage:
-  pij directory retire <role> --why <text> [--project <slug>]
-  pij directory merge <from> --into <to> --why <text> [--project <slug>]
+  pij directory retire <role> --why <text> [--drop-queued] [--project <slug>]
+  pij directory merge <from> --into <to> --why <text> [--drop-queued] [--project <slug>]
 
 retire marks the role retired (meta.state) with a changelog row. merge retires
 <from> with meta.merged_into <to> and adds a changelog row to both. Each is one
 commit. Nothing is moved or rewritten: a retired role's memory, outputs and
 lineage stay readable, and the view lists a merged role under its target. A role
 with a live holder refuses (release it first); a retired role cannot be assigned,
-edited, retired again or merged into.";
+edited, retired again or merged into, and sends to it are refused.
+
+A role with requests queued for a holder refuses, listing each request's id,
+requester and age: assign a holder to take them, or pass --drop-queued to
+withdraw them (each is recorded on the spine and its requester told once, as an
+FYI). merge does not move queued requests to <to>.";
 
 const HOLD: &str = "\
 pij directory assign|release: a seat takes or leaves a role.

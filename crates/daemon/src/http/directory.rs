@@ -13,13 +13,13 @@ use std::path::{Path, PathBuf};
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use pij_core::model::{Envelope, ErrorKind, SeatId};
+use pij_core::model::{Envelope, ErrorKind, Msg, SeatId};
 use serde_json::{Value, json};
 
 use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope};
-use crate::community::directory::RoleEdit;
+use crate::community::directory::{Reshaped, Retirement, RoleEdit};
 use crate::community::layout::{RolePaths, exists};
 use crate::community::memory;
 use crate::community::role::{self, RoleFields};
@@ -93,6 +93,8 @@ const CONTROL: [&str; 9] = [
 #[derive(Debug, Default)]
 struct Arguments {
     leaf: String,
+    /// `--drop-queued` (retire and merge only): a switch, no value.
+    drop_queued: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -148,6 +150,10 @@ impl Arguments {
                 continue;
             };
             if flag == "json" {
+                continue;
+            }
+            if flag == "drop-queued" {
+                call.drop_queued = true;
                 continue;
             }
             let (name, value) = match flag.split_once('=') {
@@ -215,6 +221,15 @@ impl Arguments {
                 "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
             ));
         }
+        if call.drop_queued && !matches!(call.leaf.as_str(), "retire" | "merge") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --drop-queued belongs to `retire` and `merge`",
+                    call.leaf
+                ),
+            ));
+        }
         if call.leaf != "merge" && call.single.contains_key("into") {
             return Err(Refusal::new(
                 "E-RS-ARG",
@@ -233,9 +248,9 @@ impl Arguments {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 if call.leaf == "merge" {
-                    "usage: pij directory merge <from> --into <to> --why <text> [--project <slug>]"
+                    "usage: pij directory merge <from> --into <to> --why <text> [--drop-queued] [--project <slug>]"
                 } else {
-                    "usage: pij directory retire <role> --why <text> [--project <slug>]"
+                    "usage: pij directory retire <role> --why <text> [--drop-queued] [--project <slug>]"
                 },
             ));
         }
@@ -796,15 +811,28 @@ async fn reshape(
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let directory = &state.services.directory;
     let into = call.get("into");
-    let written = match &into {
+    let how = Retirement {
+        why: &why,
+        drop_queued: call.drop_queued,
+    };
+    let Reshaped { written, withdrawn } = match &into {
         Some(into) => {
             directory
-                .merge(&project, repo, id, into, actor, &why)
+                .merge(&project, repo, id, into, actor, how)
                 .await?
         }
-        None => directory.retire(&project, repo, id, actor, &why).await?,
+        None => directory.retire(&project, repo, id, actor, how).await?,
     };
     record_pointers(state, &project, &written).await?;
+    let mut told = Vec::with_capacity(withdrawn.len());
+    for request in &withdrawn {
+        told.push(json!({
+            "id": request.id,
+            "requester": request.requester,
+            "created_at": request.created_at,
+            "told": tell_withdrawn(state, actor, request, id, into.as_deref(), &why).await,
+        }));
+    }
     Ok(json!({
         "project": project,
         "id": id,
@@ -812,7 +840,44 @@ async fn reshape(
         "merged_into": into,
         "commit": written.commit,
         "paths": written.paths,
+        "withdrawn": told,
     }))
+}
+
+/// Tell a withdrawn request's requester once, as an FYI held for its next
+/// real turn (plan 206). Returns the outcome: `held`, `self` when the
+/// requester is the seat that withdrew it, or why it could not be told.
+async fn tell_withdrawn(
+    state: &AppState,
+    actor: &SeatId,
+    request: &pij_store::RoleRequest,
+    role: &str,
+    into: Option<&str>,
+    why: &str,
+) -> String {
+    if request.requester == actor.as_str() {
+        return "self".to_string();
+    }
+    let gone = match into {
+        Some(into) => format!("was merged into {into} (send to role:{into} if it still applies)"),
+        None => "was retired".to_string(),
+    };
+    let msg = Msg {
+        from: actor.clone(),
+        from_machine: None,
+        to: SeatId::from(request.requester.as_str()),
+        body: format!(
+            "[pij role:{role} request {} withdrawn] Role {role} {gone} by {actor}: {why}. Your request was never delivered. It said:\n{}",
+            request.id, request.body
+        ),
+        msg_id: format!("{}.withdrawn", request.id),
+        in_reply_to: None,
+        command: None,
+    };
+    match state.services.delivery.hold_fyi(msg).await {
+        Ok(_) => "held".to_string(),
+        Err(error) => format!("not told: {error}"),
+    }
 }
 
 /// Index a landed write's paths (the pointer, plan 190).

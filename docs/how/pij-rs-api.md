@@ -811,7 +811,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory edit <id> --why <text>` with `--set <field>=<value>`, role flags or `--file <json>`; `directory retire <role> --why <text> [--drop-queued]`; `directory merge <from> --into <to> --why <text> [--drop-queued]`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/claims` | `claims [--project <slug>] [--open]` | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/delivered` | `delivered <pr> [--pm <seat>] [--project <slug>]` | — (`crates/daemon/tests/claims_http.rs`) |
@@ -1083,20 +1083,35 @@ standing: `edit` refuses a retired role and refuses a change to `state` or
 refuses either on every write (`E-RS-ARG`, `E-RS-DIRECTORY-ROLE-MISSING`), and
 `merged_from` counts only retired roles. Once retired, a role takes no sends:
 `pij send role:<id>` refuses `E-RS-DIRECTORY-RETIRED`, naming the merge target.
-The queued-request check is one count on the `role_requests_queued` index,
-read before the writer lock; a send can only slip in between that read and the
-commit, after which the send path refuses.
+
+Requests queued for the role (no live holder took them) are never stranded
+silently. Without `--drop-queued`, retire and merge refuse and list them. With
+`--drop-queued` the role is retired first, then each request still queued for
+it (any instance) is withdrawn in one store transaction: its `role_requests`
+row is deleted and a `role.request.withdrawn` spine event, with the requester
+as its seat, records `{id, project, role, instance, requester, created_at,
+withdrawn_by, why}`. Withdrawing after the commit also catches a send that
+slipped in before the send path saw the retirement. Each requester is told
+once, by an FYI held for its next real turn (msg id `<request id>.withdrawn`)
+that names the role, who retired it and why, and repeats the request's body;
+the retiring seat's own requests are not echoed back to it. `data.withdrawn`
+lists `{id, requester, created_at, told}`, where `told` is `held`, `self`, or
+why the FYI could not be held. Merge does not move queued requests to `<to>`:
+a queued request drains only on an assign, so a moved request would wait even
+when `<to>` has a live holder. Drain them with an assign first, or withdraw
+them.
 
 | Refusal | When |
 |---|---|
 | `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
-| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)); retiring or merging it away would strand them. The count is named, and the next step is to assign a holder (which drains them), release it, then retire |
+| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)) and `--drop-queued` was not given. Each is listed as `<id> from <requester> (<age> old)`; the next step offers assigning a holder (which drains them), releasing it and retrying, or the same verb with `--drop-queued` |
 | `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign and edit of a retired role refuse too, naming the merge target when there is one |
 | `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
 | `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |
 
 Cost: one writer commit per edit, retire or merge, the same as an add, plus
-one indexed count for retire and merge. The send path reads the role document
+one read on the `role_requests_queued` index for retire and merge, and with
+`--drop-queued` one store transaction and one FYI per withdrawn request. The send path reads the role document
 it already reads. No loop
 or timer.
 

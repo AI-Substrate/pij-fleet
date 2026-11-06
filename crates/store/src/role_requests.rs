@@ -6,10 +6,18 @@
 //! and how they want to hear back.
 
 use pij_core::error::{PijError, Result};
+use pij_core::model::{Event, SeatId};
+use pij_core::wire;
+use serde_json::json;
 use sqlx::Row;
 
 use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64};
+use crate::spine::append_in_transaction;
+
+/// The spine event a withdrawn request leaves (plan 206): its row is gone, so
+/// this is the record of who asked, what role, who withdrew it and why.
+pub const WITHDRAWN_EVENT: &str = "role.request.withdrawn";
 
 /// How the requester wants to hear that its request was answered (req-08).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -215,21 +223,92 @@ impl SqliteOrchestration {
         .collect()
     }
 
-    /// How many requests for `role` in `project`, any instance, wait queued
-    /// for a holder: what retiring the role would strand (plan 206). One
-    /// count on the partial `role_requests_queued` index.
-    pub async fn queued_role_request_count(&self, project: &str, role: &str) -> Result<u64> {
+    /// Every request for `role` in `project`, any instance, still queued for
+    /// a holder, oldest first: what retiring the role would strand (plan 206).
+    /// One read on the partial `role_requests_queued` index.
+    pub async fn queued_for_role(&self, project: &str, role: &str) -> Result<Vec<RoleRequest>> {
         require_current_schema(&self.pool).await?;
-        let count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM role_requests INDEXED BY role_requests_queued \
-             WHERE project = ?1 AND role = ?2 AND state = 'queued'",
-        )
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_queued \
+             WHERE project = ?1 AND role = ?2 AND state = 'queued' ORDER BY created_at, id"
+        ))
         .bind(project)
         .bind(role)
-        .fetch_one(&self.pool)
+        .fetch_all(&self.pool)
         .await
-        .map_err(adapter_error)?;
-        Ok(count as u64)
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
+    /// Withdraw every request still queued for `role` in `project` (plan
+    /// 206, `retire --drop-queued`): each row is deleted and one
+    /// [`WITHDRAWN_EVENT`] naming its requester, `by` and `why` is appended,
+    /// in one write transaction. Only `queued` rows are touched, so a request
+    /// a drain has already claimed is never withdrawn. Returns the withdrawn
+    /// requests and their events, for the caller to publish.
+    pub async fn withdraw_queued_role_requests(
+        &self,
+        project: &str,
+        role: &str,
+        by: &str,
+        why: &str,
+        at: u64,
+    ) -> Result<(Vec<Event>, Vec<RoleRequest>)> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (project, role, by, why) = (
+            project.to_string(),
+            role.to_string(),
+            by.to_string(),
+            why.to_string(),
+        );
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let rows = sqlx::query(&format!(
+                "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_queued \
+                 WHERE project = ?1 AND role = ?2 AND state = 'queued' ORDER BY created_at, id"
+            ))
+            .bind(&project)
+            .bind(&role)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let requests: Vec<RoleRequest> =
+                rows.iter().map(role_request).collect::<Result<_>>()?;
+            let mut events = Vec::with_capacity(requests.len());
+            for request in &requests {
+                sqlx::query("DELETE FROM role_requests WHERE id = ?1 AND state = 'queued'")
+                    .bind(&request.id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(adapter_error)?;
+                let mut event = Event {
+                    seq: None,
+                    v: wire::EVENT_VERSION,
+                    at,
+                    kind: WITHDRAWN_EVENT.to_string(),
+                    seat: Some(SeatId::from(request.requester.as_str())),
+                    payload: json!({
+                        "id": request.id,
+                        "project": request.project,
+                        "role": request.role,
+                        "instance": request.instance,
+                        "requester": request.requester,
+                        "created_at": request.created_at,
+                        "withdrawn_by": by,
+                        "why": why,
+                    })
+                    .to_string(),
+                };
+                event.seq = Some(append_in_transaction(&mut tx, &event).await?);
+                events.push(event);
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok((events, requests))
+        })
+        .await
     }
 
     /// Every request not yet settled, queued or stuck `delivering`, oldest
