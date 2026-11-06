@@ -110,7 +110,10 @@
 					"harness_session": "92c00825-7025-4673-b7d6-8c3fb82fad45",
 					"instance_key": "208",
 					"machine": "ops.osk.lan",
+					"release_why": "#138 merged (F70 dogfood)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-local-warbler",
+					"to": "2026-11-06T12:56:17.931Z",
 					"why": "plan 208 directory polish"
 				},
 				{
