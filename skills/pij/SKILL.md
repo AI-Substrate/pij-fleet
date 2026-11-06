@@ -58,6 +58,8 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 
 `pij generation [verb]` is a shim-local, read-only routing diagnostic, not an rs route.
 
+The shim hands `directory`, `claim`, `claims` and `delivered`, and a `send` to `role:<id>`, with `--to` or `--help`, to `pij-rs` unchanged: the same output, help and exit code ([shim forwarding](../../docs/how/pij-rs-api.md#shim-forwarding-plan-213), plan 213).
+
 `/pij prime` selects the skill route; `pij orchestration prime` invokes its CLI
 primitive. `baton` is the other orchestration subcommand.
 
