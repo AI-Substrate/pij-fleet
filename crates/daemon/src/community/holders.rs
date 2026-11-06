@@ -68,7 +68,32 @@ pub fn now() -> String {
     stamp(time::OffsetDateTime::now_utc())
 }
 
-fn stamp(at: time::OffsetDateTime) -> String {
+/// `at`'s calendar date `offset_minutes` from UTC, as `YYYY-MM-DD`: the date
+/// a memory note is filed under (plan 209, F32).
+pub fn local_date(at: time::OffsetDateTime, offset_minutes: i32) -> String {
+    let offset = time::UtcOffset::from_whole_seconds(offset_minutes.saturating_mul(60))
+        .unwrap_or(time::UtcOffset::UTC);
+    let at = at.to_offset(offset);
+    format!(
+        "{:04}-{:02}-{:02}",
+        at.year(),
+        u8::from(at.month()),
+        at.day()
+    )
+}
+
+/// Today on this machine's clock, read in-process (no launch). A note written
+/// at 08:00 in Brisbane is filed under that day, not yesterday's UTC date.
+pub fn today() -> String {
+    local_date(
+        time::OffsetDateTime::now_utc(),
+        pij_harnesses::proc::local_utc_offset_minutes().unwrap_or(0),
+    )
+}
+
+/// `at` as holders documents write it: UTC to the millisecond, with `Z`.
+pub fn stamp(at: time::OffsetDateTime) -> String {
+    let at = at.to_offset(time::UtcOffset::UTC);
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
         at.year(),
@@ -87,7 +112,17 @@ fn stamp(at: time::OffsetDateTime) -> String {
 /// millisecond still makes two holdings. Call it under the writer lock, with
 /// the role's committed rows.
 pub fn fresh_from(rows: &[Assignment], seat: &str, instance: &str) -> String {
-    let mut at = time::OffsetDateTime::now_utc();
+    fresh_from_at(rows, seat, instance, time::OffsetDateTime::now_utc())
+}
+
+/// [`fresh_from`] at a given time, so the collision rule is testable without
+/// the wall clock (#122 F003).
+pub fn fresh_from_at(
+    rows: &[Assignment],
+    seat: &str,
+    instance: &str,
+    mut at: time::OffsetDateTime,
+) -> String {
     loop {
         let from = stamp(at);
         if !rows
@@ -98,6 +133,96 @@ pub fn fresh_from(rows: &[Assignment], seat: &str, instance: &str) -> String {
         }
         at += time::Duration::milliseconds(1);
     }
+}
+
+/// Read a time a person gives (`pij directory lineage add --from/--to`):
+/// RFC 3339 with `Z` or an offset (`2026-11-04T09:00:00+10:00`, fractions
+/// allowed), or a bare date, taken as UTC midnight. `None` for anything else.
+pub fn parse_time(text: &str) -> Option<time::OffsetDateTime> {
+    let text = text.trim();
+    let number = |range: std::ops::Range<usize>| -> Option<i64> {
+        let part = text.get(range)?;
+        part.bytes()
+            .all(|b| b.is_ascii_digit())
+            .then(|| part.parse().ok())?
+    };
+    let date = time::Date::from_calendar_date(
+        i32::try_from(number(0..4)?).ok()?,
+        time::Month::try_from(u8::try_from(number(5..7)?).ok()?).ok()?,
+        u8::try_from(number(8..10)?).ok()?,
+    )
+    .ok()?;
+    if text.get(4..5) != Some("-") || text.get(7..8) != Some("-") {
+        return None;
+    }
+    if text.len() == 10 {
+        return Some(date.midnight().assume_utc());
+    }
+    if !matches!(text.get(10..11), Some("T" | "t" | " "))
+        || text.get(13..14) != Some(":")
+        || text.get(16..17) != Some(":")
+    {
+        return None;
+    }
+    let mut rest = text.get(19..)?;
+    let mut nanos = 0;
+    if let Some(fraction) = rest.strip_prefix('.') {
+        let digits = fraction.bytes().take_while(u8::is_ascii_digit).count();
+        if digits == 0 {
+            return None;
+        }
+        let padded = format!("{:0<9}", &fraction[..digits.min(9)]);
+        nanos = padded.parse().ok()?;
+        rest = &fraction[digits..];
+    }
+    let offset = match rest {
+        "Z" | "z" => time::UtcOffset::UTC,
+        _ => {
+            let sign = match rest.get(0..1)? {
+                "+" => 1,
+                "-" => -1,
+                _ => return None,
+            };
+            if rest.len() != 6 || rest.get(3..4) != Some(":") {
+                return None;
+            }
+            let hours: i8 = rest.get(1..3)?.parse().ok()?;
+            let minutes: i8 = rest.get(4..6)?.parse().ok()?;
+            time::UtcOffset::from_hms(sign * hours, sign * minutes, 0).ok()?
+        }
+    };
+    let clock = time::Time::from_hms_nano(
+        u8::try_from(number(11..13)?).ok()?,
+        u8::try_from(number(14..16)?).ok()?,
+        u8::try_from(number(17..19)?).ok()?,
+        nanos,
+    )
+    .ok()?;
+    Some(date.with_time(clock).assume_offset(offset))
+}
+
+/// A stored UTC time shown in local time with its offset, for people:
+/// `2026-11-06T00:07:12.000Z` at +600 minutes is `2026-11-06 10:07:12 +10:00`.
+/// Anything that does not parse is returned as it is.
+pub fn local(stored: &str, offset_minutes: i32) -> String {
+    let Some(at) = parse_time(stored) else {
+        return stored.to_string();
+    };
+    let Ok(offset) = time::UtcOffset::from_whole_seconds(offset_minutes.saturating_mul(60)) else {
+        return stored.to_string();
+    };
+    let at = at.to_offset(offset);
+    let (hours, minutes) = (offset_minutes.abs() / 60, offset_minutes.abs() % 60);
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} {}{hours:02}:{minutes:02}",
+        at.year(),
+        u8::from(at.month()),
+        at.day(),
+        at.hour(),
+        at.minute(),
+        at.second(),
+        if offset_minutes < 0 { '-' } else { '+' }
+    )
 }
 
 /// Close the open rows `ends` name (same role, seat, instance and `from`).
@@ -340,6 +465,68 @@ mod tests {
         froms.sort_unstable();
         froms.dedup();
         assert_eq!(froms.len(), 50);
+    }
+
+    #[test]
+    fn a_collision_moves_from_on_by_a_millisecond_without_the_wall_clock() {
+        let at = parse_time("2026-11-06T00:00:00.999Z").unwrap();
+        let mut taken = row("pij-a", "", Some("2026-11-06T00:00:00.500Z"));
+        taken.from = "2026-11-06T00:00:00.999Z".into();
+        assert_eq!(
+            fresh_from_at(std::slice::from_ref(&taken), "pij-a", "", at),
+            "2026-11-06T00:00:01.000Z"
+        );
+        assert_eq!(
+            fresh_from_at(std::slice::from_ref(&taken), "pij-a", "114", at),
+            "2026-11-06T00:00:00.999Z",
+            "another instance is another holding"
+        );
+    }
+
+    #[test]
+    fn a_memory_note_is_filed_under_the_local_date() {
+        // Plan 209, F32: 23:30 UTC on 5 Nov is already 6 Nov in Brisbane.
+        let at = parse_time("2026-11-05T23:30:00Z").unwrap();
+        assert_eq!(local_date(at, 600), "2026-11-06");
+        assert_eq!(local_date(at, 0), "2026-11-05");
+        assert_eq!(local_date(at, -300), "2026-11-05");
+    }
+
+    #[test]
+    fn times_parse_with_a_zone_or_as_a_utc_date_and_render_locally() {
+        for (text, stored) in [
+            ("2026-11-04", "2026-11-04T00:00:00.000Z"),
+            ("2026-11-04T09:30:00+10:00", "2026-11-03T23:30:00.000Z"),
+            ("2026-11-04T09:30:00.25Z", "2026-11-04T09:30:00.250Z"),
+            ("2026-11-04 09:30:00-02:30", "2026-11-04T12:00:00.000Z"),
+        ] {
+            assert_eq!(
+                parse_time(text).map(stamp).as_deref(),
+                Some(stored),
+                "{text}"
+            );
+        }
+        for bad in [
+            "",
+            "yesterday",
+            "2026-13-01",
+            "2026-11-04T09:30",
+            "2026-11-04T09:30:00",
+            "2026-11-04T09:30:00+1000",
+            "2026-11-04T09:30:00.Z",
+        ] {
+            assert!(parse_time(bad).is_none(), "{bad:?}");
+        }
+        assert_eq!(
+            local("2026-11-06T00:07:12.000Z", 600),
+            "2026-11-06 10:07:12 +10:00"
+        );
+        assert_eq!(
+            local("2026-11-06T00:07:12Z", -150),
+            "2026-11-05 21:37:12 -02:30"
+        );
+        assert_eq!(local("2026-11-06", 0), "2026-11-06 00:00:00 +00:00");
+        assert_eq!(local("whenever", 600), "whenever");
     }
 
     #[test]

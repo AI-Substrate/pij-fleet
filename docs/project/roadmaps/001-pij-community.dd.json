@@ -170,11 +170,12 @@
 				{
 					"id": "s12",
 					"title": "Time limits and check-ins",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-22"],
 					"builds": ["../blueprints/001-pij-community.dd.json#components/c-limits"],
 					"depends_on": ["#steps/s05"],
-					"done_when": "The three req-22 cases behave as written, with no new timer or launch."
+					"done_when": "The three req-22 cases behave as written, with no new timer or launch.",
+					"plan": "docs/plans/205-time-limits"
 				},
 				{
 					"id": "s13",

@@ -1,0 +1,52 @@
+private daemon pid=82984 port=47208 tmux=-L pij-208-82937
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-prime","harness":"omp","session":null,"extension_bui
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-h1","harness":"omp","session":null,"extension_build"
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-h2","harness":"omp","session":null,"extension_build"
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-h3","harness":"omp","session":null,"extension_build"
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-h4","harness":"omp","session":null,"extension_build"
+
+$ /tmp/pij208-bin/pij-rs project create fleet --repo /tmp/pij-208-SjXYfY/main --prime pij-scratch-prime
+pij project: ok — {"project":{"created_at":1793935102016,"created_by":"pij-scratch-prime","description":"fleet","plan_path":null,"prime_id":"pij-scratch-prime","repo":"/tmp/pij-208-SjXYfY/main","slug":"fleet"},"seq":12}
+exit=0
+add delivery exit=0
+add storage exit=0
+add coder exit=0
+reading rest-1: pid=82984 total=49 by_op={"ddocs.community": 6, "git.community": 21, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 10, "tmux.control-client": 1, "tmux.pipe-pane attach": 5, "tmux.set-options tap owner": 5}
+reading rest-2: pid=82984 total=49 by_op={"ddocs.community": 6, "git.community": 21, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 10, "tmux.control-client": 1, "tmux.pipe-pane attach": 5, "tmux.set-options tap owner": 5}
+
+$ /tmp/pij208-bin/pij-rs directory assign delivery pij-scratch-h1 --why first holding, renames the window
+pij directory: ok — {"commit":"c3ba8d3c1c7763f142e5a95a0afb8ef22d591c7a","flushed":0,"path":".harness/government/community/roles/delivery/holders.dd.json","project":"fleet","role":"delivery","row":{"assigned_by":"pij-scratch-prime","from":"2026-11-06T03:20:02.824Z","harness":"omp","machine":"<host>","seat":"pij-scratch-h1","why":"first holding, renames the window"},"seat":"pij-scratch-h1","seat_role":"worker","window":{"name":"fleet:delivery","renamed":true}}
+exit=0
+reading after-assign: pid=82984 total=59 by_op={"ddocs.community": 8, "git.community": 28, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 10, "tmux.control-client": 1, "tmux.pipe-pane attach": 5, "tmux.rename-window": 1, "tmux.set-options tap owner": 5}
+
+$ /tmp/pij208-bin/pij-rs directory assign storage pij-scratch-h1 --why second holding, rename skipped
+pij directory: ok — {"commit":"b7de144850dd52cc40cddd8e98c478ebc5cb3348","flushed":0,"path":".harness/government/community/roles/storage/holders.dd.json","project":"fleet","role":"storage","row":{"assigned_by":"pij-scratch-prime","from":"2026-11-06T03:20:11.130Z","harness":"omp","machine":"<host>","seat":"pij-scratch-h1","why":"second holding, rename skipped"},"seat":"pij-scratch-h1","seat_role":"worker","window":{"name":"fleet:delivery","reason":"the window keeps the seat's first open holding, fleet:delivery","renamed":false}}
+exit=0
+reading after-second-role-assign: pid=82984 total=68 by_op={"ddocs.community": 10, "git.community": 35, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 10, "tmux.control-client": 1, "tmux.pipe-pane attach": 5, "tmux.rename-window": 1, "tmux.set-options tap owner": 5}
+
+$ /tmp/pij208-bin/pij-rs --json directory assign --batch /tmp/pij-208-SjXYfY/batch.txt --why batch
+{"ok":true,"command":"pij directory","v":2,"data":{"commit":"c57ad404348b66c3eda68b354bc521fcbb587b3a","holdings":[{"commit":"c57ad404348b66c3eda68b354bc521fcbb587b3a","flushed":0,"path":".harness/government/community/roles/coder/holders.dd.json","row":{"assigned_by":"pij-scratch-prime","from":"2026-11-06T03:20:16.886Z","harness":"omp","machine":"<host>","seat":"pij-scratch-h2","why":"batch"},"seat_role":"worker","window":{"name":"fleet:coder","renamed":true}},{"commit":"c57ad404348b66c3eda68b354bc521fcbb587b3a","flushed":0,"path":".harness/government/community/roles/coder/holders.dd.json","row":{"assigned_by":"pij-scratch-prime","from":"2026-11-06T03:20:16.886Z","harness":"omp","machine":"<host>","seat":"pij-scratch-h3","why":"batch"},"seat_role":"worker","window":{"name":"fleet:coder","renamed":true}},{"commit":"c57ad404348b66c3eda68b354bc521fcbb587b3a","flushed":0,"path":".harness/government/community/roles/coder/holders.dd.json","row":{"assigned_by":"pij-scratch-prime","from":"2026-11-06T03:20:16.886Z","harness":"omp","machine":"<host>","seat":"pij-scratch-h4","why":"batch"},"seat_role":"worker","window":{"name":"fleet:coder","renamed":true}}],"project":"fleet"}}
+exit=0
+reading after-batch-of-3: pid=82984 total=80 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 10, "tmux.control-client": 1, "tmux.pipe-pane attach": 5, "tmux.rename-window": 4, "tmux.set-options tap owner": 5}
+
+$ /tmp/pij208-bin/pij-rs directory lineage add delivery pij-closed-elder --from 2026-10-01 --to 2026-10-02T12:00:00+10:00 --why history kept elsewhere
+pij directory: ok — {"commit":"b0e757b06bb7aa6f07c4d78f611406b11ec06f57","flushed":0,"path":".harness/government/community/roles/delivery/holders.dd.json","project":"fleet","role":"delivery","row":{"assigned_by":"pij-scratch-prime","from":"2026-10-01T00:00:00.000Z","harness":"unknown","machine":"unknown","release_why":"lineage add","released_by":"pij-scratch-prime","seat":"pij-closed-elder","to":"2026-10-02T02:00:00.000Z","why":"history kept elsewhere"},"seat":"pij-closed-elder"}
+exit=0
+reading after-lineage-add: pid=82984 total=89 by_op={"ddocs.community": 14, "git.community": 49, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 10, "tmux.control-client": 1, "tmux.pipe-pane attach": 5, "tmux.rename-window": 4, "tmux.set-options tap owner": 5}
+
+$ git -C gov log
+b0e757b community: lineage delivery pij-closed-elder (2026-10-01T00:00:00.000Z to 2026-10-02T02:00:00.000Z)
+c57ad40 community: assign 3 holdings
+b7de144 community: assign storage to pij-scratch-h1
+c3ba8d3 community: assign delivery to pij-scratch-h1
+3456d03 community: add role coder
+ca860cc community: add role storage
+9af0dda community: add role delivery
+c8b2f71 government
+
+$ window names
+0 w0
+1 fleet:delivery
+2 fleet:coder
+3 fleet:coder
+4 fleet:coder

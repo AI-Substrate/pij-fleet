@@ -826,6 +826,9 @@ async fn an_unfinished_withdrawal_is_finished_by_the_same_command() {
             holder: None,
             created_at: 1,
             delivered_at: None,
+            checkin_at: None,
+            escalated_at: None,
+            answered_at: None,
         })
         .await
         .unwrap();

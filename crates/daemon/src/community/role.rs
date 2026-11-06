@@ -430,17 +430,6 @@ pub fn to_bytes(document: &Value) -> Vec<u8> {
     bytes
 }
 
-/// Today's date in UTC, `YYYY-MM-DD`, for a changelog row.
-pub fn today() -> String {
-    let now = time::OffsetDateTime::now_utc();
-    format!(
-        "{:04}-{:02}-{:02}",
-        now.year(),
-        u8::from(now.month()),
-        now.day()
-    )
-}
-
 fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
     document["sections"]
         .as_array()?
