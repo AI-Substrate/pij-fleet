@@ -33,7 +33,10 @@
 					"harness_session": "235e5da8-b7fc-4331-b348-01c70ad05c95",
 					"instance_key": "126",
 					"machine": "ops.osk.lan",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-subsequent-reindeer",
+					"to": "2026-11-06T00:27:56.160Z",
 					"why": "reviewer for PR #126 (s03)"
 				}
 			]
