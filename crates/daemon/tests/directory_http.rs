@@ -2892,7 +2892,10 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
     assert_eq!(reviewer["memory"]["notes"], 1);
     assert!(reviewer["memory"]["latest"].is_string(), "{reviewer}");
     assert!(reviewer["requests"].is_null());
-    assert!(reviewer["call_on"].is_null(), "a live holder is asked directly");
+    assert!(
+        reviewer["call_on"].is_null(),
+        "a live holder is asked directly"
+    );
     let qa = role_of(&viewed, "qa");
     assert_eq!(
         qa["requests"],
