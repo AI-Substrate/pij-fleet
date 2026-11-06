@@ -33,7 +33,7 @@
 | — | pij-many-tiglon | copilot | 6a91000b-c9e9-45a3-a6cd-f83a462adb9a | ops.osk.lan | 129 | 2026-11-06T00:37:37.656Z | 2026-11-06T12:56:19.056Z | pij-steady-otter | pij-steady-otter | reviewer for PR #129 (s05) | #129 merged (F70 dogfood) |
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 130 | 2026-11-06T00:51:51.703Z | 2026-11-06T01:16:27.133Z | pij-steady-otter | pij-steady-otter | reviewer for PR #130 (s08) | #130 verdict posted (block); fix pending |
 | — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 131 | 2026-11-06T01:01:54.632Z | 2026-11-06T12:56:20.380Z | pij-steady-otter | pij-steady-otter | reviewer for PR #131 (s11) | #131 merged (F70 dogfood) |
-| — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 132 | 2026-11-06T01:16:28.531Z | — | pij-steady-otter | — | reviewer for PR #132 (s07) | — |
+| — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 132 | 2026-11-06T01:16:28.531Z | 2026-11-06T12:56:21.452Z | pij-steady-otter | pij-steady-otter | reviewer for PR #132 (s07) | #132 merged (F70 dogfood) |
 | — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 134 | 2026-11-06T01:24:53.726Z | — | pij-steady-otter | — | reviewer for PR #134 (plan 207) | — |
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 138 | 2026-11-06T03:30:49.080Z | — | pij-steady-otter | — | review #138 (plan 208) | — |
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 141 | 2026-11-06T08:01:31.936Z | — | pij-steady-otter | — | review #141 (plan 203, s09) | — |
