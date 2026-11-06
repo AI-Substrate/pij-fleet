@@ -22,8 +22,15 @@
 # it and never cleared here: whether that build is really over is the caller's
 # call, not this script's.
 #
+# Every cargo command runs under `nice -n 19` and, where it exists (macOS),
+# `taskpolicy -b` (background QoS: efficiency cores, throttled IO), so a build
+# can never starve the seats around it. rustc and linkers inherit both. Each
+# wrapper is skipped if absent. (Fleet cost rule, plan 208.)
+#
 # Cost: nothing at rest. Waiting: one df, one mkdir and one sleep per poll
-# (20 s) per waiting caller. Holding: one df per cargo command.
+# (20 s) per waiting caller. Holding: one df per cargo command, plus the nice
+# and taskpolicy launches, each of which execs into the next (one or two
+# launches per cargo command, never per poll).
 
 set -uo pipefail
 
@@ -31,6 +38,8 @@ DF="${PIJ_SHARED_BUILD_DF:-/bin/df}"         # test seam
 MKDIR="${PIJ_SHARED_BUILD_MKDIR:-/bin/mkdir}" # test seam
 POLL="${PIJ_SHARED_BUILD_POLL_SECONDS:-20}"  # test seam
 WHOAMI="${PIJ_SHARED_BUILD_WHOAMI-}"          # test seam; default: pij-rs on PATH
+NICE="${PIJ_SHARED_BUILD_NICE:-/usr/bin/nice}"                   # test seam
+TASKPOLICY="${PIJ_SHARED_BUILD_TASKPOLICY:-/usr/sbin/taskpolicy}" # test seam
 FLOOR_GB="${PIJ_DISK_FLOOR_GB:-25}"
 
 refuse() {
@@ -290,6 +299,10 @@ for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
 done
 [ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
 
+wrap=()
+[ -x "$NICE" ] && wrap+=("$NICE" -n 19)
+[ -x "$TASKPOLICY" ] && wrap+=("$TASKPOLICY" -b)
+
 export CARGO_TARGET_DIR="$target"
 export CARGO_INCREMENTAL=0
 for command in "${commands[@]}"; do
@@ -298,7 +311,7 @@ for command in "${commands[@]}"; do
 	# In the background under `wait`, so a signal is handled at once rather
 	# than after cargo finishes; `set -m` gives the job its own process group.
 	set -m
-	cargo "$@" &
+	${wrap[@]+"${wrap[@]}"} cargo "$@" &
 	child=$!
 	set +m
 	wait "$child"

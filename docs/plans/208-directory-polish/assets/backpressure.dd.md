@@ -29,6 +29,7 @@
 | bp-0007 | AC7 | ph-00d0 | BUILD | computational | BUILD: the shared-build test with a fake whoami shows the seat id in the owner line; with no seat, the user. | [ ] unchecked | — | — | harness/scripts/shared-build.sh |
 | bp-0008 | AC8: cost | ph-00d0 | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | Batch assign is one writer commit for many holders; lineage add is one commit; the writer's lock retry is bounded and only on a foreign lock. No timer or poll. | — | pij-rs --json ping |
 | bp-0009 | AC9: docs and states | ph-00d0 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0010 | AC10 | ph-00d0 | BUILD | computational | BUILD: the shared-build test runs a fake cargo that reports its niceness (19) and the flag a fake taskpolicy passed down (-b) for each command of a --then batch, and with no taskpolicy still 19. Cost: one or two extra launches per cargo command (nice and taskpolicy each exec into the next), none at rest or per poll. | [ ] unchecked | — | — | harness/scripts/shared-build.sh |
 
 <a id="sensors"></a>
 

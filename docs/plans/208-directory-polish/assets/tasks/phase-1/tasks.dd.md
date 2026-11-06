@@ -27,7 +27,7 @@
 
 ## Summary
 
-Nine tasks, one coder. F003 first (it flakes CI), then zones, window rule and the writer marker, then the two verbs (lineage add, assign --batch) on a shared assign path, then shared-build's owner, cost and docs.
+"Ten tasks, one coder. F003 first (it flakes CI), then zones, window rule and the writer marker, then the two verbs (lineage add, assign --batch) on a shared assign path, then shared-build's owner, cost and docs, and last the cost rule that runs every shared-build cargo command niced and in background QoS."
 
 <a id="tasks"></a>
 
@@ -44,6 +44,7 @@ Nine tasks, one coder. F003 first (it flakes CI), then zones, window rule and th
 | tk-0007 | F24: shared-build's owner names the seat | — | ph-00d0 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | The owner line's seat is PIJ_ID, else PIJ_SESSION_ID (every harness seat has it), else the id `pij-rs whoami --json` returns (once per run, through a test seam), else $USER. | TS test proof is CI-only (C25); checked locally by running the script with a fake whoami. | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0008 | Cost receipts | — | ph-00d0 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | Batch assign is one writer commit for N holders; lineage add one commit; the lock retry is the existing bounded one; a skipped rename launches nothing. spawn_sites.rs passes; private-daemon ping deltas per verb and live at-rest readings are in the evidence. | — | [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0009 | Docs and states | — | ph-00d0 | [ ] unchecked | — | — | [tk-0009](tasks.dd.md#done-when) | pij-rs-api.md documents lineage add, assign --batch, the zone rule, the window rule, the marker and the refusals; directory help and the skill's directory row carry them; difficulties.md marks F13, F15, F16 resolved and adds resolved rows for F17, F18, F24 and #122 F003; ddocs-check passes; PR body has a Delivers line. | No roadmap state changes. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0010 | Cost rule: shared-build runs cargo niced and in background QoS | — | ph-00d0 | [ ] unchecked | — | — | [tk-0010](tasks.dd.md#done-when) | Each cargo command runs as /usr/bin/nice -n 19 /usr/sbin/taskpolicy -b cargo ..., with taskpolicy skipped where absent (Linux CI); both paths are test seams. | TS test proof is CI-only (C25); checked locally with a fake cargo under a fake and the real taskpolicy. | [ac-0010](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -102,6 +103,12 @@ Nine tasks, one coder. F003 first (it flakes CI), then zones, window rule and th
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0009 | ddocs-check passes; CI green on the exact head; reviewer, security and performance verdicts at that head. | [ ] unchecked | [bp-0009](../../backpressure.dd.md#rows) |
+
+### tk-0010
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0010 | shared-build.test.ts (CI) and a local run: every command of a --then batch reports niceness 19 and taskpolicy -b; with no taskpolicy, niceness 19 and no wrapper. | [ ] unchecked | [bp-0010](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

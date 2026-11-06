@@ -89,6 +89,12 @@
           "claim": "Docs and states. No roadmap state change (follow-up work). docs/difficulties.md: F13, F15, F16, F17, F18 and #122 F003 marked resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0009"
+        },
+        {
+          "id": "ac-0010",
+          "claim": "Fleet cost rule (prime, via pm-001, 06 Nov 12:22): `just shared-build` runs every cargo command under `nice -n 19` and, where it exists (macOS), `taskpolicy -b`, so no seat can forget the prefix. Wrappers are launched by absolute path and each is skipped if absent.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0010"
         }
       ]
     },

@@ -14,7 +14,7 @@
     },
     {
       "name": "summary",
-      "value": "Nine tasks, one coder. F003 first (it flakes CI), then zones, window rule and the writer marker, then the two verbs (lineage add, assign --batch) on a shared assign path, then shared-build's owner, cost and docs."
+      "value": "\"Ten tasks, one coder. F003 first (it flakes CI), then zones, window rule and the writer marker, then the two verbs (lineage add, assign --batch) on a shared assign path, then shared-build's owner, cost and docs, and last the cost rule that runs every shared-build cargo command niced and in background QoS.\""
     },
     {
       "name": "tasks",
@@ -126,6 +126,18 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
           "done": "tasks.dd.json#done_when/tk-0009"
+        },
+        {
+          "id": "tk-0010",
+          "title": "Cost rule: shared-build runs cargo niced and in background QoS",
+          "phase": "ph-00d0",
+          "state": "unchecked",
+          "success": "Each cargo command runs as /usr/bin/nice -n 19 /usr/sbin/taskpolicy -b cargo ..., with taskpolicy skipped where absent (Linux CI); both paths are test seams.",
+          "notes": "TS test proof is CI-only (C25); checked locally with a fake cargo under a fake and the real taskpolicy.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0010"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0010"
         }
       ]
     },
@@ -202,6 +214,14 @@
             "assertion": "ddocs-check passes; CI green on the exact head; reviewer, security and performance verdicts at that head.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0009"
+          }
+        ],
+        "tk-0010": [
+          {
+            "id": "dw-0010",
+            "assertion": "shared-build.test.ts (CI) and a local run: every command of a --then batch reports niceness 19 and taskpolicy -b; with no taskpolicy, niceness 19 and no wrapper.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0010"
           }
         ]
       }

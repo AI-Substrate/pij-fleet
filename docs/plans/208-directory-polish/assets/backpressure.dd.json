@@ -104,6 +104,16 @@
           "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
           "state": "unchecked",
           "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0010",
+          "criterion": "AC10",
+          "phase": "ph-00d0",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: the shared-build test runs a fake cargo that reports its niceness (19) and the flag a fake taskpolicy passed down (-b) for each command of a --then batch, and with no taskpolicy still 19. Cost: one or two extra launches per cargo command (nice and taskpolicy each exec into the next), none at rest or per poll.",
+          "state": "unchecked",
+          "probe": "harness/scripts/shared-build.sh"
         }
       ]
     },
