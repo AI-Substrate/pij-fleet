@@ -568,11 +568,16 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         community::layout::schema_copies(),
         &community::writer::LOCK_RETRY,
     ));
+    // Ruling C6: an assign drains the role's queued requests (plan 199).
+    let role_queue = Arc::new(delivery::role_send::RoleQueueDrain::new(
+        directory_store.clone(),
+        Arc::clone(&delivery),
+    ));
     let directory = Arc::new(community::directory::DirectoryService::new(
         Arc::clone(&community_writer),
         directory_store,
         Arc::clone(&event_bus),
-        Arc::new(community::directory::NoHook),
+        role_queue,
         Arc::clone(&tmux),
     ));
     Ok(Services {

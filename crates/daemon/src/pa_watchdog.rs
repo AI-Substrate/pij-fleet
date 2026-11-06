@@ -61,7 +61,7 @@ use pij_core::model::{
     DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
 };
 use pij_core::orchestration::PrimeState;
-use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
+use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, QueuedRequest};
 use pij_core::ports::SeatFilter;
 use pij_core::ports::SpineWindow;
 use pij_core::report::CardRecord;
@@ -127,6 +127,9 @@ pub(crate) fn interval_secs(configured: u64) -> Result<u64> {
 /// What one round did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RoundOutcome {
+    /// A role request's time limit sent its holder a check-in, or told the
+    /// PA (else the prime) the check-in went unanswered (plan 205, s12).
+    RequestLimit(crate::delivery::role_send::LimitAction),
     /// The PA's fleet went idle; the digest was handed to delivery.
     Nudged {
         /// The PA.
@@ -317,7 +320,7 @@ fn bg_msg(to: &SeatId, body: String, msg_id: String) -> Msg {
 /// Wake a PA through the ordinary delivery path, not held when it is cold:
 /// waking it is the point. A cold wake is audited first, with `reason`.
 /// Returns the delivery outcome word (or error) and the `cold_check` label.
-async fn wake_pa(
+pub(crate) async fn wake_pa(
     services: &Services,
     pa: &SeatDescriptor,
     body: String,
@@ -392,6 +395,13 @@ impl PaWatchdog {
         let mut outcomes = self.optin_round(services, &seats, now_ms).await;
         let stops = self.stops(services, &seats).await;
         outcomes.extend(self.limit_round(services, &seats, &stops, now_ms).await);
+        // Role request time limits ride this round: no timer of their own (s12).
+        outcomes.extend(
+            crate::delivery::role_send::time_limits(services, now_ms)
+                .await
+                .into_iter()
+                .map(RoundOutcome::RequestLimit),
+        );
 
         let pas: Vec<&SeatDescriptor> = seats.iter().filter(|seat| is_watched_pa(seat)).collect();
         // The designated prime is a supervisor whatever its role says: its
@@ -950,12 +960,14 @@ impl PaWatchdog {
             })
             .collect::<Vec<_>>();
         let anomalies = stale_cards(services, &rows, now_ms).await;
+        let queued = queued_requests(services, now_ms).await;
         FleetView {
             pa: pa.id.clone(),
             prime: prime.map(|prime| prime.id.clone()),
             scope,
             rows,
             anomalies,
+            queued,
             interval_ms: interval_secs * 1_000,
         }
     }
@@ -1019,6 +1031,32 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
         DeliveryOutcome::Queued { .. } => "queued",
         DeliveryOutcome::Held { .. } => "held",
         DeliveryOutcome::Refused { .. } => "refused",
+    }
+}
+
+/// Requests waiting on a role with no live holder (plan 199): one indexed
+/// read per digest, so the queue rides the round with no timer of its own.
+/// A failed read leaves the list empty rather than holding up the nudge.
+async fn queued_requests(services: &Services, now_ms: u64) -> Vec<QueuedRequest> {
+    match services.governance.store().all_queued_role_requests().await {
+        Ok(requests) => requests
+            .into_iter()
+            .map(|request| QueuedRequest {
+                address: crate::delivery::role_send::RoleAddress {
+                    role: request.role,
+                    instance: request.instance,
+                }
+                .display(),
+                project: request.project,
+                id: request.id,
+                requester: SeatId::from(request.requester.as_str()),
+                waiting_ms: now_ms.saturating_sub(request.created_at),
+            })
+            .collect(),
+        Err(cause) => {
+            eprintln!("pa watchdog: queued role requests unavailable: {cause}");
+            Vec::new()
+        }
     }
 }
 
