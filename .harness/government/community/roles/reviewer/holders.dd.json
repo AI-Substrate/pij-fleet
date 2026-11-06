@@ -328,6 +328,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-pleased-marmot",
 					"why": "first verdict on #149 (plan 212)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T13:58:03.168Z",
+					"harness": "copilot",
+					"harness_session": "3e7756cf-b339-46ac-9b12-46d3065045cc",
+					"instance_key": "150",
+					"machine": "ops.osk.lan",
+					"seat": "pij-usual-seahorse",
+					"why": "ledger PR #150 (F61-F79)"
 				}
 			]
 		}
