@@ -104,7 +104,7 @@
 				{
 					"id": "s06",
 					"title": "Outputs and notification",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-08",
 						"../prds/001-pij-community.dd.json#requirements/req-10"
@@ -114,7 +114,8 @@
 						"../blueprints/001-pij-community.dd.json#components/c-verbs"
 					],
 					"depends_on": ["#steps/s04", "#steps/s05"],
-					"done_when": "Parallel outputs never conflict; the requester is notified in its chosen mode."
+					"done_when": "Parallel outputs never conflict; the requester is notified in its chosen mode.",
+					"plan": "docs/plans/200-outputs-notify"
 				},
 				{
 					"id": "s07",

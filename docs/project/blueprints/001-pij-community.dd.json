@@ -116,7 +116,7 @@
 					"where": "crates/daemon delivery",
 					"responsibility": "Routes an output's notice to the requester with its reply mode, or to the nearest seat above as an FYI; block and failed always wake.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-08"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-memory-hook",
