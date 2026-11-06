@@ -30,6 +30,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-alert-ibex",
 					"why": "second security holder for parallel verdicts (prime 13:20)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T09:12:49.520Z",
+					"harness": "copilot",
+					"harness_session": "3b066a36-c3a8-4830-9c90-ee18285c9a26",
+					"instance_key": "147",
+					"machine": "ops.osk.lan",
+					"seat": "pij-wary-lynx",
+					"why": "verdict on #147 (plan 213)"
 				}
 			]
 		}
