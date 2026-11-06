@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "325693b633ea1aca-000000000000006b",
+				"date": "2026-11-06",
+				"head": "6cc92eb8d1ae7e55bdba2d72087a2b8e566e5758",
+				"kind": "deliverable",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/150",
+				"requester": "pij-steady-otter",
+				"role": "docs-system",
+				"subject": "pr:150",
+				"writer": "pij-wooden-lungfish",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Ledger PR #150 (head 6cc92eb, frozen): docs/difficulties.md gains D-WB-59 to D-WB-77 = F61 to F79 in order, with pm-001's severities and owners: plan 212 (F61, F62), 209 (F63, F65, F67), 214 (F68, F69 high, F73), 215 (F66, F70, F71, F72), 216 (F75 to F79), unowned (F64, F74). F50, F53, F54, F55 and F58 (D-WB-48, 51, 52, 53, 56) now name plan 213 (shim forwarding). Appended after D-WB-58. local-path-check and ddocs-check pass; Delivers: none. Next free F is F80.\n"
+		}
+	]
+}
