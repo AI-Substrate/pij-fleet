@@ -78,6 +78,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-following-marsupial",
 					"why": "plan 207, issues #127 and #128"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T00:51:54.953Z",
+					"harness": "copilot",
+					"harness_session": "92c00825-7025-4673-b7d6-8c3fb82fad45",
+					"instance_key": "208",
+					"machine": "ops.osk.lan",
+					"seat": "pij-local-warbler",
+					"why": "plan 208 directory polish"
 				}
 			]
 		}
