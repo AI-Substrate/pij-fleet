@@ -26,15 +26,21 @@ pub const DELIVERED_EVENT: &str = "delivered";
 /// Deliveries a PM's card shows, newest first.
 pub const CARD_DELIVERIES: u32 = 3;
 
-/// The most delivery rows one card read walks: the newest rows for the PM on
-/// `deliveries_by_pm`, enough for [`CARD_DELIVERIES`] PRs of ordinary size.
-/// Bounds the read whatever the PM's history (performance review of #131).
-pub const CARD_ROWS: u32 = 48;
+/// The card's first read, one step of it: the distinct PRs recorded for the PM
+/// at its newest `recorded_at` older than `?2`, at most `?3` of them, all off
+/// the covering `deliveries_by_pm` index in index order (no sort, no table).
+/// The caller steps `?2` down until it has [`CARD_DELIVERIES`] PRs, so the walk
+/// is bounded by those PRs' rows, never the PM's history (performance review
+/// of #131).
+pub const PM_DELIVERY_STEP_SQL: &str = "SELECT DISTINCT project, pr, recorded_at FROM deliveries \
+     WHERE pm = ?1 AND recorded_at = (SELECT recorded_at FROM deliveries \
+     WHERE pm = ?1 AND recorded_at < ?2 ORDER BY recorded_at DESC LIMIT 1) \
+     ORDER BY project, pr LIMIT ?3";
 
-/// The card read: the PM's newest rows, straight off `deliveries_by_pm` in
-/// index order, with no grouping or sort; grouped into PRs in Rust.
-pub const DELIVERIES_FOR_PM_SQL: &str = "SELECT project, pr, merge_commit, recorded_by, recorded_at, address \
-     FROM deliveries WHERE pm = ?1 ORDER BY recorded_at DESC LIMIT ?2";
+/// The card's second read: every address one PR delivered, through the
+/// primary key `(project, pr, address)` in key order (no sort).
+pub const DELIVERY_ADDRESSES_SQL: &str = "SELECT address, merge_commit, recorded_by FROM deliveries \
+     WHERE project = ?1 AND pr = ?2 ORDER BY address";
 
 /// One number handed out.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -385,47 +391,60 @@ impl SqliteOrchestration {
         Ok(prs.into_iter().map(|pr| pr as u64).collect())
     }
 
-    /// The newest `limit` PRs whose delivery told `pm`, each with its
-    /// addresses: at most [`CARD_ROWS`] rows walked in `deliveries_by_pm`
-    /// order, no sort. A PR's rows share one `recorded_at` (one call records
-    /// them), so they arrive together.
+    /// The newest `limit` PRs whose delivery told `pm`, each with every
+    /// address it delivered, in two bounded indexed reads with no sort: the
+    /// PRs by stepping [`PM_DELIVERY_STEP_SQL`] down `deliveries_by_pm`, then
+    /// each PR's addresses by [`DELIVERY_ADDRESSES_SQL`]. A PR of any size is
+    /// whole and never hides an older one (performance review of #131).
     pub async fn deliveries_for_pm(&self, pm: &str, limit: u32) -> Result<Vec<DeliveryNote>> {
         require_current_schema(&self.pool).await?;
-        let rows = sqlx::query(DELIVERIES_FOR_PM_SQL)
-            .bind(pm)
-            .bind(i64::from(CARD_ROWS))
-            .fetch_all(&self.pool)
-            .await
-            .map_err(adapter_error)?;
-        let mut notes: Vec<DeliveryNote> = Vec::new();
-        for row in &rows {
-            let project: String = row.try_get("project").map_err(adapter_error)?;
-            let pr = row.try_get::<i64, _>("pr").map_err(adapter_error)? as u64;
-            let address: String = row.try_get("address").map_err(adapter_error)?;
-            if let Some(note) = notes
-                .iter_mut()
-                .find(|note| note.project == project && note.pr == pr)
-            {
-                note.addresses.push(address);
-                continue;
+        let mut tx = self.pool.begin().await.map_err(adapter_error)?;
+        let mut prs: Vec<(String, i64, i64)> = Vec::new();
+        let mut before = i64::MAX;
+        while prs.len() < limit as usize {
+            let rows = sqlx::query(PM_DELIVERY_STEP_SQL)
+                .bind(pm)
+                .bind(before)
+                .bind(i64::from(limit))
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+            let Some(first) = rows.first() else { break };
+            before = first.try_get("recorded_at").map_err(adapter_error)?;
+            for row in &rows {
+                let project: String = row.try_get("project").map_err(adapter_error)?;
+                let pr: i64 = row.try_get("pr").map_err(adapter_error)?;
+                // A retry that added addresses later records the same PR again.
+                if prs.len() < limit as usize
+                    && !prs.iter().any(|(p, n, _)| *p == project && *n == pr)
+                {
+                    prs.push((project, pr, before));
+                }
             }
-            if notes.len() == limit as usize {
-                continue;
-            }
+        }
+        let mut notes = Vec::with_capacity(prs.len());
+        for (project, pr, recorded_at) in prs {
+            let rows = sqlx::query(DELIVERY_ADDRESSES_SQL)
+                .bind(&project)
+                .bind(pr)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+            let Some(first) = rows.first() else { continue };
             notes.push(DeliveryNote {
+                merge_commit: first.try_get("merge_commit").map_err(adapter_error)?,
+                recorded_by: first.try_get("recorded_by").map_err(adapter_error)?,
+                addresses: rows
+                    .iter()
+                    .map(|row| row.try_get("address"))
+                    .collect::<std::result::Result<_, _>>()
+                    .map_err(adapter_error)?,
                 project,
-                pr,
-                merge_commit: row.try_get("merge_commit").map_err(adapter_error)?,
-                addresses: vec![address],
-                recorded_by: row.try_get("recorded_by").map_err(adapter_error)?,
-                recorded_at: row
-                    .try_get::<i64, _>("recorded_at")
-                    .map_err(adapter_error)? as u64,
+                pr: pr as u64,
+                recorded_at: recorded_at as u64,
             });
         }
-        for note in &mut notes {
-            note.addresses.sort();
-        }
+        tx.commit().await.map_err(adapter_error)?;
         Ok(notes)
     }
 }

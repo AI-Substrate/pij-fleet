@@ -277,33 +277,82 @@ async fn deliveries_record_once_release_named_claims_and_reach_the_pm_card() {
     );
 }
 
-/// Performance review of #131: the card read walks `deliveries_by_pm` in
-/// index order with a bound, and never builds a temporary b-tree to group or
-/// sort the PM's whole history.
+/// Performance review of #131: both card reads walk an index in index order,
+/// bounded, and never build a temporary b-tree to group or sort the PM's
+/// history.
 #[tokio::test]
-async fn the_pm_card_read_walks_its_index_without_sorting_the_history() {
-    use sqlx::Row;
-
+async fn the_pm_card_reads_walk_their_indexes_without_sorting_the_history() {
     let (fresh, _store, _) = store().await;
     let pool = pij_store::open(&fresh.path()).await.expect("open");
-    let plan: Vec<String> = sqlx::query(&format!(
-        "EXPLAIN QUERY PLAN {}",
-        pij_store::claims::DELIVERIES_FOR_PM_SQL
-    ))
-    .bind("pij-b")
-    .bind(48_i64)
-    .fetch_all(&pool)
-    .await
-    .expect("plan")
-    .iter()
-    .map(|row| row.get::<String, _>("detail"))
-    .collect();
-    assert!(
-        plan.iter().any(|step| step.contains("deliveries_by_pm")),
-        "{plan:?}"
+    let step = sqlx::query(pij_store::claims::PM_DELIVERY_STEP_SQL)
+        .bind("pij-b")
+        .bind(i64::MAX)
+        .bind(3_i64);
+    let addresses = sqlx::query(pij_store::claims::DELIVERY_ADDRESSES_SQL)
+        .bind("pij")
+        .bind(143_i64);
+    for (query, index) in [
+        (step, "COVERING INDEX deliveries_by_pm"),
+        (addresses, "sqlite_autoindex_deliveries_1"),
+    ] {
+        let plan: Vec<String> = query_plan(&pool, query).await;
+        assert!(plan.iter().any(|step| step.contains(index)), "{plan:?}");
+        assert!(
+            !plan.iter().any(|step| step.contains("TEMP B-TREE")),
+            "no sort or grouping: {plan:?}"
+        );
+    }
+}
+
+async fn query_plan<'a>(
+    pool: &sqlx::SqlitePool,
+    query: sqlx::query::Query<'a, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'a>>,
+) -> Vec<String> {
+    use sqlx::{Execute, Row};
+
+    let mut query = query;
+    let sql = format!("EXPLAIN QUERY PLAN {}", query.sql());
+    let arguments = query.take_arguments().expect("arguments").expect("bound");
+    sqlx::query_with(&sql, arguments)
+        .fetch_all(pool)
+        .await
+        .expect("plan")
+        .iter()
+        .map(|row| row.get::<String, _>("detail"))
+        .collect()
+}
+
+/// Performance review of #131 at 93ca2b1: a newest PR with more addresses than
+/// any row cap still shows whole, and the two older PRs still show.
+#[tokio::test]
+async fn a_large_newest_delivery_never_hides_an_address_or_an_older_pr() {
+    let (_fresh, store, _) = store().await;
+    let delivery = |pr: u64, addresses: usize, at: u64| DeliveryRecord {
+        project: "pij".into(),
+        pr,
+        merge_commit: format!("m{pr}"),
+        recorded_by: "pij-prime".into(),
+        pm: Some("pij-b".into()),
+        addresses: (0..addresses)
+            .map(|n| format!("docs/project/prds/001-pij-community.dd.json#requirements/req-{n:03}"))
+            .collect(),
+        releases: Vec::new(),
+        at,
+    };
+    for (pr, addresses, at) in [(140, 1, 10), (141, 2, 20), (142, 3, 30), (143, 60, 40)] {
+        store
+            .record_delivery_committed(&delivery(pr, addresses, at))
+            .await
+            .unwrap();
+    }
+    let card = store.deliveries_for_pm("pij-b", 3).await.unwrap();
+    assert_eq!(
+        card.iter()
+            .map(|note| (note.pr, note.addresses.len(), note.recorded_at))
+            .collect::<Vec<_>>(),
+        [(143, 60, 40), (142, 3, 30), (141, 2, 20)]
     );
-    assert!(
-        !plan.iter().any(|step| step.contains("TEMP B-TREE")),
-        "no sort or grouping: {plan:?}"
-    );
+    assert_eq!(card[0].merge_commit, "m143");
+    assert!(card[0].addresses.is_sorted());
+    assert_eq!(card[0].addresses, delivery(143, 60, 40).addresses);
 }

@@ -31,7 +31,9 @@ CREATE TABLE deliveries (
     PRIMARY KEY (project, pr, address)
 ) STRICT;
 
-CREATE INDEX deliveries_by_pm ON deliveries (pm, recorded_at) WHERE pm IS NOT NULL;
+-- The PM card's walk: newest recorded_at first, then the PRs at each one,
+-- covered by the index so it never touches the table or sorts.
+CREATE INDEX deliveries_by_pm ON deliveries (pm, recorded_at, project, pr) WHERE pm IS NOT NULL;
 
 -- Every PR recorded for one address, so a printed delivered_by edit carries
 -- all of them (review of #131, F002).

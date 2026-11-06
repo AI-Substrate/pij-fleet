@@ -504,9 +504,10 @@ spine as on an empty one.
 
 `deliveries` lists the newest three PRs whose `pij delivered` named this seat
 as the PM, each `{project, pr, merge_commit, addresses, recorded_by,
-recorded_at}`; `[]` when none (plan 196). Only `POST /v1/state` reads it, one
-bounded walk of the `deliveries_by_pm` index (at most 48 rows, no sort);
-`GET /v1/cards`, which status lines and the PA read often, leaves it `[]`. Human
+recorded_at}`; `[]` when none (plan 196). Every address of each PR is listed, however many.
+Only `POST /v1/state` reads it, in two bounded indexed reads with no sort: the
+three PRs by stepping down the covering `deliveries_by_pm` index, then each
+PR's addresses through the deliveries primary key. `GET /v1/cards`, which status lines and the PA read often, leaves it `[]`. Human
 `pij state` prints one `delivered:` line per PR.
 
 ### Every seat's card in one call
