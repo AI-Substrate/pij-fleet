@@ -171,7 +171,7 @@
 					"statement": "`pij send role:<id>` (or `role:<id>/<instance>` for a many-holder role, such as `role:pm/021`) delivers when exactly one live seat holds it. With none, the request waits on the role's queue, and pij wakes the PA (or the prime when no PA is live) with runnable next steps: revive the last holder, showing its context size, or assign a fresh seat. The queue shows in the PA's watchdog feed until it is cleared; no new timer. With two or more live holders it refuses and lists them. pij never starts a seat on its own.",
 					"actor": "requester",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Three tests: 0 live holders queue the request and wake the PA with both commands and the old seat's context size; 1 delivers; 2 refuse listing both seats. `role:pm/021` reaches only that PM.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -181,7 +181,7 @@
 					"statement": "`--reply wake|fyi|none` on a send to a role, default `wake`, is stored on the request. The output that answers it notifies the requester with that mode. A `block` verdict or a `failed` result always wakes. An output nobody requested goes as an FYI to the nearest seat above (its PM, else the prime). One seat is notified; everyone else reads the record (req-10).",
 					"actor": "requester",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "An idle requester that sent with the default is woken by the output; one that sent `--reply fyi` is not woken; a block verdict wakes a `fyi` requester.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -311,7 +311,7 @@
 					"statement": "A send can carry `--limit <duration>`; without one, the role's default limit applies. When the limit passes with no output and no card update since the request (each card update restarts it), pij sends the seat one check-in, delivered as to any busy seat: write what you have, update your card, and say why it needs longer. Nothing is stopped. If the seat does not answer, pij tells the PA (else the prime). The check runs in the watchdog round the daemon already has; the opt-in quiet-seat watchdog is unchanged.",
 					"actor": "requester",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A seat busy past its limit with no card update gets one check-in; a seat that updates its card is never checked in; a seat that ignores the check-in raises a PA notice.",
 					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
 				},

@@ -34,6 +34,22 @@ pub struct FleetAnomaly {
     pub detail: String,
 }
 
+/// A request sent to a role with no live holder (plan 199): it waits on the
+/// role's queue until a seat is assigned.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueuedRequest {
+    /// `role:<id>` or `role:<id>/<instance>`.
+    pub address: String,
+    /// The project whose directory holds the role.
+    pub project: String,
+    /// The request id (the send's msg_id).
+    pub id: String,
+    /// Who sent it.
+    pub requester: SeatId,
+    /// How long it has waited, in ms.
+    pub waiting_ms: u64,
+}
+
 /// A PA's fleet: every live seat sharing its prime's repository.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FleetView {
@@ -47,6 +63,8 @@ pub struct FleetView {
     pub rows: Vec<FleetRow>,
     /// Open anomalies on seats in scope.
     pub anomalies: Vec<FleetAnomaly>,
+    /// Requests waiting on a role with no live holder (plan 199).
+    pub queued: Vec<QueuedRequest>,
     /// The watchdog interval, which also defines a ready seat as overdue.
     pub interval_ms: u64,
 }
@@ -135,6 +153,20 @@ impl FleetView {
         }
         // Said out loud so a short list is never read as "no anomalies".
         text.push_str("\n  (anomalies here are stale cards only; `pij anomalies` has every kind)");
+        if !self.queued.is_empty() {
+            text.push_str("\nQueued role requests (no live holder; assigning one delivers them):");
+            for request in &self.queued {
+                let _ = write!(
+                    text,
+                    "\n  {} in {}: request {} from {}, waiting {}",
+                    request.address,
+                    request.project,
+                    request.id,
+                    request.requester,
+                    human_duration(request.waiting_ms)
+                );
+            }
+        }
 
         let mut rows: Vec<&FleetRow> = self.rows.iter().collect();
         rows.sort_by(|a, b| {

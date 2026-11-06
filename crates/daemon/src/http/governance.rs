@@ -60,7 +60,7 @@ impl GovernanceService {
     }
 
     /// The governance store, shared with the directory writer's pointer.
-    pub(super) fn store(&self) -> &SqliteOrchestration {
+    pub(crate) fn store(&self) -> &SqliteOrchestration {
         &self.store
     }
 
