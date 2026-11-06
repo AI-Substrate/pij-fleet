@@ -6,6 +6,7 @@
 pub mod anomalies;
 mod auth;
 mod background;
+mod claims;
 mod client;
 mod codex_caller;
 pub(crate) mod cold_wake;
@@ -17,6 +18,7 @@ mod fyi;
 pub mod governance;
 mod identity;
 mod lifecycle;
+pub mod memory_turn;
 mod report;
 mod revive;
 pub mod role;
@@ -195,13 +197,19 @@ enum Endpoint {
     Spine,
     /// `pij directory add` (plan 190): the community directory's writer.
     Directory,
+    /// `pij claim` and `pij claim release` (plan 196).
+    Claim,
+    /// `pij claims` (plan 196).
+    Claims,
+    /// `pij delivered <pr>`, run once by the merger (plan 196, ruling C23).
+    Delivered,
     /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
     /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
     BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 53] = [
+    const ALL: [Self; 56] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -254,6 +262,9 @@ impl Endpoint {
         Self::Orchestration,
         Self::Spine,
         Self::Directory,
+        Self::Claim,
+        Self::Claims,
+        Self::Delivered,
         Self::BackgroundEmit,
     ];
 
@@ -306,6 +317,9 @@ impl Endpoint {
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
             Self::Directory => "/v1/directory",
+            Self::Claim => "/v1/claim",
+            Self::Claims => "/v1/claims",
+            Self::Delivered => "/v1/delivered",
             Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
@@ -357,6 +371,9 @@ impl Endpoint {
             | Self::Orchestration
             | Self::Spine
             | Self::Directory
+            | Self::Claim
+            | Self::Claims
+            | Self::Delivered
             | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
@@ -592,6 +609,9 @@ fn router_with_optional_federation(
                     | Endpoint::Orchestration
                     | Endpoint::Spine
                     | Endpoint::Directory
+                    | Endpoint::Claim
+                    | Endpoint::Claims
+                    | Endpoint::Delivered
                     | Endpoint::BackgroundEmit
             ) {
                 Method::POST
@@ -664,6 +684,9 @@ fn router_with_optional_federation(
             Endpoint::Orchestration => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Spine => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Directory => router.route(endpoint.path(), post(directory::handle)),
+            Endpoint::Claim | Endpoint::Claims | Endpoint::Delivered => {
+                router.route(endpoint.path(), post(claims::handle))
+            }
             Endpoint::ShimSend => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimCompactSelf => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),
@@ -735,6 +758,8 @@ struct Health<'a> {
     pid: u32,
     /// The ddocs this daemon resolved at start, or null (plan 190, C10).
     ddocs: Option<String>,
+    /// The gh `pij delivered` launches, resolved at start, or null (plan 196).
+    gh: Option<String>,
     /// The processes this daemon has launched, by call site (plan 180).
     spawns: pij_core::spawns::SpawnCounts,
 }
@@ -762,6 +787,11 @@ async fn health(State(state): State<AppState>) -> Response {
         ddocs: state
             .services
             .ddocs
+            .path()
+            .map(|path| path.display().to_string()),
+        gh: state
+            .services
+            .gh
             .path()
             .map(|path| path.display().to_string()),
         spawns: pij_core::spawns::snapshot(),
@@ -2051,10 +2081,32 @@ pub(crate) async fn send_control(
         msg_id: request.msg_id,
         in_reply_to: request.in_reply_to,
     };
-    match state.services.delivery.accept_control(msg).await {
+    // Plan 201: a role holder writes its memory before it is compacted.
+    if msg.command.as_deref() == Some("compact") {
+        let holdings = memory_turn::holdings(state, &target.id).await;
+        if !holdings.is_empty() {
+            return match memory_turn::hold(
+                state,
+                name,
+                target.clone(),
+                holdings,
+                memory_turn::Then::Compact(msg),
+            ) {
+                Ok(held) => envelope(StatusCode::OK, &Envelope::ok(name, held)),
+                Err(refusal) => *refusal,
+            };
+        }
+    }
+    match admit_control(state, msg).await {
         Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(name, receipt)),
         Err(error) => send_failure(name, error),
     }
+}
+
+/// Admit one authorized control: the single place a control enters delivery,
+/// so a compact held for a memory turn takes the same path when it runs.
+async fn admit_control(state: &AppState, msg: Msg) -> Result<pij_core::model::Receipt, PijError> {
+    state.services.delivery.accept_control(msg).await
 }
 
 /// Map a delivery failure onto the wire, once.
@@ -2717,10 +2769,26 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
         Ok(seat) => seat,
         Err(error) => return internal("pij state", error),
     };
-    match seat_card(&state, seat, None).await {
-        Ok(projection) => envelope(StatusCode::OK, &Envelope::ok("pij state", projection)),
-        Err(error) => internal("pij state", error),
+    let mut projection = match seat_card(&state, seat, None).await {
+        Ok(projection) => projection,
+        Err(error) => return internal("pij state", error),
+    };
+    // One seat only (plan 196, performance review of #131): `/v1/cards` is read
+    // often, by status lines and the PA, and never pays for the deliveries.
+    match state
+        .services
+        .governance
+        .store()
+        .deliveries_for_pm(
+            projection.card.id.as_str(),
+            pij_store::claims::CARD_DELIVERIES,
+        )
+        .await
+    {
+        Ok(deliveries) => projection.card.deliveries = deliveries,
+        Err(error) => return internal("pij state", error),
     }
+    envelope(StatusCode::OK, &Envelope::ok("pij state", projection))
 }
 
 /// `GET /v1/cards` — every local, untombstoned seat's `pij state` card in one
@@ -2819,7 +2887,8 @@ struct UnavailableCard {
 /// Shared by `/v1/state` and `/v1/cards`. Every store read here is bounded by
 /// the seat's own rows (plan 188): the card and the state note are each one
 /// newest-of-a-kind lookup on `(seat, kind)`, and the held deliveries read only
-/// the seat's delivery events. None of them reads the spine end to end.
+/// the seat's delivery events. None of them reads the spine end to end. The PR
+/// deliveries naming the seat as PM (plan 196) are read by `/v1/state` alone.
 ///
 /// `session_wait` bounds the seat's session-status read: `None` waits as
 /// `/v1/state` always has; the bulk read passes [`LIST_STATUS_WAIT`] so one
@@ -3082,6 +3151,7 @@ fn state_card(
             held: Vec::new(),
             delivery_deferrals: Vec::new(),
             pending_fyis: 0,
+            deliveries: Vec::new(),
             session_status: None,
             size: pij_core::cold_wake::SeatSize::default(),
             size_lines: Vec::new(),

@@ -20,12 +20,13 @@ use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope};
 use crate::community::layout::{RolePaths, exists};
+use crate::community::memory;
 use crate::community::role::{self, RoleFields};
 use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{Refusal, pointer};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 22] = [
+const SINGLE: [&str; 26] = [
     "why",
     "from",
     "from-project",
@@ -48,14 +49,30 @@ const SINGLE: [&str; 22] = [
     "effort",
     "packet",
     "brief",
+    "hook",
+    "body",
+    "body-file",
+    "note",
 ];
-const REPEATED: [&str; 6] = [
+const REPEATED: [&str; 7] = [
     "scope-path",
     "rule",
     "out-of-scope",
     "forbidden",
     "input",
     "output-kind",
+    "tags",
+];
+/// Flags a `memory` call may carry (plan 201).
+const MEMORY: [&str; 8] = [
+    "title",
+    "tags",
+    "hook",
+    "body",
+    "body-file",
+    "note",
+    "project",
+    "actor",
 ];
 /// Flags that steer the write rather than describe a role.
 const CONTROL: [&str; 8] = [
@@ -94,6 +111,7 @@ impl Arguments {
                             | "external"
                             | "templates"
                             | "template-diff"
+                            | "memory"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -209,6 +227,9 @@ impl Arguments {
                 format!("directory {} takes only [--project <slug>]", call.leaf),
             ));
         }
+        if call.leaf == "memory" {
+            call.check_memory()?;
+        }
         if matches!(call.leaf.as_str(), "assign" | "release")
             && (call.describes_a_role()
                 || call.get("file").is_some()
@@ -223,6 +244,59 @@ impl Arguments {
             ));
         }
         Ok(call)
+    }
+
+    /// `memory add <role> --title --tags --hook --body|--body-file`, or
+    /// `memory <role> [--note <slug>]`. There is no other memory verb: nothing
+    /// is ever deleted.
+    fn check_memory(&self) -> Result<(), Refusal> {
+        let flags: Vec<&str> = self
+            .single
+            .keys()
+            .chain(self.repeated.keys())
+            .map(String::as_str)
+            .collect();
+        if let Some(flag) = flags.iter().find(|flag| !MEMORY.contains(flag)) {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory memory: unsupported --{flag}"),
+            ));
+        }
+        let writes = ["title", "tags", "hook", "body", "body-file"];
+        match self.positions.as_slice() {
+            [verb, _] if verb == "add" => {
+                if self.get("note").is_some() {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "directory memory add: --note belongs to reading",
+                    ));
+                }
+                if self.get("body").is_some() && self.get("body-file").is_some() {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "give the body as --body or --body-file, not both",
+                    ));
+                }
+                Ok(())
+            }
+            [role] if role != "add" => match flags.iter().find(|flag| writes.contains(flag)) {
+                Some(flag) => Err(Refusal::new(
+                    "E-RS-ARG",
+                    format!("directory memory {role}: --{flag} belongs to `memory add`"),
+                )),
+                None => Ok(()),
+            },
+            [verb, ..] if verb != "add" && self.positions.len() > 1 => Err(Refusal::new(
+                "E-RS-UNPORTED",
+                format!(
+                    "directory memory {verb}: unknown verb; memory has add and read, and nothing is ever deleted"
+                ),
+            )),
+            _ => Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>|--body-file <path>; pij directory memory <role> [--note <slug>]",
+            )),
+        }
     }
 
     fn get(&self, name: &str) -> Option<String> {
@@ -331,6 +405,7 @@ pub(crate) async fn handle(
                 Err(refusal) => Err(refusal),
             }
         }
+        "memory" => memory(&state, &actor.id, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => {
@@ -648,9 +723,94 @@ async fn external(
     }))
 }
 
+/// `directory memory add <role> …` writes one note (AC1); `directory memory
+/// <role> [--note <slug>]` reads the INDEX or one note (AC3), in-process.
+async fn memory(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let positions: Vec<&str> = call.positions.iter().map(String::as_str).collect();
+    let ["add", role_id] = positions.as_slice() else {
+        let role_id = positions[0];
+        let root = crate::community::root::find(&repo)?;
+        let mut data = match call.get("note") {
+            Some(note) => memory::read_note(&root.worktree, role_id, &note)?,
+            None => memory::read_index(&root.worktree, role_id)?,
+        };
+        data["project"] = json!(project);
+        return Ok(data);
+    };
+    let role_id = (*role_id).to_string();
+    let body = match (call.get("body"), call.get("body-file")) {
+        (Some(body), None) => body,
+        (None, Some(file)) if file == "-" => {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "--body-file - reads stdin, which only the pij CLI can do; pass --body or a file path",
+            ));
+        }
+        (None, Some(file)) => {
+            let path = caller_path(caller, &file)?;
+            std::fs::read_to_string(&path).map_err(|error| {
+                Refusal::new(
+                    "E-RS-ARG",
+                    format!("cannot read {}: {error}", path.display()),
+                )
+            })?
+        }
+        _ => String::new(),
+    };
+    let fields = memory::NoteFields {
+        title: call.get("title").unwrap_or_default(),
+        tags: call
+            .all("tags")
+            .iter()
+            .flat_map(|tags| tags.split(','))
+            .map(str::trim)
+            .filter(|tag| !tag.is_empty())
+            .map(str::to_string)
+            .collect(),
+        hook: call.get("hook").unwrap_or_default(),
+        body,
+    };
+    // Refuse a bad note before taking the writer lock.
+    memory::note(&role::today(), &fields)?;
+    let (written, note) = state
+        .services
+        .directory
+        .memory_add(&project, repo, &role_id, fields, actor)
+        .await?;
+    let pointers = pointer::for_write(&project, &written.paths, &written.commit);
+    state
+        .services
+        .governance
+        .store()
+        .record_community_pointers(&pointers)
+        .await
+        .map_err(|error| {
+            Refusal::new(
+                "E-RS-STORE",
+                format!(
+                    "committed {} but could not record the pointer: {error}",
+                    written.commit
+                ),
+            )
+        })?;
+    Ok(json!({
+        "project": project,
+        "role": role_id,
+        "commit": written.commit,
+        "path": note,
+        "paths": written.paths,
+    }))
+}
+
 /// The project the write belongs to and the repository to find governance from:
 /// `--project`, else the project whose repo holds the caller's directory.
-async fn project_and_repo(
+pub(crate) async fn project_and_repo(
     state: &AppState,
     caller: &CallerContext,
     named: Option<String>,
@@ -823,7 +983,7 @@ fn refused(refusal: &Refusal) -> Response {
     let status = match refusal.code {
         "E-RS-ARG" | "E-RS-UNPORTED" => StatusCode::BAD_REQUEST,
         "E-RS-OWNERSHIP" => StatusCode::FORBIDDEN,
-        "E-RS-NOT-FOUND" => StatusCode::NOT_FOUND,
+        "E-RS-NOT-FOUND" | memory::E_NOTE_MISSING => StatusCode::NOT_FOUND,
         "E-RS-STORE" | crate::community::E_GOV_GIT => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::CONFLICT,
     };
