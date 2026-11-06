@@ -83,6 +83,12 @@
           "claim": "Docs and states. No roadmap state changes (follow-ups). docs/difficulties.md records F26, F27 and F28 as resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
+          "id": "ac-0009",
+          "claim": "Ledger items docs/difficulties.md gives plan 209 (and pm-001 18:15): F30, F41, F42, F43, F50 (pij runs pij-rs for claim, claims, delivered and directory memory: native text, --help and stdin); F31 (memory add prints one line); F34 (slug at most 40, cut on a word); F35, F38 (add --help marks required flags, shows the shortest add, says each add commits); F36, F37 (a role refusal lists every gap with the flag that fills it, no hand edit); F40 (the foreign-edit refusal says the prime commits); F46 (an unparsable Delivers line is quoted with the form to write); F49 and F51 (the memory prompt); F26 in CI; F44 a measured receipt. F32 lands in #138 merge with main.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0009"
         }
       ]
     },

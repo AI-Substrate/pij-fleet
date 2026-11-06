@@ -44,6 +44,7 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | tk-0007 | #129 digest scope | — | ph-00d1 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | After #129 merges: the PA digest reads queued rows for the PA's projects only, without bodies; the prime falls back to all projects. | Waits for #129. | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0008 | #132 late admission | — | ph-00d1 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | After #132 merges: a bound-ended memory turn awaits its owned admission's settle after the held action and records delivered-late, queued or refused. | Waits for #132. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0009 | Cost, docs and states | — | ph-00d1 | [ ] unchecked | — | — | [tk-0009](tasks.dd.md#done-when) | Cost receipts per bp-0007; difficulties.md records F26, F27, F28 resolved; ddocs-check passes; PR body has a Delivers line. | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0010 | Ledger items owned by 209 (F30-F51) | — | ph-00d1 | [ ] unchecked | — | — | [tk-0010](tasks.dd.md#done-when) | Each item in ac-0009 is fixed with a test, or measured (F44), or moved with a reason (F32 to #138). | pm-001 18:15 added F49-F51. | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -102,6 +103,12 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0009 | ddocs-check passes; CI green on the exact head; verdicts at that head. | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
+
+### tk-0010
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0010 | The tests named in bp-0009 pass in CI; difficulties.md marks each item resolved or moved. | [ ] unchecked | [bp-0009](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

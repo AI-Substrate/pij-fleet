@@ -28,6 +28,7 @@
 | bp-0006 | AC6 | ph-00d1 | BUILD | computational | BUILD: a slow admission past the bound records delivered-late; a refused one records refused; the held action still runs at the bound. | [ ] unchecked | — | — | crates/ |
 | bp-0007 | AC7: cost | ph-00d1 | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | AC1 to AC3 change tests and the gate only; no production launch. AC4 and AC5 are single indexed reads replacing existing ones. AC6 adds one awaited future per bound-ended turn; no timer, poll or launch. | — | pij-rs --json ping |
 | bp-0008 | AC8: docs and states | ph-00d1 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
+| bp-0009 | AC9 | ph-00d1 | BUILD | computational | BUILD: routing tests show the four verbs run native and other directory verbs keep the daemon route; unit tests for the memory add line, the slug cap, the add help, the role refusal flags and the Delivers line; CI runs pij-skill-check; F44 timed pij against pij-rs. | [ ] unchecked | — | — | crates/ |
 
 <a id="sensors"></a>
 

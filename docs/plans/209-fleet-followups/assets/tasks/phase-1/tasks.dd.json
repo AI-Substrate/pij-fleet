@@ -126,6 +126,18 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0007"
           ],
           "done": "tasks.dd.json#done_when/tk-0009"
+        },
+        {
+          "id": "tk-0010",
+          "title": "Ledger items owned by 209 (F30-F51)",
+          "phase": "ph-00d1",
+          "state": "unchecked",
+          "success": "Each item in ac-0009 is fixed with a test, or measured (F44), or moved with a reason (F32 to #138).",
+          "notes": "pm-001 18:15 added F49-F51.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0009"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0010"
         }
       ]
     },
@@ -202,6 +214,14 @@
             "assertion": "ddocs-check passes; CI green on the exact head; verdicts at that head.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0007"
+          }
+        ],
+        "tk-0010": [
+          {
+            "id": "dw-0010",
+            "assertion": "The tests named in bp-0009 pass in CI; difficulties.md marks each item resolved or moved.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0009"
           }
         ]
       }
