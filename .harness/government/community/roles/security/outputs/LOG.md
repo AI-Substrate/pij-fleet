@@ -52,3 +52,5 @@
 
 2026-11-06 verdict pr:129 da23eb7566844c93857ecb11ba58c4da6947c605 block - Final merged head retains identical vulnerable drain blob; released holder can receive subsequently queued requests, MEDIUM9/10; in-memory proof carries; four CI jobs green/identical tree do not cover race; audit/stage qualifications recorded; 2026-11-06-pr-129-da23eb7-security.md.
 
+2026-11-06 verdict pr:130 dcc3e526043b2aa3206eae0ea036876183fb9d99 pass-with-notes - Holder snapshots excluded from file, auth/hooks/held FYI boundaries preserved; rendering not fully literal and compact hook is admission-timed, not completion proof; identical-tree CI1899 cases, ddocs caveat; no local mutations; 2026-11-06-pr-130-dcc3e52-security.md.
+
