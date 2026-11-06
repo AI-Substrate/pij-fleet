@@ -27,19 +27,81 @@
 
 ## Summary
 
-_Empty._
+Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait for #131, #129 and #132 to merge; cost, docs and states last.
 
 <a id="tasks"></a>
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | F27: the Rust flakes at their roots | — | ph-00d1 | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | claude_heal_scripts: EPIPE on a payload the script never needed is not a failure; claude_inbound: the daemon installs its SIGINT handler before printing readiness (production race); pane_observer: teardown asserts no server is left, not kill-server's status; control_mode (found on main, run 42154126103): the test window is named so automatic-rename cannot move it. | Causes from CI logs: runs 42146286413, 42147270960, 42137015642, 42154126103. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | F27: the watchdog smoke's private-daemon teardown | — | ph-00d1 | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | The fixture's daemon stop waits longer than the daemon's own 5 s drain (SHUTDOWN_DRAIN_TIMEOUT) before SIGKILL; other children keep the 3 s bound. | Run 42147635271: the daemon printed shutting down, then was SIGKILLed 3 s after SIGINT (status null). TS proof is CI-only (C25). | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | F27: the reaper tests under load | — | ph-00d1 | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | The reaper tests named by pm-001 pass 50 in a row under load, fixed at the root. | Awaiting pm-001's names for the tests. | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | F28: one test-only time scale for real-child budgets | — | ph-00d1 | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | pij_testkit::time::scaled and harness/driver/time-scale.ts read PIJ_TEST_TIME_SCALE (default 1; below 1 or not a number refuses). Real-child budgets use it (claude_heal, claude_inbound, control_mode, registration's real-ps tests through a cfg(test)-only observation deadline, the governance fixture). Production constants unchanged. AGENTS.md (resource cost item 5) and the shared-build header carry the nice-only rule. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | F26: the skill check passes and runs in the gate | — | ph-00d1 | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | pij-skill-check.sh exits 0: markers plan 175 and 186 reworded are updated, the ones they reversed are retired with the reason in a comment, and routes/peer.md is back under its 150-line budget (reflowed, no text change). A pij-skill sensor runs it in harness checks, and just self-check runs it. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | #131 N002: recorded_by from the newest record | — | ph-00d1 | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | After #131 merges: the delivery card's recorded_by comes from the same row as its recorded_at. | Waits for #131. | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0007 | #129 digest scope | — | ph-00d1 | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | After #129 merges: the PA digest reads queued rows for the PA's projects only, without bodies; the prime falls back to all projects. | Waits for #129. | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0008 | #132 late admission | — | ph-00d1 | [ ] unchecked | — | — | [tk-0008](tasks.dd.md#done-when) | After #132 merges: a bound-ended memory turn awaits its owned admission's settle after the held action and records delivered-late, queued or refused. | Waits for #132. | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0009 | Cost, docs and states | — | ph-00d1 | [ ] unchecked | — | — | [tk-0009](tasks.dd.md#done-when) | Cost receipts per bp-0007; difficulties.md records F26, F27, F28 resolved; ddocs-check passes; PR body has a Delivers line. | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | Each named test passes 50 runs in a row under load (niced) and CI is green twice on the head. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | smoke.test.ts green on CI twice on the head. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | 50 runs in a row under load, niced. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | The real-ps and other wall-clock tests pass under taskpolicy -b with the scale set; a grep shows production constants unchanged. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | Exit 0 on the head; harness checks lists pij-skill; a deleted route module makes it exit 1. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0006 | Two recorders on one PR; the card names the later one with the later time. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0007
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0007 | Query test: the PA sees its own project, the prime sees both, no body column read. | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-0008
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0008 | Slow admission records delivered-late; refused records refused; the held action still runs at the bound. | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-0009
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0009 | ddocs-check passes; CI green on the exact head; verdicts at that head. | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
