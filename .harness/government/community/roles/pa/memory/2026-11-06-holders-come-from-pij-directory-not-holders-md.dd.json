@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "read when mapping seats to roles in a round; s03 retired HOLDERS.md",
+				"tags": [
+					"pa",
+					"directory",
+					"holders",
+					"s03"
+				],
+				"title": "Holders come from pij directory, not HOLDERS.md"
+			}
+		},
+		{
+			"name": "body",
+			"value": "To map seats to roles in a round:\n`pij directory | python3 -c \"import json,sys;d=json.load(sys.stdin);[print(r['id'],[l['seat'] for l in r.get('lineage',[]) if not l.get('to')]) for r in d['roles']]\"`\n(lineage entries without `to` are the live holders.)\n\nAt 10:31 on 06 Nov: pa pij-watchful-badger, pm-001 pij-steady-otter, delivery pij-swift-kestrel, docs-system pij-wooden-lungfish (replaced pij-careful-heron, which was 611k and cold; prime said don't wake it), security pij-wary-lynx, performance pij-frugal-wombat.\n"
+		}
+	]
+}
