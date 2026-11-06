@@ -33,3 +33,4 @@
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | 211 | 2026-11-06T08:05:50.616Z | — | pij-steady-otter | — | plan 211 registration attempts (#145) | — |
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 213 | 2026-11-06T08:44:43.213Z | 2026-11-06T12:56:18.328Z | pij-steady-otter | pij-steady-otter | plan 213 shim forwards community verbs (prime 18:43) | #147 merged (F70 dogfood) |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | 212 | 2026-11-06T10:24:19.295Z | — | pij-steady-otter | — | plan 212 role send follow-ups | — |
+| — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | 214 | 2026-11-06T13:27:26.868Z | — | pij-steady-otter | — | plan 214 held delivery and urgent sends (prime: before 212 follow-ups) | — |

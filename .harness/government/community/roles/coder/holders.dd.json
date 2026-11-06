@@ -188,6 +188,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "plan 212 role send follow-ups"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T13:27:26.868Z",
+					"harness": "copilot",
+					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
+					"instance_key": "214",
+					"machine": "ops.osk.lan",
+					"seat": "pij-swift-kestrel",
+					"why": "plan 214 held delivery and urgent sends (prime: before 212 follow-ups)"
 				}
 			]
 		}
