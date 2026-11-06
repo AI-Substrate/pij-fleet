@@ -2188,3 +2188,70 @@ async fn a_failed_scope_read_shows_no_queue_rather_than_every_project() {
         "a failed scope read must not widen the digest"
     );
 }
+
+/// #144 F002 (ibex S001), a guard: when the prime lookup fails, the digest
+/// shows no queue. The PA and its parent hold nothing, and the parent is the
+/// designated prime, so a working lookup widens the scope to every project.
+/// The parent's holdings read on its own cannot be failed here: it is the PA's
+/// query on the same table, keyed only by seat.
+#[tokio::test]
+async fn a_failed_prime_lookup_shows_no_queue_rather_than_every_project() {
+    let (services, store) = services().await;
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    services
+        .watchdogs()
+        .designate_prime(&pij_core::orchestration::PrimeDesignation {
+            seat: "pij-prime".into(),
+            designated_by: "pij-human".into(),
+            designated_at: 1,
+            state: pij_core::orchestration::PrimeState::Current,
+        })
+        .await
+        .unwrap();
+    for (id, project) in [("req-alpha", "alpha"), ("req-beta", "beta")] {
+        services
+            .governance
+            .store()
+            .record_role_request(&pij_store::RoleRequest {
+                id: id.into(),
+                project: project.into(),
+                role: "reviewer".into(),
+                instance: String::new(),
+                requester: "pij-pm".into(),
+                body: "review".into(),
+                in_reply_to: None,
+                fyi: false,
+                reply: pij_store::ReplyMode::Wake,
+                limit_ms: None,
+                state: pij_store::RequestState::Queued,
+                holder: None,
+                created_at: 1,
+                delivered_at: None,
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .unwrap();
+    }
+    let pa = seat("pij-pa", "/tmp", Some("pij-prime"));
+    let ids = |queued: Vec<pij_core::pa_digest::QueuedRequest>| {
+        queued.into_iter().map(|row| row.id).collect::<Vec<_>>()
+    };
+    // The instrument: under the designated prime, with no holdings, every project.
+    assert_eq!(
+        ids(super::queued_requests(&services, &pa, 10).await),
+        ["req-alpha", "req-beta"]
+    );
+
+    sqlx::query("ALTER TABLE prime_designation RENAME TO prime_designation_gone")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(services.watchdogs().prime().await.is_err());
+    assert_eq!(
+        ids(super::queued_requests(&services, &pa, 10).await),
+        Vec::<String>::new(),
+        "a failed prime lookup must not widen the digest"
+    );
+}
