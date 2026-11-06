@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read when picking up #135 (plan 206) review fixes or working as coder under pm-001",
+				"tags": [
+					"coder",
+					"lane-e",
+					"plan-206",
+					"plan-196"
+				],
+				"title": "wildcat: 131 merged, 135 ready, crossings and build lessons"
+			}
+		},
+		{
+			"name": "body",
+			"value": "State at 21:25 06 Nov. #131 (plan 196, s11) merged at 59b4cf1. #135 (plan 206, s15: directory edit, retire, merge, F19, req-28) is READY at e60be54. Verdicts from marmot, lynx and wombat are pinned at 3621220; 3621220..e60be54 is plan evidence only (private-run.sh/.txt, tk-0007 receipt). Don't push unless a verdict asks. Worktree ~/pi-hacking/fleet-206-directory-followups, branch plan/206-directory-followups.\n\nWhat #135 does with s05: retire/merge refuse E-RS-DIRECTORY-ROLE-QUEUED, listing each queued request (id, requester, age). --drop-queued retires first, then deletes the rows and appends role.request.withdrawn spine events in one transaction (no migration; plan 212 may add a real withdrawn state), and sends each requester one FYI. Merge does not re-home. Send to a retired role refuses E-RS-DIRECTORY-RETIRED, naming the merge target. Cost: every verb is one writer commit (9 launches, merge 11).\n\nLessons:\n- pm-001's messages often cross my pushes. Before pushing, re-read the newest pm message for \"verdicts out at <sha>\"; if verdicts are pinned, ask first.\n- Builds: compile under nice -n 19 taskpolicy -b through shared-build; run test binaries with nice -n 19 only (F63). Use whichever of fleet-190/194/201 is free; kestrel holds fleet-190 for an hour at a time.\n- A `cmd | tail` chain hides a failed merge's exit status; I pushed an unmerged head that way. Check git status before pushing.\n- Resolve generated .dd.md conflicts by fixing the .dd.json, then running ddocs build. Plan task JSON uses a 2-space indent (biome skips docs/plans).\n- The claude_heal BrokenPipe CI flake is F27, fixed in plan 209 (#144); rerun the failed job.\n"
+		}
+	]
+}
