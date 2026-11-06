@@ -774,6 +774,12 @@ Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored
 
 Cost: a role send costs what an ordinary send costs, plus in-process reads (no launch) and one store write; a queued request adds one wake delivery; a drain one delivery per request. No timer or poll: the digest reads the queue once per nudge.
 
+### Time limits on role requests (plan 205)
+
+A role request with a limit (`--limit`, else the role's `default_limit`, C5; with neither, none) is checked inside the existing PA watchdog round, with no timer of its own. The clock starts at the later of the request's delivery and its holder's latest `report.now` card, so every card update restarts it; time spent queued for a holder does not count. Past the limit, the holder gets one check-in through the ordinary delivery path, with a cold wake audited as the watchdog does: write down what you have, update your card, and say why it needs longer. If a whole further limit passes after the check-in with no card update, the project's `pa` holder (else the prime) is told once. Nothing is ever stopped. Each step is recorded on the request (`checkin_at`, `escalated_at`, migration 0035) before it is sent, so a round never repeats one. An answered request (`answered_at`, set by s06's outputs) is never checked in.
+
+Cost per round: one indexed read of the open limited requests (delivered, limited, not escalated, not answered), plus one `LIMIT 1` card read per open request; a check-in or notice is one delivery. No launch site and no timer.
+
 ## Governance route inventory
 
 All POST families below use argv/caller unless the typed alternative is named. Unknown leaves refuse; unsupported flags are not dropped. These are the daemon routes, not invented `/v1/report/<leaf>` endpoints.

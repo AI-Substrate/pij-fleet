@@ -311,7 +311,7 @@
 					"statement": "A send can carry `--limit <duration>`; without one, the role's default limit applies. When the limit passes with no output and no card update since the request (each card update restarts it), pij sends the seat one check-in, delivered as to any busy seat: write what you have, update your card, and say why it needs longer. Nothing is stopped. If the seat does not answer, pij tells the PA (else the prime). The check runs in the watchdog round the daemon already has; the opt-in quiet-seat watchdog is unchanged.",
 					"actor": "requester",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A seat busy past its limit with no card update gets one check-in; a seat that updates its card is never checked in; a seat that ignores the check-in raises a PA notice.",
 					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
 				},
