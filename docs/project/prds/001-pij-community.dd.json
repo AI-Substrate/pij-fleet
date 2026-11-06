@@ -10,7 +10,7 @@
 				"status": "draft",
 				"updated": "2026-11-06",
 				"owner": "pij-far-jackal",
-				"summary": "A pij emergent community (PEC) builds lasting knowledge of its problem space (ruling C30). Specialist roles hold what the fleet learns, in role memory and outputs that outlive any seat, and can be called on later, revived or read by a fresh seat; long-running specialists are a feature, not a cost to minimise. Nothing in PEC is engineering-specific: the problem space may be an engineering project, a design workshop, research or operations. A PEC is a project's agents operating as one cohesive fleet across many concurrent tasks. The prime and humans build whatever community the work needs now and reshape it as the work changes. Its directory names every role, specialist and general, with its scope, holders, memory and outputs, so roles outlive seats and the community's knowledge grows."
+				"summary": "A pij emergent community (PEC) builds lasting, searchable knowledge of its problem space (ruling C30). Specialist roles hold what the fleet learns, in role memory and outputs that outlive any seat, and can be called on later, revived or read by a fresh seat; long-running specialists are a feature, not a cost to minimise. Nothing in PEC is engineering-specific: the problem space may be an engineering project, a design workshop, research or operations. A PEC is a project's agents operating as one cohesive fleet across many concurrent tasks. The prime and humans build whatever community the work needs now and reshape it as the work changes. Its directory names every role, specialist and general, with its scope, holders, memory and outputs, so roles outlive seats and the community's knowledge grows."
 			}
 		},
 		{
@@ -394,7 +394,7 @@
 				{
 					"id": "req-29",
 					"title": "Role recommendations name their signal",
-					"statement": "The prime (and PMs) recommend roles from need and keep the fleet small but expert. Each recommendation to create, split, merge or retire a role names the signal it rests on. Signals for a new role: the same system or paths keep coming up across tasks; a finding is re-derived; a judgment must be independent of the author; a seat carries two domains; a path or system needs one owner; this would be worth remembering (ruling C30). Signals against: one-off work; overlap with an existing role (extend it instead); nothing worth remembering; it would mostly sit idle. A role is not a seat: roles can be many and cold while live seats stay few, and a cold specialist with rich memory is someone to call on, not to retire. At boundaries (a wave end, a compact, a PR merge) the prime reviews whether to split overloaded roles and merge or retire idle ones. Templates stay examples.",
+					"statement": "The prime (and PMs) recommend roles from need, weighing two truths: small contexts are cheaper and sharper, and an expert in its own seat beats a generalist carrying the topic; they keep the fleet small but expert. Each recommendation to create, split, merge or retire a role names the signal it rests on. Signals for a new role: the same system or paths keep coming up across tasks; a finding is re-derived; a judgment must be independent of the author; a seat carries two domains; a path or system needs one owner; this would be worth remembering (ruling C30). Signals against: one-off work; overlap with an existing role (extend it instead); nothing worth remembering; it would mostly sit idle. A role is not a seat: roles can be many and cold while live seats stay few, and a cold specialist with rich memory is someone to call on, not to retire. At boundaries (a wave end, a compact, a PR merge) the prime reviews whether to split overloaded roles and merge or retire idle ones, and each holder writes memory (ruling C30). Templates stay examples.",
 					"actor": "prime",
 					"priority": "should",
 					"state": "in-progress",
@@ -530,7 +530,7 @@
 				{
 					"date": "2026-11-06",
 					"by": "pij-back-tapir",
-					"change": "Plan 203: req-12 and req-24 shipped (the view prompts the prime for each condition and for roles a roadmap step needs); req-29 added for ruling C28 (role recommendations name their signal; a role is not a seat; boundary reviews), in-progress until s10; req-27 stays in-progress (s09 adds the needs prompts and the PEC notice; s10 finishes it). The summary now leads with PEC's purpose (ruling C30): lasting, searchable knowledge of the problem space, held by specialist roles that outlive seats, in any domain."
+					"change": "Plan 203: req-12 and req-24 shipped (the view prompts the prime for each condition and for roles a roadmap step needs); req-29 added for ruling C28 (role recommendations name their signal; a role is not a seat; boundary reviews), in-progress until s10 (its statement carries C28's two truths and C30's memory at every boundary); req-27 stays in-progress (s09 adds the needs prompts and the PEC notice; s10 finishes it). The summary now leads with PEC's purpose (ruling C30): lasting, searchable knowledge of the problem space, held by specialist roles that outlive seats, in any domain."
 				}
 			]
 		}

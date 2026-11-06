@@ -180,9 +180,10 @@ impl DirectoryService {
     /// step need) is listed by name in `suggestions` and shown in full only
     /// with `suggest`; `prime_document` says whether the prime role's
     /// document exists, so a project without one reads as that document
-    /// missing (F21). Reads per call: assignments, the project, the queued requests and the
-    /// newest outputs, one store query each; each role's document and memory
-    /// folder, the repo's workstreams (`picture::step_docs`) and their
+    /// missing (F21). Reads per call: assignments, the project, the project's
+    /// queued requests (without bodies) and the newest outputs, one store
+    /// query each; each role's document and memory folder, the repo's
+    /// workstreams (`picture::read_step_docs`, parsed once) and their
     /// blueprints, in-process.
     ///
     /// # Errors
@@ -207,12 +208,9 @@ impl DirectoryService {
             .map(|seat| seat.to_string());
         let queued: Vec<pij_store::RoleRequest> = self
             .store
-            .all_queued_role_requests()
+            .queued_role_request_heads(project)
             .await
-            .map_err(store_error)?
-            .into_iter()
-            .filter(|request| request.project == project)
-            .collect();
+            .map_err(store_error)?;
         let outputs = self
             .store
             .latest_outputs(project)
@@ -339,11 +337,12 @@ impl DirectoryService {
                 "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
             }));
         }
+        let step_docs = picture::read_step_docs(repo);
         let mut prompts = templates::recommendations(project, &made_from);
         picture::fold_needs(
             project,
             &mut prompts,
-            &picture::step_needs(repo),
+            &picture::step_needs(&step_docs),
             &made_from,
             &self.templates,
         );
@@ -356,7 +355,7 @@ impl DirectoryService {
         }
         prompts.extend(picture::unowned(
             project,
-            &picture::recurring_paths(repo),
+            &picture::recurring_paths(repo, &step_docs),
             &scopes,
         ));
         let pending: Vec<Value> = rows

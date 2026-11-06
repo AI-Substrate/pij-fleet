@@ -2910,14 +2910,14 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
         none["commands"],
         json!([
             "pij-rs revive pij-qa-2",
-            "pij directory assign qa <seat> --why \"<why>\" --project fleet"
+            "pij directory assign qa '<seat>' --why '<why>' --project fleet"
         ])
     );
     let two = action(&viewed, "pm-001", "two-live-holders").expect("pm-001 has two");
     assert_eq!(
         two["commands"],
         json!([
-            "pij directory release pm-001 pij-holder --why \"a one-holder role had 2 live holders\" --project fleet"
+            "pij directory release pm-001 pij-holder --why 'a one-holder role had 2 live holders' --project fleet"
         ])
     );
     let stale = action(&viewed, "qa", "memory-stale").expect("qa's closes left no note");
@@ -3008,6 +3008,10 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
     let retire = review("dusty");
     assert_eq!(retire["act"], "retire");
     assert_eq!(signal(&retire), "mostly-idle");
+    assert!(
+        retire["commands"].as_array().unwrap().is_empty() && retire["later"].is_array(),
+        "s15's verbs are shown, not offered: {retire}"
+    );
     assert!(
         viewed["data"]["reviews"]
             .as_array()

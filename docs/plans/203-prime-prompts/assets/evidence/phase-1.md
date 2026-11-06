@@ -44,3 +44,36 @@ belongs to the deploy.
   time with zone, one line per holder, signals, the boundary review).
 - `store_integration::outputs_answer_for_their_exact_head_and_list_by_role`
   (`latest_outputs`).
+
+## Verdict round on 47bd3b2
+
+Security S001 (HIGH), the reviewer's command bugs, lungfish's wording notes
+and performance's two cheap notes, in one push:
+
+- Every printed command is built by `picture::command`, which quotes each word
+  with `shell_word`: step labels, needs, blueprint paths, seat and role ids,
+  the project and placeholders (`'<seat>'`). Nothing in a printed line is
+  substituted or redirected.
+- `http::directory::tests::every_printed_command_runs_as_written_through_the_real_parsers`
+  builds every command the picture prints from hostile text (`$(…)`,
+  backticks, `;`, both quotes, a newline), splits all of them with one
+  `/bin/sh` run in an empty scratch folder, and checks that nothing ran, that
+  the shell produced exactly the intended words, and that each line passes the
+  parser its verb reaches: `pij directory` through `Arguments::parse` (and a
+  new role through `role::from_fields`, holding every section `pij/role`
+  requires, so a create without `--packet` fails), `pij send` through
+  `shim::parse_send`. `pij-rs revive` is replayed through clap in the CLI test
+  `the_pictures_revive_line_parses_as_native_revive`.
+- Creates carry `--packet`; `call_on` prints `pij send role:<id> --body-file
+  <path>`; memory-stale prints `--body-file <path>`; two-domains counts
+  distinct roles and releases and reassigns each holding with its instance,
+  as steps in order (`in_order`, rendered `then:`).
+- s15's `retire` and `merge` have not shipped, so the idle review shows them
+  in `later` with a note and offers no runnable command; the replay test
+  checks they are still refused.
+- C28's two truths and C30's memory at every boundary are in `notice()`, the
+  API paragraph and req-29; attributions name C30; the summary says
+  "searchable".
+- Cost: the view reads the project's queued requests without bodies, filtered
+  in SQL (`queued_role_request_heads`), and parses the step documents once per
+  call (`read_step_docs`) for both needs and recurring paths.

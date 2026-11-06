@@ -3026,6 +3026,7 @@ fn render_directory_at(
     // C28: every recommendation prints the signal it rests on.
     let recommend = |out: &mut String, item: &Value| {
         let commands = list(&item["commands"]);
+        let later = list(&item["later"]);
         let _ = write!(
             out,
             "\n  {} ({}): {}",
@@ -3033,9 +3034,19 @@ fn render_directory_at(
             text(&item["kind"]),
             commands
                 .first()
+                .or(later.first())
                 .map_or_else(|| text(&item["command"]), text)
         );
+        let joint = if item["in_order"] == true {
+            "then"
+        } else {
+            "or"
+        };
         for command in commands.iter().skip(1) {
+            let _ = write!(out, "\n    {joint}: {}", text(command));
+        }
+        // Verbs not shipped yet: shown, never as runnable (plan 203).
+        for command in later.iter().skip(usize::from(commands.is_empty())) {
             let _ = write!(out, "\n    or: {}", text(command));
         }
         if let Some(detail) = item["detail"].as_str() {
@@ -3797,7 +3808,7 @@ mod tests {
                  "live": [{"seat": "pij-c", "instance": "", "since": "2026-11-05T23:30:00Z", "machine": "m", "seat_live": true}],
                  "requests": null, "latest_output": null, "memory": {"notes": 0, "latest": null}},
                 {"id": "historian", "kind": "specialist", "holders": "one", "live": [],
-                 "memory": {"notes": 12, "latest": "2026-10-01"}, "call_on": "pij send --to role:historian --body x"}
+                 "memory": {"notes": 12, "latest": "2026-10-01"}, "call_on": "pij send role:historian --body-file x"}
             ],
             "actions": [{"role": "pm", "condition": "memory-stale", "says": "pm's last 2 closes left no memory note", "commands": ["pij directory memory add pm --project fleet"]}],
             "prompts": [
@@ -3805,7 +3816,8 @@ mod tests {
                 {"role": "docs-system", "kind": "needed", "needed_by": ["001 s09"], "command": "pij directory add docs-system", "signal": {"code": "step-needs", "says": "a step needs it"}}
             ],
             "reviews": [
-                {"role": "dusty", "kind": "idle", "act": "retire", "commands": ["pij directory retire dusty", "pij directory merge dusty --into <role>"], "detail": "dusty is idle", "signal": {"code": "mostly-idle", "says": "it would mostly sit idle"}}
+                {"role": "reviewer", "kind": "two-domains", "act": "split", "commands": ["pij directory release reviewer/115 pij-a", "pij directory assign reviewer/115 '<seat>'"], "in_order": true, "signal": {"code": "two-domains", "says": "two domains"}},
+                {"role": "dusty", "kind": "idle", "act": "retire", "command": null, "commands": [], "later": ["pij directory retire dusty", "pij directory merge dusty --into '<role>'"], "detail": "dusty is idle", "note": "retire and merge are s15's verbs", "signal": {"code": "mostly-idle", "says": "it would mostly sit idle"}}
             ],
             "guidance": "PEC guidance",
             "notice": "PEC notice",
@@ -3824,7 +3836,7 @@ fleet: 3 role(s); prime: pij-prime (no prime role document yet)
     memory: no notes
   historian (specialist, one): no holder
     memory: 12 note(s), newest 2026-10-01
-    cold, with memory to call on: pij send --to role:historian --body x
+    cold, with memory to call on: pij send role:historian --body-file x
 
 Next actions:
   pm's last 2 closes left no memory note
@@ -3842,9 +3854,13 @@ Roles to consider adding:
 Suggested roles not yet here: pm, pa. See each with its command: pij directory --suggest --project fleet
 
 Boundary review (at a wave end, a compact or a PR merge):
+  reviewer (two-domains): pij directory release reviewer/115 pij-a
+    then: pij directory assign reviewer/115 '<seat>'
+    signal: two domains
   dusty (idle): pij directory retire dusty
-    or: pij directory merge dusty --into <role>
+    or: pij directory merge dusty --into '<role>'
     dusty is idle
+    retire and merge are s15's verbs
     signal: it would mostly sit idle
 
 PEC notice";
@@ -3853,6 +3869,47 @@ PEC notice";
             time::UtcOffset::from_hms(-3, -30, 0).unwrap()
         });
         assert_eq!(behind, "2026-11-05 23:37 -03:30");
+    }
+
+    /// Plan 203: the picture's revive line parses as `pij-rs revive` (the
+    /// daemon's test replays its `pij directory` and `pij send` lines).
+    #[test]
+    fn the_pictures_revive_line_parses_as_native_revive() {
+        let gone = pij_store::Assignment {
+            project: "fleet".into(),
+            role: "qa".into(),
+            instance: String::new(),
+            seat: "pij-gone".into(),
+            harness: None,
+            session: None,
+            machine: None,
+            from: "2026-11-01T00:00:00Z".into(),
+            to: Some("2026-11-02T00:00:00Z".into()),
+            assigned_by: "prime".into(),
+            released_by: None,
+            why: "w".into(),
+            release_why: Some("release".into()),
+            end_pending: false,
+        };
+        let actions = pij_daemon::community::picture::actions(
+            "fleet",
+            "qa",
+            "one",
+            &[&gone],
+            &std::collections::HashSet::new(),
+            1,
+            None,
+        );
+        let revive = actions[0]["commands"][0].as_str().unwrap();
+        let words: Vec<&str> = revive.split(' ').collect();
+        assert_eq!(words, ["pij-rs", "revive", "pij-gone"]);
+        match super::Cli::try_parse_from(words)
+            .expect("pij-rs parses it")
+            .command
+        {
+            super::Command::Revive { id, .. } => assert_eq!(id, "pij-gone"),
+            _ => panic!("not revive"),
+        }
     }
 
     #[test]

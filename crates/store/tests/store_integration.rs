@@ -1947,6 +1947,13 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
         ids(store.all_queued_role_requests().await.unwrap()),
         ["r-other-role", "r-other-instance", "r-late"]
     );
+    // Plan 203: the directory view's read is the project's queue, bodiless.
+    let mut elsewhere = request("r-elsewhere", "coder", "", 2);
+    elsewhere.project = "other".into();
+    store.record_role_request(&elsewhere).await.expect("record");
+    let heads = store.queued_role_request_heads("pij").await.unwrap();
+    assert!(heads.iter().all(|row| row.body.is_empty()), "no bodies");
+    assert_eq!(ids(heads), ["r-other-role", "r-other-instance", "r-late"]);
 }
 
 /// Plan 205 (migration 0035): the watchdog round reads only delivered,

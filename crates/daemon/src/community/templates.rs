@@ -297,7 +297,6 @@ pub fn parse_version(text: &str) -> Option<u32> {
 /// to this directory (review F001), and the signal it rests on (C28): an
 /// independent judgment for the reviewer and security, else a core role.
 pub fn recommendations(project: &str, roles: &[(String, Option<String>)]) -> Vec<Recommendation> {
-    let project = pij_core::directory::shell_word(project);
     let has = |name: &str| {
         roles
             .iter()
@@ -318,9 +317,18 @@ pub fn recommendations(project: &str, roles: &[(String, Option<String>)]) -> Vec
                 kind,
                 Move::Create,
                 signal,
-                format!(
-                    "pij directory add {name} --from template:{name} --why \"{kind} role from the {name} template\" --project {project}"
-                ),
+                super::picture::command(&[
+                    "pij",
+                    "directory",
+                    "add",
+                    name,
+                    "--from",
+                    &format!("template:{name}"),
+                    "--why",
+                    &format!("{kind} role from the {name} template"),
+                    "--project",
+                    project,
+                ]),
             )
         })
         .collect()
@@ -578,7 +586,7 @@ mod tests {
         );
         assert_eq!(
             all[1]["command"],
-            "pij directory add pm --from template:pm --why \"core role from the pm template\" --project fleet"
+            "pij directory add pm --from template:pm --why 'core role from the pm template' --project fleet"
         );
         assert!(
             prompts("my fleet", &[])[0]["command"]

@@ -1041,9 +1041,14 @@ pa, coder, reviewer) or security is missing (ruling C22). A role counts for a
 template when its id or its `meta.template` is that name, so `pm-001` made from
 `pm` clears the pm prompt. Each prompt is `{role, kind, command}`, `kind` core or
 recommended, and `command` a runnable line such as `pij directory add pm --from
-template:pm --why "core role from the pm template" --project fleet`. Every
-printed command names the viewed project (shell-quoted when needed), so running
-it from another repo's directory still acts on the directory that printed it;
+template:pm --why 'core role from the pm template' --project fleet`. Every
+printed command names the viewed project, so running it from another repo's
+directory still acts on the directory that printed it. Each word of a printed
+command is shell-quoted where it needs it (`picture::command`), including text
+from step documents, blueprints and the store and placeholders such as
+`'<seat>'`, so the line runs as written: nothing in it is substituted or
+redirected (security S001 on #141). A test splits every printed command with
+`/bin/sh` and replays it through the parser its verb reaches;
 the human view's drift hint does the same. `guidance` states the PEC wording. The view creates nothing; adding a role clears its prompt.
 
 Cost: listing, diffing and the view read embedded bytes and the governance
@@ -1074,8 +1079,8 @@ role also carries:
 - `memory`: `{notes, latest}`, the number of memory notes (s07) and the newest
   dated note's `yyyy-mm-dd`;
 - `call_on`: for a cold role with memory (no live holder, at least one note),
-  the command that calls on it, `pij send --to role:<id> --body "<what you need
-  from it>"` (ruling C30: a cold specialist with rich memory is someone to call
+  the command that calls on it, `pij send role:<id> --body-file '<path to what
+  you need from it>' --project <slug>` (ruling C30: a cold specialist with rich memory is someone to call
   on, not to retire); otherwise `null`.
 
 `data.actions` lists what needs the prime (req-12), each
@@ -1084,41 +1089,48 @@ project:
 
 | condition | when | commands |
 |---|---|---|
-| `no-live-holder` | requests wait and no holder's seat is live | `pij-rs revive <last holder>` (when there was one), `pij directory assign <role> <seat> --why "<why>"` |
-| `two-live-holders` | a one-holder role has two or more live holders | `pij directory release` for each but the newest |
-| `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file -` |
+| `no-live-holder` | requests wait and no holder's seat is live | `pij-rs revive <last holder>` (when there was one), `pij directory assign <role> '<seat>' --why '<why>'` |
+| `two-live-holders` | a one-holder role has two or more live holders | `pij directory release <role>[/<instance>] <seat>` for each but the newest |
+| `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file '<path to the note>'` |
 
 A missing core or security role stays in `prompts` (s03). A workstream step
 that is not complete and lists `needs: ["role:<id>"]` adds `needed_by`
 (`<workstream> <step>`) to that role's prompt, or, for a role that is neither there nor prompted, a prompt of
 kind `needed`: from its template when one ships, else as a new definition with
-`<title>` and `<what it always does>` to fill in. Adding the role clears it.
+`<title>`, `<what it always does>` and the standing packet (`--packet`, which
+`pij/role` requires) to fill in. Adding the role clears it.
 `data.notice` always asks the prime to notice a need no role covers, in the PEC
 wording.
 
 Step documents are found by one helper, `picture::step_docs` (ruling C29):
 the project repo's `docs/project/workstreams/*.dd.json`, or, while that folder
 holds none, the older `docs/project/roadmaps/*.dd.json`. `needs` names roles
-(req-24); `depends_on` is the ordering, which the view does not read.
+(req-24); `depends_on` is the ordering, which the view does not read. Each call
+reads and parses those documents once (`picture::read_step_docs`) for both the
+needs and the recurring paths.
 
-#### Growing the community (ruling C28)
+#### Growing the community (rulings C28, C30)
 
 Every recommendation to create, split, merge or retire a role is a
 `picture::Recommendation`, which cannot be built without the signal it rests on.
 Each one in `prompts` (create) and `reviews` (split, merge, retire) carries
-`act`, `signal: {code, says}`, `command` and `commands`, and may carry `detail`:
+`act`, `signal: {code, says}`, `command` and `commands`, and may carry `detail`.
+`in_order: true` marks `commands` as steps (release, then assign) rather than
+alternatives. `later` holds lines for verbs that have not shipped (s15's
+`retire` and `merge`): shown with a `note`, never in `commands`, so `command`
+is `null` until they ship.
 
 | signal `code` | says | used by |
 |---|---|---|
 | `recurring` | the same system or paths keep coming up across tasks | a path built by at least three workstream steps (`RECURRING_STEPS`; each step's `builds` resolved to its blueprint component's `where`) that no role's `scope.paths` covers: create its owner |
 | `re-derived` | knowledge is re-derived (the same finding twice) | taught in the notice |
 | `independent-judgment` | a judgment must be independent of the author | the reviewer and security prompts |
-| `two-domains` | a seat is bloating because it carries two domains | a live seat holding two or more roles: split each later role onto its own seat (release, then assign) |
+| `two-domains` | a seat is bloating because it carries two domains | a live seat holding two or more distinct roles (instances of one role are one domain): split each later role onto its own seat, releasing and reassigning each holding with its instance kept (`reviewer/115`) |
 | `one-owner` | a path or system needs one owner | taught in the notice |
 | `worth-remembering` | this would be worth remembering: knowledge that should outlive the seat (ruling C30) | taught in the notice |
 | `core` | a core role a PEC starts from (C22); its template is an example | the other core prompts |
 | `step-needs` | a workstream step names this role in its needs | the `needed` prompts |
-| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (the s15 verbs) |
+| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (the s15 verbs, in `later`) |
 
 A cold role with memory is never put up for retirement: a role is not a seat.
 `data.reviews` is the boundary review the prime runs at a wave end, a compact
@@ -1127,9 +1139,12 @@ with why a PEC exists (ruling C30): it builds lasting knowledge of its problem
 space, whatever the work (an engineering project, a design workshop, research,
 operations), held by specialist roles in memory and outputs that outlive any
 seat and are called on later, so a long-running specialist is a feature, not a
-cost. Then: recommend roles from need and keep the fleet small but expert, the signals for and
-against, that a role is not a seat (roles can be many and cold, live seats
-few), the boundary review, and that templates are examples. The human view
+cost. Then: recommend roles from need, weighing C28's two truths (small
+contexts are cheaper and sharper; an expert in its own seat beats a generalist
+carrying the topic), and keep the fleet small but expert; the signals for and
+against; that a role is not a seat (roles can be many and cold, live seats
+few); the boundary review, at which each holder also writes memory (C30); and
+that templates are examples. The human view
 prints each recommendation's signal under it.
 
 The human view prints times in local time with their zone

@@ -367,7 +367,7 @@ async fn prompts_list_missing_core_roles_and_security_and_create_nothing() {
     let line = empty["data"]["prompts"][5]["command"].as_str().unwrap();
     assert_eq!(
         line,
-        "pij directory add security --from template:security --why \"recommended role from the security template\" --project fleet"
+        "pij directory add security --from template:security --why 'recommended role from the security template' --project fleet"
     );
     let added = directory(
         addr,

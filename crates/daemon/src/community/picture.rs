@@ -4,7 +4,7 @@
 //! them. Nothing here reads, writes or launches.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use pij_core::directory::shell_word;
 use pij_store::{Assignment, CommunityOutput, RoleRequest};
@@ -27,7 +27,7 @@ pub const ROADMAPS: &str = "docs/project/roadmaps";
 /// The project's workstream documents (`*.dd.json`), sorted: those in
 /// [`WORKSTREAMS`], else those in the older [`ROADMAPS`]. The one place the
 /// view finds step documents, so the folder move needs no other change.
-pub fn step_docs(repo: &Path) -> Vec<std::path::PathBuf> {
+pub fn step_docs(repo: &Path) -> Vec<PathBuf> {
     let list = |folder: &str| {
         let mut files: Vec<_> = std::fs::read_dir(repo.join(folder))
             .into_iter()
@@ -46,6 +46,75 @@ pub fn step_docs(repo: &Path) -> Vec<std::path::PathBuf> {
         current
     }
 }
+
+/// One workstream document, read and parsed once per view and handed to
+/// [`step_needs`] and [`recurring_paths`].
+pub struct StepDoc {
+    /// Its file name without `.dd.json`, as steps are labelled.
+    pub name: String,
+    /// Where it was read, so its blueprint references resolve.
+    pub path: PathBuf,
+    /// The parsed document.
+    pub document: Value,
+}
+
+/// [`step_docs`], each read and parsed once; an unreadable one is skipped.
+pub fn read_step_docs(repo: &Path) -> Vec<StepDoc> {
+    step_docs(repo)
+        .into_iter()
+        .filter_map(|path| {
+            let document = std::fs::read(&path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())?;
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map_or("", |n| n.trim_end_matches(".dd.json"))
+                .to_string();
+            Some(StepDoc {
+                name,
+                path,
+                document,
+            })
+        })
+        .collect()
+}
+
+/// The named section's array value, or empty.
+fn section(document: &Value, name: &str) -> Vec<Value> {
+    document["sections"]
+        .as_array()
+        .and_then(|sections| sections.iter().find(|s| s["name"] == name))
+        .and_then(|s| s["value"].as_array())
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// A printed command: every word quoted with [`shell_word`], so text from a
+/// repo, the store or a placeholder reaches the program as one literal
+/// argument and the line runs as written (S001). A placeholder such as
+/// `<seat>` is quoted too: run unfilled, it is a value the verb refuses, not
+/// a shell redirection.
+pub fn command(words: &[&str]) -> String {
+    words
+        .iter()
+        .map(|word| shell_word(word))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A holding's address: `role`, or `role/instance` (`reviewer/115`).
+fn address(row: &Assignment) -> String {
+    if row.instance.is_empty() {
+        row.role.clone()
+    } else {
+        format!("{}/{}", row.role, row.instance)
+    }
+}
+
+/// What a new role's standing packet says, to be filled in: `pij/role`
+/// requires one (`--packet <text>` or `--brief <path>`).
+const PACKET: &str = "<what a holder is told at the start of every job>";
 
 /// A path or system built by at least this many workstream steps, with no role
 /// whose scope covers it, recurs enough to want an owner (C28).
@@ -186,6 +255,12 @@ pub struct Recommendation {
     pub needed_by: Vec<String>,
     /// Runnable commands, the first the main one.
     pub commands: Vec<String>,
+    /// Whether [`Self::commands`] are steps run in order (release, then
+    /// assign) rather than alternatives.
+    pub in_order: bool,
+    /// Commands for verbs that have not shipped (s15's `retire` and `merge`):
+    /// shown so the move is clear, never offered as runnable.
+    pub later: Vec<String>,
     /// A note, such as who the designated prime is.
     pub note: Option<String>,
 }
@@ -207,12 +282,15 @@ impl Recommendation {
             detail: None,
             needed_by: Vec::new(),
             commands: vec![command],
+            in_order: false,
+            later: Vec::new(),
             note: None,
         }
     }
 
     /// The view's JSON: `{role, kind, act, signal: {code, says}, command,
-    /// commands}`, with `detail`, `needed_by` and `note` when set.
+    /// commands}`, with `in_order`, `later`, `detail`, `needed_by` and `note`
+    /// when set. `command` is `null` when nothing runnable ships yet.
     pub fn json(&self) -> Value {
         let mut out = json!({
             "role": self.role,
@@ -222,6 +300,12 @@ impl Recommendation {
             "command": self.commands.first(),
             "commands": self.commands,
         });
+        if self.in_order {
+            out["in_order"] = json!(true);
+        }
+        if !self.later.is_empty() {
+            out["later"] = json!(self.later);
+        }
         if let Some(detail) = &self.detail {
             out["detail"] = json!(detail);
         }
@@ -235,7 +319,8 @@ impl Recommendation {
     }
 }
 
-/// The standing prompt that teaches how to grow a PEC (rulings C26, C28),
+/// The standing prompt that teaches how to grow a PEC (rulings C26, C28,
+/// C30),
 /// built from the same [`Signal`]s the recommendations name.
 pub fn notice() -> String {
     let list = |signals: &[Signal]| {
@@ -246,7 +331,7 @@ pub fn notice() -> String {
             .join("; ")
     };
     format!(
-        "Why a PEC: it builds lasting knowledge of its problem space, whatever the work (an engineering project, a design workshop, research, operations). Specialist roles hold that knowledge in memory and outputs that outlive any seat, and are called on later, revived or read by a fresh seat; a long-running specialist is a feature, not a cost. Growing this community: is the work asking for something no role here covers? Recommend a role from need, and keep the fleet small but expert. Signals for a new role: {}. Signals against: {}. A role is not a seat: roles can be many and cold (memory, lineage and queue, revived on demand), while live seats stay few, and a cold specialist with rich memory is someone to call on, not to retire. At each boundary (a wave end, a compact, a PR merge), review: split an overloaded role, merge or retire an idle one with nothing to remember. Templates are examples, not a checklist. Each recommendation here names the signal it rests on. The community is whatever the work needs now.",
+        "Why a PEC: it builds lasting knowledge of its problem space, whatever the work (an engineering project, a design workshop, research, operations). Specialist roles hold that knowledge in memory and outputs that outlive any seat, and are called on later, revived or read by a fresh seat; a long-running specialist is a feature, not a cost. Growing this community: is the work asking for something no role here covers? Recommend a role from need, weighing two truths: small contexts are cheaper and sharper, and an expert in its own seat beats a generalist carrying the topic. Keep the fleet small but expert. Signals for a new role: {}. Signals against: {}. A role is not a seat: roles can be many and cold (memory, lineage and queue, revived on demand), while live seats stay few, and a cold specialist with rich memory is someone to call on, not to retire. At each boundary (a wave end, a compact, a PR merge), review: split an overloaded role, merge or retire an idle one with nothing to remember, and have each holder write memory at the boundary. Templates are examples, not a checklist. Each recommendation here names the signal it rests on. The community is whatever the work needs now.",
         list(&Signal::FOR),
         list(&Signal::AGAINST)
     )
@@ -287,8 +372,6 @@ pub fn actions(
     waiting: usize,
     memory_latest: Option<&str>,
 ) -> Vec<Value> {
-    let p = shell_word(project);
-    let r = shell_word(role);
     let mut out = Vec::new();
     let mut holding: Vec<&Assignment> = rows
         .iter()
@@ -308,11 +391,19 @@ pub fn actions(
             })
             .map(|row| row.seat.as_str());
         if let Some(last) = last {
-            commands.push(format!("pij-rs revive {}", shell_word(last)));
+            commands.push(command(&["pij-rs", "revive", last]));
         }
-        commands.push(format!(
-            "pij directory assign {r} <seat> --why \"<why>\" --project {p}"
-        ));
+        commands.push(command(&[
+            "pij",
+            "directory",
+            "assign",
+            role,
+            "<seat>",
+            "--why",
+            "<why>",
+            "--project",
+            project,
+        ]));
         out.push(json!({
             "role": role,
             "condition": "no-live-holder",
@@ -334,11 +425,17 @@ pub fn actions(
                 seats.len(),
                 seats.join(", ")
             ),
-            "commands": holding[..newest].iter().map(|row| format!(
-                "pij directory release {r} {} --why \"a one-holder role had {} live holders\" --project {p}",
-                shell_word(&row.seat),
-                seats.len()
-            )).collect::<Vec<_>>(),
+            "commands": holding[..newest].iter().map(|row| command(&[
+                "pij",
+                "directory",
+                "release",
+                &address(row),
+                &row.seat,
+                "--why",
+                &format!("a one-holder role had {} live holders", seats.len()),
+                "--project",
+                project,
+            ])).collect::<Vec<_>>(),
         }));
     }
 
@@ -359,40 +456,36 @@ pub fn actions(
                 "{role}'s last {MEMORY_CLOSES} closes left no memory note (newest note: {}); ask a holder, or write what you know",
                 memory_latest.unwrap_or("none")
             ),
-            "commands": [format!(
-                "pij directory memory add {r} --title \"<what was learned>\" --hook \"<when to read it>\" --body-file - --project {p}"
-            )],
+            "commands": [command(&[
+                "pij",
+                "directory",
+                "memory",
+                "add",
+                role,
+                "--title",
+                "<what was learned>",
+                "--hook",
+                "<when to read it>",
+                "--body-file",
+                "<path to the note>",
+                "--project",
+                project,
+            ])],
         }));
     }
     out
 }
 
 /// Each role a not-complete workstream step needs (`needs: ["role:<id>"]`),
-/// with the steps that need it, `<workstream> <step>`. Reads [`step_docs`];
-/// an unreadable one is skipped.
-pub fn step_needs(repo: &Path) -> Vec<(String, Vec<String>)> {
-    let files = step_docs(repo);
+/// with the steps that need it, `<workstream> <step>`.
+pub fn step_needs(docs: &[StepDoc]) -> Vec<(String, Vec<String>)> {
     let mut needs: Vec<(String, Vec<String>)> = Vec::new();
-    for file in files {
-        let Some(document) = std::fs::read(&file)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        else {
-            continue;
-        };
-        let name = file
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map_or("", |n| n.trim_end_matches(".dd.json"))
-            .to_string();
-        let steps = document["sections"]
-            .as_array()
-            .and_then(|sections| sections.iter().find(|s| s["name"] == "steps"))
-            .and_then(|s| s["value"].as_array())
-            .cloned()
-            .unwrap_or_default();
-        for step in steps.iter().filter(|step| step["state"] != "complete") {
-            let label = format!("{name} {}", step["id"].as_str().unwrap_or("?"));
+    for doc in docs {
+        for step in section(&doc.document, "steps")
+            .iter()
+            .filter(|step| step["state"] != "complete")
+        {
+            let label = format!("{} {}", doc.name, step["id"].as_str().unwrap_or("?"));
             for role in step["needs"]
                 .as_array()
                 .into_iter()
@@ -421,7 +514,6 @@ pub fn fold_needs(
     roles: &[(String, Option<String>)],
     catalog: &Catalog,
 ) {
-    let p = shell_word(project);
     for (role, steps) in needs {
         let exists = roles
             .iter()
@@ -433,16 +525,45 @@ pub fn fold_needs(
             prompt.needed_by.clone_from(steps);
             continue;
         }
-        let r = shell_word(role);
-        let why = format!("\"{} needs role:{role}\"", steps.join(", "));
-        let command = if catalog.latest(role).is_some() {
-            format!("pij directory add {r} --from template:{r} --why {why} --project {p}")
+        let why = format!("{} needs role:{role}", steps.join(", "));
+        let printed = if catalog.latest(role).is_some() {
+            command(&[
+                "pij",
+                "directory",
+                "add",
+                role,
+                "--from",
+                &format!("template:{role}"),
+                "--why",
+                &why,
+                "--project",
+                project,
+            ])
         } else {
-            format!(
-                "pij directory add {r} --title \"<title>\" --kind general --lifecycle long-lived --holders one --rule \"<what it always does>\" --why {why} --project {p}"
-            )
+            command(&[
+                "pij",
+                "directory",
+                "add",
+                role,
+                "--title",
+                "<title>",
+                "--kind",
+                "general",
+                "--lifecycle",
+                "long-lived",
+                "--holders",
+                "one",
+                "--rule",
+                "<what it always does>",
+                "--packet",
+                PACKET,
+                "--why",
+                &why,
+                "--project",
+                project,
+            ])
         };
-        let mut prompt = Recommendation::new(role, "needed", Move::Create, Signal::Needed, command);
+        let mut prompt = Recommendation::new(role, "needed", Move::Create, Signal::Needed, printed);
         prompt.needed_by.clone_from(steps);
         prompts.push(prompt);
     }
@@ -471,44 +592,24 @@ fn covers(scope: &str, root: &str) -> bool {
 
 /// Paths or systems the workstreams keep building, with the steps that build
 /// them: each step's `builds` resolved to its blueprint component's `where`.
-/// Reads [`step_docs`] and the blueprints they point at, in-process.
-pub fn recurring_paths(repo: &Path) -> Vec<(String, Vec<String>)> {
-    let files = step_docs(repo);
-    let read = |path: &Path| {
-        std::fs::read(path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-    };
-    let section = |document: &Value, name: &str| {
-        document["sections"]
-            .as_array()
-            .and_then(|sections| sections.iter().find(|s| s["name"] == name))
-            .and_then(|s| s["value"].as_array())
-            .cloned()
-            .unwrap_or_default()
-    };
-    let mut blueprints: std::collections::BTreeMap<std::path::PathBuf, Vec<Value>> =
+/// Reads the blueprints the documents point at, each once, in-process.
+pub fn recurring_paths(repo: &Path, docs: &[StepDoc]) -> Vec<(String, Vec<String>)> {
+    let mut blueprints: std::collections::BTreeMap<PathBuf, Vec<Value>> =
         std::collections::BTreeMap::new();
     let mut paths: Vec<(String, Vec<String>)> = Vec::new();
-    for file in files {
-        let Some(document) = read(&file) else {
-            continue;
-        };
-        let name = file
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map_or("", |n| n.trim_end_matches(".dd.json"))
-            .to_string();
-        for step in section(&document, "steps") {
-            let label = format!("{name} {}", step["id"].as_str().unwrap_or("?"));
+    for doc in docs {
+        for step in section(&doc.document, "steps") {
+            let label = format!("{} {}", doc.name, step["id"].as_str().unwrap_or("?"));
             for built in step["builds"].as_array().into_iter().flatten() {
-                let Some((doc, id)) = built.as_str().and_then(|b| b.split_once("#components/"))
+                let Some((target, id)) = built.as_str().and_then(|b| b.split_once("#components/"))
                 else {
                     continue;
                 };
-                let blueprint = file.parent().unwrap_or(repo).join(doc);
+                let blueprint = doc.path.parent().unwrap_or(repo).join(target);
                 let components = blueprints.entry(blueprint.clone()).or_insert_with(|| {
-                    read(&blueprint)
+                    std::fs::read(&blueprint)
+                        .ok()
+                        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
                         .map(|d| section(&d, "components"))
                         .unwrap_or_default()
                 });
@@ -540,7 +641,6 @@ pub fn unowned(
     recurring: &[(String, Vec<String>)],
     scopes: &[(String, Vec<String>)],
 ) -> Vec<Recommendation> {
-    let p = shell_word(project);
     recurring
         .iter()
         .filter(|(_, steps)| steps.len() >= RECURRING_STEPS)
@@ -566,12 +666,30 @@ pub fn unowned(
                 "recurring",
                 Move::Create,
                 Signal::Recurring,
-                format!(
-                    "pij directory add {} --title \"<title>\" --kind specialist --lifecycle long-lived --holders one --scope-path {} --rule \"<what it always does>\" --why \"{root} recurs across {} steps and no role owns it\" --project {p}",
-                    shell_word(&id),
-                    shell_word(&format!("{root}/**")),
-                    steps.len()
-                ),
+                command(&[
+                    "pij",
+                    "directory",
+                    "add",
+                    &id,
+                    "--title",
+                    "<title>",
+                    "--kind",
+                    "specialist",
+                    "--lifecycle",
+                    "long-lived",
+                    "--holders",
+                    "one",
+                    "--scope-path",
+                    &format!("{root}/**"),
+                    "--rule",
+                    "<what it always does>",
+                    "--packet",
+                    PACKET,
+                    "--why",
+                    &format!("{root} recurs across {} steps and no role owns it", steps.len()),
+                    "--project",
+                    project,
+                ]),
             );
             prompt.detail = Some(format!(
                 "{root} is built by {} steps ({}) and no role's scope covers it; it needs one owner",
@@ -583,14 +701,15 @@ pub fn unowned(
         .collect()
 }
 
-/// A split recommendation for each live seat holding two or more roles at
-/// once (C28: a seat carrying two domains): give each later role its own seat.
+/// A split recommendation for each live seat holding two or more distinct
+/// roles at once (C28: a seat carrying two domains): give each later role its
+/// own seat, releasing and reassigning each of its holdings with its instance
+/// kept (`reviewer/115`). Instances of one role are one domain.
 pub fn two_domains(
     project: &str,
     rows: &[Assignment],
     live: &HashSet<String>,
 ) -> Vec<Recommendation> {
-    let p = shell_word(project);
     let mut seats: Vec<&str> = rows
         .iter()
         .filter(|row| row.to.is_none() && live.contains(&row.seat))
@@ -605,29 +724,62 @@ pub fn two_domains(
             .filter(|row| row.to.is_none() && row.seat == seat)
             .collect();
         held.sort_by(|a, b| a.from.cmp(&b.from));
-        held.dedup_by(|a, b| a.role == b.role);
-        if held.len() < 2 {
+        let mut roles: Vec<&str> = Vec::new();
+        for row in &held {
+            if !roles.contains(&row.role.as_str()) {
+                roles.push(&row.role);
+            }
+        }
+        if roles.len() < 2 {
             continue;
         }
-        let names: Vec<&str> = held.iter().map(|row| row.role.as_str()).collect();
-        for later in &held[1..] {
-            let r = shell_word(&later.role);
+        for later in &roles[1..] {
+            let mine: Vec<&&Assignment> = held.iter().filter(|row| row.role == *later).collect();
+            let why = format!(
+                "{seat} carries {} roles; {later} gets its own seat",
+                roles.len()
+            );
+            let split = format!("its own seat, split from {seat}");
+            let mut commands: Vec<String> = mine
+                .iter()
+                .map(|row| {
+                    command(&[
+                        "pij",
+                        "directory",
+                        "release",
+                        &address(row),
+                        seat,
+                        "--why",
+                        &why,
+                        "--project",
+                        project,
+                    ])
+                })
+                .collect();
+            commands.extend(mine.iter().map(|row| {
+                command(&[
+                    "pij",
+                    "directory",
+                    "assign",
+                    &address(row),
+                    "<seat>",
+                    "--why",
+                    &split,
+                    "--project",
+                    project,
+                ])
+            }));
+            let first = commands.remove(0);
             let mut prompt = Recommendation::new(
-                later.role.clone(),
+                *later,
                 "two-domains",
                 Move::Split,
                 Signal::TwoDomains,
-                format!(
-                    "pij directory release {r} {} --why \"{seat} carries {} roles; {} gets its own seat\" --project {p}",
-                    shell_word(seat),
-                    names.len(),
-                    later.role
-                ),
+                first,
             );
-            prompt.commands.push(format!(
-                "pij directory assign {r} <seat> --why \"its own seat, split from {seat}\" --project {p}"
-            ));
-            prompt.detail = Some(format!("{seat} holds {} at once", names.join(" and ")));
+            prompt.commands.extend(commands);
+            prompt.in_order = true;
+            prompt.detail = Some(format!("{seat} holds {} at once", roles.join(" and ")));
             out.push(prompt);
         }
     }
@@ -672,20 +824,40 @@ pub fn idle(project: &str, role: &RoleActivity<'_>, cutoff: &str) -> Option<Reco
     if last >= cutoff {
         return None;
     }
-    let p = shell_word(project);
-    let r = shell_word(role.role);
     let mut prompt = Recommendation::new(
         role.role,
         "idle",
         Move::Retire,
         Signal::MostlyIdle,
-        format!(
-            "pij directory retire {r} --why \"idle since {last}, nothing to remember\" --project {p}"
-        ),
+        command(&[
+            "pij",
+            "directory",
+            "retire",
+            role.role,
+            "--why",
+            &format!("idle since {last}, nothing to remember"),
+            "--project",
+            project,
+        ]),
     );
-    prompt.commands.push(format!(
-        "pij directory merge {r} --into <role> --why \"folded into <role>: idle since {last}\" --project {p}"
-    ));
+    prompt.commands.push(command(&[
+        "pij",
+        "directory",
+        "merge",
+        role.role,
+        "--into",
+        "<role>",
+        "--why",
+        &format!("folded into <role>: idle since {last}"),
+        "--project",
+        project,
+    ]));
+    // Neither verb has shipped (s15): the move is shown, not offered to run.
+    prompt.later = std::mem::take(&mut prompt.commands);
+    prompt.note = Some(
+        "retire and merge are s15's verbs and have not shipped; until then the role stays, cold"
+            .to_string(),
+    );
     prompt.detail = Some(format!(
         "{} has no memory, outputs, waiting requests or live holder, and nothing has happened since {last}",
         role.role
@@ -696,14 +868,19 @@ pub fn idle(project: &str, role: &RoleActivity<'_>, cutoff: &str) -> Option<Reco
 /// For a cold role with memory (no live holder, at least one note), the
 /// command that calls on it (ruling C30): a request to the role, which waits
 /// on its queue and wakes the PA (else the prime) to revive or assign a
-/// holder. `None` otherwise.
+/// holder. `pij send` takes its target positionally and its text from a file.
+/// `None` otherwise.
 pub fn call_on(project: &str, role: &str, live_holder: bool, notes: usize) -> Option<String> {
     (!live_holder && notes > 0).then(|| {
-        format!(
-            "pij send --to role:{} --body \"<what you need from it>\" --project {}",
-            shell_word(role),
-            shell_word(project)
-        )
+        command(&[
+            "pij",
+            "send",
+            &format!("role:{role}"),
+            "--body-file",
+            "<path to what you need from it>",
+            "--project",
+            project,
+        ])
     })
 }
 
@@ -774,7 +951,7 @@ mod tests {
             acts[0]["commands"],
             json!([
                 "pij-rs revive pij-dead",
-                "pij directory assign reviewer <seat> --why \"<why>\" --project fleet"
+                "pij directory assign reviewer '<seat>' --why '<why>' --project fleet"
             ])
         );
         assert!(actions("fleet", "reviewer", "one", &rows, &live(&[]), 0, None).is_empty());
@@ -810,7 +987,7 @@ mod tests {
         assert_eq!(
             acts[0]["commands"],
             json!([
-                "pij directory release reviewer pij-a --why \"a one-holder role had 2 live holders\" --project fleet"
+                "pij directory release reviewer pij-a --why 'a one-holder role had 2 live holders' --project fleet"
             ])
         );
         assert!(
@@ -925,10 +1102,14 @@ mod tests {
             "{command}"
         );
         assert!(
-            command.contains("--why \"001 s09, 001 s10 needs role:docs-system\""),
+            command.contains("--why '001 s09, 001 s10 needs role:docs-system'"),
             "{command}"
         );
         assert!(command.ends_with("--project fleet"), "{command}");
+        assert!(
+            expected_template || command.contains("--packet '<what a holder is told"),
+            "a new definition carries its standing packet: {command}"
+        );
     }
 
     #[test]
@@ -948,7 +1129,7 @@ mod tests {
         .unwrap();
         std::fs::write(roadmaps.join("broken.dd.json"), "{").unwrap();
         assert_eq!(
-            step_needs(&dir),
+            step_needs(&read_step_docs(&dir)),
             vec![
                 (
                     "qa".to_string(),
@@ -992,7 +1173,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let recurring = recurring_paths(&dir);
+        let recurring = recurring_paths(&dir, &read_step_docs(&dir));
         assert_eq!(
             recurring,
             vec![
@@ -1028,6 +1209,10 @@ mod tests {
                 .contains("--scope-path 'crates/daemon/**'"),
             "{json}"
         );
+        assert!(
+            json["command"].as_str().unwrap().contains(" --packet '<"),
+            "{json}"
+        );
         let owned = [(
             "daemon-team".to_string(),
             vec!["crates/daemon/src/**".to_string()],
@@ -1044,19 +1229,29 @@ mod tests {
         pm.role = "pm".into();
         let reviewer = row("pij-a", "2026-11-02T00:00:00Z", None, None);
         let other = row("pij-b", "2026-11-02T00:00:00Z", None, None);
-        let rows = vec![reviewer, pm, other];
+        let mut reviewer_116 = row("pij-a", "2026-11-03T00:00:00Z", None, None);
+        reviewer_116.instance = "116".into();
+        let mut pm_again = row("pij-a", "2026-11-04T00:00:00Z", None, None);
+        pm_again.role = "pm".into();
+        pm_again.instance = "2".into();
+        let rows = vec![reviewer, pm, other, reviewer_116, pm_again];
         let split = two_domains("fleet", &rows, &live(&["pij-a", "pij-b"]));
-        assert_eq!(split.len(), 1);
+        assert_eq!(split.len(), 1, "pm, reviewer, reviewer, pm is two roles");
         let json = split[0].json();
         assert_eq!(json["role"], "reviewer", "the later role moves");
         assert_eq!(json["act"], "split");
         assert_eq!(json["signal"]["code"], "two-domains");
         assert_eq!(json["detail"], "pij-a holds pm and reviewer at once");
-        assert!(
-            json["commands"][0]
-                .as_str()
-                .unwrap()
-                .starts_with("pij directory release reviewer pij-a ")
+        assert_eq!(json["in_order"], true);
+        assert_eq!(
+            json["commands"],
+            json!([
+                "pij directory release reviewer pij-a --why 'pij-a carries 2 roles; reviewer gets its own seat' --project fleet",
+                "pij directory release reviewer/116 pij-a --why 'pij-a carries 2 roles; reviewer gets its own seat' --project fleet",
+                "pij directory assign reviewer '<seat>' --why 'its own seat, split from pij-a' --project fleet",
+                "pij directory assign reviewer/116 '<seat>' --why 'its own seat, split from pij-a' --project fleet",
+            ]),
+            "every holding moves, its instance kept"
         );
         assert!(
             two_domains("fleet", &rows, &live(&["pij-b"])).is_empty(),
@@ -1085,16 +1280,19 @@ mod tests {
         let json = idle("fleet", &base, "2026-10-07").expect("idle").json();
         assert_eq!(json["act"], "retire");
         assert_eq!(json["signal"]["code"], "mostly-idle");
+        assert_eq!(json["command"], Value::Null, "nothing runnable ships yet");
+        assert_eq!(json["commands"], json!([]));
         assert_eq!(
-            json["commands"][0],
-            "pij directory retire qa --why \"idle since 2026-09-02, nothing to remember\" --project fleet"
+            json["later"][0],
+            "pij directory retire qa --why 'idle since 2026-09-02, nothing to remember' --project fleet"
         );
         assert!(
-            json["commands"][1]
+            json["later"][1]
                 .as_str()
                 .unwrap()
-                .starts_with("pij directory merge qa --into <role> ")
+                .starts_with("pij directory merge qa --into '<role>' ")
         );
+        assert!(json["note"].as_str().unwrap().contains("s15"), "{json}");
         let kept = RoleActivity { notes: 1, ..base };
         assert!(
             idle("fleet", &kept, "2026-10-07").is_none(),
@@ -1145,13 +1343,16 @@ mod tests {
             "a design workshop, research, operations",
             "a long-running specialist is a feature",
             "a cold specialist with rich memory is someone to call on, not to retire",
+            "small contexts are cheaper and sharper",
+            "an expert in its own seat beats a generalist carrying the topic",
+            "have each holder write memory at the boundary",
         ] {
             assert!(notice.contains(words), "{words}: {notice}");
         }
         assert_eq!(idle_cutoff(1_793_934_000_000), "2026-10-07");
         assert_eq!(
             call_on("fleet", "qa", false, 3).as_deref(),
-            Some("pij send --to role:qa --body \"<what you need from it>\" --project fleet")
+            Some("pij send role:qa --body-file '<path to what you need from it>' --project fleet")
         );
         assert!(
             call_on("fleet", "qa", true, 3).is_none(),
@@ -1180,7 +1381,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            step_needs(&dir),
+            step_needs(&read_step_docs(&dir)),
             vec![("qa".to_string(), vec!["001-old s01".to_string()])]
         );
         std::fs::create_dir_all(dir.join(WORKSTREAMS)).unwrap();
@@ -1195,7 +1396,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            step_needs(&dir),
+            step_needs(&read_step_docs(&dir)),
             vec![("docs".to_string(), vec!["001-new s02".to_string()])],
             "workstreams win once they hold a document"
         );

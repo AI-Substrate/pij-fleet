@@ -1042,6 +1042,221 @@ mod tests {
         tokens.iter().map(|token| (*token).to_string()).collect()
     }
 
+    /// Every command the picture prints (plan 203), built from hostile repo
+    /// and store text, is split by a real `/bin/sh` and replayed through the
+    /// parser its verb reaches: nothing in it runs, the shell hands the verb
+    /// exactly the words the picture meant, and the verb accepts them. A role
+    /// it creates carries every section `pij/role` requires (#141 review and
+    /// security S001).
+    #[test]
+    fn every_printed_command_runs_as_written_through_the_real_parsers() {
+        use std::collections::HashSet;
+
+        use crate::community::picture::{self, RoleActivity};
+        use crate::community::templates::{self, Catalog};
+
+        let hostile = "s09$(touch dollar)`touch tick`;touch semi \"dq\" 'sq'\nnext";
+        let seat = "pij-a;touch seat";
+        let project = "fleet";
+        let holding = |role: &str, instance: &str, seat: &str, from: &str, to: Option<&str>| {
+            pij_store::Assignment {
+                project: project.into(),
+                role: role.into(),
+                instance: instance.into(),
+                seat: seat.into(),
+                harness: None,
+                session: None,
+                machine: None,
+                from: from.into(),
+                to: to.map(Into::into),
+                assigned_by: "prime".into(),
+                released_by: None,
+                why: "w".into(),
+                release_why: to.map(|_| "close".to_string()),
+                end_pending: false,
+            }
+        };
+        let closed = [
+            holding(
+                "reviewer",
+                "",
+                "pij-old",
+                "2026-11-01T00:00:00Z",
+                Some("2026-11-02T00:00:00Z"),
+            ),
+            holding(
+                "reviewer",
+                "",
+                "pij-old",
+                "2026-11-03T00:00:00Z",
+                Some("2026-11-04T00:00:00Z"),
+            ),
+        ];
+        let open = [
+            holding("reviewer", "115", seat, "2026-11-05T00:00:00Z", None),
+            holding("reviewer", "", "pij-b", "2026-11-06T00:00:00Z", None),
+        ];
+        let rows: Vec<&pij_store::Assignment> = closed.iter().chain(&open).collect();
+        let seats: HashSet<String> = [seat.to_string(), "pij-b".to_string()].into();
+        let mut printed: Vec<String> = Vec::new();
+        let mut take = |actions: Vec<Value>| {
+            for action in actions {
+                for command in action["commands"].as_array().unwrap() {
+                    printed.push(command.as_str().unwrap().to_string());
+                }
+            }
+        };
+        take(picture::actions(
+            project,
+            "reviewer",
+            "one",
+            &rows,
+            &HashSet::new(),
+            1,
+            None,
+        ));
+        take(picture::actions(
+            project,
+            "reviewer",
+            "one",
+            &rows,
+            &seats,
+            0,
+            Some("2026-11-05"),
+        ));
+        let mut prompts = templates::recommendations(project, &[]);
+        let needs = vec![
+            ("qa".to_string(), vec![format!("001 {hostile}")]),
+            (format!("docs{hostile}"), vec![format!("001 {hostile}")]),
+        ];
+        picture::fold_needs(project, &mut prompts, &needs, &[], &Catalog::shipped());
+        prompts.extend(picture::unowned(
+            project,
+            &[(
+                format!("crates/{hostile}"),
+                vec!["a".into(), "b".into(), "c".into()],
+            )],
+            &[],
+        ));
+        let mut two = open.to_vec();
+        two.push(holding("pm", "", seat, "2026-11-01T00:00:00Z", None));
+        prompts.extend(picture::two_domains(project, &two, &seats));
+        for prompt in &prompts {
+            printed.extend(prompt.commands.iter().cloned());
+        }
+        printed.extend(picture::call_on(project, hostile, false, 1));
+        let idle = picture::idle(
+            project,
+            &RoleActivity {
+                role: hostile,
+                created: Some("2026-01-01"),
+                rows: &[],
+                live_holder: false,
+                waiting: 0,
+                has_output: false,
+                notes: 0,
+            },
+            "2026-10-01",
+        )
+        .expect("idle");
+        assert!(
+            idle.commands.is_empty(),
+            "nothing runnable ships for retire"
+        );
+        let kinds: HashSet<&str> = prompts.iter().map(|prompt| prompt.kind).collect();
+        for kind in ["core", "needed", "recurring", "two-domains"] {
+            assert!(kinds.contains(kind), "the fixture prints a {kind} prompt");
+        }
+
+        let all: Vec<&String> = printed.iter().chain(&idle.later).collect();
+        let dir = pij_testkit::fresh_dir("printed-commands");
+        let script: String = all
+            .iter()
+            .map(|command| format!("printf '%s\\037' {command}; printf '\\036'\n"))
+            .collect();
+        let shell = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(&script)
+            .current_dir(&dir)
+            .output()
+            .expect("run /bin/sh");
+        assert!(shell.status.success(), "{shell:?}");
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            0,
+            "nothing in a printed command ran, and nothing was redirected"
+        );
+        let stdout = String::from_utf8(shell.stdout).unwrap();
+        let split: Vec<Vec<String>> = stdout
+            .split('\x1e')
+            .filter(|record| !record.is_empty())
+            .map(|record| {
+                record
+                    .split('\x1f')
+                    .filter(|word| !word.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(split.len(), all.len());
+
+        let schema: Value = serde_json::from_slice(include_bytes!(
+            "../../../../.dd/schemas/pij/role/schema.json"
+        ))
+        .unwrap();
+        for (command, words) in all.iter().zip(&split) {
+            let words_ref: Vec<&str> = words.iter().map(String::as_str).collect();
+            assert_eq!(
+                picture::command(&words_ref),
+                **command,
+                "the shell split {command} into exactly its words"
+            );
+            let later = idle.later.contains(command);
+            match words_ref.as_slice() {
+                // Native clap; the CLI's own test replays this shape.
+                ["pij-rs", "revive", _] => {}
+                ["pij", "send", ..] => {
+                    crate::http::shim::parse_send(&words[1..], Some("text"))
+                        .unwrap_or_else(|error| panic!("{command}: {error}"));
+                }
+                ["pij", "directory", ..] if later => {
+                    assert_eq!(
+                        Arguments::parse(&words[1..]).map(|_| ()).unwrap_err().code,
+                        "E-RS-UNPORTED",
+                        "{command}: s15's verbs have not shipped, so they stay in `later`"
+                    );
+                }
+                ["pij", "directory", ..] => {
+                    let call = Arguments::parse(&words[1..])
+                        .unwrap_or_else(|refusal| panic!("{command}: {refusal:?}"));
+                    if call.leaf != "add" || call.get("from").is_some() {
+                        continue;
+                    }
+                    let document = role::from_fields(&call.positions[0], &call.fields())
+                        .unwrap_or_else(|refusal| panic!("{command}: {refusal:?}"));
+                    for (name, rule) in schema["sections"].as_object().unwrap() {
+                        if rule["required"] != true || name == "changelog" {
+                            continue;
+                        }
+                        let section = document["sections"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|section| section["name"] == *name)
+                            .unwrap_or_else(|| panic!("{command}: pij/role requires {name}"));
+                        for field in rule["shape"]["required"].as_array().into_iter().flatten() {
+                            assert!(
+                                !section["value"][field.as_str().unwrap()].is_null(),
+                                "{command}: pij/role requires {name}.{field}"
+                            );
+                        }
+                    }
+                }
+                _ => panic!("{command}: a verb with no replay"),
+            }
+        }
+    }
+
     #[test]
     fn flags_repeat_where_the_schema_holds_a_list_and_refuse_elsewhere() {
         let call = Arguments::parse(&argv(&[
