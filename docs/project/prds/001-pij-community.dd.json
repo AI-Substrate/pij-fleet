@@ -221,7 +221,7 @@
 					"statement": "`pij directory` shows each role with holders, waiting requests, latest output and memory freshness, and prompts the prime with next actions, in the style of `harness flow orient`: no live holder with requests waiting, two live holders on a one-holder role, memory not updated across recent closes, a recommended role missing.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Each of the four conditions, set up in a test project, produces its prompt with a runnable command.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -331,7 +331,7 @@
 					"statement": "A roadmap step lists the roles it needs (`needs: role:devcontainer`). The prime's view flags a needed role that does not exist, and the prime offers to create it from a template or as a new definition with the operator.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A step needing a missing role shows a prompt in `pij directory`; creating the role clears it.",
 					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
 				},
@@ -502,6 +502,11 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "Plan 194: req-14 reworded per ruling C22, from creating the core roles to prompting for them and for security until each exists, creating nothing. req-13 and req-14 shipped; req-27 in-progress (the s03 wording; s09 and s10 to come)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-back-tapir",
+					"change": "Plan 203: req-12 and req-24 shipped (the view prompts the prime for each condition and for roles a roadmap step needs); req-27 stays in-progress (s09 adds the needs prompts and the PEC notice; s10 finishes it)."
 				}
 			]
 		}

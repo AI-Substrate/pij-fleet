@@ -146,7 +146,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-12",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
-					"state": "in-progress"
+					"state": "shipped"
 				},
 				{
 					"id": "c-templates",
@@ -321,6 +321,11 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "c-templates in-progress: the core and security templates ship in plan 194, compiled into the daemon; the optional templates come in s10."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-back-tapir",
+					"change": "c-orient shipped (plan 203): the directory view and its prompts."
 				}
 			]
 		}

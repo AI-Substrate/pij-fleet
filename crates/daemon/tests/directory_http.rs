@@ -560,14 +560,15 @@ async fn help_is_answered_not_refused() {
 // Plan 195: holding roles.
 
 async fn with_roles(addr: SocketAddr, repo: &Repo) {
+    with_roles_and_prime(addr, repo, &[]).await;
+}
+
+/// [`with_roles`], with `extra` project-create flags such as `--prime <seat>`.
+async fn with_roles_and_prime(addr: SocketAddr, repo: &Repo, extra: &[&str]) {
     let main = repo.main.to_str().unwrap();
-    let created = call(
-        addr,
-        "/v1/project",
-        &["project", "create", "fleet", "--repo", main],
-        &repo.main,
-    )
-    .await;
+    let mut argv = vec!["project", "create", "fleet", "--repo", main];
+    argv.extend_from_slice(extra);
+    let created = call(addr, "/v1/project", &argv, &repo.main).await;
     assert_eq!(created["ok"], true, "{created}");
     for (id, holders) in [("pm-001", "one"), ("reviewer", "many")] {
         let added = call(
@@ -2655,5 +2656,294 @@ async fn security_a_released_holder_never_drains_and_a_cold_drain_is_audited() {
             .count(),
         1
     );
+    rig.server.abort();
+}
+
+fn role_of<'a>(view: &'a Value, id: &str) -> &'a Value {
+    view["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == id)
+        .unwrap_or_else(|| panic!("no role {id} in {view}"))
+}
+
+fn action<'a>(view: &'a Value, role: &str, condition: &str) -> Option<&'a Value> {
+    view["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["role"] == role && action["condition"] == condition)
+}
+
+fn prompt<'a>(view: &'a Value, role: &str) -> Option<&'a Value> {
+    view["data"]["prompts"]
+        .as_array()
+        .and_then(|prompts| prompts.iter().find(|prompt| prompt["role"] == role))
+}
+
+/// Plan 203 (s09), AC1 to AC4: the prime's operating picture. Per role the
+/// holders (with seat liveness), waiting requests, latest output and memory
+/// freshness; the three condition actions with runnable commands; a roadmap
+/// need prompting a missing role until it exists; the designated prime named,
+/// and the missing prime role document worded as a document.
+#[tokio::test]
+async fn the_view_shows_the_picture_and_prompts_the_prime() {
+    let repo = repo("pij-directory-picture");
+    let rig = rig(Arc::new(NoHook)).await;
+    // qa's two closed holdings, seeded before any assign writes rows.
+    let closed = |seat: &str, from: &str, to: &str| pij_store::Assignment {
+        project: "fleet".into(),
+        role: "qa".into(),
+        instance: String::new(),
+        seat: seat.into(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: from.into(),
+        to: Some(to.into()),
+        assigned_by: SEAT.into(),
+        released_by: Some(seat.into()),
+        why: "qa".into(),
+        release_why: Some("close".into()),
+        end_pending: false,
+    };
+    rig.store
+        .replace_assignments(
+            "fleet",
+            &[
+                closed(
+                    "pij-qa-1",
+                    "2026-10-01T00:00:00.000Z",
+                    "2026-10-02T00:00:00.000Z",
+                ),
+                closed(
+                    "pij-qa-2",
+                    "2026-10-03T00:00:00.000Z",
+                    "2026-10-04T00:00:00.000Z",
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+    with_roles_and_prime(rig.addr, &repo, &["--prime", SEAT]).await;
+    for (id, holders) in [("qa", "one")] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--title",
+                id,
+                "--kind",
+                "general",
+                "--lifecycle",
+                "long-lived",
+                "--holders",
+                holders,
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    for argv in [
+        &[
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "lead",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "pm-001",
+            SEAT,
+            "--why",
+            "second lead",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "reviewer/114",
+            "pij-second",
+            "--why",
+            "review",
+        ][..],
+        &[
+            "directory",
+            "memory",
+            "add",
+            "reviewer",
+            "--title",
+            "What broke",
+            "--hook",
+            "h",
+            "--body",
+            "b",
+        ][..],
+    ] {
+        let done = call(rig.addr, "/v1/directory", argv, &repo.main).await;
+        assert_eq!(done["ok"], true, "{argv:?}: {done}");
+    }
+    let request = pij_store::RoleRequest {
+        id: "req-qa-1".into(),
+        project: "fleet".into(),
+        role: "qa".into(),
+        instance: String::new(),
+        requester: "pij-second".into(),
+        body: "check it".into(),
+        in_reply_to: None,
+        fyi: false,
+        reply: pij_store::ReplyMode::Wake,
+        limit_ms: None,
+        state: pij_store::RequestState::Queued,
+        holder: None,
+        created_at: 1_793_934_000_000,
+        delivered_at: None,
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
+    };
+    rig.store.record_role_request(&request).await.unwrap();
+    rig.store
+        .record_output(&pij_store::CommunityOutput {
+            path: "roles/reviewer/outputs/2026-11/06-verdict-pr-200-0123456.dd.json".into(),
+            project: "fleet".into(),
+            role: "reviewer".into(),
+            kind: "verdict".into(),
+            subject: "pr:200".into(),
+            head: Some("0123456789".into()),
+            result: Some("pass".into()),
+            writer: "pij-second".into(),
+            holds_role: true,
+            answers: None,
+            commit: "c0ffee".into(),
+            created_at: 1_793_934_100_000,
+        })
+        .await
+        .unwrap();
+    let roadmaps = repo.main.join("docs/project/roadmaps");
+    std::fs::create_dir_all(&roadmaps).unwrap();
+    std::fs::write(
+        roadmaps.join("001-test.dd.json"),
+        json!({"sections": [{"name": "steps", "value": [
+            {"id": "s01", "state": "complete", "needs": ["role:ancient"]},
+            {"id": "s09", "state": "planned", "needs": ["role:docs-system", "role:security", "role:qa"]}
+        ]}]})
+        .to_string(),
+    )
+    .unwrap();
+
+    let before = head(&repo);
+    let viewed = view(rig.addr, &repo).await;
+    assert_eq!(viewed["ok"], true, "{viewed}");
+    assert_eq!(head(&repo), before, "the view writes nothing");
+
+    // AC1: holders with liveness, requests, latest output, memory.
+    let reviewer = role_of(&viewed, "reviewer");
+    assert_eq!(reviewer["live"][0]["seat"], "pij-second");
+    assert_eq!(reviewer["live"][0]["seat_live"], true);
+    assert_eq!(reviewer["latest_output"]["kind"], "verdict");
+    assert_eq!(reviewer["latest_output"]["result"], "pass");
+    assert_eq!(reviewer["memory"]["notes"], 1);
+    assert!(reviewer["memory"]["latest"].is_string(), "{reviewer}");
+    assert!(reviewer["requests"].is_null());
+    let qa = role_of(&viewed, "qa");
+    assert_eq!(
+        qa["requests"],
+        json!({"count": 1, "oldest_at": 1_793_934_000_000_u64})
+    );
+    assert_eq!(qa["memory"], json!({"notes": 0, "latest": null}));
+    assert!(qa["latest_output"].is_null());
+
+    // AC2: each condition, with runnable commands.
+    let none = action(&viewed, "qa", "no-live-holder").expect("qa has no live holder");
+    assert_eq!(
+        none["commands"],
+        json!([
+            "pij-rs revive pij-qa-2",
+            "pij directory assign qa <seat> --why \"<why>\" --project fleet"
+        ])
+    );
+    let two = action(&viewed, "pm-001", "two-live-holders").expect("pm-001 has two");
+    assert_eq!(
+        two["commands"],
+        json!([
+            "pij directory release pm-001 pij-holder --why \"a one-holder role had 2 live holders\" --project fleet"
+        ])
+    );
+    let stale = action(&viewed, "qa", "memory-stale").expect("qa's closes left no note");
+    assert!(
+        stale["commands"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("pij directory memory add qa "),
+        "{stale}"
+    );
+    assert!(action(&viewed, "reviewer", "memory-stale").is_none());
+
+    // AC3: a step's need prompts the missing role; the PEC notice stands.
+    let docs = prompt(&viewed, "docs-system").expect("docs-system is needed");
+    assert_eq!(docs["kind"], "needed");
+    assert_eq!(docs["needed_by"], json!(["001-test s09"]));
+    assert_eq!(
+        prompt(&viewed, "security").unwrap()["needed_by"],
+        json!(["001-test s09"])
+    );
+    assert!(
+        prompt(&viewed, "ancient").is_none(),
+        "a complete step needs nothing"
+    );
+    assert!(prompt(&viewed, "qa").is_none(), "qa exists");
+    let notice = viewed["data"]["notice"].as_str().unwrap();
+    assert!(notice.contains("no role here covers"), "{notice}");
+    assert!(notice.contains("whatever the work needs now"), "{notice}");
+
+    // AC4: the designated prime is named; the prime prompt is the document.
+    assert_eq!(viewed["data"]["prime"], SEAT);
+    assert_eq!(
+        prompt(&viewed, "prime").unwrap()["note"],
+        format!("the project's prime is {SEAT}; this adds the prime role's document")
+    );
+
+    // Adding the needed role clears its prompt.
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "docs-system",
+            "--title",
+            "docs",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    assert!(prompt(&view(rig.addr, &repo).await, "docs-system").is_none());
     rig.server.abort();
 }

@@ -408,9 +408,10 @@ pub(crate) async fn handle(
         "memory" => memory(&state, &actor.id, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
-                Ok((project, repo)) if call.leaf == "view" => {
-                    state.services.directory.view(&project, &repo).await
-                }
+                Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
+                    Ok(live) => state.services.directory.view(&project, &repo, &live).await,
+                    Err(refusal) => Err(refusal),
+                },
                 Ok((project, repo)) => state.services.directory.rebuild(&project, repo).await,
                 Err(refusal) => Err(refusal),
             }
@@ -421,6 +422,20 @@ pub(crate) async fn handle(
         Ok(data) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, data)),
         Err(refusal) => refused(&refusal),
     }
+}
+
+/// The registered, untombstoned seats: one registry read per view.
+async fn live_seats(state: &AppState) -> Result<std::collections::HashSet<String>, Refusal> {
+    Ok(state
+        .services
+        .registry
+        .list(pij_core::ports::SeatFilter::default())
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .into_iter()
+        .filter(|seat| seat.tombstoned_at.is_none())
+        .map(|seat| seat.id.to_string())
+        .collect())
 }
 
 async fn add(

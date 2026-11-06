@@ -806,7 +806,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [The prime's operating picture](#the-primes-operating-picture-plan-203) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/output` | `output verdict\|deliverable\|note\|handover --role <id> --subject <address> [--head <sha>] [--result <r>] [--note-owed <text>]… [--evidence <json>]… [--link <url>] [--answers <msg_id>] [--body <text>\|--body-file <path>] [--project <slug>]`; `output --help`. See [Role outputs](#role-outputs-plan-200) | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/outputs` | `outputs --subject <address> [--head <sha>]`; `outputs --role <id> [--limit <n>]`; `outputs --help` | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/adopt` | Existing identity admission plus optional asserted role; omitted parent and role remain unsaid | `adopt-with-role` |
@@ -1036,6 +1036,47 @@ the human view's drift hint does the same. `guidance` states the PEC wording. Th
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
+
+### The prime's operating picture (plan 203)
+
+`pij directory` names the project's designated prime (`data.prime`, the seat
+the project records; `null` when none), so a missing `prime` role document does
+not read as a missing prime: that prompt carries `note`, naming the prime. Each
+role also carries:
+
+- `live[].seat_live`: whether the holder's seat is registered and not tombstoned;
+- `requests`: `{count, oldest_at}` of its queued requests (s05), or `null`;
+- `latest_output`: its newest output (s06) `{kind, subject, head, result, writer, at, path}`, or `null`;
+- `memory`: `{notes, latest}`, the number of memory notes (s07) and the newest
+  dated note's `yyyy-mm-dd`.
+
+`data.actions` lists what needs the prime (req-12), each
+`{role, condition, says, commands}` with runnable commands that name the
+project:
+
+| condition | when | commands |
+|---|---|---|
+| `no-live-holder` | requests wait and no holder's seat is live | `pij-rs revive <last holder>` (when there was one), `pij directory assign <role> <seat> --why "<why>"` |
+| `two-live-holders` | a one-holder role has two or more live holders | `pij directory release` for each but the newest |
+| `memory-stale` | the role's last two closes (`picture::MEMORY_CLOSES`) both fall on a day after its newest memory note, or it has none | `pij directory memory add <role> --title … --hook … --body-file -` |
+
+A missing core or security role stays in `prompts` (s03). A roadmap step that
+is not complete and lists `needs: ["role:<id>"]` (the project repo's
+`docs/project/roadmaps/*.dd.json`) adds `needed_by` (`<roadmap> <step>`) to that
+role's prompt, or, for a role that is neither there nor prompted, a prompt of
+kind `needed`: from its template when one ships, else as a new definition with
+`<title>` and `<what it always does>` to fill in. Adding the role clears it.
+`data.notice` always asks the prime to notice a need no role covers, in the PEC
+wording.
+
+The human view prints times in local time with their zone
+(`2026-11-06 13:07 +10:00`), puts each holder of a role with more than one on
+its own line, then the next actions and the prompts.
+
+Cost: per call, one query each for the holdings, the project, the queued
+requests and each role's newest output (one window query), and one registry
+list; each role's document and memory folder and the repo's roadmaps are read
+in-process. It launches nothing, per role or per seat, and has no timer or poll.
 
 ### Role memory (plan 201)
 

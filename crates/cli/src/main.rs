@@ -2829,29 +2829,76 @@ fn render_outputs(data: &Value) -> String {
     out
 }
 
-/// `pij directory` for a human: each role, its mode and its live holders.
+/// `pij directory` for a human: the prime, each role with its holders, waiting
+/// requests, latest output and memory, then the next actions and prompts.
 fn render_directory(view: &Value) -> String {
+    render_directory_at(view, |at| {
+        time::UtcOffset::local_offset_at(at).unwrap_or(time::UtcOffset::UTC)
+    })
+}
+
+/// `instant` (RFC 3339 text, or ms since the epoch) at the offset `zone`
+/// gives for it, as `yyyy-mm-dd hh:mm ±hh:mm`; the text as given when it
+/// does not parse.
+fn local_time(instant: &Value, zone: &impl Fn(time::OffsetDateTime) -> time::UtcOffset) -> String {
+    let at = match instant {
+        Value::String(text) => {
+            time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()
+        }
+        Value::Number(ms) => ms
+            .as_u64()
+            .and_then(|ms| i128::from(ms).checked_mul(1_000_000))
+            .and_then(|ns| time::OffsetDateTime::from_unix_timestamp_nanos(ns).ok()),
+        _ => None,
+    };
+    let Some(at) = at else {
+        return instant.as_str().unwrap_or("-").to_string();
+    };
+    let local = at.to_offset(zone(at));
+    let (hours, minutes, _) = local.offset().as_hms();
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02} {}{:02}:{:02}",
+        local.year(),
+        u8::from(local.month()),
+        local.day(),
+        local.hour(),
+        local.minute(),
+        if hours < 0 || minutes < 0 { '-' } else { '+' },
+        hours.unsigned_abs(),
+        minutes.unsigned_abs()
+    )
+}
+
+fn render_directory_at(
+    view: &Value,
+    zone: impl Fn(time::OffsetDateTime) -> time::UtcOffset,
+) -> String {
     let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
-    let roles = view["roles"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or_default();
+    let list = |value: &Value| value.as_array().cloned().unwrap_or_default();
+    let roles = list(&view["roles"]);
     let mut out = format!("{}: {} role(s)", text(&view["project"]), roles.len());
-    for role in roles {
-        let live = role["live"]
-            .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let holders: Vec<String> = live
+    match view["prime"].as_str() {
+        Some(prime) => {
+            let _ = write!(out, "; prime: {prime}");
+        }
+        None => out.push_str("; no designated prime"),
+    }
+    for role in &roles {
+        let holders: Vec<String> = list(&role["live"])
             .iter()
             .map(|holder| {
                 let instance = holder["instance"].as_str().filter(|key| !key.is_empty());
                 format!(
-                    "{}{} since {} on {}{}",
+                    "{}{} since {} on {}{}{}",
                     text(&holder["seat"]),
                     instance.map(|key| format!(" ({key})")).unwrap_or_default(),
-                    text(&holder["since"]),
+                    local_time(&holder["since"], &zone),
                     text(&holder["machine"]),
+                    if holder["seat_live"] == false {
+                        ", seat not live"
+                    } else {
+                        ""
+                    },
                     if holder["end_pending"] == true {
                         ", end pending"
                     } else {
@@ -2860,18 +2907,63 @@ fn render_directory(view: &Value) -> String {
                 )
             })
             .collect();
-        let _ = write!(
-            out,
-            "\n  {} ({}, {}): {}",
+        let head = format!(
+            "\n  {} ({}, {}): ",
             text(&role["id"]),
             text(&role["kind"]),
-            text(&role["holders"]),
-            if holders.is_empty() {
-                "no holder".to_string()
-            } else {
-                holders.join("; ")
-            }
+            text(&role["holders"])
         );
+        out.push_str(&head);
+        // F22: one line per holder unless there is exactly one.
+        match holders.as_slice() {
+            [] => out.push_str("no holder"),
+            [only] => out.push_str(only),
+            many => {
+                let _ = write!(out, "{} holders", many.len());
+                for holder in many {
+                    let _ = write!(out, "\n    {holder}");
+                }
+            }
+        }
+        let requests = &role["requests"];
+        if let Some(count) = requests["count"].as_u64() {
+            let _ = write!(
+                out,
+                "\n    requests: {count} waiting, oldest {}",
+                local_time(&requests["oldest_at"], &zone)
+            );
+        }
+        let output = &role["latest_output"];
+        if output.is_object() {
+            let _ = write!(
+                out,
+                "\n    latest output: {} on {}{}{} by {}, {}",
+                text(&output["kind"]),
+                text(&output["subject"]),
+                output["head"]
+                    .as_str()
+                    .map(|head| format!(" at {}", head.chars().take(7).collect::<String>()))
+                    .unwrap_or_default(),
+                output["result"]
+                    .as_str()
+                    .map(|result| format!(" ({result})"))
+                    .unwrap_or_default(),
+                text(&output["writer"]),
+                local_time(&output["at"], &zone)
+            );
+        }
+        let memory = &role["memory"];
+        if let Some(notes) = memory["notes"].as_u64() {
+            match memory["latest"].as_str() {
+                Some(latest) => {
+                    let _ = write!(out, "\n    memory: {notes} note(s), newest {latest}");
+                }
+                None if notes == 0 => out.push_str("\n    memory: no notes"),
+                None => {
+                    let _ = write!(out, "\n    memory: {notes} note(s), none dated");
+                }
+            }
+        }
         let template = &role["template"];
         if template["behind"] == true {
             let _ = write!(
@@ -2885,13 +2977,24 @@ fn render_directory(view: &Value) -> String {
             );
         }
     }
-    if let Some(prompts) = view["prompts"].as_array().filter(|p| !p.is_empty()) {
+    let actions = list(&view["actions"]);
+    if !actions.is_empty() {
+        out.push_str("\n\nNext actions:");
+        for action in &actions {
+            let _ = write!(out, "\n  {}", text(&action["says"]));
+            for command in list(&action["commands"]) {
+                let _ = write!(out, "\n    {}", text(&command));
+            }
+        }
+    }
+    let prompts = list(&view["prompts"]);
+    if !prompts.is_empty() {
         let _ = write!(
             out,
-            "\n\n{}\nNot yet in this directory:",
+            "\n\n{}\nRole documents not yet in this directory:",
             text(&view["guidance"])
         );
-        for prompt in prompts {
+        for prompt in &prompts {
             let _ = write!(
                 out,
                 "\n  {} ({}): {}",
@@ -2899,7 +3002,17 @@ fn render_directory(view: &Value) -> String {
                 text(&prompt["kind"]),
                 text(&prompt["command"])
             );
+            let needed: Vec<String> = list(&prompt["needed_by"]).iter().map(text).collect();
+            if !needed.is_empty() {
+                let _ = write!(out, "\n    needed by {}", needed.join(", "));
+            }
+            if let Some(note) = prompt["note"].as_str() {
+                let _ = write!(out, "\n    {note}");
+            }
         }
+    }
+    if let Some(notice) = view["notice"].as_str() {
+        let _ = write!(out, "\n\n{notice}");
     }
     out
 }
@@ -3520,6 +3633,66 @@ mod tests {
             text.contains("pij directory template-diff qa --project 'my remote'"),
             "{text}"
         );
+    }
+
+    /// Plan 203: the prime, holders one per line for a many-holder role, local
+    /// times with zone, requests, the latest output, memory, the next actions,
+    /// the needed and prime prompts, and the PEC notice.
+    #[test]
+    fn the_directory_view_renders_the_picture_in_local_time() {
+        let view = serde_json::json!({
+            "project": "fleet", "prime": "pij-prime", "pending": [],
+            "roles": [
+                {"id": "reviewer", "kind": "general", "holders": "many",
+                 "live": [
+                    {"seat": "pij-a", "instance": "114", "since": "2026-11-06T03:07:00.000Z", "machine": "m", "seat_live": true},
+                    {"seat": "pij-b", "instance": "115", "since": "2026-11-06T04:00:00Z", "machine": "m", "seat_live": false}
+                 ],
+                 "requests": {"count": 2, "oldest_at": 1_793_934_000_000_u64},
+                 "latest_output": {"kind": "verdict", "subject": "pr:200", "head": "0123456789", "result": "pass", "writer": "pij-a", "at": 1_793_934_000_000_u64},
+                 "memory": {"notes": 3, "latest": "2026-11-05"}},
+                {"id": "pm", "kind": "specialist", "holders": "one",
+                 "live": [{"seat": "pij-c", "instance": "", "since": "2026-11-05T23:30:00Z", "machine": "m", "seat_live": true}],
+                 "requests": null, "latest_output": null, "memory": {"notes": 0, "latest": null}}
+            ],
+            "actions": [{"role": "pm", "condition": "memory-stale", "says": "pm's last 2 closes left no memory note", "commands": ["pij directory memory add pm --project fleet"]}],
+            "prompts": [
+                {"role": "prime", "kind": "core", "command": "pij directory add prime --from template:prime", "note": "the project's prime is pij-prime; this adds the prime role's document"},
+                {"role": "docs-system", "kind": "needed", "needed_by": ["001 s09"], "command": "pij directory add docs-system"}
+            ],
+            "guidance": "PEC guidance",
+            "notice": "PEC notice",
+        });
+        let ten = time::UtcOffset::from_hms(10, 0, 0).unwrap();
+        let text = super::render_directory_at(&view, |_| ten);
+        let expected = "\
+fleet: 2 role(s); prime: pij-prime
+  reviewer (general, many): 2 holders
+    pij-a (114) since 2026-11-06 13:07 +10:00 on m
+    pij-b (115) since 2026-11-06 14:00 +10:00 on m, seat not live
+    requests: 2 waiting, oldest 2026-11-06 13:00 +10:00
+    latest output: verdict on pr:200 at 0123456 (pass) by pij-a, 2026-11-06 13:00 +10:00
+    memory: 3 note(s), newest 2026-11-05
+  pm (specialist, one): pij-c since 2026-11-06 09:30 +10:00 on m
+    memory: no notes
+
+Next actions:
+  pm's last 2 closes left no memory note
+    pij directory memory add pm --project fleet
+
+PEC guidance
+Role documents not yet in this directory:
+  prime (core): pij directory add prime --from template:prime
+    the project's prime is pij-prime; this adds the prime role's document
+  docs-system (needed): pij directory add docs-system
+    needed by 001 s09
+
+PEC notice";
+        assert_eq!(text, expected);
+        let behind = super::local_time(&serde_json::json!("2026-11-06T03:07:00Z"), &|_| {
+            time::UtcOffset::from_hms(-3, -30, 0).unwrap()
+        });
+        assert_eq!(behind, "2026-11-05 23:37 -03:30");
     }
 
     #[test]

@@ -33,13 +33,61 @@ _Empty._
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | Picture: per role in the view (JSON and human), waiting requests (s05 queue), latest output (s06), memory freshness (s07), and whether each holder's seat is live | — | ph-00cb | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | — | community/directory.rs view; one store read each (assignments, queued requests, newest output per role via a new store read, registry list once in http); memory folder read in-process. | [ac-0001](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | Condition prompts (req-12) as `actions`: no live holder with requests waiting; two live holders on a one-holder role; memory not updated across the last two closes; each with its runnable command | — | ph-00cb | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | — | Mirror s05's wake commands (pij-rs revive, pij directory assign). The missing core and security roles stay in `prompts` (s03). | [ac-0002](../../../plan.dd.md#acceptance-criteria) |
+| tk-0003 | Needs (req-24, req-27): a not-complete roadmap step's `needs: role:&lt;id&gt;` with no such role prompts its creation from a template or as a new definition; a standing PEC notice to name a need no role covers | — | ph-00cb | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | — | Roadmaps read in-process from the project repo's docs/project/roadmaps/*.dd.json. | [ac-0003](../../../plan.dd.md#acceptance-criteria) |
+| tk-0004 | F21: the view names the project's designated prime (projects.prime_id); a missing `prime` role document's prompt says it is the role document that is missing, not the prime | — | ph-00cb | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | — | store.project(slug), one read. | [ac-0004](../../../plan.dd.md#acceptance-criteria) |
+| tk-0005 | F22: holder times render in local time with zone; a many-holder role renders one holder per line | — | ph-00cb | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | — | CLI render_directory; offset in-process (time local-offset), UTC when unknown. | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0006 | Cost receipts: spawn sites, private-daemon spawn deltas for the view, live before reading; reads per call stated in backpressure | — | ph-00cb | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) |
+| tk-0007 | Docs and states: pij-rs-api.md, skill verb coverage, roadmap s09 complete, req-12 and req-24 shipped, req-27 in-progress, c-orient shipped | — | ph-00cb | [ ] unchecked | — | — | [tk-0007](tasks.dd.md#done-when) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | A test project with a holder, a queued request, an output and a memory note shows each in the view's JSON and in the human view | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | Each of the three conditions, set up in a test project, produces its action with a runnable command; the missing-role prompts are unchanged | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | A step needing a missing role prompts its creation; adding the role clears it; the PEC notice is present | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | The view names the designated prime; with no prime role document the prompt names the role document, not the prime, as missing | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+
+### tk-0005
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0005 | A many-holder role renders one holder per line, and times render local with zone | [ ] unchecked | [bp-0005](../../backpressure.dd.md#rows) |
+
+### tk-0006
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0006 | Private-daemon readings show the view launches nothing; reads per call are stated | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+
+### tk-0007
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0007 | ddocs-check passes; CI is green on the exact head; the PR body has a Delivers line | [ ] unchecked | [bp-0007](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

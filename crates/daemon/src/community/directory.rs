@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use super::holders::{self, seat_role_for};
 use super::layout::RolePaths;
+use super::picture;
 use super::root::GovernanceRoot;
 use super::templates::{self, Catalog};
 use super::writer::{CommunityWriter, Existing, NewFile, Written};
@@ -169,15 +170,48 @@ impl DirectoryService {
     /// Plan 194: each role's template drift, and prompts for the missing core
     /// roles and security (ruling C22), which create nothing.
     ///
+    /// Plan 203 (s09): the project's designated prime; per role its waiting
+    /// requests, latest output and memory freshness, and whether each holder's
+    /// seat is live (`live` is the registered, untombstoned seats); `actions`
+    /// for the conditions that need the prime, roadmap needs folded into the
+    /// prompts, and the standing PEC `notice`. Reads per call: assignments,
+    /// the project, the queued requests and the newest outputs, one store
+    /// query each; each role's document and memory folder, and the repo's
+    /// roadmaps, in-process.
+    ///
     /// # Errors
     /// [`super::E_GOV_ABSENT`] without a governance worktree; `E-RS-STORE`.
-    pub async fn view(&self, project: &str, repo: &std::path::Path) -> Result<Value, Refusal> {
+    pub async fn view(
+        &self,
+        project: &str,
+        repo: &std::path::Path,
+        live_seats: &std::collections::HashSet<String>,
+    ) -> Result<Value, Refusal> {
         let root = super::root::find(repo)?;
-        let rows = self
+        let store_error =
+            |error: pij_core::error::PijError| Refusal::new("E-RS-STORE", error.to_string());
+        let rows = self.store.assignments(project).await.map_err(store_error)?;
+        let prime = self
             .store
-            .assignments(project)
+            .project(project)
             .await
-            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+            .map_err(store_error)?
+            .and_then(|record| record.prime_id)
+            .map(|seat| seat.to_string());
+        let queued: Vec<pij_store::RoleRequest> = self
+            .store
+            .all_queued_role_requests()
+            .await
+            .map_err(store_error)?
+            .into_iter()
+            .filter(|request| request.project == project)
+            .collect();
+        let outputs = self
+            .store
+            .latest_outputs(project)
+            .await
+            .map_err(store_error)?;
+        let mut actions = Vec::new();
         let roles_dir = root.worktree.join(super::layout::COMMUNITY).join("roles");
         let mut ids: Vec<String> = std::fs::read_dir(&roles_dir)
             .into_iter()
@@ -206,9 +240,23 @@ impl DirectoryService {
                     serde_json::json!({
                         "seat": row.seat, "instance": row.instance, "since": row.from,
                         "machine": row.machine, "end_pending": row.end_pending,
+                        "seat_live": live_seats.contains(&row.seat),
                     })
                 })
                 .collect();
+            let waiting = picture::waiting(id, &queued);
+            let memory = super::memory::freshness(&root.worktree, id).unwrap_or(Value::Null);
+            actions.extend(picture::actions(
+                project,
+                id,
+                meta["holders"].as_str().unwrap_or("one"),
+                &mine,
+                live_seats,
+                waiting["count"]
+                    .as_u64()
+                    .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                memory["latest"].as_str(),
+            ));
             let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
             made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
             roles.push(serde_json::json!({
@@ -218,16 +266,39 @@ impl DirectoryService {
                 "holders": meta["holders"],
                 "template": self.templates.drift(&meta),
                 "live": live,
+                "requests": waiting,
+                "latest_output": picture::latest_output(id, &outputs),
+                "memory": memory,
                 "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
             }));
         }
-        let prompts = templates::prompts(project, &made_from);
+        let mut prompts = templates::prompts(project, &made_from);
+        picture::fold_needs(
+            project,
+            &mut prompts,
+            &picture::roadmap_needs(repo),
+            &made_from,
+            &self.templates,
+        );
+        // F21: a missing prime role document is not a missing prime.
+        for prompt in prompts
+            .iter_mut()
+            .filter(|prompt| prompt["role"] == "prime")
+        {
+            prompt["note"] = serde_json::json!(match &prime {
+                Some(seat) => format!("the project's prime is {seat}; this adds the prime role's document"),
+                None => "this adds the prime role's document; the project records no designated prime either".to_string(),
+            });
+        }
         let pending: Vec<Value> = rows
             .iter()
             .filter(|row| row.end_pending)
             .map(|row| serde_json::json!({"role": row.role, "seat": row.seat, "instance": row.instance, "to": row.to}))
             .collect();
-        let mut view = serde_json::json!({"project": project, "roles": roles, "pending": pending});
+        let mut view = serde_json::json!({
+            "project": project, "prime": prime, "roles": roles, "pending": pending,
+            "actions": actions, "notice": picture::NOTICE,
+        });
         if !prompts.is_empty() {
             view["prompts"] = serde_json::json!(prompts);
             view["guidance"] = serde_json::json!(templates::GUIDANCE);
