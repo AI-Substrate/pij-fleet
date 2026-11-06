@@ -2104,3 +2104,87 @@ fn the_digest_reads_the_pas_projects_then_its_primes_then_all_only_for_the_desig
         Some(Vec::new())
     );
 }
+
+/// #144 F002: a PA whose holdings cannot be read shows no queue, never every
+/// project. It holds `pa` in alpha only, and its parent is the designated
+/// prime with no holdings: before the fix the failed read counted as "holds
+/// nothing", and the prime fallback widened the digest to beta as well.
+#[tokio::test]
+async fn a_failed_scope_read_shows_no_queue_rather_than_every_project() {
+    let (services, store) = services().await;
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query(
+        "INSERT INTO community_assignments (project, role, instance, seat, from_at, assigned_by, why) \
+         VALUES ('alpha', 'pa', '', 'pij-pa', '2026-11-06T00:00:00Z', 'pij-prime', 'fixture')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    services
+        .watchdogs()
+        .designate_prime(&pij_core::orchestration::PrimeDesignation {
+            seat: "pij-prime".into(),
+            designated_by: "pij-human".into(),
+            designated_at: 1,
+            state: pij_core::orchestration::PrimeState::Current,
+        })
+        .await
+        .unwrap();
+    for (id, project) in [("req-alpha", "alpha"), ("req-beta", "beta")] {
+        services
+            .governance
+            .store()
+            .record_role_request(&pij_store::RoleRequest {
+                id: id.into(),
+                project: project.into(),
+                role: "reviewer".into(),
+                instance: String::new(),
+                requester: "pij-pm".into(),
+                body: "review".into(),
+                in_reply_to: None,
+                fyi: false,
+                reply: pij_store::ReplyMode::Wake,
+                limit_ms: None,
+                state: pij_store::RequestState::Queued,
+                holder: None,
+                created_at: 1,
+                delivered_at: None,
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .unwrap();
+    }
+    let pa = seat("pij-pa", "/tmp", Some("pij-prime"));
+    let ids = |queued: Vec<pij_core::pa_digest::QueuedRequest>| {
+        queued.into_iter().map(|row| row.id).collect::<Vec<_>>()
+    };
+    // The instrument: with its holdings readable, the PA sees alpha only.
+    assert_eq!(
+        ids(super::queued_requests(&services, &pa, 10).await),
+        ["req-alpha"]
+    );
+
+    // The PA's holdings read now fails; the prime and request reads still work.
+    sqlx::query("ALTER TABLE community_assignments RENAME TO community_assignments_gone")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(services.watchdogs().prime().await.unwrap().is_some());
+    assert_eq!(
+        services
+            .governance
+            .store()
+            .unsettled_role_requests_in(None)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        ids(super::queued_requests(&services, &pa, 10).await),
+        Vec::<String>::new(),
+        "a failed scope read must not widen the digest"
+    );
+}

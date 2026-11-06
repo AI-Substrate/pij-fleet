@@ -32,15 +32,18 @@
 # wrapper is skipped if absent. (Fleet cost rule, plan 208.)
 #
 # A `cargo test` compiles that way (`cargo test ... --no-run`), then runs the
-# same command under `nice -n 19` alone, which finds nothing left to compile
-# and only runs the test binaries: background QoS slows a test's own child
-# processes past its wall-clock budgets (F63, plan 209).
+# same command under `nice -n 19` alone, which finds the test binaries built
+# and runs them: background QoS slows a test's own child processes past its
+# wall-clock budgets (F63, plan 209). The run step is not compile-free: cargo
+# builds doctests as they run, so they compile there, nice-only. It refuses
+# `--doc --no-run`, so `cargo test --doc` skips the compile step and is one
+# nice-only run (#144 F001).
 #
 # Cost: nothing at rest. Waiting: one df, one mkdir and one sleep per poll
 # (20 s) per waiting caller. Holding: one df per cargo command, plus the nice
 # and taskpolicy launches, each of which execs into the next (one or two
 # launches per cargo command, never per poll); a `cargo test` adds one more
-# cargo and nice for its run step.
+# cargo and nice for its run step (a `cargo test --doc` is one step).
 
 set -uo pipefail
 
@@ -217,12 +220,20 @@ on_signal() {
 	if [ -n "$child" ]; then
 		drain "$child"
 		wait "$child" 2>/dev/null
+		child=""
 	fi
 	release
 	exit "$1"
 }
 
-trap release EXIT
+# Any other exit with cargo running (an untrapped signal such as USR1, which
+# bash still runs this trap for) drains its group before the lock goes (F48).
+on_exit() {
+	[ -z "$child" ] || drain "$child"
+	release
+}
+
+trap on_exit EXIT
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 # A closed terminal sends HUP: cargo runs in its own group and would otherwise
@@ -362,9 +373,13 @@ for command in "${commands[@]}"; do
 		for arg in "$@"; do
 			[ "$arg" = "--" ] && break
 			[ "$arg" = "--no-run" ] && runs_tests=0
+			# Doctests compile while they run; there is no --no-run step.
+			[ "$arg" = "--doc" ] && runs_tests=2
 		done
 	fi
-	if [ "$runs_tests" = 1 ]; then
+	if [ "$runs_tests" = 2 ]; then
+		run_cargo nice_only "$@" || exit $?
+	elif [ "$runs_tests" = 1 ]; then
 		compile=()
 		while IFS= read -r -d '' arg; do compile+=("$arg"); done < <(build_only "$@")
 		run_cargo wrap "${compile[@]}" || exit $?

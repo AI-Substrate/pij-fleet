@@ -270,12 +270,16 @@ impl SqliteOrchestration {
     /// digest scope); `None` reads every project. Queued rows are one seek of
     /// `role_requests_queued` per project, never a scan of the others;
     /// `delivering` rows (normally none) are read from their own index and
-    /// kept by project. Bodies are not read.
+    /// kept by project. An empty list reads nothing. Bodies are not read.
     pub async fn unsettled_role_requests_in(
         &self,
         projects: Option<&[String]>,
     ) -> Result<Vec<RoleRequest>> {
         require_current_schema(&self.pool).await?;
+        // No projects reads nothing, not the global delivering rows (#144).
+        if projects.is_some_and(<[String]>::is_empty) {
+            return Ok(Vec::new());
+        }
         let columns = COLUMNS.replace("body", "'' AS body");
         let mut rows = Vec::new();
         let queued = match projects {

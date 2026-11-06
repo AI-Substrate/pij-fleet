@@ -1064,44 +1064,40 @@ pub(crate) fn digest_scope(
 }
 
 /// The projects `seat` holds an open role in, sorted and unique: one indexed
-/// read. A failed read counts as none.
-async fn held_projects(services: &Services, seat: &SeatId) -> Vec<String> {
+/// read.
+async fn held_projects(services: &Services, seat: &SeatId) -> Result<Vec<String>, String> {
     let mut projects: Vec<String> = services
         .directory
         .store()
         .open_assignments(seat.as_str())
         .await
-        .unwrap_or_default()
+        .map_err(|cause| format!("{seat}'s holdings: {cause}"))?
         .into_iter()
         .map(|row| row.project)
         .collect();
     projects.sort();
     projects.dedup();
-    projects
+    Ok(projects)
 }
 
-/// Requests waiting on a role with no live holder (plan 199), in the PA's
-/// projects ([`digest_scope`]): at most three indexed reads for the scope and
-/// one seek per project, per digest, so the queue rides the round with no
-/// timer of its own. A failed read leaves the list empty rather than holding
-/// up the nudge.
-async fn queued_requests(
+/// The PA's digest scope ([`digest_scope`]): at most three indexed reads. A
+/// failed read is an error, never "holds nothing": the fallbacks would widen
+/// it, as far as every project under the designated prime (#144 F002).
+async fn queue_scope(
     services: &Services,
     pa: &SeatDescriptor,
-    now_ms: u64,
-) -> Vec<QueuedRequest> {
-    let own = held_projects(services, &pa.id).await;
+) -> Result<Option<Vec<String>>, String> {
+    let own = held_projects(services, &pa.id).await?;
     let (parent, parent_is_prime) = match (own.is_empty(), pa.parent.as_ref()) {
         (true, Some(parent)) => {
-            let held = held_projects(services, parent).await;
+            let held = held_projects(services, parent).await?;
             let prime = held.is_empty()
                 && services
                     .governance
                     .store()
                     .prime()
                     .await
-                    .ok()
-                    .flatten()
+                    .map_err(|cause| format!("the designated prime: {cause}"))?
                     .is_some_and(|prime| {
                         prime.state == PrimeState::Current && &prime.seat == parent
                     });
@@ -1109,7 +1105,26 @@ async fn queued_requests(
         }
         _ => (Vec::new(), false),
     };
-    let scope = digest_scope(own, parent, parent_is_prime);
+    Ok(digest_scope(own, parent, parent_is_prime))
+}
+
+/// Requests waiting on a role with no live holder (plan 199), in the PA's
+/// projects ([`queue_scope`]): the scope's reads and one seek per project, per
+/// digest, so the queue rides the round with no timer of its own. A failed
+/// read, of the scope or the requests, reports the queue unavailable and
+/// leaves the list empty rather than holding up the nudge.
+async fn queued_requests(
+    services: &Services,
+    pa: &SeatDescriptor,
+    now_ms: u64,
+) -> Vec<QueuedRequest> {
+    let scope = match queue_scope(services, pa).await {
+        Ok(scope) => scope,
+        Err(cause) => {
+            eprintln!("pa watchdog: queued role requests unavailable: {cause}");
+            return Vec::new();
+        }
+    };
     match services
         .governance
         .store()

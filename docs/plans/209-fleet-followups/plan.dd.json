@@ -67,7 +67,7 @@
         },
         {
           "id": "ac-0005",
-          "claim": "#129 digest scope (after #129 merges). The PA digest reads only queued rows for the PA's projects (from its open assignments), without bodies, with a prime-only fallback across all projects; the 'delivering' rows stay visible.",
+          "claim": "\"#129 digest scope (after #129 merges). The PA digest reads only queued rows for the PA's projects (from its open assignments), without bodies, with a prime-only fallback across all projects; the delivering rows stay visible. A failed scope read (the PA's or its parent's holdings, or the prime) reports the queue unavailable and shows none, never a wider scope; an empty scope reads nothing (#144 F002).\"",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005",
           "receipt": "assets/evidence/phase-1.md"
@@ -94,7 +94,7 @@
         },
         {
           "id": "ac-0009",
-          "claim": "Ledger items docs/difficulties.md gives plan 209 (and pm-001 18:15): F46 (an unparsable Delivers line is quoted with the form to write); F48 (shared-build stops cargo on HUP); F51 (the memory prompt asks for one note); F26 in CI. F30 (pm-001 20:51): through the pij shim, `directory memory add --body-file -` reaches pij-rs with its body on stdin, sent as --body (the shim hands directory to pij-rs since plan 213, #147; a shim test proves it); F42-F44, F49 and F50 are also resolved by plan 213.",
+          "claim": "\"Ledger items docs/difficulties.md gives plan 209 (and pm-001 18:15): F46 (an unparsable Delivers line is quoted with the form to write); F48 (shared-build stops cargo on HUP, and its EXIT trap drains a running cargo group, e.g. on an untrapped USR1); F51 (the memory prompt asks for one note); F26 in CI. F30 (pm-001 20:51): through the pij shim, `directory memory add --body-file -` reaches pij-rs with its body on stdin, sent as --body (the shim hands directory to pij-rs since plan 213, #147; a shim test proves it); F42-F44, F49 and F50 are also resolved by plan 213.\"",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0009",
           "receipt": "assets/evidence/phase-1.md"
@@ -108,7 +108,7 @@
         },
         {
           "id": "ac-0011",
-          "claim": "pij directory add papercuts from an external PEC dogfood (pm-001 21:25): F35 add --help marks the required flags (--why, --title, --kind, --lifecycle, --holders, at least one --rule, and --packet or --brief; the schema requires scope.rules, so --scope-path alone is not enough) and shows the shortest add; F36 a role ddocs refusal says nothing was written and names the flag for each gap, never a hand edit; F37 one refusal lists every missing section; F38 add --help says each add commits on its own and --batch is all or nothing.",
+          "claim": "\"pij directory add papercuts from an external PEC dogfood (pm-001 21:25): F35 add --help marks the required flags (--why, --title, --kind, --lifecycle, --holders, at least one --rule, and --packet or --brief; the schema requires scope.rules, so --scope-path alone is not enough) and shows the shortest add; F36 a role ddocs refusal says nothing was written and names the flag for each gap, never a hand edit; F37 one refusal lists every missing section and its next step names the flag for each (real ddocs already reports every gap in one envelope but its next_action names only the first; receipt in the evidence); F38 add --help says each add commits on its own and --batch is all or nothing.\"",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0011",
           "receipt": "assets/evidence/phase-1.md"
@@ -122,7 +122,7 @@
         },
         {
           "id": "ac-0013",
-          "claim": "F67 (pm-001 21:32): pij directory lineage add --batch <file> --why <text> records many past holdings in one writer commit, all or nothing, like assign --batch; a bad time, a missing role or an overlap (with a committed holding or an earlier line) names every bad line and writes nothing.",
+          "claim": "\"F67 (pm-001 21:32): pij directory lineage add --batch <file> --why <text> records many past holdings in one writer commit, all or nothing, like assign --batch. A bad line is refused and nothing is written. Diagnostics are phase-local, not exhaustive: a time or syntax error stops before the role and overlap checks, which then name each missing role and each overlap (with a committed holding or an earlier line) by role and span.\"",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0013",
           "receipt": "assets/evidence/phase-1.md"
@@ -143,7 +143,7 @@
         },
         {
           "id": "ac-0016",
-          "claim": "F63 (prime, via pm-001 20:52): just shared-build compiles a cargo test with --no-run under nice -n 19 taskpolicy -b, then runs the same command under nice -n 19 alone, so test binaries never run in background QoS; arguments after -- reach only the run. AGENTS.md (resource cost item 5) and the script header say so.",
+          "claim": "\"F63 (prime, via pm-001 20:52): just shared-build compiles a cargo test with --no-run under nice -n 19 taskpolicy -b, then runs the same command under nice -n 19 alone, so test binaries never run in background QoS; arguments after -- reach only the run. Doctests compile during the run (nice-only), and cargo test --doc, which cargo refuses with --no-run, is one nice-only step (#144 F001). AGENTS.md (resource cost item 5) and the script header say so.\"",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0016",
           "receipt": "assets/evidence/phase-1.md"
