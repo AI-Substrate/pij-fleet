@@ -46,3 +46,5 @@
 
 2026-11-06 verdict pr:126 04144d1ca39130106202322d3479273c636a388a pass-with-notes - Embedded selectors and brief confinement safe; six packets public-safe; prompts/list/diff do not create or execute; CI merge tree equals head, Rust1887pass5skip; real-ddocs UNAVAILABLE/early-return limit explicit; no local build; 2026-11-06-pr-126-04144d1-security.md.
 
+2026-11-06 verdict pr:126 6b820d0e04c89a6c7980c5cbc94f8e5258baa6aa pass-with-notes - Seven-file project-quoting delta safe; all printed commands select viewed project; 29 values/58 inert argv roundtrips and identical-tree CI proof; real-ddocs limit carried; no build/replay; 2026-11-06-pr-126-6b820d0-security.md.
+
