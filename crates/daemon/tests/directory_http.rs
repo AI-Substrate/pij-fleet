@@ -3050,6 +3050,7 @@ async fn a_check_in_claimed_by_a_stopped_daemon_is_sent_once_after_its_lease() {
             .claim_role_request_limit("req-limit", LimitStage::CheckIn, due)
             .await
             .unwrap()
+            .is_some()
     );
     assert_eq!(
         limit_acts(time_limits(&rig.services, due + LIMIT_CLAIM_LEASE_MS - 1).await),
@@ -3122,4 +3123,101 @@ async fn a_limit_on_a_holder_that_is_gone_tells_the_pa_at_once() {
         .unwrap()
         .expect("row");
     assert_eq!((row.checkin_at, row.escalated_at), (None, Some(due)));
+}
+
+/// Review of #133, F002 residual: a stopped daemon claimed a notice, pinned
+/// PA pij-second and maybe reached it before the stamp. The PA then rotates to
+/// pij-third, and the claim's lease runs out. When pij-second already has the
+/// notice, the retry only stamps it: the new PA is not told again. When it
+/// never reached admission, the retry resolves afresh and tells pij-third.
+async fn a_rotated_pa_after_a_pinned_notice(name: &str, admitted: bool) {
+    use pij_daemon::delivery::role_send::time_limits;
+    use pij_store::{LIMIT_CLAIM_LEASE_MS, LimitStage};
+    let (rig, repo, delivered) = limit_rig(name, true).await;
+    let checked = delivered + LIMIT_MS;
+    assert_eq!(time_limits(&rig.services, checked).await.len(), 1);
+    let stopped = checked + LIMIT_MS;
+    let claim = rig
+        .store
+        .claim_role_request_limit("req-limit", LimitStage::Notice, stopped)
+        .await
+        .unwrap();
+    assert_eq!(claim.map(|claim| claim.pinned), Some(None));
+    assert!(
+        rig.store
+            .pin_role_request_limit("req-limit", stopped, "pij-second")
+            .await
+            .unwrap()
+    );
+    if admitted {
+        rig.delivery
+            .accept(pij_core::model::Msg {
+                from: SeatId::from("pij-bg"),
+                from_machine: None,
+                to: SeatId::from("pij-second"),
+                body: "[pij time limit] the stopped attempt's notice".into(),
+                msg_id: "role-limit-notice-req-limit".into(),
+                in_reply_to: None,
+                command: None,
+            })
+            .await
+            .unwrap();
+    }
+    let mut third = SeatDescriptor::new("pij-third", Harness::Omp, "/tmp");
+    third.parent = Some(SeatId::from(SEAT));
+    rig.services.registry.put(third).await.unwrap();
+    for argv in [
+        [
+            "directory",
+            "release",
+            "pa",
+            "pij-second",
+            "--why",
+            "rotate",
+        ],
+        ["directory", "assign", "pa", "pij-third", "--why", "rotate"],
+    ] {
+        let done = call(rig.addr, "/v1/directory", &argv, &repo.main).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let retried = stopped + LIMIT_CLAIM_LEASE_MS;
+    let expected = if admitted { "pij-second" } else { "pij-third" };
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, retried).await),
+        [(
+            "req-limit".to_string(),
+            "notice",
+            Some(expected.to_string()),
+            true
+        )]
+    );
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, retried + LIMIT_MS).await),
+        []
+    );
+    let told = |seat: &'static str| {
+        let (rig, repo) = (&rig, &repo);
+        async move { outcomes_for(rig, repo, seat, "role-limit-notice-req-limit").await }
+    };
+    assert_eq!(
+        (told("pij-second").await, told("pij-third").await),
+        if admitted { (1, 0) } else { (0, 1) }
+    );
+    let row = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .expect("row");
+    assert_eq!(row.escalated_at, Some(retried));
+}
+
+#[tokio::test]
+async fn an_admitted_notice_is_not_sent_again_to_a_rotated_pa() {
+    a_rotated_pa_after_a_pinned_notice("pij-limit-rotated-admitted", true).await;
+}
+
+#[tokio::test]
+async fn a_pinned_notice_never_admitted_goes_to_the_current_pa() {
+    a_rotated_pa_after_a_pinned_notice("pij-limit-rotated-unsent", false).await;
 }

@@ -1999,6 +1999,7 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
             .claim_role_request_limit("escalated", LimitStage::Notice, 31)
             .await
             .unwrap()
+            .is_some()
     );
     assert!(
         store
@@ -2010,7 +2011,8 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
         !store
             .claim_role_request_limit("escalated", LimitStage::Notice, 32)
             .await
-            .unwrap(),
+            .unwrap()
+            .is_some(),
         "once"
     );
     let ids = |rows: Vec<RoleRequest>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
@@ -2024,6 +2026,7 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
             .claim_role_request_limit("early", LimitStage::CheckIn, 40)
             .await
             .unwrap()
+            .is_some()
     );
     assert!(
         store
@@ -2035,7 +2038,8 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
         !store
             .claim_role_request_limit("early", LimitStage::CheckIn, 41)
             .await
-            .unwrap(),
+            .unwrap()
+            .is_some(),
         "one check-in"
     );
     let early = store.role_request("early").await.unwrap().expect("row");
@@ -2057,7 +2061,9 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
 /// behind is taken again only once its lease runs out.
 #[tokio::test]
 async fn limit_claims_refuse_an_answer_retry_a_failure_and_expire_a_stale_claim() {
-    use pij_store::{LIMIT_CLAIM_LEASE_MS, LimitStage, ReplyMode, RequestState, RoleRequest};
+    use pij_store::{
+        LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage, ReplyMode, RequestState, RoleRequest,
+    };
     let fresh = FreshStore::new();
     let pool = pij_store::open(&fresh.path()).await.expect("open");
     let store = pij_store::SqliteOrchestration::new(pool);
@@ -2087,7 +2093,13 @@ async fn limit_claims_refuse_an_answer_retry_a_failure_and_expire_a_stale_claim(
     }
     let claim = |id: &'static str, stage, at| {
         let store = store.clone();
-        async move { store.claim_role_request_limit(id, stage, at).await.unwrap() }
+        async move {
+            store
+                .claim_role_request_limit(id, stage, at)
+                .await
+                .unwrap()
+                .is_some()
+        }
     };
 
     // The round read both as open; an answer lands before the claim.
@@ -2112,6 +2124,12 @@ async fn limit_claims_refuse_an_answer_retry_a_failure_and_expire_a_stale_claim(
     // A live claim blocks a second attempt; a failed one is dropped and retried.
     assert!(claim("retried", LimitStage::CheckIn, 300).await);
     assert!(
+        store
+            .pin_role_request_limit("retried", 300, "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
         !claim("retried", LimitStage::CheckIn, 301).await,
         "live claim"
     );
@@ -2125,7 +2143,14 @@ async fn limit_claims_refuse_an_answer_retry_a_failure_and_expire_a_stale_claim(
             .await
             .unwrap()
     );
-    assert!(claim("retried", LimitStage::CheckIn, 302).await, "retry");
+    assert_eq!(
+        store
+            .claim_role_request_limit("retried", LimitStage::CheckIn, 302)
+            .await
+            .unwrap(),
+        Some(LimitClaim { pinned: None }),
+        "a release drops the pin, so the retry resolves afresh"
+    );
     assert!(
         store
             .finish_role_request_limit("retried", LimitStage::CheckIn, 302, 302)
@@ -2134,8 +2159,22 @@ async fn limit_claims_refuse_an_answer_retry_a_failure_and_expire_a_stale_claim(
     );
     assert!(!claim("retried", LimitStage::CheckIn, 303).await, "stamped");
 
-    // A stopped daemon's claim holds until its lease runs out.
+    // A stopped daemon's claim holds until its lease runs out, and hands its
+    // pinned recipient to the attempt that takes it over.
     assert!(claim("retried", LimitStage::Notice, 400).await);
+    assert!(
+        !store
+            .pin_role_request_limit("retried", 399, "pij-pa-b")
+            .await
+            .unwrap(),
+        "not its claim"
+    );
+    assert!(
+        store
+            .pin_role_request_limit("retried", 400, "pij-pa-a")
+            .await
+            .unwrap()
+    );
     assert!(
         !claim(
             "retried",
@@ -2145,8 +2184,14 @@ async fn limit_claims_refuse_an_answer_retry_a_failure_and_expire_a_stale_claim(
         .await
     );
     let retaken = 400 + LIMIT_CLAIM_LEASE_MS;
-    assert!(
-        claim("retried", LimitStage::Notice, retaken).await,
+    assert_eq!(
+        store
+            .claim_role_request_limit("retried", LimitStage::Notice, retaken)
+            .await
+            .unwrap(),
+        Some(LimitClaim {
+            pinned: Some("pij-pa-a".into())
+        }),
         "expired"
     );
     assert!(

@@ -928,15 +928,41 @@ pub async fn time_limit_step(
         return None;
     }
     let store = services.governance.store();
-    match store
+    let claim = match store
         .claim_role_request_limit(&request.id, stage, now_ms)
         .await
     {
-        Ok(true) => {}
-        Ok(false) => return None,
+        Ok(Some(claim)) => claim,
+        Ok(None) => return None,
         Err(cause) => {
             eprintln!("pij-rs: time limits: claim for {}: {cause}", request.id);
             return None;
+        }
+    };
+    if let Some(pinned) = claim.pinned.as_deref() {
+        match already_admitted(store, request, stage, pinned).await {
+            Ok(Some(told)) => {
+                let settled = store
+                    .finish_role_request_limit(&request.id, told, now_ms, now_ms)
+                    .await;
+                if let Err(cause) = settled {
+                    eprintln!("pij-rs: time limits: settle {}: {cause}", request.id);
+                }
+                return Some(LimitAction {
+                    request: request.id.clone(),
+                    kind: limit_kind(told),
+                    to: Some(SeatId::from(pinned)),
+                    delivery: "already admitted".to_string(),
+                    admitted: true,
+                });
+            }
+            Ok(None) => {}
+            // Keep the claim and its pin: after the lease, the next round
+            // asks again rather than resolving a new recipient.
+            Err(cause) => {
+                eprintln!("pij-rs: time limits: admission of {}: {cause}", request.id);
+                return None;
+            }
         }
     }
     let told = match stage {
@@ -1004,6 +1030,81 @@ fn admitted(delivery: &str) -> bool {
     matches!(delivery, "delivered" | "queued" | "held")
 }
 
+fn limit_kind(stage: LimitStage) -> &'static str {
+    match stage {
+        LimitStage::CheckIn => "check-in",
+        LimitStage::Notice => "notice",
+    }
+}
+
+fn limit_msg_id(stage: LimitStage, request: &RoleRequest) -> String {
+    match stage {
+        LimitStage::CheckIn => format!("role-limit-checkin-{}", request.id),
+        LimitStage::Notice => format!("role-limit-notice-{}", request.id),
+    }
+}
+
+/// A stopped daemon's attempt pinned `pinned` and may have reached it before
+/// the stamp (review of #133). Which notification `pinned` already has, if
+/// any: at the check-in stage that is the check-in, or the notice a gone
+/// holder turned it into. `None` means it never reached admission, so the
+/// caller resolves the recipient afresh.
+async fn already_admitted(
+    store: &SqliteOrchestration,
+    request: &RoleRequest,
+    stage: LimitStage,
+    pinned: &str,
+) -> pij_core::error::Result<Option<LimitStage>> {
+    let candidates: &[LimitStage] = match stage {
+        LimitStage::CheckIn => &[LimitStage::CheckIn, LimitStage::Notice],
+        LimitStage::Notice => &[LimitStage::Notice],
+    };
+    for told in candidates {
+        if store
+            .limit_notification_admitted(pinned, &limit_msg_id(*told, request))
+            .await?
+        {
+            return Ok(Some(*told));
+        }
+    }
+    Ok(None)
+}
+
+/// Pin `to` on the claim, then send. Nothing is sent when the claim is gone.
+async fn send_limit(
+    services: &Services,
+    request: &RoleRequest,
+    stage: LimitStage,
+    to: &SeatDescriptor,
+    body: String,
+    now_ms: u64,
+) -> String {
+    match services
+        .governance
+        .store()
+        .pin_role_request_limit(&request.id, now_ms, to.id.as_str())
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => return "claim lost, nothing sent".to_string(),
+        Err(cause) => return format!("error: pin: {cause}"),
+    }
+    let reason = match stage {
+        LimitStage::CheckIn => "role-limit-check-in",
+        LimitStage::Notice => "role-limit-notice",
+    };
+    crate::pa_watchdog::wake_pa(
+        services,
+        to,
+        body,
+        limit_msg_id(stage, request),
+        reason,
+        now_ms,
+    )
+    .await
+    .0
+}
+
 async fn check_in(
     services: &Services,
     request: &RoleRequest,
@@ -1025,16 +1126,7 @@ async fn check_in(
         request.requester,
         human_duration(limit)
     );
-    let delivery = crate::pa_watchdog::wake_pa(
-        services,
-        seat,
-        body,
-        format!("role-limit-checkin-{}", request.id),
-        "role-limit-check-in",
-        now_ms,
-    )
-    .await
-    .0;
+    let delivery = send_limit(services, request, LimitStage::CheckIn, seat, body, now_ms).await;
     LimitAction {
         request: request.id.clone(),
         kind: "check-in",
@@ -1097,18 +1189,7 @@ async fn notice(
         ),
     };
     let delivery = match &target {
-        Some(seat) => {
-            crate::pa_watchdog::wake_pa(
-                services,
-                seat,
-                body,
-                format!("role-limit-notice-{}", request.id),
-                "role-limit-notice",
-                now_ms,
-            )
-            .await
-            .0
-        }
+        Some(seat) => send_limit(services, request, LimitStage::Notice, seat, body, now_ms).await,
         None => "no live PA or prime to tell".to_string(),
     };
     LimitAction {
