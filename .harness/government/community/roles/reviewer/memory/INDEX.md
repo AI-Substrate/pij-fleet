@@ -57,5 +57,6 @@
 - [2026-11-06-pr-138-directory-polish.md](2026-11-06-pr-138-directory-polish.md): PR 138 7c2b6b1 pass-with-notes; batch/lineage/window/marker/clock and shared-build changes verified, N001 phase-local diagnostics; exact-head CI 4/4, 1,894 Rust and 15 shared-build tests pass, no local runs.
 
 <!-- pij:generated -->
+- [2026-11-06 PR 129 F003 recovery closure at 314da13](2026-11-06-pr-129-f003-recovery-closure-at-314da13.dd.md): Read when reviewing durable delivery claims, interruption recovery or PR 129 closure (review, role-send, recovery, ci)
 - [2026-11-06 PR 131 C29 alias and merged head 599747c](2026-11-06-pr-131-c29-alias-and-merged-head-599747c.dd.md): When a claim kind is renamed, verify canonicalization at allocation, release, file-derived keys and PM lookup. (reviewer, claims, c29, workstreams, merge)
 <!-- /pij:generated -->

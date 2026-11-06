@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read when reviewing durable delivery claims, interruption recovery or PR 129 closure",
+				"tags": [
+					"review",
+					"role-send",
+					"recovery",
+					"ci"
+				],
+				"title": "PR 129 F003 recovery closure at 314da13"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR 129 correctness review passes with proof notes at 314da13a19d8d233e8c7b6d48d3de0991635b47e. F001/F002 were closed at a560297. F003 is now closed by one-transaction boot recovery after winning the bind and before serving/workers: admitted requests are settled to their original holder using delivery evidence, unsent claims return to queued, and the PA sees queued plus delivering rows without fetching bodies.\n\nCI run 42174918545 and junit-linux artifact 13482338801 confirm the real-boot restart case, store recovery negatives/idempotence, digest case and all prior review regressions pass. 1968 tests ran and passed; five unrelated tests were skipped. All four CI jobs are green. No local builds, test runs or runtime probes were needed or run under the CI-first instruction.\n\nProof limits: restart is seeded durable-state reconstruction through real boot, not a process-kill experiment. Ledger/FYI settlement is directly tested; the delivery-job evidence branch was source-reviewed. The reported red-without-boot-call mutation was not rerun. Security owns crafted-evidence/S1/S2 review and performance owns recovery/digest cost.\n\nLesson: claiming before a side effect fixes concurrency only if interruption recovery also distinguishes not-yet-admitted from already-admitted work. Blindly requeueing every durable claim can recreate duplicate dispatch across a rotated holder. Preserve the originally admitted recipient and consult durable delivery evidence.\n\nCurrent verdict: roles/reviewer/outputs/2026-11/pr-129-verdict.md. Three review rounds left replay, competing-drain and interrupted-claim regressions in CI, with actual JUnit testcase receipts.\n"
+		}
+	]
+}
