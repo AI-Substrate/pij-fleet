@@ -56,15 +56,21 @@
         },
         {
           "id": "ac-0004",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Docs and embedded templates only: no launch, loop or timer.",
+          "claim": "F23 (low, s03 dogfood): `pij directory templates --show <name>[@vN]` prints a template's body (and its embedded path), so a prime can read a template before `add --from template:`.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
-          "claim": "Docs and states. In this PR: roadmap s10 goes to complete (plan cell docs/plans/204-community-route); req-13, req-15 and req-27 go to shipped; c-skill and c-templates go to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Docs and embedded templates only: no launch, loop or timer.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and states. In this PR: roadmap s10 goes to complete (plan cell docs/plans/204-community-route); req-13, req-15 and req-27 go to shipped; c-skill and c-templates go to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
         }
       ]
     },
