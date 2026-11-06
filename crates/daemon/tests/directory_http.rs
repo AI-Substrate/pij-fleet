@@ -731,7 +731,18 @@ async fn assign_and_release_write_holders_set_seat_roles_and_call_the_hook_once_
     .await;
     assert_eq!(review["ok"], true, "{review}");
     assert_eq!(review["data"]["seat_role"], "worker");
-    assert_eq!(review["data"]["window"]["name"], "fleet:reviewer-114");
+    // F17 (plan 208): a second role keeps the first holding's window name,
+    // with no launch.
+    assert_eq!(review["data"]["window"]["name"], "fleet:pm-001");
+    assert_eq!(review["data"]["window"]["renamed"], false);
+    assert!(
+        !rig.tmux
+            .calls()
+            .iter()
+            .any(|call| call.contains("fleet:reviewer-114")),
+        "{:?}",
+        rig.tmux.calls()
+    );
     assert_eq!(holders_at_head(&repo, "reviewer")[0]["instance_key"], "114");
     assert_eq!(
         *hook.0.lock().unwrap(),
@@ -1584,6 +1595,205 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
 #[path = "pr122_review/mod.rs"]
 mod review;
 
+/// Plan 194 (s03): --from template and file, templates, drift and prompts.
+#[path = "templates_http/mod.rs"]
+mod templates;
+
+/// Plan 208 F16: `assign --batch` records many holdings in one commit, and a
+/// file with any bad line writes nothing and names every one.
+#[tokio::test]
+async fn a_batch_assign_is_one_commit_all_or_nothing() {
+    let repo = repo("pij-directory-assign-batch");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let file = repo.root.join("holders.txt");
+    let batch = |text: &str| {
+        std::fs::write(&file, text).unwrap();
+        let file = file.to_str().unwrap().to_string();
+        let addr = rig.addr;
+        let main = repo.main.clone();
+        async move {
+            call(
+                addr,
+                "/v1/directory",
+                &[
+                    "directory",
+                    "assign",
+                    "--batch",
+                    file.as_str(),
+                    "--why",
+                    "import",
+                ],
+                &main,
+            )
+            .await
+        }
+    };
+    let start = head(&repo);
+    let bad =
+        batch("# holders\npm-001 pij-holder\nqa pij-second\nreviewer/1 pij-nobody\nreviewer/2\n")
+            .await;
+    assert_eq!(bad["ok"], false, "{bad}");
+    let message = bad["meta"].as_str().unwrap_or_default().to_string() + &bad.to_string();
+    for named in ["line 4: seat pij-nobody does not exist", "line 5:"] {
+        assert!(message.contains(named), "{named}: {bad}");
+    }
+    assert_eq!(head(&repo), start, "nothing written");
+    let held = batch("pm-001 pij-holder\nreviewer/1 pij-holder\nreviewer/1 pij-holder\n").await;
+    assert_eq!(held["ok"], false, "{held}");
+    assert!(held.to_string().contains("already holds"), "{held}");
+    assert_eq!(head(&repo), start, "a repeated line writes nothing");
+
+    let lines: String = (1..=7)
+        .map(|n| format!("reviewer/{n} pij-second\n"))
+        .chain(std::iter::once("pm-001 pij-holder\n".to_string()))
+        .collect();
+    let landed = batch(&format!("\n# eight holdings\n{lines}")).await;
+    assert_eq!(landed["ok"], true, "{landed}");
+    assert_eq!(landed["data"]["holdings"].as_array().unwrap().len(), 8);
+    assert_eq!(landed["data"]["commit"], head(&repo));
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{start}..HEAD")]
+        )
+        .trim(),
+        "1",
+        "one commit for eight holdings"
+    );
+    assert_eq!(holders_at_head(&repo, "reviewer").len(), 7);
+    assert_eq!(holders_at_head(&repo, "pm-001").len(), 1);
+    assert_eq!(rig.store.assignments("fleet").await.unwrap().len(), 8);
+    rig.server.abort();
+}
+
+/// Plan 208 F15: the prime records a closed seat's past holding; anyone else
+/// is refused, and so is an overlap or a reversed span.
+#[tokio::test]
+async fn the_prime_records_a_closed_seats_past_holding() {
+    let repo = repo("pij-directory-lineage");
+    let rig = rig(Arc::new(NoHook)).await;
+    let main = repo.main.to_str().unwrap();
+    let created = call(
+        rig.addr,
+        "/v1/project",
+        &[
+            "project", "create", "fleet", "--repo", main, "--prime", SEAT,
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    for id in ["docs-system", "reviewer"] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    let lineage = |from: &str, to: &str| {
+        let (from, to) = (from.to_string(), to.to_string());
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move {
+            call(
+                addr,
+                "/v1/directory",
+                &[
+                    "directory",
+                    "lineage",
+                    "add",
+                    "docs-system",
+                    "pij-careful-heron",
+                    "--from",
+                    from.as_str(),
+                    "--to",
+                    to.as_str(),
+                    "--why",
+                    "from HOLDERS.md",
+                ],
+                &main,
+            )
+            .await
+        }
+    };
+    let start = head(&repo);
+    let added = lineage("2026-11-04T09:00:00+10:00", "2026-11-06").await;
+    assert_eq!(added["ok"], true, "{added}");
+    assert_eq!(added["data"]["commit"], head(&repo));
+    let rows = holders_at_head(&repo, "docs-system");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["seat"], "pij-careful-heron");
+    assert_eq!(rows[0]["from"], "2026-11-03T23:00:00.000Z");
+    assert_eq!(rows[0]["to"], "2026-11-06T00:00:00.000Z");
+    assert_eq!(rows[0]["released_by"], SEAT);
+    assert_eq!(rows[0]["release_why"], "lineage add");
+    assert_eq!(
+        rig.roles
+            .read_role(&SeatId::from("pij-careful-heron"))
+            .await
+            .unwrap(),
+        None,
+        "no seat role for a past holding"
+    );
+    let view = call(rig.addr, "/v1/directory", &["directory"], &repo.main).await;
+    let docs = view["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == "docs-system")
+        .unwrap()
+        .clone();
+    assert_eq!(docs["lineage"].as_array().unwrap().len(), 1, "{docs}");
+    assert!(docs["live"].as_array().unwrap().is_empty(), "{docs}");
+
+    let after = head(&repo);
+    for (from, to, code) in [
+        (
+            "2026-11-05",
+            "2026-11-05T12:00:00Z",
+            "E-RS-DIRECTORY-OVERLAP",
+        ),
+        ("2026-11-05", "2026-11-04", "E-RS-ARG"),
+        ("2026-11-01", "2999-01-01", "E-RS-ARG"),
+        ("last tuesday", "2026-11-04", "E-RS-ARG"),
+    ] {
+        let refused = lineage(from, to).await;
+        assert_eq!(refused["details"]["code"], code, "{from} {to}: {refused}");
+    }
+    assert_eq!(head(&repo), after, "a refused lineage add writes nothing");
+    let earlier = lineage("2026-11-01", "2026-11-02").await;
+    assert_eq!(earlier["ok"], true, "{earlier}");
+    let rows = holders_at_head(&repo, "docs-system");
+    assert_eq!(rows[0]["from"], "2026-11-01T00:00:00.000Z", "time order");
+
+    // Anyone but the prime is refused.
+    let reviewer = call(
+        rig.addr,
+        "/v1/project",
+        &["project", "set", "fleet", "--prime", "pij-second"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(reviewer["ok"], true, "{reviewer}");
+    let refused = lineage("2026-10-01", "2026-10-02").await;
+    assert_eq!(refused["details"]["code"], "E-RS-OWNERSHIP", "{refused}");
+    assert_ne!(head(&repo), start);
+    rig.server.abort();
+}
+
 async fn send_to(addr: SocketAddr, cwd: &Path, to: &str, msg_id: &str, extra: Value) -> Value {
     let mut body = json!({
         "from": SEAT,
@@ -1982,9 +2192,6 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
     );
     rig.server.abort();
 }
-/// Plan 194 (s03): --from template and file, templates, drift and prompts.
-#[path = "templates_http/mod.rs"]
-mod templates;
 
 /// Review of #129 (pij-many-tiglon), F001 control: an identical retry to the
 /// same holder is one delivery.

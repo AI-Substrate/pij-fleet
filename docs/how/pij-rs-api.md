@@ -817,7 +817,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/claims` | `claims [--project <slug>] [--open]` | — (`crates/daemon/tests/claims_http.rs`) |
 | POST `/v1/delivered` | `delivered <pr> [--pm <seat>] [--project <slug>]` | — (`crates/daemon/tests/claims_http.rs`) |
@@ -868,6 +868,15 @@ the standing governance worktree's `.harness/government`, found as
    pij never pushes.
 4. It records `(project, path, commit)` in the store (migration 0031). The rows
    can be rebuilt from the branch head.
+
+While it stages and commits, the writer keeps `pij-writer.owner` in the
+worktree's own git dir (beside its `index.lock`, found by reading the
+worktree's `.git` file, no launch) naming the daemon pid, the time and the
+commit subject, and removes it when the write ends, however it ends (plan 208,
+F18). A person whose own commit in the governance worktree fails on
+`index.lock` and finds that file should retry in a moment. The writer's own
+`git add` and `git commit` wait on a foreign `index.lock` for about 1.5 s
+(100, 200, 400, 800 ms), then refuse `E-RS-GOV-LOCKED`; nothing else retries.
 
 Writes are serialised per governance worktree. The branch also carries copies of
 pij's `pij/*` schemas under `.dd/schemas/pij/`, so ddocs validates there; a write
@@ -941,8 +950,31 @@ drain the role queue. A second live holder of a one-holder role succeeds with
 as written, `seat_role` and `flushed` (pending close-ends this write carried to the branch;
 only those lose their pending mark).
 
+`pij directory assign --batch <file> --why <text>` (plan 208, F16) reads one
+`<role>[/<instance>] <seat>` per line (blank and `#` lines skipped) and records
+every holding in one writer commit (`community: assign <n> holdings`), all or
+nothing: an unknown role, a seat that does not exist or is closed, a holding
+already open, or a line repeated in the file refuses the whole batch, naming
+every bad line, and writes nothing. Each holding then gets what a single assign
+gives it (store row, seat role, hook, window rule). The envelope carries
+`commit` and `holdings`, one receipt per line in file order.
+
 `pij directory release <role>[/<instance>] <seat> --why <text>` closes the row
 (`to`, `released_by`, `release_why`); seat roles are left as they are.
+
+`pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time>
+--why <text>` (plan 208, F15) lets the prime record a closed seat's past
+holding, for history kept elsewhere before the directory existed. The seat need
+not be live or even registered. Only the project's prime (its `prime_id`; for a
+project that names none, a seat whose role is `prime`) may run it
+(`E-RS-OWNERSHIP`). Times are RFC 3339
+with `Z` or an offset, fractions allowed, or a bare date (UTC midnight), stored
+as UTC to the millisecond; `--from` must be before `--to` and `--to` not in the
+future (`E-RS-ARG`). A holding that overlaps another of the same seat and
+instance refuses `E-RS-DIRECTORY-OVERLAP`. The row goes into the holders
+document in time order, with `released_by` the prime and `release_why`
+`lineage add`, in one writer commit; the store indexes it without a live-seat
+check and sets no seat role. The view shows it in the lineage.
 
 `pij close <seat>` ends every open holding of the seat with `release_why`
 `close`, and never fails because of the directory. The ends are stored as
@@ -969,6 +1001,13 @@ flags, with no daemon needed.
 calling seat) to `community/external.dd.json`, created with `meta.project` on
 first use (req-16). Loans are not otherwise tracked.
 
+Every date the writer stamps carries its zone (plan 208, F13): holders `from`
+and `to`, and since plan 208 changelog `date` rows too, are UTC to the
+millisecond with `Z` (`2026-11-06T00:07:12.123Z`); older changelog rows keep
+their bare UTC date. The human `pij directory` view prints each holder's
+`since` in local time with its offset (`2026-11-06 10:07:12 +10:00`, reading
+the offset once per view); `--json` keeps the stored UTC value.
+
 Holders rows are written so `to` and `released_by` always come together (ddocs
 cannot pair them; the writer refuses otherwise with `E-RS-DIRECTORY-ROW`).
 Release and close keep the assign's `why` and write their reason to
@@ -984,10 +1023,16 @@ that records one holding twice with `E-RS-DIRECTORY-ROW`, and replaces nothing.
 | `E-RS-DIRECTORY-HELD` | the seat already holds that role and instance |
 | `E-RS-DIRECTORY-NOT-HELD` | release of a role the seat does not hold |
 | `E-RS-NOT-FOUND` | the seat does not exist |
-| `E-RS-ARG` | a closed seat, a missing `--why`, or role flags on assign or release |
+| `E-RS-DIRECTORY-OVERLAP` | `lineage add` of a holding that overlaps another of that seat and instance |
+| `E-RS-OWNERSHIP` | `lineage add` by anyone but the prime |
+| `E-RS-ARG` | a closed seat, a missing `--why`, role flags on assign or release, a bad `--batch` line (all named, nothing written), or a bad, reversed or future `lineage add` time |
 
 On assign the holder's tmux window is renamed `<project>:<role>`, or
-`<project>:<role>-<instance>` for a many-holder role (req-26, C16), with one tmux
+`<project>:<role>-<instance>` for a many-holder role (req-26, C16), when the new
+holding is the seat's first open one (the earliest `from`). A seat that takes a
+second role keeps its window's name (plan 208, F17): no launch, and
+`data.window` says `renamed: false` with the holding that names it. Release does
+not rename. A rename is one tmux
 launch (`tmux.rename-window`) that targets the holder's pane id, never through
 the control client, whose allow-list stays reads only. pij never targets a
 window by that name: tmux reads `-t a:b` as session `a`, window `b`, so a name
@@ -995,8 +1040,10 @@ like `pij:security` is ambiguous as a target. A seat with no pane, or a failed r
 assigns; `data.window` says what happened.
 
 Cost: assign costs one writer commit plus the rename (about 10 launches: git 7,
-ddocs 2, tmux 1); release and a close that ends holdings cost one writer commit
-(about 9). The view and help launch nothing. A rebuild
+ddocs 2, tmux 1; 9 when the rename is skipped); release, lineage add and a close
+that ends holdings cost one writer commit (about 9). `assign --batch` of N
+holdings is one writer commit (git 7, ddocs 2 per holders document touched)
+plus at most one rename per line. The view and help launch nothing. A rebuild
 costs three git launches plus one per holders document, on demand only.
 
 ### Role templates (plan 194)
@@ -1052,7 +1099,8 @@ writer commit as any add. No loop or timer.
 ### Role memory (plan 201)
 
 `pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body
-<text>` writes one note, a `pij/memory` document (`meta.date`, `title`, `tags`,
+<text>` writes one note, a `pij/memory` document (`meta.date`, the daemon machine's
+local date, plan 209; `title`, `tags`,
 `hook`; `body`), to `community/roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json`,
 the slug taken from the title (lowercase ASCII letters and digits, other runs
 as one hyphen, at most 60). `--tags` repeats or takes a comma list.
