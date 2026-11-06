@@ -177,6 +177,19 @@ pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, R
     Ok(document)
 }
 
+/// `document` carrying `committed`'s changelog in place of its own, so a
+/// whole-document edit never rewrites history (plan 206, F20).
+pub fn keep_changelog(mut document: Value, committed: &Value) -> Value {
+    let history = section(committed, "changelog").cloned();
+    if let Some(sections) = document["sections"].as_array_mut() {
+        sections.retain(|section| section["name"] != "changelog");
+        if let Some(history) = history {
+            sections.push(json!({"name": "changelog", "value": history}));
+        }
+    }
+    document
+}
+
 /// The value of section `name`, added with `empty` when the document lacks it.
 fn slot<'a>(sections: &'a mut Vec<Value>, name: &str, empty: Value) -> &'a mut Value {
     let at = match sections.iter().position(|section| section["name"] == name) {

@@ -1378,3 +1378,7 @@ mod review;
 /// Plan 194 (s03): --from template and file, templates, drift and prompts.
 #[path = "templates_http/mod.rs"]
 mod templates;
+
+/// Plan 206 (s15): edit (F20) and template-diff's missing version (F19).
+#[path = "reshape_http/mod.rs"]
+mod reshape;

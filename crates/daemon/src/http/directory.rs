@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope};
+use crate::community::directory::RoleEdit;
 use crate::community::layout::{RolePaths, exists};
 use crate::community::role::{self, RoleFields};
 use crate::community::writer::{Existing, NewFile, Written};
@@ -49,7 +50,8 @@ const SINGLE: [&str; 22] = [
     "packet",
     "brief",
 ];
-const REPEATED: [&str; 6] = [
+const REPEATED: [&str; 7] = [
+    "set",
     "scope-path",
     "rule",
     "out-of-scope",
@@ -88,6 +90,7 @@ impl Arguments {
                     && matches!(
                         leaf.as_str(),
                         "add"
+                            | "edit"
                             | "assign"
                             | "release"
                             | "rebuild"
@@ -188,6 +191,22 @@ impl Arguments {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "edit" && call.repeated.contains_key("set") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --set belongs to `edit`", call.leaf),
+            ));
+        }
+        if call.leaf == "edit"
+            && (call.positions.len() != 1
+                || call.get("batch").is_some()
+                || (call.get("file").is_some() && call.describes_a_role()))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory edit <id> --why <text> (--set <field>=<value>... and role flags | --file <json>)",
             ));
         }
         if call.leaf != "add" && call.single.contains_key("from") {
@@ -317,6 +336,7 @@ pub(crate) async fn handle(
     let result = match call.leaf.as_str() {
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
         "external" => external(&state, &actor.id, &request.caller, &call).await,
+        "edit" => edit(&state, &actor.id, &request.caller, &call).await,
         "templates" => Ok(json!({"templates": state.services.directory.templates().listing()})),
         "template-diff" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
@@ -545,6 +565,124 @@ impl Source {
             )),
         }
     }
+}
+
+/// The meta, default-seat and packet fields `--set <field>=<value>` may change.
+const SETTABLE: [&str; 14] = [
+    "title",
+    "kind",
+    "lifecycle",
+    "holders",
+    "instance_key",
+    "default_limit",
+    "summary",
+    "template",
+    "template_version",
+    "harness",
+    "model",
+    "effort",
+    "packet",
+    "brief",
+];
+
+/// The role flags with each `--set <field>=<value>` laid over them.
+fn edit_fields(call: &Arguments) -> Result<RoleFields, Refusal> {
+    let mut fields = call.fields();
+    for set in call.all("set") {
+        let (key, value) = set.split_once('=').ok_or_else(|| {
+            Refusal::new("E-RS-ARG", format!("--set {set:?}: write <field>=<value>"))
+        })?;
+        let key = key.trim().replace('-', "_");
+        let slot = match key.as_str() {
+            "title" => &mut fields.title,
+            "kind" => &mut fields.kind,
+            "lifecycle" => &mut fields.lifecycle,
+            "holders" => &mut fields.holders,
+            "instance_key" => &mut fields.instance_key,
+            "default_limit" => &mut fields.default_limit,
+            "summary" => &mut fields.summary,
+            "template" => &mut fields.template,
+            "template_version" => &mut fields.template_version,
+            "harness" => &mut fields.harness,
+            "model" => &mut fields.model,
+            "effort" => &mut fields.effort,
+            "packet" => &mut fields.packet,
+            "brief" => &mut fields.brief,
+            _ => {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    format!(
+                        "--set {key}: not a field edit can set; use one of {}, the list flags (--rule, --scope-path, ...) or --file",
+                        SETTABLE.join(", ")
+                    ),
+                ));
+            }
+        };
+        if slot.replace(value.to_string()).is_some() {
+            return Err(Refusal::new("E-RS-ARG", format!("{key} is given twice")));
+        }
+    }
+    Ok(fields)
+}
+
+/// `directory edit <id> --why <text>` (plan 206, F20): change a role that
+/// exists, through the writer, with one changelog row.
+async fn edit(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let id = &call.positions[0];
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                "--why <text> is required: it becomes the changelog row",
+            )
+        })?;
+    let paths = RolePaths::new(id)?;
+    let change = match call.get("file") {
+        Some(file) => RoleEdit::Document(read_document(&caller_path(caller, &file)?)?),
+        None if call.describes_a_role() => RoleEdit::Fields(Box::new(edit_fields(call)?)),
+        None => {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "directory edit needs --set <field>=<value>, role flags or --file <json>",
+            ));
+        }
+    };
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let written = state
+        .services
+        .directory
+        .edit(&project, repo, id, change, actor, &why)
+        .await?;
+    let pointers = pointer::for_write(&project, &written.paths, &written.commit);
+    state
+        .services
+        .governance
+        .store()
+        .record_community_pointers(&pointers)
+        .await
+        .map_err(|error| {
+            Refusal::new(
+                "E-RS-STORE",
+                format!(
+                    "committed {} but could not record the pointer: {error}",
+                    written.commit
+                ),
+            )
+        })?;
+    Ok(json!({
+        "project": project,
+        "id": id,
+        "path": paths.document.display().to_string(),
+        "commit": written.commit,
+        "paths": written.paths,
+    }))
 }
 
 /// `directory assign|release <role>[/<instance>] <seat> --why <text>` (plan 195).

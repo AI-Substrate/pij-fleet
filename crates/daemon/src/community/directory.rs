@@ -29,6 +29,8 @@ pub const E_ROLE_MISSING: &str = "E-RS-DIRECTORY-ROLE-MISSING";
 pub const E_HELD: &str = "E-RS-DIRECTORY-HELD";
 /// The seat does not hold that role (and instance).
 pub const E_NOT_HELD: &str = "E-RS-DIRECTORY-NOT-HELD";
+/// A role made from a template records no template version (plan 206, F19).
+pub const E_NO_TEMPLATE_VERSION: &str = "E-RS-DIRECTORY-NO-TEMPLATE-VERSION";
 
 /// Called once after each assign lands (ruling C6); s05 drains the role queue
 /// through it.
@@ -63,6 +65,15 @@ pub struct AssignRequest {
     pub why: String,
     /// This machine's alias.
     pub machine: String,
+}
+
+/// What `pij directory edit` changes (plan 206, F20).
+#[derive(Clone, Debug)]
+pub enum RoleEdit {
+    /// Fields laid over the committed document, as `add --from` does.
+    Fields(Box<role::RoleFields>),
+    /// A whole replacement document; the committed changelog is kept.
+    Document(Value),
 }
 
 /// What an assign or release changed.
@@ -248,12 +259,27 @@ impl DirectoryService {
                 serde_json::json!({"id": id, "template": null, "behind": false, "diff": ""}),
             );
         };
-        let version = meta["template_version"].as_str().unwrap_or_default();
+        let record = format!(
+            "Record the version it came from: pij directory edit {id} --set template_version=<n> --why <text>"
+        );
+        let version = match meta["template_version"].as_str().map(str::trim) {
+            Some(version) if !version.is_empty() => version,
+            _ => {
+                return Err(Refusal::new(
+                    E_NO_TEMPLATE_VERSION,
+                    format!(
+                        "role {id:?} records template {name:?} but no template_version, so there is nothing to diff from"
+                    ),
+                )
+                .with_next(record));
+            }
+        };
         let from = templates::parse_version(version).ok_or_else(|| {
             Refusal::new(
                 "E-RS-ARG",
                 format!("role {id:?} records template_version {version:?}, not a version number"),
             )
+            .with_next(record.clone())
         })?;
         let (latest, diff) = self.templates.diff_to_latest(name, from)?;
         Ok(serde_json::json!({
@@ -404,6 +430,67 @@ impl DirectoryService {
             .await?;
         self.flushed(&built.landed, &written).await?;
         Ok((written, entry))
+    }
+
+    /// `pij directory edit <id>` (plan 206, F20): change an existing role in
+    /// one writer commit. The role is read under the writer lock, the change
+    /// applied, its changelog kept, and one row added.
+    ///
+    /// # Errors
+    /// [`E_ROLE_MISSING`]; `E-RS-ARG` for an edit that changes nothing or a
+    /// document for another id; any writer refusal. Nothing is written.
+    pub async fn edit(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        id: &str,
+        change: RoleEdit,
+        actor: &SeatId,
+        why: &str,
+    ) -> Result<Written, Refusal> {
+        let paths = RolePaths::new(id)?;
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: edit role {id}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+        );
+        let (project_id, id, by, why) = (
+            project.to_string(),
+            id.to_string(),
+            actor.to_string(),
+            why.to_string(),
+        );
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let current = read_role(root, &id)?;
+                let edited = match change {
+                    RoleEdit::Fields(fields) => role::apply_fields(current.clone(), &fields)?,
+                    RoleEdit::Document(document) => role::keep_changelog(document, &current),
+                };
+                if edited == current {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        format!("the edit changes nothing in role {id:?}"),
+                    ));
+                }
+                let stamped = role::stamp(edited, &id, &by, &why, &role::today())?;
+                let mut files = vec![NewFile {
+                    path: paths.document.clone(),
+                    bytes: role::to_bytes(&stamped),
+                    document: true,
+                    existing: Existing::Replace,
+                }];
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        Ok(written)
     }
 
     /// Any other directory write (`directory add`): `files` plus the project's
@@ -788,6 +875,27 @@ fn open_for(row: &Assignment, seat: &str, instance: &str) -> bool {
 
 fn holders_path(role: &str) -> Result<String, Refusal> {
     Ok(RolePaths::new(role)?.holders.display().to_string())
+}
+
+/// The role's committed document.
+fn read_role(root: &GovernanceRoot, id: &str) -> Result<Value, Refusal> {
+    let paths = RolePaths::new(id)?;
+    let missing = || {
+        Refusal::new(
+            E_ROLE_MISSING,
+            format!("role {id:?} does not exist in this project's directory"),
+        )
+        .with_next(format!(
+            "Add it first: pij directory add {id} --why <text> ..."
+        ))
+    };
+    let bytes = std::fs::read(root.worktree.join(&paths.document)).map_err(|_| missing())?;
+    serde_json::from_slice(&bytes).map_err(|error| {
+        Refusal::new(
+            E_GOV_GIT,
+            format!("{} is not JSON: {error}", paths.document.display()),
+        )
+    })
 }
 
 /// The role's committed holders rows; none when it has no holders document.
