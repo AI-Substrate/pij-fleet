@@ -104,6 +104,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-exuberant-wildcat",
 					"why": "plan 206 reshape (s15)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T01:25:15.218Z",
+					"harness": "copilot",
+					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
+					"instance_key": "204",
+					"machine": "ops.osk.lan",
+					"seat": "pij-following-marsupial",
+					"why": "plan 204 s10 (route doc and templates first)"
 				}
 			]
 		}

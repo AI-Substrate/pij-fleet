@@ -26,3 +26,4 @@
 | — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 207 | 2026-11-06T00:31:36.106Z | 2026-11-06T01:25:14.544Z | pij-steady-otter | pij-steady-otter | plan 207, issues #127 and #128 | plan 207 PR #134 out for verdicts |
 | — | pij-local-warbler | copilot | 92c00825-7025-4673-b7d6-8c3fb82fad45 | ops.osk.lan | 208 | 2026-11-06T00:51:54.953Z | — | pij-steady-otter | — | plan 208 directory polish | — |
 | — | pij-exuberant-wildcat | copilot | cc88fc7c-b066-44d1-a82d-fa6560786ddf | ops.osk.lan | 206 | 2026-11-06T01:01:56.479Z | — | pij-steady-otter | — | plan 206 reshape (s15) | — |
+| — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 204 | 2026-11-06T01:25:15.218Z | — | pij-steady-otter | — | plan 204 s10 (route doc and templates first) | — |
