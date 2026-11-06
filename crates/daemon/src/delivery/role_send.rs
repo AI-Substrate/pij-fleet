@@ -187,6 +187,12 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     {
         return replay(&send, existing);
     }
+    // Held from the standing read until a queued request is recorded, so a
+    // retire or merge never lands between them (review of #135, F001).
+    let gate = services
+        .directory
+        .admission(&send.project, &send.address.role)
+        .await;
     let document = role_document(&send.repo, &send.project, &send.address.role)?;
     refuse_retired(&send, &role::standing(&document))?;
     let meta = section(&document, "meta");
@@ -261,6 +267,7 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
                 }
                 return Err(Refusal::new("E-RS-STORE", error.to_string()));
             }
+            drop(gate);
             let woke = wake(services, &store, &request, &assignments, now_ms).await;
             let receipt = Receipt {
                 msg_id: request.id.clone(),

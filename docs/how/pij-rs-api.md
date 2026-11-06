@@ -1092,18 +1092,33 @@ refuses either on every write (`E-RS-ARG`, `E-RS-DIRECTORY-ROLE-MISSING`), and
 `pij send role:<id>` refuses `E-RS-DIRECTORY-RETIRED`, naming the merge target.
 
 Requests queued for the role (no live holder took them) are never stranded
-silently. Without `--drop-queued`, retire and merge refuse and list them. With
-`--drop-queued` the role is retired first, then each request still queued for
+silently. A send to a role and a retire or merge of it share one admission
+gate per (project, role): the send holds it from reading the role's standing
+until its request is recorded, and the reshape holds it from reading the queue
+through its commit and withdrawal, so no request is admitted between the check
+and the retirement. Without `--drop-queued`, retire and merge refuse and list
+the queued requests. With `--drop-queued` the role is retired, each requester
+is told once by an FYI held for its next real turn (msg id `<request
+id>.withdrawn`, so a repeat is ignored) that names the role, who retired it and
+why, and repeats the request's body, and then every request still queued for
 it (any instance) is withdrawn in one store transaction: its `role_requests`
 row is deleted and a `role.request.withdrawn` spine event, with the requester
 as its seat, records `{id, project, role, instance, requester, created_at,
-withdrawn_by, why}`. Withdrawing after the commit also catches a send that
-slipped in before the send path saw the retirement. Each requester is told
-once, by an FYI held for its next real turn (msg id `<request id>.withdrawn`)
-that names the role, who retired it and why, and repeats the request's body;
-the retiring seat's own requests are not echoed back to it. `data.withdrawn`
-lists `{id, requester, created_at, told}`, where `told` is `held`, `self`, or
-why the FYI could not be held. Merge does not move queued requests to `<to>`:
+withdrawn_by, why}`. The retiring seat's own requests are not echoed back to
+it. `data.withdrawn` lists `{id, requester, instance, created_at, told}`, where
+`told` is `held`, `self`, or why the FYI could not be held. If the withdrawal
+fails after the retirement committed (`E-RS-STORE`, naming the command), the
+same `retire` or `merge ... --drop-queued` finishes it: on an already retired
+role with requests still queued it makes no commit and adds no changelog row
+(`data.resumed: true`, `data.commit: null`), tells nobody twice, and
+withdraws them. With nothing queued, a retired role refuses as before.
+
+Every command a refusal prints names the project it was asked about
+(`--project <slug>`) and the exact holding or queued instance
+(`<role>/<instance>`), so following it from another checkout changes the right
+project: the held refusal prints one release per holding, the queued refusal
+one assign per queued instance and the `--drop-queued` form, and F19's
+template-diff refusal its edit. Merge does not move queued requests to `<to>`:
 a queued request drains only on an assign, so a moved request would wait even
 when `<to>` has a live holder. Drain them with an assign first, or withdraw
 them.
@@ -1111,7 +1126,7 @@ them.
 | Refusal | When |
 |---|---|
 | `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
-| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)) and `--drop-queued` was not given. Each is listed as `<id> from <requester> (<age> old)`; the next step offers assigning a holder (which drains them), releasing it and retrying, or the same verb with `--drop-queued` |
+| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)) and `--drop-queued` was not given. Each is listed as `<id> from <requester> for <role>[/<instance>] (<age> old)`; the next step prints an assign per queued instance (which drains them; release it and retry after) and the same verb with `--drop-queued` |
 | `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign and edit of a retired role refuse too, naming the merge target when there is one |
 | `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
 | `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |

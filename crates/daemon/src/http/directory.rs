@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope};
-use crate::community::directory::{Reshaped, Retirement, RoleEdit};
+use crate::community::directory::{Retirement, RoleEdit};
 use crate::community::layout::{RolePaths, exists};
 use crate::community::memory;
 use crate::community::role::{self, RoleFields};
@@ -461,7 +461,7 @@ pub(crate) async fn handle(
                 Ok((project, repo)) => state
                     .services
                     .directory
-                    .template_diff(&repo, &call.positions[0])
+                    .template_diff(&project, &repo, &call.positions[0])
                     .map(|mut data| {
                         data["project"] = json!(project);
                         data
@@ -815,7 +815,7 @@ async fn reshape(
         why: &why,
         drop_queued: call.drop_queued,
     };
-    let Reshaped { written, withdrawn } = match &into {
+    let reshaped = match &into {
         Some(into) => {
             directory
                 .merge(&project, repo, id, into, actor, how)
@@ -823,23 +823,38 @@ async fn reshape(
         }
         None => directory.retire(&project, repo, id, actor, how).await?,
     };
-    record_pointers(state, &project, &written).await?;
-    let mut told = Vec::with_capacity(withdrawn.len());
-    for request in &withdrawn {
+    let (commit, paths) = match &reshaped.written {
+        Some(written) => {
+            record_pointers(state, &project, written).await?;
+            (json!(written.commit), json!(written.paths))
+        }
+        None => (Value::Null, json!([])),
+    };
+    // Tell first, then withdraw: an FYI is held once per msg id, so a
+    // withdrawal that fails after this is finished by the same command
+    // without telling anyone twice (review of #135, F002).
+    let mut told = Vec::with_capacity(reshaped.queued.len());
+    for request in &reshaped.queued {
         told.push(json!({
             "id": request.id,
             "requester": request.requester,
+            "instance": request.instance,
             "created_at": request.created_at,
             "told": tell_withdrawn(state, actor, request, id, into.as_deref(), &why).await,
         }));
     }
+    let resumed = reshaped.written.is_none();
+    directory
+        .withdraw(reshaped, &project, id, actor, &why)
+        .await?;
     Ok(json!({
         "project": project,
         "id": id,
         "state": "retired",
         "merged_into": into,
-        "commit": written.commit,
-        "paths": written.paths,
+        "commit": commit,
+        "paths": paths,
+        "resumed": resumed,
         "withdrawn": told,
     }))
 }

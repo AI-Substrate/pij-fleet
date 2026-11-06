@@ -233,7 +233,7 @@ async fn template_diff_names_a_missing_version_and_the_edit_that_records_one() {
     );
     assert_eq!(
         refused["details"]["next"],
-        "Record the version it came from: pij directory edit half --set template_version=<n> --why <text>"
+        "Record the version it came from: pij directory edit half --set template_version=<n> --why <text> --project fleet"
     );
 
     let recorded = directory(
@@ -295,7 +295,7 @@ async fn retire_and_merge_reshape_roles_and_keep_their_history() {
     );
     assert_eq!(
         held["details"]["next"],
-        "pij directory release qa pij-holder --why <text>"
+        "Release each holding first:\n  pij directory release qa pij-holder --why <text> --project fleet"
     );
     assert_eq!(head(&repo), before, "a refused retire commits nothing");
 
@@ -545,7 +545,8 @@ async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
     );
     let text = retire.to_string();
     assert!(
-        text.contains("1 request(s) queued") && text.contains("req-qa from pij-holder (0m old)"),
+        text.contains("1 request(s) queued")
+            && text.contains("req-qa from pij-holder for qa (0m old)"),
         "{retire}"
     );
     assert!(
@@ -666,4 +667,439 @@ async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
             "{msg} queued"
         );
     }
+}
+
+/// The `pij ...` commands a refusal's next step prints, one per line or after
+/// a lead-in.
+fn commands(refusal: &Value) -> Vec<String> {
+    refusal["details"]["next"]
+        .as_str()
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            line.find("pij directory")
+                .map(|at| line[at + 4..].trim().to_string())
+        })
+        .collect()
+}
+
+/// Run a printed command from `cwd`, filling its placeholders.
+async fn replay(addr: SocketAddr, cwd: &Path, command: &str, fills: &[(&str, &str)]) -> Value {
+    let mut text = command.to_string();
+    for (placeholder, value) in fills {
+        text = text.replace(placeholder, value);
+    }
+    let argv: Vec<&str> = text.split_whitespace().collect();
+    call(addr, "/v1/directory", &argv, cwd).await
+}
+
+/// Review of #135, F001: a send to a role and a retire or merge of it go
+/// through one admission gate, held by the send until its request is recorded
+/// and by the reshape through its commit and withdrawal. A send queued behind
+/// a --drop-queued retire is withdrawn by it; a send arriving after a plain
+/// retire's check is refused, never stranded.
+#[tokio::test]
+async fn sends_and_retirement_share_one_admission_gate() {
+    let repo = repo("pij-directory-reshape-gate");
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    for id in ["qa", "ops"] {
+        let added = directory(
+            addr,
+            &repo,
+            &["add", id, "--rule", "r", "--packet", "p", "--why", "start"],
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{id}: {added}");
+    }
+    let pause = || tokio::time::sleep(std::time::Duration::from_millis(300));
+    let main = repo.main.clone();
+    let send = |role: &'static str, msg: &'static str| {
+        let main = main.clone();
+        tokio::spawn(
+            async move { send_to(addr, &main, &format!("role:{role}"), msg, json!({})).await },
+        )
+    };
+    let retire = |role: &'static str, drop: bool| {
+        let main = main.clone();
+        tokio::spawn(async move {
+            let mut argv = vec!["directory", "retire", role, "--why", "gate"];
+            if drop {
+                argv.push("--drop-queued");
+            }
+            call(addr, "/v1/directory", &argv, &main).await
+        })
+    };
+
+    // With --drop-queued: the send holds the gate first and records its
+    // request; the retire then withdraws it.
+    let gate = rig.services.directory.admission("fleet", "qa").await;
+    let sent = send("qa", "req-gate");
+    pause().await;
+    let retired = retire("qa", true);
+    pause().await;
+    assert!(
+        !sent.is_finished() && !retired.is_finished(),
+        "both wait on the gate"
+    );
+    assert!(rig.store.role_request("req-gate").await.unwrap().is_none());
+    drop(gate);
+    let sent = sent.await.unwrap();
+    assert_eq!(sent["data"]["request"]["state"], "queued", "{sent}");
+    let retired = retired.await.unwrap();
+    assert_eq!(retired["ok"], true, "{retired}");
+    assert_eq!(
+        retired["data"]["withdrawn"][0]["id"], "req-gate",
+        "{retired}"
+    );
+    assert!(rig.store.role_request("req-gate").await.unwrap().is_none());
+
+    // Without it: the retire holds the gate first and commits on an empty
+    // queue; the send then reads the retired role and is refused.
+    let gate = rig.services.directory.admission("fleet", "ops").await;
+    let retired = retire("ops", false);
+    pause().await;
+    let sent = send("ops", "req-late");
+    pause().await;
+    assert!(
+        !sent.is_finished() && !retired.is_finished(),
+        "both wait on the gate"
+    );
+    drop(gate);
+    let retired = retired.await.unwrap();
+    assert_eq!(retired["ok"], true, "{retired}");
+    let sent = sent.await.unwrap();
+    assert_eq!(refusal_code(&sent), "E-RS-DIRECTORY-RETIRED", "{sent}");
+    assert!(rig.store.role_request("req-late").await.unwrap().is_none());
+    assert!(
+        rig.store
+            .queued_for_role("fleet", "ops")
+            .await
+            .unwrap()
+            .is_empty(),
+        "nothing queued behind the retired role"
+    );
+}
+
+/// Review of #135, F002: a --drop-queued retirement that committed but did
+/// not withdraw (the store failed, or the daemon stopped after the FYI) is
+/// finished by the same command: no second commit or changelog row, one
+/// withdrawal event and one FYI. With nothing left to withdraw it refuses.
+#[tokio::test]
+async fn an_unfinished_withdrawal_is_finished_by_the_same_command() {
+    let repo = repo("pij-directory-reshape-resume");
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    let added = directory(
+        addr,
+        &repo,
+        &[
+            "add", "qa", "--rule", "r", "--packet", "p", "--why", "start",
+        ],
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    let retired = directory(
+        addr,
+        &repo,
+        &["retire", "qa", "--why", "done", "--drop-queued"],
+    )
+    .await;
+    assert_eq!(retired["ok"], true, "{retired}");
+    // The state a failed withdrawal leaves: the role retired, a request still
+    // queued for it, and its requester already told.
+    rig.store
+        .record_role_request(&pij_store::RoleRequest {
+            id: "req-left".into(),
+            project: "fleet".into(),
+            role: "qa".into(),
+            instance: String::new(),
+            requester: "pij-holder".into(),
+            body: "please".into(),
+            in_reply_to: None,
+            fyi: false,
+            reply: pij_store::ReplyMode::Wake,
+            limit_ms: None,
+            state: pij_store::RequestState::Queued,
+            holder: None,
+            created_at: 1,
+            delivered_at: None,
+        })
+        .await
+        .unwrap();
+    rig.delivery
+        .hold_fyi(pij_core::model::Msg {
+            from: SeatId::from(SEAT),
+            from_machine: None,
+            to: SeatId::from("pij-holder"),
+            body: "told before the store failed".into(),
+            msg_id: "req-left.withdrawn".into(),
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .unwrap();
+    let before = head(&repo);
+    let rows = section(&committed(&repo, "qa"), "changelog")
+        .as_array()
+        .unwrap()
+        .len();
+
+    let plain = directory(addr, &repo, &["retire", "qa", "--why", "again"]).await;
+    assert_eq!(refusal_code(&plain), "E-RS-DIRECTORY-RETIRED", "{plain}");
+    let finished = directory(
+        addr,
+        &repo,
+        &["retire", "qa", "--why", "again", "--drop-queued"],
+    )
+    .await;
+    assert_eq!(finished["ok"], true, "{finished}");
+    assert_eq!(finished["data"]["resumed"], true);
+    assert_eq!(finished["data"]["commit"], Value::Null);
+    assert_eq!(
+        finished["data"]["withdrawn"][0]["id"], "req-left",
+        "{finished}"
+    );
+    assert_eq!(head(&repo), before, "no second commit");
+    assert_eq!(
+        section(&committed(&repo, "qa"), "changelog")
+            .as_array()
+            .unwrap()
+            .len(),
+        rows,
+        "no second changelog row"
+    );
+    assert!(rig.store.role_request("req-left").await.unwrap().is_none());
+    let events = rig
+        .services
+        .spine
+        .all_matching(&SeatId::from("pij-holder"), &[pij_store::WITHDRAWN_EVENT])
+        .await
+        .unwrap();
+    assert_eq!(events.len(), 1, "one withdrawal event");
+    assert_eq!(
+        rig.delivery
+            .pending_fyi_count(&SeatId::from("pij-holder"))
+            .await
+            .unwrap(),
+        1,
+        "the requester is told once"
+    );
+    let nothing_left = directory(
+        addr,
+        &repo,
+        &["retire", "qa", "--why", "again", "--drop-queued"],
+    )
+    .await;
+    assert_eq!(
+        refusal_code(&nothing_left),
+        "E-RS-DIRECTORY-RETIRED",
+        "{nothing_left}"
+    );
+}
+
+/// Review of #135, F003: the commands a refusal prints keep the project it was
+/// asked about and the exact instance. Called from project A's checkout with
+/// --project other, replaying each printed command changes B, never A.
+#[tokio::test]
+async fn printed_repair_commands_keep_the_project_and_instance() {
+    let (a, b) = (repo("pij-directory-scope-a"), repo("pij-directory-scope-b"));
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &a).await;
+    let created = call(
+        addr,
+        "/v1/project",
+        &[
+            "project",
+            "create",
+            "other",
+            "--repo",
+            b.main.to_str().unwrap(),
+        ],
+        &b.main,
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    for repo in [&a, &b] {
+        let added = call(
+            addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                "qa",
+                "--title",
+                "qa",
+                "--kind",
+                "general",
+                "--lifecycle",
+                "long-lived",
+                "--holders",
+                "many",
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    let half = call(
+        addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "half",
+            "--title",
+            "half",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--template",
+            "reviewer",
+            "--why",
+            "w",
+        ],
+        &b.main,
+    )
+    .await;
+    assert_eq!(half["ok"], true, "{half}");
+    let on_b = |argv: &[&'static str]| {
+        let mut full = vec!["directory"];
+        full.extend_from_slice(argv);
+        full.extend_from_slice(&["--project", "other"]);
+        full
+    };
+    let a_head = head(&a);
+
+    let assigned = call(
+        addr,
+        "/v1/directory",
+        &on_b(&["assign", "qa/135", "pij-holder", "--why", "w"]),
+        &a.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let held = call(
+        addr,
+        "/v1/directory",
+        &on_b(&["retire", "qa", "--why", "w"]),
+        &a.main,
+    )
+    .await;
+    assert_eq!(refusal_code(&held), "E-RS-DIRECTORY-ROLE-HELD", "{held}");
+    assert_eq!(
+        commands(&held),
+        ["directory release qa/135 pij-holder --why <text> --project other"]
+    );
+    for command in commands(&held) {
+        let done = replay(addr, &a.main, &command, &[("<text>", "w")]).await;
+        assert_eq!(done["ok"], true, "{command}: {done}");
+    }
+    let rows = holders_at_head(&b, "qa");
+    assert!(
+        rows.iter().all(|row| !row["to"].is_null()),
+        "B's qa/135 released: {rows:?}"
+    );
+
+    let queued = send_to(
+        addr,
+        &a.main,
+        "role:qa/7",
+        "req-7",
+        json!({"project": "other"}),
+    )
+    .await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+    let refused = call(
+        addr,
+        "/v1/directory",
+        &on_b(&["retire", "qa", "--why", "w"]),
+        &a.main,
+    )
+    .await;
+    assert_eq!(
+        refusal_code(&refused),
+        "E-RS-DIRECTORY-ROLE-QUEUED",
+        "{refused}"
+    );
+    assert!(
+        refused
+            .to_string()
+            .contains("req-7 from pij-test-coder for qa/7"),
+        "{refused}"
+    );
+    let printed = commands(&refused);
+    assert_eq!(
+        printed,
+        [
+            "directory assign qa/7 <seat> --why <text> --project other",
+            "directory retire qa --why <text> --drop-queued --project other",
+        ]
+    );
+    let drained = replay(
+        addr,
+        &a.main,
+        &printed[0],
+        &[("<seat>", "pij-holder"), ("<text>", "w")],
+    )
+    .await;
+    assert_eq!(drained["ok"], true, "{drained}");
+    // The drain runs after the assign lands.
+    let mut request = rig
+        .store
+        .role_request("req-7")
+        .await
+        .unwrap()
+        .expect("req-7");
+    for _ in 0..100 {
+        if request.state == pij_store::RequestState::Delivered {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        request = rig
+            .store
+            .role_request("req-7")
+            .await
+            .unwrap()
+            .expect("req-7");
+    }
+    assert_eq!(
+        (request.state, request.holder.as_deref()),
+        (pij_store::RequestState::Delivered, Some("pij-holder"))
+    );
+
+    let diff = call(
+        addr,
+        "/v1/directory",
+        &on_b(&["template-diff", "half"]),
+        &a.main,
+    )
+    .await;
+    assert_eq!(
+        refusal_code(&diff),
+        "E-RS-DIRECTORY-NO-TEMPLATE-VERSION",
+        "{diff}"
+    );
+    let [edit] = commands(&diff).try_into().expect("one printed edit");
+    let b_before = head(&b);
+    let edited = replay(addr, &a.main, &edit, &[("<n>", "1"), ("<text>", "w")]).await;
+    assert_eq!(edited["ok"], true, "{edit}: {edited}");
+    assert_ne!(head(&b), b_before, "B changed");
+    assert_eq!(head(&a), a_head, "A untouched throughout");
 }
