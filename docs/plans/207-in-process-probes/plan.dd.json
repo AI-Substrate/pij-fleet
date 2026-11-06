@@ -45,27 +45,27 @@
         },
         {
           "id": "ac-0002",
-          "claim": "#128, ancestry in-process (ruling C27). `crates/daemon/src/registration.rs` reads each ancestor's parent and kernel name in-process (macOS proc_pidinfo short BSD info; Linux /proc as before). When the walk first meets a harness host's name (copilot, claude, codex, node), every host-named ancestor's argv comes from one batched `/bin/ps -p <pids>`, so a registration launches at most 1 ps however many host-named ancestors it has. The 32-ancestor cap and the results for native and paneless registration are unchanged. `unsafe_code = \"forbid\"` stays absolute (C27).",
+          "claim": "#128, ancestry in-process (ruling C27). `crates/daemon/src/registration.rs` reads each ancestor's parent and kernel name in-process (macOS proc_pidinfo short BSD info; Linux /proc as before). Only an ancestor whose name is a harness host's (copilot, claude, codex, node) has its argv read, by one single-pid `/bin/ps -p <pid> -o pid= -o args=` bound to that pid and failing closed, cached for the registration: at most one ps per host-named ancestor, never batched and never a census (C27 as amended: on macOS `ps -p a,b` costs about 0.6 s of kernel CPU). The 32-ancestor cap and the results for native and paneless registration are unchanged. `unsafe_code = \"forbid\"` stays absolute (C27).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
           "receipt": "docs/plans/207-in-process-probes/assets/evidence/phase-1.md"
         },
         {
           "id": "ac-0003",
-          "claim": "Guards. crates/testkit/tests/spawn_sites.rs fails if a `date` launch returns on the UTC-offset path, or if registration's `ps` is reached other than through the host-name gate; a registration test counts at most 1 argv read per registration (C27).",
+          "claim": "Guards. crates/testkit/tests/spawn_sites.rs fails if a `date` launch returns on the UTC-offset path, or if registration's `ps` is reached other than through the host-name gate; registration tests count one argv read per host-named ancestor and none without one (C27 as amended).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003",
           "receipt": "docs/plans/207-in-process-probes/assets/evidence/phase-1.md"
         },
         {
           "id": "ac-0004",
-          "claim": "Readings. The performance seat records, on the live fleet before and after deploy, `date.utc-offset` and `ps.registration-native-process` over a 60 s at-rest window with pending Claude seats present (expected: date.utc-offset to 0; ps.registration-native-process at most 1 per registration, C27), plus the daemon total, with data.pid on each reading.",
+          "claim": "Readings. The performance seat records, on the live fleet before and after deploy, `date.utc-offset` and `ps.registration-native-process` over a 60 s at-rest window with pending Claude seats present (expected: date.utc-offset to 0; ps.registration-native-process at most one per host-named ancestor per registration, C27 as amended), plus the daemon total, with data.pid on each reading.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Removes launches: date.utc-offset to 0, and ps.registration-native-process from one per ancestor to at most 1 per registration (C27); no new launch, loop or timer. The before and after readings are AC4.",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Removes launches: date.utc-offset to 0, and ps.registration-native-process from one per ancestor to at most one per host-named ancestor (C27 as amended); no new launch, loop or timer. The before and after readings are AC4.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005",
           "receipt": "docs/plans/207-in-process-probes/assets/evidence/phase-1.md"

@@ -1545,15 +1545,15 @@ type ObserveFuture = std::pin::Pin<
     Box<dyn Future<Output = std::result::Result<Option<NativeProcess>, RegistrationError>> + Send>,
 >;
 
-/// One registration's ancestor observer. macOS: a [`BatchedAncestry`], so the
-/// whole registration launches at most one `ps` (ruling C27, review of #134
-/// F001). Linux: `/proc`, which launches nothing.
+/// One registration's ancestor observer. macOS: an [`AncestryReads`], so a
+/// registration launches at most one `ps` per host-named ancestor (ruling C27
+/// as amended). Linux: `/proc`, which launches nothing.
 fn native_observer() -> impl FnMut(u32) -> ObserveFuture {
     #[cfg(not(target_os = "linux"))]
     {
-        let ancestry = Arc::new(std::sync::Mutex::new(BatchedAncestry::new(
+        let ancestry = Arc::new(std::sync::Mutex::new(AncestryReads::new(
             pij_harnesses::proc::parent_and_name,
-            read_argv_batch_with_ps,
+            read_argv_with_ps,
         )));
         move |pid| -> ObserveFuture {
             let ancestry = Arc::clone(&ancestry);
@@ -1677,37 +1677,32 @@ const PROCESS_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(1);
 #[cfg(any(not(target_os = "linux"), test))]
 const HOST_NAMES: [&str; 4] = ["copilot", "claude", "codex", "node"];
 
-/// One registration's ancestry reads (plan 207, #128, ruling C27; review of
-/// #134 F001). Parents and kernel names are read in-process for every
-/// ancestor. The first time an ancestor's name is a harness host's, the chain
-/// above it is walked in-process (to the walks' 32-process cap) and every
-/// host-named pid's argv comes from ONE `argv_batch` call, so a registration
-/// reads argv at most once, however many host-named ancestors it has. Later
-/// observations answer from that read; a pid it did not return disappeared,
-/// as with `ps` before. The batch supplies argv only: every name and parent is
-/// the in-process read (security review of #134, S001).
+/// One registration's ancestry reads (plan 207, #128, ruling C27 as amended
+/// after the review of #134). Parents and kernel names are read in-process for
+/// every ancestor. Only an ancestor whose name is a harness host's has its
+/// argv read, by one single-pid `argv` call, cached for the registration, so
+/// an ancestor is read at most once and a registration launches no more `ps`
+/// than it has host-named ancestors. Never batched: on macOS `ps -p a,b` costs
+/// about 0.6 s of kernel CPU where one pid costs nothing. The read supplies
+/// argv only; every name and parent is the in-process read (S001).
 #[cfg(any(not(target_os = "linux"), test))]
-struct BatchedAncestry<K, A> {
+struct AncestryReads<K, A> {
     kernel: K,
-    argv_batch: A,
-    read: Option<ArgvBatch>,
+    argv: A,
+    read: std::collections::HashMap<u32, Option<Vec<String>>>,
 }
 
-/// One batched argv read: each requested pid still found, with its argv.
 #[cfg(any(not(target_os = "linux"), test))]
-type ArgvBatch = std::collections::HashMap<u32, Vec<String>>;
-
-#[cfg(any(not(target_os = "linux"), test))]
-impl<K, A> BatchedAncestry<K, A>
+impl<K, A> AncestryReads<K, A>
 where
     K: Fn(u32) -> Option<(u32, String)>,
-    A: FnMut(&[u32]) -> std::result::Result<ArgvBatch, RegistrationError>,
+    A: FnMut(u32) -> std::result::Result<Option<Vec<String>>, RegistrationError>,
 {
-    fn new(kernel: K, argv_batch: A) -> Self {
+    fn new(kernel: K, argv: A) -> Self {
         Self {
             kernel,
-            argv_batch,
-            read: None,
+            argv,
+            read: std::collections::HashMap::new(),
         }
     }
 
@@ -1731,110 +1726,69 @@ where
                 argv: vec![name],
             }));
         }
-        if self.read.is_none() {
-            let pids = self.host_named_chain(pid, parent);
-            let read = (self.argv_batch)(&pids)?;
+        if !self.read.contains_key(&pid) {
+            let argv = (self.argv)(pid)?;
             // The name and parent were read before `ps`; an exec or reparent
             // in between would pair this argv with another image's name.
-            if (self.kernel)(pid).as_ref() != Some(&(parent, name.clone())) {
+            if argv.is_some() && (self.kernel)(pid).as_ref() != Some(&(parent, name.clone())) {
                 return Err(native_refusal(format!(
                     "process {pid} changed while its argv was read"
                 )));
             }
-            self.read = Some(read);
+            self.read.insert(pid, argv);
         }
-        Ok(self
-            .read
-            .as_ref()
-            .and_then(|read| read.get(&pid))
-            .map(|argv| NativeProcess {
-                parent,
-                executable: name,
-                executable_replaced: false,
-                argv: argv.clone(),
-            }))
-    }
-
-    /// `pid`, then each host-named ancestor above it, read in-process.
-    fn host_named_chain(&self, pid: u32, parent: u32) -> Vec<u32> {
-        let mut pids = vec![pid];
-        let mut seen = vec![pid];
-        let mut current = parent;
-        while current != 0 && seen.len() < 32 && !seen.contains(&current) {
-            seen.push(current);
-            let Some((next, name)) = (self.kernel)(current) else {
-                break;
-            };
-            if HOST_NAMES.contains(&name.as_str()) {
-                pids.push(current);
-            }
-            current = next;
-        }
-        pids
+        Ok(self.read[&pid].clone().map(|argv| NativeProcess {
+            parent,
+            executable: name,
+            executable_replaced: false,
+            argv,
+        }))
     }
 }
 
-/// One `/bin/ps` for a registration's host-named ancestors: their exact pids,
-/// never a census, with the child, output and wall time bounded.
+/// One `/bin/ps` for one host-named ancestor's argv: its exact pid, never a
+/// list or a census, with the child, output and wall time bounded.
 #[cfg(not(target_os = "linux"))]
-fn read_argv_batch_with_ps(pids: &[u32]) -> std::result::Result<ArgvBatch, RegistrationError> {
+fn read_argv_with_ps(pid: u32) -> std::result::Result<Option<Vec<String>>, RegistrationError> {
     use std::process::Command;
 
     // Only `pid` and `args`: ps prints `ucomm` raw, so a newline in an image
     // name could forge a row, while `args` is escaped (security review of
     // #134, S001). Names and parents come from the in-process read.
     pij_core::spawns::record("ps.registration-native-process");
-    let list = pids
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
     let mut command = Command::new("/bin/ps");
     command
-        .args(["-ww", "-p", &list, "-o", "pid=", "-o", "args="])
+        .args(["-ww", "-p", &pid.to_string(), "-o", "pid=", "-o", "args="])
         .env("LC_ALL", "C");
-    let output = run_observation(
-        &format!("pids {list}"),
-        &mut command,
-        OBSERVATION_LIMIT * pids.len().max(1),
-    )?;
-    parse_argv_batch(&output.unwrap_or_default(), pids)
+    run_observation(&format!("pid {pid}"), &mut command, OBSERVATION_LIMIT)?
+        .map(|output| parse_argv_row(&output, pid))
+        .transpose()
 }
 
-/// `pid args...` lines, one per requested process `ps` still found. Fails
-/// closed: a row for a pid not asked for, a second row for one pid, or a row
-/// without a pid or argv refuses the whole batch, so no row can stand in for
-/// another process (security review of #134, S001).
+/// Exactly one `pid args...` line, for `pid`. Fails closed: a row for another
+/// pid, a second row, or a row without a pid or argv refuses, so no row can
+/// stand in for another process (security review of #134, S001).
 #[cfg(any(not(target_os = "linux"), test))]
-fn parse_argv_batch(
-    output: &[u8],
-    requested: &[u32],
-) -> std::result::Result<ArgvBatch, RegistrationError> {
+fn parse_argv_row(output: &[u8], pid: u32) -> std::result::Result<Vec<String>, RegistrationError> {
     let text = std::str::from_utf8(output)
         .map_err(|_| native_refusal("process observation is not UTF-8"))?;
-    let mut read = ArgvBatch::new();
-    for line in text.lines().filter(|line| !line.trim().is_empty()) {
-        let mut fields = line.split_whitespace();
-        let pid: u32 = fields
-            .next()
-            .and_then(|pid| pid.parse().ok())
-            .ok_or_else(|| native_refusal("process observation has no pid"))?;
-        if !requested.contains(&pid) {
-            return Err(native_refusal(format!(
-                "process observation describes unrequested pid {pid}"
-            )));
-        }
-        let argv: Vec<String> = fields.map(str::to_string).collect();
-        if argv.is_empty() {
-            return Err(native_refusal("process observation has no argv"));
-        }
-        if read.insert(pid, argv).is_some() {
-            return Err(native_refusal(format!(
-                "process observation describes pid {pid} twice"
-            )));
-        }
+    let mut rows = text.lines().filter(|line| !line.trim().is_empty());
+    let (Some(row), None) = (rows.next(), rows.next()) else {
+        return Err(native_refusal(
+            "process observation must describe exactly one process",
+        ));
+    };
+    let mut fields = row.split_whitespace();
+    if fields.next().and_then(|field| field.parse::<u32>().ok()) != Some(pid) {
+        return Err(native_refusal(format!(
+            "process observation does not describe pid {pid}"
+        )));
     }
-    Ok(read)
+    let argv: Vec<String> = fields.map(str::to_string).collect();
+    if argv.is_empty() {
+        return Err(native_refusal("process observation has no argv"));
+    }
+    Ok(argv)
 }
 
 /// The output budget for one observed process.
@@ -4798,22 +4752,19 @@ mod tests {
         }
     }
 
-    type ArgvBatches = Arc<std::sync::Mutex<Vec<Vec<u32>>>>;
+    type ArgvReads = Arc<std::sync::Mutex<Vec<u32>>>;
 
     /// A fixture argv reader: records the real spawn counter's operation, as
-    /// the production `ps` does, logs the pids asked for, and answers from
-    /// `fixture` for each pid.
-    fn fixture_batch(
-        batches: ArgvBatches,
+    /// the production `ps` does, logs the pid asked for, and answers from
+    /// `fixture`.
+    fn fixture_argv(
+        reads: ArgvReads,
         fixture: impl Fn(u32) -> Option<NativeProcess>,
-    ) -> impl FnMut(&[u32]) -> std::result::Result<super::ArgvBatch, RegistrationError> {
-        move |pids: &[u32]| {
+    ) -> impl FnMut(u32) -> std::result::Result<Option<Vec<String>>, RegistrationError> {
+        move |pid| {
             pij_core::spawns::record("ps.registration-native-process");
-            batches.lock().unwrap().push(pids.to_vec());
-            Ok(pids
-                .iter()
-                .filter_map(|pid| fixture(*pid).map(|process| (*pid, process.argv)))
-                .collect())
+            reads.lock().unwrap().push(pid);
+            Ok(fixture(pid).map(|process| process.argv))
         }
     }
 
@@ -4864,10 +4815,10 @@ mod tests {
         for harness in [Harness::Claude, Harness::Copilot, Harness::Codex] {
             for node in [false, true] {
                 let (service, _registry) = native_service(Vec::new(), paneless_liveness()).await;
-                let batches = ArgvBatches::default();
-                let ancestry = std::sync::Mutex::new(super::BatchedAncestry::new(
+                let reads = ArgvReads::default();
+                let ancestry = std::sync::Mutex::new(super::AncestryReads::new(
                     move |pid| kernel_of(paneless_process(pid, harness, node)),
-                    fixture_batch(Arc::clone(&batches), move |pid| {
+                    fixture_argv(Arc::clone(&reads), move |pid| {
                         paneless_process(pid, harness, node)
                     }),
                 ));
@@ -4881,21 +4832,22 @@ mod tests {
                     .expect("verified external ancestor");
                 assert_eq!(seat.proc, Some(HOST), "{harness:?} node={node}");
                 assert_eq!(
-                    *batches.lock().unwrap(),
-                    vec![vec![HOST.pid]],
+                    *reads.lock().unwrap(),
+                    vec![HOST.pid],
                     "{harness:?} node={node}: one read, for the host only"
                 );
             }
         }
     }
 
-    /// Review of #134, F001: a paneless chain with TWO host-named ancestors
+    /// Ruling C27 as amended: a paneless chain with TWO host-named ancestors
     /// (`pij` -> a `node` helper -> the `node` Claude host) is accepted as
-    /// before and launches exactly one `ps`, counted by the real counter.
+    /// before and launches one single-pid `ps` per host-named ancestor,
+    /// counted by the real counter.
     #[test]
-    fn paneless_chain_with_two_host_named_ancestors_launches_one_ps() {
+    fn paneless_chain_launches_one_ps_per_host_named_ancestor() {
         alone(
-            "paneless_chain_with_two_host_named_ancestors_launches_one_ps",
+            "paneless_chain_launches_one_ps_per_host_named_ancestor",
             || {
                 let chain = |pid: u32| {
                     if pid == PANELLESS_SHELL.pid {
@@ -4909,16 +4861,16 @@ mod tests {
                         paneless_process(pid, Harness::Claude, true)
                     }
                 };
-                let batches = ArgvBatches::default();
+                let reads = ArgvReads::default();
                 tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .unwrap()
                     .block_on(async {
                         let (service, _) = native_service(Vec::new(), paneless_liveness()).await;
-                        let ancestry = std::sync::Mutex::new(super::BatchedAncestry::new(
+                        let ancestry = std::sync::Mutex::new(super::AncestryReads::new(
                             move |pid| kernel_of(chain(pid)),
-                            fixture_batch(Arc::clone(&batches), chain),
+                            fixture_argv(Arc::clone(&reads), chain),
                         ));
                         let before = registration_ps();
                         let (seat, _) = service
@@ -4930,71 +4882,77 @@ mod tests {
                             .await
                             .expect("the same Claude host is accepted");
                         assert_eq!(seat.proc, Some(HOST));
-                        assert_eq!(registration_ps() - before, 1, "one ps per registration");
+                        assert_eq!(
+                            registration_ps() - before,
+                            2,
+                            "one ps per host-named ancestor"
+                        );
                     });
-                assert_eq!(
-                    *batches.lock().unwrap(),
-                    vec![vec![PANELLESS_SHELL.pid, HOST.pid]]
-                );
+                assert_eq!(*reads.lock().unwrap(), vec![PANELLESS_SHELL.pid, HOST.pid]);
             },
         );
     }
 
-    /// Review of #134, F001: a native chain `copilot` host -> `node` launcher
-    /// -> pane shell is accepted as before and launches exactly one `ps`.
+    /// Ruling C27 as amended: a native chain `copilot` host -> `node`
+    /// launcher -> pane shell is accepted as before and launches exactly two
+    /// single-pid `ps`, one per host-named ancestor.
     #[test]
-    fn native_chain_with_a_node_launcher_launches_one_ps() {
-        alone("native_chain_with_a_node_launcher_launches_one_ps", || {
-            let chain = |pid: u32| match pid {
-                4242 => Some(NativeProcess {
-                    parent: OTHER_HOST.pid,
-                    executable: "copilot".into(),
-                    executable_replaced: false,
-                    argv: vec!["copilot".into(), "--model".into(), "gpt-5".into()],
-                }),
-                777 => Some(NativeProcess {
-                    parent: SHELL.pid,
-                    executable: "node".into(),
-                    executable_replaced: false,
-                    argv: vec!["node".into(), "/opt/tools/launcher.js".into()],
-                }),
-                41 => Some(NativeProcess {
-                    parent: 0,
-                    executable: "zsh".into(),
-                    executable_replaced: false,
-                    argv: vec!["-zsh".into()],
-                }),
-                _ => None,
-            };
-            let batches = ArgvBatches::default();
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async {
-                    let (service, _) = native_service(Vec::new(), native_liveness()).await;
-                    let ancestry = std::sync::Mutex::new(super::BatchedAncestry::new(
-                        move |pid| kernel_of(chain(pid)),
-                        fixture_batch(Arc::clone(&batches), chain),
-                    ));
-                    let before = registration_ps();
-                    let (seat, _) = service
-                        .register_native_with_observer(
-                            native_claim("pij-native"),
-                            Some(SESSION.into()),
-                            &native_tmux(),
-                            |pid| ready(ancestry.lock().unwrap().observe(pid)),
-                        )
-                        .await
-                        .expect("the same Copilot host is accepted");
-                    assert_eq!(seat.proc, Some(HOST));
-                    assert_eq!(registration_ps() - before, 1, "one ps per registration");
-                });
-            assert_eq!(
-                *batches.lock().unwrap(),
-                vec![vec![HOST.pid, OTHER_HOST.pid]]
-            );
-        });
+    fn native_copilot_chain_launches_one_ps_per_host_named_ancestor() {
+        alone(
+            "native_copilot_chain_launches_one_ps_per_host_named_ancestor",
+            || {
+                let chain = |pid: u32| match pid {
+                    4242 => Some(NativeProcess {
+                        parent: OTHER_HOST.pid,
+                        executable: "copilot".into(),
+                        executable_replaced: false,
+                        argv: vec!["copilot".into(), "--model".into(), "gpt-5".into()],
+                    }),
+                    777 => Some(NativeProcess {
+                        parent: SHELL.pid,
+                        executable: "node".into(),
+                        executable_replaced: false,
+                        argv: vec!["node".into(), "/opt/tools/launcher.js".into()],
+                    }),
+                    41 => Some(NativeProcess {
+                        parent: 0,
+                        executable: "zsh".into(),
+                        executable_replaced: false,
+                        argv: vec!["-zsh".into()],
+                    }),
+                    _ => None,
+                };
+                let reads = ArgvReads::default();
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        let (service, _) = native_service(Vec::new(), native_liveness()).await;
+                        let ancestry = std::sync::Mutex::new(super::AncestryReads::new(
+                            move |pid| kernel_of(chain(pid)),
+                            fixture_argv(Arc::clone(&reads), chain),
+                        ));
+                        let before = registration_ps();
+                        let (seat, _) = service
+                            .register_native_with_observer(
+                                native_claim("pij-native"),
+                                Some(SESSION.into()),
+                                &native_tmux(),
+                                |pid| ready(ancestry.lock().unwrap().observe(pid)),
+                            )
+                            .await
+                            .expect("the same Copilot host is accepted");
+                        assert_eq!(seat.proc, Some(HOST));
+                        assert_eq!(
+                            registration_ps() - before,
+                            2,
+                            "one ps per host-named ancestor"
+                        );
+                    });
+                assert_eq!(*reads.lock().unwrap(), vec![HOST.pid, OTHER_HOST.pid]);
+            },
+        );
     }
 
     /// Every host a matcher accepts has a name in HOST_NAMES, or its argv
@@ -5013,9 +4971,11 @@ mod tests {
                 );
             }
         }
-        let mut ancestry = super::BatchedAncestry::new(
+        let mut ancestry = super::AncestryReads::new(
             |pid| (pid == 7).then(|| (1, "zsh".to_string())),
-            |_: &[u32]| panic!("no argv read for a shell"),
+            |_: u32| -> std::result::Result<Option<Vec<String>>, RegistrationError> {
+                panic!("no argv read for a shell")
+            },
         );
         let shell = ancestry.observe(7).unwrap().unwrap();
         assert_eq!((shell.parent, shell.executable.as_str()), (1, "zsh"));
@@ -5023,43 +4983,35 @@ mod tests {
         assert!(ancestry.observe(8).unwrap().is_none());
     }
 
-    /// One batched `ps` line per process still found; a gone pid is absent.
+    /// One `ps` row, for the pid asked for.
     #[test]
-    fn a_batched_ps_reply_maps_back_to_each_pid() {
-        let read = super::parse_argv_batch(
-            b"  777 node /opt/tools/launcher.js\n 4242 copilot --model gpt-5\n",
-            &[777, 4242, 9],
-        )
-        .unwrap();
-        assert_eq!(read.len(), 2);
-        assert_eq!(read[&777], ["node", "/opt/tools/launcher.js"]);
-        assert_eq!(read[&4242], ["copilot", "--model", "gpt-5"]);
-        assert!(super::parse_argv_batch(b"", &[777]).unwrap().is_empty());
-        assert!(super::parse_argv_batch(b"x a b\n", &[777]).is_err());
-        assert!(super::parse_argv_batch(b"777\n", &[777]).is_err());
+    fn a_ps_row_maps_back_to_its_pid() {
+        assert_eq!(
+            super::parse_argv_row(b" 4242 copilot --model gpt-5\n", 4242).unwrap(),
+            ["copilot", "--model", "gpt-5"]
+        );
+        assert!(super::parse_argv_row(b"x a b\n", 4242).is_err());
+        assert!(super::parse_argv_row(b"4242\n", 4242).is_err());
+        assert!(super::parse_argv_row(b"", 4242).is_err());
     }
 
     /// Security review of #134, S001: a row can never stand in for another
-    /// process. A duplicate pid, an unrequested pid, or a name-borne newline
-    /// that forges a second row for a real ancestor refuses the whole batch.
+    /// process. A row for another pid, a second row, or a name-borne newline
+    /// that forges a second row refuses, never replaces.
     #[test]
-    fn a_forged_or_duplicate_batch_row_refuses_the_whole_batch() {
-        let requested = [777, 4242];
+    fn a_forged_or_duplicate_ps_row_refuses() {
         for (case, output) in [
             (
                 "duplicate pid",
                 &b" 777 node /opt/tools/launcher.js\n 777 node claude/cli.js --session-id x\n"[..],
             ),
-            (
-                "unrequested pid",
-                &b" 777 node /opt/tools/launcher.js\n 31337 claude --session-id x\n"[..],
-            ),
+            ("another pid", &b" 31337 claude --session-id x\n"[..]),
             (
                 "injected newline row",
-                &b" 777 node /opt/tools/launcher.js\n 4242 nod\n777 node @anthropic-ai/claude-code/cli.js --session-id x\n"[..],
+                &b" 777 nod\n777 node @anthropic-ai/claude-code/cli.js --session-id x\n"[..],
             ),
         ] {
-            let refused = super::parse_argv_batch(output, &requested);
+            let refused = super::parse_argv_row(output, 777);
             assert!(
                 matches!(refused, Err(RegistrationError::Refused(_))),
                 "{case}: {refused:?}"
@@ -5073,75 +5025,81 @@ mod tests {
     #[test]
     fn an_exec_during_the_argv_read_refuses() {
         let execed = std::cell::Cell::new(false);
-        let mut ancestry = super::BatchedAncestry::new(
+        let mut ancestry = super::AncestryReads::new(
             |pid| {
                 (pid == 7).then(|| {
                     let name = if execed.get() { "claude" } else { "node" };
                     (1, name.to_string())
                 })
             },
-            |pids: &[u32]| {
+            |_: u32| {
                 execed.set(true);
-                Ok(pids
-                    .iter()
-                    .map(|pid| (*pid, vec!["claude".to_string()]))
-                    .collect())
+                Ok(Some(vec!["claude".to_string()]))
             },
         );
         assert!(ancestry.observe(7).is_err());
     }
 
     /// Plan 207 (#128): this test's real ancestry, read the production way,
-    /// matches `ps` for every ancestor and launches at most one `ps` in all.
+    /// matches `ps` for every ancestor and launches one `ps` per host-named
+    /// ancestor, none on a second read.
     #[cfg(target_os = "macos")]
     #[test]
-    fn a_real_ancestry_matches_ps_with_at_most_one_launch() {
-        alone("a_real_ancestry_matches_ps_with_at_most_one_launch", || {
-            let mut ancestry = super::BatchedAncestry::new(
-                pij_harnesses::proc::parent_and_name,
-                super::read_argv_batch_with_ps,
-            );
-            let mut pid = std::process::id();
-            let mut hosts = 0;
-            let mut seen = 0;
-            let before = registration_ps();
-            while pid > 1 && seen < 32 {
-                let process = ancestry.observe(pid).unwrap().expect("a live ancestor");
-                let out = Command::new("/bin/ps")
-                    .args([
-                        "-ww",
-                        "-p",
-                        &pid.to_string(),
-                        "-o",
-                        "ppid=",
-                        "-o",
-                        "ucomm=",
-                        "-o",
-                        "args=",
-                    ])
-                    .env("LC_ALL", "C")
-                    .output()
-                    .unwrap();
-                let old = parse_native_process(&out.stdout).unwrap();
-                assert_eq!(process.parent, old.parent, "pid {pid}");
-                if HOST_NAMES.contains(&old.executable.as_str()) {
-                    hosts += 1;
-                    assert_eq!(process.argv, old.argv, "pid {pid}");
-                    assert_eq!(process.executable, old.executable, "pid {pid}");
-                } else {
-                    let name: String = old.executable.chars().take(15).collect();
-                    assert_eq!(process.executable, name, "pid {pid}");
+    fn a_real_ancestry_matches_ps_with_one_launch_per_host() {
+        alone(
+            "a_real_ancestry_matches_ps_with_one_launch_per_host",
+            || {
+                let mut ancestry = super::AncestryReads::new(
+                    pij_harnesses::proc::parent_and_name,
+                    super::read_argv_with_ps,
+                );
+                let mut pid = std::process::id();
+                let mut hosts = 0;
+                let mut seen = 0;
+                let before = registration_ps();
+                while pid > 1 && seen < 32 {
+                    let process = ancestry.observe(pid).unwrap().expect("a live ancestor");
+                    let out = Command::new("/bin/ps")
+                        .args([
+                            "-ww",
+                            "-p",
+                            &pid.to_string(),
+                            "-o",
+                            "ppid=",
+                            "-o",
+                            "ucomm=",
+                            "-o",
+                            "args=",
+                        ])
+                        .env("LC_ALL", "C")
+                        .output()
+                        .unwrap();
+                    let old = parse_native_process(&out.stdout).unwrap();
+                    assert_eq!(process.parent, old.parent, "pid {pid}");
+                    if HOST_NAMES.contains(&old.executable.as_str()) {
+                        hosts += 1;
+                        assert_eq!(process.argv, old.argv, "pid {pid}");
+                        assert_eq!(process.executable, old.executable, "pid {pid}");
+                    } else {
+                        let name: String = old.executable.chars().take(15).collect();
+                        assert_eq!(process.executable, name, "pid {pid}");
+                    }
+                    pid = process.parent;
+                    seen += 1;
                 }
-                pid = process.parent;
-                seen += 1;
-            }
-            assert!(seen >= 2, "walked only {seen} ancestors");
-            assert_eq!(
-                registration_ps() - before,
-                u64::from(hosts > 0),
-                "at most one ps"
-            );
-        });
+                assert!(seen >= 2, "walked only {seen} ancestors");
+                assert_eq!(
+                    registration_ps() - before,
+                    hosts,
+                    "one ps per host-named ancestor"
+                );
+                let mut pid = std::process::id();
+                while pid > 1 {
+                    pid = ancestry.observe(pid).unwrap().map_or(1, |p| p.parent);
+                }
+                assert_eq!(registration_ps() - before, hosts, "a second read is cached");
+            },
+        );
     }
 
     #[test]

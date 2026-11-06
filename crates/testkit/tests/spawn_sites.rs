@@ -331,18 +331,19 @@ fn retired_launches_stay_retired() {
     );
 }
 
-/// Plan 207 (#128, ruling C27; review of #134 F001, N001): registration's
-/// `ps` runs at most once per registration. A TRIPWIRE over
-/// `crates/daemon/src/registration.rs`: the launch lives in
-/// `read_argv_batch_with_ps` alone; only `native_observer` names it, and only
-/// to build the registration's `BatchedAncestry`, whose `observe` gates argv on
-/// `HOST_NAMES`. The behaviour is counted by
-/// `registration::tests::*_launches_one_ps` with the real spawn counter.
+/// Plan 207 (#128, ruling C27 as amended; review of #134 N001): registration
+/// launches at most one single-pid `ps` per host-named ancestor. A TRIPWIRE
+/// over `crates/daemon/src/registration.rs`: the launch lives in
+/// `read_argv_with_ps` alone; only `native_observer` names it, and only to
+/// build the registration's `AncestryReads`, whose `observe` gates argv on
+/// `HOST_NAMES` and caches each read. The behaviour is counted by
+/// `registration::tests::*_launches_one_ps_per_host_named_ancestor` with the
+/// real spawn counter.
 fn registration_gate_findings(lines: &[String]) -> Vec<String> {
     let mut function = String::new();
     let mut records = Vec::new();
     let mut mentions = Vec::new();
-    let mut builds_batched = false;
+    let mut builds_reads = false;
     let mut observe_gated = false;
     for line in lines {
         if let Some(name) = fn_name(line) {
@@ -355,61 +356,61 @@ fn registration_gate_findings(lines: &[String]) -> Vec<String> {
         if line.contains("\"ps.registration-native-process\"") {
             records.push(function.clone());
         }
-        if line.contains("read_argv_batch_with_ps") && fn_name(line).is_none() {
+        if line.contains("read_argv_with_ps") && fn_name(line).is_none() {
             mentions.push(function.clone());
         }
-        if function == "native_observer" && line.contains("BatchedAncestry::new(") {
-            builds_batched = true;
+        if function == "native_observer" && line.contains("AncestryReads::new(") {
+            builds_reads = true;
         }
         if function == "observe" && line.contains("HOST_NAMES.contains(") {
             observe_gated = true;
         }
     }
     let mut findings = Vec::new();
-    if records != ["read_argv_batch_with_ps"] {
+    if records != ["read_argv_with_ps"] {
         findings.push(format!(
-            "the registration ps is recorded in {records:?}, not only read_argv_batch_with_ps"
+            "the registration ps is recorded in {records:?}, not only read_argv_with_ps"
         ));
     }
     if mentions != ["native_observer"] {
         findings.push(format!(
-            "read_argv_batch_with_ps is named in {mentions:?}, not only native_observer"
+            "read_argv_with_ps is named in {mentions:?}, not only native_observer"
         ));
     }
-    if !builds_batched {
-        findings.push("native_observer does not delegate through BatchedAncestry::new".to_string());
+    if !builds_reads {
+        findings.push("native_observer does not delegate through AncestryReads::new".to_string());
     }
     if !observe_gated {
         findings.push(
-            "BatchedAncestry::observe no longer checks HOST_NAMES before reading argv".to_string(),
+            "AncestryReads::observe no longer checks HOST_NAMES before reading argv".to_string(),
         );
     }
     findings
 }
 
 #[test]
-fn registration_ps_runs_once_behind_the_host_name_gate() {
+fn registration_ps_runs_only_behind_the_host_name_gate() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lines = production_lines(&root.join("crates/daemon/src/registration.rs"));
     let findings = registration_gate_findings(&lines);
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 
     // Negative controls (review of #134, N001): the guard must reject an
-    // observer that reads argv per pid, with the batching helper still present.
+    // observer that reads argv for every pid, with the gated reader still present.
     let start = lines
         .iter()
         .position(|line| line.contains("fn native_observer("))
         .expect("native_observer");
     let mut direct = lines.clone();
     for line in &mut direct[start..] {
-        if line.contains("BatchedAncestry::new(") {
-            *line = "        let ancestry = read_argv_batch_with_ps(&[pid]);".to_string();
+        if line.contains("AncestryReads::new(") {
+            *line = "        let ancestry = read_argv_with_ps(pid);".to_string();
             break;
         }
     }
     assert!(
         !registration_gate_findings(&direct).is_empty(),
-        "a native_observer that bypasses BatchedAncestry must be caught"
+        "a native_observer that bypasses AncestryReads must be caught"
     );
     let end = lines[start + 1..]
         .iter()
@@ -417,7 +418,7 @@ fn registration_ps_runs_once_behind_the_host_name_gate() {
         .map_or(lines.len(), |offset| start + 1 + offset);
     let mut replaced = lines[..=start].to_vec();
     replaced.push(
-        "    move |pid| -> ObserveFuture { Box::pin(async move { read_argv_batch_with_ps(&[pid]).map(|mut read| read.remove(&pid)) }) }"
+        "    move |pid| -> ObserveFuture { Box::pin(async move { read_argv_with_ps(pid) }) }"
             .to_string(),
     );
     replaced.push("}".to_string());

@@ -49,7 +49,7 @@
           "title": "#128: registration ancestry in-process on macOS, 32-ancestor cap kept",
           "phase": "ph-00cf",
           "state": "checked",
-          "success": "read_native_process on macOS reads parent and kernel name in-process for every ancestor and reads every host-named ancestor's argv in one batched /bin/ps (ruling C27, review of #134 F001), at most 1 per registration; native and paneless registration give the same results.",
+          "success": "read_native_process on macOS reads parent and kernel name in-process for every ancestor and reads each host-named ancestor's argv with one single-pid /bin/ps, cached for the registration, at most one per host-named ancestor (ruling C27 as amended after the review of #134); native and paneless registration give the same results.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -106,7 +106,7 @@
         "tk-0003": [
           {
             "id": "dw-0003",
-            "assertion": "The existing registration tests pass unchanged; a test walks this test process's real ancestry the production way and matches ps for each ancestor, launching ps only for host-named ones; a registration test counts one argv read per registration (C27).",
+            "assertion": "The existing registration tests pass unchanged; a test walks this test process's real ancestry the production way and matches ps for each ancestor, launching ps only for host-named ones; registration tests count one argv read per host-named ancestor (C27 as amended).",
             "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }

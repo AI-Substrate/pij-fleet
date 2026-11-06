@@ -55,3 +55,28 @@ The two launches present from the first reading (`ps.sidecar-process-group`, `tm
   - `an_exec_during_the_argv_read_refuses`.
   - `a_batched_ps_reply_maps_back_to_each_pid` also covers an argv-less row.
 - **Local proof:** niced on the fleet-194 target (`nice -n 19 taskpolicy -b`). Clippy `-D warnings` on pij-daemon with all targets on macOS: clean. It caught `parse_native_process` becoming test-only, which Linux CI can't see. `pij-daemon --lib registration` 116 passed and `pij-testkit --test spawn_sites` 6 passed. The two real-`ps` tests (`a_real_ancestry_matches_ps_with_at_most_one_launch` and `http::native_tests::native_registration_preserves_claimed_host_and_reports_atomic_binding_transitions`) time out at production's 1 s observation limit under background QoS. At load 15, `/bin/ps` on 2 pids took 2.9 to 5.9 s under `taskpolicy -b` against 0.6 s with `nice` alone, and the old four-column call took 2.8 s too. So this is a test-timing issue under QoS, not this change. Their run without background QoS waits on a one-off exception.
+
+## Batched ps cost regression and C27 as amended
+
+- **Found by the nice-only real-`ps` run:** both real-`ps` tests still timed out at the 1 s limit, and the cause was the batch, not QoS. Measured un-niced at 2371 processes and load 15:
+  - `/bin/ps -p <one pid>`: 0.00 s.
+  - `/bin/ps -p a,b` (any 2+ pids, any columns, comma list or repeated `-p`): 0.62 to 0.66 s, of which 0.61 s is kernel sys CPU.
+  - Two single-pid calls: 0.01 s.
+  - `ps -A -ww -o pid= -o args=`: 0.08 s and 395 KB.
+  - A Copilot seat has 2 host-named ancestors (its `node` wrapper and `copilot`), so the batch cost every Copilot registration about 0.6 s and, under load, a retryable refusal.
+- **Ruling C27 as amended (prime, option A):** at most one `/bin/ps -p <pid>` per host-named ancestor, never batched, never a census. Each call reads args only, is bound to its pid and fails closed (S001). One pid per call removes the cross-pid row risk at the root.
+- **Change:**
+  - `AncestryReads` replaces `BatchedAncestry`. Each host-named ancestor's argv comes from `read_argv_with_ps(pid)`, cached for the registration, so an ancestor is read at most once.
+  - `parse_argv_row` accepts exactly one row, for the requested pid, with argv; anything else refuses.
+  - The post-read in-process re-check stays.
+- **Tests:**
+  - `native_copilot_chain_launches_one_ps_per_host_named_ancestor` records exactly 2 on the real counter, and `paneless_chain_launches_one_ps_per_host_named_ancestor` records 2.
+  - `paneless_registration_reads_argv_only_for_the_host_named_ancestor` reads only the host.
+  - `every_host_name_a_matcher_accepts_reads_argv` reads none for a shell.
+  - `a_forged_or_duplicate_ps_row_refuses` covers a duplicate row, another pid, and an injected newline row.
+  - `a_ps_row_maps_back_to_its_pid`.
+  - On macOS, `a_real_ancestry_matches_ps_with_one_launch_per_host` checks that launches equal the host-named ancestors and that a second walk launches none.
+  - The spawn_sites tripwire `registration_ps_runs_only_behind_the_host_name_gate` keeps both negative controls.
+- **Local proof (fleet-194 target, merged with main f23c34e):**
+  - Under `nice -n 19 taskpolicy -b`: clippy `-D warnings` on pij-daemon and pij-testkit with all targets on macOS was clean; `pij-daemon --lib registration` 118 passed, including both real-`ps` tests, which now pass even under background QoS; `pij-testkit --test spawn_sites` 6 passed.
+  - The prime's one-off nice-only run of the two real-`ps` tests from the built binary (`a_real_ancestry_matches_ps_with_one_launch_per_host` and `http::native_tests::native_registration_preserves_claimed_host_and_reports_atomic_binding_transitions`): 2 passed in 0.19 s at load 20.7.
