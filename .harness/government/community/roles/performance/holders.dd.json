@@ -21,6 +21,15 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-frugal-wombat",
 					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-06T08:06:58.218Z",
+					"harness": "copilot",
+					"harness_session": "fcc65013-77f1-4b8f-8bce-8c6a57b45201",
+					"machine": "ops.osk.lan",
+					"seat": "pij-thrifty-marten",
+					"why": "second performance holder for parallel verdicts (prime 18:06)"
 				}
 			]
 		}

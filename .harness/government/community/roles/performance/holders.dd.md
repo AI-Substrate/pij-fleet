@@ -19,3 +19,4 @@
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | — | pij-frugal-wombat | copilot | 053e5557-43a7-485f-ba0c-48215970fb4b | ops.osk.lan | — | 2026-11-05T23:09:44.728Z | — | pij-steady-otter | — | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | — |
+| — | pij-thrifty-marten | copilot | fcc65013-77f1-4b8f-8bce-8c6a57b45201 | ops.osk.lan | — | 2026-11-06T08:06:58.218Z | — | pij-steady-otter | — | second performance holder for parallel verdicts (prime 18:06) | — |
