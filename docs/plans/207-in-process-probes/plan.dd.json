@@ -45,7 +45,7 @@
         },
         {
           "id": "ac-0002",
-          "claim": "#128, ancestry in-process (ruling C27). `crates/daemon/src/registration.rs` reads each ancestor's parent and kernel name in-process (macOS proc_pidinfo short BSD info; Linux /proc as before) and launches `/bin/ps` for argv only when the name is a harness host's (copilot, claude, codex, node), so a registration launches at most 1 ps instead of one per ancestor. The 32-ancestor cap and the results for native and paneless registration are unchanged. `unsafe_code = \"forbid\"` stays absolute (C27).",
+          "claim": "#128, ancestry in-process (ruling C27). `crates/daemon/src/registration.rs` reads each ancestor's parent and kernel name in-process (macOS proc_pidinfo short BSD info; Linux /proc as before). When the walk first meets a harness host's name (copilot, claude, codex, node), every host-named ancestor's argv comes from one batched `/bin/ps -p <pids>`, so a registration launches at most 1 ps however many host-named ancestors it has. The 32-ancestor cap and the results for native and paneless registration are unchanged. `unsafe_code = \"forbid\"` stays absolute (C27).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002",
           "receipt": "docs/plans/207-in-process-probes/assets/evidence/phase-1.md"

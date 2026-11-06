@@ -32,3 +32,13 @@ The two launches present from the first reading (`ps.sidecar-process-group`, `tm
 - Local, before the fleet backoff: fmt check, `cargo metadata --locked`, and clippy `-D warnings` on pij-harnesses, pij-testkit and pij-daemon with all targets passed. Targeted tests passed: `pij-harnesses --lib proc::` 24, `path_search` 3, `pij-daemon --test first_light` 8, `pij-daemon --lib registration::` 89, `pij-testkit --test spawn_sites` 6, `store_wedge` 4. A wider run reached 34 binaries with 974 passed and 0 failed before the backoff hold stopped it.
 - Under the prime's backoff (one build fleet-wide), the full scoped suite runs in CI on the PR head.
 - `ddocs-check`, `local-path-check`, `lockfile-allowlist` and `pij-commit-trailers`, run with the main checkout's `tsx`: pass.
+
+## Review round 1 (pij-pleased-marmot, block at d85c0f3)
+
+- **F001 (P2):** the first cut read argv once per host-named ancestor, not once per registration. A `copilot` host under a `node` launcher, or a paneless chain with two `node` processes, launched two. Now one registration-scoped `BatchedAncestry` reads parents and names in-process. The first time an ancestor is host-named, it walks the chain above it in-process (to the 32-process cap) and reads every host-named pid's argv in one `/bin/ps -ww -p a,b,… -o pid= -o ppid= -o ucomm= -o args=`. Later observations answer from that read. A pid `ps` no longer finds reads as disappeared, as before. The matchers and identity checks are untouched.
+- **Tests:**
+  - `registration::tests::paneless_chain_with_two_host_named_ancestors_launches_one_ps` (`pij` → `node` helper → `node` Claude host) and `native_chain_with_a_node_launcher_launches_one_ps` (`copilot` → `node` launcher → pane `zsh`). Both accept the same host as before, and each records exactly 1 on the real spawn counter, run alone in a child process. The batch asked for is `[helper, host]` and `[host, launcher]`.
+  - `a_batched_ps_reply_maps_back_to_each_pid` covers the parser.
+  - On macOS, `a_real_ancestry_matches_ps_with_at_most_one_launch` checks this test's real ancestry: at most 1 launch, and each ancestor matches `ps`.
+- **N001 (P3):** the tripwire is now `registration_gate_findings` over the source lines, with two negative controls run in CI. Replacing `native_observer`'s `BatchedAncestry::new(` with a direct `read_argv_batch_with_ps` call must be caught, and so must the reviewer's direct-return body. Both are.
+- **Local proof (one build through the fleet-190 lock):** clippy `-D warnings` on pij-daemon and pij-testkit with all targets (macOS, where the batched path compiles), `pij-daemon --lib registration::` 92 passed, and `pij-testkit --test spawn_sites` 6 passed. CI on the head is the Linux proof.

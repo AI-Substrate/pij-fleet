@@ -49,7 +49,7 @@
           "title": "#128: registration ancestry in-process on macOS, 32-ancestor cap kept",
           "phase": "ph-00cf",
           "state": "checked",
-          "success": "read_native_process on macOS reads parent and kernel name in-process for every ancestor and launches /bin/ps for argv only for a host-named ancestor (ruling C27), at most 1 per registration; native and paneless registration give the same results.",
+          "success": "read_native_process on macOS reads parent and kernel name in-process for every ancestor and reads every host-named ancestor's argv in one batched /bin/ps (ruling C27, review of #134 F001), at most 1 per registration; native and paneless registration give the same results.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
