@@ -191,7 +191,7 @@
 					"statement": "Memory is never capped or pruned. Each note is its own small ddoc under `community/roles/<id>/memory/` (date, title, tags, one-line hook, body), and pij generates `memory/INDEX.md` with one line per note, so a seat reads the index and opens only the notes it needs. Notes are written one at a time. Before pij compacts or closes a seat that holds a role, it first asks the seat to add what it learned, and runs the compact or close after that turn.",
 					"actor": "pa",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A compact of a role holder shows the memory turn first, then the compact; the new note appears with an INDEX.md line; a seat holding no role is compacted directly.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},

@@ -1,0 +1,226 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Role memory and the memory turn",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Memory store: note document, slug, INDEX regeneration that keeps hand-written lines, list and read",
+          "phase": "ph-00c9",
+          "state": "checked",
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "notes": "crates/daemon/src/community/memory.rs, pure (no git, no launch). Tests target it.",
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "pij directory memory verbs: add (writer, one commit), view INDEX, --note; help text; CLI wiring",
+          "phase": "ph-00c9",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "notes": "http/directory.rs, core/directory.rs help, cli main.rs. add builds files inside write_with so two adds serialise on the worktree lock.",
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "The memory turn before compact and close of a role holder",
+          "phase": "ph-00c9",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "notes": "send_control (compact) and lifecycle close. Waits on seat.activity idle after the prompt's delivery.outcome, bounded. Design pending pm-001 confirmation (self vs other caller).",
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Cost receipts: spawn sites and private-daemon spawn deltas per verb",
+          "phase": "ph-00c9",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "note": "Open only for the live after-deploy reading."
+        },
+        {
+          "id": "tk-0005",
+          "title": "Docs and states: pij-rs-api.md, skill verb coverage, roadmap s07, req-09, c-memory-hook",
+          "phase": "ph-00c9",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "A unit test regenerates an INDEX holding hand-written lines (links, bare names, dot rows) and keeps every one, drops the empty placeholder, and adds exactly one line per pij note",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0002",
+            "assertion": "A built note validates as pij/memory and its file name is <yyyy-mm-dd>-<slug>.dd.json; a title that slugs to nothing or escapes the folder is refused",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0003",
+            "assertion": "In a scratch governance repo, memory add commits the note, its .dd.md and INDEX.md in one commit; two concurrent adds land as two commits and both INDEX lines survive",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0004",
+            "assertion": "memory <role> prints the INDEX and --note <slug> prints one note; there is no delete verb and an unknown memory verb is refused by name",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0005",
+            "assertion": "With a fake bus, compact of a role holder delivers the memory prompt first and admits the compact only after the seat's next idle; a non-holder is compacted with no prompt",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          },
+          {
+            "id": "dw-0006",
+            "assertion": "When the bound passes with no turn end, the compact or close proceeds and its receipt says so (ended: bound)",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          },
+          {
+            "id": "dw-0007",
+            "assertion": "Close of a role holder runs the memory turn before the tombstone; close of a non-holder is unchanged",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0008",
+            "assertion": "spawn_sites.rs passes with any new launch site recorded; private-daemon spawn deltas per verb and live at-rest readings before and after are in the evidence",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004",
+            "note": "Private-daemon deltas and the live before reading are in assets/evidence/phase-1.md; spawn_sites.rs passes. The live after reading belongs to the deploy."
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0009",
+            "assertion": "just ddocs-check and ddocs validate on docs/project pass; pij-rs-api.md and the skill verb tables name the memory verbs and refusals; roadmap s07 complete, req-09 and c-memory-hook shipped",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ]
+      }
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}

@@ -125,7 +125,7 @@
 					"where": "crates/daemon control",
 					"responsibility": "Before a compact or close of a role holder, delivers the memory prompt and holds the control until that turn ends.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-09"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-routes",
