@@ -1950,11 +1950,11 @@ async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
 }
 
 /// Plan 205 (migration 0035): the watchdog round reads only delivered,
-/// limited requests not yet escalated or answered, and each limit stamp is
-/// recorded once.
+/// limited requests not yet escalated or answered, and each limit stage is
+/// claimed and stamped once.
 #[tokio::test]
 async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
-    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    use pij_store::{LimitStage, ReplyMode, RequestState, RoleRequest};
     let fresh = FreshStore::new();
     let pool = pij_store::open(&fresh.path()).await.expect("open");
     let store = pij_store::SqliteOrchestration::new(pool);
@@ -1996,13 +1996,19 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
     );
     assert!(
         store
-            .mark_role_request_escalated("escalated", 31)
+            .claim_role_request_limit("escalated", LimitStage::Notice, 31)
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .finish_role_request_limit("escalated", LimitStage::Notice, 31, 31)
             .await
             .unwrap()
     );
     assert!(
         !store
-            .mark_role_request_escalated("escalated", 32)
+            .claim_role_request_limit("escalated", LimitStage::Notice, 32)
             .await
             .unwrap(),
         "once"
@@ -2015,13 +2021,19 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
 
     assert!(
         store
-            .mark_role_request_checked_in("early", 40)
+            .claim_role_request_limit("early", LimitStage::CheckIn, 40)
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .finish_role_request_limit("early", LimitStage::CheckIn, 40, 40)
             .await
             .unwrap()
     );
     assert!(
         !store
-            .mark_role_request_checked_in("early", 41)
+            .claim_role_request_limit("early", LimitStage::CheckIn, 41)
             .await
             .unwrap(),
         "one check-in"
@@ -2036,6 +2048,126 @@ async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
         ["early", "late"],
         "a checked-in request stays open until escalated or answered"
     );
+}
+
+/// Review of #133 (F001, F002): a limit claim is the one atomic step that
+/// decides a notification. It refuses a request answered after the round's
+/// read, at either stage; it blocks a second attempt while live; a failed
+/// attempt drops it so the next round retries; and one a stopped daemon left
+/// behind is taken again only once its lease runs out.
+#[tokio::test]
+async fn limit_claims_refuse_an_answer_retry_a_failure_and_expire_a_stale_claim() {
+    use pij_store::{LIMIT_CLAIM_LEASE_MS, LimitStage, ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    for id in ["answered", "checked-answered", "retried"] {
+        store
+            .record_role_request(&RoleRequest {
+                id: id.into(),
+                project: "pij".into(),
+                role: "coder".into(),
+                instance: String::new(),
+                requester: "pij-asker".into(),
+                body: "go".into(),
+                in_reply_to: None,
+                fyi: false,
+                reply: ReplyMode::Wake,
+                limit_ms: Some(60_000),
+                state: RequestState::Delivered,
+                holder: Some("pij-coder".into()),
+                created_at: 1,
+                delivered_at: Some(10),
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .expect("record");
+    }
+    let claim = |id: &'static str, stage, at| {
+        let store = store.clone();
+        async move { store.claim_role_request_limit(id, stage, at).await.unwrap() }
+    };
+
+    // The round read both as open; an answer lands before the claim.
+    assert_eq!(store.open_limited_role_requests().await.unwrap().len(), 3);
+    assert!(claim("checked-answered", LimitStage::CheckIn, 100).await);
+    assert!(
+        store
+            .finish_role_request_limit("checked-answered", LimitStage::CheckIn, 100, 100)
+            .await
+            .unwrap()
+    );
+    for id in ["answered", "checked-answered"] {
+        assert!(store.mark_role_request_answered(id, 150).await.unwrap());
+    }
+    assert!(
+        !claim("answered", LimitStage::CheckIn, 200).await,
+        "check-in"
+    );
+    assert!(!claim("answered", LimitStage::Notice, 200).await, "notice");
+    assert!(!claim("checked-answered", LimitStage::Notice, 200).await);
+
+    // A live claim blocks a second attempt; a failed one is dropped and retried.
+    assert!(claim("retried", LimitStage::CheckIn, 300).await);
+    assert!(
+        !claim("retried", LimitStage::CheckIn, 301).await,
+        "live claim"
+    );
+    assert!(
+        !claim("retried", LimitStage::Notice, 301).await,
+        "one at a time"
+    );
+    assert!(
+        store
+            .release_role_request_limit("retried", 300)
+            .await
+            .unwrap()
+    );
+    assert!(claim("retried", LimitStage::CheckIn, 302).await, "retry");
+    assert!(
+        store
+            .finish_role_request_limit("retried", LimitStage::CheckIn, 302, 302)
+            .await
+            .unwrap()
+    );
+    assert!(!claim("retried", LimitStage::CheckIn, 303).await, "stamped");
+
+    // A stopped daemon's claim holds until its lease runs out.
+    assert!(claim("retried", LimitStage::Notice, 400).await);
+    assert!(
+        !claim(
+            "retried",
+            LimitStage::Notice,
+            400 + LIMIT_CLAIM_LEASE_MS - 1
+        )
+        .await
+    );
+    let retaken = 400 + LIMIT_CLAIM_LEASE_MS;
+    assert!(
+        claim("retried", LimitStage::Notice, retaken).await,
+        "expired"
+    );
+    assert!(
+        !store
+            .finish_role_request_limit("retried", LimitStage::Notice, 400, 401)
+            .await
+            .unwrap(),
+        "the stale attempt no longer owns it"
+    );
+    assert!(
+        store
+            .finish_role_request_limit("retried", LimitStage::Notice, retaken, retaken)
+            .await
+            .unwrap()
+    );
+    let row = store.role_request("retried").await.unwrap().expect("row");
+    assert_eq!(
+        (row.checkin_at, row.escalated_at),
+        (Some(302), Some(retaken))
+    );
+    assert!(store.open_limited_role_requests().await.unwrap().is_empty());
 }
 
 /// Review of #129: a daemon that stopped between a claim and its outcome

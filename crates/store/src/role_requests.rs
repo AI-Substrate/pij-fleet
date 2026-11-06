@@ -66,6 +66,20 @@ impl RequestState {
     }
 }
 
+/// Which time-limit notification a claim is for (plan 205, s12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LimitStage {
+    /// The holder's one check-in; stamps `checkin_at`.
+    CheckIn,
+    /// The PA's (else the prime's) one notice; stamps `escalated_at`.
+    Notice,
+}
+
+/// How long a time-limit claim blocks another attempt. Admission takes
+/// seconds and a failed one drops its claim at once, so only a daemon that
+/// stopped mid-attempt leaves one this old; the next round then retries.
+pub const LIMIT_CLAIM_LEASE_MS: u64 = 2 * 60_000;
+
 /// One request sent to a role.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleRequest {
@@ -284,14 +298,96 @@ impl SqliteOrchestration {
         .collect()
     }
 
-    /// Record the holder's check-in at `at`; `false` when one was recorded.
-    pub async fn mark_role_request_checked_in(&self, id: &str, at: u64) -> Result<bool> {
-        self.stamp_once(id, "checkin_at", at).await
+    /// Claim request `id` for one time-limit notification at `now`, before
+    /// it is sent (review of #133, F001 and F002). In one statement the
+    /// request must still be delivered, unanswered, not yet told at `stage`
+    /// and not escalated, and hold no live claim; so an answer that lands
+    /// after the round's read wins, and two rounds never send at once. A
+    /// claim older than [`LIMIT_CLAIM_LEASE_MS`] was left by a stopped daemon
+    /// and may be taken again. `false` when the request is not claimable.
+    pub async fn claim_role_request_limit(
+        &self,
+        id: &str,
+        stage: LimitStage,
+        now: u64,
+    ) -> Result<bool> {
+        let stage_open = match stage {
+            LimitStage::CheckIn => "checkin_at IS NULL AND ",
+            LimitStage::Notice => "",
+        };
+        let stale_before = now.saturating_sub(LIMIT_CLAIM_LEASE_MS);
+        self.limit_write(
+            format!(
+                "UPDATE role_requests SET limit_claim_at = ?2 WHERE id = ?1 \
+                 AND state = 'delivered' AND answered_at IS NULL AND {stage_open}escalated_at IS NULL \
+                 AND (limit_claim_at IS NULL OR limit_claim_at <= ?3)"
+            ),
+            id,
+            &[now, stale_before],
+        )
+        .await
     }
 
-    /// Record the PA notice at `at`; `false` when one was recorded.
-    pub async fn mark_role_request_escalated(&self, id: &str, at: u64) -> Result<bool> {
-        self.stamp_once(id, "escalated_at", at).await
+    /// The claimed notification was admitted: stamp `stage` at `at` and
+    /// clear the claim taken at `claimed_at`. `false` when that claim is gone.
+    pub async fn finish_role_request_limit(
+        &self,
+        id: &str,
+        stage: LimitStage,
+        claimed_at: u64,
+        at: u64,
+    ) -> Result<bool> {
+        let column = match stage {
+            LimitStage::CheckIn => "checkin_at",
+            LimitStage::Notice => "escalated_at",
+        };
+        self.limit_write(
+            format!(
+                "UPDATE role_requests SET {column} = ?2, limit_claim_at = NULL \
+                 WHERE id = ?1 AND limit_claim_at = ?3"
+            ),
+            id,
+            &[at, claimed_at],
+        )
+        .await
+    }
+
+    /// The claimed notification was not admitted: drop the claim taken at
+    /// `claimed_at`, so the next round tries again. `false` when it is gone.
+    pub async fn release_role_request_limit(&self, id: &str, claimed_at: u64) -> Result<bool> {
+        self.limit_write(
+            "UPDATE role_requests SET limit_claim_at = NULL WHERE id = ?1 AND limit_claim_at = ?2"
+                .to_string(),
+            id,
+            &[claimed_at],
+        )
+        .await
+    }
+
+    async fn limit_write(&self, sql: String, id: &str, times: &[u64]) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let times = times
+            .iter()
+            .map(|at| sql_i64(*at, "limit stamp"))
+            .collect::<Result<Vec<_>>>()?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let mut query = sqlx::query(&sql).bind(&id);
+            for at in times {
+                query = query.bind(at);
+            }
+            let changed = query
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
     }
 
     /// Record that an output answered request `id` at `at` (s06: lane B's
