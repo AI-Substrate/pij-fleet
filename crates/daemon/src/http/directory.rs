@@ -26,7 +26,7 @@ use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{Refusal, pointer};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 26] = [
+const SINGLE: [&str; 27] = [
     "why",
     "from",
     "from-project",
@@ -53,6 +53,7 @@ const SINGLE: [&str; 26] = [
     "body",
     "body-file",
     "note",
+    "slug",
 ];
 const REPEATED: [&str; 7] = [
     "scope-path",
@@ -64,7 +65,8 @@ const REPEATED: [&str; 7] = [
     "tags",
 ];
 /// Flags a `memory` call may carry (plan 201).
-const MEMORY: [&str; 8] = [
+const MEMORY: [&str; 9] = [
+    "slug",
     "title",
     "tags",
     "hook",
@@ -262,7 +264,7 @@ impl Arguments {
                 format!("directory memory: unsupported --{flag}"),
             ));
         }
-        let writes = ["title", "tags", "hook", "body", "body-file"];
+        let writes = ["title", "tags", "hook", "body", "body-file", "slug"];
         match self.positions.as_slice() {
             [verb, _] if verb == "add" => {
                 if self.get("note").is_some() {
@@ -775,6 +777,7 @@ async fn memory(
             .collect(),
         hook: call.get("hook").unwrap_or_default(),
         body,
+        slug: call.get("slug"),
     };
     // Refuse a bad note before taking the writer lock.
     memory::note(&role::today(), &fields)?;

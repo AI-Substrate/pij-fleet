@@ -161,13 +161,13 @@ const MEMORY: &str = "\
 pij directory memory: a role's memory, one note per file (pij/memory).
 
 Usage:
-  pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>
-  pij directory memory add <role> --title <t> --hook <h> --body-file <path|->
+  pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] [--slug <s>] --body <text>
+  pij directory memory add <role> --title <t> --hook <h> [--slug <s>] --body-file <path|->
   pij directory memory <role>                     print memory/INDEX.md
   pij directory memory <role> --note <slug>       print one note
 
 add writes roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json, the slug taken
-from --title, and regenerates memory/INDEX.md with one line per note, keeping
+from --title (at most 40 characters, cut on a word) unless --slug gives it, and regenerates memory/INDEX.md with one line per note, keeping
 every line pij did not write. One commit per note. --tags repeats or takes a
 comma list. --body-file - reads stdin. Notes are never capped, pruned or
 deleted; there is no delete verb.

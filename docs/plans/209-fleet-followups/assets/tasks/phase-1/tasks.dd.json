@@ -139,6 +139,18 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
           "done": "tasks.dd.json#done_when/tk-0010"
+        },
+        {
+          "id": "tk-0011",
+          "title": "s07 dogfood: local note dates, the add line, --slug",
+          "phase": "ph-00d1",
+          "state": "unchecked",
+          "success": "F31 and F34 land now; F32 follows #138 and reuses its clock.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0010"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0011"
         }
       ]
     },
@@ -224,6 +236,14 @@
             "assertion": "The tests named in bp-0009 pass in CI; difficulties.md marks each item resolved or moved.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0009"
+          }
+        ],
+        "tk-0011": [
+          {
+            "id": "dw-0011",
+            "assertion": "The tests in bp-0010 pass in CI.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0010"
           }
         ]
       }

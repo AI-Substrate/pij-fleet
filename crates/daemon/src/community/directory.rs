@@ -437,7 +437,7 @@ impl DirectoryService {
         actor: &SeatId,
     ) -> Result<(Written, String), Refusal> {
         let date = role::today();
-        let note = super::memory::note_path(role_id, &date, &fields.title)?;
+        let note = super::memory::note_path(role_id, &date, &fields)?;
         let pending = self.pending(project).await?;
         let message = format!(
             "community: memory {role_id}: {}\n\n{}\n\nPij-Seat: {actor}\nPij-Project: {project}",

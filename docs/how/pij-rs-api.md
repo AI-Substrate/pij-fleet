@@ -1057,7 +1057,8 @@ writer commit as any add. No loop or timer.
 <text>` writes one note, a `pij/memory` document (`meta.date`, `title`, `tags`,
 `hook`; `body`), to `community/roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json`,
 the slug taken from the title (lowercase ASCII letters and digits, other runs
-as one hyphen, at most 40, cut back to a word boundary). `--tags` repeats or takes a comma list.
+as one hyphen, at most 40, cut back to a word boundary), or given with `--slug`
+(lowercase letters and digits joined by single hyphens, at most 40). `--tags` repeats or takes a comma list.
 `--body-file <path>` reads the body from a file; the CLI (`pij` hands `directory`
 to `pij-rs`, plan 213) reads the file, or stdin for `-`, and sends it as `--body`,
 while a raw HTTP caller's path is read by the daemon relative to `caller.cwd`. The same commit regenerates

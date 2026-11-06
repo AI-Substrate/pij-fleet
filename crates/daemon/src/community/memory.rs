@@ -42,6 +42,9 @@ pub struct NoteFields {
     pub hook: String,
     /// The note itself.
     pub body: String,
+    /// `--slug`: the file name's slug, instead of one derived from the title
+    /// (plan 209, F34).
+    pub slug: Option<String>,
 }
 
 /// The file-name slug for `title`: lowercase ASCII letters and digits, with
@@ -76,12 +79,43 @@ pub fn slug(title: &str) -> Result<String, Refusal> {
     Ok(out)
 }
 
+/// The note's slug: `--slug` as given, checked, or one derived from the title.
+///
+/// # Errors
+/// `E-RS-ARG` for a `--slug` that is not lowercase ASCII letters and digits
+/// joined by single hyphens, or longer than [`SLUG_MAX`]; or a title with no
+/// slug.
+pub fn note_slug(fields: &NoteFields) -> Result<String, Refusal> {
+    let Some(given) = fields.slug.as_deref() else {
+        return slug(&fields.title);
+    };
+    let plain = !given.is_empty()
+        && given.len() <= SLUG_MAX
+        && !given.starts_with('-')
+        && !given.ends_with('-')
+        && !given.contains("--")
+        && given
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-');
+    if plain {
+        Ok(given.to_string())
+    } else {
+        Err(Refusal::new(
+            "E-RS-ARG",
+            format!(
+                "--slug {given:?} must be lowercase letters and digits joined by single hyphens, \
+                 at most {SLUG_MAX} characters"
+            ),
+        ))
+    }
+}
+
 /// The note's path, worktree-relative: `roles/<id>/memory/<date>-<slug>.dd.json`.
 ///
 /// # Errors
-/// A bad role id or a title with no slug.
-pub fn note_path(role: &str, date: &str, title: &str) -> Result<PathBuf, Refusal> {
-    Ok(memory_dir(&RolePaths::new(role)?).join(format!("{date}-{}{NOTE}", slug(title)?)))
+/// A bad role id, a bad `--slug`, or a title with no slug.
+pub fn note_path(role: &str, date: &str, fields: &NoteFields) -> Result<PathBuf, Refusal> {
+    Ok(memory_dir(&RolePaths::new(role)?).join(format!("{date}-{}{NOTE}", note_slug(fields)?)))
 }
 
 /// The pij/memory document for `fields`, dated `date`.
@@ -143,7 +177,7 @@ pub fn files(
     let paths = RolePaths::new(role_id)?;
     require_role(worktree, role_id, &paths, true)?;
     let document = note(date, fields)?;
-    let path = note_path(role_id, date, &fields.title)?;
+    let path = note_path(role_id, date, fields)?;
     let exists = Refusal::new(
         E_NOTE_EXISTS,
         format!(
@@ -453,6 +487,7 @@ mod tests {
             tags: vec!["cost".to_string(), "spine".to_string()],
             hook: "why to open it".to_string(),
             body: "what I learned\n".to_string(),
+            slug: None,
         }
     }
 
@@ -492,9 +527,39 @@ mod tests {
             assert_eq!(slug(title).unwrap_err().code, "E-RS-ARG", "{title:?}");
         }
         assert_eq!(
-            note_path("qa", "2026-11-06", "../../etc").unwrap(),
+            note_path("qa", "2026-11-06", &fields("../../etc")).unwrap(),
             PathBuf::from(".harness/government/community/roles/qa/memory/2026-11-06-etc.dd.json")
         );
+    }
+
+    /// F34: `--slug` names the file instead of the title, and is checked.
+    #[test]
+    fn a_given_slug_names_the_file_and_must_be_plain() {
+        let mut given = fields("A long title the slug replaces");
+        given.slug = Some("shim-stdin".to_string());
+        assert_eq!(
+            note_path("qa", "2026-11-06", &given).unwrap(),
+            PathBuf::from(
+                ".harness/government/community/roles/qa/memory/2026-11-06-shim-stdin.dd.json"
+            )
+        );
+        for bad in [
+            "",
+            "Shim",
+            "-x",
+            "x-",
+            "a--b",
+            "a/b",
+            "../x",
+            &"a".repeat(41),
+        ] {
+            given.slug = Some(bad.to_string());
+            assert_eq!(
+                note_path("qa", "2026-11-06", &given).unwrap_err().code,
+                "E-RS-ARG",
+                "{bad:?}"
+            );
+        }
     }
 
     #[test]

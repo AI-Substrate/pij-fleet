@@ -104,6 +104,16 @@
           "proof": "BUILD: shim_forward a_memory_add_with_its_body_on_stdin_reaches_pij_rs (F30: through pij, a memory add with --body-file - reaches pij-rs with its body on stdin, which pij-rs sends as --body); unit tests for the memory add line, the slug cap, the add help, the role refusal flags and the Delivers line; the shared-build test covers HUP; CI runs pij-skill-check.",
           "state": "unchecked",
           "probe": "crates/"
+        },
+        {
+          "id": "bp-0010",
+          "criterion": "AC10",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: memory tests: a given slug names the file and a bad one refuses; a long title is cut on a word; the CLI unit test for the memory add line; F32 a note stamped at 23:30 UTC on a +10:00 machine is filed under the next local day (injected clock).",
+          "state": "unchecked",
+          "probe": "crates/"
         }
       ]
     },
