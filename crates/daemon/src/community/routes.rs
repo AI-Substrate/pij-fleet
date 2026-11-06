@@ -58,7 +58,10 @@ impl Overlap {
     pub fn warning(&self) -> String {
         format!(
             "{W_OVERLAP}: {} (role:{}) overlaps {} (role:{})",
-            self.path, self.role, self.other_path, self.other_role
+            cell(&self.path),
+            self.role,
+            cell(&self.other_path),
+            self.other_role
         )
     }
 }
@@ -351,11 +354,17 @@ fn code(path: &str) -> String {
     format!("`{}`", cell(&path.replace('`', "'")))
 }
 
-/// A Markdown table cell: one line, pipes escaped.
+/// A Markdown table cell: one line, pipes escaped, control characters (ESC,
+/// bidi controls and the rest) dropped (security note on #130).
 fn cell(text: &str) -> String {
     text.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+        .chars()
+        .filter(|ch| {
+            !ch.is_control() && !matches!(ch, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        })
+        .collect::<String>()
         .replace('|', "\\|")
 }
 
@@ -444,6 +453,16 @@ mod tests {
             "W-ROUTES-OVERLAP: crates/x/** (role:a) overlaps crates/x/y.rs (role:b)"
         );
         assert!(markdown(&table).contains("## Overlaps\n\n- `crates/x/**` (role:a) overlaps"));
+        let raw = Overlap {
+            role: "a".into(),
+            path: "x/\n**".into(),
+            other_role: "b".into(),
+            other_path: "x/\u{1b}y".into(),
+        };
+        assert_eq!(
+            raw.warning(),
+            "W-ROUTES-OVERLAP: x/ ** (role:a) overlaps x/y (role:b)"
+        );
         // One role claiming two overlapping paths is no conflict.
         assert!(
             build(&roles(&[("a", role(&["x/**", "x/y"], &[]))]))
@@ -454,9 +473,12 @@ mod tests {
 
     #[test]
     fn cells_stay_one_line_with_pipes_escaped() {
-        let table = build(&roles(&[("pm", role(&[], &["a | b\nnext  line"]))]));
+        let table = build(&roles(&[(
+            "pm",
+            role(&[], &["a | b\nnext  line\u{1b}[31m\u{202e}"]),
+        )]));
         assert!(
-            markdown(&table).contains("| a \\| b next line | role:pm |\n"),
+            markdown(&table).contains("| a \\| b next line[31m | role:pm |\n"),
             "{}",
             markdown(&table)
         );
