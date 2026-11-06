@@ -79,7 +79,10 @@
 					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
 					"instance_key": "207",
 					"machine": "ops.osk.lan",
+					"release_why": "plan 207 PR #134 out for verdicts",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-following-marsupial",
+					"to": "2026-11-06T01:25:14.544Z",
 					"why": "plan 207, issues #127 and #128"
 				},
 				{
