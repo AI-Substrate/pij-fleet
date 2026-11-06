@@ -49,6 +49,8 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | tk-0012 | directory add papercuts (F35-F38) | — | ph-00d1 | [ ] unchecked | — | — | [tk-0012](tasks.dd.md#done-when) | Each of F35, F36, F37 and F38 has its fix and one test. | — | [ac-0011](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0013 | F65: check the Delivers line before the merge | — | ph-00d1 | [ ] unchecked | — | — | [tk-0013](tasks.dd.md#done-when) | See ac-0012. | — | [ac-0012](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0014 | F67: lineage add --batch | — | ph-00d1 | [ ] unchecked | — | — | [tk-0014](tasks.dd.md#done-when) | See ac-0013. | — | [ac-0013](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0015 | F41: delivered prints its edits | — | ph-00d1 | [ ] unchecked | — | — | [tk-0015](tasks.dd.md#done-when) | See ac-0014. | — | [ac-0014](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0016 | F40: the foreign-edit refusal names who commits | — | ph-00d1 | [ ] unchecked | — | — | [tk-0016](tasks.dd.md#done-when) | See ac-0015. | — | [ac-0015](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -137,6 +139,18 @@ Nine tasks, one coder. F27 first (CI trust), then F28 and F26; AC4 to AC6 wait f
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0014 | a_lineage_batch_is_one_commit_all_or_nothing passes in CI. | [ ] unchecked | [bp-0013](../../backpressure.dd.md#rows) |
+
+### tk-0015
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0015 | The bp-0014 test passes in CI. | [ ] unchecked | [bp-0014](../../backpressure.dd.md#rows) |
+
+### tk-0016
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0016 | The bp-0015 assertion passes in CI. | [ ] unchecked | [bp-0015](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 

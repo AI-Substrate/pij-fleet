@@ -3608,6 +3608,32 @@ mod tests {
         );
     }
 
+    /// Plan 209, F41: `pij delivered` in human mode prints each edit's command.
+    #[test]
+    fn delivered_prints_the_edits_for_the_docs_pr() {
+        let data = serde_json::json!({
+            "line": "PR #131 delivered 2 addresses; told pij-steady-otter",
+            "edits": [
+                {"address": "a", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-20/delivered_by' '#131'"},
+                {"address": "b", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-21/delivered_by' '#131'"},
+            ],
+            "notes": [],
+        });
+        let text = super::render_claims("delivered", &data);
+        assert!(
+            text.contains("ddocs edits for the PM's next docs PR"),
+            "{text}"
+        );
+        assert!(
+            text.contains("requirements/req-20/delivered_by' '#131'"),
+            "{text}"
+        );
+        assert!(
+            text.contains("requirements/req-21/delivered_by' '#131'"),
+            "{text}"
+        );
+    }
+
     /// Plan 209, F31: a memory add says what it wrote, not its envelope.
     #[test]
     fn a_memory_add_prints_one_line() {

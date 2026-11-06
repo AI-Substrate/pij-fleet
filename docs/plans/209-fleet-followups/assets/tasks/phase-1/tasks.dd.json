@@ -187,6 +187,30 @@
             "../../../plan.dd.json#acceptance_criteria/ac-0013"
           ],
           "done": "tasks.dd.json#done_when/tk-0014"
+        },
+        {
+          "id": "tk-0015",
+          "title": "F41: delivered prints its edits",
+          "phase": "ph-00d1",
+          "state": "unchecked",
+          "success": "See ac-0014.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0014"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0015"
+        },
+        {
+          "id": "tk-0016",
+          "title": "F40: the foreign-edit refusal names who commits",
+          "phase": "ph-00d1",
+          "state": "unchecked",
+          "success": "See ac-0015.",
+          "notes": "",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0015"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0016"
         }
       ]
     },
@@ -304,6 +328,22 @@
             "assertion": "a_lineage_batch_is_one_commit_all_or_nothing passes in CI.",
             "state": "unchecked",
             "pressure": "../../backpressure.dd.json#rows/bp-0013"
+          }
+        ],
+        "tk-0015": [
+          {
+            "id": "dw-0015",
+            "assertion": "The bp-0014 test passes in CI.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0014"
+          }
+        ],
+        "tk-0016": [
+          {
+            "id": "dw-0016",
+            "assertion": "The bp-0015 assertion passes in CI.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0015"
           }
         ]
       }

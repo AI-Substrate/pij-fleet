@@ -144,6 +144,26 @@
           "proof": "BUILD: directory_http a_lineage_batch_is_one_commit_all_or_nothing: three past holdings in one commit across two roles; an in-batch overlap plus a missing role, and a reversed span, write nothing and name the lines.",
           "state": "unchecked",
           "probe": "crates/daemon"
+        },
+        {
+          "id": "bp-0014",
+          "criterion": "AC14",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: pij-cli unit test delivered_prints_the_edits_for_the_docs_pr renders two edits as their commands.",
+          "state": "unchecked",
+          "probe": "crates/cli"
+        },
+        {
+          "id": "bp-0015",
+          "criterion": "AC15",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: writer_tests: a hand-edited memory INDEX refuses with the path named and a next step naming the prime.",
+          "state": "unchecked",
+          "probe": "crates/daemon"
         }
       ]
     },

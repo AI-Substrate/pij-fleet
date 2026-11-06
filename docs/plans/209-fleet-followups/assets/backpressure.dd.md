@@ -33,6 +33,8 @@
 | bp-0011 | AC11 | ph-00d1 | BUILD | computational | BUILD: one test each: pij-core add_help_names_the_required_flags (F35) and add_help_says_each_add_is_its_own_commit (F38); pij-daemon community::ddocs a_role_refusal_names_the_flag_for_each_gap_not_a_hand_edit (F36) and a_role_refusal_lists_every_gap_at_once (F37), through the refusal text. | [ ] unchecked | — | — | crates/ |
 | bp-0012 | AC12 | ph-00d1 | BUILD | computational | BUILD: pij-testkit tests/delivers_check.rs runs the bin: addresses and none pass; #138's and #132's lines, a body with no line, and the template placeholder fail. The delivers workflow runs on this PR. | [ ] unchecked | — | — | crates/testkit |
 | bp-0013 | AC13 | ph-00d1 | BUILD | computational | BUILD: directory_http a_lineage_batch_is_one_commit_all_or_nothing: three past holdings in one commit across two roles; an in-batch overlap plus a missing role, and a reversed span, write nothing and name the lines. | [ ] unchecked | — | — | crates/daemon |
+| bp-0014 | AC14 | ph-00d1 | BUILD | computational | BUILD: pij-cli unit test delivered_prints_the_edits_for_the_docs_pr renders two edits as their commands. | [ ] unchecked | — | — | crates/cli |
+| bp-0015 | AC15 | ph-00d1 | BUILD | computational | BUILD: writer_tests: a hand-edited memory INDEX refuses with the path named and a next step naming the prime. | [ ] unchecked | — | — | crates/daemon |
 
 <a id="sensors"></a>
 
