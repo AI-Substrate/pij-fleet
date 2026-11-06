@@ -148,7 +148,7 @@ impl RegistrationService {
             )
         {
             return self
-                .register_paneless_with_observer(claim, harness_session, observe_native_process)
+                .register_paneless_with_observer(claim, harness_session, native_observer())
                 .await;
         }
         self.register_inner(claim, harness_session, RegistrationMode::Ordinary)
@@ -285,7 +285,7 @@ impl RegistrationService {
         harness_session: Option<String>,
         tmux: &dyn TmuxPort,
     ) -> std::result::Result<(SeatDescriptor, PutBinding), RegistrationError> {
-        self.register_native_with_observer(claim, harness_session, tmux, observe_native_process)
+        self.register_native_with_observer(claim, harness_session, tmux, native_observer())
             .await
     }
 
@@ -1540,6 +1540,42 @@ impl NativeProcess {
     }
 }
 
+/// What one ancestor observation resolves to.
+type ObserveFuture = std::pin::Pin<
+    Box<dyn Future<Output = std::result::Result<Option<NativeProcess>, RegistrationError>> + Send>,
+>;
+
+/// One registration's ancestor observer. macOS: an [`AncestryReads`], so a
+/// registration launches at most one `ps` per host-named ancestor (ruling C27
+/// as amended). Linux: `/proc`, which launches nothing.
+fn native_observer() -> impl FnMut(u32) -> ObserveFuture {
+    #[cfg(not(target_os = "linux"))]
+    {
+        let ancestry = Arc::new(std::sync::Mutex::new(AncestryReads::new(
+            pij_harnesses::proc::parent_and_name,
+            read_argv_with_ps,
+        )));
+        move |pid| -> ObserveFuture {
+            let ancestry = Arc::clone(&ancestry);
+            Box::pin(async move {
+                tokio::task::spawn_blocking(move || {
+                    ancestry
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .observe(pid)
+                })
+                .await
+                .map_err(|error| native_refusal(format!("process observer failed: {error}")))?
+            })
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        |pid| -> ObserveFuture { Box::pin(observe_native_process(pid)) }
+    }
+}
+
+#[cfg(target_os = "linux")]
 async fn observe_native_process(
     pid: u32,
 ) -> std::result::Result<Option<NativeProcess>, RegistrationError> {
@@ -1637,6 +1673,7 @@ const PROCESS_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Production's limit; unit tests that run a real `ps` stretch it by the one
 /// test-only scale (plan 209, F28), which production never reads.
+#[cfg(any(not(target_os = "linux"), test))]
 fn process_observation_timeout() -> Duration {
     #[cfg(test)]
     {
@@ -1648,48 +1685,159 @@ fn process_observation_timeout() -> Duration {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn read_native_process(pid: u32) -> std::result::Result<Option<NativeProcess>, RegistrationError> {
-    use std::process::Command;
+/// The kernel names of the processes a harness matcher can accept
+/// ([`NativeProcess::is_external_host`], [`NativeProcess::is_copilot_host`]).
+/// Only an ancestor with one of these names needs its argv (ruling C27).
+#[cfg(any(not(target_os = "linux"), test))]
+const HOST_NAMES: [&str; 4] = ["copilot", "claude", "codex", "node"];
 
-    // One requested PID, never a machine-wide process census. The child, output,
-    // and wall time are bounded independently of the async caller's lifetime.
-    // Darwin truncates `comm` paths when followed by another output column.
-    // Read the kernel accounting name instead: the supported host basenames
-    // fit, and is_copilot_host still independently checks argv/entrypoint.
-    pij_core::spawns::record("ps.registration-native-process");
-    let mut command = Command::new("/bin/ps");
-    command
-        .args([
-            "-ww",
-            "-p",
-            &pid.to_string(),
-            "-o",
-            "ppid=",
-            "-o",
-            "ucomm=",
-            "-o",
-            "args=",
-        ])
-        .env("LC_ALL", "C");
-    read_native_process_using(pid, &mut command)
+/// One registration's ancestry reads (plan 207, #128, ruling C27 as amended
+/// after the review of #134). Parents and kernel names are read in-process for
+/// every ancestor. Only an ancestor whose name is a harness host's has its
+/// argv read, by one single-pid `argv` call, cached for the registration, so
+/// an ancestor is read at most once and a registration launches no more `ps`
+/// than it has host-named ancestors. Never batched: on macOS `ps -p a,b` costs
+/// about 0.6 s of kernel CPU where one pid costs nothing. The read supplies
+/// argv only; every name and parent is the in-process read (S001).
+#[cfg(any(not(target_os = "linux"), test))]
+struct AncestryReads<K, A> {
+    kernel: K,
+    argv: A,
+    read: std::collections::HashMap<u32, Option<Vec<String>>>,
 }
 
 #[cfg(any(not(target_os = "linux"), test))]
+impl<K, A> AncestryReads<K, A>
+where
+    K: Fn(u32) -> Option<(u32, String)>,
+    A: FnMut(u32) -> std::result::Result<Option<Vec<String>>, RegistrationError>,
+{
+    fn new(kernel: K, argv: A) -> Self {
+        Self {
+            kernel,
+            argv,
+            read: std::collections::HashMap::new(),
+        }
+    }
+
+    fn observe(
+        &mut self,
+        pid: u32,
+    ) -> std::result::Result<Option<NativeProcess>, RegistrationError> {
+        let Some((parent, name)) = (self.kernel)(pid) else {
+            // No such process (or none the kernel will describe): as `ps` exiting
+            // non-zero did, the ancestor disappeared.
+            return Ok(None);
+        };
+        if !HOST_NAMES.contains(&name.as_str()) {
+            // No matcher accepts this name, so its argv is never read: the name
+            // stands in for argv[0], which keeps a non-empty argv and the same
+            // refusal text.
+            return Ok(Some(NativeProcess {
+                parent,
+                executable: name.clone(),
+                executable_replaced: false,
+                argv: vec![name],
+            }));
+        }
+        if !self.read.contains_key(&pid) {
+            let argv = (self.argv)(pid)?;
+            // The name and parent were read before `ps`; an exec or reparent
+            // in between would pair this argv with another image's name.
+            if argv.is_some() && (self.kernel)(pid).as_ref() != Some(&(parent, name.clone())) {
+                return Err(native_refusal(format!(
+                    "process {pid} changed while its argv was read"
+                )));
+            }
+            self.read.insert(pid, argv);
+        }
+        Ok(self.read[&pid].clone().map(|argv| NativeProcess {
+            parent,
+            executable: name,
+            executable_replaced: false,
+            argv,
+        }))
+    }
+}
+
+/// One `/bin/ps` for one host-named ancestor's argv: its exact pid, never a
+/// list or a census, with the child, output and wall time bounded.
+#[cfg(not(target_os = "linux"))]
+fn read_argv_with_ps(pid: u32) -> std::result::Result<Option<Vec<String>>, RegistrationError> {
+    use std::process::Command;
+
+    // Only `pid` and `args`: ps prints `ucomm` raw, so a newline in an image
+    // name could forge a row, while `args` is escaped (security review of
+    // #134, S001). Names and parents come from the in-process read.
+    pij_core::spawns::record("ps.registration-native-process");
+    let mut command = Command::new("/bin/ps");
+    command
+        .args(["-ww", "-p", &pid.to_string(), "-o", "pid=", "-o", "args="])
+        .env("LC_ALL", "C");
+    run_observation(&format!("pid {pid}"), &mut command, OBSERVATION_LIMIT)?
+        .map(|output| parse_argv_row(&output, pid))
+        .transpose()
+}
+
+/// Exactly one `pid args...` line, for `pid`. Fails closed: a row for another
+/// pid, a second row, or a row without a pid or argv refuses, so no row can
+/// stand in for another process (security review of #134, S001).
+#[cfg(any(not(target_os = "linux"), test))]
+fn parse_argv_row(output: &[u8], pid: u32) -> std::result::Result<Vec<String>, RegistrationError> {
+    let text = std::str::from_utf8(output)
+        .map_err(|_| native_refusal("process observation is not UTF-8"))?;
+    let mut rows = text.lines().filter(|line| !line.trim().is_empty());
+    let (Some(row), None) = (rows.next(), rows.next()) else {
+        return Err(native_refusal(
+            "process observation must describe exactly one process",
+        ));
+    };
+    let mut fields = row.split_whitespace();
+    if fields.next().and_then(|field| field.parse::<u32>().ok()) != Some(pid) {
+        return Err(native_refusal(format!(
+            "process observation does not describe pid {pid}"
+        )));
+    }
+    let argv: Vec<String> = fields.map(str::to_string).collect();
+    if argv.is_empty() {
+        return Err(native_refusal("process observation has no argv"));
+    }
+    Ok(argv)
+}
+
+/// The output budget for one observed process.
+#[cfg(any(not(target_os = "linux"), test))]
+const OBSERVATION_LIMIT: usize = 64 * 1024;
+
+/// One pid through [`run_observation`]; the bounded-runner tests use it.
+#[cfg(test)]
 fn read_native_process_using(
     pid: u32,
     command: &mut std::process::Command,
 ) -> std::result::Result<Option<NativeProcess>, RegistrationError> {
+    run_observation(&format!("pid {pid}"), command, OBSERVATION_LIMIT)?
+        .map(|output| parse_native_process(&output))
+        .transpose()
+}
+
+/// Run one bounded process observation: stdout up to `limit` bytes within
+/// [`PROCESS_OBSERVATION_TIMEOUT`]. `None` when the command exits non-zero.
+#[cfg(any(not(target_os = "linux"), test))]
+fn run_observation(
+    what: &str,
+    command: &mut std::process::Command,
+    limit: usize,
+) -> std::result::Result<Option<Vec<u8>>, RegistrationError> {
     use std::process::Stdio;
     use std::time::Instant;
 
-    const OUTPUT_LIMIT: u64 = 64 * 1024;
+    let limit = limit as u64;
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|error| native_refusal(format!("cannot observe host process {pid}: {error}")))?;
+        .map_err(|error| native_refusal(format!("cannot observe host {what}: {error}")))?;
     let stdout = child
         .stdout
         .take()
@@ -1697,7 +1845,7 @@ fn read_native_process_using(
     let reader = std::thread::spawn(move || {
         let mut output = Vec::new();
         stdout
-            .take(OUTPUT_LIMIT + 1)
+            .take(limit + 1)
             .read_to_end(&mut output)
             .map(|_| output)
     });
@@ -1710,7 +1858,7 @@ fn read_native_process_using(
                 let _ = child.kill();
                 let _ = child.wait();
                 break Err(RegistrationError::Retryable(format!(
-                    "process observation for pid {pid} timed out after {}ms",
+                    "process observation for {what} timed out after {}ms",
                     process_observation_timeout().as_millis(),
                 )));
             }
@@ -1718,7 +1866,7 @@ fn read_native_process_using(
                 let _ = child.kill();
                 let _ = child.wait();
                 break Err(native_refusal(format!(
-                    "process observation for pid {pid} failed: {error}"
+                    "process observation for {what} failed: {error}"
                 )));
             }
         }
@@ -1728,16 +1876,16 @@ fn read_native_process_using(
         .map_err(|_| native_refusal("process output reader failed"))?
         .map_err(|error| native_refusal(format!("cannot read process observation: {error}")))?;
     let status = status?;
-    if output.len() as u64 > OUTPUT_LIMIT {
-        return Err(native_refusal("process observation exceeded 64 KiB"));
+    if output.len() as u64 > limit {
+        return Err(native_refusal(format!(
+            "process observation exceeded {} KiB",
+            limit / 1024
+        )));
     }
-    if !status.success() {
-        return Ok(None);
-    }
-    parse_native_process(&output).map(Some)
+    Ok(status.success().then_some(output))
 }
 
-#[cfg(any(not(target_os = "linux"), test))]
+#[cfg(test)]
 fn parse_native_process(output: &[u8]) -> std::result::Result<NativeProcess, RegistrationError> {
     let text = std::str::from_utf8(output)
         .map_err(|_| native_refusal("process observation is not UTF-8"))?;
@@ -1830,7 +1978,7 @@ mod tests {
     use crate::delivery::DeliveryService;
 
     use super::{
-        NativeProcess, RegistrationError, RegistrationService, parse_native_process,
+        HOST_NAMES, NativeProcess, RegistrationError, RegistrationService, parse_native_process,
         requested_model_matches,
     };
     use crate::events::EventBus;
@@ -4616,6 +4764,356 @@ mod tests {
                 assert_eq!(registry.get(&seat.id).await.unwrap(), Some(seat));
             }
         }
+    }
+
+    type ArgvReads = Arc<std::sync::Mutex<Vec<u32>>>;
+
+    /// A fixture argv reader: records the real spawn counter's operation, as
+    /// the production `ps` does, logs the pid asked for, and answers from
+    /// `fixture`.
+    fn fixture_argv(
+        reads: ArgvReads,
+        fixture: impl Fn(u32) -> Option<NativeProcess>,
+    ) -> impl FnMut(u32) -> std::result::Result<Option<Vec<String>>, RegistrationError> {
+        move |pid| {
+            pij_core::spawns::record("ps.registration-native-process");
+            reads.lock().unwrap().push(pid);
+            Ok(fixture(pid).map(|process| process.argv))
+        }
+    }
+
+    fn kernel_of(process: Option<NativeProcess>) -> Option<(u32, String)> {
+        process.map(|process| {
+            let name = std::path::Path::new(&process.executable)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            (process.parent, name)
+        })
+    }
+
+    /// Run `body` alone in a child test process, so the process-wide spawn
+    /// counter moves only for it, and return what it measured.
+    fn alone(test: &str, body: impl FnOnce()) {
+        const CHILD: &str = "PIJ_REGISTRATION_ALONE";
+        if std::env::var(CHILD).as_deref() == Ok(test) {
+            body();
+            return;
+        }
+        let output = Command::new(std::env::current_exe().expect("test binary"))
+            .args([&format!("registration::tests::{test}"), "--exact"])
+            .env(CHILD, test)
+            .output()
+            .expect("re-run alone");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn registration_ps() -> u64 {
+        pij_core::spawns::snapshot()
+            .by_op
+            .get("ps.registration-native-process")
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Plan 207 (#128, ruling C27): over the CLI, shell and host chain every
+    /// harness reads argv once, for the host, and the shell's never.
+    #[tokio::test]
+    async fn paneless_registration_reads_argv_only_for_the_host_named_ancestor() {
+        for harness in [Harness::Claude, Harness::Copilot, Harness::Codex] {
+            for node in [false, true] {
+                let (service, _registry) = native_service(Vec::new(), paneless_liveness()).await;
+                let reads = ArgvReads::default();
+                let ancestry = std::sync::Mutex::new(super::AncestryReads::new(
+                    move |pid| kernel_of(paneless_process(pid, harness, node)),
+                    fixture_argv(Arc::clone(&reads), move |pid| {
+                        paneless_process(pid, harness, node)
+                    }),
+                ));
+                let (seat, _) = service
+                    .register_paneless_with_observer(
+                        paneless_claim(harness),
+                        Some(SESSION.into()),
+                        |pid| ready(ancestry.lock().unwrap().observe(pid)),
+                    )
+                    .await
+                    .expect("verified external ancestor");
+                assert_eq!(seat.proc, Some(HOST), "{harness:?} node={node}");
+                assert_eq!(
+                    *reads.lock().unwrap(),
+                    vec![HOST.pid],
+                    "{harness:?} node={node}: one read, for the host only"
+                );
+            }
+        }
+    }
+
+    /// Ruling C27 as amended: a paneless chain with TWO host-named ancestors
+    /// (`pij` -> a `node` helper -> the `node` Claude host) is accepted as
+    /// before and launches one single-pid `ps` per host-named ancestor,
+    /// counted by the real counter.
+    #[test]
+    fn paneless_chain_launches_one_ps_per_host_named_ancestor() {
+        alone(
+            "paneless_chain_launches_one_ps_per_host_named_ancestor",
+            || {
+                let chain = |pid: u32| {
+                    if pid == PANELLESS_SHELL.pid {
+                        Some(NativeProcess {
+                            parent: HOST.pid,
+                            executable: "node".into(),
+                            executable_replaced: false,
+                            argv: vec!["node".into(), "/opt/tools/helper.js".into()],
+                        })
+                    } else {
+                        paneless_process(pid, Harness::Claude, true)
+                    }
+                };
+                let reads = ArgvReads::default();
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        let (service, _) = native_service(Vec::new(), paneless_liveness()).await;
+                        let ancestry = std::sync::Mutex::new(super::AncestryReads::new(
+                            move |pid| kernel_of(chain(pid)),
+                            fixture_argv(Arc::clone(&reads), chain),
+                        ));
+                        let before = registration_ps();
+                        let (seat, _) = service
+                            .register_paneless_with_observer(
+                                paneless_claim(Harness::Claude),
+                                Some(SESSION.into()),
+                                |pid| ready(ancestry.lock().unwrap().observe(pid)),
+                            )
+                            .await
+                            .expect("the same Claude host is accepted");
+                        assert_eq!(seat.proc, Some(HOST));
+                        assert_eq!(
+                            registration_ps() - before,
+                            2,
+                            "one ps per host-named ancestor"
+                        );
+                    });
+                assert_eq!(*reads.lock().unwrap(), vec![PANELLESS_SHELL.pid, HOST.pid]);
+            },
+        );
+    }
+
+    /// Ruling C27 as amended: a native chain `copilot` host -> `node`
+    /// launcher -> pane shell is accepted as before and launches exactly two
+    /// single-pid `ps`, one per host-named ancestor.
+    #[test]
+    fn native_copilot_chain_launches_one_ps_per_host_named_ancestor() {
+        alone(
+            "native_copilot_chain_launches_one_ps_per_host_named_ancestor",
+            || {
+                let chain = |pid: u32| match pid {
+                    4242 => Some(NativeProcess {
+                        parent: OTHER_HOST.pid,
+                        executable: "copilot".into(),
+                        executable_replaced: false,
+                        argv: vec!["copilot".into(), "--model".into(), "gpt-5".into()],
+                    }),
+                    777 => Some(NativeProcess {
+                        parent: SHELL.pid,
+                        executable: "node".into(),
+                        executable_replaced: false,
+                        argv: vec!["node".into(), "/opt/tools/launcher.js".into()],
+                    }),
+                    41 => Some(NativeProcess {
+                        parent: 0,
+                        executable: "zsh".into(),
+                        executable_replaced: false,
+                        argv: vec!["-zsh".into()],
+                    }),
+                    _ => None,
+                };
+                let reads = ArgvReads::default();
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        let (service, _) = native_service(Vec::new(), native_liveness()).await;
+                        let ancestry = std::sync::Mutex::new(super::AncestryReads::new(
+                            move |pid| kernel_of(chain(pid)),
+                            fixture_argv(Arc::clone(&reads), chain),
+                        ));
+                        let before = registration_ps();
+                        let (seat, _) = service
+                            .register_native_with_observer(
+                                native_claim("pij-native"),
+                                Some(SESSION.into()),
+                                &native_tmux(),
+                                |pid| ready(ancestry.lock().unwrap().observe(pid)),
+                            )
+                            .await
+                            .expect("the same Copilot host is accepted");
+                        assert_eq!(seat.proc, Some(HOST));
+                        assert_eq!(
+                            registration_ps() - before,
+                            2,
+                            "one ps per host-named ancestor"
+                        );
+                    });
+                assert_eq!(*reads.lock().unwrap(), vec![HOST.pid, OTHER_HOST.pid]);
+            },
+        );
+    }
+
+    /// Every host a matcher accepts has a name in HOST_NAMES, or its argv
+    /// would never be read and it could not be recognized. A shell is
+    /// answered in-process; a pid the kernel does not know disappeared.
+    #[test]
+    fn every_host_name_a_matcher_accepts_reads_argv() {
+        for harness in [Harness::Claude, Harness::Copilot, Harness::Codex] {
+            for node in [false, true] {
+                let host = paneless_process(HOST.pid, harness, node).unwrap();
+                assert!(host.is_external_host(harness));
+                let name = std::path::Path::new(&host.executable).file_name().unwrap();
+                assert!(
+                    HOST_NAMES.contains(&name.to_str().unwrap()),
+                    "{harness:?} node={node}: {name:?}"
+                );
+            }
+        }
+        let mut ancestry = super::AncestryReads::new(
+            |pid| (pid == 7).then(|| (1, "zsh".to_string())),
+            |_: u32| -> std::result::Result<Option<Vec<String>>, RegistrationError> {
+                panic!("no argv read for a shell")
+            },
+        );
+        let shell = ancestry.observe(7).unwrap().unwrap();
+        assert_eq!((shell.parent, shell.executable.as_str()), (1, "zsh"));
+        assert!(!shell.is_copilot_host());
+        assert!(ancestry.observe(8).unwrap().is_none());
+    }
+
+    /// One `ps` row, for the pid asked for.
+    #[test]
+    fn a_ps_row_maps_back_to_its_pid() {
+        assert_eq!(
+            super::parse_argv_row(b" 4242 copilot --model gpt-5\n", 4242).unwrap(),
+            ["copilot", "--model", "gpt-5"]
+        );
+        assert!(super::parse_argv_row(b"x a b\n", 4242).is_err());
+        assert!(super::parse_argv_row(b"4242\n", 4242).is_err());
+        assert!(super::parse_argv_row(b"", 4242).is_err());
+    }
+
+    /// Security review of #134, S001: a row can never stand in for another
+    /// process. A row for another pid, a second row, or a name-borne newline
+    /// that forges a second row refuses, never replaces.
+    #[test]
+    fn a_forged_or_duplicate_ps_row_refuses() {
+        for (case, output) in [
+            (
+                "duplicate pid",
+                &b" 777 node /opt/tools/launcher.js\n 777 node claude/cli.js --session-id x\n"[..],
+            ),
+            ("another pid", &b" 31337 claude --session-id x\n"[..]),
+            (
+                "injected newline row",
+                &b" 777 nod\n777 node @anthropic-ai/claude-code/cli.js --session-id x\n"[..],
+            ),
+        ] {
+            let refused = super::parse_argv_row(output, 777);
+            assert!(
+                matches!(refused, Err(RegistrationError::Refused(_))),
+                "{case}: {refused:?}"
+            );
+        }
+    }
+
+    /// The name read in-process before `ps` must still hold after it: an exec
+    /// in between refuses rather than pairing one image's name with another's
+    /// argv.
+    #[test]
+    fn an_exec_during_the_argv_read_refuses() {
+        let execed = std::cell::Cell::new(false);
+        let mut ancestry = super::AncestryReads::new(
+            |pid| {
+                (pid == 7).then(|| {
+                    let name = if execed.get() { "claude" } else { "node" };
+                    (1, name.to_string())
+                })
+            },
+            |_: u32| {
+                execed.set(true);
+                Ok(Some(vec!["claude".to_string()]))
+            },
+        );
+        assert!(ancestry.observe(7).is_err());
+    }
+
+    /// Plan 207 (#128): this test's real ancestry, read the production way,
+    /// matches `ps` for every ancestor and launches one `ps` per host-named
+    /// ancestor, none on a second read.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_real_ancestry_matches_ps_with_one_launch_per_host() {
+        alone(
+            "a_real_ancestry_matches_ps_with_one_launch_per_host",
+            || {
+                let mut ancestry = super::AncestryReads::new(
+                    pij_harnesses::proc::parent_and_name,
+                    super::read_argv_with_ps,
+                );
+                let mut pid = std::process::id();
+                let mut hosts = 0;
+                let mut seen = 0;
+                let before = registration_ps();
+                while pid > 1 && seen < 32 {
+                    let process = ancestry.observe(pid).unwrap().expect("a live ancestor");
+                    let out = Command::new("/bin/ps")
+                        .args([
+                            "-ww",
+                            "-p",
+                            &pid.to_string(),
+                            "-o",
+                            "ppid=",
+                            "-o",
+                            "ucomm=",
+                            "-o",
+                            "args=",
+                        ])
+                        .env("LC_ALL", "C")
+                        .output()
+                        .unwrap();
+                    let old = parse_native_process(&out.stdout).unwrap();
+                    assert_eq!(process.parent, old.parent, "pid {pid}");
+                    if HOST_NAMES.contains(&old.executable.as_str()) {
+                        hosts += 1;
+                        assert_eq!(process.argv, old.argv, "pid {pid}");
+                        assert_eq!(process.executable, old.executable, "pid {pid}");
+                    } else {
+                        let name: String = old.executable.chars().take(15).collect();
+                        assert_eq!(process.executable, name, "pid {pid}");
+                    }
+                    pid = process.parent;
+                    seen += 1;
+                }
+                assert!(seen >= 2, "walked only {seen} ancestors");
+                assert_eq!(
+                    registration_ps() - before,
+                    hosts,
+                    "one ps per host-named ancestor"
+                );
+                let mut pid = std::process::id();
+                while pid > 1 {
+                    pid = ancestry.observe(pid).unwrap().map_or(1, |p| p.parent);
+                }
+                assert_eq!(registration_ps() - before, hosts, "a second read is cached");
+            },
+        );
     }
 
     #[test]
