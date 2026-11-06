@@ -51,7 +51,7 @@
         },
         {
           "id": "ac-0003",
-          "claim": "F66: `pij directory lineage add` (single and --batch) prints a human summary through the shim, as assign and release do after #149: one line per recorded holding (role, instance, seat, from, to). --json keeps the raw receipt.",
+          "claim": "F66: `pij directory lineage add` (single and --batch) prints a human summary through the shim, as assign and release do after #149: one line per recorded holding (role, instance, seat, from, to). --json keeps the raw receipt. Also (N001 from #144): docs/how/pij-rs-api.md's lineage --batch paragraph says its diagnostics are phase-local, not that it names every bad line.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
