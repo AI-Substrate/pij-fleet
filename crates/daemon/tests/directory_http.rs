@@ -13,6 +13,7 @@ use pij_daemon::community::Refusal;
 use pij_daemon::community::ddocs::Validator;
 use pij_daemon::community::directory::{AfterAssign, DirectoryService, NoHook};
 use pij_daemon::community::layout::rendered;
+use pij_daemon::community::templates::Catalog;
 use pij_daemon::community::writer::{CommunityWriter, LOCK_RETRY};
 use pij_daemon::http::{HttpConfig, router_with_config};
 use pij_testkit::fakes::FakeTmux;
@@ -148,6 +149,10 @@ async fn rig(hook: Arc<dyn AfterAssign>) -> Rig {
 }
 
 async fn rig_with(hook: Arc<dyn AfterAssign>, writer: CommunityWriter) -> Rig {
+    rig_full(hook, writer, Catalog::shipped()).await
+}
+
+async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: Catalog) -> Rig {
     let fresh = FreshStore::new();
     let config = Config {
         adapters: Adapters {
@@ -168,13 +173,16 @@ async fn rig_with(hook: Arc<dyn AfterAssign>, writer: CommunityWriter) -> Rig {
     services.community = Arc::clone(&writer);
     let tmux = Arc::new(FakeTmux::new());
     services.tmux = tmux.clone();
-    services.directory = Arc::new(DirectoryService::new(
-        writer,
-        store.clone(),
-        Arc::clone(&services.event_bus),
-        hook,
-        tmux.clone(),
-    ));
+    services.directory = Arc::new(
+        DirectoryService::new(
+            writer,
+            store.clone(),
+            Arc::clone(&services.event_bus),
+            hook,
+            tmux.clone(),
+        )
+        .with_templates(catalog),
+    );
     for (id, pane, parent) in [
         (SEAT, Some(PANE), None),
         ("pij-holder", Some("%51"), Some(SEAT)),
@@ -1366,3 +1374,7 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
 /// flush pending close-ends, and a same-second reassign keeps both holdings.
 #[path = "pr122_review/mod.rs"]
 mod review;
+
+/// Plan 194 (s03): --from template and file, templates, drift and prompts.
+#[path = "templates_http/mod.rs"]
+mod templates;

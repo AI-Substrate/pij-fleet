@@ -6,11 +6,11 @@
 		{
 			"name": "meta",
 			"value": {
-				"title": "PRD 001: pij community",
+				"title": "PRD 001: Pij Emergent Communities (PEC)",
 				"status": "draft",
-				"updated": "2026-11-04",
+				"updated": "2026-11-06",
 				"owner": "pij-far-jackal",
-				"summary": "A pij community is a project's agents operating as one cohesive fleet across many concurrent tasks. Its directory names every role, specialist and general, with its scope, holders, memory and outputs, so roles outlive seats and the community builds knowledge over time."
+				"summary": "A pij emergent community (PEC) is a project's agents operating as one cohesive fleet across many concurrent tasks. The prime and humans build whatever community the work needs now and reshape it as the work changes. Its directory names every role, specialist and general, with its scope, holders, memory and outputs, so roles outlive seats and the community builds knowledge over time."
 			}
 		},
 		{
@@ -231,18 +231,18 @@
 					"statement": "pij ships role templates, each with a version. `pij directory add <id> --from template:<name>` copies one onto the governance branch, where it is edited freely; `--from file:<brief>` makes a role from a project's own brief, referenced rather than copied. When a template moves ahead, `pij directory` shows the difference and never applies it automatically. Templates are written fresh for the public repo.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A role taken from template v1 shows a diff after the template moves to v2, and its local edits are untouched.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
 					"id": "req-14",
 					"title": "Core roles and the security reminder",
-					"statement": "Creating a directory creates the core roles: prime, pm, pa, coder, reviewer. pij prompts the prime until a security role exists. Optional templates include devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer and transcriber.",
+					"statement": "A new directory prompts the prime for the core roles (prime, pm, pa, coder, reviewer) and for security until each exists, each with a runnable command to start it from a template; nothing is created automatically (ruling C22). Optional templates include devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer and transcriber.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
-					"done_when": "A new directory lists the five core roles and a security prompt; adding `security` clears the prompt.",
+					"state": "shipped",
+					"done_when": "A new directory lists prompts for the five core roles and for security, each with a runnable `pij directory add` line, and creates nothing; adding `security` clears its prompt.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
@@ -372,10 +372,21 @@
 					"statement": "A community's roles are discovered from what its work needs. Role templates are examples, not a checklist: the `/pij community` route and the prime's prompts say so, and the prime is prompted to notice a need no role covers and create a role for it, which may look nothing like any template.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "The `/pij community` route and the prime's prompts state that templates are examples; with a roadmap need that no role or template covers, the prime is prompted to create a role for it, and the new role validates without coming from a template.",
 					"note": "Delivered across s03 (templates), s09 (prime prompts) and s10 (the route).",
 					"source": "ruling C18"
+				},
+				{
+					"id": "req-28",
+					"title": "Communities are reshaped as the work changes",
+					"statement": "A pij emergent community is never fixed at setup. As the work changes, the prime or a human can add, merge or retire roles. A retired or merged role keeps its memory, outputs and lineage, and templates stay examples throughout.",
+					"actor": "prime",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A role can be retired, and two roles merged, each by a directory write that commits on the governance branch with a changelog row. Afterwards the retired role's memory, outputs and lineage are still readable, and the directory view lists it as retired rather than missing.",
+					"note": "Extends req-27 (grow from needs) to reshaping. Adding a role ships today (`pij directory add`); there is no retire or merge verb yet, and no roadmap step delivers this row.",
+					"source": "ruling C26"
 				}
 			]
 		},
@@ -481,6 +492,16 @@
 					"date": "2026-11-04",
 					"by": "pij-brisk-marten",
 					"change": "Plan 195: req-26's note records the window naming shipped on assign; the --id refusal is still open, so it stays in-progress."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "docs-system",
+					"change": "Renamed forward per ruling C26: the feature is Pij Emergent Communities (PEC). Title and summary reworded; req-28 added (communities are reshaped as the work changes), since req-27 covers growing from needs but not reshaping. Slugs and ids unchanged."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-following-marsupial",
+					"change": "Plan 194: req-14 reworded per ruling C22, from creating the core roles to prompting for them and for security until each exists, creating nothing. req-13 and req-14 shipped; req-27 in-progress (the s03 wording; s09 and s10 to come)."
 				}
 			]
 		}
