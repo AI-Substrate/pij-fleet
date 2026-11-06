@@ -41,6 +41,7 @@ Ship Pij Emergent Communities (PEC): a per-project directory of roles that outli
 | s13 | Doc procedures and examples in the skill | [x] complete | [req-23](../prds/001-pij-community.dd.md#requirements) | [c-skill](../blueprints/001-pij-community.dd.md#components) | [s01](#steps) | A fresh PM writes a valid, linked PRD and roadmap from the procedure. | docs/plans/191-doc-procedures | — | role:docs-system, role:reviewer, role:security |
 | s14 | Triage pij's earlier register into PRD 002 | [x] complete | [req-25](../prds/001-pij-community.dd.md#requirements) | [c-doc-schemas](../blueprints/001-pij-community.dd.md#components) | [s01](#steps) | PRD 002 validates under docs/project/prds/ and every open row of the earlier register has a recorded verdict. | docs/plans/192-prd-register-move | — | role:docs-system, role:reviewer, role:security |
 | s10 | Community skill route and optional templates | [ ] planned | [req-13](../prds/001-pij-community.dd.md#requirements), [req-15](../prds/001-pij-community.dd.md#requirements) | [c-skill](../blueprints/001-pij-community.dd.md#components), [c-templates](../blueprints/001-pij-community.dd.md#components) | [s03](#steps), [s09](#steps) | A fresh prime follows the route and stands up a working community. | — | — | — |
+| s15 | Reshape: retire and merge roles | [ ] in-progress | [req-28](../prds/001-pij-community.dd.md#requirements) | [c-verbs](../blueprints/001-pij-community.dd.md#components) | [s04](#steps) | A retired or merged role keeps its memory, outputs and lineage readable; a send to it refuses by name, naming the target after a merge. | docs/plans/206-directory-followups | — | — |
 
 <a id="changelog"></a>
 
@@ -57,3 +58,4 @@ Ship Pij Emergent Communities (PEC): a per-project directory of roles that outli
 | 2026-11-04 | pij-brisk-marten | Plan 195: s04 complete (assign, release, close-ends, lineage, the view and rebuild; evidence in docs/plans/195-assign-lineage/assets/evidence/phase-2.md). |
 | 2026-11-06 | docs-system | Renamed forward per ruling C26: title and goal name Pij Emergent Communities (PEC). Slugs and step ids unchanged. |
 | 2026-11-06 | pij-following-marsupial | s03 complete (plan 194); its done_when now says the core roles are prompted, not created (ruling C22). |
+| 2026-11-06 | pij-exuberant-wildcat | s15 added (reshape: retire and merge roles, req-28, C26), plan 206, in progress. |

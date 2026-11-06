@@ -209,6 +209,16 @@
 					],
 					"depends_on": ["#steps/s03", "#steps/s09"],
 					"done_when": "A fresh prime follows the route and stands up a working community."
+				},
+				{
+					"id": "s15",
+					"title": "Reshape: retire and merge roles",
+					"state": "in-progress",
+					"delivers": ["../prds/001-pij-community.dd.json#requirements/req-28"],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-verbs"],
+					"depends_on": ["#steps/s04"],
+					"done_when": "A retired or merged role keeps its memory, outputs and lineage readable; a send to it refuses by name, naming the target after a merge.",
+					"plan": "docs/plans/206-directory-followups"
 				}
 			]
 		},
@@ -259,6 +269,11 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "s03 complete (plan 194); its done_when now says the core roles are prompted, not created (ruling C22)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "s15 added (reshape: retire and merge roles, req-28, C26), plan 206, in progress."
 				}
 			]
 		}
