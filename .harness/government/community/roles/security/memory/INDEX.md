@@ -6,3 +6,6 @@
 
 - [2026-11-06-ibex-pr-138-marker-boundary.md](2026-11-06-ibex-pr-138-marker-boundary.md): #138 advisory marker/local-authority boundaries; exact-head pass-with-notes, DIRTY integration qualification and publication receipt.
 
+<!-- pij:generated -->
+- [2026-11-06 Role queue claims and recovery admission](2026-11-06-role-queue-claims-and-recovery-admission.dd.md): Read before changing role-send claiming, boot recovery or cold-drain audits. (role-queue, recovery, audit)
+<!-- /pij:generated -->

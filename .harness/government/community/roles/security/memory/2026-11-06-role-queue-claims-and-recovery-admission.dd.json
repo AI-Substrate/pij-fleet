@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Read before changing role-send claiming, boot recovery or cold-drain audits.",
+				"tags": [
+					"role-queue",
+					"recovery",
+					"audit"
+				],
+				"title": "Role queue claims and recovery admission"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Role-send review lesson from PR #129, head 314da13a19d8d233e8c7b6d48d3de0991635b47e.\n\nClaim queued work atomically against the current live project/role/instance assignment. A release before claim must prevent stale hooks from consuming later requests. Authorization linearizes at claim; it is not retroactive revocation of already-admitted work.\n\nRecovery evidence must identify the holder/recipient, message ID and local origin. Authenticated foreign-origin rows are not local delivery evidence. The reviewed implementation relies on the existing local delivery-ID contract rather than separately comparing body/project/role or every job state.\n\nA queued delivery job or held FYI records admission, not model completion. A transactional recovery pass is not universal exactly-once proof; this version logs recovery failure and continues startup. Distinguish those limits from the correctness of its atomic row updates.\n\nCold-drain overrides require the stored request identity and a mandatory audit before dispatch. Audit failure must not wake the holder. This assignment/queue policy is separate from future requester-reply wake enforcement.\n\nCI run 42174918545 tested the exact source tree with 1968 passing JUnit cases. Its restart regression invokes boot over seeded claims, not live process killing. Foreign-origin/corrupt-job recovery and audit-bus failure were source-assessed, not dedicated fault-injection runs. Never upgrade those evidence grades in a later handoff.\n\nFull verdict: .harness/government/community/roles/security/outputs/2026-11-06-pr-129-314da13-security.md.\nPublished verdict: https://github.com/AI-Substrate/pij-fleet/pull/129#issuecomment-6678977802.\n"
+		}
+	]
+}
