@@ -2659,10 +2659,17 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
         assert_eq!(request.holder.as_deref(), Some("pij-holder"), "{id}");
     }
     let head = inbox_bodies(&rig, "pij-holder").await;
+    let first = head.first().map(String::as_str).unwrap_or_default();
+    // Each assign holds the routing table for its holder (plan 202), and held
+    // FYIs ride along with the seat's next real message: this drained request.
+    let (request, riders) = first.split_once("\n\nAlso, ").unwrap_or((first, ""));
     assert_eq!(
-        head.first().map(String::as_str),
-        Some("[pij role:pm-001 request req-a from pij-test-coder · reply wake]\nplease req-a"),
+        request, "[pij role:pm-001 request req-a from pij-test-coder · reply wake]\nplease req-a",
         "the oldest request is first in the holder's queue"
+    );
+    assert!(
+        riders.is_empty() || riders.contains("Routing table for fleet."),
+        "only the routing table rides along: {first}"
     );
     let events = call(
         rig.addr,
