@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "read before deciding whether a seat needs compacting",
+				"tags": [
+					"pa",
+					"compact",
+					"threshold"
+				],
+				"title": "Compaction line is 400k in this community"
+			}
+		},
+		{
+			"name": "body",
+			"value": "The prime set it on 2026-11-06 23:13: in pij-fleet's community the compaction line is 400k, not the PA brief's 600k default. Compact over-400k seats that are working or will be needed again, at their next boundary, after their memory turn (handshake: handover file under roles/<role>/outputs/handover-<seat>-<date>.md, reply 'handover ready', then pij send <seat> --command compact). Context comes from the Copilot footer (ctx is ? in the nudge). The cold-seat rule still applies. First cases: pij-local-warbler (656k then 731k, long turn) and pij-steady-otter (552k)."
+		}
+	]
+}
