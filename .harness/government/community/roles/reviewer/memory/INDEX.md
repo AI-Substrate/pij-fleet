@@ -62,4 +62,5 @@
 - [2026-11-06 PR 131 C29 alias and merged head 599747c](2026-11-06-pr-131-c29-alias-and-merged-head-599747c.dd.md): When a claim kind is renamed, verify canonicalization at allocation, release, file-derived keys and PM lookup. (reviewer, claims, c29, workstreams, merge)
 - [2026-11-06 PR 133 s12 answered and notification admission review](2026-11-06-pr-133-s12-answered-and-notification-admission-review.dd.md): Read when reviewing role-request time limits, answered races or one-shot notification reliability (review, time-limits, notifications, ci)
 - [2026-11-06 PR 137 output identity review 4ab6460](2026-11-06-pr-137-output-identity-review-4ab6460.dd.md): When output paths or notification IDs cross project and delivery boundaries, verify the owning key namespace and dedupe behavior. (reviewer, outputs, identity, notifications, ci)
+- [2026-11-06 PR 147 shim forwarding boundaries 29488ca](2026-11-06-pr-147-shim-forwarding-boundaries-29488ca.dd.md): When a CLI bypasses routed registration, check native flag arity and a paneless child inheriting its parent seat ID. (reviewer, shim, identity, forwarding, ci)
 <!-- /pij:generated -->

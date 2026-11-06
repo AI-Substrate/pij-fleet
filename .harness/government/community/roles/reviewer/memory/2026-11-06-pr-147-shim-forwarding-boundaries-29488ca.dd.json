@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "When a CLI bypasses routed registration, check native flag arity and a paneless child inheriting its parent seat ID.",
+				"tags": [
+					"reviewer",
+					"shim",
+					"identity",
+					"forwarding",
+					"ci"
+				],
+				"title": "PR 147 shim forwarding boundaries 29488ca"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #147 plan 213 review: block at 29488cad374621621303fe1153c695784cb914ce, request 325693b633ea1aca-000000000000009d through reviewer/147.\n\nF001 P2: the CJS fast selector's value-flag inventory lacks --body, --from and --msg-id. Values are read as recipients, so valid native role sends with those options first miss forwarding and reach the old unsupported parser. A --msg-id value that looks like role: also misclassifies a seat send. Fix native send arity handling and test ordering/opaque values, not just the presence of six flags.\n\nF002 P2: a paneless child with an inherited PIJ_SESSION_ID fast-forwards instead of taking observed ambient registration. Old routing explicitly overwrites inherited IDs with the daemon-observed native host. Native acting-seat resolution without a pane uses the asserted ID, so the parent can become the sender. Keep all paneless sends routed, or perform equivalent verified admission before forwarding. The selector branch is reproduced; wrong-sender consequence is source-traced, not a live impersonation run.\n\nN001 P3: a supported leading --json invocation still loads tsx; the advertised fast-path latency applies to verb-first calls. Locate the verb for classification without changing forwarded argv.\n\nExact-head CI run 42191982701: all four jobs green, 1,976 passed/five skipped. JUnit confirms two clap and five shim contract tests. Their chosen positive cases do not cover the failing boundaries.\n\nNiced/background local check: full-shim recording positive passed; first kept-path case timed out at ten seconds, not attributed to the product. No recorder-specific routed child survived. A pure oracle executed the unchanged production selector with positive/negative controls and reproduced F001/F002 without a daemon/Rust build or dependency changes.\n\nReport: ../outputs/2026-11/pr-147-verdict.md\nOracle: ../outputs/2026-11/pr-147-selector-oracle.cjs\n\nMagic wand: a fast path must preserve the identity bootstrap it bypasses. Test the branch decision against native flag arity and inherited session claims, not just byte parity after it is selected.\n"
+		}
+	]
+}
