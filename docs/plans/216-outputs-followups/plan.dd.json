@@ -1,0 +1,174 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Outputs follow-ups (F75-F79)",
+        "slug": "outputs-followups",
+        "ordinal": 216,
+        "complexity": "CS-1",
+        "summary": "Make pij outputs find a verdict by its short head, print a human line on write, warn on off-list kinds and undefined subjects, and say where the index starts.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "s06 (#137) works end to end; its first dogfood found five rough edges, one of which (F75) makes a merger read 'no verdict yet' when one exists. Small and self-contained: one coder after the PEC batch."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Make pij outputs find a verdict by its short head, print a human line on write, warn on off-list kinds and undefined subjects, and say where the index starts."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "An outputs adopt verb for pre-s06 history (F79 is documented, not built).",
+        "Changing the output path pattern."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "F75 (medium): `pij outputs --head` matches a unique prefix of 7 or more hex characters, as git does; an ambiguous prefix is refused naming the matches; fewer than 7 is refused with 'give 7+ characters or the full sha'. Never a silent `0 output(s)` for a head that has outputs.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "F76: a successful `pij output` prints one human line (`wrote <role> <kind> on <subject> at <head7> (<result>); told <seat> (<mode>)`), with the raw receipt only under --json.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "F77: writing an output whose kind isn't in the role's output_kinds succeeds with a warning naming the role's kinds and the `pij directory edit` fix. docs-system's role gains `verdict` (C7), through the verb.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "F78: subject forms are defined: `pr:<n>`, `step:<sNN>`, `plan:<NNN>`, `doc:<repo path>`, or a ddocs address. Help and the API doc name them; any other form is written with a warning that `pij outputs --subject` only finds exact matches.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "F79: the help and the API doc say the outputs index starts at s06 (#137, 2026-11-06), and older outputs live in each role's outputs folder and LOG.md. No adopt verb unless a role asks for one.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch. Prefix matching is one indexed range read on the existing outputs index; warnings are computed from data already read.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Docs and states. docs/how/pij-rs-api.md: head prefixes, the success line, the output_kinds warning, subject forms and where the index starts. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00d8",
+          "title": "Outputs follow-ups (F75-F79)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-1.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Source: docs-system's s06 dogfood note, written with pij output (governance roles/docs-system/outputs/2026-11/06-note-step-s06.dd.json, 2026-11-06 23:50). F75: `pij outputs --subject pr:141 --head bfc5c54` gave 0 outputs while the full sha gave 1; the filename itself uses the 7-char head. F76 is the F31/F42/F58 family. F77: `pij output verdict --role docs-system` was accepted though the role lists deliverable, note. F78: only pr:N is documented. F79: about 20 hand-written docs-system outputs are not indexed."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
