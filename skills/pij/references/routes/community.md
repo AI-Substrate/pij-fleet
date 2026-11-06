@@ -13,7 +13,7 @@ The directory lives on the governance branch under `<government-root>/community/
 ## Prime: build from needs, then reshape
 
 ```bash
-pij directory                                    # roles, holders, drift, prompts (missing core roles, security, unmet needs)
+pij directory                                    # the prime, roles (holders, requests, outputs, memory, drift), prompts, actions
 pij directory templates [--show <name>[@vN]]     # the shipped examples, and one template's body
 pij directory add <id> --from template:<name> --why "<the need>"  [flags override fields]
 pij directory add <id> --from file:<brief> --why "<the need>" --rule <text> ...
@@ -23,22 +23,22 @@ pij directory release <role>[/<instance>] <seat> --why <text>
 pij directory template-diff <id>                 # upstream change since the role's version; never applied
 ```
 
-1. **Start from the work.** Read the workstream's steps (their `needs` are roles; `depends_on` is the order), then the view's prompts. Each prompt prints a runnable line. Add a role when a need has no owner, not because a template exists ([when to recommend one](#when-to-recommend-a-role-c28)).
-2. **The core roles are prompted, not required.** prime, pm, pa, coder and reviewer are prompted until each exists, and security until a security role exists. A role counts when its id or its template matches (`pm-001` from `pm`). The prime is designated, never assigned (C24).
+1. **Start from the work.** Read the workstream's steps (their `needs` are roles; `depends_on` is the order), then the view. Its prompts name missing core roles, security and unmet `needs`; its actions name a role with requests waiting and no live holder, two live holders on a one-holder role, or memory gone stale. Each prints runnable lines. Add a role when a need has no owner, not because a template exists ([when to recommend one](#when-to-recommend-a-role-c28)).
+2. **The core roles are prompted, not required.** prime, pm, pa, coder and reviewer are prompted until each exists, and security until a security role exists. A role counts when its id or its template matches (`pm-001` from `pm`). The prime is designated, never assigned (C24): the view's `prime` names its seat, and a prime prompt only adds the role's document.
 3. **Reshape as needs shift.** Add a role for a new need. To merge two roles, add the merged one, assign it and release the old holders. To retire a role, release its holders and say why; its document and lineage stay as history. Reassign rather than respawn.
 4. **Drift is advice.** A role whose template moved ahead is marked; read `template-diff` and copy what you want by hand.
 5. **Borrowed seats**: `pij directory external add <seat> --from-project <slug> --why <note>`.
-6. **Routing**: `pij directory routes` prints who owns which paths (generated from role scopes); the prime gets one FYI when it changes.
+6. **Routing**: a role's `scope` paths say who owns what; keep them true when you reshape (a generated routing table is planned).
 7. **Project docs** (PRDs, blueprints, workstreams, rulings): follow [the doc procedures](../community/README.md).
 
 ### When to recommend a role (C28)
 
-Keep the fleet small but expert. Small contexts are cheaper and sharper, and an expert in its own seat beats a generalist carrying the topic. The prime and PMs recommend roles as the work reveals them; templates stay examples.
+Keep the fleet small but expert. Small contexts are cheaper and sharper, and an expert in its own seat beats a generalist carrying the topic. The prime and PMs recommend worker and specialist roles as the work reveals them; templates stay examples.
 
 - **For a new role**: it would be worth remembering (C30); the same system or paths keep coming up across tasks; a finding is re-derived (the same one twice); a judgment must be independent of the author (security, performance); a seat is bloating because it carries two domains; a path or system needs one owner.
 - **Against**: one-off work; overlap with an existing role (extend that one); nothing worth remembering; it would mostly sit idle.
 - **A role is not a seat.** Roles can be many and cold: their memory, lineage and queue wait, and a holder is assigned when work arrives. Live seats stay few.
-- **Review at boundaries** (wave end, compact, PR merge): split an overloaded role, merge or retire idle ones (step 3).
+- **Review at boundaries** (wave end, compact, PR merge): split an overloaded role, merge or retire idle ones (item 3 above).
 - **Name the signal.** Every recommendation says which signal it rests on, and the `--why` carries it: `--why "same finding twice: pane reads in s07 and s09"`.
 
 ## PM: staff a workstream's steps
@@ -64,11 +64,11 @@ pij directory memory add <role> --title <t> --hook <one line> [--tags <a,b>] --b
 ```
 
 - Before a role holder is compacted or closed, pij gives it a memory turn and holds the compact or close until that turn ends. Check the note landed and that its INDEX line reads well.
-- The view flags a role whose memory went stale across recent closes. Nudge the holder; never write its memory for it.
+- The view's `memory-stale` action marks a role whose last 2 closes left no memory note, with the holder's `memory add` line. Nudge the holder; never write its memory for it.
 
 ## Every role holder
 
-- Results are outputs, not chat: `pij output <kind> --role <id> --subject <address> [--answers <msg_id>] ...`. A verdict names the exact head, and `--answers` notifies the requester in the mode it asked for.
+- Results are outputs, not chat: `pij output verdict --role <id> --subject <address> --head <sha> --result pass|pass-with-notes|block [--answers <msg_id>]`, or `deliverable|note|handover` without `--head`. `--answers` tells the requester in the mode it asked for.
 - Write a memory note before a compact or close, and read your role's `memory/INDEX.md` when you take a role.
 - Your packet says what to do; this route does not.
 
