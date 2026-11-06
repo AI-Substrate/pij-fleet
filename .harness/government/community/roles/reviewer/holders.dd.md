@@ -38,7 +38,7 @@
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 138 | 2026-11-06T03:30:49.080Z | — | pij-steady-otter | — | review #138 (plan 208) | — |
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 141 | 2026-11-06T08:01:31.936Z | — | pij-steady-otter | — | review #141 (plan 203, s09) | — |
 | — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 137 | 2026-11-06T08:02:01.809Z | — | pij-steady-otter | — | review #137 (plan 200, s06) | — |
-| — | pij-many-tiglon | copilot | 6a91000b-c9e9-45a3-a6cd-f83a462adb9a | ops.osk.lan | 133 | 2026-11-06T08:03:17.938Z | — | pij-steady-otter | — | review #133 (plan 205, s12) | — |
+| — | pij-many-tiglon | copilot | 6a91000b-c9e9-45a3-a6cd-f83a462adb9a | ops.osk.lan | 133 | 2026-11-06T08:03:17.938Z | 2026-11-06T12:56:22.246Z | pij-steady-otter | pij-steady-otter | review #133 (plan 205, s12) | #133 merged (F70 dogfood) |
 | — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 147 | 2026-11-06T09:12:47.111Z | — | pij-steady-otter | — | verdict on #147 (plan 213) | — |
 | — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 135 | 2026-11-06T10:59:57.375Z | — | pij-steady-otter | — | review #135 (plan 206) | — |
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 130 | 2026-11-06T12:49:17.301Z | 2026-11-06T12:56:19.954Z | pij-steady-otter | pij-steady-otter | review #130 merge delta | #130 merged (F70 dogfood) |
