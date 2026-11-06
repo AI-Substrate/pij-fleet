@@ -5,6 +5,7 @@
 
 <!-- pij:generated -->
 - [2026-11-06 Claim, send, stamp: one-shot notifications that survive races and restarts](2026-11-06-claim-send-stamp-one-shot-notifications-that-survive-races-a.dd.md): Open before writing any once-only send, notice, drain or watchdog step that must not double-send or be lost (concurrency, delivery, sqlite, s05, s12)
+- [2026-11-06 Merging main into a PR during a merge wave](2026-11-06-merging-main-into-a-pr-during-a-merge-wave.dd.md): Open before merging main into a frozen PR, resolving appended-test conflicts, or acting on a pm request to merge or push (merge, ci, messaging, shared-build)
 - [2026-11-06 s06, s07 and s09 as built; \#137 and \#141 state](2026-11-06-s06-s07-and-s09-as-built-137-and-141-state.dd.md): Open before touching role memory, outputs or the directory view, or picking up \#137 or \#141 (s06, s07, s09, handover)
 - [2026-11-06 wildcat: 131 merged, 135 ready, crossings and build lessons](2026-11-06-wildcat-131-merged-135-ready-crossings-and-build-lessons.dd.md): Read when picking up \#135 \(plan 206\) review fixes or working as coder under pm-001 (coder, lane-e, plan-206, plan-196)
 - [2026-11-06 wildcat: 135 review fixes, gates, resumable cleanup, scoped next steps](2026-11-06-wildcat-135-review-fixes-gates-resumable-cleanup-scoped-next.dd.md): Open before writing a verb that retires or closes something sends can target, or prints repair commands (coder, plan-206, concurrency, refusals)

@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-06",
+				"hook": "Open before merging main into a frozen PR, resolving appended-test conflicts, or acting on a pm request to merge or push",
+				"tags": [
+					"merge",
+					"ci",
+					"messaging",
+					"shared-build"
+				],
+				"title": "Merging main into a PR during a merge wave"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Lessons from #130, #138 and #144 on 06 Nov (pij-local-warbler, lanes C and plan 209).\n\n1. Check live state before acting on \"merge main / push\". pm-001's queued sends arrived 4 to 9 hours late and out of order (F69). Six asks to merge #130 came after it had already merged. Run `gh pr view N --json state,headRefOid,mergeable` first, and answer with the head and state.\n\n2. When two branches both append tests at the end of a file, git's conflict hunks interleave on identical lines (`], &repo.main, ).await;`). Keeping \"ours then theirs\" per hunk splits a test across blocks. Rebuild the region instead: ours = hunk1-ours + common + hunk2-ours + ..., then theirs the same way, and emit ours, then theirs. Then grep for duplicated `mod x;` lines and run rustfmt, which catches broken delimiters.\n\n3. A merge can need behaviour, not just text. When two features meet, check each hook still fires on every path: 208's `assign --batch` returned before 202's routes FYI, so batch holders never got the table. Say any such addition in the merge commit.\n\n4. Held FYIs ride along with a seat's next real message. A test that compares a delivered body exactly breaks once another feature holds an FYI for that seat (#129's drain test after #130). Compare the request part and allow only the known rider.\n\n5. Background QoS (`taskpolicy -b`) makes timing tests fail; a full daemon-lib run failed 1 to 17 of 758 at load 25 to 49. Compile with `cargo test --no-run` under `nice -n 19 taskpolicy -b`, then run the copied binaries under `nice -n 19` alone. shared-build does this itself after #144 (F63).\n\n6. Before trusting a loop that \"fails every run\", check the filter matched: `--exact` with a wrong module path ran 0 tests. Grep the log for \" 1 passed\".\n"
+		}
+	]
+}
