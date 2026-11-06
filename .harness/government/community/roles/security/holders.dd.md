@@ -19,3 +19,4 @@
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | — | pij-wary-lynx | copilot | 3b066a36-c3a8-4830-9c90-ee18285c9a26 | ops.osk.lan | — | 2026-11-05T23:09:44.160Z | — | pij-steady-otter | — | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | — |
+| — | pij-alert-ibex | copilot | f5ecc23f-34ac-4ecd-a42f-b129c66db7e7 | ops.osk.lan | — | 2026-11-06T03:22:08.439Z | — | pij-steady-otter | — | second security holder for parallel verdicts (prime 13:20) | — |
