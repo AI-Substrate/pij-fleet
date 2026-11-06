@@ -231,7 +231,10 @@
 					"harness_session": "3e7756cf-b339-46ac-9b12-46d3065045cc",
 					"instance_key": "138",
 					"machine": "ops.osk.lan",
+					"release_why": "#138 merged (F70 dogfood)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-usual-seahorse",
+					"to": "2026-11-06T12:56:23.926Z",
 					"why": "review #138 (plan 208)"
 				},
 				{
