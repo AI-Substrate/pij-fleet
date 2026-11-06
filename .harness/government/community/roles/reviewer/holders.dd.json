@@ -254,7 +254,10 @@
 					"harness_session": "95615f7f-89fc-4639-ac6b-c838fe5e1ac3",
 					"instance_key": "137",
 					"machine": "ops.osk.lan",
+					"release_why": "#137 merged 27efa69",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-pleased-marmot",
+					"to": "2026-11-06T13:48:52.115Z",
 					"why": "review #137 (plan 200, s06)"
 				},
 				{
