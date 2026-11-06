@@ -88,6 +88,10 @@ impl SqliteRegistry {
                     .map_err(adapter_error)?
                     .rows_affected();
                     record_dropped_fyis(&mut event, dropped)?;
+                    // Plan 196: a retired seat's open number claims are released
+                    // in the same transaction; the numbers stay burned.
+                    crate::claims::release_for_seat(&mut tx, seat.as_str(), event.at as i64)
+                        .await?;
                     let seq = append_in_transaction(&mut tx, &event).await?;
                     // A retired seat's turn is over: `working` must not outlive it.
                     let affected = sqlx::query(

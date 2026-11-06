@@ -128,6 +128,41 @@ struct Rig {
     store: pij_store::SqliteOrchestration,
     roles: Arc<pij_daemon::http::role::RoleService>,
     tmux: Arc<FakeTmux>,
+    bus: Arc<pij_daemon::events::EventBus>,
+}
+
+/// `pij close <seat>`, and when the seat holds a role (plan 201: the close is
+/// held for its memory turn, bounded at 50 ms here) the close's own receipt
+/// data once it has landed.
+async fn close_landed(rig: &Rig, cwd: &Path, seat: &str) -> Value {
+    let answer: Value = reqwest::Client::new()
+        .post(format!("http://{}/v1/close", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({"seat": seat, "reason": "done", "caller": {"TMUX_PANE": PANE, "cwd": cwd}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(answer["ok"], true, "{answer}");
+    if answer["data"]["held"] != "memory-turn" {
+        return answer["data"].clone();
+    }
+    for _ in 0..500 {
+        if let Some(event) = rig
+            .bus
+            .latest_matching(&seat.into(), &["memory.turn"])
+            .await
+            .unwrap()
+        {
+            let turn: Value = serde_json::from_str(&event.payload).unwrap();
+            assert_eq!(turn["then"], "closed", "{turn}");
+            return turn["closed"].clone();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the held close of {seat} never landed");
 }
 
 /// Counts after-assign calls (ruling C6).
@@ -173,6 +208,8 @@ async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: 
     let mut services = pij_daemon::build_services(&config, &signals)
         .await
         .expect("services");
+    // A closed holder gets a memory turn (plan 201); nothing here plays it.
+    services.memory_turn_bound = std::time::Duration::from_millis(50);
     let writer = Arc::new(writer);
     let store = services.directory.store().clone();
     services.community = Arc::clone(&writer);
@@ -217,6 +254,7 @@ async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: 
         services.registry.put(seat).await.expect("seed seat");
     }
     let roles = Arc::clone(&services.roles);
+    let bus = Arc::clone(&services.event_bus);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = router_with_config(services, HttpConfig::local(KEY.to_string()));
@@ -228,6 +266,7 @@ async fn rig_full(hook: Arc<dyn AfterAssign>, writer: CommunityWriter, catalog: 
         store,
         roles,
         tmux,
+        bus,
     }
 }
 
@@ -776,18 +815,9 @@ async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_writ
         let assigned = call(rig.addr, "/v1/directory", argv, &repo.main).await;
         assert_eq!(assigned["ok"], true, "{assigned}");
     }
-    let close = |seat: &str| {
-        reqwest::Client::new()
-            .post(format!("http://{}/v1/close", rig.addr))
-            .bearer_auth(KEY)
-            .json(&json!({"seat": seat, "reason": "done", "caller": {"TMUX_PANE": PANE, "cwd": repo.main}}))
-            .send()
-    };
-
-    let closed: Value = close("pij-holder").await.unwrap().json().await.unwrap();
-    assert_eq!(closed["ok"], true, "{closed}");
+    let closed = close_landed(&rig, &repo.main, "pij-holder").await;
     assert_eq!(
-        closed["data"]["directory"]["committed"][0]["project"], "fleet",
+        closed["directory"]["committed"][0]["project"], "fleet",
         "{closed}"
     );
     let row = &holders_at_head(&repo, "pm-001")[0];
@@ -800,14 +830,13 @@ async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_writ
         &repo.main,
         &["worktree", "remove", "--force", repo.gov.to_str().unwrap()],
     );
-    let pending: Value = close("pij-second").await.unwrap().json().await.unwrap();
-    assert_eq!(
-        pending["ok"], true,
+    let pending = close_landed(&rig, &repo.main, "pij-second").await;
+    assert!(
+        pending["tombstoned_at"].is_number(),
         "the close never fails on the directory: {pending}"
     );
-    assert!(pending["data"]["tombstoned_at"].is_number(), "{pending}");
     assert_eq!(
-        pending["data"]["directory"]["pending"][0]["code"], "E-RS-GOV-ABSENT",
+        pending["directory"]["pending"][0]["code"], "E-RS-GOV-ABSENT",
         "{pending}"
     );
     let stored = rig.store.assignments("fleet").await.unwrap();
@@ -1240,6 +1269,157 @@ async fn a_linked_worktree_finds_its_project_and_an_unknown_repo_names_the_regis
 }
 
 /// AC9 (req-16): external entries append to community/external.dd.json.
+/// Plan 201, AC1 and AC3: a note is one commit with its INDEX line, the
+/// INDEX keeps hand-written lines, reads print the INDEX or one note, and there
+/// is no way to delete.
+#[tokio::test]
+async fn memory_add_writes_one_note_per_commit_and_reads_back() {
+    let repo = repo("pij-directory-memory");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    let index = repo
+        .gov
+        .join(".harness/government/community/roles/reviewer/memory/INDEX.md");
+    let hand = "# reviewer memory\n\n- [old.md](old.md): by hand\n";
+    std::fs::write(&index, hand).unwrap();
+    std::fs::write(index.with_file_name("old.md"), "kept\n").unwrap();
+    git(&repo.gov, &["add", "."]);
+    git(&repo.gov, &["commit", "-q", "-m", "hand memory"]);
+    let before = head(&repo);
+
+    let add = |title: &'static str| {
+        vec![
+            "directory",
+            "memory",
+            "add",
+            "reviewer",
+            "--title",
+            title,
+            "--tags",
+            "pr,cost",
+            "--tags",
+            "spine",
+            "--hook",
+            "open for the fix",
+            "--body",
+            "the body\n",
+        ]
+    };
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &add("PR 200: what broke"),
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    let note = ".harness/government/community/roles/reviewer/memory/";
+    let path = added["data"]["path"].as_str().unwrap();
+    assert!(
+        path.starts_with(note) && path.ends_with("-pr-200-what-broke.dd.json"),
+        "{path}"
+    );
+    assert_eq!(added["data"]["commit"], head(&repo));
+    let changed = git(&repo.gov, &["show", "--name-only", "--format=", "HEAD"]);
+    assert_eq!(changed.lines().count(), 3, "{changed}");
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{before}..HEAD")]
+        )
+        .trim(),
+        "1"
+    );
+    let text = std::fs::read_to_string(&index).unwrap();
+    assert!(text.starts_with(hand), "{text}");
+    assert!(
+        text.contains("PR 200: what broke](") && text.contains("(pr, cost, spine)"),
+        "{text}"
+    );
+
+    let again = call(
+        rig.addr,
+        "/v1/directory",
+        &add("PR 200: what broke"),
+        &repo.main,
+    )
+    .await;
+    assert_eq!(again["details"]["code"], "E-RS-MEMORY-EXISTS", "{again}");
+
+    let read = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "memory", "reviewer"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(read["data"]["index"], text, "{read}");
+    let one = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "memory",
+            "reviewer",
+            "--note",
+            "pr-200-what-broke",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(
+        one["data"]["meta"]["tags"],
+        json!(["pr", "cost", "spine"]),
+        "{one}"
+    );
+    assert_eq!(one["data"]["body"], "the body\n");
+    let hand_note = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "memory", "reviewer", "--note", "old"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(hand_note["data"]["text"], "kept\n", "{hand_note}");
+
+    for (argv, code) in [
+        (
+            &["directory", "memory", "delete", "reviewer"][..],
+            "E-RS-UNPORTED",
+        ),
+        (
+            &["directory", "memory", "reviewer", "--note", "nope"][..],
+            "E-RS-MEMORY-NOTE-MISSING",
+        ),
+        (
+            &["directory", "memory", "ghost"][..],
+            "E-RS-DIRECTORY-ROLE-MISSING",
+        ),
+        (
+            &[
+                "directory",
+                "memory",
+                "add",
+                "reviewer",
+                "--title",
+                "t",
+                "--hook",
+                "h",
+            ][..],
+            "E-RS-ARG",
+        ),
+        (
+            &["directory", "memory", "reviewer", "--body", "x"][..],
+            "E-RS-ARG",
+        ),
+    ] {
+        let refused = call(rig.addr, "/v1/directory", argv, &repo.main).await;
+        assert_eq!(refused["details"]["code"], code, "{argv:?}: {refused}");
+    }
+    assert_eq!(git(&repo.gov, &["status", "--porcelain"]), "");
+    rig.server.abort();
+}
+
 #[tokio::test]
 async fn external_add_creates_then_appends_dated_entries() {
     let repo = repo("pij-directory-external");

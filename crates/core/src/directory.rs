@@ -12,6 +12,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("rebuild") => Some(REBUILD),
         Some("routes") => Some(ROUTES),
         Some("templates" | "template-diff") => Some(TEMPLATES),
+        Some("memory") => Some(MEMORY),
         _ => None,
     }
 }
@@ -60,6 +61,8 @@ Usage:
   pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]
   pij directory rebuild                               the store from the branch head
   pij directory routes [--write --why <text>]         the routing table, with live holders
+  pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>|--body-file <path|->
+  pij directory memory <role> [--note <slug>]         a role's memory INDEX, or one note
 
 Pij Emergent Communities (PEC): the prime and the humans build whatever
 community the work needs now, and reshape it as the work changes. Templates are
@@ -160,6 +163,24 @@ an FYI when it is assigned a role, after a compact and when a revive brings it
 back; the prime gets the changed rows as one FYI. A change of holder sends
 nothing. This verb prints it with the live holders and says whether ROUTES.md
 is stale; --write regenerates a stale one in one commit.";
+const MEMORY: &str = "\
+pij directory memory: a role's memory, one note per file (pij/memory).
+
+Usage:
+  pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>
+  pij directory memory add <role> --title <t> --hook <h> --body-file <path|->
+  pij directory memory <role>                     print memory/INDEX.md
+  pij directory memory <role> --note <slug>       print one note
+
+add writes roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json, the slug taken
+from --title, and regenerates memory/INDEX.md with one line per note, keeping
+every line pij did not write. One commit per note. --tags repeats or takes a
+comma list. --body-file - reads stdin. Notes are never capped, pruned or
+deleted; there is no delete verb.
+
+Before `pij close` or a compact of a seat that holds a role, pij asks that
+seat to write what it learned here, and holds the close or compact until its
+turn ends.";
 
 #[cfg(test)]
 mod tests {
@@ -180,6 +201,8 @@ mod tests {
         assert!(help(None).unwrap().contains("pij directory <verb> --help"));
         assert!(help(Some("nope")).is_none());
         assert!(help(Some("routes")).unwrap().contains("--write --why"));
+        assert!(help(Some("memory")).unwrap().contains("no delete verb"));
+        assert!(help(None).unwrap().contains("pij directory memory <role>"));
         assert!(
             help(Some("add"))
                 .unwrap()

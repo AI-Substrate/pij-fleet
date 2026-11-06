@@ -10,7 +10,7 @@ docs/project/
   workshops/NNN-<slug>/NNN-<topic>.md  design sessions that fed a PRD
 ```
 
-Every file here is numbered. Take the next number with `pij claim <kind>` once it exists (PRD 001, req-20); until then the prime hands numbers out.
+Every file here is numbered. Take the next number with `pij claim <kind> --for <slug>` (PRD 001, req-20); it records your seat so parallel PMs never collide. Every PR body names what it delivers on a `Delivers:` line, and the merger runs `pij delivered <pr>` once after the merge (req-21).
 
 - The joins are ddocs link cells: a roadmap step `delivers` requirement rows and `builds` components, and a component `realises` rows. `ddocs validate <file>` checks them.
 - A builder sets a requirement's state in the PR that delivers it. Rows are amended, never deleted.

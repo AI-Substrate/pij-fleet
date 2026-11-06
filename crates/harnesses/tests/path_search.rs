@@ -3,8 +3,8 @@
 //! On macOS a bare program name is spawned with `posix_spawnp`, which tries each
 //! PATH entry in turn, and every miss creates and tears down a kernel process.
 //! With the daemon's 32-entry PATH that was 18 processes per liveness check.
-//! The probes now name `/bin/ps` and `/bin/date`, so a `ps` or `date` earlier on
-//! PATH is never tried, let alone run.
+//! The probes now name `/bin/ps`, so a `ps` earlier on PATH is never tried, let
+//! alone run; the UTC offset is read in-process (plan 207), so no `date` runs.
 //!
 //! Setting PATH in this process would need `unsafe`, so each test re-runs this
 //! test binary as a child with a decoy directory first on PATH. The decoys
@@ -138,14 +138,15 @@ fn liveness_runs_bin_ps_never_a_ps_found_on_path() {
     );
 }
 
+/// Plan 207 (#127): the offset is read in-process, so no `date` runs at all.
 #[test]
-fn utc_offset_runs_bin_date_never_a_date_found_on_path() {
+fn utc_offset_runs_no_date_at_all() {
     if is_child() {
         local_utc_offset_minutes().expect("read the offset");
         return;
     }
     assert_no_decoy_ran(
-        &run_with_decoys_first("utc_offset_runs_bin_date_never_a_date_found_on_path"),
+        &run_with_decoys_first("utc_offset_runs_no_date_at_all"),
         "local_utc_offset_minutes",
     );
 }
