@@ -9,7 +9,7 @@ use std::sync::Arc;
 use pij_core::config::{AdapterChoice, Adapters, Config};
 use pij_core::delivery::delivery_kind;
 use pij_core::model::{Harness, Msg, SeatDescriptor, SeatId};
-use pij_core::ports::{Queue, Registry};
+use pij_core::ports::Queue;
 use pij_daemon::community::Refusal;
 use pij_daemon::community::ddocs::Validator;
 use pij_daemon::community::directory::{DirectoryService, NoHook};
@@ -400,10 +400,11 @@ async fn an_output_lands_in_one_commit_flags_a_non_holder_and_answers_only_its_h
 
 #[tokio::test]
 async fn two_outputs_at_once_land_as_two_files() {
-    let rig = Arc::new(rig("pij-output-concurrent").await);
+    let rig = rig("pij-output-concurrent").await;
+    let argv = verdict("ccccccc3", "pass", None);
     let (a, b) = tokio::join!(
-        call(&rig, "/v1/output", &verdict("ccccccc3", "pass", None)),
-        call(&rig, "/v1/output", &verdict("ccccccc3", "pass", None)),
+        call(&rig, "/v1/output", &argv),
+        call(&rig, "/v1/output", &argv),
     );
     assert_eq!(
         (a["ok"].clone(), b["ok"].clone()),
