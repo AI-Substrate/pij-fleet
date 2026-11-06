@@ -101,7 +101,7 @@
           "phase": "ph-00d1",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "BUILD: unit tests for the memory add line, the slug cap, the add help, the role refusal flags and the Delivers line; the shared-build test covers HUP; CI runs pij-skill-check.",
+          "proof": "BUILD: shim_forward a_memory_add_with_its_body_on_stdin_reaches_pij_rs (F30: through pij, a memory add with --body-file - reaches pij-rs with its body on stdin, which pij-rs sends as --body); unit tests for the memory add line, the slug cap, the add help, the role refusal flags and the Delivers line; the shared-build test covers HUP; CI runs pij-skill-check.",
           "state": "unchecked",
           "probe": "crates/"
         }
