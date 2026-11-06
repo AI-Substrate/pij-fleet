@@ -1,0 +1,167 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "The pij shim forwards community verbs to pij-rs",
+        "slug": "shim-native-forward",
+        "ordinal": 213,
+        "complexity": "CS-3",
+        "summary": "Stop the pij shim lagging pij-rs on every new verb (F30, F42, F43, F44, F50, F53, F54, F55, F58): the shim forwards community verbs (directory, claim, claims, delivered, send role:, output, outputs, requests) natively to pij-rs, with pij-rs's human output, help, flags and stdin handling, plus one contract test that fails when a pij-rs verb or flag isn't reachable through the shim.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Prime ruling, 06 Nov 18:43: don't fix the shim gaps one at a time. Today each new pij-rs verb reaches the shim late: raw JSON instead of the human form (F42, F50, F58), stub help (F43, F53), stdin refused (F30), --body refused (F55), a receipt missing fields (F54), and 0.45-6 s per call versus 0.05-0.2 s native (F44). This plan supersedes plan 209's F30, F42, F43, F44 and F50 items and plan 212's AC5; those plans drop them."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Stop the pij shim lagging pij-rs on every new verb (F30, F42, F43, F44, F50, F53, F54, F55, F58): the shim forwards community verbs (directory, claim, claims, delivered, send role:, output, outputs, requests) natively to pij-rs, with pij-rs's human output, help, flags and stdin handling, plus one contract test that fails when a pij-rs verb or flag isn't reachable through the shim."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Forward. The pij shim hands every community verb (directory and all its subverbs, claim, claims, delivered, send to role: addresses, output, outputs, requests) to the pij-rs binary with argv and stdin unchanged and the caller's identity attached, and prints pij-rs's own stdout, stderr and exit code. No re-rendering or JSON wrapping in the shim.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Help. `pij <verb> --help` prints pij-rs's help for that verb, including role sends, --reply and --fyi.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Contract test. One test enumerates pij-rs's community verbs and flags (from clap) and fails when any is unreachable through the shim, or when the shim's output differs from pij-rs's.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Cost (F44). A forwarded call costs about one pij-rs exec over the native call; measure shim versus native per call, before and after, on a quiet machine.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Forwarding adds one exec per shim call and nothing per tick. The goal is to make the shim cheaper (F44) by removing its own rendering. No timer, poll or new daemon launch site.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and states. No workstream state changes. docs/how/pij-rs-api.md says the shim forwards community verbs natively; the skill's shim table follows. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00d5",
+          "title": "The pij shim forwards community verbs to pij-rs",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-3.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: the pij shim (the npm `pij` bin and its forwarding table; grep for 'E-RS-UNPORTED' and 'Forward argv and caller'), pij-rs's clap command tree (crates/cli/src/main.rs), and how the shim passes caller identity today (PIJ_ID, seat discovery). Coordinate with plan 209 (warbler) and plan 212 (kestrel), which drop their shim items."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}

@@ -246,8 +246,12 @@ function probeFailure(verb: string, probe: RsProbe): RouteOutcome | undefined {
 	}
 }
 
-/** No shell, buffering, parser, or HTTP substitute for the native trailer command. */
-async function runNative(args: readonly string[], deps: GenerationRouterDeps): Promise<number> {
+/** No shell, buffering, parser, or HTTP substitute for a native pij-rs command. */
+async function runNative(
+	command: string,
+	args: readonly string[],
+	deps: GenerationRouterDeps,
+): Promise<number> {
 	if (deps.runNative !== undefined) return deps.runNative(args);
 	return new Promise((resolve) => {
 		const child = spawn("pij-rs", [...args], {
@@ -274,7 +278,7 @@ async function runNative(args: readonly string[], deps: GenerationRouterDeps): P
 		process.on("SIGTERM", forwardTerm);
 		process.on("SIGHUP", forwardHup);
 		child.once("error", (error) => {
-			process.stderr.write(`pij-rs commit-trailers: ${error.message}\n`);
+			process.stderr.write(`pij-rs ${command}: ${error.message}\n`);
 			finish(127);
 		});
 		child.once("close", (code, signal) => {
@@ -342,6 +346,7 @@ export async function routeVerb(
 	const row = pre.row;
 	if ("nativeCommand" in row) {
 		const exitCode = await runNative(
+			row.nativeCommand,
 			[
 				"--state-dir",
 				location.stateDir,

@@ -173,6 +173,13 @@ pub struct Services {
     pub community: Arc<community::writer::CommunityWriter>,
     /// Role holding: assign, release and close-ends (plan 195).
     pub directory: Arc<community::directory::DirectoryService>,
+    /// gh as resolved once at daemon start, for `pij delivered` (plan 196).
+    pub gh: Arc<dyn community::gh::PullRequests>,
+    /// How long a compact or close of a role holder waits for its memory turn
+    /// (plan 201).
+    pub memory_turn_bound: std::time::Duration,
+    /// Seats with a memory turn pending: one at a time per seat (plan 201).
+    pub memory_turns: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -611,6 +618,17 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         ddocs,
         community: community_writer,
         directory,
+        gh: Arc::new(community::gh::Gh::from_env()),
+        memory_turn_bound: {
+            let (bound, warning) = http::memory_turn::bound_from(
+                std::env::var(http::memory_turn::BOUND_ENV).ok().as_deref(),
+            );
+            if let Some(warning) = warning {
+                eprintln!("pij-rs: {warning}");
+            }
+            bound
+        },
+        memory_turns: Arc::default(),
         offline: config.is_fully_offline(),
     };
     role_queue.bind(services.clone());
@@ -1048,6 +1066,10 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             return Err(error);
         }
     };
+
+    // After the bind is won and before anything is served: no claim can be in
+    // flight, and a boot that lost the bind never touches a live daemon's rows.
+    delivery::role_send::recover_requests(&services).await;
 
     let (governance_shutdown, governance_shutdown_rx) = tokio::sync::oneshot::channel();
     let governance_observer =

@@ -66,6 +66,28 @@ impl RequestState {
     }
 }
 
+/// Which time-limit notification a claim is for (plan 205, s12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LimitStage {
+    /// The holder's one check-in; stamps `checkin_at`.
+    CheckIn,
+    /// The PA's (else the prime's) one notice; stamps `escalated_at`.
+    Notice,
+}
+
+/// How long a time-limit claim blocks another attempt. Admission takes
+/// seconds and a failed one drops its claim at once, so only a daemon that
+/// stopped mid-attempt leaves one this old; the next round then retries.
+pub const LIMIT_CLAIM_LEASE_MS: u64 = 2 * 60_000;
+
+/// A time-limit claim just taken (plan 205, s12).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LimitClaim {
+    /// The seat a stopped attempt resolved and pinned before sending, when
+    /// the claim was taken over after its lease. `None` for a fresh claim.
+    pub pinned: Option<String>,
+}
+
 /// One request sent to a role.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleRequest {
@@ -110,6 +132,32 @@ pub struct RoleRequest {
     /// so s12 never checks it in or escalates it.
     pub answered_at: Option<u64>,
 }
+
+/// Boot recovery's evidence that delivery already took a stranded claim:
+/// a ledger row, a `delivery:<holder>` job in any state, or a held FYI under
+/// its msg_id. Every probe is an indexed SEARCH (performance P001 on #129):
+/// the ledger's unique key, `jobs_by_dedupe` and the FYI primary key.
+const RECOVER_TAKEN_SQL: &str = "UPDATE role_requests SET state = 'delivered', delivered_at = ?1 \
+     WHERE state = 'delivering' AND holder IS NOT NULL AND ( \
+       EXISTS (SELECT 1 FROM delivered_messages AS ledger \
+         WHERE ledger.recipient = role_requests.holder AND ledger.sender_machine = '' \
+         AND ledger.msg_id = role_requests.id) \
+       OR EXISTS (SELECT 1 FROM jobs \
+         WHERE jobs.kind = 'delivery:' || role_requests.holder \
+         AND jobs.dedupe_origin = '' AND jobs.dedupe_key = role_requests.id) \
+       OR EXISTS (SELECT 1 FROM fyis \
+         WHERE fyis.origin = '' AND fyis.id = role_requests.id \
+         AND fyis.recipient = role_requests.holder))";
+
+/// Has delivery taken local message `?2` for recipient `?1`? The evidence of
+/// [`RECOVER_TAKEN_SQL`], for one recipient and msg_id (review of #133).
+const ADMITTED_SQL: &str = "SELECT \
+       EXISTS (SELECT 1 FROM delivered_messages AS ledger \
+         WHERE ledger.recipient = ?1 AND ledger.sender_machine = '' AND ledger.msg_id = ?2) \
+       OR EXISTS (SELECT 1 FROM jobs \
+         WHERE jobs.kind = 'delivery:' || ?1 AND jobs.dedupe_origin = '' AND jobs.dedupe_key = ?2) \
+       OR EXISTS (SELECT 1 FROM fyis \
+         WHERE fyis.origin = '' AND fyis.id = ?2 AND fyis.recipient = ?1)";
 
 const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
      limit_ms, state, holder, created_at, delivered_at, checkin_at, escalated_at, answered_at";
@@ -211,7 +259,32 @@ impl SqliteOrchestration {
         .collect()
     }
 
-    /// Every queued request, oldest first: the PA digest's list.
+    /// Every request not yet settled, queued or stuck `delivering`, oldest
+    /// first: the PA digest's list (review of #129, F003). Bodies are not
+    /// read (blank here); the digest never shows them. Two partial-index reads.
+    pub async fn unsettled_role_requests(&self) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        let columns = COLUMNS.replace("body", "'' AS body");
+        let mut rows = Vec::new();
+        for (index, state) in [
+            ("role_requests_queued", "queued"),
+            ("role_requests_delivering", "delivering"),
+        ] {
+            let read = sqlx::query(&format!(
+                "SELECT {columns} FROM role_requests INDEXED BY {index} WHERE state = '{state}'"
+            ))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+            for row in &read {
+                rows.push(role_request(row)?);
+            }
+        }
+        rows.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+        Ok(rows)
+    }
+
+    /// Every queued request, oldest first.
     pub async fn all_queued_role_requests(&self) -> Result<Vec<RoleRequest>> {
         require_current_schema(&self.pool).await?;
         sqlx::query(&format!(
@@ -243,14 +316,169 @@ impl SqliteOrchestration {
         .collect()
     }
 
-    /// Record the holder's check-in at `at`; `false` when one was recorded.
-    pub async fn mark_role_request_checked_in(&self, id: &str, at: u64) -> Result<bool> {
-        self.stamp_once(id, "checkin_at", at).await
+    /// Claim request `id` for one time-limit notification at `now`, before
+    /// it is sent (review of #133, F001 and F002). In one statement the
+    /// request must still be delivered, unanswered, not yet told at `stage`
+    /// and not escalated, and hold no live claim; so an answer that lands
+    /// after the round's read wins, and two rounds never send at once. A
+    /// claim older than [`LIMIT_CLAIM_LEASE_MS`] was left by a stopped daemon
+    /// and may be taken again. `None` when the request is not claimable;
+    /// otherwise the seat a stopped attempt had pinned, if any (see
+    /// [`Self::pin_role_request_limit`]).
+    pub async fn claim_role_request_limit(
+        &self,
+        id: &str,
+        stage: LimitStage,
+        now: u64,
+    ) -> Result<Option<LimitClaim>> {
+        require_current_schema(&self.pool).await?;
+        let stage_open = match stage {
+            LimitStage::CheckIn => "checkin_at IS NULL AND ",
+            LimitStage::Notice => "",
+        };
+        let sql = format!(
+            "UPDATE role_requests SET limit_claim_at = ?2 WHERE id = ?1 \
+             AND state = 'delivered' AND answered_at IS NULL AND {stage_open}escalated_at IS NULL \
+             AND (limit_claim_at IS NULL OR limit_claim_at <= ?3) RETURNING limit_claim_target"
+        );
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let stale_before = sql_i64(now.saturating_sub(LIMIT_CLAIM_LEASE_MS), "limit claim")?;
+        let now = sql_i64(now, "limit claim")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let row = sqlx::query(&sql)
+                .bind(&id)
+                .bind(now)
+                .bind(stale_before)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+            let claim = row
+                .map(|row| {
+                    row.try_get::<Option<String>, _>("limit_claim_target")
+                        .map(|pinned| LimitClaim { pinned })
+                        .map_err(adapter_error)
+                })
+                .transpose()?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(claim)
+        })
+        .await
     }
 
-    /// Record the PA notice at `at`; `false` when one was recorded.
-    pub async fn mark_role_request_escalated(&self, id: &str, at: u64) -> Result<bool> {
-        self.stamp_once(id, "escalated_at", at).await
+    /// Pin the seat the claim taken at `claimed_at` resolved to, before the
+    /// notification is sent to it (review of #133). A retry after the claim
+    /// expires asks delivery whether that same seat already has the message
+    /// ([`Self::limit_notification_admitted`]) instead of resolving again, so
+    /// a PA that rotated meanwhile is not told twice. `false` when that claim
+    /// is gone, and then nothing may be sent.
+    pub async fn pin_role_request_limit(
+        &self,
+        id: &str,
+        claimed_at: u64,
+        target: &str,
+    ) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let target = target.to_string();
+        let claimed_at = sql_i64(claimed_at, "limit claim")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let changed = sqlx::query(
+                "UPDATE role_requests SET limit_claim_target = ?3 \
+                 WHERE id = ?1 AND limit_claim_at = ?2",
+            )
+            .bind(&id)
+            .bind(claimed_at)
+            .bind(&target)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
+    }
+
+    /// Did delivery already take local message `msg_id` for `recipient`? The
+    /// same evidence boot recovery uses: a ledger row, a `delivery:<recipient>`
+    /// job in any state, or a held FYI, each an indexed SEARCH.
+    pub async fn limit_notification_admitted(&self, recipient: &str, msg_id: &str) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query_scalar::<_, bool>(ADMITTED_SQL)
+            .bind(recipient)
+            .bind(msg_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(adapter_error)
+    }
+
+    /// The claimed notification was admitted: stamp `stage` at `at` and
+    /// clear the claim taken at `claimed_at`. `false` when that claim is gone.
+    pub async fn finish_role_request_limit(
+        &self,
+        id: &str,
+        stage: LimitStage,
+        claimed_at: u64,
+        at: u64,
+    ) -> Result<bool> {
+        let column = match stage {
+            LimitStage::CheckIn => "checkin_at",
+            LimitStage::Notice => "escalated_at",
+        };
+        self.limit_write(
+            format!(
+                "UPDATE role_requests SET {column} = ?2, limit_claim_at = NULL, \
+                 limit_claim_target = NULL WHERE id = ?1 AND limit_claim_at = ?3"
+            ),
+            id,
+            &[at, claimed_at],
+        )
+        .await
+    }
+
+    /// The claimed notification was not admitted: drop the claim taken at
+    /// `claimed_at` and its pin, so the next round resolves and tries again.
+    /// `false` when it is gone.
+    pub async fn release_role_request_limit(&self, id: &str, claimed_at: u64) -> Result<bool> {
+        self.limit_write(
+            "UPDATE role_requests SET limit_claim_at = NULL, limit_claim_target = NULL \
+             WHERE id = ?1 AND limit_claim_at = ?2"
+                .to_string(),
+            id,
+            &[claimed_at],
+        )
+        .await
+    }
+
+    async fn limit_write(&self, sql: String, id: &str, times: &[u64]) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let times = times
+            .iter()
+            .map(|at| sql_i64(*at, "limit stamp"))
+            .collect::<Result<Vec<_>>>()?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let mut query = sqlx::query(&sql).bind(&id);
+            for at in times {
+                query = query.bind(at);
+            }
+            let changed = query
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
     }
 
     /// Record that an output answered request `id` at `at` (s06: lane B's
@@ -352,6 +580,40 @@ impl SqliteOrchestration {
         .await
     }
 
+    /// Settle every request a stopped daemon left `delivering`: claimed, but
+    /// neither marked delivered nor released (review of #129). Run once at
+    /// boot, before anything claims. One the delivery path already took for
+    /// its holder (a ledger row, a delivery job, or a held FYI under its
+    /// msg_id) is marked delivered at `now_ms`, so it is never sent twice. Any
+    /// other goes back to `queued` with no holder: the next assign drains it
+    /// and the PA digest lists it. One write transaction. Returns how many
+    /// were marked delivered and how many re-queued.
+    pub async fn recover_delivering_role_requests(&self, now_ms: u64) -> Result<(u64, u64)> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let now = sql_i64(now_ms, "delivered_at")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let delivered = sqlx::query(RECOVER_TAKEN_SQL)
+                .bind(now)
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected();
+            let requeued = sqlx::query(
+                "UPDATE role_requests SET state = 'queued', holder = NULL \
+                 WHERE state = 'delivering'",
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected();
+            tx.commit().await.map_err(adapter_error)?;
+            Ok((delivered, requeued))
+        })
+        .await
+    }
+
     async fn transition(
         &self,
         id: &str,
@@ -425,4 +687,92 @@ fn role_request(row: &sqlx::sqlite::SqliteRow) -> Result<RoleRequest> {
         escalated_at: stamp("escalated_at")?,
         answered_at: stamp("answered_at")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::Row;
+
+    /// Performance P001 on #129: every evidence probe in boot recovery is an
+    /// indexed SEARCH, never a SCAN that grows with retained job history. The
+    /// outer read is the `role_requests_delivering` partial index.
+    #[tokio::test]
+    async fn boot_recovery_probes_are_indexed_searches() {
+        let pool = crate::open("").await.expect("memory");
+        let plan: Vec<String> =
+            sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::RECOVER_TAKEN_SQL))
+                .bind(0_i64)
+                .fetch_all(&pool)
+                .await
+                .expect("plan")
+                .iter()
+                .map(|row| row.get::<String, _>("detail"))
+                .collect();
+        let text = plan.join("\n");
+        // The outer read walks the partial index of stranded claims, which is
+        // normally empty; every probe inside it must be a SEARCH.
+        for (table, index) in [
+            ("role_requests", "role_requests_delivering"),
+            ("ledger", "sqlite_autoindex_delivered_messages_1"),
+            ("jobs", "jobs_by_dedupe"),
+            ("fyis", "sqlite_autoindex_fyis_1"),
+        ] {
+            assert!(
+                plan.iter()
+                    .any(|line| line.contains(&format!("{table} USING"))
+                        && line.contains(&format!("INDEX {index}"))),
+                "{table} does not use {index}:\n{text}"
+            );
+        }
+        for table in ["ledger", "jobs", "fyis"] {
+            assert!(
+                plan.iter()
+                    .any(|line| line.starts_with(&format!("SEARCH {table} "))),
+                "{table} is not a SEARCH:\n{text}"
+            );
+        }
+        assert!(
+            !plan
+                .iter()
+                .any(|line| line.starts_with("SCAN")
+                    && !line.contains("INDEX role_requests_delivering")),
+            "a probe scans:\n{text}"
+        );
+    }
+
+    /// Review of #133: the time-limit retry's admission probe is the same
+    /// three indexed SEARCHes, with no SCAN at all.
+    #[tokio::test]
+    async fn limit_admission_probes_are_indexed_searches() {
+        let pool = crate::open("").await.expect("memory");
+        let plan: Vec<String> = sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::ADMITTED_SQL))
+            .bind("pij-pa")
+            .bind("role-limit-notice-r")
+            .fetch_all(&pool)
+            .await
+            .expect("plan")
+            .iter()
+            .map(|row| row.get::<String, _>("detail"))
+            .collect();
+        let text = plan.join("\n");
+        for (table, index) in [
+            ("ledger", "sqlite_autoindex_delivered_messages_1"),
+            ("jobs", "jobs_by_dedupe"),
+            ("fyis", "sqlite_autoindex_fyis_1"),
+        ] {
+            assert!(
+                plan.iter()
+                    .any(|line| line.starts_with(&format!("SEARCH {table} "))
+                        && line.contains(&format!("INDEX {index}"))),
+                "{table} is not a SEARCH on {index}:\n{text}"
+            );
+        }
+        // The FROM-less outer SELECT is SQLite's `SCAN CONSTANT ROW`.
+        assert!(
+            !plan
+                .iter()
+                .any(|line| line.starts_with("SCAN") && line != "SCAN CONSTANT ROW"),
+            "a probe scans:\n{text}"
+        );
+    }
 }

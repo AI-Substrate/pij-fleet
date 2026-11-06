@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::fmt;
 
-use pij_cli::{DaemonClient, IdentityRequest};
+use pij_cli::{CallerContext, DaemonClient, IdentityRequest};
 use pij_core::model::SeatId;
 
 /// A refusal whose text names the unusable identity input.
@@ -48,12 +48,18 @@ pub(crate) fn request_from_environment(
 /// Send every available identity input together. The daemon treats an observable
 /// pane as authoritative and refuses a contradictory `PIJ_SESSION_ID`; without
 /// a pane, the asserted environment id remains the only available evidence.
+/// `caller` rides along so the daemon applies the same harness-session checks
+/// it applies to the routed shim (plan 213; security review of #147).
 pub(crate) async fn resolve_acting_seat(
     env: Option<OsString>,
     pane: Option<OsString>,
+    caller: CallerContext,
     client: &DaemonClient,
 ) -> Result<SeatId, NamedRefusal> {
-    let request = request_from_environment(env, pane)?;
+    let request = IdentityRequest {
+        caller: Some(caller),
+        ..request_from_environment(env, pane)?
+    };
 
     let response = client.whoami(&request).await;
     if !response.ok {

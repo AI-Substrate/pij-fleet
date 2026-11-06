@@ -18,7 +18,7 @@ The PM that owns the work writes its docs, and the prime helps when asked. The p
 ## Rules for every type
 
 1. **Where.** `docs/project/{prds,blueprints,roadmaps}/NNN-<slug>.dd.json`. The slug is a few kebab-case words naming the feature (`seat-bookmarks`); use the same slug for a project's PRD, blueprint and roadmap so they pair by name. Workshops go in `docs/project/workshops/NNN-<slug>/NNN-<topic>.md`.
-2. **The number.** Ask your project's PM role (pm/001 in pij) for the next NNN of that type, or the prime if you are that PM. Once `pij claim` exists (roadmap step s11) use that instead. Never guess a number from the folder listing; a parallel PM may hold it.
+2. **The number.** Claim it: `pij claim prd --for <slug>` (or `roadmap`, `blueprint`, `workshop`; `plan` and `migration` work the same way). It hands out the next NNN for your project with your seat on record, so parallel PMs never collide. Never guess a number from the folder listing; another seat may hold it. `pij claims` lists who holds what; `pij claim release <kind> <number>` gives one back (a released number is never reused).
 3. **Run ddocs from the repo root.** From a subdirectory it can't find the `pij/*` schemas and every file fails with `E401 schema ... was not found`.
 4. **Create** a file by writing its `.dd.json`. Start from the matching example and replace every value. `owner` and changelog `by` are the role you hold (`pm-001`), or your seat id if you hold none yet. Dates are local `date +%F`. The schema is `pij/prd`, `pij/blueprint` or `pij/roadmap`. `ddocs schema show pij/prd` lists its sections and enums but not the fields of each row; those are in the procedure for each type and in the examples.
 5. **Edit** an existing file with ddocs, which validates before it writes:
@@ -42,6 +42,8 @@ Example: `"delivers": ["../prds/001-daily-digest.dd.json#requirements/req-01"]`.
 ## States
 
 - Rows and steps start `planned`. The builder flips a row's state in the PR that delivers it (`in-progress`, then `shipped`; roadmap steps use `complete`), not in a later cleanup.
+- **Every PR body carries a `Delivers:` line** naming the full ddocs addresses it delivers, e.g. `Delivers: docs/project/prds/001-pij-community.dd.json#requirements/req-20, docs/project/roadmaps/001-pij-community.dd.json#steps/s11`. A PR that delivers no row says `Delivers: none`.
+- **After the merge, the merger runs `pij delivered <pr>` once.** It records the delivery, posts it on the PM's card and prints the `ddocs set` edits (`delivered_by` and a step's `plan`); the PM puts them in its next docs PR. pij never edits or pushes these files itself.
 - Rows are amended, never deleted. To drop one, set its state to `dropped` (steps: `abandoned`) and say why in its `note`.
 - Ids are never reused. A new requirement takes the next free `req-NN`, even after a drop.
 - Every change of meaning adds a `changelog` row: date, who, what changed.
@@ -49,3 +51,5 @@ Example: `"delivers": ["../prds/001-daily-digest.dd.json#requirements/req-01"]`.
 ## Role documents
 
 A pij emergent community (PEC) is built from whatever roles the work needs now and reshaped as the work changes; templates are examples, not a checklist. Its roles under `<government-root>/community/roles/` are written only by `pij directory add`, which adds the changelog row and runs `ddocs validate` and `ddocs build` itself. Start a role from a template with `pij directory add <id> --from template:<name>` when one fits (`pij directory templates` lists them), or from your own brief with `--from file:<brief>`. Don't pre-validate a role document with ddocs: `pij/role` requires a `changelog` section that only the writer adds, so a hand check always fails on it.
+
+Holders are written only by `pij directory assign` (one, or many with `--batch <file>` in one commit) and `release`; the prime records a closed seat's past holding with `pij directory lineage add <role> <seat> --from <time> --to <time> --why <text>`. If your own commit in the standing governance worktree fails on `index.lock`, pij's writer may be committing there: its git dir holds `pij-writer.owner` while it does. Retry in a moment; never delete the lock.

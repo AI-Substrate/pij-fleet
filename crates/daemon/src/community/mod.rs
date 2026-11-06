@@ -8,9 +8,11 @@
 
 pub mod ddocs;
 pub mod directory;
+pub mod gh;
 mod git;
 pub mod holders;
 pub mod layout;
+pub mod memory;
 pub mod output;
 pub mod pointer;
 pub mod role;

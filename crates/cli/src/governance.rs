@@ -28,6 +28,9 @@ pub async fn governance(
         "directory" => "/v1/directory",
         "output" => "/v1/output",
         "outputs" => "/v1/outputs",
+        "claim" => "/v1/claim",
+        "claims" => "/v1/claims",
+        "delivered" => "/v1/delivered",
         _ => {
             let mut error = Envelope::refused(
                 format!("pij {family}"),
@@ -48,6 +51,22 @@ pub async fn governance(
             &json!({"argv": argv, "caller": caller}),
         )
         .await
+}
+
+/// `pij directory memory add … --body-file <path|->`: read the body here and
+/// send it as `--body`, so stdin works and the daemon reads no caller file.
+/// Any other argv is returned unchanged.
+///
+/// # Errors
+/// The flag without a value, or a body that cannot be read.
+pub fn inline_body_file(
+    args: &[String],
+    read: impl FnMut(&str) -> std::io::Result<String>,
+) -> Result<Vec<String>, String> {
+    if args.first().map(String::as_str) != Some("memory") {
+        return Ok(args.to_vec());
+    }
+    body_file_to_body(args, read)
 }
 
 /// `--body-file <path|->` read here and sent as `--body`, so stdin works and
@@ -102,6 +121,27 @@ mod tests {
             argv(&["note", "--body", "from n.md"])
         );
         assert!(super::body_file_to_body(&argv(&["note", "--body-file"]), read).is_err());
+    }
+
+    #[test]
+    fn a_memory_body_file_is_read_here_and_sent_as_body() {
+        let argv = |tokens: &[&str]| tokens.iter().map(|t| (*t).to_string()).collect::<Vec<_>>();
+        let read = |source: &str| Ok(format!("from {source}"));
+        assert_eq!(
+            super::inline_body_file(&argv(&["memory", "add", "qa", "--body-file", "-"]), read)
+                .unwrap(),
+            argv(&["memory", "add", "qa", "--body", "from -"])
+        );
+        assert_eq!(
+            super::inline_body_file(&argv(&["memory", "add", "qa", "--body-file=n.md"]), read)
+                .unwrap(),
+            argv(&["memory", "add", "qa", "--body", "from n.md"])
+        );
+        let other = argv(&["add", "qa", "--body-file", "x"]);
+        assert_eq!(super::inline_body_file(&other, read).unwrap(), other);
+        assert!(
+            super::inline_body_file(&argv(&["memory", "add", "qa", "--body-file"]), read).is_err()
+        );
     }
 
     use axum::extract::{Json, State};

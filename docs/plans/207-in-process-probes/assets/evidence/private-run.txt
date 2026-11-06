@@ -1,0 +1,18 @@
+private daemon pid=72232 port=17907
+reading rest-1: pid=72232 total=2 by_op={"ps.sidecar-process-group": 1, "tmux.control-client": 1}
+reading rest-2: pid=72232 total=2 by_op={"ps.sidecar-process-group": 1, "tmux.control-client": 1}
+reading after-3-fyi-reads: pid=72232 total=2 by_op={"ps.sidecar-process-group": 1, "tmux.control-client": 1}
+
+$ chain (ps -o pid,ppid,ucomm,args)
+91320 72212 node             node <tmp>/node_modules/@anthropic-ai/claude-code/cli.js --session-id 00000000-0000-4000-8000-000000000207
+91761 91320 sleep            /bin/sleep 600
+
+$ paneless register 1 (caller pid 91761, harness claude, session 00000000-0000-4000-8000-000000000207)
+ok pij-primary-lungfish
+reading after-register-1: pid=72232 total=3 by_op={"ps.registration-native-process": 1, "ps.sidecar-process-group": 1, "tmux.control-client": 1}
+
+$ paneless register 2 (caller pid 91761, harness claude, session 00000000-0000-4000-8000-000000000207)
+ok pij-primary-lungfish
+reading after-register-2: pid=72232 total=4 by_op={"ps.registration-native-process": 2, "ps.sidecar-process-group": 1, "tmux.control-client": 1}
+docs/plans/207-in-process-probes/assets/evidence/private-run.sh: line 65: 72232 Terminated: 15          "$BIN" daemon --bind "127.0.0.1:$PORT" --state-dir "$PIJ_RS_STATE_DIR" >> "$S/daemon.log" 2>&1
+docs/plans/207-in-process-probes/assets/evidence/private-run.sh: line 65: 91320 Terminated: 15          node "$ENTRY" --session-id "$SESSION"

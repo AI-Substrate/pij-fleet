@@ -191,9 +191,10 @@
 					"statement": "Memory is never capped or pruned. Each note is its own small ddoc under `community/roles/<id>/memory/` (date, title, tags, one-line hook, body), and pij generates `memory/INDEX.md` with one line per note, so a seat reads the index and opens only the notes it needs. Notes are written one at a time. Before pij compacts or closes a seat that holds a role, it first asks the seat to add what it learned, and runs the compact or close after that turn.",
 					"actor": "pa",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A compact of a role holder shows the memory turn first, then the compact; the new note appears with an INDEX.md line; a seat holding no role is compacted directly.",
-					"source": "workshops/001-pij-community/001-community-directory.md"
+					"source": "workshops/001-pij-community/001-community-directory.md",
+					"delivered_by": "#132"
 				},
 				{
 					"id": "req-10",
@@ -301,9 +302,10 @@
 					"statement": "`pij claim prd|roadmap|blueprint|migration|<kind>` hands out the next NNN for a project, recorded with the claiming seat, and releases it when the work merges or the seat closes. Parallel PMs never collide on a number.",
 					"actor": "pm",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Two seats claiming at once get different numbers; a claim held by a closed seat is released.",
-					"source": "workshops/001-pij-community/001-community-directory.md"
+					"source": "workshops/001-pij-community/001-community-directory.md",
+					"delivered_by": "#131"
 				},
 				{
 					"id": "req-22",
@@ -351,9 +353,10 @@
 					"statement": "When a PR merges, pij records which requirement rows and roadmap steps it delivered (from the PR's links), fills `delivered_by`, and puts it on the owning PM's card, so states stop lagging the code.",
 					"actor": "pm",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Merging a PR that names req-07 records the PR on req-07 and shows on the PM's card within one event.",
-					"source": "workshops/001-pij-community/001-community-directory.md"
+					"source": "workshops/001-pij-community/001-community-directory.md",
+					"delivered_by": "#131"
 				},
 				{
 					"id": "req-26",
@@ -502,6 +505,16 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "Plan 194: req-14 reworded per ruling C22, from creating the core roles to prompting for them and for security until each exists, creating nothing. req-13 and req-14 shipped; req-27 in-progress (the s03 wording; s09 and s10 to come)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 196: req-20 (pij claim, released on close or merge) and req-21 (pij delivered records a merged PR's Delivers line, posts on the PM's card and prints the delivered_by edits) shipped."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "docs-system",
+					"change": "delivered_by recorded: req-20 and req-21 by #131 (s11, from the prime's `pij delivered 131`); req-09 by #132 (s07), set by hand because #132's Delivers line names the step in prose, not as ddocs addresses."
 				}
 			]
 		}

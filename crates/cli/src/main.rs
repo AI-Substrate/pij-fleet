@@ -341,15 +341,27 @@ enum Command {
     },
     /// Durably enqueue one message as the acting seat.
     #[command(
-        after_long_help = "Examples:\n  pij-rs send --to <id> --body 'hello'\n  pij-rs send --to <id> --body-file -\n  pij-rs send --to <id> --fyi --body 'merged #452, nothing needed from you' (their next action doesn't depend on it: held, opens no turn)\n  pij-rs send --to <id> --force --reason 'prod is down' --body '...' (wake a cold seat anyway; audited)"
+        after_long_help = "Examples:\n  pij send <id> 'hello'   (the pij shim forwards this form unchanged)\n  pij send role:<id>[/<instance>] 'hello' [--reply wake|fyi|none] [--limit 45m]   (to whoever holds the role)\n  pij-rs send --to <id> --body 'hello'\n  pij-rs send --to <id> --body-file -\n  pij-rs send --to <id> --fyi --body 'merged #452, nothing needed from you' (their next action doesn't depend on it: held, opens no turn)\n  pij-rs send --to <id> --force --reason 'prod is down' --body '...' (wake a cold seat anyway; audited)"
     )]
     Send {
         /// Assert the derived sending seat. Omit to use PIJ_SESSION_ID or TMUX_PANE.
         #[arg(long)]
         from: Option<String>,
-        /// `<seat>` or `<seat>@<machine>`; use `@@` for a literal seat `@`.
+        /// The recipient, as the pij shim writes it: `send <recipient> [<text>]`.
+        /// Same as --to.
+        #[arg(
+            value_parser = pij_core::address::parse_destination,
+            conflicts_with = "to",
+            required_unless_present = "to"
+        )]
+        recipient: Option<pij_core::model::Destination>,
+        /// The body, as the pij shim writes it. Same as --body.
+        #[arg(conflicts_with_all = ["body", "body_file"])]
+        text: Option<String>,
+        /// `<seat>`, `<seat>@<machine>` or `role:<id>[/<instance>]`; use `@@` for a
+        /// literal seat `@`.
         #[arg(long, value_parser = pij_core::address::parse_destination)]
-        to: pij_core::model::Destination,
+        to: Option<pij_core::model::Destination>,
         /// Literal message body, including values beginning with `-`.
         #[arg(long, allow_hyphen_values = true, conflicts_with = "body_file")]
         body: Option<String>,
@@ -600,6 +612,24 @@ enum Command {
     /// A project's role outputs, by subject and exact head or by role (plan 200).
     #[command(disable_help_flag = true)]
     Outputs {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Take the next number for a kind, or release one (plan 196).
+    #[command(disable_help_flag = true)]
+    Claim {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// List a project's open and released number claims (plan 196).
+    #[command(disable_help_flag = true)]
+    Claims {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Record what a merged PR delivered; prints the ddocs edits (plan 196, C23).
+    #[command(disable_help_flag = true)]
+    Delivered {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -1004,6 +1034,7 @@ async fn run(cli: Cli) -> ExitCode {
     if let Command::Send {
         command: Some(command),
         body,
+        text,
         body_file,
         ..
     } = &cli.command
@@ -1011,7 +1042,8 @@ async fn run(cli: Cli) -> ExitCode {
         let result = if body_file.is_some() {
             Err("E-RS-CONTROL-BODY: --command and --body-file are mutually exclusive".to_string())
         } else {
-            pij_core::control::validate_command(command, body.as_deref().unwrap_or_default())
+            let argument = body.as_deref().or(text.as_deref()).unwrap_or_default();
+            pij_core::control::validate_command(command, argument)
         };
         if let Err(reason) = result {
             return emit(
@@ -1215,6 +1247,14 @@ async fn run(cli: Cli) -> ExitCode {
         println!("{}", pij_core::outputs::help(family));
         return ExitCode::SUCCESS;
     }
+    // Claim help needs no daemon either (plan 196).
+    if let Command::Claim { args } | Command::Claims { args } | Command::Delivered { args } =
+        &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        print!("{}", pij_core::claims::HELP);
+        return ExitCode::SUCCESS;
+    }
     let client = match DaemonClient::new(&state_dir, &addr) {
         Ok(client) => client,
         Err(error) => {
@@ -1363,6 +1403,8 @@ async fn run(cli: Cli) -> ExitCode {
         ),
         Command::Send {
             from,
+            recipient,
+            text,
             to,
             body,
             body_file,
@@ -1376,6 +1418,18 @@ async fn run(cli: Cli) -> ExitCode {
             limit,
             project,
         } => {
+            // clap requires exactly one of the two recipient forms.
+            let Some(to) = to.or(recipient) else {
+                return emit(
+                    &Envelope::<Value>::refused(
+                        "pij send",
+                        ErrorKind::Refused,
+                        "pij send needs a recipient: pij send <id> <text>, or --to <id>",
+                    ),
+                    cli.json,
+                );
+            };
+            let body = body.or(text);
             let acting = match resolve_command_seat(&client, "pij send", from.as_deref()).await {
                 Ok(seat) => seat,
                 Err(error) => return emit(&setup_refusal::<Value>("pij send", error), cli.json),
@@ -1434,6 +1488,7 @@ async fn run(cli: Cli) -> ExitCode {
             } else {
                 client.send(&request).await
             };
+            let raw = response.raw_json.clone();
             if response.ok {
                 response.meta = Some(format!("from {}; msg_id {}", request.from, request.msg_id));
                 // This is a CLI-derived receipt, not an unchanged daemon reply.
@@ -1445,7 +1500,10 @@ async fn run(cli: Cli) -> ExitCode {
                 println!("{held}");
                 return ExitCode::SUCCESS;
             }
-            emit(&response, cli.json)
+            match with_memory_turn(&response, raw.as_deref()).filter(|_| response.ok) {
+                Some(shown) => emit(&shown, cli.json),
+                None => emit(&response, cli.json),
+            }
         }
         Command::Activity {
             seat,
@@ -1535,9 +1593,12 @@ async fn run(cli: Cli) -> ExitCode {
                 caller: None,
             };
             let mut response = client.send_control(&request, &caller_context()).await;
+            let raw = response.raw_json.take();
             response.command = "pij compact-self".to_string();
-            response.raw_json = None;
-            emit(&response, cli.json)
+            match with_memory_turn(&response, raw.as_deref()) {
+                Some(shown) => emit(&shown, cli.json),
+                None => emit(&response, cli.json),
+            }
         }
         Command::Inbox {
             action,
@@ -1728,6 +1789,19 @@ async fn run(cli: Cli) -> ExitCode {
         }
         Command::Directory { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let args = match pij_cli::governance::inline_body_file(&args, |source| {
+                if source == "-" {
+                    std::io::read_to_string(std::io::stdin())
+                } else {
+                    std::fs::read_to_string(source)
+                }
+            }) {
+                Ok(args) => args,
+                Err(reason) => {
+                    eprintln!("pij directory: {reason}");
+                    return ExitCode::from(2);
+                }
+            };
             let response =
                 pij_cli::governance::governance(&client, "directory", &args, &caller_context())
                     .await;
@@ -1746,6 +1820,15 @@ async fn run(cli: Cli) -> ExitCode {
                 }
                 Some(data) if data.get("diff").is_some_and(Value::is_string) => {
                     println!("{}", render_template_diff(data));
+                    ExitCode::SUCCESS
+                }
+                // `directory memory <role>` and `--note`: the text itself.
+                Some(memory) if memory.get("index").is_some_and(Value::is_string) => {
+                    print!("{}", memory["index"].as_str().unwrap_or_default());
+                    ExitCode::SUCCESS
+                }
+                Some(memory) if memory.get("note").is_some() && memory.get("commit").is_none() => {
+                    println!("{}", render_memory_note(memory));
                     ExitCode::SUCCESS
                 }
                 _ => emit(&response, as_json),
@@ -1783,6 +1866,9 @@ async fn run(cli: Cli) -> ExitCode {
                 _ => emit(&response, as_json),
             }
         }
+        Command::Claim { args } => claims_verb(&client, "claim", &args, cli.json).await,
+        Command::Claims { args } => claims_verb(&client, "claims", &args, cli.json).await,
+        Command::Delivered { args } => claims_verb(&client, "delivered", &args, cli.json).await,
         Command::Project { args }
         | Command::Stream { args }
         | Command::Fence { args }
@@ -2271,6 +2357,7 @@ async fn resolve_command_seat(
     let derived = identity::resolve_acting_seat(
         std::env::var_os("PIJ_SESSION_ID"),
         std::env::var_os("TMUX_PANE"),
+        caller_context(),
         client,
     )
     .await
@@ -2715,6 +2802,29 @@ fn system_time_ms() -> Result<u64, PijError> {
     })
 }
 
+/// A held compact's control receipt with what the typed `Receipt` drops put
+/// back: `held` and `memory_turn` (plan 201), read from the daemon's raw
+/// reply. `None` when the reply carries no memory turn, so every other receipt
+/// prints exactly as before.
+fn with_memory_turn(
+    response: &Envelope<pij_core::model::Receipt>,
+    raw: Option<&str>,
+) -> Option<Envelope<Value>> {
+    let daemon: Value = serde_json::from_str(raw?).ok()?;
+    let data = &daemon["data"];
+    if data["memory_turn"].is_null() {
+        return None;
+    }
+    let mut value = serde_json::to_value(response).ok()?;
+    if !value["data"].is_object() {
+        return None;
+    }
+    for key in ["held", "memory_turn"] {
+        value["data"][key] = data[key].clone();
+    }
+    serde_json::from_value(value).ok()
+}
+
 /// Is this send receipt an FYI held for the recipient's next turn?
 /// The human line for a held FYI, with the receipt's warning (plan 159) on
 /// the next line. `None` when the send was not held as an FYI.
@@ -2778,8 +2888,14 @@ fn render_outputs(data: &Value) -> String {
 }
 
 /// `pij directory` for a human: each role, its mode and its live holders.
+/// Times are shown in local time with their offset (F13); `--json` keeps UTC.
 fn render_directory(view: &Value) -> String {
     let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    let offset = pij_harnesses::proc::local_utc_offset_minutes().ok();
+    let since = |value: &Value| match (value.as_str(), offset) {
+        (Some(stored), Some(minutes)) => pij_daemon::community::holders::local(stored, minutes),
+        _ => text(value),
+    };
     let roles = view["roles"]
         .as_array()
         .map(Vec::as_slice)
@@ -2798,7 +2914,7 @@ fn render_directory(view: &Value) -> String {
                     "{}{} since {} on {}{}",
                     text(&holder["seat"]),
                     instance.map(|key| format!(" ({key})")).unwrap_or_default(),
-                    text(&holder["since"]),
+                    since(&holder["since"]),
                     text(&holder["machine"]),
                     if holder["end_pending"] == true {
                         ", end pending"
@@ -2896,6 +3012,33 @@ fn render_template_diff(data: &Value) -> String {
     }
 }
 
+/// One memory note for a human: its title line, then the body as written.
+fn render_memory_note(note: &Value) -> String {
+    if let Some(text) = note["text"].as_str() {
+        return text.trim_end().to_string();
+    }
+    let meta = &note["meta"];
+    let tags: Vec<&str> = meta["tags"]
+        .as_array()
+        .map(|tags| tags.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let mut out = format!(
+        "# {}\n{} · {}",
+        meta["title"].as_str().unwrap_or("-"),
+        meta["date"].as_str().unwrap_or("-"),
+        meta["hook"].as_str().unwrap_or("-"),
+    );
+    if !tags.is_empty() {
+        let _ = write!(out, " ({})", tags.join(", "));
+    }
+    let _ = write!(
+        out,
+        "\n\n{}",
+        note["body"].as_str().unwrap_or_default().trim_end()
+    );
+    out
+}
+
 fn directory_help(args: &[String]) -> ExitCode {
     let verb = pij_core::directory::verb(args);
     match pij_core::directory::help(verb) {
@@ -2910,6 +3053,67 @@ fn directory_help(args: &[String]) -> ExitCode {
             );
             ExitCode::from(2)
         }
+    }
+}
+
+/// Forward `pij claim|claims|delivered` and render the answer (plan 196).
+async fn claims_verb(client: &DaemonClient, family: &str, args: &[String], json: bool) -> ExitCode {
+    let as_json = json || args.iter().any(|arg| arg == "--json");
+    let response = pij_cli::governance::governance(client, family, args, &caller_context()).await;
+    match response.data.as_ref().filter(|_| response.ok && !as_json) {
+        Some(data) => {
+            println!("{}", render_claims(family, data));
+            ExitCode::SUCCESS
+        }
+        None => emit(&response, as_json),
+    }
+}
+
+/// `pij claim`, `pij claims` and `pij delivered` for a human. `delivered`
+/// prints its ddocs edits as runnable lines (ruling C23: printed, not applied).
+fn render_claims(family: &str, data: &Value) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+    match family {
+        "claims" => {
+            let rows = data["claims"].as_array().cloned().unwrap_or_default();
+            let mut out = format!(
+                "{}: {} open, {} listed",
+                text(&data["project"]),
+                data["open"],
+                rows.len()
+            );
+            for row in rows {
+                let state = match row["release_reason"].as_str() {
+                    Some(reason) => format!("released ({reason})"),
+                    None => "open".to_string(),
+                };
+                let _ = write!(
+                    out,
+                    "\n  {} {}  {}  {}  {}",
+                    text(&row["kind"]),
+                    text(&row["formatted"]),
+                    text(&row["seat"]),
+                    state,
+                    text(&row["subject"])
+                );
+            }
+            out
+        }
+        "delivered" => {
+            let mut out = text(&data["line"]);
+            let edits = data["edits"].as_array().cloned().unwrap_or_default();
+            if !edits.is_empty() {
+                out.push_str("\nddocs edits for the PM's next docs PR (not applied):");
+                for edit in edits {
+                    let _ = write!(out, "\n  {}", text(&edit["command"]));
+                }
+            }
+            for note in data["notes"].as_array().cloned().unwrap_or_default() {
+                let _ = write!(out, "\nnote: {}", text(&note));
+            }
+            out
+        }
+        _ => text(&data["line"]),
     }
 }
 
@@ -2980,6 +3184,17 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
         }
         if card.pending_fyis > 0 {
             let _ = write!(output, "\nFYIs held: {}", card.pending_fyis);
+        }
+        for note in &card.deliveries {
+            let _ = write!(
+                output,
+                "\ndelivered: {} #{} ({}) by {}: {}",
+                note.project,
+                note.pr,
+                note.merge_commit.get(..12).unwrap_or(&note.merge_commit),
+                note.recorded_by,
+                note.addresses.join(", ")
+            );
         }
         if let Some(block) = &card.session_status {
             let _ = write!(
@@ -3418,6 +3633,9 @@ impl Command {
             Command::Directory { .. } => "pij directory",
             Command::Output { .. } => "pij output",
             Command::Outputs { .. } => "pij outputs",
+            Command::Claim { .. } => "pij claim",
+            Command::Claims { .. } => "pij claims",
+            Command::Delivered { .. } => "pij delivered",
             Command::List { .. } => "pij list",
             Command::State { .. } => "pij state",
             Command::Tail { .. } => "pij tail",
@@ -3704,10 +3922,35 @@ mod tests {
                 "directory",
                 "output",
                 "outputs",
+                "claim",
+                "claims",
+                "delivered",
                 "list",
                 "state",
                 "tail"
             ]
+        );
+    }
+
+    /// Review F002: a held compact's reply decodes as the typed control
+    /// receipt the client uses, and its memory_turn survives to the output.
+    #[test]
+    fn a_held_compact_reply_decodes_as_a_receipt_and_keeps_its_memory_turn() {
+        let raw = r#"{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"m1","outcome":{"outcome":"held","reason":"memory-turn"},"at":5,"held":"memory-turn","memory_turn":{"action":"compact","bound_ms":300000}}}"#;
+        let mut typed: pij_core::model::Envelope<pij_core::model::Receipt> =
+            serde_json::from_str(raw).expect("the client's typed decode");
+        typed.raw_json = None;
+        let shown = super::with_memory_turn(&typed, Some(raw)).expect("a held compact");
+        let data = shown.data.expect("data");
+        assert_eq!(data["msg_id"], "m1");
+        assert_eq!(data["outcome"]["outcome"], "held");
+        assert_eq!(data["held"], "memory-turn");
+        assert_eq!(data["memory_turn"]["bound_ms"], 300_000);
+        assert!(super::with_memory_turn(&typed, None).is_none());
+        let plain = r#"{"ok":true,"command":"pij send","v":2,"data":{"msg_id":"m2","outcome":{"outcome":"queued"},"at":5}}"#;
+        assert!(
+            super::with_memory_turn(&typed, Some(plain)).is_none(),
+            "an ordinary receipt prints as before"
         );
     }
 
@@ -4366,5 +4609,152 @@ mod identity_cli_tests {
             adopt_argv(None, "claude", None),
             ["inbox", "register", "--harness", "claude"]
         );
+    }
+}
+
+/// Plan 213: the pij shim hands pij-rs's community verbs to this binary
+/// unchanged. Which verbs is read from clap, never restated.
+#[cfg(test)]
+mod shim_forward_tests {
+    use std::collections::BTreeSet;
+
+    use clap::{CommandFactory, Parser};
+
+    use super::{Cli, Command};
+
+    /// One list from the shim's `harness/scripts/pij-native-verbs.json`.
+    fn shim_list(key: &str) -> Vec<String> {
+        let file: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../harness/scripts/pij-native-verbs.json"
+        ))
+        .expect("pij-native-verbs.json is JSON");
+        serde_json::from_value(file[key].clone()).unwrap_or_else(|_| panic!("a {key} array"))
+    }
+
+    fn listed() -> Vec<String> {
+        shim_list("verbs")
+    }
+
+    /// `--long` options of `command` that take a value; `global` keeps only
+    /// options marked global.
+    fn value_flags(command: &clap::Command, global: bool) -> BTreeSet<String> {
+        command
+            .get_arguments()
+            .filter(|arg| arg.get_action().takes_values() && (!global || arg.is_global_set()))
+            .filter_map(|arg| arg.get_long().map(|long| format!("--{long}")))
+            .collect()
+    }
+
+    fn send_command() -> clap::Command {
+        Cli::command()
+            .find_subcommand("send")
+            .expect("a send subcommand")
+            .clone()
+    }
+
+    /// Review of #147, F001 and N001: the shim reads a flag's value as a value,
+    /// never as the verb or the recipient, because its value-flag tables are
+    /// clap's.
+    #[test]
+    fn the_shims_value_flag_tables_are_claps() {
+        let send = value_flags(&send_command(), false);
+        let listed: BTreeSet<String> = shim_list("send_value_flags").into_iter().collect();
+        assert_eq!(listed, send);
+        let global: BTreeSet<String> = shim_list("global_value_flags").into_iter().collect();
+        assert_eq!(global, value_flags(&Cli::command(), true));
+        for routed in shim_list("routed_send_value_flags") {
+            let long = routed.trim_start_matches("--");
+            assert!(
+                send_command()
+                    .get_arguments()
+                    .all(|arg| arg.get_long() != Some(long)),
+                "{routed} is a pij-rs send flag, so it is not shim-only"
+            );
+        }
+        // Negative control: a new value-taking send flag that the shim's table
+        // lacks is caught.
+        let grown = send_command().arg(clap::Arg::new("priority").long("priority"));
+        assert_ne!(listed, value_flags(&grown, false));
+    }
+
+    /// Verbs that own their grammar and help (clap's help flag disabled) but the
+    /// shim does not forward, and listed verbs that no longer exist or own it.
+    fn gaps(command: &clap::Command, listed: &[String]) -> Vec<String> {
+        let owned: BTreeSet<String> = command
+            .get_subcommands()
+            .filter(|sub| sub.is_disable_help_flag_set())
+            .map(|sub| sub.get_name().to_string())
+            .collect();
+        let listed: BTreeSet<String> = listed.iter().cloned().collect();
+        owned.symmetric_difference(&listed).cloned().collect()
+    }
+
+    #[test]
+    fn the_shim_forwards_exactly_the_verbs_that_own_their_help() {
+        let listed = listed();
+        assert!(listed.contains(&"directory".to_string()), "{listed:?}");
+        assert_eq!(gaps(&Cli::command(), &listed), Vec::<String>::new());
+        // Negative controls: a new verb that owns its help but is not listed,
+        // and a listed verb clap no longer has, both fail.
+        let grown =
+            Cli::command().subcommand(clap::Command::new("requests").disable_help_flag(true));
+        assert_eq!(gaps(&grown, &listed), ["requests"]);
+        let mut stale = listed.clone();
+        stale.push("retired-verb".to_string());
+        assert_eq!(gaps(&Cli::command(), &stale), ["retired-verb"]);
+    }
+
+    /// The shim's own send form reaches pij-rs unchanged (F55): a positional
+    /// recipient and text, the same as --to and --body.
+    #[test]
+    fn send_takes_the_shims_positional_form() {
+        let cli = Cli::try_parse_from([
+            "pij-rs",
+            "send",
+            "role:security/141",
+            "hello",
+            "--reply",
+            "fyi",
+        ])
+        .expect("the positional form parses");
+        let Command::Send {
+            recipient,
+            text,
+            to,
+            body,
+            reply,
+            ..
+        } = cli.command
+        else {
+            panic!("expected send");
+        };
+        assert_eq!(
+            recipient.map(|to| to.seat.as_str().to_string()).as_deref(),
+            Some("role:security/141")
+        );
+        assert_eq!((text.as_deref(), to, body), (Some("hello"), None, None));
+        assert_eq!(reply.as_deref(), Some("fyi"));
+
+        let piped = Cli::try_parse_from(["pij-rs", "send", "pij-peer", "--body-file", "-"])
+            .expect("a positional recipient with a stdin body parses");
+        let Command::Send {
+            recipient,
+            body_file,
+            ..
+        } = piped.command
+        else {
+            panic!("expected send");
+        };
+        assert!(recipient.is_some());
+        assert_eq!(body_file.as_deref(), Some("-"));
+
+        for both in [
+            &["pij-rs", "send", "pij-a", "--to", "pij-b", "--body", "x"][..],
+            &["pij-rs", "send", "pij-a", "hello", "--body", "x"],
+            &["pij-rs", "send", "pij-a", "hello", "--body-file", "-"],
+            &["pij-rs", "send", "--body", "x"],
+        ] {
+            assert!(Cli::try_parse_from(both).is_err(), "{both:?}");
+        }
     }
 }

@@ -125,7 +125,7 @@
 					"where": "crates/daemon control",
 					"responsibility": "Before a compact or close of a role holder, delivers the memory prompt and holds the control until that turn ends.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-09"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-routes",
@@ -167,7 +167,7 @@
 					"where": "crates/cli + crates/store",
 					"responsibility": "`pij claim <kind>` hands out the next NNN per project and kind, and releases it on merge or close.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-20"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-merge-delivery",
@@ -176,7 +176,7 @@
 					"where": "crates/daemon",
 					"responsibility": "On a PR merge, reads the PR's links to requirement rows and steps, records the delivery and fills `delivered_by` through a docs PR, and updates the owning PM's card.",
 					"realises": ["../prds/001-pij-community.dd.json#requirements/req-21"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-limits",
@@ -321,6 +321,11 @@
 					"date": "2026-11-06",
 					"by": "pij-following-marsupial",
 					"change": "c-templates in-progress: the core and security templates ship in plan 194, compiled into the daemon; the optional templates come in s10."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 196: c-claims and c-merge-delivery shipped. Delivery is the verb the merger runs (C23); the edits are printed for the PM's docs PR, never applied."
 				}
 			]
 		}
