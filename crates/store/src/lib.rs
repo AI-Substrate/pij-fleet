@@ -7,6 +7,7 @@
 #![deny(missing_docs)]
 
 pub mod background;
+pub mod claims;
 pub mod community;
 pub mod decisions;
 pub mod dispatch;
@@ -17,9 +18,11 @@ pub mod orchestration;
 pub mod queue;
 pub mod registry;
 mod role_assertion;
+pub mod role_requests;
 pub mod spine;
 pub mod status;
 
+pub use claims::{Claim, ClaimKey, DeliveryCommit, DeliveryNote, DeliveryRecord, ReleaseOutcome};
 pub use community::{Assignment, AssignmentCommit, CommunityPointer};
 pub use governance::GovernanceOutcome;
 pub use migrate::{SCHEMA_VERSION, StorePool, open, require_current_schema, schema_version};
@@ -29,4 +32,5 @@ pub use orchestration::{
 pub use queue::SqliteQueue;
 pub use registry::SqliteRegistry;
 pub use role_assertion::{Placement, PlacementCommit};
+pub use role_requests::{ReplyMode, RequestState, RoleRequest};
 pub use spine::SqliteSpine;
