@@ -4,7 +4,7 @@ Dogfood of PRD 001, Pij Emergent Communities (PEC): the prime and humans build w
 
 Roles and holders are written by pij (s02, s04): `pij directory`, `pij directory add`, `assign` and `release`. Never hand-edit role files or holders; `HOLDERS.md` keeps only pre-s04 history.
 
-Memory is written by pij (s07): `pij directory memory add <role> --title <t> --hook <when to read it> [--tags a,b] --body-file -`, one commit per note, and `INDEX.md` is regenerated inside its `pij:generated` block (lines outside it are kept). Read with `pij directory memory <role> [--note <slug>]`. Never hand-write a note. Before a compact or close, pij gives a role holder a memory turn; `pij compact-self` runs it for a self-compaction.
+Memory is written by pij (s07): `pij directory memory add <role> --title <t> --hook <when to read it> [--tags a,b] --body-file <path>` (not `-` until plan 209 fixes F30: the `pij` shim refuses stdin), one commit per note, and `INDEX.md` is regenerated inside its `pij:generated` block (lines outside it are kept). Read with `pij directory memory <role> [--note <slug>]`. Never hand-write a note. Before a compact or close, pij gives a role holder a memory turn; `pij compact-self` runs it for a self-compaction.
 
 **Until the remaining verbs exist:**
 - **Outputs:** append one line to the role's `outputs/LOG.md`: `<date> <kind> <subject> <head> <result> — <notes>`. Verdicts are also posted on the PR as `<role>: pass|pass-with-notes|block (head <full-sha>)` followed by the notes.
