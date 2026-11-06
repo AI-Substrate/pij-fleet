@@ -224,13 +224,43 @@ async fn write(
         ),
         None => None,
     };
-    if let Some(request) = &request {
-        fields.requester = Some(request.requester.clone());
-    }
-    let holds_role = store
+    let holdings = store
         .open_assignments(actor.id.as_str())
         .await
-        .map_err(store_error)?
+        .map_err(store_error)?;
+    if let Some(request) = &request {
+        // pm-001's ruling (security S001 on #137): anyone may publish, but
+        // only the request's recorded holder, a live holder of its role or its
+        // project's prime may answer it. Checked before anything is written,
+        // stamped or sent.
+        let recorded = request.holder.as_deref() == Some(actor.id.as_str());
+        let holder = holdings
+            .iter()
+            .any(|row| row.project == request.project && row.role == request.role);
+        let prime = !recorded
+            && !holder
+            && store
+                .project(&request.project)
+                .await
+                .map_err(store_error)?
+                .and_then(|record| record.prime_id)
+                .is_some_and(|prime| prime == actor.id);
+        if !(recorded || holder || prime) {
+            return Err(Refusal::new(
+                "E-RS-OUTPUT-NOT-HOLDER",
+                format!(
+                    "--answers {}: {} is not the request's holder, a live holder of {} in project {}, or that project's prime, so it may not answer it; nothing was written",
+                    request.id, actor.id, request.role, request.project
+                ),
+            )
+            .with_next(format!(
+                "Get assigned (pij directory assign {} <seat> --why <text> --project {}), or drop --answers to publish the output without answering",
+                request.role, request.project
+            )));
+        }
+        fields.requester = Some(request.requester.clone());
+    }
+    let holds_role = holdings
         .iter()
         .any(|row| row.project == project && row.role == fields.role);
     let (written, path) = state
@@ -267,7 +297,15 @@ async fn write(
             .await
             .map_err(|error| committed_but(&written.commit, &error))?;
     }
-    let notified = notify(state, actor, &fields, request.as_ref(), &path).await;
+    let notified = notify(
+        state,
+        actor,
+        &fields,
+        request.as_ref(),
+        &path,
+        &notice_id(&project, &written.commit),
+    )
+    .await;
     let mut data = json!({
         "project": project,
         "role": fields.role,
@@ -298,6 +336,7 @@ async fn notify(
     fields: &OutputFields,
     request: Option<&RoleRequest>,
     path: &str,
+    msg_id: &str,
 ) -> Value {
     let (target, mode) = match request {
         Some(request) => {
@@ -314,7 +353,12 @@ async fn notify(
             } else {
                 ReplyMode::Fyi
             };
-            (above(state, writer).await, mode)
+            match above(state, writer).await {
+                Ok(seat) => (seat, mode),
+                Err(error) => {
+                    return json!({"seat": null, "mode": mode.as_str(), "outcome": format!("not delivered: finding the seat above failed: {error}")});
+                }
+            }
         }
     };
     let Some(target) = target else {
@@ -323,7 +367,7 @@ async fn notify(
     if mode == ReplyMode::None || target == writer.id {
         return json!({"seat": target, "mode": mode.as_str(), "outcome": "not told"});
     }
-    let msg_id = format!("output-{}-{}", writer.id, now_ms());
+    let msg_id = msg_id.to_string();
     let msg = Msg {
         from: writer.id.clone(),
         from_machine: None,
@@ -364,46 +408,75 @@ async fn notify(
                 .accept(msg)
                 .await
                 .map(|receipt| json!(receipt.outcome)),
-            Err(_) => Ok(json!("the forced wake was refused")),
+            // Nothing is sent after a refused or failed audit; say why.
+            Err(refused) => Ok(json!(format!(
+                "not delivered: the forced wake was refused: {}",
+                refused_reason(*refused).await
+            ))),
         }
     };
     json!({
         "seat": target,
         "mode": mode.as_str(),
+        "msg_id": msg_id,
         "outcome": outcome.unwrap_or_else(|error| json!(format!("not delivered: {error}"))),
     })
 }
 
+/// Why the cold-wake guard refused: its envelope's message, else its status.
+async fn refused_reason(response: Response) -> String {
+    let status = response.status();
+    let message = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|envelope| {
+            ["meta", "error"]
+                .iter()
+                .find_map(|key| envelope[*key].as_str().map(str::to_string))
+        });
+    message.map_or_else(
+        || status.to_string(),
+        |message| format!("{status}: {message}"),
+    )
+}
+
+/// The notice's message id, from the committed output's identity (review of
+/// #137, F002): one commit holds one output, so two outputs never share it,
+/// while a replay of one notice keeps the same id and stays idempotent.
+fn notice_id(project: &str, commit: &str) -> String {
+    format!("output-{project}-{commit}")
+}
+
 /// The seat above the writer: its recorded parent when live, else the
-/// project's current prime.
-async fn above(state: &AppState, writer: &SeatDescriptor) -> Option<SeatId> {
+/// project's current prime. A failed lookup is an error, not "no seat"
+/// (review of #137, N001).
+async fn above(
+    state: &AppState,
+    writer: &SeatDescriptor,
+) -> Result<Option<SeatId>, pij_core::error::PijError> {
     let live = |seat: &Option<SeatDescriptor>| {
         seat.as_ref()
             .is_some_and(|seat| seat.tombstoned_at.is_none())
     };
     if let Some(parent) = &writer.parent {
-        let seat = state.services.registry.get(parent).await.ok().flatten();
+        let seat = state.services.registry.get(parent).await?;
         if live(&seat) {
-            return Some(parent.clone());
+            return Ok(Some(parent.clone()));
         }
     }
-    let prime = state
+    let Some(prime) = state
         .services
         .directory
         .store()
         .prime()
-        .await
-        .ok()
-        .flatten()
-        .filter(|designation| designation.state == pij_core::orchestration::PrimeState::Current)?;
-    let seat = state
-        .services
-        .registry
-        .get(&prime.seat)
-        .await
-        .ok()
-        .flatten();
-    live(&seat).then_some(prime.seat)
+        .await?
+        .filter(|designation| designation.state == pij_core::orchestration::PrimeState::Current)
+    else {
+        return Ok(None);
+    };
+    let seat = state.services.registry.get(&prime.seat).await?;
+    Ok(live(&seat).then_some(prime.seat))
 }
 
 fn notice(writer: &SeatDescriptor, fields: &OutputFields, path: &str) -> String {

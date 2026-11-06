@@ -1110,7 +1110,8 @@ writer commit as any add. No loop or timer.
 document to
 `community/roles/<id>/outputs/<yyyy-mm>/<dd>-<kind>-<subject>[-<head7>].dd.json`
 through the single writer, in one commit, then indexes it in the store
-(migration 0036) and records its pointer. The kinds are `verdict`,
+(migration 0036, keyed by project and path, since a path is relative to its
+project's governance worktree) and records its pointer. The kinds are `verdict`,
 `deliverable`, `note` and `handover`. A verdict needs `--head <sha>`, the exact
 head it is for, and `--result pass|pass-with-notes|block`; other kinds may give
 a result such as `failed`. `--note-owed` and `--evidence` repeat (evidence is
@@ -1122,14 +1123,23 @@ land as two files (`-2`, `-3` …). The writer is recorded; one who does not hol
 the role is written with `writer_holds_role: false` and the answer carries a
 `warning`.
 
-`--answers <msg_id>` (ruling C3) names the role request it answers: the request
-is marked answered (s12's `answered_at`, so its time-limit check-ins stop) and
+`--answers <msg_id>` (ruling C3) names the role request it answers. Anyone may
+publish an output, but only the request's recorded holder, a live holder of the
+request's role, or the request project's prime may answer it; anyone else is
+refused with `E-RS-OUTPUT-NOT-HOLDER` before anything is written, stamped or
+sent (next: get assigned, or drop `--answers` to publish without answering).
+The request is marked answered (s12's `answered_at`, so its time-limit check-ins stop) and
 its requester is told in the reply mode it asked for: `wake` (the default; a
 cold requester is woken as an audited forced wake, ruling C4), `fyi` (held for
 its next turn) or `none`. A `block` verdict or a `failed` result always wakes.
 An output nobody asked for goes as an FYI to the seat above the writer (its
 recorded parent when live, else the current prime). One seat is told; the
-answer's `data.notified` says who, in which mode, and what happened.
+answer's `data.notified` says who, in which mode, the notice's `msg_id` and
+what happened. The `msg_id` is `output-<project>-<commit>`, from the output's
+own commit, so two outputs never share one and a replayed notice keeps its id.
+A failed lookup of the seat above or a refused forced-wake audit is reported
+in `outcome` with its cause (`not delivered: …`); nothing is sent after a
+refused audit.
 
 `pij outputs --subject pr:N --head <sha>` lists the outputs about that subject
 for exactly that head, so a verdict on an older head answers none once the head
@@ -1142,6 +1152,7 @@ launch nothing.
 | `E-RS-ARG` | an unknown kind, a missing subject, a verdict without `--head` or a known `--result`, a handover without a body, bad `--evidence` JSON, `--body` with `--body-file` |
 | `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json` |
 | `E-RS-NOT-FOUND` | `--answers` names no recorded request |
+| `E-RS-OUTPUT-NOT-HOLDER` (403) | `--answers` from a writer that is not the request's recorded holder, a live holder of its role or its project's prime |
 
 Plus every writer refusal above. Cost: one writer commit per output (git 7,
 ddocs 2) and one delivery to the one seat told. No timer or poll.

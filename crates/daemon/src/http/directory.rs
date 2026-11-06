@@ -1206,7 +1206,7 @@ fn read_batch(dir: &Path) -> Result<Vec<(String, Value)>, Refusal> {
 pub(super) fn refused(refusal: &Refusal) -> Response {
     let status = match refusal.code {
         "E-RS-ARG" | "E-RS-UNPORTED" => StatusCode::BAD_REQUEST,
-        "E-RS-OWNERSHIP" => StatusCode::FORBIDDEN,
+        "E-RS-OWNERSHIP" | "E-RS-OUTPUT-NOT-HOLDER" => StatusCode::FORBIDDEN,
         "E-RS-NOT-FOUND" | memory::E_NOTE_MISSING => StatusCode::NOT_FOUND,
         "E-RS-STORE" | crate::community::E_GOV_GIT => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::CONFLICT,
