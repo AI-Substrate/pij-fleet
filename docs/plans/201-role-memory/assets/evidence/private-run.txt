@@ -86,4 +86,4 @@ $ memory/INDEX.md at HEAD
 
 $ memory.turn on the spine
 memory.turn {"action":"close","holdings":[{"project":"fleet","role":"reviewer","instance":"114"}],"prompt":"memory-turn-pij-scratch-holder-1793925724529","ended":"bound","waited_ms":5003,"note":"the seat's turn did not end within 5s; the close proceeded without its memory turn"}
-docs/plans/201-role-memory/assets/evidence/private-run.sh: line 108: 69023 Terminated: 15          PIJ_RS_MEMORY_TURN_SECS=5 "$BIN" daemon --bind "127.0.0.1:$PORT" --state-dir "$PIJ_RS_STATE_DIR" >> "$S/daemon.log" 2>&1  (wd: ~/pi-hacking/fleet-201-role-memory)
+docs/plans/201-role-memory/assets/evidence/private-run.sh: line 108: 69023 Terminated: 15          PIJ_RS_MEMORY_TURN_SECS=5 "$BIN" daemon --bind "127.0.0.1:$PORT" --state-dir "$PIJ_RS_STATE_DIR" >> "$S/daemon.log" 2>&1  (wd: <worktree>)

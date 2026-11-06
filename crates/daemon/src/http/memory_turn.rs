@@ -22,10 +22,17 @@
 //! compacted or closed, one live subscription while its turn is pending, one
 //! delivery, one spine event and one deadline. No poll, no launch.
 
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use axum::http::StatusCode;
+use axum::response::Response;
+
 use pij_core::events::EventFilter;
-use pij_core::model::{DeliveryOutcome, Event, Msg, Receipt, SeatDescriptor, SeatId};
+use pij_core::model::{
+    DeliveryOutcome, Envelope, ErrorKind, Event, Msg, Receipt, SeatDescriptor, SeatId,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio_stream::StreamExt;
@@ -39,14 +46,38 @@ pub const BOUND: Duration = Duration::from_secs(5 * 60);
 /// Overrides [`BOUND`] in seconds, read once at daemon start.
 pub const BOUND_ENV: &str = "PIJ_RS_MEMORY_TURN_SECS";
 
-/// The bound this daemon uses: [`BOUND_ENV`] when it is a positive integer,
-/// else [`BOUND`].
-pub fn bound_from(value: Option<&str>) -> Duration {
-    value
-        .and_then(|secs| secs.trim().parse::<u64>().ok())
-        .filter(|secs| *secs > 0)
-        .map_or(BOUND, Duration::from_secs)
+/// The bound this daemon uses: [`BOUND_ENV`] when it is a positive integer
+/// no larger than [`BOUND_MAX`] (a larger one is clamped), else [`BOUND`];
+/// with a warning to print when the value was not used as given.
+pub fn bound_from(value: Option<&str>) -> (Duration, Option<String>) {
+    let Some(text) = value else {
+        return (BOUND, None);
+    };
+    match text.trim().parse::<u64>() {
+        Ok(secs) if secs > BOUND_MAX.as_secs() => (
+            BOUND_MAX,
+            Some(format!(
+                "{BOUND_ENV}={secs} is above the {}s ceiling; using {}s",
+                BOUND_MAX.as_secs(),
+                BOUND_MAX.as_secs()
+            )),
+        ),
+        Ok(secs) if secs > 0 => (Duration::from_secs(secs), None),
+        _ => (
+            BOUND,
+            Some(format!(
+                "{BOUND_ENV}={text:?} is not a positive whole number of seconds; using {}s",
+                BOUND.as_secs()
+            )),
+        ),
+    }
 }
+
+/// The ceiling on the bound: an override may shorten the wait, never lengthen
+/// it past five minutes.
+pub const BOUND_MAX: Duration = Duration::from_secs(5 * 60);
+/// A second compact or close for a seat whose memory turn is still pending.
+pub const E_PENDING: &str = "E-RS-MEMORY-TURN-PENDING";
 
 /// The `held` value, and the held compact receipt's outcome reason.
 pub const HELD: &str = "memory-turn";
@@ -134,11 +165,23 @@ impl Then {
 /// the seat was closed or revived meanwhile, and record one spine event.
 pub(crate) fn hold(
     state: &AppState,
+    command: &str,
     seat: SeatDescriptor,
     holdings: Vec<Holding>,
     then: Then,
-) -> Value {
+) -> Result<Value, Box<Response>> {
+    // One pending memory turn per seat: a repeat compact or close is refused
+    // by name, never a second turn or a second action.
+    let pending = Pending::take(&state.services.memory_turns, &seat.id)
+        .ok_or_else(|| Box::new(pending_refusal(command, &seat.id)))?;
     let bound = state.services.memory_turn_bound;
+    // The bound runs from the hold, not from the prompt's admission.
+    let held_at = Instant::now();
+    let now = tokio::time::Instant::now();
+    let deadline = now
+        .checked_add(bound)
+        .or_else(|| now.checked_add(BOUND_MAX))
+        .unwrap_or(now);
     let action = then.action();
     // A held compact answers as a control receipt (the clients decode one, and
     // Copilot's checks its msg_id); a held close answers with the seat.
@@ -159,13 +202,57 @@ pub(crate) fn hold(
     answer["memory_turn"] = held(action, &holdings, bound);
     let state = state.clone();
     tokio::spawn(async move {
-        let mut report = run(&state, &seat.id, holdings, action, bound).await;
+        let mut report = run(&state, &seat.id, holdings, action, bound, held_at, deadline).await;
         let (then, closed) = proceed(&state, &seat, then).await;
+        // Free the seat before the event is visible, so a reader of the event
+        // can always take the next turn.
+        drop(pending);
         report.then = Some(then);
         report.closed = closed;
         record(&state, &seat.id, &report).await;
     });
-    answer
+    Ok(answer)
+}
+
+/// The seats with a memory turn pending, one entry each; the entry goes when
+/// its task ends, however it ends.
+struct Pending {
+    turns: Arc<Mutex<BTreeSet<String>>>,
+    seat: String,
+}
+
+impl Pending {
+    fn take(turns: &Arc<Mutex<BTreeSet<String>>>, seat: &SeatId) -> Option<Self> {
+        let inserted = turns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(seat.to_string());
+        inserted.then(|| Self {
+            turns: Arc::clone(turns),
+            seat: seat.to_string(),
+        })
+    }
+}
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        self.turns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.seat);
+    }
+}
+
+fn pending_refusal(command: &str, seat: &SeatId) -> Response {
+    let mut answer: Envelope<Value> = Envelope::refused(
+        command,
+        ErrorKind::Refused,
+        format!(
+            "{E_PENDING}: {seat} already has a memory turn pending; its held compact or close runs when that turn ends, so this request was not taken"
+        ),
+    );
+    answer.details = Some(json!({"code": E_PENDING, "seat": seat}));
+    super::envelope(StatusCode::CONFLICT, &answer)
 }
 
 /// Run the held action against the seat it was held for, and only that one:
@@ -181,6 +268,19 @@ async fn proceed(state: &AppState, held: &SeatDescriptor, then: Then) -> (String
     };
     if let Some(skip) = skip_reason(held, &now) {
         return (skip.to_string(), None);
+    }
+    // Authority is rechecked too: the closer must still be the seat or its
+    // recorded parent. A seat reparented during the turn is not closed.
+    if let Then::Close { actor, .. } = &then
+        && actor != &now.id
+        && now.parent.as_ref() != Some(actor)
+    {
+        return (
+            format!(
+                "skipped: {actor} no longer owns the seat (its parent changed during the memory turn)"
+            ),
+            None,
+        );
     }
     match then {
         Then::Compact(msg) => match super::admit_control(state, msg).await {
@@ -349,8 +449,9 @@ async fn run(
     holdings: Vec<Holding>,
     action: Action,
     bound: Duration,
+    started: Instant,
+    deadline: tokio::time::Instant,
 ) -> Report {
-    let started = Instant::now();
     let services = &state.services;
     // Subscribed before the send, so neither fact can slip past.
     let mut events = services
@@ -383,7 +484,6 @@ async fn run(
                 )
             } else {
                 let mut watch = Watch::new(&msg_id);
-                let deadline = tokio::time::Instant::now() + bound;
                 loop {
                     match tokio::time::timeout_at(deadline, events.next()).await {
                         Ok(Some(event)) => {
@@ -575,10 +675,16 @@ mod tests {
     }
 
     #[test]
-    fn the_bound_is_overridden_only_by_a_positive_integer() {
-        assert_eq!(bound_from(Some("5")), Duration::from_secs(5));
-        for value in [None, Some(""), Some("0"), Some("-1"), Some("5m")] {
-            assert_eq!(bound_from(value), BOUND, "{value:?}");
+    fn the_bound_is_overridden_only_by_a_positive_integer_up_to_the_ceiling() {
+        assert_eq!(bound_from(Some("5")), (Duration::from_secs(5), None));
+        assert_eq!(bound_from(None), (BOUND, None));
+        let (clamped, warning) = bound_from(Some("86400"));
+        assert_eq!(clamped, BOUND_MAX);
+        assert!(warning.unwrap().contains("ceiling"));
+        for value in ["", "0", "-1", "5m"] {
+            let (bound, warning) = bound_from(Some(value));
+            assert_eq!(bound, BOUND, "{value:?}");
+            assert!(warning.is_some(), "{value:?}");
         }
     }
 

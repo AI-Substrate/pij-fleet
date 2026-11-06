@@ -176,6 +176,8 @@ pub struct Services {
     /// How long a compact or close of a role holder waits for its memory turn
     /// (plan 201).
     pub memory_turn_bound: std::time::Duration,
+    /// Seats with a memory turn pending: one at a time per seat (plan 201).
+    pub memory_turns: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -611,9 +613,16 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         ddocs,
         community: community_writer,
         directory,
-        memory_turn_bound: http::memory_turn::bound_from(
-            std::env::var(http::memory_turn::BOUND_ENV).ok().as_deref(),
-        ),
+        memory_turn_bound: {
+            let (bound, warning) = http::memory_turn::bound_from(
+                std::env::var(http::memory_turn::BOUND_ENV).ok().as_deref(),
+            );
+            if let Some(warning) = warning {
+                eprintln!("pij-rs: {warning}");
+            }
+            bound
+        },
+        memory_turns: Arc::default(),
         offline: config.is_fully_offline(),
     })
 }

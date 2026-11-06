@@ -454,3 +454,55 @@ async fn a_held_self_compact_or_close_does_not_act_on_a_revived_seat() {
 async fn rig_again() -> Rig {
     rig(Duration::from_secs(30), &["prime"]).await
 }
+
+/// Security S1: a held close rechecks authority, not only the incarnation. A
+/// seat reparented during its turn is not closed by its old parent.
+#[tokio::test]
+async fn a_seat_reparented_during_its_turn_is_not_closed_by_its_old_parent() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    let mut moved = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    moved.parent = Some("plain".into());
+    rig.registry.put(moved).await.unwrap();
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event(&rig, "holder").await;
+    assert!(
+        turn["then"].as_str().unwrap().contains("no longer owns"),
+        "{turn}"
+    );
+    assert!(!tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}
+
+/// Security S4: a second compact or close while one is held is refused by
+/// name; there is never a second turn.
+#[tokio::test]
+async fn a_repeat_request_while_one_is_held_is_refused_by_name() {
+    let rig = rig(Duration::from_secs(30), &["holder"]).await;
+    let first = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(first["data"]["held"], "memory-turn", "{first}");
+    let prompt = prompt_for(&rig, "holder").await;
+    let again = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(
+        again["details"]["code"], "E-RS-MEMORY-TURN-PENDING",
+        "{again}"
+    );
+    let compact = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
+    assert_eq!(
+        compact["details"]["code"], "E-RS-MEMORY-TURN-PENDING",
+        "{compact}"
+    );
+    take_turn(&rig, "holder", &prompt).await;
+    assert_eq!(turn_event(&rig, "holder").await["then"], "closed");
+    assert!(
+        rig.queue
+            .peek(&[delivery_kind(&"holder".into())])
+            .await
+            .unwrap()
+            .is_none(),
+        "one prompt, no second turn"
+    );
+    rig.server.abort();
+}

@@ -1055,8 +1055,10 @@ as before), delivers one prompt from `pij-bg` naming each role and project and
 the `pij directory memory add` command, then holds the action until the prompt
 is delivered and the seat next publishes `idle`, or until the bound passes,
 after which it proceeds anyway. The bound is one constant, 5 minutes
-(`memory_turn::BOUND`); `PIJ_RS_MEMORY_TURN_SECS`, a positive integer read at
-daemon start, overrides it.
+(`memory_turn::BOUND`), and it runs from the moment the request is held, not
+from the prompt's admission. `PIJ_RS_MEMORY_TURN_SECS`, a positive integer read
+at daemon start, may shorten it; a value above the 5-minute ceiling is clamped
+and an unusable one ignored, each with a warning on the daemon's stderr.
 
 The caller is answered at once with `data.held: "memory-turn"` and
 `data.memory_turn` (`action`, `holdings`, `bound_ms`, `note`), and the compact or
@@ -1071,10 +1073,16 @@ lands when the turn ends. Before the action runs the daemon reads the seat
 once and skips the action if the seat was closed, or a revive put another
 incarnation in it (its process or pane changed), during the turn: a brake, so
 an old action never gains authority over a replacement that reuses the seat
-id. A close then compares-and-sets against that same read, so the seat's
+id. A held close also rechecks authority: the closer must still be the seat or
+its recorded parent, so a seat reparented during the turn is not closed. Each
+skip is named in the `memory.turn` event's `then`. A close then compares-and-sets against that same read, so the seat's
 ordinary activity changes during the turn do not block it. The native CLI's
 `send --command compact` and `compact-self` print the held receipt with its
 `held` and `memory_turn`.
+
+A seat has at most one memory turn pending. A second compact or close for it
+while one is held is refused with `E-RS-MEMORY-TURN-PENDING` (HTTP 409); it is
+never a second turn or a second action.
 
 Every turn records one `memory.turn` spine event on the seat: `action`,
 `holdings`, `prompt` (the prompt's msg_id), `ended` (`turn-end`, `bound`, or

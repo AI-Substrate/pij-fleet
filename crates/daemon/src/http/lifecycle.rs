@@ -356,16 +356,19 @@ async fn handle(
                     Err(response) => *response,
                 };
             }
-            let held = memory_turn::hold(
+            match memory_turn::hold(
                 &state,
+                command,
                 expected,
                 holdings,
                 memory_turn::Then::Close {
                     actor: actor.id,
                     reason: call.reason,
                 },
-            );
-            envelope(StatusCode::OK, &Envelope::ok(command, held))
+            ) {
+                Ok(held) => envelope(StatusCode::OK, &Envelope::ok(command, held)),
+                Err(refusal) => *refusal,
+            }
         }
     }
 }

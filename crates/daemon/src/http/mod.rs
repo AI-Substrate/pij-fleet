@@ -2056,13 +2056,16 @@ pub(crate) async fn send_control(
     if msg.command.as_deref() == Some("compact") {
         let holdings = memory_turn::holdings(state, &target.id).await;
         if !holdings.is_empty() {
-            let held = memory_turn::hold(
+            return match memory_turn::hold(
                 state,
+                name,
                 target.clone(),
                 holdings,
                 memory_turn::Then::Compact(msg),
-            );
-            return envelope(StatusCode::OK, &Envelope::ok(name, held));
+            ) {
+                Ok(held) => envelope(StatusCode::OK, &Envelope::ok(name, held)),
+                Err(refusal) => *refusal,
+            };
         }
     }
     match admit_control(state, msg).await {
