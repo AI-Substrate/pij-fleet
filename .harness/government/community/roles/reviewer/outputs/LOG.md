@@ -92,3 +92,9 @@
 
 2026-11-06 verdict pr-138 7c2b6b147d158746545699226343a3fd09b7bdeb pass-with-notes - lineage/batch/window/marker/zone and shared-build owner/QoS changes verified, deterministic F003 rewrite retained; N001 P3 mixed-invalid batch diagnostics are phase-local; exact-head CI 4/4 with 1,894 Rust and 15 shared-build tests pass, no local runs, security/performance proof separately owned; final pin unchanged but GitHub DIRTY, reconciliation not approved.
 
+2026-11-06 verdict pr-140 ebcdb101d4d73bbf0e32a27bedb2aa9992539f75 pass-with-notes - all 18 F17-F34 rows, severities and owner plans corroborated against s03/s07 dogfood and PM records; N001 parallel D-WB-14..17 allocation in #138 requires convergence reconciliation; exact-head CI 4/4 green, CLEAN, no local runs/worktree, security public-safety scan separately owned.
+
+2026-11-06 verdict pr-140 29c09d77ab9f391f0db868cef96f7f6e5cea1352 pass - renumber-only delta removes F17/F18/F24 and keeps unchanged text for fifteen D-WB-18..32 rows; N001 closed, independent merge-tree ledger has 32 unique D-WB IDs with #138, unrelated three-file conflicts not approved; exact-head CI 4/4 green before review/publication, no local builds/tests/worktree.
+
+2026-11-06 verdict pr-131 599747c6727140f883ccc5708f3f03a7d7f73cc7 pass-with-notes - C29 workstream/roadmap canonical counter, manual/file-derived release and both-folder PM lookup verified; Services/API/skill merge keeps claims and s07 memory; exact-head CI 4/4 with 1,945 tests, no new blocker/local checks; prior c6aa07b dispositions stand, role memory written/read through verb at writer commit 2113b1c.
+

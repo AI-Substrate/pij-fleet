@@ -294,3 +294,17 @@
 2026-11-06 verdict pr-134 c54aeb5 perf pass-with-notes (final). Waiting lynx
 2026-11-06 MERGED #132 9527d9e (s07 live, daemon 93991). Announced memory verb + memory turn to 13 seats; lungfish dogfood s07; #130 DIRTY -> warbler merge main
 2026-11-06 verdict pr-138 7c2b6b1 reviewer pass-with-notes (N001 P3); #138 DIRTY after #132 -> warbler merge main after ibex/wombat report
+2026-11-06 F30 --body-file - refused via shim (badger + otter); correction FYI to 13 seats; fix -> plan 209
+2026-11-06 s07 dogfood (lungfish): F31 raw JSON line, F32 UTC date (medium), F33 INDEX adopt, F34 --slug. F31/32/34 -> 209; F29/F33 -> 210
+2026-11-06 verdict pr-138 7c2b6b1 security (ibex) pass-with-notes; waiting wombat then warbler merges main
+2026-11-06 pr-140 docs (difficulties F17-F34) ebcdb10 -> seahorse + ibex scan; perf n/a
+2026-11-06 verdict pr-138 7c2b6b1 perf pass-with-notes; all three in -> warbler merge main into #138
+2026-11-06 pr-140 D-WB id clash with #138 -> lungfish renumber from D-WB-18, drop F17/F18/F24; seahorse/ibex hold
+2026-11-06 pr-140 final 29c09d7 (renumbered D-WB-18..32) -> seahorse ibex delta
+2026-11-06 #136 4f72f52 C29 wording in (route 81/100); claude_heal EPIPE root cause -> warbler 209
+2026-11-06 READY pr-140 29c09d7 (seahorse pass, ibex pass, perf n/a) -> prime
+2026-11-06 external dogfood F35-F38 -> 209 (warbler), F39 -> 203 (tapir, with F21); lungfish ledger FYI
+2026-11-06 pr-131 final 599747c (C29 + main) -> marmot ibex wombat delta; worktree review-131-599747c
+2026-11-06 verdict pr-131 599747c perf pass-with-notes. Waiting marmot, ibex
+2026-11-06 verdict pr-131 599747c reviewer pass-with-notes. Waiting ibex
+2026-11-06 READY pr-131 599747c (marmot, ibex, wombat pass-with-notes) -> prime; 201 evidence machine alias -> warbler 209

@@ -72,3 +72,15 @@
 
 2026-11-06 note pr:131 c6aa07bfeb7316ee277f7325f873c3684e8eb4fa held-for-next-head - PM C29 round arrived after publication; existing verdict covers this snapshot only, not C29/replacement; further review waits for fresh PM pin/worktree; #132/#130 unchanged and complete.
 
+2026-11-06 verdict pr:138 7c2b6b147d158746545699226343a3fd09b7bdeb pass-with-notes - F15/F16/F18/F24 and wrapper boundaries reviewed; marker/seat labels advisory, not authority; four green checks, identical-tree 1894-case Rust and 15 shared-build-test evidence; live PR DIRTY/CONFLICTING, no replacement-head/merge clearance; macOS/ddocs limits explicit; 2026-11-06-pr-138-7c2b6b1-security.md.
+
+2026-11-06 verdict pr:140 ebcdb101d4d73bbf0e32a27bedb2aa9992539f75 pass - Docs-only public-safety scan; complete 71-line file and 18 additions clear, 18/18 positive controls; no private paths/identities/content found; exact head CLEAN and four green checks before publication; correctness/severity/owner-plan review excluded; 2026-11-06-pr-140-ebcdb10-security.md.
+
+2026-11-06 note pr:140 ebcdb101d4d73bbf0e32a27bedb2aa9992539f75 held-for-next-head - PM renumbering/drop notice arrived after publication; existing pass is this snapshot only. Await replacement pin; next review limited to renumbering from D-WB-18 and removal of F17/F18/F24 owned by #138. PM informed of crossed publication.
+
+2026-11-06 verdict pr:140 29c09d77ab9f391f0db868cef96f7f6e5cea1352 pass - Requested delta-only public-safety scan; sole parent ebcdb10, only difficulties.md, 33 changed lines clear with calibrated controls; separate reviewer owns numbering/duplicates/merge correctness; final exact head CLEAN and four green checks before publication; 2026-11-06-pr-140-29c09d7-security.md.
+
+2026-11-06 verdict pr:131 599747c6727140f883ccc5708f3f03a7d7f73cc7 pass-with-notes - C29 path/claim/release normalization and PM routing boundaries retained; inherited evidence machine-label candidate routed for neutralization/classification, private status unverified and value withheld; exact head CLEAN/four green checks, identical-tree 1945-case proof; same-user/static/ddocs limits explicit; 2026-11-06-pr-131-599747c-security.md.
+
+2026-11-06 friction security-memory-add blocked - E-RS-GOV-FOREIGN-EDIT on roles/security/memory/INDEX.md carrying pre-s07 uncommitted edits; supported verb wrote nothing. PM notified for prime baseline commit before retry; no index cleanup, manual memory write or governance commit attempted. PR #131 comment 6677181209 read-back verified.
+
