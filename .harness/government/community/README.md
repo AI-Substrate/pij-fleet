@@ -8,7 +8,7 @@ Memory is written by pij (s07): `pij directory memory add <role> --title <t> --h
 
 **Until the remaining verbs exist:**
 - **Outputs:** append one line to the role's `outputs/LOG.md`: `<date> <kind> <subject> <head> <result> — <notes>`. Verdicts are also posted on the PR as `<role>: pass|pass-with-notes|block (head <full-sha>)` followed by the notes.
-- **Numbers:** migration numbers are claimed from pm/001 before writing a migration.
+- **Numbers:** claimed with `pij claim workstream|plan|prd|blueprint|migration` (s11; `roadmap` is an alias), listed with `pij claims`. The merger runs `pij delivered <pr>` after every merge.
 - **Routing:** see `ROUTES.md`. Send owned work, don't do it.
 
 Every seat commits only through the prime: send the prime the path and the prime commits here. Seats never commit to this branch themselves.
