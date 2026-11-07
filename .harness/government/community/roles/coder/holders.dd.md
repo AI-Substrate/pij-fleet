@@ -35,3 +35,4 @@
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | 212 | 2026-11-06T10:24:19.295Z | — | pij-steady-otter | — | plan 212 role send follow-ups | — |
 | — | pij-swift-kestrel | copilot | 4926f51e-8ca7-4f43-a0c5-791f12bb5903 | ops.osk.lan | 214 | 2026-11-06T13:27:26.868Z | — | pij-steady-otter | — | plan 214 held delivery and urgent sends (prime: before 212 follow-ups) | — |
 | — | pij-yielding-bison | copilot | 24bcbe7f-020f-4f4f-ac9d-48b0d12247ec | ops.osk.lan | 217 | 2026-11-07T07:41:54.014Z | — | pij-steady-otter | — | plan 217 PA presence (prime, Jordan's go) | — |
+| — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 204 | 2026-11-07T12:35:32.360Z | — | pij-steady-otter | — | revived for #136's final push (s10) | — |

@@ -220,6 +220,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-yielding-bison",
 					"why": "plan 217 PA presence (prime, Jordan's go)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T12:35:32.360Z",
+					"harness": "copilot",
+					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
+					"instance_key": "204",
+					"machine": "ops.osk.lan",
+					"seat": "pij-following-marsupial",
+					"why": "revived for #136's final push (s10)"
 				}
 			]
 		}
