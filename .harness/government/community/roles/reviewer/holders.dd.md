@@ -48,4 +48,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 144 | 2026-11-07T07:31:24.990Z | 2026-11-07T07:37:50.102Z | pij-steady-otter | pij-steady-otter | fresh reviewer after the 07 Nov reboot (#144 delta, #150 ledger) | #144 merged e6958e7 |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 150 | 2026-11-07T07:31:24.990Z | 2026-11-07T07:50:00.562Z | pij-steady-otter | pij-steady-otter | fresh reviewer after the 07 Nov reboot (#144 delta, #150 ledger) | #150 merged fda4d8a |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 148 | 2026-11-07T07:37:26.611Z | — | pij-steady-otter | — | first verdict on #148 (plan 211) | — |
-| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 151 | 2026-11-07T07:49:06.324Z | — | pij-steady-otter | — | #151 plan 209 states | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 151 | 2026-11-07T07:49:06.324Z | 2026-11-07T08:15:58.094Z | pij-steady-otter | pij-steady-otter | #151 plan 209 states | #151 merged 5119ef5 |
