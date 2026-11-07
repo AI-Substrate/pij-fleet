@@ -223,6 +223,8 @@ pub enum Move {
     Merge,
     /// Retire a role.
     Retire,
+    /// Point work that names a retired role at another (plan 206).
+    Retarget,
 }
 
 impl Move {
@@ -233,6 +235,7 @@ impl Move {
             Self::Split => "split",
             Self::Merge => "merge",
             Self::Retire => "retire",
+            Self::Retarget => "retarget",
         }
     }
 }
@@ -258,8 +261,9 @@ pub struct Recommendation {
     /// Whether [`Self::commands`] are steps run in order (release, then
     /// assign) rather than alternatives.
     pub in_order: bool,
-    /// Commands for verbs that have not shipped (s15's `retire` and `merge`):
-    /// shown so the move is clear, never offered as runnable.
+    /// Commands for verbs that have not shipped: shown so the move is clear,
+    /// never offered as runnable. None today: s15's `retire` and `merge` ship
+    /// in plan 206.
     pub later: Vec<String>,
     /// A note, such as who the designated prime is.
     pub note: Option<String>,
@@ -523,6 +527,92 @@ pub fn step_needs(docs: &[StepDoc]) -> Vec<(String, Vec<String>)> {
         }
     }
     needs
+}
+
+/// The unfinished steps that still need a retired role (review of #135,
+/// F004). Its document and history stay, so `add` under its id would refuse;
+/// instead each step's needs are pointed at the role that does the work now:
+/// the merge target for a merged role, `<replaces-<id>>` to fill in for a
+/// retired one. `retired` is `(id, merged_into)`; one recommendation per role,
+/// with one `ddocs set` per step, its address relative to `repo`. Each edit
+/// replaces every retired role its step names, so two roles' edits of one
+/// step print the same command.
+pub fn retarget(
+    repo: &Path,
+    retired: &[(String, Option<String>)],
+    docs: &[StepDoc],
+) -> Vec<Recommendation> {
+    let replacement = |need: &str| -> Option<String> {
+        let id = need.strip_prefix("role:")?;
+        let (_, into) = retired.iter().find(|(retired, _)| retired == id)?;
+        Some(match into {
+            Some(into) => format!("role:{into}"),
+            None => format!("role:<replaces-{id}>"),
+        })
+    };
+    let mut out = Vec::new();
+    for (role, into) in retired {
+        let named = format!("role:{role}");
+        let (mut steps, mut commands) = (Vec::new(), Vec::new());
+        for doc in docs {
+            let file = doc.path.strip_prefix(repo).unwrap_or(&doc.path).display();
+            for step in section(&doc.document, "steps")
+                .iter()
+                .filter(|step| step["state"] != "complete")
+            {
+                let needs: Vec<&str> = step["needs"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
+                if !needs.contains(&named.as_str()) {
+                    continue;
+                }
+                let id = step["id"].as_str().unwrap_or("?");
+                steps.push(format!("{} {id}", doc.name));
+                let mut next: Vec<String> = Vec::new();
+                for need in needs {
+                    let need = replacement(need).unwrap_or_else(|| need.to_string());
+                    if !next.contains(&need) {
+                        next.push(need);
+                    }
+                }
+                commands.push(command(&[
+                    "ddocs",
+                    "set",
+                    "--value-json",
+                    &format!("{file}#steps/{id}/needs"),
+                    &json!(next).to_string(),
+                ]));
+            }
+        }
+        if commands.is_empty() {
+            continue;
+        }
+        let mut prompt = Recommendation::new(
+            role.clone(),
+            "needed",
+            Move::Retarget,
+            Signal::Needed,
+            commands.remove(0),
+        );
+        prompt.commands.extend(commands);
+        prompt.in_order = prompt.commands.len() > 1;
+        prompt.detail = Some(match into {
+            Some(into) => format!(
+                "{} still need role:{role}, which was merged into {into}; role:{into} does that work now",
+                steps.join(", ")
+            ),
+            None => format!(
+                "{} still need role:{role}, which is retired; name the role that does that work now",
+                steps.join(", ")
+            ),
+        });
+        prompt.needed_by = steps;
+        out.push(prompt);
+    }
+    out
 }
 
 /// Fold the workstream needs into the missing-role `prompts` (req-24, req-27):
@@ -875,12 +965,6 @@ pub fn idle(project: &str, role: &RoleActivity<'_>, cutoff: &str) -> Option<Reco
         "--project",
         project,
     ]));
-    // Neither verb has shipped (s15): the move is shown, not offered to run.
-    prompt.later = std::mem::take(&mut prompt.commands);
-    prompt.note = Some(
-        "retire and merge are s15's verbs and have not shipped; until then the role stays, cold"
-            .to_string(),
-    );
     prompt.detail = Some(format!(
         "{} has no memory, outputs, waiting requests or live holder, and nothing has happened since {last}",
         role.role
@@ -1383,19 +1467,18 @@ mod tests {
         let json = idle("fleet", &base, "2026-10-07").expect("idle").json();
         assert_eq!(json["act"], "retire");
         assert_eq!(json["signal"]["code"], "mostly-idle");
-        assert_eq!(json["command"], Value::Null, "nothing runnable ships yet");
-        assert_eq!(json["commands"], json!([]));
         assert_eq!(
-            json["later"][0],
-            "pij directory retire qa --why 'idle since 2026-09-02, nothing to remember' --project fleet"
+            json["command"],
+            "pij directory retire qa --why 'idle since 2026-09-02, nothing to remember' --project fleet",
+            "s15 ships retire and merge (plan 206): both are runnable"
         );
         assert!(
-            json["later"][1]
+            json["commands"][1]
                 .as_str()
                 .unwrap()
                 .starts_with("pij directory merge qa --into '<role>' ")
         );
-        assert!(json["note"].as_str().unwrap().contains("s15"), "{json}");
+        assert_eq!(json["later"], Value::Null, "{json}");
         let kept = RoleActivity { notes: 1, ..base };
         assert!(
             idle("fleet", &kept, "2026-10-07").is_none(),

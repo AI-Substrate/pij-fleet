@@ -821,6 +821,7 @@ Flags, on a send to a role only: `--reply wake|fyi|none` (default `wake`; stored
 | `E-RS-ROLE-ONLY` | `--reply`, `--limit` or `--project` on a send to a seat |
 | `E-RS-ROLE-ADDRESS` | a malformed address, an instance on a one-holder role, `role:<id>@<machine>` or a forwarded role send (role addresses are local and never forwarded), or `--command` to a role |
 | `E-RS-DIRECTORY-ROLE-MISSING` | the project's directory has no such role (next: `pij directory view`) |
+| `E-RS-DIRECTORY-RETIRED` | the role is retired (plan 206); nothing is sent or queued. A merged role names the role it went to, and the next step is `Send to role:<to> instead.` |
 | `E-RS-ROLE-HOLDERS` | two or more live holders |
 | `E-RS-ROLE-MISMATCH` | the holder's `seat_roles` role disagrees with the directory (a `pm`, `pa` or `worker` role other than the one the directory implies; a prime is never re-roled). Next: `pij role <seat> <role>` |
 
@@ -859,7 +860,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/close` | `close <seat> [--reason <text>]`; typed `{seat, reason?, caller}`. A role holder's close answers `held` and lands after its [memory turn](#the-memory-turn) | `seat-close` |
 | POST `/v1/reap` | `reap [--dry-run]`; typed `{dry_run?, caller}` | `reap-dry-run` |
 | POST `/v1/spine` | `spine append --kind <kind> [--refs <a,b>] [--project <slug>]`; `events/render [--since N] [--peer <seat>] [--project <slug>] [--limit N]` (paged, see below) | `spine-append`, `spine-events`, `spine-render` |
-| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
+| POST `/v1/directory` | `directory [--project <slug>]` (the view); `directory add <id> --why <text> [--project <slug>]` with role flags or `--file <json>`; `directory add --batch <dir> --why <text>`; `directory add <id> --from template:<name>[@v<n>]\|file:<brief> --why <text>`; `directory edit <id> --why <text>` with `--set <field>=<value>`, role flags or `--file <json>`; `directory retire <role> --why <text> [--drop-queued]`; `directory merge <from> --into <to> --why <text> [--drop-queued]`; `directory templates`; `directory template-diff <id>`; `directory assign\|release <role>[/<instance>] <seat> --why <text>`; `directory assign --batch <file> --why <text>`; `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>`; `directory lineage add --batch <file> --why <text>`; `directory external add <seat> --from-project <slug> --why <note> [--role <id>]`; `directory rebuild`; `directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>\|--body-file <path>`; `directory memory <role> [--note <slug>]`; `directory routes [--write --why <text>]`; `directory [<verb>] --help`. See [Community directory](#community-directory-plan-190), [Routing table](#routing-table-plan-202) and [Role memory](#role-memory-plan-201) | — (`crates/daemon/tests/directory_http.rs`) |
 | POST `/v1/output` | `output verdict\|deliverable\|note\|handover --role <id> --subject <address> [--head <sha>] [--result <r>] [--note-owed <text>]… [--evidence <json>]… [--link <url>] [--answers <msg_id>] [--body <text>\|--body-file <path>] [--project <slug>]`; `output --help`. See [Role outputs](#role-outputs-plan-200) | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/outputs` | `outputs --subject <address> [--head <sha>]`; `outputs --role <id> [--limit <n>]`; `outputs --help` | — (`crates/daemon/tests/output_http.rs`) |
 | POST `/v1/claim` | `claim <kind> --for <subject> [--project <slug>]`; `claim release <kind> <number> [--why <text>] [--project <slug>]`; `--help`. See [Number claims and delivery at merge](#number-claims-and-delivery-at-merge-plan-196) | — (`crates/daemon/tests/claims_http.rs`) |
@@ -1131,7 +1132,10 @@ returns `{id, template, version, latest, behind, diff}`: `diff` is a unified dif
 of the template between the role's version and the latest, computed in-process,
 and empty when the role is current or came from no template. Nothing is ever
 applied: the role file is untouched. A role without `role.dd.json` refuses with
-`E-RS-DIRECTORY-ROLE-MISSING`.
+`E-RS-DIRECTORY-ROLE-MISSING`. A role that records a template but no
+`template_version` refuses with `E-RS-DIRECTORY-NO-TEMPLATE-VERSION`, and a
+version that is not a number with `E-RS-ARG`; both name the next step, `pij
+directory edit <id> --set template_version=<n> --why <text>` (plan 206, F19).
 
 The view also carries `prompts` and `guidance` while any core role (prime, pm,
 pa, coder, reviewer) or security is missing (ruling C22). A role counts for a
@@ -1151,6 +1155,113 @@ the human view's drift hint does the same. `guidance` states the PEC wording. Th
 Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
+
+### Reshaping roles (plan 206)
+
+`pij directory edit <id> --why <text>` changes a role that exists (F20). Give
+`--set <field>=<value>` (repeatable; `title`, `kind`, `lifecycle`, `holders`,
+`instance_key`, `default_limit`, `summary`, `template`, `template_version`,
+`harness`, `model`, `effort`, `packet` or `brief`) and any of the role flags
+`add` takes, or `--file <json>` for the whole document. The writer reads the
+committed role under its lock, applies the change (a repeated flag replaces the
+whole list, as for `add --from`), keeps the changelog (a `--file` document's
+own changelog is replaced by the committed one), adds one row with `--why`, and
+commits it like an add (validate, build, commit, pointer), with `ROUTES.md`
+regenerated in the same commit when the role's scope changed (plan 202).
+`data` is `{project, id, path, commit, paths, routes}`, `routes` as for `add`.
+
+| Refusal | When |
+|---|---|
+| `E-RS-DIRECTORY-ROLE-MISSING` | the role has no `role.dd.json`; the next step is `pij directory add` |
+| `E-RS-ARG` | no id, no `--why`, nothing to change, an edit that changes nothing, `--set` without `=`, a field `--set` cannot set, a field given twice, `--file` with flags, a document naming another id, or `--set` on any verb but edit |
+| `E-RS-DDOCS-INVALID` | ddocs refuses the edited document; nothing is committed |
+
+`pij directory retire <role> --why <text>` and `pij directory merge <from>
+--into <to> --why <text>` reshape the community as the work changes (req-28,
+C26). Retire sets the role's `meta.state` to `retired` with a changelog row.
+Merge retires `<from>` with `meta.merged_into: <to>` and adds a changelog row to
+both roles (`merged into <to>: <why>` and `<from> merged in: <why>`), in one
+commit. Nothing is moved or rewritten: a retired role's `role.dd.json`, memory,
+outputs and holders lineage stay where they are and stay readable. The view
+gives each role `state` (`active` or `retired`), `merged_into` (or null) and
+`merged_from` (the roles merged into it, derived from their `merged_into`), and
+the human view prints `retired, merged into <to>` and `merged from <from>`. A
+retired role no longer clears a core-role prompt (C22) and routes nothing: the
+same commit rewrites `ROUTES.md` without its rows (plan 202). `data` is
+`{project, id, state, merged_into, commit, paths, routes}`. Only retire and merge change a role's
+standing: `edit` refuses a retired role and refuses a change to `state` or
+`merged_into` (a `--file` that leaves them out keeps them). ddocs cannot tie
+`merged_into` to `state: retired` or check that it names a role, so the writer
+refuses either on every write (`E-RS-ARG`, `E-RS-DIRECTORY-ROLE-MISSING`), and
+`merged_from` counts only retired roles. Once retired, a role takes no sends:
+`pij send role:<id>` refuses `E-RS-DIRECTORY-RETIRED`, naming the merge target.
+
+Requests queued for the role (no live holder took them) are never stranded
+silently. A send to a role and a retire or merge of it share one admission
+gate per (project, role): the send holds it from reading the role's standing
+until its request is recorded (queued, or `delivering` to the one live
+holder), a drain holds it from claiming a queued request until that request is
+delivered or back on the queue, and the reshape holds it from reading the
+queue through its commit and withdrawal, so no request is admitted between the
+check and the retirement. The gate goes with the work that can still land, not
+with the caller awaiting it: a send cancelled while its insert waits on the
+store, or a retire cancelled while its commit waits on the writer, keeps the
+gate until that write has landed or failed. A retire or merge also refuses
+while any request for the role is `delivering` (claimed, not yet settled),
+since a failed delivery, or a daemon that stops first and re-queues it at
+boot, would put it back on the queue behind a retired role. This check only
+ever refuses a retirement: it is a brake, not a policy. Without `--drop-queued`, retire and merge refuse and list
+the queued requests. With `--drop-queued` the role is retired, each requester
+is told once by an FYI held for its next real turn (msg id `<request
+id>.withdrawn`, so a repeat is ignored) that names the role, who retired it and
+why, and repeats the request's body, and then every request still queued for
+it (any instance) is withdrawn in one store transaction: its `role_requests`
+row is deleted and a `role.request.withdrawn` spine event, with the requester
+as its seat, records `{id, project, role, instance, requester, created_at,
+withdrawn_by, why, requester_gone}`. The retiring seat's own requests are not echoed back to
+it. `data.withdrawn` lists `{id, requester, instance, created_at, told}`, where
+`told` is `held`, `self`, or `gone: <why>` for a requester that is no longer a
+seat (unknown or tombstoned: nobody to tell). Those are still withdrawn, listed
+again in `data.gone` (request ids), and their events carry
+`requester_gone: true`. Nothing is withdrawn unless every other requester's FYI
+was held: one that could not be (`not told: <why>`) refuses
+`E-RS-DIRECTORY-NOT-TOLD` after the retirement landed, with the requests still
+queued, and the same command tells and withdraws them. If the withdrawal
+fails after the retirement committed (`E-RS-STORE`, naming the command), the
+same `retire` or `merge ... --drop-queued` finishes it: on an already retired
+role with requests still queued it makes no commit and adds no changelog row
+(`data.resumed: true`, `data.commit: null`), tells nobody twice, and
+withdraws them. With nothing queued, a retired role refuses as before.
+
+Every command a refusal prints names the project it was asked about
+(`--project <slug>`) and the exact holding or queued instance
+(`<role>/<instance>`), so following it from another checkout changes the right
+project. Each role, holding, seat and project in it is one shell word, quoted
+when it carries anything but `[A-Za-z0-9_-./:@%+=,]`, since a holding instance
+can arrive as data (`assign --batch`) and must never become shell syntax: the held refusal prints one release per holding, the queued refusal
+one assign per queued instance and the `--drop-queued` form, and F19's
+template-diff refusal its edit. Merge does not move queued requests to `<to>`:
+a queued request drains only on an assign, so a moved request would wait even
+when `<to>` has a live holder. Drain them with an assign first, or withdraw
+them.
+
+| Refusal | When |
+|---|---|
+| `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
+| `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)) and `--drop-queued` was not given. Each is listed as `<id> from <requester> for <role>[/<instance>] (<age> old)`; the next step prints an assign per queued instance (which drains them; release it and retry after) and the same verb with `--drop-queued`. Also while a request for the role is being delivered, listed as `<id> from <requester> to <holder> (<age> old)`; the next step is the same verb once it settles (`--drop-queued` cannot withdraw a claimed request) |
+| `E-RS-DIRECTORY-NOT-TOLD` | `--drop-queued`: a requester's FYI could not be held, so nothing was withdrawn; the retirement has landed and the next step is the same command |
+| `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign and edit of a retired role refuse too, naming the merge target when there is one |
+| `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
+| `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |
+
+Cost: one writer commit per edit, retire or merge, the same as an add, plus
+one read on the `role_requests_queued` index and one on the (normally empty)
+`role_requests_delivering` index for retire and merge, and with
+`--drop-queued` one store transaction and one FYI per withdrawn request. The
+send path reads the role document it already reads. The gate is an in-process
+lock: no launch, loop or timer. A drain holds it per request while that
+request is delivered, so a send to the same role waits for at most one
+delivery.
 
 ### The prime's operating picture (plan 203)
 
@@ -1213,9 +1324,9 @@ Every recommendation to create, split, merge or retire a role is a
 Each one in `prompts` (create) and `reviews` (split, merge, retire) carries
 `act`, `signal: {code, says}`, `command` and `commands`, and may carry `detail`.
 `in_order: true` marks `commands` as steps (release, then assign) rather than
-alternatives. `later` holds lines for verbs that have not shipped (s15's
-`retire` and `merge`): shown with a `note`, never in `commands`, so `command`
-is `null` until they ship.
+alternatives. `later` holds lines for verbs that have not shipped: shown with a
+`note`, never in `commands`. None use it today: s15's `retire` and `merge`
+shipped in plan 206, so a `mostly-idle` review offers both as `commands`.
 
 | signal `code` | says | used by |
 |---|---|---|
@@ -1226,8 +1337,8 @@ is `null` until they ship.
 | `one-owner` | a path or system needs one owner | taught in the notice |
 | `worth-remembering` | this would be worth remembering: knowledge that should outlive the seat (ruling C30) | taught in the notice |
 | `core` | a core role a PEC starts from (C22); its template is an example | the other core prompts |
-| `step-needs` | a workstream step names this role in its needs | the `needed` prompts |
-| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (the s15 verbs, in `later`) |
+| `step-needs` | a workstream step names this role in its needs | the `needed` prompts: `add` for a role that does not exist; for a retired role named by an unfinished step (its document stays, so `add` would refuse) a `retarget` prompt instead, with one `ddocs set --value-json <workstream>#steps/<id>/needs <json>` per step that points the step at the merge target, or at `role:<replaces-<id>>` to fill in for a plain retirement (plan 206) |
+| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (both in `commands`) |
 
 A cold role with memory is never put up for retirement: a role is not a seat.
 `data.reviews` is the boundary review the prime runs at a wave end, a compact
@@ -1309,7 +1420,8 @@ ddocs 2) and one delivery to the one seat told. No timer or poll.
 
 ### Routing table (plan 202)
 
-pij builds the routing table, "send it, don't do it", from every role's scope:
+pij builds the routing table, "send it, don't do it", from every active role's
+scope (a retired or merged role routes nothing, plan 206):
 one row per `scope.paths` entry and one per `scope.rules` entry, each sent to
 `role:<id>`, ordered by role id, paths first. It lives in
 `community/ROUTES.md`, which carries no holder names, so a change of holder never
@@ -1318,7 +1430,8 @@ components agree up to where either ends or turns into a glob) give the warning
 `W-ROUTES-OVERLAP: <path> (role:<a>) overlaps <path> (role:<b>)`, listed under
 `## Overlaps` in the file.
 
-Every role write through the writer (`directory add` today) rewrites
+Every role write through the writer (`directory add`, `edit`, `retire` and
+`merge`) rewrites
 `ROUTES.md` in the same commit when its bytes change, so a regeneration is never
 a commit of its own. The first one replaces a hand-written `ROUTES.md`; the old
 text stays in the branch history. `data.routes` on the add carries `path`,
