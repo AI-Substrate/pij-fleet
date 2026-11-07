@@ -3975,7 +3975,7 @@ async fn requests_as(addr: SocketAddr, argv: &[&str], caller: Value) -> Value {
         .unwrap()
 }
 
-/// The `request.closed` audit events a seat's verbs wrote (S003).
+/// The `request.closed_by_actor` audit events a seat's verbs wrote (S003).
 async fn closed_events(rig: &Rig, repo: &Repo, seat: &str) -> Vec<Value> {
     let events = call(
         rig.addr,
@@ -3988,7 +3988,7 @@ async fn closed_events(rig: &Rig, repo: &Repo, seat: &str) -> Vec<Value> {
         .as_array()
         .expect("events")
         .iter()
-        .filter(|event| event["kind"] == "request.closed")
+        .filter(|event| event["kind"] == "request.closed_by_actor")
         .map(|event| serde_json::from_str(event["payload"].as_str().unwrap()).unwrap())
         .collect()
 }

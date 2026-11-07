@@ -923,13 +923,33 @@ impl SqliteOrchestration {
         at: u64,
         notice: Option<&str>,
     ) -> Result<CloseOutcome> {
+        self.close_role_request_audited(id, from, by, why, at, notice, None)
+            .await
+            .map(|(_, outcome)| outcome)
+    }
+
+    /// [`Self::close_role_request`], appending `audit` to the spine in the
+    /// same transaction when, and only when, the request closes (security
+    /// review of #149, S003: no close without its audit). Returns the
+    /// appended event, with its sequence, for the caller to publish.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn close_role_request_audited(
+        &self,
+        id: &str,
+        from: RequestState,
+        by: &str,
+        why: &str,
+        at: u64,
+        notice: Option<&str>,
+        audit: Option<Event>,
+    ) -> Result<(Vec<Event>, CloseOutcome)> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let (owned_id, by, why) = (id.to_string(), by.to_string(), why.to_string());
         let notice = notice.map(str::to_string);
         let from = from.as_str();
         let at = sql_i64(at, "closed_at")?;
-        let moved = owned_write(async move {
+        let (moved, events) = owned_write(async move {
             let id = owned_id;
             let mut tx = begin_write(&pool).await?;
             let moved = sqlx::query(
@@ -951,6 +971,7 @@ impl SqliteOrchestration {
             .map_err(adapter_error)?
             .rows_affected()
                 == 1;
+            let mut events = Vec::new();
             if moved {
                 sqlx::query("DELETE FROM role_requests WHERE id = ?1 AND state = ?2")
                     .bind(&id)
@@ -958,20 +979,27 @@ impl SqliteOrchestration {
                     .execute(&mut *tx)
                     .await
                     .map_err(adapter_error)?;
+                if let Some(mut event) = audit {
+                    event.seq = Some(append_in_transaction(&mut tx, &event).await?);
+                    events.push(event);
+                }
             }
             tx.commit().await.map_err(adapter_error)?;
-            Ok(moved)
+            Ok((moved, events))
         })
         .await?;
         let closed = self.closed_role_request(id).await?;
-        Ok(match (moved, closed) {
-            (true, Some(closed)) => CloseOutcome::Closed(closed),
-            (false, Some(closed)) => CloseOutcome::AlreadyClosed(closed),
-            (_, None) => match self.role_request(id).await? {
-                Some(open) => CloseOutcome::OtherState(open),
-                None => CloseOutcome::Unknown,
+        Ok((
+            events,
+            match (moved, closed) {
+                (true, Some(closed)) => CloseOutcome::Closed(closed),
+                (false, Some(closed)) => CloseOutcome::AlreadyClosed(closed),
+                (_, None) => match self.role_request(id).await? {
+                    Some(open) => CloseOutcome::OtherState(open),
+                    None => CloseOutcome::Unknown,
+                },
             },
-        })
+        ))
     }
 
     /// The close's FYI to the requester was admitted: `owed` becomes `told`,

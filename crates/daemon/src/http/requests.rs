@@ -88,8 +88,9 @@ pub(crate) async fn handle(
     }
 }
 
-/// The audit event for a withdraw or close by a caller (S003).
-pub const REQUEST_CLOSED_EVENT: &str = "request.closed";
+/// The audit event every withdraw and close writes, in the same transaction
+/// as the close (security review of #149, S003).
+pub const REQUEST_CLOSED_EVENT: &str = "request.closed_by_actor";
 
 /// How the caller of a mutating verb was identified (S003, F88).
 struct Caller {
@@ -105,45 +106,51 @@ impl Caller {
     }
 }
 
-/// One `request.closed` event: the request, the verb, who, and how the caller
-/// was identified. No body.
-async fn audit_close(
+/// Close `request` from `from` with its audit event, appended in the close's
+/// own transaction and published once it commits. The event names the
+/// request, the verb, the claimed actor and the caller's evidence; no body.
+#[allow(clippy::too_many_arguments)]
+async fn close_audited(
     state: &AppState,
     actor: &SeatId,
     caller: &Caller,
     request: &RoleRequest,
+    from: RequestState,
+    why: &str,
+    notice: Option<&'static str>,
     verb: &str,
-    quiet: bool,
     at: u64,
-) {
-    let payload = json!({
-        "request": request.id,
-        "project": request.project,
-        "verb": verb,
-        "by": actor,
-        "bound": caller.by.as_str(),
-        "pane": caller.pane,
-        "session": caller.session,
-        "quiet": quiet,
-    });
-    if let Err(cause) = state
+) -> Result<CloseOutcome, Refusal> {
+    let audit = Event {
+        seq: None,
+        v: 1,
+        at,
+        kind: REQUEST_CLOSED_EVENT.into(),
+        seat: Some(actor.clone()),
+        payload: json!({
+            "request": request.id,
+            "project": request.project,
+            "verb": verb,
+            "actor": actor,
+            "bound": caller.by.as_str(),
+            "pane": caller.pane,
+            "session": caller.session,
+            "quiet": notice == Some("quiet"),
+        })
+        .to_string(),
+    };
+    let store = state.services.governance.store().clone();
+    let (id, by, why) = (request.id.clone(), actor.to_string(), why.to_string());
+    state
         .services
         .event_bus
-        .publish(Event {
-            seq: None,
-            v: 1,
-            at,
-            kind: REQUEST_CLOSED_EVENT.into(),
-            seat: Some(actor.clone()),
-            payload: payload.to_string(),
+        .publish_committed_batch(async move {
+            store
+                .close_role_request_audited(&id, from, &by, &why, at, notice, Some(audit))
+                .await
         })
         .await
-    {
-        eprintln!(
-            "pij-rs: audit of {verb} {} by {actor} failed: {cause}",
-            request.id
-        );
-    }
+        .map_err(store_refusal)
 }
 
 /// Positions, and `--name value` (or `--name=value`) pairs.
@@ -267,13 +274,20 @@ async fn withdraw(
         ));
     }
     let at = system_time_ms().map_err(store_refusal)?;
-    match store
-        .close_role_request(id, RequestState::Queued, actor.as_str(), &why, at, None)
-        .await
-        .map_err(store_refusal)?
+    match close_audited(
+        state,
+        actor,
+        caller,
+        &request,
+        RequestState::Queued,
+        &why,
+        None,
+        "withdraw",
+        at,
+    )
+    .await?
     {
         CloseOutcome::Closed(closed) => {
-            audit_close(state, actor, caller, &closed.request, "withdraw", false, at).await;
             let mut data = closed_entry(&closed);
             data["line"] = json!(format!("request {id} withdrawn by {actor}: {why}"));
             Ok(data)
@@ -343,22 +357,20 @@ async fn close(
         "owed"
     };
     let at = system_time_ms().map_err(store_refusal)?;
-    let closed = match store
-        .close_role_request(
-            id,
-            RequestState::Delivered,
-            actor.as_str(),
-            &why,
-            at,
-            Some(notice),
-        )
-        .await
-        .map_err(store_refusal)?
+    let closed = match close_audited(
+        state,
+        actor,
+        caller,
+        &request,
+        RequestState::Delivered,
+        &why,
+        Some(notice),
+        "close",
+        at,
+    )
+    .await?
     {
-        CloseOutcome::Closed(closed) => {
-            audit_close(state, actor, caller, &closed.request, "close", quiet, at).await;
-            closed
-        }
+        CloseOutcome::Closed(closed) => closed,
         CloseOutcome::OtherState(request) => return Err(not_delivered(&request)),
         CloseOutcome::AlreadyClosed(closed) => return Err(already_closed(&closed)),
         CloseOutcome::Unknown => return Err(unknown(id)),
