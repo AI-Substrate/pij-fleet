@@ -244,7 +244,10 @@
 					"harness_session": "3e7756cf-b339-46ac-9b12-46d3065045cc",
 					"instance_key": "141",
 					"machine": "ops.osk.lan",
+					"release_why": "seat died in the 07 Nov reboot; prime: fresh holders",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-usual-seahorse",
+					"to": "2026-11-07T07:29:14.092Z",
 					"why": "review #141 (plan 203, s09)"
 				},
 				{
