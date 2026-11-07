@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "560e260953eb581d2b414c2dcaf24a90363b9aee",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/136#issuecomment-6708298992",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:136",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: block** at `560e260953eb581d2b414c2dcaf24a90363b9aee`.\n\nS136001: the required literal shell-word boundary is missing from printed executable recipes. This is a source-confirmed recipe-safety blocker, not a claim of automatic interpolation or observed code execution.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | templates/roles/researcher/v1/role.dd.json; skills/pij/references/routes/community.md | 55; 19-27, 53-77 | Unquoted dynamic command arguments and double-quoted report text lack literal shell-word protection | 9/10 |\n\nAll 16 templates instruct holders to reply using `pij send <seat> --body-file <path>` and report using double-quoted text placeholders. The route also prints unquoted paths, text, role addresses and composite arguments. These are operational instructions once placeholders are filled, not merely descriptions of an API. If an untrusted filename or report text is inserted literally, the shell can interpret operators or substitutions before pij receives argv. Double quotes protect whitespace, not command substitution.\n\nEncode each complete dynamic argument as a literal shell word, including combined addresses and field/value arguments, or use structured argv. Make that boundary explicit in the route and template packets. The 29-command coverage test and its unknown-verb/unknown-flag negative controls prove grammar, not safe shell splitting or literal argument integrity.\n\n**Public-content scan:** 39 PR-owned changed files were reviewed, excluding imported main at `bb753b8`; supplementary scanning included all 16 templates. No credential/token literals, private owner/name identities or private content found. The initial bootstrap-path concern was withdrawn: it is pij-owned governance layout permitted by C21, even though the line was edited. It is not a publication-policy blocker.\n\n**Canary:** evidence reports seven privately created roles, but one read-only call reached the live daemon and refused. Therefore the original run was not fully isolated; no live writes are reported. Current wrapper source explicitly pins private address and state, removing its inherited/default-daemon destination. The correction was not re-canaryed, so source protection is not renewed execution proof. Canary evidence/rig contains no credential literals; credential variable references are not embedded tokens.\n\n`templates --show` uses exact embedded-catalog lookup, not caller-selected filesystem reads. Relevant native forwarding preserves argv without a shell; no new permission bypass found in the merged dispatch/help.\n\n**Proof:** exact-head CI [42374959821](https://github.com/AI-Substrate/pij-fleet/actions/runs/42374959821) passed all four jobs. JUnit lists 2,081 passing cases, including `the_community_route_and_templates_print_real_commands`. Newer delivers runs [42375005413](https://github.com/AI-Substrate/pij-fleet/actions/runs/42375005413) and [42375352339](https://github.com/AI-Substrate/pij-fleet/actions/runs/42375352339) passed at this head; historical delivers run 42374959888 failed. Source and CI inspection only, with no local builds/tests, exploitation, credential reads, product edits or live daemon operations.\n"
+		}
+	]
+}
