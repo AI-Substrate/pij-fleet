@@ -19,6 +19,7 @@ pub mod governance;
 mod identity;
 mod lifecycle;
 pub mod memory_turn;
+mod output;
 mod report;
 mod requests;
 mod revive;
@@ -200,6 +201,10 @@ enum Endpoint {
     Spine,
     /// `pij directory add` (plan 190): the community directory's writer.
     Directory,
+    /// `pij output` (plan 200): a role's output, through the writer.
+    Output,
+    /// `pij outputs` (plan 200): a project's outputs by subject or role.
+    Outputs,
     /// `pij claim` and `pij claim release` (plan 196).
     Claim,
     /// `pij claims` (plan 196).
@@ -214,7 +219,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 57] = [
+    const ALL: [Self; 59] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -267,6 +272,8 @@ impl Endpoint {
         Self::Orchestration,
         Self::Spine,
         Self::Directory,
+        Self::Output,
+        Self::Outputs,
         Self::Claim,
         Self::Claims,
         Self::Delivered,
@@ -323,6 +330,8 @@ impl Endpoint {
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
             Self::Directory => "/v1/directory",
+            Self::Output => "/v1/output",
+            Self::Outputs => "/v1/outputs",
             Self::Claim => "/v1/claim",
             Self::Claims => "/v1/claims",
             Self::Delivered => "/v1/delivered",
@@ -378,6 +387,8 @@ impl Endpoint {
             | Self::Orchestration
             | Self::Spine
             | Self::Directory
+            | Self::Output
+            | Self::Outputs
             | Self::Claim
             | Self::Claims
             | Self::Delivered
@@ -617,6 +628,8 @@ fn router_with_optional_federation(
                     | Endpoint::Orchestration
                     | Endpoint::Spine
                     | Endpoint::Directory
+                    | Endpoint::Output
+                    | Endpoint::Outputs
                     | Endpoint::Claim
                     | Endpoint::Claims
                     | Endpoint::Delivered
@@ -693,6 +706,9 @@ fn router_with_optional_federation(
             Endpoint::Orchestration => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Spine => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Directory => router.route(endpoint.path(), post(directory::handle)),
+            Endpoint::Output | Endpoint::Outputs => {
+                router.route(endpoint.path(), post(output::handle))
+            }
             Endpoint::Claim | Endpoint::Claims | Endpoint::Delivered => {
                 router.route(endpoint.path(), post(claims::handle))
             }
@@ -772,6 +788,9 @@ struct Health<'a> {
     gh: Option<String>,
     /// The processes this daemon has launched, by call site (plan 180).
     spawns: pij_core::spawns::SpawnCounts,
+    /// Registration attempts by path, mode and outcome, with the ancestry
+    /// `ps` reads they paid (plan 211).
+    registrations: crate::registration::attempts::AttemptCounts,
 }
 
 #[derive(serde::Serialize)]
@@ -805,6 +824,7 @@ async fn health(State(state): State<AppState>) -> Response {
             .path()
             .map(|path| path.display().to_string()),
         spawns: pij_core::spawns::snapshot(),
+        registrations: state.registration.attempts().snapshot(),
     };
     match checked {
         Ok(()) => envelope(StatusCode::OK, &Envelope::ok("pij ping", data)),
@@ -829,6 +849,11 @@ struct RegistrationRequest {
     harness_session: Option<String>,
     #[serde(default)]
     native_extension_delivery: bool,
+    /// Why the client is registering (plan 211): `explicit`, `receive`,
+    /// `heartbeat`, `shim` or `lease-retry`. Advisory: it labels the attempt
+    /// counters and decides nothing.
+    #[serde(default)]
+    attempt: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -933,6 +958,15 @@ async fn register(
     State(state): State<AppState>,
     Json(mut request): Json<RegistrationRequest>,
 ) -> Response {
+    use crate::registration::attempts::{Outcome, Path};
+    let path = Path::from_client(request.attempt.as_deref());
+    // Every parsed attempt counts once (plan 211; review of #148, F001): a
+    // refusal here before the service is counted here, the rest by the service.
+    let early = |claim: &Registration, outcome: Outcome| {
+        let registration = state.registration.clone();
+        let claim = claim.clone();
+        async move { registration.count_early(path, &claim, outcome).await }
+    };
     // Vocabulary is a refusal, never a serde rejection (plan 166).
     if let Some(Err(reason)) = request
         .claim
@@ -940,6 +974,7 @@ async fn register(
         .as_deref()
         .map(pij_core::orchestration::check_seat_role)
     {
+        early(&request.claim, Outcome::Refused).await;
         return role::RoleError::Invalid(reason).into_response("pij register");
     }
     // Native claims carry their own verified host tuple. Do not replace it with
@@ -955,7 +990,10 @@ async fn register(
     {
         let observed = match state.services.tmux.pane_process(pane).await {
             Ok(observed) => observed,
-            Err(error) => return internal("pij register", error),
+            Err(error) => {
+                early(&request.claim, Outcome::Error).await;
+                return internal("pij register", error);
+            }
         };
         if let Some(observed) = observed {
             match pane_harness_identity(&state, observed.pid, harness).await {
@@ -969,6 +1007,7 @@ async fn register(
                             .zip(request.claim.proc_start)
                             .map(|(pid, proc_start)| ProcIdentity { pid, proc_start });
                         if !claim.is_some_and(|claim| observed.subtree.contains(&claim)) {
+                            early(&request.claim, Outcome::Refused).await;
                             return refused(
                                 "pij register",
                                 "claimed pid/proc_start is not in the daemon-observed pane process subtree; nothing was written",
@@ -981,29 +1020,30 @@ async fn register(
                     proc_source = Some(observed.source);
                 }
                 Ok(None) => {
+                    early(&request.claim, Outcome::Refused).await;
                     return refused(
                         "pij register",
                         "pane process disappeared before registration; nothing was written",
                     );
                 }
-                Err(error) => return internal("pij register", error),
+                Err(error) => {
+                    early(&request.claim, Outcome::Error).await;
+                    return internal("pij register", error);
+                }
             }
         }
     }
-    let registration = &state.registration;
-    let registered = if request.native_extension_delivery {
-        registration
-            .register_native(
-                request.claim,
-                request.harness_session,
-                state.services.tmux.as_ref(),
-            )
-            .await
-    } else {
-        registration
-            .register_with_harness_session(request.claim, request.harness_session)
-            .await
-    };
+    let registered = state
+        .registration
+        .register_via(
+            path,
+            request.claim,
+            request.harness_session,
+            request
+                .native_extension_delivery
+                .then_some(state.services.tmux.as_ref()),
+        )
+        .await;
     match registered {
         Ok((descriptor, report)) => {
             let meta = descriptor.pane.is_none().then(|| {

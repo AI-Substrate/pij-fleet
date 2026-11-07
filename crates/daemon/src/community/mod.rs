@@ -13,6 +13,8 @@ mod git;
 pub mod holders;
 pub mod layout;
 pub mod memory;
+pub mod output;
+pub mod picture;
 pub mod pointer;
 pub mod role;
 pub mod root;

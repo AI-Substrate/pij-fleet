@@ -1,0 +1,167 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Outputs and notification",
+        "slug": "outputs-notify",
+        "ordinal": 200,
+        "complexity": "CS-4",
+        "summary": "Roadmap 001 s06: `pij output verdict|deliverable|note|handover` writes one ddoc per output through the writer and a store fact; `pij outputs --subject pr:N --head <sha>` answers for that exact head; the output notifies its requester in the stored reply mode.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Delivers req-10 and the notify half of req-08. Rulings: C3 (`pij output ... --answers <msg_id>` links an output to its request), C4 (a wake to a cold requester is an audited forced wake). Depends on s05 (the request and its reply mode) and s04 (holders, to flag a writer who doesn't hold the role)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Roadmap 001 s06: `pij output verdict|deliverable|note|handover` writes one ddoc per output through the writer and a store fact; `pij outputs --subject pr:N --head <sha>` answers for that exact head; the output notifies its requester in the stored reply mode."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Write. `pij output <kind> --role <id> --subject <address> ...` writes `community/roles/<id>/outputs/<yyyy-mm>/<slug>.dd.json` (pij/output, plan 190 schema) through the writer, one at a time, and records a store fact (migration 0036). A verdict carries the exact head, result, notes owed, evidence (command, exit code, log path) and an optional external link. The writer is recorded, and flagged if it doesn't hold the role.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Exact head. `pij outputs --subject pr:N --head <sha>` answers only for that head and answers none when the head has moved.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Notify (req-08). `--answers <msg_id>` (C3) links the output to its request; the requester is notified in its stored mode: wake (a forced, audited wake if cold, C4), fyi, or none. A `block` verdict or a `failed` result always wakes. An output nobody requested goes as an FYI to the nearest seat above (its PM, else the prime). One seat is notified.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Handover. A `handover` output holds what is in flight now, so a fresh holder can pick up.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). One writer commit per output (about 9 launches: git 7, ddocs 2); notification is one delivery. No timer or poll.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Docs and states. In this PR: roadmap s06 goes to complete (plan cell docs/plans/200-outputs-notify); req-08 and req-10 go to shipped; c-notify goes to shipped; c-verbs stays in-progress. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00c8",
+          "title": "Outputs and notification",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-4.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: crates/daemon/src/community/ (writer, layout), the pij/output schema (.dd/schemas/pij/output), s05's request store (plan 199). Migration 0036 is claimed for this plan (0035 went to s12, which merges first and adds role_requests.answered_at plus mark_role_request_answered(id, at); `--answers` calls that helper)."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}

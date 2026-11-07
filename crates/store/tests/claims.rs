@@ -356,3 +356,40 @@ async fn a_large_newest_delivery_never_hides_an_address_or_an_older_pr() {
     assert!(card[0].addresses.is_sorted());
     assert_eq!(card[0].addresses, delivery(143, 60, 40).addresses);
 }
+
+/// #131 N002: a PR recorded again later by another seat shows that seat with
+/// that time, not the first address's recorder with the newer time.
+#[tokio::test]
+async fn a_later_recording_by_another_seat_names_that_seat_with_its_time() {
+    let (_fresh, store, _) = store().await;
+    let recording = |address: &str, by: &str, at: u64| DeliveryRecord {
+        project: "pij".into(),
+        pr: 150,
+        merge_commit: "m150".into(),
+        recorded_by: by.into(),
+        pm: Some("pij-b".into()),
+        addresses: vec![format!(
+            "docs/project/prds/001-pij-community.dd.json#requirements/{address}"
+        )],
+        releases: Vec::new(),
+        at,
+    };
+    for (address, by, at) in [("req-20", "pij-first", 10), ("req-21", "pij-later", 20)] {
+        store
+            .record_delivery_committed(&recording(address, by, at))
+            .await
+            .unwrap();
+    }
+    let card = store.deliveries_for_pm("pij-b", 3).await.unwrap();
+    assert_eq!(
+        card.iter()
+            .map(|note| (
+                note.pr,
+                note.addresses.len(),
+                note.recorded_at,
+                note.recorded_by.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        [(150, 2, 20, "pij-later")]
+    );
+}

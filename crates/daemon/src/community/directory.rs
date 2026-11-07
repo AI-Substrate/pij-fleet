@@ -18,6 +18,7 @@ use serde_json::Value;
 
 use super::holders::{self, seat_role_for};
 use super::layout::RolePaths;
+use super::picture;
 use super::root::GovernanceRoot;
 use super::routes::{self, Regenerated};
 use super::templates::{self, Catalog};
@@ -190,15 +191,53 @@ impl DirectoryService {
     /// Plan 194: each role's template drift, and prompts for the missing core
     /// roles and security (ruling C22), which create nothing.
     ///
+    /// Plan 203 (s09): the project's designated prime; per role its waiting
+    /// requests, latest output and memory freshness, and whether each holder's
+    /// seat is live (`live` is the registered, untombstoned seats); `actions`
+    /// for the conditions that need the prime, workstream needs and recurring
+    /// unowned paths folded into the prompts, the boundary `reviews`, each
+    /// recommendation naming its C28 signal, and the standing PEC `notice`.
+    /// F39: a suggestion nothing points at (a core or security role with no
+    /// step need) is listed by name in `suggestions` and shown in full only
+    /// with `suggest`; `prime_document` says whether the prime role's
+    /// document exists, so a project without one reads as that document
+    /// missing (F21). Reads per call: assignments, the project, the project's
+    /// queued requests (without bodies) and the newest outputs, one store
+    /// query each; each role's document and memory folder, the repo's
+    /// workstreams (`picture::read_step_docs`, parsed once) and their
+    /// blueprints, in-process.
+    ///
     /// # Errors
     /// [`super::E_GOV_ABSENT`] without a governance worktree; `E-RS-STORE`.
-    pub async fn view(&self, project: &str, repo: &std::path::Path) -> Result<Value, Refusal> {
+    pub async fn view(
+        &self,
+        project: &str,
+        repo: &std::path::Path,
+        live_seats: &std::collections::HashSet<String>,
+        suggest: bool,
+    ) -> Result<Value, Refusal> {
         let root = super::root::find(repo)?;
-        let rows = self
+        let store_error =
+            |error: pij_core::error::PijError| Refusal::new("E-RS-STORE", error.to_string());
+        let rows = self.store.assignments(project).await.map_err(store_error)?;
+        let prime = self
             .store
-            .assignments(project)
+            .project(project)
             .await
-            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+            .map_err(store_error)?
+            .and_then(|record| record.prime_id)
+            .map(|seat| seat.to_string());
+        let queued: Vec<pij_store::RoleRequest> = self
+            .store
+            .queued_role_request_heads(project)
+            .await
+            .map_err(store_error)?;
+        let outputs = self
+            .store
+            .latest_outputs(project)
+            .await
+            .map_err(store_error)?;
+        let mut actions = Vec::new();
         let roles_dir = root.worktree.join(super::layout::COMMUNITY).join("roles");
         let mut ids: Vec<String> = std::fs::read_dir(&roles_dir)
             .into_iter()
@@ -210,6 +249,14 @@ impl DirectoryService {
         ids.sort();
         let mut roles = Vec::new();
         let mut made_from = Vec::new();
+        let mut scopes: Vec<(String, Vec<String>)> = Vec::new();
+        let mut reviews = picture::two_domains(project, &rows, live_seats);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+            });
+        let cutoff = picture::idle_cutoff(now_ms);
         for id in &ids {
             let document: Value = std::fs::read(roles_dir.join(id).join("role.dd.json"))
                 .ok()
@@ -227,9 +274,76 @@ impl DirectoryService {
                     serde_json::json!({
                         "seat": row.seat, "instance": row.instance, "since": row.from,
                         "machine": row.machine, "end_pending": row.end_pending,
+                        "seat_live": live_seats.contains(&row.seat),
                     })
                 })
                 .collect();
+            let waiting = picture::waiting(id, &queued);
+            let memory = super::memory::freshness(&root.worktree, id).unwrap_or(Value::Null);
+            actions.extend(picture::actions(
+                project,
+                id,
+                meta["holders"].as_str().unwrap_or("one"),
+                &mine,
+                live_seats,
+                &queued
+                    .iter()
+                    .filter(|request| request.role == *id)
+                    .map(|request| request.instance.as_str())
+                    .collect::<Vec<_>>(),
+                memory["latest"].as_str(),
+            ));
+            let section = |name: &str| {
+                document["sections"]
+                    .as_array()
+                    .and_then(|sections| sections.iter().find(|section| section["name"] == name))
+                    .map_or(Value::Null, |section| section["value"].clone())
+            };
+            scopes.push((
+                id.clone(),
+                section("scope")["paths"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|path| path.as_str().map(str::to_string))
+                    .collect(),
+            ));
+            let changelog = section("changelog");
+            let created = changelog
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|row| row["date"].as_str())
+                .filter_map(|date| date.get(..10))
+                .min();
+            reviews.extend(picture::idle(
+                project,
+                &picture::RoleActivity {
+                    role: id,
+                    created,
+                    rows: &mine,
+                    live_holder: mine
+                        .iter()
+                        .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                    waiting: waiting["count"]
+                        .as_u64()
+                        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                    has_output: outputs.iter().any(|output| &output.role == id),
+                    notes: memory["notes"]
+                        .as_u64()
+                        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                },
+                &cutoff,
+            ));
+            let call_on = picture::call_on(
+                project,
+                id,
+                mine.iter()
+                    .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                memory["notes"]
+                    .as_u64()
+                    .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+            );
             let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
             made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
             roles.push(serde_json::json!({
@@ -239,18 +353,73 @@ impl DirectoryService {
                 "holders": meta["holders"],
                 "template": self.templates.drift(&meta),
                 "live": live,
+                "requests": waiting,
+                "latest_output": picture::latest_output(id, &outputs),
+                "memory": memory,
+                "call_on": call_on,
                 "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
             }));
         }
-        let prompts = templates::prompts(project, &made_from);
+        let step_docs = picture::read_step_docs(repo);
+        let mut prompts = templates::recommendations(project, &made_from);
+        picture::fold_needs(
+            project,
+            &mut prompts,
+            &picture::step_needs(&step_docs),
+            &made_from,
+            &self.templates,
+        );
+        // F21: a missing prime role document is not a missing prime.
+        for prompt in prompts.iter_mut().filter(|prompt| prompt.role == "prime") {
+            prompt.note = Some(match &prime {
+                Some(seat) => format!("the project's prime is {seat}; this adds the prime role's document"),
+                None => "this adds the prime role's document; the project records no designated prime either".to_string(),
+            });
+        }
+        prompts.extend(picture::unowned(
+            project,
+            &picture::recurring_paths(repo, &step_docs),
+            &scopes,
+        ));
         let pending: Vec<Value> = rows
             .iter()
             .filter(|row| row.end_pending)
             .map(|row| serde_json::json!({"role": row.role, "seat": row.seat, "instance": row.instance, "to": row.to}))
             .collect();
-        let mut view = serde_json::json!({"project": project, "roles": roles, "pending": pending});
+        let prime_document = made_from
+            .iter()
+            .any(|(id, template)| id == "prime" || template.as_deref() == Some("prime"));
+        // F39: only what a need or a C28 signal points at shows unasked.
+        let (shown, held): (Vec<_>, Vec<_>) = prompts.into_iter().partition(|prompt| {
+            suggest
+                || !prompt.needed_by.is_empty()
+                || !matches!(
+                    prompt.signal,
+                    picture::Signal::Core | picture::Signal::Independent
+                )
+        });
+        let prompts = shown;
+        let mut view = serde_json::json!({
+            "project": project, "prime": prime, "prime_document": prime_document,
+            "roles": roles, "pending": pending,
+            "actions": actions, "notice": picture::notice(),
+            "reviews": reviews.iter().map(picture::Recommendation::json).collect::<Vec<_>>(),
+        });
+        if !held.is_empty() {
+            view["suggestions"] = serde_json::json!({
+                "roles": held.iter().map(|prompt| prompt.role.clone()).collect::<Vec<_>>(),
+                "command": format!(
+                    "pij directory --suggest --project {}",
+                    pij_core::directory::shell_word(project)
+                ),
+            });
+        }
         if !prompts.is_empty() {
-            view["prompts"] = serde_json::json!(prompts);
+            view["prompts"] = prompts
+                .iter()
+                .map(picture::Recommendation::json)
+                .collect::<Vec<_>>()
+                .into();
             view["guidance"] = serde_json::json!(templates::GUIDANCE);
         }
         Ok(view)
@@ -443,6 +612,55 @@ impl DirectoryService {
         Ok((written, entry))
     }
 
+    /// `pij output` (plan 200, AC1): one pij/output document in one commit,
+    /// its path chosen under the writer lock so two outputs at once never share
+    /// a file. Returns the commit and the document's path.
+    ///
+    /// # Errors
+    /// Any writer or [`super::output`] refusal; nothing is written.
+    pub async fn output_add(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        fields: super::output::OutputFields,
+        writer: &SeatId,
+        holds_role: bool,
+    ) -> Result<(Written, String), Refusal> {
+        let date = super::holders::today();
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: {} {} on {}\n\nPij-Seat: {writer}\nPij-Project: {project}",
+            fields.role, fields.kind, fields.subject
+        );
+        let (project_id, by) = (project.to_string(), writer.to_string());
+        let chosen = Arc::new(std::sync::Mutex::new(String::new()));
+        let path_out = Arc::clone(&chosen);
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let (mut files, path) =
+                    super::output::files(&root.worktree, &fields, &by, holds_role, &date)?;
+                *path_out
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    path.display().to_string();
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        let path = chosen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        Ok((written, path))
+    }
+
     /// `pij directory memory add` (plan 201, AC1): one note and the
     /// regenerated INDEX in one commit, built under the writer lock so two adds
     /// to one role each keep the other's INDEX line. Returns the note's path.
@@ -458,7 +676,7 @@ impl DirectoryService {
         actor: &SeatId,
     ) -> Result<(Written, String), Refusal> {
         let date = super::holders::today();
-        let note = super::memory::note_path(role_id, &date, &fields.title)?;
+        let note = super::memory::note_path(role_id, &date, &fields)?;
         let pending = self.pending(project).await?;
         let message = format!(
             "community: memory {role_id}: {}\n\n{}\n\nPij-Seat: {actor}\nPij-Project: {project}",
@@ -825,87 +1043,173 @@ impl DirectoryService {
         row: Assignment,
         actor: &SeatId,
     ) -> Result<HoldingReceipt, Refusal> {
-        let pending = self.pending(&row.project).await?;
+        let mut receipts = self.lineage_many(repo, vec![row], actor).await?;
+        Ok(receipts.remove(0))
+    }
+
+    /// Record several past holdings in one holders commit, all or nothing
+    /// (plan 209, F67): every row must name one project. A refusal names every
+    /// bad row: a missing role, or an overlap with a holding of the same seat
+    /// and instance, committed or earlier in the batch. Receipts come back in
+    /// row order.
+    ///
+    /// # Errors
+    /// [`E_OVERLAP`], [`E_ROLE_MISSING`], or any writer refusal; nothing is
+    /// written.
+    pub async fn lineage_many(
+        &self,
+        repo: PathBuf,
+        rows: Vec<Assignment>,
+        actor: &SeatId,
+    ) -> Result<Vec<HoldingReceipt>, Refusal> {
+        let Some(first) = rows.first().cloned() else {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "a lineage batch needs at least one line",
+            ));
+        };
+        let pending = self.pending(&first.project).await?;
+        let span_of = |row: &Assignment| {
+            format!(
+                "{}{} {} ({} to {})",
+                row.role,
+                instance_suffix(&row.instance),
+                row.seat,
+                row.from,
+                row.to.as_deref().unwrap_or_default()
+            )
+        };
+        let subject = match rows.as_slice() {
+            [one] => format!("community: lineage {}", span_of(one)),
+            many => format!(
+                "community: lineage {} holdings\n\n{}",
+                many.len(),
+                many.iter().map(span_of).collect::<Vec<_>>().join("\n")
+            ),
+        };
         let message = format!(
-            "community: lineage {}{} {} ({} to {})\n\n{}\n\nPij-Seat: {actor}\nPij-Project: {}",
-            row.role,
-            instance_suffix(&row.instance),
-            row.seat,
-            row.from,
-            row.to.as_deref().unwrap_or_default(),
-            row.why,
-            row.project
+            "{subject}\n\n{}\n\nPij-Seat: {actor}\nPij-Project: {}",
+            first.why, first.project
         );
         let flush = pending;
-        let draft = row.clone();
+        let drafts = rows.clone();
         let (written, built) = self
             .commit(repo, message, move |root, built| {
-                let mut rows = read_holders(root, &draft.project, &draft.role)?;
-                built.landed = holders::apply_ends(&mut rows, &flush);
+                let project = drafts[0].project.clone();
+                let mut roles: Vec<String> = drafts.iter().map(|row| row.role.clone()).collect();
+                roles.sort();
+                roles.dedup();
+                let mut problems: Vec<(&str, String)> = Vec::new();
+                let mut by_role = BTreeMap::new();
+                for role in &roles {
+                    match read_holders(root, &project, role) {
+                        Ok(mut held) => {
+                            built.landed.extend(holders::apply_ends(&mut held, &flush));
+                            by_role.insert(role.clone(), held);
+                        }
+                        Err(refusal) if refusal.code == E_ROLE_MISSING => {
+                            problems
+                                .push((E_ROLE_MISSING, format!("role {role:?} does not exist")));
+                        }
+                        Err(refusal) => return Err(refusal),
+                    }
+                }
                 let span = |held: &Assignment| {
                     (
                         holders::parse_time(&held.from),
                         held.to.as_deref().and_then(holders::parse_time),
                     )
                 };
-                let (from, to) = span(&draft);
-                if let Some(other) = rows.iter().find(|held| {
-                    let (start, end) = span(held);
-                    held.seat == draft.seat
-                        && held.instance == draft.instance
-                        && start < to
-                        && end.is_none_or(|end| from < Some(end))
-                }) {
-                    return Err(Refusal::new(
-                        E_OVERLAP,
-                        format!(
-                            "{} held {}{} from {} to {}, which overlaps {} to {}",
-                            other.seat,
-                            other.role,
-                            instance_suffix(&other.instance),
-                            other.from,
-                            other.to.as_deref().unwrap_or("now"),
-                            draft.from,
-                            draft.to.as_deref().unwrap_or_default()
-                        ),
-                    ));
+                for draft in &drafts {
+                    let Some(held) = by_role.get_mut(&draft.role) else {
+                        continue;
+                    };
+                    let (from, to) = span(draft);
+                    if let Some(other) = held.iter().find(|other| {
+                        let (start, end) = span(other);
+                        other.seat == draft.seat
+                            && other.instance == draft.instance
+                            && start < to
+                            && end.is_none_or(|end| from < Some(end))
+                    }) {
+                        problems.push((
+                            E_OVERLAP,
+                            format!(
+                                "{} held {}{} from {} to {}, which overlaps {} to {}",
+                                other.seat,
+                                other.role,
+                                instance_suffix(&other.instance),
+                                other.from,
+                                other.to.as_deref().unwrap_or("now"),
+                                draft.from,
+                                draft.to.as_deref().unwrap_or_default()
+                            ),
+                        ));
+                        continue;
+                    }
+                    // Lineage reads in time order.
+                    let at = held
+                        .iter()
+                        .position(|other| holders::parse_time(&other.from) > from)
+                        .unwrap_or(held.len());
+                    held.insert(at, draft.clone());
                 }
-                // Lineage reads in time order.
-                let at = rows
-                    .iter()
-                    .position(|held| holders::parse_time(&held.from) > from)
-                    .unwrap_or(rows.len());
-                rows.insert(at, draft.clone());
-                let mut files = vec![holders_file(&draft.role, &rows)?];
+                match problems.as_slice() {
+                    [] => {}
+                    [(code, one)] if drafts.len() == 1 => {
+                        return Err(Refusal::new(code, one.clone()));
+                    }
+                    many => {
+                        let code = if many.iter().all(|(code, _)| *code == E_OVERLAP) {
+                            E_OVERLAP
+                        } else {
+                            E_ROLE_MISSING
+                        };
+                        let named: Vec<&str> = many.iter().map(|(_, text)| text.as_str()).collect();
+                        return Err(Refusal::new(
+                            code,
+                            format!("the batch wrote nothing: {}", named.join("; ")),
+                        ));
+                    }
+                }
+                let mut files = Vec::new();
+                for (role, held) in &by_role {
+                    files.push(holders_file(role, held)?);
+                }
+                let written: Vec<&str> = roles.iter().map(String::as_str).collect();
                 files.extend(flush_files(
                     root,
-                    &draft.project,
+                    &project,
                     &flush,
-                    &[draft.role.as_str()],
+                    &written,
                     &mut built.landed,
                 )?);
-                built.row = Some(draft);
                 Ok(files)
             })
             .await?;
-        self.store
-            .record_history(&row)
-            .await
-            .map_err(|error| store_refusal(&written, &error))?;
+        let mut receipts = Vec::with_capacity(rows.len());
+        for row in &rows {
+            self.store
+                .record_history(row)
+                .await
+                .map_err(|error| store_refusal(&written, &error))?;
+            receipts.push(
+                HoldingReceipt {
+                    commit: written.commit.clone(),
+                    path: holders_path(&row.role)?,
+                    row: holders::to_document(&row.role, std::slice::from_ref(row))["sections"][1]
+                        ["value"][0]
+                        .clone(),
+                    warning: None,
+                    seat_role: None,
+                    flushed: built.landed.len(),
+                    window: None,
+                    drained: Vec::new(),
+                },
+            );
+        }
         self.flushed(&built.landed, &written).await?;
-        Ok(HoldingReceipt {
-            commit: written.commit.clone(),
-            path: holders_path(&row.role)?,
-            row:
-                holders::to_document(&row.role, std::slice::from_ref(&row))["sections"][1]["value"]
-                    [0]
-                .clone(),
-            warning: None,
-            seat_role: None,
-            flushed: built.landed.len(),
-            window: None,
-            drained: Vec::new(),
-        })
+        Ok(receipts)
     }
 
     /// End a seat's holding of a role: `to`, `released_by` and `release_why`.

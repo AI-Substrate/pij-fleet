@@ -26,6 +26,8 @@ pub async fn governance(
         "orchestration" => "/v1/orchestration",
         "spine" => "/v1/spine",
         "directory" => "/v1/directory",
+        "output" => "/v1/output",
+        "outputs" => "/v1/outputs",
         "claim" => "/v1/claim",
         "claims" => "/v1/claims",
         "delivered" => "/v1/delivered",
@@ -60,14 +62,31 @@ pub async fn governance(
 /// The flag without a value, or a body that cannot be read.
 pub fn inline_body_file(
     args: &[String],
-    mut read: impl FnMut(&str) -> std::io::Result<String>,
+    read: impl FnMut(&str) -> std::io::Result<String>,
 ) -> Result<Vec<String>, String> {
     if args.first().map(String::as_str) != Some("memory") {
         return Ok(args.to_vec());
     }
+    body_file_to_body(args, read)
+}
+
+/// `--body-file <path|->` read here and sent as `--body`, so stdin works and
+/// the daemon reads no caller file (`pij output`, plan 200).
+///
+/// # Errors
+/// The flag without a value, or a body that cannot be read.
+pub fn body_file_to_body(
+    args: &[String],
+    mut read: impl FnMut(&str) -> std::io::Result<String>,
+) -> Result<Vec<String>, String> {
     let mut out = Vec::with_capacity(args.len());
     let mut tokens = args.iter();
     while let Some(token) = tokens.next() {
+        if token == "--" {
+            out.push(token.clone());
+            out.extend(tokens.by_ref().cloned());
+            break;
+        }
         let source = match token.strip_prefix("--body-file") {
             Some("") => tokens
                 .next()
@@ -90,6 +109,21 @@ pub fn inline_body_file(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_output_body_file_is_read_here_and_sent_as_body() {
+        let argv = |tokens: &[&str]| tokens.iter().map(|t| (*t).to_string()).collect::<Vec<_>>();
+        let read = |source: &str| Ok(format!("from {source}"));
+        assert_eq!(
+            super::body_file_to_body(&argv(&["note", "--body-file", "-"]), read).unwrap(),
+            argv(&["note", "--body", "from -"])
+        );
+        assert_eq!(
+            super::body_file_to_body(&argv(&["note", "--body-file=n.md"]), read).unwrap(),
+            argv(&["note", "--body", "from n.md"])
+        );
+        assert!(super::body_file_to_body(&argv(&["note", "--body-file"]), read).is_err());
+    }
+
     #[test]
     fn a_memory_body_file_is_read_here_and_sent_as_body() {
         let argv = |tokens: &[&str]| tokens.iter().map(|t| (*t).to_string()).collect::<Vec<_>>();
