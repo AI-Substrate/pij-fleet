@@ -429,7 +429,10 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     // only when Claude's inbound-accept setting was emitted in its argv.
     let transport: Arc<dyn Transport> = match config.adapters.transport {
         AdapterChoice::Fake => Arc::new(FakeTransport::reachable()),
-        AdapterChoice::Real => Arc::new(UdsTransport::new()?),
+        // Plan 218: the peer's start is read in-process (no `ps`).
+        AdapterChoice::Real => Arc::new(UdsTransport::new(Arc::new(
+            pij_harnesses::proc::observed_start,
+        ))?),
     };
     // Legacy and Rust daemons intentionally coexist during migration. Resolve the
     // legacy signature at the composition root and inject it; the tmux adapter

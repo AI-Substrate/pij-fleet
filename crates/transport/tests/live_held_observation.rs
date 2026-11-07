@@ -21,10 +21,34 @@ use std::env;
 use std::time::{Duration, Instant};
 
 use pij_core::model::{
-    DeliveryOrigin, DeliveryOutcome, Harness, Msg, ProcIdentity, SeatDescriptor, SeatId,
+    DeliveryOrigin, DeliveryOutcome, Harness, Msg, ObservedStart, ProcIdentity, SeatDescriptor,
+    SeatId, parse_process_start,
 };
 use pij_core::ports::Transport;
 use pij_transport::UdsTransport;
+
+/// The daemon injects `pij_harnesses::proc::observed_start`; this crate may not
+/// depend on harnesses, so the live witness reads the same two values with `ps`.
+fn live_transport() -> UdsTransport {
+    let lstart = |pid: u32, tz: Option<&str>| {
+        let mut command = std::process::Command::new("/bin/ps");
+        command
+            .args(["-p", &pid.to_string(), "-o", "lstart="])
+            .env("LC_ALL", "C");
+        if let Some(tz) = tz {
+            command.env("TZ", tz);
+        }
+        let output = command.output().ok()?;
+        parse_process_start(std::str::from_utf8(&output.stdout).ok()?.trim()).ok()
+    };
+    UdsTransport::new(std::sync::Arc::new(move |pid| {
+        Some(ObservedStart {
+            local: lstart(pid, None)?,
+            utc: lstart(pid, Some("UTC"))?,
+        })
+    }))
+    .expect("HOME must name the account owning ~/.claude")
+}
 
 fn live_pid() -> Option<u32> {
     env::var("PIJ_LIVE_CLAUDE_PID").ok()?.trim().parse().ok()
@@ -61,7 +85,7 @@ async fn an_unmarked_message_is_observed_held_on_the_live_wire() {
     let Some(pid) = live_pid() else {
         panic!("set PIJ_LIVE_CLAUDE_PID to a running, NON-accepting Claude session");
     };
-    let transport = UdsTransport::new().expect("HOME must name the account owning ~/.claude");
+    let transport = live_transport();
     let seat = seat(pid);
 
     assert!(
@@ -123,7 +147,7 @@ async fn a_long_body_reaches_an_accepting_seat_without_a_dialog() {
     else {
         panic!("set PIJ_LIVE_ACCEPTING_PID to a session spawned with crossSessionInbound=accept");
     };
-    let transport = UdsTransport::new().expect("HOME must name the account owning ~/.claude");
+    let transport = live_transport();
     let seat = seat(pid);
 
     // 40 numbered lines, each carrying the sentinel, so a truncation to the last
@@ -177,9 +201,7 @@ async fn a_declined_message_is_observed_refused_on_the_live_wire() {
     else {
         panic!("set PIJ_LIVE_REFUSING_PID to a running, NON-accepting Claude session");
     };
-    let transport = UdsTransport::new()
-        .expect("HOME must name the account owning ~/.claude")
-        .with_ack_wait(Duration::from_secs(90));
+    let transport = live_transport().with_ack_wait(Duration::from_secs(90));
     let seat = seat(pid);
 
     let sentinel = format!("WOODPECKER-DENY-{}", std::process::id());
