@@ -21,5 +21,6 @@
 - [2026-11-07 Scoped digest reads fail closed](2026-11-07-scoped-digest-reads-fail-closed.dd.md): Read before changing digest scope resolution or reviewing queued role-request metadata exposure. (digest, scope, privacy, proof)
 - [2026-11-07 Correct victim identifiers are not caller proof](2026-11-07-victim-identifiers-are-not-caller-proof.dd.md): Read before authorizing seat activity/context reports or using telemetry to gate delivery. (identity, telemetry, authorization, regression)
 - [2026-11-08 Observation is not origin proof](2026-11-08-observation-is-not-origin-proof.dd.md): Read before using observed PID, pane or registry metadata to authorize a caller or socket peer. (identity, sockets, proof)
+- [2026-11-08 Refused evidence is not absent context](2026-11-08-refused-evidence-is-not-absent-context.dd.md): Read before grading F88-class claims or falling back from rejected identity to unbound authority. (identity, policy, audit, fail-closed)
 - [2026-11-08 Request mutations need bound and scoped authority](2026-11-08-request-mutations-need-bound-authority.dd.md): Read before authorizing request close/withdraw or reusing a caller/prime helper. (requests, identity, authority, proof)
 <!-- /pij:generated -->
