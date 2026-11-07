@@ -23,16 +23,17 @@ use crate::model::{Harness, SeatDescriptor, SeatId, SystemState};
 /// How long a working seat must be silent before its pane is read.
 pub const STALL_AFTER_MS: u64 = 20 * 60 * 1_000;
 
-/// The events that are the seat's own doing: its busy and idle posts, its
-/// reports, and its inbox acknowledgements. Anything addressed TO the seat
-/// (a delivery outcome, a held FYI, a watchdog audit) is not, so a seat that
-/// is sent messages while it sits on a dialog still reads silent.
-pub const OWN_ACTIVITY_KINDS: [&str; 4] = [
-    "seat.activity",
-    "report.now",
-    "report.state",
-    "delivery.inbox-ack",
-];
+/// The events that are the seat's own doing: its busy and idle posts and its
+/// reports. Anything addressed TO the seat (a delivery outcome, a held FYI, a
+/// watchdog audit) is not, so a seat that is sent messages while it sits on a
+/// dialog still reads silent.
+///
+/// Nor is `delivery.inbox-ack` (F108): the Copilot native extension's inbox
+/// reader acks on its own, beside the model. pij-bumpy-herring's reader
+/// reconnected and acked a queued message 2.5 minutes into a dialog that then
+/// stood 21 minutes, and the ack restarted the quiet stretch, so the round
+/// never read the pane.
+pub const OWN_ACTIVITY_KINDS: [&str; 3] = ["seat.activity", "report.now", "report.state"];
 
 /// The reason recorded when a stall message wakes a cold parent or PA.
 pub const MODAL_STALL_REASON: &str = "pa-watchdog: modal dialog";

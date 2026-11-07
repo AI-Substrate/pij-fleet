@@ -154,6 +154,22 @@ async fn own_event(services: &crate::Services, seat: &str, at: u64) {
         .unwrap();
 }
 
+/// The native extension reader's ack, as herring's reader wrote it at 04:14:09.
+async fn reader_ack(services: &crate::Services, seat: &str, at: u64) {
+    let _ = services
+        .spine
+        .append(Event {
+            seq: None,
+            v: 1,
+            at,
+            kind: "delivery.inbox-ack".into(),
+            seat: Some(SeatId::from(seat)),
+            payload: r#"{"job_id":16399,"authenticated_machine":"local","evidence_grade":"machine","outcome":"reader-read"}"#.into(),
+        })
+        .await
+        .unwrap();
+}
+
 fn stalls(outcomes: Vec<RoundOutcome>) -> Vec<RoundOutcome> {
     outcomes
         .into_iter()
@@ -307,6 +323,68 @@ async fn a_seat_on_a_dialog_is_told_once_per_stretch_to_its_parent_and_pa() {
         .filter(|call| !call.starts_with("capture_without_launch:"))
         .collect();
     assert!(keys.is_empty(), "pij never touches the pane: {keys:?}");
+}
+
+/// F108: herring's real timeline on the post-#156 daemon. Its last own event
+/// was at 04:11:22, the dialog opened at 04:11:34, its native reader acked a
+/// queued message at 04:14:09, and the prime declined at 04:33:11. The ack is
+/// not the seat's doing, so the last round before the decline (04:32:42)
+/// claims the stall and tells the parent and the PA, and the dialog shows on
+/// `pij list` while it stands.
+#[tokio::test]
+async fn a_reader_ack_mid_dialog_does_not_restart_the_quiet_stretch() {
+    let (services, tmux, store, folder, config) = services_with_config(
+        FakeTmux::new().with_standing_capture(fixture("copilot-follow-up-dialog-herring-f108.txt")),
+    )
+    .await;
+    fleet(&services, &folder).await;
+    let addr = http(&config, &store).await;
+    let start = crate::http::system_time_ms().unwrap();
+    own_event(&services, "pij-asking", start).await;
+    reader_ack(&services, "pij-asking", start + 167_000).await;
+    let watchdog = PaWatchdog::default();
+
+    let outcomes = stalls(
+        watchdog
+            .round(&services, INTERVAL, start + 1_280_000)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        outcomes,
+        vec![RoundOutcome::ModalStall {
+            seat: "pij-asking".into(),
+            told: vec![
+                ("pij-pm".into(), "queued".into()),
+                ("pij-pa".into(), "queued".into())
+            ],
+        }],
+        "the stall is claimed before the decline"
+    );
+    assert_eq!(captures(&tmux, "%17"), 1);
+    assert_eq!(told(&services, "pij-pm").await.len(), 1);
+    let to_pa = told(&services, "pij-pa").await;
+    assert_eq!(to_pa.len(), 1);
+    assert!(
+        to_pa[0].body.contains("silent for 21m"),
+        "measured from the seat's own event, not the ack: {}",
+        to_pa[0].body
+    );
+    let (listed, _) = views(addr, "pij-asking").await;
+    assert_eq!(listed["since_ms"], start, "{listed}");
+
+    // Another reader ack while it stands neither hides it nor re-tells.
+    reader_ack(&services, "pij-asking", start + 1_300_000).await;
+    assert_eq!(views(addr, "pij-asking").await.0, listed);
+    assert!(
+        stalls(
+            watchdog
+                .round(&services, INTERVAL, start + 1_340_000)
+                .await
+                .unwrap()
+        )
+        .is_empty()
+    );
 }
 
 /// bp-0001 and bp-0005: a healthy working seat (recent own events) and a seat

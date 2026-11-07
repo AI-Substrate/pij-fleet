@@ -57,7 +57,8 @@ const COPILOT_CLEARS: &str =
     "ctrl+d declines (enter would accept the highlighted option, esc cancels)";
 
 /// Every dialog pij recognises. Fixtures: `copilot-follow-up-dialog-*.txt`
-/// (pij-bumpy-herring, pane %17, 2026-11-07; pij-wary-lynx, 2026-11-06) and
+/// (pij-bumpy-herring, pane %17, 2026-11-07 and F108 on 2026-11-08;
+/// pij-wary-lynx, 2026-11-06) and
 /// `claude-2.1.284-permission-dialog.txt`.
 pub const MODAL_MARKERS: &[ModalMarker] = &[
     ModalMarker {
@@ -195,6 +196,12 @@ mod tests {
         .expect("lynx's screen is a dialog");
         assert_eq!(lynx.label, "Copilot selection dialog (ctrl+d declines)");
         assert_eq!(lynx.clears, herring.clears);
+        let f108 = modal_dialog(
+            Harness::Copilot,
+            &fixture("copilot-follow-up-dialog-herring-f108.txt"),
+        )
+        .expect("herring's F108 screen is a dialog");
+        assert_eq!(f108, herring);
     }
 
     /// The title alone is enough when the footer differs.
