@@ -1103,6 +1103,10 @@ export class NativeBridge {
 		this.activityUnsupported = false;
 		/** The last state the daemon accepted; stop settles a seat left `working`. */
 		this.activityPublished = undefined;
+		/** Plan 217: the latest `session.usage_info`, sent with each activity post. */
+		this.context = undefined;
+		/** This incarnation's report grant from its registration; none, no reports. */
+		this.contextToken = undefined;
 		this.stopped = undefined;
 	}
 	emit(kind, details = {}) {
@@ -1252,6 +1256,9 @@ export class NativeBridge {
 		);
 		throwIfStopped(signal);
 		verifyRegisteredSeat(seat, registration);
+		// Plan 217 (review S153-001): only this registration's grant may report
+		// the seat's context size. An older daemon issues none.
+		this.contextToken = typeof seat?.context_token === "string" ? seat.context_token : undefined;
 		this.registered = true;
 		if (!this.reconnectRegistration) {
 			this.reconnectRegistration = { ...registration };
@@ -2034,6 +2041,7 @@ export class NativeBridge {
 	 */
 	observeActivity(event) {
 		if (event?.agentId) return;
+		if (event?.type === "session.usage_info") this.observeContext(event.data);
 		// A fused turn that ends without a commit has no root turn_end, so its
 		// aggregate completion and abort end the work too. A failed route does not:
 		// its fallback model still runs the turn.
@@ -2049,18 +2057,45 @@ export class NativeBridge {
 		this.activityState = state;
 		this.activity = this.activity.then(() => this.publishActivity(state));
 	}
+	/**
+	 * Plan 217: Copilot's `session.usage_info` is ephemeral (never in
+	 * events.jsonl), so the daemon cannot read this session's size from its
+	 * transcript. Keep the latest; the next activity post carries it.
+	 */
+	observeContext(data) {
+		const tokens = data?.currentTokens;
+		if (!Number.isSafeInteger(tokens) || tokens < 0) return;
+		const window = data?.tokenLimit;
+		this.context = {
+			context_tokens: tokens,
+			...(Number.isSafeInteger(window) && window > 0 ? { context_window_tokens: window } : {}),
+		};
+	}
 	async publishActivity(state) {
 		if (this.activityUnsupported || !this.registered || this.controller.signal.aborted) {
 			// Not published: the next observed transition must try again.
 			if (this.activityState === state) this.activityState = undefined;
 			return;
 		}
+		const body = {
+			seat: this.registration.id,
+			native_session: this.registration.harness_session,
+			state,
+		};
+		const token = this.contextToken;
+		const context = token && this.context ? { ...this.context, context_token: token } : undefined;
 		try {
-			await this.client.request(
-				"/v1/activity",
-				{ seat: this.registration.id, native_session: this.registration.harness_session, state },
-				this.controller.signal,
-			);
+			try {
+				await this.client.request("/v1/activity", { ...body, ...context }, this.controller.signal);
+			} catch (error) {
+				// A refused report (a grant from before a daemon restart, or a
+				// daemon that knows no reports) still publishes the state; reports
+				// resume with the next registration's grant.
+				if (!context || ![400, 422].includes(error?.status) || this.controller.signal.aborted)
+					throw error;
+				if (this.contextToken === token) this.contextToken = undefined;
+				await this.client.request("/v1/activity", body, this.controller.signal);
+			}
 			this.activityPublished = state;
 		} catch (error) {
 			if (this.controller.signal.aborted) return;

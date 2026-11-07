@@ -23,6 +23,7 @@ outlives you — you are its current, replaceable operator.
    prose; a stale roster misleads every reader. Name the PRD reconciliation owner.
 2. **Run intake through the authoritative portfolio** (prime-flow for prose):
    items become streams (proposed → deciding → preparing → in_flight → done | folded | dropped).
+   In a PEC project an item is a workstream step, built in zero or more streams (its lanes), and the workstream doc governs its order (C29).
    These states live in prime-flow or your notes: the store's project record has no status field.
    Node status is the source of concurrent truth; `nav.now` is only your attention
    pointer. You NEVER invent work items — humans name features.

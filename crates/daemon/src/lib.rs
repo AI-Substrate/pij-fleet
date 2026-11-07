@@ -19,6 +19,7 @@ pub mod delivery;
 pub mod events;
 pub mod federation;
 pub mod lifecycle;
+mod modal_stall;
 pub mod pa_watchdog;
 pub mod pairing;
 pub mod pane_observer;
@@ -26,6 +27,7 @@ pub mod park_notice;
 pub mod pointer;
 pub mod reaper;
 mod registration;
+pub mod reported_context;
 mod serve;
 pub mod session_warmup;
 mod supervise;
@@ -118,6 +120,9 @@ pub struct Services {
     pub liveness: Arc<dyn LivenessPort>,
     /// Session facts from harness transcripts, for `pij state`'s `sessionStatus`.
     pub session_status: Arc<dyn SessionStatusPort>,
+    /// Context sizes native extensions report at turn boundaries (plan 217):
+    /// they fill `session_status`'s unknown context facts.
+    pub reported_context: Arc<reported_context::ReportedContext>,
     /// Usage-limit rejections from harness transcripts (plan 172 R3): the PA
     /// watchdog's limit-reset wake. Blocking; called off the reactor.
     pub usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource>,
@@ -491,12 +496,16 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     };
     // Stateful: the real source keeps one transcript read position per seat, so
     // it is composed once here and shared by every request.
-    let session_status: Arc<dyn SessionStatusPort> = match config.adapters.session_status {
+    let transcripts: Arc<dyn SessionStatusPort> = match config.adapters.session_status {
         AdapterChoice::Fake => Arc::new(FakeSessionStatus::new()),
         AdapterChoice::Real => Arc::new(pij_unisphere::UnisphereSessionStatus::with_roots(
             session_roots(),
         )),
     };
+    let reported_context = Arc::new(reported_context::ReportedContext::default());
+    let session_status: Arc<dyn SessionStatusPort> = Arc::new(
+        reported_context::WithReportedContext::new(transcripts, Arc::clone(&reported_context)),
+    );
     // Follows the session-status choice: a daemon that reads no transcripts
     // reads no quota records either.
     let usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource> =
@@ -600,6 +609,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         harnesses,
         liveness,
         session_status,
+        reported_context,
         usage_limits,
         delivery,
         roles,

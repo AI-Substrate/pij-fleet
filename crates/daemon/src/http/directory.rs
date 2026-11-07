@@ -29,10 +29,11 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 29] = [
+const SINGLE: [&str; 30] = [
     "why",
     "into",
     "from",
+    "show",
     "to",
     "from-project",
     "role",
@@ -83,11 +84,12 @@ const MEMORY: [&str; 9] = [
     "actor",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 10] = [
+const CONTROL: [&str; 11] = [
     "write",
     "why",
     "into",
     "from",
+    "show",
     "project",
     "file",
     "batch",
@@ -260,15 +262,21 @@ impl Arguments {
         }
         if matches!(call.leaf.as_str(), "templates" | "template-diff")
             && (call.positions.len() != usize::from(call.leaf == "template-diff")
-                || call
-                    .single
-                    .keys()
-                    .any(|flag| !matches!(flag.as_str(), "project" | "actor"))
+                || call.single.keys().any(|flag| {
+                    !(matches!(flag.as_str(), "project" | "actor")
+                        || (flag == "show" && call.leaf == "templates"))
+                })
                 || !call.repeated.is_empty())
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
+                "usage: pij directory templates [--show <name>[@vN]] | pij directory template-diff <id> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "templates" && call.single.contains_key("show") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --show belongs to `templates`", call.leaf),
             ));
         }
         if call.drop_queued && !matches!(call.leaf.as_str(), "retire" | "merge") {
@@ -539,7 +547,10 @@ pub(crate) async fn handle(
         "retire" | "merge" => reshape(&state, &actor.id, &request.caller, &call).await,
         "routes" => routes_leaf(&state, &actor.id, &request.caller, &call).await,
         "lineage" => lineage(&state, &actor.id, &request.caller, &call).await,
-        "templates" => Ok(json!({"templates": state.services.directory.templates().listing()})),
+        "templates" => match call.get("show") {
+            Some(spec) => state.services.directory.templates().show(&spec),
+            None => Ok(json!({"templates": state.services.directory.templates().listing()})),
+        },
         "template-diff" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) => state
@@ -1207,9 +1218,20 @@ async fn hold(
             })
             .await?
     } else {
-        directory
+        let mut receipt = directory
             .release(&project, repo, role, instance, &seat_id, actor, &why)
-            .await?
+            .await?;
+        // F57: a live seat's window follows its remaining holdings.
+        if let Ok(Some(descriptor)) = state.services.registry.get(&seat_id).await
+            && descriptor.tombstoned_at.is_none()
+        {
+            receipt.window = Some(
+                directory
+                    .window_after_release(&descriptor, &receipt.row)
+                    .await,
+            );
+        }
+        receipt
     };
     let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
     if call.leaf == "assign" {
@@ -2172,5 +2194,23 @@ mod tests {
                 .leaf,
             "templates"
         );
+        assert_eq!(
+            Arguments::parse(&argv(&["directory", "templates", "--show", "pm@v1"]))
+                .unwrap()
+                .get("show")
+                .as_deref(),
+            Some("pm@v1")
+        );
+        for refused in [
+            &["directory", "template-diff", "pm", "--show", "pm"][..],
+            &["directory", "add", "pm", "--show", "pm", "--why", "w"][..],
+            &["directory", "--show", "pm"][..],
+        ] {
+            assert_eq!(
+                Arguments::parse(&argv(refused)).unwrap_err().code,
+                "E-RS-ARG",
+                "{refused:?}"
+            );
+        }
     }
 }

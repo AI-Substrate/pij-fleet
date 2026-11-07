@@ -1,0 +1,203 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "PA presence nudges and large-seat notes for the prime",
+        "slug": "pa-presence",
+        "ordinal": 217,
+        "complexity": "CS-3",
+        "summary": "While a fleet is active, the daemon tells the prime when its PA is missing, wakes a dormant PA and tells the prime if it stays silent, and queues an FYI for the prime when a fleet seat goes over 600k tokens; Copilot seats report their context size so the size note covers them. All inside the existing 60 s PA watchdog round, from state the daemon already holds, with no new launches.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-07",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "On 6 Nov another project's PA made no calls for seven busy hours while its prime and 14 workers ran at 400k to 800k tokens. Nothing fired: the PA watchdog nudges a PA only when the fleet goes idle or the prime resumes after an idle stretch, and with no live PA it does nothing. This plan adds four things to the same round: a missing-PA alert to the prime, a dormant-PA wake, an unresponsive-PA alert to the prime, and a once-per-crossing FYI to the prime for any fleet seat over 600k. FYIs never wake the prime; they ride in on its next turn like other queued FYIs. Jordan's go: 2026-11-07, see original-ask.md. Thresholds (Jordan, 2026-11-07): missing 20 min, dormant 30 min, unresponsive 10 min after the dormant wake, large seat 600k tokens."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A prime whose fleet is active hears, once, when it has no live PA.",
+        "A PA that has taken no turn while its fleet is active is woken once with the fleet digest; if it still takes no turn, the prime hears, once.",
+        "A prime hears, as an FYI on its next turn, when a seat in its fleet goes over 600k tokens.",
+        "Copilot seats report their context size, so the size note and the PA digest cover them."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "The daemon compacting or restarting seats itself; it only tells the PA and the prime.",
+        "Waking the prime for any of this except the missing-PA and unresponsive-PA alerts.",
+        "Changing the existing idle-edge, prime-active or usage-limit wakes (plans 172, 173, #68).",
+        "Choosing or spawning a replacement PA; the prime decides."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Fleet active. A scope (a prime and its fleet, as the PA watchdog scopes it today; with a directory `pa` role, that role's holders count as the scope's PA) is active when the prime or any worker in it was observed `working` within the last 20 minutes. Unknown or missing states are never evidence of activity. A scope stopped on a usage limit is not active. A scope with fewer than two workers never fires the PA alerts in ac-0002 to ac-0004.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "PA missing. When a scope has been active for 20 minutes with no live PA (none registered, all dead or tombstoned), the prime gets one message naming the last PA seat if any, with the revive command (`pij-rs revive <seat> ...`), or the spawn form when there was none. Once per missing stretch: it re-arms only after a live PA has been seen in the scope again, or the scope has gone inactive and become active again.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "PA dormant. When a scope is active and its live PA has taken no turn for 30 minutes (last turn from its observed state changes or last event time), the PA is woken once with the fleet digest, through the ordinary delivery path (composer and typing gates apply; cold wakes audited as today, with a new reason `pa-watchdog: dormant while fleet active`). It re-arms only after the PA takes a turn. A PA that is `working` is never dormant.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "PA unresponsive. When a dormant wake (ac-0003) is followed by 10 minutes with no PA turn (wedged, a modal question, a message parked in its composer, a held delivery), the prime gets one message: which PA, how long it has been silent, the delivery receipt of the dormant wake, and the choices (check its pane, revive it, replace it). Once per dormant stretch.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Large-seat FYI. When a seat in a prime's fleet (its workers, its PA, and seats spawned by them) reports a context size over 600,000 tokens, the prime gets an FYI, never a wake: seat, size, role, model, and its PA. Once per crossing; it re-arms when the seat is seen under 600,000 (compacted, or revived fresh). Crossings in the same round are combined into one FYI. The threshold is one named constant with the others in this plan.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Copilot context size. Copilot seats report their context size (`contextUsedTokens` with a native or derived basis, not `unknown`) to the daemon from what the Copilot extension already sees (session events or usage), with no new process launch. `pij list` and the PA digest show it.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Restart safety. A daemon restart does not repeat a message already sent in the same stretch: the once-per-stretch claims for ac-0002, ac-0004 and ac-0005 are stored (as the usage-limit wake claims are) before the message is sent.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). All checks run inside the existing 60 s PA watchdog round from state the daemon already holds (seat states, last event times, session status, roles, parents); zero new process launches per tick, per seat or per scope; no new timer. Store reads per round are bounded and stated. Measured before and after deploy.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
+          "id": "ac-0009",
+          "claim": "Audit and docs. Every decision is audited on `watchdog.round` with its reason (sent, armed, waiting, braked, capped). docs/how/pij-rs-api.md and the PA and prime sections of skills/pij describe the four messages, their thresholds, and what to do on each; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0009"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0217",
+          "title": "PA presence nudges and large-seat notes",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-3.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: crates/daemon/src/pa_watchdog.rs (the round, scopes, the fleet digest, the limit-wake claims that are stored before sending) and its tests in pa_watchdog_tests.rs; crates/core/src/watchdog.rs (IdleEdge, PrimeActive, scope_prime, fleet_working; the new trackers belong beside them as pure state machines); crates/core/src/session_status.rs (contextUsedTokens and its basis); crates/daemon/src/park_notice.rs (how an FYI is queued without a wake and suppressed once delivered); the Copilot extension under .copilot/extensions/pij (what it reports as session status today; use `rg --hidden`). Coordinate with plan 214 (kestrel, Copilot delivery) if both touch the Copilot extension."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": "Assumes the Copilot extension can see the session's token usage without a launch; if it cannot, ac-0006 reports what it can and says which basis, and the 600k FYI covers only seats with a known size."
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Nagging: a prime gets the same alert every round.",
+          "likelihood": "Medium",
+          "impact": "High",
+          "mitigation": "Every message is once per stretch with a stored claim (ac-0007); tests run a simulated afternoon of rounds and count messages."
+        },
+        {
+          "risk": "A healthy PA in a long tool call is called dormant.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "A PA observed working is never dormant (ac-0003); only a turn-less stretch counts."
+        },
+        {
+          "risk": "Plan 214 and this plan both touch the Copilot extension.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; keep the Copilot change to the status report; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: `just shared-build` or your own target; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free. Test runs under `nice -n 19`.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (pa_watchdog.rs, the Copilot extension, skills/pij): rebase onto main before the PR and keep edits minimal.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}

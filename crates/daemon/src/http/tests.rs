@@ -8220,6 +8220,145 @@ async fn a_turn_boundary_never_flushes_even_when_warm() {
     server.abort();
 }
 
+/// Plan 217 AC6: a size posted with a turn boundary fills the card's unknown
+/// size, for the session it came from.
+#[tokio::test]
+async fn a_size_posted_at_a_turn_boundary_reaches_the_state_card() {
+    use pij_core::session_status::{SeatStatus, SessionStatusReply};
+    let queue = Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy"));
+    let spine = Arc::new(FakeSpine::new());
+    let mut services = test_services(
+        Arc::new(FakeRegistry::new().with_seat(cold_seat(pij_core::model::SystemState::Idle))),
+        queue,
+        spine,
+    )
+    .await;
+    services.session_status = Arc::new(crate::reported_context::WithReportedContext::new(
+        Arc::new(pij_testkit::fakes::FakeSessionStatus::new().with_reply(
+            COLD_SESSION,
+            SessionStatusReply::Status(SeatStatus::unknown()),
+        )),
+        Arc::clone(&services.reported_context),
+    ));
+    let victim = cold_seat(pij_core::model::SystemState::Idle);
+    let (grant, _) = services
+        .reported_context
+        .grant(&victim.id, victim.proc)
+        .expect("grant");
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let card = || post_json(addr, "/v1/state", serde_json::json!({"id": "pij-cold"}));
+    assert_eq!(
+        card().await.1["data"]["contextUsed"],
+        serde_json::Value::Null
+    );
+    let report = |tokens: u64, token: Option<String>| {
+        let mut body = serde_json::json!({
+            "seat": "pij-cold",
+            "native_session": COLD_SESSION,
+            "state": "working",
+            "context_tokens": tokens,
+            "context_window_tokens": 952_000,
+        });
+        if let Some(token) = token {
+            body["context_token"] = token.into();
+        }
+        post_json(addr, "/v1/activity", body)
+    };
+    for forged in [None, Some("0".repeat(64))] {
+        let (status, reply) = report(0, forged).await;
+        assert_eq!(status, 400, "{reply}");
+        let card = card().await.1;
+        assert_eq!(card["data"]["contextUsed"], serde_json::Value::Null);
+        assert_eq!(
+            card["data"]["state"], "idle",
+            "a refused report changes no activity"
+        );
+    }
+    let (status, reply) = report(640_000, Some(grant)).await;
+    assert_eq!(status, 200, "{reply}");
+    let card = card().await.1;
+    assert_eq!(card["data"]["contextUsed"], 640_000);
+    assert_eq!(card["data"]["state"], "working");
+    server.abort();
+}
+
+/// Plan 217 (pm-001 ruling): a Copilot seat whose size is reported meets the
+/// cold-wake guard exactly as a Claude seat with the same facts does; with
+/// no size known it is never refused.
+#[tokio::test]
+async fn a_reported_copilot_size_meets_the_cold_guard_like_any_harness() {
+    use pij_core::session_status::{Fact, SessionStatusReply};
+    // The Copilot transcript knows the model and last call, never the size.
+    let mut copilot_facts = match cold_status() {
+        SessionStatusReply::Status(status) => status,
+        other => panic!("{other:?}"),
+    };
+    copilot_facts.context_used_tokens = Fact::Unknown;
+    let daemon = |harness: Harness, reply: SessionStatusReply| async move {
+        let mut seat = cold_seat(pij_core::model::SystemState::Idle);
+        seat.harness = harness;
+        let mut services = test_services(
+            Arc::new(
+                FakeRegistry::new()
+                    .with_seat(seat)
+                    .with_seat(SeatDescriptor::new("pij-sender", Harness::Omp, "/abs/tree")),
+            ),
+            Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+            Arc::new(FakeSpine::new()),
+        )
+        .await;
+        let reports = Arc::clone(&services.reported_context);
+        services.session_status = Arc::new(crate::reported_context::WithReportedContext::new(
+            Arc::new(pij_testkit::fakes::FakeSessionStatus::new().with_reply(COLD_SESSION, reply)),
+            Arc::clone(&reports),
+        ));
+        let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+        (addr, server, reports)
+    };
+    let (claude, claude_server, _) = daemon(Harness::Claude, cold_status()).await;
+    let (copilot, copilot_server, reports) =
+        daemon(Harness::Copilot, SessionStatusReply::Status(copilot_facts)).await;
+
+    let (status, reply) = post_json(
+        copilot,
+        "/v1/send",
+        cold_send("m-unknown", serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(status, 200, "an unknown size is never refused: {reply}");
+
+    reports.record(
+        &"pij-cold".into(),
+        Some(COLD_SESSION.to_string()),
+        720_000,
+        None,
+    );
+    let (copilot_status, copilot_reply) = post_json(
+        copilot,
+        "/v1/send",
+        cold_send("m-cold", serde_json::json!({})),
+    )
+    .await;
+    let (claude_status, claude_reply) = post_json(
+        claude,
+        "/v1/send",
+        cold_send("m-cold", serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(claude_status, 400, "{claude_reply}");
+    assert_eq!(copilot_status, claude_status, "{copilot_reply}");
+    assert_eq!(copilot_reply["meta"], claude_reply["meta"]);
+    assert!(
+        copilot_reply["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("E-RS-COLD-WAKE: ❄ pij-cold is cold (720k, idle 2h)"),
+        "{copilot_reply}"
+    );
+    claude_server.abort();
+    copilot_server.abort();
+}
+
 // ---------------------------------------------------------------------------
 // Plan 160: seat size and coldness on `pij state` and `pij list`.
 // ---------------------------------------------------------------------------

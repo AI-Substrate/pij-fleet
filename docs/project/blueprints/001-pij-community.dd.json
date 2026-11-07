@@ -15,7 +15,7 @@
 		},
 		{
 			"name": "overview",
-			"value": "Pij Emergent Communities (PEC) rest on a per-project community directory that the prime and humans reshape as the work changes. Its definitions, memory and outputs are ddocs on the governance branch, written by one daemon-side writer through the ddocs CLI. The store holds pointers and live state (assignments, lineage, requests), and can be rebuilt from the branch. Delivery learns one new address form, `role:<id>`, and one new request field, the reply mode. Product docs (PRDs, blueprints, roadmaps) live on main under docs/project and are joined by ddocs links."
+			"value": "Pij Emergent Communities (PEC) rest on a per-project community directory that the prime and humans reshape as the work changes. Its definitions, memory and outputs are ddocs on the governance branch, written by one daemon-side writer through the ddocs CLI. The store holds pointers and live state (assignments, lineage, requests), and can be rebuilt from the branch. Delivery learns one new address form, `role:<id>`, and one new request field, the reply mode. Product docs (PRDs, blueprints, workstreams) live on main under docs/project and are joined by ddocs links."
 		},
 		{
 			"name": "components",
@@ -24,9 +24,12 @@
 					"id": "c-doc-schemas",
 					"name": "Project docs schemas",
 					"kind": "schema",
-					"where": ".dd/schemas/pij/{prd,blueprint,roadmap}",
-					"responsibility": "The three schemas behind docs/project, joined by typed link cells.",
-					"realises": ["../prds/001-pij-community.dd.json#requirements/req-18"],
+					"where": ".dd/schemas/pij/{prd,blueprint,workstream}",
+					"responsibility": "The schemas behind docs/project, joined by typed link cells: pij/prd, pij/blueprint and pij/workstream (C29; pij/roadmap stays, superseded, until plan 210 moves the roadmap docs).",
+					"realises": [
+						"../prds/001-pij-community.dd.json#requirements/req-18",
+						"../prds/001-pij-community.dd.json#requirements/req-30"
+					],
 					"state": "shipped"
 				},
 				{
@@ -159,7 +162,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-13",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
-					"state": "in-progress"
+					"state": "shipped"
 				},
 				{
 					"id": "c-claims",
@@ -198,7 +201,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-15",
 						"../prds/001-pij-community.dd.json#requirements/req-23"
 					],
-					"state": "in-progress"
+					"state": "shipped"
 				}
 			]
 		},
@@ -342,6 +345,16 @@
 					"date": "2026-11-06",
 					"by": "pij-exuberant-wildcat",
 					"change": "c-verbs realises req-28: plan 206 adds pij directory retire and merge (roadmap s15)."
+				},
+				{
+					"date": "2026-11-07",
+					"by": "pij-following-marsupial",
+					"change": "Plan 204: c-skill and c-templates shipped (the community route, and the optional role templates beside the core ones)."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "Ruling C29, plan 210 phase 1: c-doc-schemas adds pij/workstream (nesting and lanes) and marks pij/roadmap superseded, and realises req-30; the overview says workstreams."
 				}
 			]
 		}

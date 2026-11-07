@@ -1,4 +1,4 @@
-//! Deliveries held behind a busy turn (plan 214, AC2; migration 0038).
+//! Deliveries held behind a busy turn (plan 214, AC2; migration 0043).
 //!
 //! A delivery's held time is `jobs.acked_at - jobs.enqueued_at`. The ack that
 //! ends a hold past [`HELD_FLAG_SECS`] records it in `held_deliveries`; the PA

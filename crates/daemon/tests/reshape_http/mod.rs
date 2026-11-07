@@ -1245,8 +1245,18 @@ async fn retirement_waits_for_requests_in_delivery() {
     let queued = send_to(addr, &repo.main, "role:dev", "req-drain", json!({})).await;
     assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
     let gate = rig.services.directory.admission("fleet", "dev").await;
-    let assigned = directory(addr, &repo, &["assign", "dev", "pij-holder", "--why", "w"]).await;
-    assert_eq!(assigned["ok"], true, "{assigned}");
+    // The assign waits for its drain (plan 212, F56), so it runs alongside
+    // and is awaited once the gate is released.
+    let main = repo.main.clone();
+    let assigning = tokio::spawn(async move {
+        call(
+            addr,
+            "/v1/directory",
+            &["directory", "assign", "dev", "pij-holder", "--why", "w"],
+            &main,
+        )
+        .await
+    });
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let state = |id: &'static str| {
         let store = rig.store.clone();
@@ -1258,6 +1268,8 @@ async fn retirement_waits_for_requests_in_delivery() {
         "the drain waits on the gate before it claims"
     );
     drop(gate);
+    let assigned = assigning.await.unwrap();
+    assert_eq!(assigned["ok"], true, "{assigned}");
     for _ in 0..100 {
         if state("req-drain").await == Some(pij_store::RequestState::Delivered) {
             break;

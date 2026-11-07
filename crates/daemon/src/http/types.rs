@@ -608,6 +608,11 @@ pub struct StateCard {
     /// FYIs held for this seat's next real turn (plan 158).
     #[serde(default)]
     pub pending_fyis: u64,
+    /// A standing stall on the harness's own dialog (plan 219): the seat reads
+    /// `working`, but its pane shows this dialog and it has recorded no event
+    /// since `since_ms`. Absent when there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialog: Option<pij_core::modal_stall::DialogView>,
     /// PRs whose delivery named this seat as the PM, newest first (plan 196,
     /// AC6): `pij delivered` posts here. Read by `pij state <seat>` only;
     /// `/v1/cards` leaves it empty so the bulk read stays cheap.

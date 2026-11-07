@@ -1,0 +1,125 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 212 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00d4",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: two bare holders give one refusal with a runnable assign command; following it makes role:<role>/<instance> deliver.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00d4",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: queue two, assign, and the receipt names both.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00d4",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: list filters; the requester withdraws; a third seat is refused; a withdrawn request never drains.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-00d4",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: assign then release restores the name; with a second role held, the window keeps that role's name.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-00d4",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: shim tests for help text, receipt fields, --body and add output.",
+          "state": "unchecked",
+          "probe": "crates/",
+          "note": "Superseded by plan 213 (#147): crates/cli/tests/shim_forward.rs proves help, receipt and --body parity."
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6: cost",
+          "phase": "ph-00d4",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "No new timer, poll or launch site. List and withdraw are store reads and writes; the receipt and window changes are in-process."
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: docs and states",
+          "phase": "ph-00d4",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8: F61",
+          "phase": "ph-00d4",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: directory_http test queues a request from the seat later assigned the role, and asserts the receipt's closed entry, the closed row and the replay.",
+          "state": "unchecked",
+          "probe": "crates/daemon/tests/directory_http.rs"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

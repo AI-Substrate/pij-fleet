@@ -1,4 +1,4 @@
-//! Mid-turn steering, per seat (plan 214, ruling C31; migration 0038).
+//! Mid-turn steering, per seat (plan 214, ruling C31; migration 0043).
 //!
 //! On by default: a seat with no row steers. `pij steer off` records who
 //! turned it off and when; `pij steer on` records the same with `steer = 1`.

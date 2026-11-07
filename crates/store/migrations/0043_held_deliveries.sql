@@ -33,4 +33,4 @@ CREATE TABLE seat_steering (
     set_at_ms INTEGER NOT NULL
 ) STRICT;
 
-PRAGMA user_version = 38;
+PRAGMA user_version = 43;

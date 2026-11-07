@@ -206,17 +206,20 @@
 				{
 					"id": "s10",
 					"title": "Community skill route and optional templates",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/001-pij-community.dd.json#requirements/req-13",
-						"../prds/001-pij-community.dd.json#requirements/req-15"
+						"../prds/001-pij-community.dd.json#requirements/req-15",
+						"../prds/001-pij-community.dd.json#requirements/req-27",
+						"../prds/001-pij-community.dd.json#requirements/req-29"
 					],
 					"builds": [
 						"../blueprints/001-pij-community.dd.json#components/c-skill",
 						"../blueprints/001-pij-community.dd.json#components/c-templates"
 					],
 					"depends_on": ["#steps/s03", "#steps/s09"],
-					"done_when": "A fresh prime follows the route and stands up a working community."
+					"done_when": "A fresh prime follows the route and stands up a working community.",
+					"plan": "docs/plans/204-community-route"
 				},
 				{
 					"id": "s15",
@@ -308,6 +311,11 @@
 					"date": "2026-11-06",
 					"by": "pij-exuberant-wildcat",
 					"change": "Plan 206: s15 complete (pij directory edit, retire and merge; retire waits for queued role requests; a retired or merged role refuses sends)."
+				},
+				{
+					"date": "2026-11-07",
+					"by": "pij-following-marsupial",
+					"change": "Plan 204: s10 complete (the /pij community route, ten optional templates, templates --show; a fresh-prime canary stood up a community from the route). s10 also delivers req-27 and req-29, the route half of C26 and C28."
 				}
 			]
 		}

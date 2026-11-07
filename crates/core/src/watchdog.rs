@@ -446,6 +446,420 @@ pub fn optin_nudge(seat: &SeatId, quiet_secs: u64, optin: &WatchdogOptIn) -> Str
     )
 }
 
+// Plan 217: PA presence and large seats. Four checks ride the PA watchdog's
+// round, per scope (a prime and its fleet): the prime hears when an active
+// fleet has no live PA, a dormant PA is woken, the prime hears when that PA
+// stays silent, and the prime gets an FYI when a fleet seat grows past
+// LARGE_SEAT_TOKENS. Every threshold is one constant here (Jordan, 2026-11-07).
+
+/// A scope is active while its prime or a worker was observed working this
+/// recently.
+pub const FLEET_ACTIVE_WINDOW_MS: u64 = 20 * 60_000;
+/// How long an active scope may go without a live PA before the prime hears.
+pub const PA_MISSING_AFTER_MS: u64 = 20 * 60_000;
+/// How long a PA in an active scope may take no turn before it is woken.
+pub const PA_DORMANT_AFTER_MS: u64 = 30 * 60_000;
+/// How long after a dormant wake with no PA turn the prime hears.
+pub const PA_UNRESPONSIVE_AFTER_MS: u64 = 10 * 60_000;
+/// A fleet seat whose context is over this many tokens is named to the prime.
+pub const LARGE_SEAT_TOKENS: u64 = 600_000;
+/// A scope with fewer workers than this never raises the PA alerts.
+pub const PRESENCE_MIN_WORKERS: usize = 2;
+
+/// The reason recorded when the dormant wake wakes a cold PA.
+pub const PA_DORMANT_REASON: &str = "pa-watchdog: dormant while fleet active";
+/// The reason recorded when the missing-PA alert wakes a cold prime.
+pub const PA_MISSING_REASON: &str = "pa-watchdog: active fleet has no PA";
+/// The reason recorded when the unresponsive-PA alert wakes a cold prime.
+pub const PA_UNRESPONSIVE_REASON: &str = "pa-watchdog: PA unresponsive";
+
+/// The once-per-stretch claims, stored before each message is sent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PresenceKind {
+    /// The prime was told its active scope has no live PA. Subject: the scope.
+    Missing,
+    /// A dormant PA was woken. Subject: the PA.
+    Dormant,
+    /// The prime was told its PA did not answer the dormant wake. Subject: the PA.
+    Unresponsive,
+    /// The prime was told a seat went over [`LARGE_SEAT_TOKENS`]. Subject: the seat.
+    LargeSeat,
+}
+
+impl PresenceKind {
+    /// Every kind, in store order.
+    pub const ALL: [Self; 4] = [
+        Self::Missing,
+        Self::Dormant,
+        Self::Unresponsive,
+        Self::LargeSeat,
+    ];
+
+    /// The stored and audited spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "pa-missing",
+            Self::Dormant => "pa-dormant",
+            Self::Unresponsive => "pa-unresponsive",
+            Self::LargeSeat => "large-seat",
+        }
+    }
+
+    /// Parse a stored spelling.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == text)
+    }
+}
+
+/// One stored claim: this stretch's message for `subject` was sent (or is
+/// being sent). Removing the row re-arms the check.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresenceClaim {
+    /// Which check.
+    pub kind: PresenceKind,
+    /// The scope key, PA or seat the claim is about.
+    pub subject: String,
+    /// When it was claimed, epoch ms.
+    pub claimed_at_ms: u64,
+    /// What the send recorded once delivery answered (JSON), `{}` until then.
+    pub detail: String,
+}
+
+/// What one check decided this round, as audited on `watchdog.round`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresenceVerdict {
+    /// Nothing to say: the condition does not hold.
+    Quiet,
+    /// The condition holds; its time has not come.
+    Waiting,
+    /// Send now (the claim is taken first).
+    Send,
+    /// Already sent this stretch.
+    Capped,
+    /// The stretch ended: the claim is released and the check re-armed.
+    Armed,
+    /// Due, but a brake held it: there is nobody to tell.
+    Braked,
+}
+
+impl PresenceVerdict {
+    /// The verdict as audited.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Quiet => "quiet",
+            Self::Waiting => "waiting",
+            Self::Send => "sent",
+            Self::Capped => "capped",
+            Self::Armed => "armed",
+            Self::Braked => "braked",
+        }
+    }
+}
+
+/// Whether a scope is active, from what this daemon has observed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Activity {
+    /// The prime or a worker was observed working within
+    /// [`FLEET_ACTIVE_WINDOW_MS`], and the scope is not on a usage limit.
+    Active,
+    /// Positively not active: on a usage limit, or watched for a whole window
+    /// with no working observation.
+    Inactive,
+    /// Not watched long enough to say. Never evidence of activity, and never
+    /// re-arms a claim: after a restart, only a positive observation does.
+    Unknown,
+}
+
+/// One scope's facts for a round.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScopeObservation {
+    /// The prime or a worker is observed [`SystemState::Working`] now.
+    pub working: bool,
+    /// The scope is stopped on a usage limit.
+    pub on_limit: bool,
+    /// Live workers in scope (not a PA, not a prime).
+    pub workers: usize,
+    /// A live PA counts for this scope.
+    pub live_pa: bool,
+    /// The stored missing-PA claim exists.
+    pub missing_claimed: bool,
+    /// This round's clock, epoch ms.
+    pub now_ms: u64,
+}
+
+/// One scope's activity and missing-PA tracker. In memory: a restart starts
+/// it afresh, which can only delay a message (the stored claim stops a
+/// repeat).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ScopePresence {
+    watched_since_ms: Option<u64>,
+    last_working_ms: Option<u64>,
+    missing_since_ms: Option<u64>,
+}
+
+impl ScopePresence {
+    /// Record this round's observation: the scope's activity, and the
+    /// missing-PA verdict.
+    pub fn observe(&mut self, seen: ScopeObservation) -> (Activity, PresenceVerdict) {
+        let now = seen.now_ms;
+        let watched_since = *self.watched_since_ms.get_or_insert(now);
+        if seen.working {
+            self.last_working_ms = Some(now);
+        }
+        let activity = if seen.on_limit {
+            Activity::Inactive
+        } else if self
+            .last_working_ms
+            .is_some_and(|at| now.saturating_sub(at) < FLEET_ACTIVE_WINDOW_MS)
+        {
+            Activity::Active
+        } else if now.saturating_sub(watched_since) >= FLEET_ACTIVE_WINDOW_MS {
+            Activity::Inactive
+        } else {
+            Activity::Unknown
+        };
+        let rearm = seen.live_pa || activity == Activity::Inactive;
+        if rearm || activity == Activity::Unknown || seen.workers < PRESENCE_MIN_WORKERS {
+            self.missing_since_ms = None;
+            let verdict = if rearm && seen.missing_claimed {
+                PresenceVerdict::Armed
+            } else {
+                PresenceVerdict::Quiet
+            };
+            return (activity, verdict);
+        }
+        let since = *self.missing_since_ms.get_or_insert(now);
+        let verdict = if seen.missing_claimed {
+            PresenceVerdict::Capped
+        } else if now.saturating_sub(since) >= PA_MISSING_AFTER_MS {
+            PresenceVerdict::Send
+        } else {
+            PresenceVerdict::Waiting
+        };
+        (activity, verdict)
+    }
+
+    /// When this tracker first saw the scope, epoch ms.
+    pub fn watched_since_ms(&self) -> Option<u64> {
+        self.watched_since_ms
+    }
+
+    /// How long the current missing stretch has lasted at `now_ms`.
+    pub fn missing_for_ms(&self, now_ms: u64) -> u64 {
+        self.missing_since_ms
+            .map_or(0, |since| now_ms.saturating_sub(since))
+    }
+}
+
+/// One live PA's facts for the dormant and unresponsive checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaObservation {
+    /// Its scope's [`Activity`] this round.
+    pub activity: Activity,
+    /// Live workers in its scope.
+    pub workers: usize,
+    /// The PA is observed [`SystemState::Working`] now.
+    pub working: bool,
+    /// Its last turn boundary, epoch ms (its latest `seat.activity`, or the
+    /// last round that saw it working), `None` when there is none.
+    pub last_turn_ms: Option<u64>,
+    /// When this daemon first watched the PA: the dormant clock's start when
+    /// it has no turn on record.
+    pub watched_since_ms: u64,
+    /// The stored dormant claim's time, when a dormant wake was sent.
+    pub dormant_at_ms: Option<u64>,
+    /// The stored unresponsive claim exists.
+    pub unresponsive_claimed: bool,
+    /// The scope has a prime to tell.
+    pub prime: bool,
+    /// This round's clock, epoch ms.
+    pub now_ms: u64,
+}
+
+/// The dormant wake's and the unresponsive alert's verdicts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaVerdicts {
+    /// Wake the PA ([`PresenceVerdict::Send`]), or why not.
+    pub dormant: PresenceVerdict,
+    /// Tell the prime ([`PresenceVerdict::Send`]), or why not.
+    pub unresponsive: PresenceVerdict,
+}
+
+/// Decide a PA's dormant wake and unresponsive alert from stored claims and
+/// this round's facts. Pure and stateless: everything that must survive a
+/// restart is in the claims or on the spine.
+///
+/// A PA observed working is never dormant. A turn after the dormant wake
+/// re-arms both, whatever the scope's state. The unresponsive alert needs a
+/// prime, an active scope and the minimum workers at the time it is due;
+/// without them it is [`PresenceVerdict::Braked`], keeps the dormant cap, and
+/// fires if they return before the PA takes a turn.
+pub fn pa_verdicts(seen: PaObservation) -> PaVerdicts {
+    let quiet = PaVerdicts {
+        dormant: PresenceVerdict::Quiet,
+        unresponsive: PresenceVerdict::Quiet,
+    };
+    if let Some(woken_at) = seen.dormant_at_ms {
+        if seen.working || seen.last_turn_ms.is_some_and(|turn| turn > woken_at) {
+            return PaVerdicts {
+                dormant: PresenceVerdict::Armed,
+                unresponsive: if seen.unresponsive_claimed {
+                    PresenceVerdict::Armed
+                } else {
+                    PresenceVerdict::Quiet
+                },
+            };
+        }
+        // The scope's brakes hold now, not only when the wake went: a fleet
+        // that stopped (usage limit, idle) or shrank below the minimum since
+        // never wakes the prime. The dormant cap stands either way.
+        let braked =
+            !seen.prime || seen.activity != Activity::Active || seen.workers < PRESENCE_MIN_WORKERS;
+        let unresponsive = if seen.unresponsive_claimed {
+            PresenceVerdict::Capped
+        } else if seen.now_ms.saturating_sub(woken_at) < PA_UNRESPONSIVE_AFTER_MS {
+            PresenceVerdict::Waiting
+        } else if braked {
+            PresenceVerdict::Braked
+        } else {
+            PresenceVerdict::Send
+        };
+        return PaVerdicts {
+            dormant: PresenceVerdict::Capped,
+            unresponsive,
+        };
+    }
+    if seen.working || seen.activity != Activity::Active || seen.workers < PRESENCE_MIN_WORKERS {
+        return quiet;
+    }
+    let quiet_since = seen.last_turn_ms.unwrap_or(seen.watched_since_ms);
+    PaVerdicts {
+        dormant: if seen.now_ms.saturating_sub(quiet_since) >= PA_DORMANT_AFTER_MS {
+            PresenceVerdict::Send
+        } else {
+            PresenceVerdict::Waiting
+        },
+        unresponsive: PresenceVerdict::Quiet,
+    }
+}
+
+/// The large-seat check over a fleet's known sizes: `(crossed, rearmed)`.
+/// A seat over [`LARGE_SEAT_TOKENS`] with no claim has crossed; a claimed
+/// seat seen at or under it re-arms. An unknown size is neither.
+pub fn large_seats<'a>(
+    sizes: impl IntoIterator<Item = (&'a SeatId, Option<u64>)>,
+    claimed: impl Fn(&SeatId) -> bool,
+) -> (Vec<SeatId>, Vec<SeatId>) {
+    let mut crossed = Vec::new();
+    let mut rearmed = Vec::new();
+    for (seat, tokens) in sizes {
+        match tokens {
+            Some(tokens) if tokens > LARGE_SEAT_TOKENS && !claimed(seat) => {
+                crossed.push(seat.clone());
+            }
+            Some(tokens) if tokens <= LARGE_SEAT_TOKENS && claimed(seat) => {
+                rearmed.push(seat.clone());
+            }
+            _ => {}
+        }
+    }
+    (crossed, rearmed)
+}
+
+/// The missing-PA alert to the prime: the last PA and its revive command, or
+/// the spawn form when the scope never had one.
+pub fn pa_missing_body(
+    prime: &SeatId,
+    active_ms: u64,
+    last_pa: Option<&SeatId>,
+    folder: &str,
+) -> String {
+    let lead = format!(
+        "[pij watchdog] {prime}: your fleet has been working for {} with no live PA, so \
+         nobody is watching seat sizes, stalls or queued requests.",
+        crate::cold_wake::human_duration(active_ms)
+    );
+    let spawn = format!(
+        "pij-rs spawn --harness omp --role pa --cwd {}",
+        crate::directory::shell_word(folder)
+    );
+    match last_pa {
+        Some(pa) => format!(
+            "{lead} The last PA was {pa}. Revive it: `pij-rs revive {}` (add `--fresh` for a \
+             blank conversation), or start a new one: `{spawn}`.",
+            crate::directory::shell_word(pa.as_str())
+        ),
+        None => format!("{lead} Start one: `{spawn}`."),
+    }
+}
+
+/// The dormant wake to the PA: why, then the fleet digest.
+pub fn pa_dormant_body(pa: &SeatId, quiet_ms: u64, digest: &str) -> String {
+    format!(
+        "[pij watchdog] {pa}: your fleet is working but you have taken no turn for {}. \
+         Check the fleet now, and report with `pij report now \"<did>\" \"<next>\"`.\n\n{digest}",
+        crate::cold_wake::human_duration(quiet_ms)
+    )
+}
+
+/// The unresponsive-PA alert to the prime.
+pub fn pa_unresponsive_body(
+    prime: &SeatId,
+    pa: &SeatId,
+    quiet_ms: u64,
+    woken_ago_ms: u64,
+    wake_receipt: &str,
+) -> String {
+    format!(
+        "[pij watchdog] {prime}: your PA {pa} has taken no turn for {}, and has not answered \
+         the dormant wake sent {} ago ({wake_receipt}). It may be wedged, waiting on a \
+         question, or holding a message in its composer. Check its pane; revive it \
+         (`pij-rs revive {}`); or replace it.",
+        crate::cold_wake::human_duration(quiet_ms),
+        crate::cold_wake::human_duration(woken_ago_ms),
+        crate::directory::shell_word(pa.as_str()),
+    )
+}
+
+/// One large seat, for [`large_seats_body`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LargeSeat {
+    /// The seat.
+    pub seat: SeatId,
+    /// Its context, in tokens.
+    pub tokens: u64,
+    /// Its role, when it has one.
+    pub role: Option<String>,
+    /// Its model, when known.
+    pub model: Option<String>,
+}
+
+/// The large-seat FYI to the prime: every crossing this round, one line each.
+pub fn large_seats_body(seats: &[LargeSeat], pas: &[SeatId]) -> String {
+    let pa = if pas.is_empty() {
+        "none".to_string()
+    } else {
+        pas.iter()
+            .map(SeatId::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut text = format!(
+        "[pij watchdog] over {} tokens in your fleet (PA: {pa}):",
+        crate::cold_wake::human_tokens(LARGE_SEAT_TOKENS)
+    );
+    for seat in seats {
+        text.push_str(&format!(
+            "\n- {} {} role {} model {}",
+            seat.seat,
+            crate::cold_wake::human_tokens(seat.tokens),
+            seat.role.as_deref().unwrap_or("none"),
+            seat.model.as_deref().unwrap_or("unknown"),
+        ));
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,5 +879,285 @@ mod tests {
         let nudge = optin_nudge(&optin.seat, 60, &optin);
         assert!(nudge.contains(CARD), "{nudge}");
         assert!(brief.contains(CARD), "the PA brief names {CARD}");
+    }
+
+    const MIN: u64 = 60_000;
+
+    fn scope(working: bool, now_ms: u64) -> ScopeObservation {
+        ScopeObservation {
+            working,
+            on_limit: false,
+            workers: 2,
+            live_pa: false,
+            missing_claimed: false,
+            now_ms,
+        }
+    }
+
+    /// Plan 217 AC1: working within the window is active; an unseen scope is
+    /// unknown, never active; a usage limit is inactive.
+    #[test]
+    fn a_scope_is_active_only_on_a_working_observation_within_the_window() {
+        let mut tracker = ScopePresence::default();
+        assert_eq!(tracker.observe(scope(false, 0)).0, Activity::Unknown);
+        assert_eq!(tracker.observe(scope(false, 19 * MIN)).0, Activity::Unknown);
+        assert_eq!(
+            tracker.observe(scope(false, 20 * MIN)).0,
+            Activity::Inactive
+        );
+        assert_eq!(tracker.observe(scope(true, 21 * MIN)).0, Activity::Active);
+        assert_eq!(tracker.observe(scope(false, 40 * MIN)).0, Activity::Active);
+        assert_eq!(
+            tracker.observe(scope(false, 41 * MIN)).0,
+            Activity::Inactive
+        );
+        let limited = ScopeObservation {
+            on_limit: true,
+            ..scope(true, 42 * MIN)
+        };
+        assert_eq!(tracker.observe(limited).0, Activity::Inactive);
+    }
+
+    /// Plan 217 AC2: one send after 20 active minutes with no PA, capped while
+    /// claimed, re-armed by a PA or a positively inactive scope, and never
+    /// with fewer than two workers.
+    #[test]
+    fn the_missing_pa_alert_arms_sends_caps_and_rearms() {
+        let mut tracker = ScopePresence::default();
+        let verdict = |tracker: &mut ScopePresence, seen| tracker.observe(seen).1;
+        assert_eq!(
+            verdict(&mut tracker, scope(true, 0)),
+            PresenceVerdict::Waiting
+        );
+        assert_eq!(
+            verdict(&mut tracker, scope(true, 19 * MIN)),
+            PresenceVerdict::Waiting
+        );
+        assert_eq!(tracker.missing_for_ms(19 * MIN), 19 * MIN);
+        assert_eq!(
+            verdict(&mut tracker, scope(true, 20 * MIN)),
+            PresenceVerdict::Send
+        );
+        let claimed = |at| ScopeObservation {
+            missing_claimed: true,
+            ..scope(true, at)
+        };
+        assert_eq!(
+            verdict(&mut tracker, claimed(21 * MIN)),
+            PresenceVerdict::Capped
+        );
+        // A PA appears: the claim is released.
+        let with_pa = ScopeObservation {
+            live_pa: true,
+            ..claimed(22 * MIN)
+        };
+        assert_eq!(verdict(&mut tracker, with_pa), PresenceVerdict::Armed);
+        // A fresh stretch waits its own 20 minutes.
+        assert_eq!(
+            verdict(&mut tracker, scope(true, 23 * MIN)),
+            PresenceVerdict::Waiting
+        );
+        assert_eq!(
+            verdict(&mut tracker, scope(true, 42 * MIN)),
+            PresenceVerdict::Waiting
+        );
+        assert_eq!(
+            verdict(&mut tracker, scope(true, 43 * MIN)),
+            PresenceVerdict::Send
+        );
+        // Inactive for a whole window re-arms.
+        assert_eq!(
+            verdict(
+                &mut tracker,
+                ScopeObservation {
+                    working: false,
+                    ..claimed(63 * MIN)
+                }
+            ),
+            PresenceVerdict::Armed
+        );
+        // One worker never fires, however long.
+        let mut lone = ScopePresence::default();
+        for minute in 0..60 {
+            let seen = ScopeObservation {
+                workers: 1,
+                ..scope(true, minute * MIN)
+            };
+            assert_eq!(lone.observe(seen).1, PresenceVerdict::Quiet);
+        }
+    }
+
+    /// Plan 217 AC7: a restarted tracker never re-arms a stored claim on its
+    /// first observations; only positive evidence does.
+    #[test]
+    fn a_fresh_tracker_keeps_a_stored_missing_claim() {
+        let mut tracker = ScopePresence::default();
+        for minute in 0..20 {
+            let seen = ScopeObservation {
+                working: false,
+                missing_claimed: true,
+                ..scope(false, minute * MIN)
+            };
+            assert_eq!(tracker.observe(seen).1, PresenceVerdict::Quiet, "{minute}");
+        }
+    }
+
+    fn pa(now_ms: u64) -> PaObservation {
+        PaObservation {
+            activity: Activity::Active,
+            workers: 2,
+            working: false,
+            last_turn_ms: Some(0),
+            watched_since_ms: 0,
+            dormant_at_ms: None,
+            unresponsive_claimed: false,
+            prime: true,
+            now_ms,
+        }
+    }
+
+    /// Plan 217 AC3, AC4: woken once at 30 turn-less minutes, the prime told
+    /// 10 minutes later, both capped, both re-armed by a turn.
+    #[test]
+    fn a_dormant_pa_is_woken_then_reported_then_rearmed_by_a_turn() {
+        assert_eq!(pa_verdicts(pa(29 * MIN)).dormant, PresenceVerdict::Waiting);
+        assert_eq!(pa_verdicts(pa(30 * MIN)).dormant, PresenceVerdict::Send);
+        let working = PaObservation {
+            working: true,
+            ..pa(90 * MIN)
+        };
+        assert_eq!(pa_verdicts(working).dormant, PresenceVerdict::Quiet);
+        for quiet in [Activity::Unknown, Activity::Inactive] {
+            let seen = PaObservation {
+                activity: quiet,
+                ..pa(90 * MIN)
+            };
+            assert_eq!(pa_verdicts(seen).dormant, PresenceVerdict::Quiet);
+        }
+        let lone = PaObservation {
+            workers: 1,
+            ..pa(90 * MIN)
+        };
+        assert_eq!(pa_verdicts(lone).dormant, PresenceVerdict::Quiet);
+        // No turn on record: the clock starts when the daemon first saw it.
+        let unseen = PaObservation {
+            last_turn_ms: None,
+            watched_since_ms: 10 * MIN,
+            ..pa(39 * MIN)
+        };
+        assert_eq!(pa_verdicts(unseen).dormant, PresenceVerdict::Waiting);
+
+        let woken = |now| PaObservation {
+            dormant_at_ms: Some(30 * MIN),
+            ..pa(now)
+        };
+        assert_eq!(
+            pa_verdicts(woken(39 * MIN)),
+            PaVerdicts {
+                dormant: PresenceVerdict::Capped,
+                unresponsive: PresenceVerdict::Waiting
+            }
+        );
+        assert_eq!(
+            pa_verdicts(woken(40 * MIN)).unresponsive,
+            PresenceVerdict::Send
+        );
+        let no_prime = PaObservation {
+            prime: false,
+            ..woken(40 * MIN)
+        };
+        assert_eq!(pa_verdicts(no_prime).unresponsive, PresenceVerdict::Braked);
+        // Review F001: the scope's brakes at the time the alert is due.
+        for braked in [
+            PaObservation {
+                workers: 1,
+                ..woken(40 * MIN)
+            },
+            PaObservation {
+                activity: Activity::Inactive,
+                ..woken(40 * MIN)
+            },
+        ] {
+            assert_eq!(
+                pa_verdicts(braked),
+                PaVerdicts {
+                    dormant: PresenceVerdict::Capped,
+                    unresponsive: PresenceVerdict::Braked
+                },
+                "{braked:?}"
+            );
+        }
+        // A turn still re-arms while the scope is inactive.
+        let inactive_turn = PaObservation {
+            activity: Activity::Inactive,
+            last_turn_ms: Some(41 * MIN),
+            ..woken(42 * MIN)
+        };
+        assert_eq!(pa_verdicts(inactive_turn).dormant, PresenceVerdict::Armed);
+        let told = PaObservation {
+            unresponsive_claimed: true,
+            ..woken(50 * MIN)
+        };
+        assert_eq!(pa_verdicts(told).unresponsive, PresenceVerdict::Capped);
+        // The wake's own time is not a turn; a later one re-arms both.
+        let same = PaObservation {
+            last_turn_ms: Some(30 * MIN),
+            ..told
+        };
+        assert_eq!(pa_verdicts(same).dormant, PresenceVerdict::Capped);
+        let answered = PaObservation {
+            last_turn_ms: Some(30 * MIN + 1),
+            ..told
+        };
+        assert_eq!(
+            pa_verdicts(answered),
+            PaVerdicts {
+                dormant: PresenceVerdict::Armed,
+                unresponsive: PresenceVerdict::Armed
+            }
+        );
+        // A turn inside the 10 minutes re-arms the wake and tells nobody.
+        let quick = PaObservation {
+            working: true,
+            ..woken(35 * MIN)
+        };
+        assert_eq!(
+            pa_verdicts(quick),
+            PaVerdicts {
+                dormant: PresenceVerdict::Armed,
+                unresponsive: PresenceVerdict::Quiet
+            }
+        );
+    }
+
+    /// Plan 217 AC5: over the line crosses once; at or under re-arms; unknown
+    /// does neither.
+    #[test]
+    fn large_seats_cross_once_and_rearm_under_the_line() {
+        let (a, b, c, d): (SeatId, SeatId, SeatId, SeatId) =
+            ("a".into(), "b".into(), "c".into(), "d".into());
+        let sizes = [
+            (&a, Some(LARGE_SEAT_TOKENS + 1)),
+            (&b, Some(LARGE_SEAT_TOKENS + 1)),
+            (&c, Some(LARGE_SEAT_TOKENS)),
+            (&d, None),
+        ];
+        let (crossed, rearmed) = large_seats(sizes, |seat| seat == &b || seat == &c || seat == &d);
+        assert_eq!(crossed, vec![a.clone()]);
+        assert_eq!(rearmed, vec![c]);
+        let body = large_seats_body(
+            &[LargeSeat {
+                seat: a,
+                tokens: 650_000,
+                role: Some("worker".into()),
+                model: None,
+            }],
+            &[],
+        );
+        assert_eq!(
+            body,
+            "[pij watchdog] over 600k tokens in your fleet (PA: none):\n\
+             - a 650k role worker model unknown"
+        );
     }
 }

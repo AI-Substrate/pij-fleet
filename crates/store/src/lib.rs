@@ -22,6 +22,7 @@ pub mod registry;
 mod role_assertion;
 pub mod role_requests;
 pub mod spine;
+mod stalls;
 pub mod status;
 pub mod steering;
 
@@ -38,8 +39,8 @@ pub use queue::SqliteQueue;
 pub use registry::SqliteRegistry;
 pub use role_assertion::{Placement, PlacementCommit};
 pub use role_requests::{
-    LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage, ReplyMode, RequestState, RoleRequest,
-    WITHDRAWN_EVENT, Withdrawal,
+    CloseOutcome, ClosedOrOpen, ClosedRoleRequest, LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage,
+    REQUESTS_LIST_LIMIT, ReplyMode, RequestState, RoleRequest, WITHDRAWN_EVENT, Withdrawal,
 };
 pub use spine::SqliteSpine;
 pub use steering::SteeringSetting;
