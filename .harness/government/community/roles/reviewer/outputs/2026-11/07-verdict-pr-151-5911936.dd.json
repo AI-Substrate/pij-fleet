@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b4fb-8c66-72b3-b2eb-a14c8ad23165",
+				"date": "2026-11-07",
+				"head": "5911936acb9a20dec676dc9a43a2e87625d0902d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/151#issuecomment-6704157901",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:151",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F001: add ac-0008 to tk-0009 satisfies with ddocs, regenerate, and obtain zero warnings from harness plan validate --complete before shipped closeout."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #151 correctness review\n\n## A. Verdict\n\n**block** at `5911936acb9a20dec676dc9a43a2e87625d0902d`.\n\nOne small closeout-accounting repair is owed. The supplied ordinary validation receipt is accurate, but complete validation is not green.\n\n## B. Scope\n\nSix changed files, all under `docs/plans/209-fleet-followups/`: three DD sources and their generated views. No product-code rereview or performance reassessment.\n\n## C. Accepted changes\n\n#144 is merged as `e6958e71a1b3ffe2b3dfa38d49ae16be04a1401c`, from reviewed head `165c32215126ed72e5eb8949431f090cde50d559`. The recorded reviewer/security/performance outputs at that full head exist and are all pass-with-notes, from the writers named in bp-0008.\n\nThe after-deploy note exists and matches bp-0007's numbers: 43 launches / 60.007030 seconds = 0.716583/s, compared descriptively with 0.70/s BEFORE; CPU 16.70%, RSS 142.73 to 143.91 MiB. Preserve its qualification: this was an active-fleet observation, not a controlled idle baseline or causal regression test. Machine-wide increase is not attributed to #144.\n\nThe bp-0016 correction accurately states that doctests compile during the run and `--doc` uses one run-only invocation. **#144 N003 is closed.** Source/view changes agree; the regenerated task table's removed column held only empty values.\n\n## D. F001: shipped plan retains an unclaimed acceptance criterion\n\n**P2, `docs/plans/209-fleet-followups/assets/tasks/phase-1/tasks.dd.json:126-128`.**\n\ntk-0009 is now checked, but its `satisfies` lists only ac-0007. No task accounts for newly checked ac-0008. The plan and phase are marked shipped/checked without complete per-criterion accounting.\n\nRead-only validation at the unchanged full head returned:\n\n```text\nharness plan validate docs/plans/209-fleet-followups\n  status: ok; mode: summary; errors: 0; warnings: 0; open: 0; orphans: 1\n\nharness plan validate docs/plans/209-fleet-followups --complete\n  status: degraded; errors: 0; warnings: 1; open: 0; orphans: 1\n  orphan-claim: plan.dd.json#acceptance_criteria/ac-0008\n  \"has no incoming satisfies — no task accounts for it\"\n```\n\nThe plain result does not contradict the supplied receipt: summary mode does not surface this warning. It does not prove complete closeout either.\n\n**Repair:** add ac-0008 to tk-0009's `satisfies` through ddocs, regenerate the view, and require `harness plan validate ... --complete` to return zero errors and warnings before retaining shipped status. No behavioral repair is requested.\n\n## E. CI\n\n[CI run 42352834657](https://github.com/AI-Substrate/pij-fleet/actions/runs/42352834657) completed successfully at this full head, all four jobs green. [Delivers run 42352834688](https://github.com/AI-Substrate/pij-fleet/actions/runs/42352834688) also passed. PR state is CLEAN.\n\n## F. Cost and limits\n\nDocs only; no loop, timer or launch changed. Receipts were checked against governance outputs, not reproduced with live fleet probes. No local builds or tests.\n\n## G. Commands\n\nExact-head diff and merge metadata; governance receipt reads; clean pinned checkout inspected before and after ordinary/complete read-only plan validation; exact-head CI checks.\n\n## H. Handover and harness feedback\n\nReturn a frozen repaired head with the missing accounting edge and a zero-warning complete-validation receipt. **magicWand:** use `--complete` for closeout; ordinary summary green can coexist with unclaimed criteria.\n"
+		}
+	]
+}
