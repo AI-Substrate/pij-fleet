@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b669-d6d4-7863-b3a5-7523fea2a2e9",
+				"date": "2026-11-08",
+				"head": "a7a0f4a470532ae54d0103528b2bf338abff3bfe",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/156#issuecomment-6708370107",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:156",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #156 correctness review\n\n## A. Verdict\n\n**BLOCK** at `a7a0f4a470532ae54d0103528b2bf338abff3bfe`: **F001**, failed notifications are permanently capped; **F002**, timestamp comparisons cannot implement sequence-based re-arming.\n\n## B. Scope and proof\n\nFull plan-219 review against main `cee0113`: candidate/marker logic, watchdog integration, durable stretch lifecycle, roster/card rendering, migration and regression evidence. Clean pinned detached checkout; GitHub and `git ls-remote` agree, PR CLEAN.\n\nCI run `42381309337` succeeded at this head. JUnit has 2,089 cases, zero failures/errors, including the new candidate, real-screen/quoted-screen, lifecycle, store and state-rendering cases. No local builds/tests, mutation checks, pane captures or live fleet measurements were run.\n\n## C. F001, P2: a failed tell consumes the stretch permanently\n\n`crates/daemon/src/modal_stall.rs:112-120` claims the stretch before calling tell. An existing stretch always skips tell (`modal_stall.rs:96-101`), regardless of whether any recipient actually accepted its message.\n\n`wake_pa` returns an outcome/error string, including cold-audit or delivery failures (`pa_watchdog.rs:332-347`). Tell records that string but no pending/accepted recipient state (`modal_stall.rs:190-193`). The claim stays committed even if the PA refuses, delivery fails, or there is no live target. Later rounds and restarts skip notification for the same quiet stretch. If the parent accepted and the PA failed, the PA is never retried; a subsequently available target likewise remains untold.\n\nThis defeats detection precisely when the seat remains stuck and cannot generate the own event needed to re-arm it. Preserve durable pending/accepted notification state per target and retry unaccepted targets on the existing round with stable message ids. Keep successful targets capped across restarts. Test all-failure, partial-failure and later-target recovery with a no-duplicate successful control. The current lifecycle test covers only successful queued tells.\n\n## D. F002, P2: a new own event with an earlier clock does not re-arm\n\n`latest_matching` deliberately selects freshness by event sequence (`crates/store/src/spine.rs:317-344`), but the detector discards that sequence and keeps only `event.at`. The new store accepts a replacement stretch only when its timestamp increases (`stalls.rs:33-36`), and hides an existing view only for an own event whose timestamp is greater (`stalls.rs:115-118`).\n\nThe repository explicitly permits a later committed event to have an earlier supplied clock; the API documentation states that freshness follows sequence. After claiming quiet timestamp 1000, append a newer own event with timestamp 900: the existing blocked view remains, and a later round cannot claim the newer sequence's stretch because 1000 is not less than 900. Equal timestamps have the same problem.\n\nPersist the own-event sequence as the stretch identity/re-arm cursor and use timestamp only for duration. Test later sequence with earlier/equal time, plus the increasing-time positive control. Existing tests use increasing timestamps exclusively, so their passing re-arm result does not cover this contract.\n\n## E. Candidate and marker behavior\n\nThe four own-event names match the existing activity/report/inbox-ACK producers; deliveries addressed to the seat are excluded. Known harness, live/working/paned and 20-minute gates run before capture. A seat with no own-event baseline is deliberately excluded and documented.\n\nThe sample Copilot footer/title and Claude last-line rules are bottom-anchored. Real herring/lynx and Claude permission fixtures match; working/ready/tool screens, quoted dialogs above a real composer, typed footer and cross-harness controls do not. OMP/Pi have no markers and no reads. These cases executed in CI.\n\nThe first-line extraction permits an untitled footer match and can fall back to row zero without an earlier rule. That 160-character line is stored and sent/audited. Squirrel was given this specific model-text-first-line boundary for the independently owned privacy assessment; no security pass is inferred here.\n\n## F. Acceptance map\n\n| AC | Evidence and disposition |\n|---|---|\n| AC1 | Named 19/20/21-minute, idle/paneless/dead/no-baseline gate test passes; own-kind lookup source checked |\n| AC2 | Real-screen, working/quoted/typed and per-harness fixture cases pass; capture call is candidate-only; privacy remains independently owned |\n| AC3 | Successful parent/PA deduplication, restart cap and increasing-time re-arm pass; failure recovery and sequence re-arm remain open: F001/F002 |\n| AC4 | HTTP roster/card and human state tests show/clear a normal stretch; earlier-clock clearing remains open: F002 |\n| AC5 | Three candidate rounds mean three captures; healthy and OMP seats get zero captures; own lookup is one snapshot with four indexed kind probes; live reading owed |\n| AC6 | API/PA/difficulty records and Delivers:none checked; no key-sending code added; plan remains draft/unchecked |\n\nThe store claim/upsert and open-state update are independently owned transactions. Same/older timestamp claims do not overwrite the stored row; that provides the tested restart cap but is not a valid substitute for sequence ordering.\n\n## G. Notes and limits\n\n**N001, P3:** `stall_body` says the seat “has shown a dialog for at least” its whole quiet duration (`core/src/modal_stall.rs:121-125`). The detector knows how long own events were absent, not when this dialog first appeared. Say “is showing a dialog and has had no own event for ...” instead.\n\nNo new scheduling loop/timer is introduced; detection rides the existing watchdog round. Capture uses the existing tmux adapter, whose documented control-client-down fallback can still launch a process. Ocelot owns the exact capture/probe scaling and deployment measurement. The daemon never presses a key.\n\nMigration 0040 is above current main's 36 and reserved 0038/0039. Lower-number PRs merging afterward still require renumbering under merge-order policy. A successful fresh-store CI migration is not a live after-deploy receipt.\n\n## H. Handover\n\nFix notification recovery and sequence-based stretch identity, retain the sample marker/zero-capture/successful restart controls, and return one frozen repair with fresh CI. Preserve the independent first-line privacy assessment and the owed live cost reading. No product code was modified by this reviewer.\n"
+		}
+	]
+}
