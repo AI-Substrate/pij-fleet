@@ -2628,21 +2628,23 @@ async fn a_role_send_reaches_its_one_holder_and_records_the_request() {
     rig.server.abort();
 }
 
-/// #149 S002: a holding's instance is stored text. The refusal's printed
-/// command quotes it as one word, so running the line never runs it.
+/// #149 S002: a holding's instance is stored text, so the several-holders
+/// refusal's printed send quotes it as one shell word. `/bin/sh` splits the
+/// printed line (placeholder filled) through `printf` in an empty directory:
+/// the words come back exactly, and the payloads, which would write files if
+/// they ran, write nothing (the #135 S001 pattern).
 #[tokio::test]
 async fn a_hostile_instance_is_one_quoted_word_in_the_printed_command() {
     let repo = repo("pij-role-send-hostile");
     let rig = rig(Arc::new(NoHook)).await;
     with_roles(rig.addr, &repo).await;
-    for (target, seat) in [
-        ("reviewer/1$(id)", "pij-holder"),
-        ("reviewer/2;id", "pij-second"),
-    ] {
+    let hostile = ["1$(id>dollar)`id>tick`;id>semi", "2'$(id>quote)'"];
+    for (instance, seat) in hostile.iter().zip(["pij-holder", "pij-second"]) {
+        let target = format!("reviewer/{instance}");
         let assigned = call(
             rig.addr,
             "/v1/directory",
-            &["directory", "assign", target, seat, "--why", "review"],
+            &["directory", "assign", &target, seat, "--why", "review"],
             &repo.main,
         )
         .await;
@@ -2657,14 +2659,38 @@ async fn a_hostile_instance_is_one_quoted_word_in_the_printed_command() {
     )
     .await;
     assert_eq!(refusal_code(&both), "E-RS-ROLE-HOLDERS", "{both}");
-    let next = both["details"]["next"].as_str().unwrap_or_default();
+    let line = both["details"]["next"]
+        .as_str()
+        .unwrap_or_default()
+        .replace("<text>", "hi");
+    let dir = fresh_dir("pij-role-send-hostile-sh");
+    let shell = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(format!("printf '%s\\037' {line}"))
+        .current_dir(&dir)
+        .output()
+        .expect("run /bin/sh");
+    assert!(shell.status.success(), "{shell:?}");
+    assert_eq!(
+        std::fs::read_dir(&dir).unwrap().count(),
+        0,
+        "nothing in the printed command ran: {line}"
+    );
+    let words: Vec<String> = String::from_utf8(shell.stdout)
+        .unwrap()
+        .split('\x1f')
+        .filter(|word| !word.is_empty())
+        .map(str::to_string)
+        .collect();
     assert!(
-        [
-            "pij send 'role:reviewer/1$(id)' '<text>'",
-            "pij send 'role:reviewer/2;id' '<text>'",
-        ]
-        .contains(&next),
-        "{both}"
+        hostile.iter().any(|instance| words
+            == [
+                "pij".to_string(),
+                "send".to_string(),
+                format!("role:reviewer/{instance}"),
+                "hi".to_string(),
+            ]),
+        "{line} split into {words:?}"
     );
     rig.server.abort();
 }
