@@ -168,6 +168,17 @@
 					"state": "planned",
 					"done_when": "The PR's cost row shows 0 new launch sites and no change in `pij-rs --json ping` spawn counts.",
 					"source": "Jordan, 2026-11-04, prime chat"
+				},
+				{
+					"id": "req-10",
+					"title": "Seat identity provenance (F88)",
+					"statement": "A request that acts as a seat proves it comes from that seat's own process, not only that the caller holds the daemon key. Today the machine bearer authenticates the machine, and registered identifiers (seat, session, pane, pid and start, all visible in the roster) stand in for the caller at seat-specific gates, so a local caller holding the key can act as another seat: send as it, claim its inbox, answer its requests, report its context size, or re-register it. Each seat incarnation gets a capability bootstrapped privately to it (never reissued from the identifiers a victim exposes), and every endpoint that grants authority by seat, parent, prime, holder, owner or recipient checks that capability before comparing identities. OS peer credentials on a Unix socket are bootstrap evidence, not the whole control. Registration observations stay as continuity and liveness checks; machine-public operations stay public by explicit policy.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Every route the F88 inventory lists as trusting registered identifiers refuses a caller that holds the daemon key but not the target seat's incarnation capability, with a regression per route class (send-as, inbox claim, role and holder actions, outputs, activity, registration); the inventory is re-run at the shipping head and shows no route left on identifiers alone.",
+					"source": "F88, security (pij-annual-squirrel), 2026-11-07: governance roles/security/outputs/2026-11/07-note-issue-f88.dd.json (all 63 method and route pairs at a0ec952; root HIGH 9/10). Prime's ruling the same day: the gap was accepted at registration's strength for plan 217 (#153), to be fixed once, for every endpoint, here.",
+					"note": "Plan 217 (#153) ships a per-incarnation context grant for /v1/activity, audited on reissue, and a Known limit section stating this residual; that grant is the first instance of the capability this requirement generalises."
 				}
 			]
 		},
@@ -213,6 +224,11 @@
 					"date": "2026-11-06",
 					"by": "pij-far-jackal with Jordan",
 					"change": "q-01 answered: anyone may change a policy, parent and prime by default, anyone else with --force and a reason (req-08)."
+				},
+				{
+					"date": "2026-11-07",
+					"by": "pij-steady-otter (pm-001) for pij-far-jackal",
+					"change": "Added req-10, seat identity provenance (F88): security's endpoint inventory found registered identifiers standing in for caller proof; the prime ruled it is fixed once here, for every endpoint."
 				}
 			]
 		}
