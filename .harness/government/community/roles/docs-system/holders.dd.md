@@ -19,4 +19,4 @@
 | id | seat | harness | harness_session | machine | instance_key | from | to | assigned_by | released_by | why | release_why |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | — | pij-careful-heron | unknown | — | unknown | — | 2026-11-04T00:00:00.000Z | 2026-11-06T00:00:00.000Z | pij-far-jackal | pij-far-jackal | docs-system 04-06 Nov (wave A/B; went cold, replaced by wooden-lungfish) LOG:10 | lineage add |
-| — | pij-wooden-lungfish | copilot | d03f4d10-553a-46bc-a460-95b077ecefa9 | ops.osk.lan | — | 2026-11-05T23:09:43.718Z | — | pij-steady-otter | — | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | — |
+| — | pij-wooden-lungfish | copilot | d03f4d10-553a-46bc-a460-95b077ecefa9 | ops.osk.lan | — | 2026-11-05T23:09:43.718Z | 2026-11-07T07:29:16.777Z | pij-steady-otter | pij-steady-otter | record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06) | seat died in the 07 Nov reboot; prime: fresh holders |
