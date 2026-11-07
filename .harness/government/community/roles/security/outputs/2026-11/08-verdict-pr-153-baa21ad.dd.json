@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "baa21add0f94f83c014f1c9a0fe8c20bf0a7af5b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6708269741",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:153",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: block** at `baa21add0f94f83c014f1c9a0fe8c20bf0a7af5b`.\n\nThe prime's accepted registration-strength authority remains accepted. This verdict does not reopen F88. The mandatory audit condition fails, and a separate current-head incarnation race remains.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/http/fyi.rs | 258-289 | Authorized old-incarnation report can overwrite replacement activity/context after grant rotation | 9/10 |\n| 2 | 🟡 MEDIUM | crates/daemon/src/http/mod.rs | 968-1005, 1141-1166 | Failed mandatory reissue audit still returns the existing grant | 9/10 |\n\n## S153-002: old authorization survives incarnation replacement\n\nConfirmed at this head, not merely carried forward from herring's `a0ec952` assessment.\n\nAn old request legitimately passes the grant check, then pauses at the awaited activity update. Registration replaces the process while preserving seat/session and rotates the grant; this replacement is permitted (`crates/daemon/src/registration.rs:1526`). The replacement publishes idle/large context and advances generation. The old request then resumes with working/small context.\n\n`set_activity` updates the live row by seat, without the authorized process identity (`crates/store/src/registry.rs:496`). The later `record` unconditionally replaces reported context and advances generation (`crates/daemon/src/reported_context.rs:116`). Native registration and activity do not share an exclusion boundary covering authorization through commit. Individual publication locks serialize commits but do not reject authorization from the replaced incarnation.\n\nGrant rotation rejects a later old-token check, not this already-authorized request. The overlay still matches seat/session; watchdog generation/process invalidation refreshes from the overwritten report rather than rejecting its stale writer. The outstanding revoked-incarnation request can therefore bypass the cold-wake brake or suppress large-seat alerts. It does not steal the replacement grant.\n\nCoordinate rotation and reporting under the same per-seat critical section, with incarnation/grant revalidation before effects. Add a barrier regression: pause after authorization, rotate while preserving session, publish replacement state/context, then release the old request. Assert replacement activity, context and generation are unchanged; retain a no-rotation positive control. Existing post-rotation token-rejection coverage does not exercise this interleaving.\n\n## F003: accepted audit condition is best-effort\n\n`EventBus::publish` propagates durable append errors (`crates/daemon/src/events/mod.rs:78-94`). `audit_grant_reissue` logs clock/append failures and returns `()`, after which registration still returns HTTP 200 with the existing token. Thus \"every successful reissue has one durable event\" is not guaranteed. Withhold the existing token when its required audit cannot persist; the completed registration itself need not be undone.\n\nThe successful-event path explicitly selects the required evidence fields, including connection origin, and excludes the token. First/new-incarnation grants are classified under the grant mutex and produce no reissue event. No secret leakage found in this delta.\n\n## Known limit and regression\n\nThe body substantially describes Copilot-only size forgery, genuine-report overwrite, list/card/digest effects, possible PA compaction, large-seat FYIs, and both cold-wake consequences.\n\nCorrect two qualifications: a reissue event proves neither theft nor innocence, including genuine lease recovery or an attacker coinciding with startup; \"no other fact\" overlooks the reportable unknown context-window value (`crates/daemon/src/reported_context.rs:170-175`). The grant itself supplies no message-reading authority. The stale-incarnation race above is separate from accepted grant retrieval.\n\n`reissued_grant_is_audited_known_limit_f88` uses correct victim identifiers and asserts first-grant silence, identical reissued token, exactly one event, token exclusion and successful forged activity (`crates/daemon/src/http/native_tests.rs:4154-4228`). This satisfies the stated happy-path regression narrowly. It does not read back the forged size or cover every evidence field, append failure, concurrent issuance or the authorized-across-rotation race.\n\n**Proof:** exact-head CI [42373655076](https://github.com/AI-Substrate/pij-fleet/actions/runs/42373655076), attempts 1 and 2, succeeded. Attempt-2 JUnit lists 2,096 passing cases and the named F88 regression. Source and CI inspection only; no local builds/tests, exploit execution, credential reads, product edits or live probes. Green happy-path CI does not prove the missing failure/race cases.\n"
+		}
+	]
+}
