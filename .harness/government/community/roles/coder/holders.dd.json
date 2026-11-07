@@ -374,7 +374,10 @@
 					"harness_session": "4926f51e-8ca7-4f43-a0c5-791f12bb5903",
 					"instance_key": "f112",
 					"machine": "ops.osk.lan",
+					"release_why": "#169 merged a2cc5e7",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-swift-kestrel",
+					"to": "2026-11-07T22:49:17.009Z",
 					"why": "F112: per-tick whole-machine ps census in the legacy tap-writer check (ocelot 4029f72)"
 				}
 			]
