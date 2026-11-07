@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "9cdcf3d8fac96966067901d6b8966d1cf76b844b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6714325747",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:167",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #167, exact head `9cdcf3d8fac96966067901d6b8966d1cf76b844b`.\n\nReviewed `2d2f04e..9cdcf3d`: the sequence-ordering repair and security-guard preservation through the main merge. No new high-confidence security vulnerability was identified. This is not an independent security review of #169.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new vulnerability identified | - |\n\n### Ordering and authority\n\n`crates/store/migrations/0044_compaction_wakes.sql:20-34` assigns a database-owned AUTOINCREMENT sequence, retains unique `(seat,msg_id)`, and keeps the pending-only index. `crates/store/src/compactions.rs:25-114` supplies no caller-controlled sequence, uses bound SQL, preserves duplicate rows without resetting order or settlement, and conditionally settles pending rows.\n\n`crates/daemon/src/compaction_wake.rs:82-154` traverses descending sequence within seat groups. Supersession requires a newer same-seat compact with a delivered receipt and spine sequence. A global sequence value cannot suppress another seat. Backward/equal-clock regression assertions are present in `compaction_wake_tests.rs:469-504`; they were not locally executed.\n\nThe merge preserves live-pane/process resolution, sender consistency, control authorization and tracking-before-admission (`crates/daemon/src/http/mod.rs:2443-2556`). Owned writes remain in place (`crates/store/src/migrate.rs:47-55`), and holdings/claims read failures leave the row pending (`compaction_wake.rs:203-232`). No new authority beyond the previously accepted C32 registration-strength boundary was identified.\n\n### Privacy and merge scope\n\nThe wake retains label-only bodies to the subject and its live parent (`compaction_wake.rs:267-325`). Merged attach refusal/backoff remains interaction-unknown (`crates/daemon/src/pane_observer.rs:340-374`); diagnostics use existing PA-scoped rows, not pane transcripts (`crates/daemon/src/pa_watchdog.rs:955-1002,1340-1354`).\n\nChanged ordering/refusal documentation and tests add no identified C19/C21 disclosure, credential export or wider message-body recipient (`docs/how/pij-rs-api.md:1926-1943`; `skills/pij/references/prime/pa.md:38-44`; `crates/daemon/src/pa_watchdog_tests.rs:1857-1899`).\n\n### Remaining migration and reliability limits\n\nMigration 0044 is rewritten rather than followed by a corrective migration. Databases already migrated by intermediate unmerged builds encounter SQLx checksum rejection at boot, not automatic schema conversion; migration execution remains fail-closed (`crates/store/src/migrate.rs:184-192`).\n\nPre-admission cancellation/refusal can still leave ghost rows, and undelivered expiry still uses wall-clock time. Settlement-before-send gives at-most-once initiation, not guaranteed initiation or delivery; failures are not retried. Reusing a settled message ID does not re-arm its wake (`compaction_wake.rs:111-115,149-161,267-325`; `crates/store/src/compactions.rs:25-46`). These remain deployment/correctness limitations, not cleared by the security verdict.\n\n### Proof\n\nGitHub metadata and the independent remote pull ref agree on the reviewed full SHA; GitHub reports CLEAN. CI run `42423682724` and latest successful Delivers run `42423682845` both identify that SHA and success. The earlier cancelled Delivers run is superseded.\n\nNo local builds, tests, runtime wakes, credential reads, probes or fault injection were performed. Migration and ordering guards were source-reviewed; exact-head CI is the execution proof.\n"
+		}
+	]
+}
