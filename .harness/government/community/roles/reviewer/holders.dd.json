@@ -673,7 +673,10 @@
 					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
 					"instance_key": "166",
 					"machine": "ops.osk.lan",
+					"release_why": "#166 merged 8622292a",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-whole-spoonbill",
+					"to": "2026-11-07T21:43:13.042Z",
 					"why": "plan 221 states PR #166 (spoonbill reviewed #163)"
 				},
 				{
