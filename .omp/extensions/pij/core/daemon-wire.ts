@@ -52,6 +52,8 @@ export interface Registration {
 	readonly effort?: string;
 	readonly parent?: string;
 	readonly relay: boolean;
+	/** Why this registration is attempted (plan 211); the daemon only counts it. */
+	readonly attempt?: "explicit" | "receive" | "heartbeat" | "shim" | "lease-retry";
 }
 
 export interface RustSeatDescriptor {

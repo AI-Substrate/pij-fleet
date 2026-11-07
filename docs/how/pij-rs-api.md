@@ -60,7 +60,24 @@ the processes this daemon has launched since it started, by `<program>.<site>`
 operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...); the
 `by_op` values sum to `total` (plan 180). `data.pid` is the daemon's own process
 id (plan 190): the spawn counter resets on restart, so two readings compare only
-when their pids match. `data.ddocs` is the ddocs path the daemon resolved once at
+when their pids match. `data.registrations:{total,ps,by_key,by_seat}` counts registration
+attempts since start (plan 211, issue #145): `by_key` is per
+`<path>.<mode>.<outcome>` with `{count,ps}`, where `ps` is the ancestry `ps`
+reads those attempts paid. `path` is the client's advisory `attempt` on
+`/v1/register` (`explicit`, `receive`, `heartbeat`, `shim`, `lease-retry`;
+`unspecified` when absent, `other` when unknown) or the daemon caller (`adopt`,
+`claude-bind`, `codex-bind`); `mode` is `pane` or `paneless`; `outcome` is
+`new`, `rebound`, `unchanged`, `refused`, `retired`, `retryable`,
+`session-hold`, `holder-current` or `error`. Every parsed `/v1/register`
+counts once, including one the route refuses before registration (an invalid
+role, a pane it cannot observe). `by_seat` is per address: the resolved seat, or
+for a refusal the claimed id when it is a seat (`(unnamed)` when empty);
+addresses that are not seats, longer than 64 bytes, or beyond the first 64
+count under `(other)`. Each attempt's `ps` tally closes when the attempt is
+counted: an observer a timeout left running may not launch afterwards, so no
+read goes uncounted. The counters are in-process (one mutex-guarded pair of
+maps): no launch, event or store write per attempt, and nothing reads them to
+decide anything. `data.ddocs` is the ddocs path the daemon resolved once at
 start (`PIJ_DDOCS`, which must be absolute, else PATH), or `null` when it found
 none; `just doctor` prints it. A relative or empty PATH entry is taken relative
 to the daemon's directory at start, so the kept path is always absolute. `data.gh` is
@@ -146,6 +163,8 @@ with ordinary registration backoff; it is not a `native-session` Hold.
 Every successful `/v1/register` returns and stores a live descriptor (`tombstoned_at: None`). An existing retired address is resumed only with the **same harness AND** at least one continuity witness: the same nonempty harness session (`HARNESS_SESSION_ID`, `harness_session` or `harnessSession`), the same nonempty `spawn_id`, or the recorded process incarnation corroborated by the daemon. Missing values and a matching pane alone prove nothing. Without continuity it returns HTTP400, v2 `error:"refused"`, with `seat <id> is retired (<reason>, <at>); a different session may not take it`, without changing the row; a different harness adds `; harness mismatch: row <h1>, claim <h2>` and is never adopted by a lift. Paneless Claude/Codex/Copilot session selection includes retired addresses, preferring live rows, then greatest `proc_start`, then ascending id; historical duplicates are not host owners. Their existing live-owner, session and pull-shape restrictions remain stronger than the continuity ladder. A lift clears both tombstone fields, keeps the address, harness, parent, authoritative role and Telegram bindings, updates the claimed process/pane, and emits exactly one resume event with `prior_reason`, `old_proc`, `new_proc`, `old_pane` and `new_pane`: `seat.native-resumed` for native Copilot, `seat.resumed` otherwise. Native ownership/HOLD checks, the verified spawn-prebind exception and the `revive` verb are unchanged.
 
 That refusal carries the typed discriminator `details:{code:"E-RS-SEAT-RETIRED",seat:"<id>"}`, on `/v1/register` and `/v1/adopt` alike; match the code, never the prose (pij-fleet#44). `GET /v1/seats` omits retired rows, so an OMP or Pi extension choosing its own startup name can pick a retired seat's id. Only that self-chosen name advances to its next memorable candidate on this code, for at most 8 claims in total. An assigned identity never advances: `PIJ_SESSION_ID`, a reload's own id, a same-pane or same-process match, or a `/new`/`/fork` replacement keeps the refusal terminal. A boot that still fails notifies at error level, sets the footer to `boot failed` and, when `PIJ_ANNOUNCE_TO` or `PIJ_PARENT_ID` names a spawner, sends it one best-effort `pij boot failed (spawn <id>, pane <pane>): <reason>` message from the non-seat sender `pij-boot-failed-<pid>`.
+
+A native Copilot claim that names an address recorded for a different native session is refused before the daemon observes the host (plan 211, issue #145): `E-RS-SEAT-RETIRED` when that address is retired, else the different-session refusal. The same check decides again under the registration lock, so this early read is a brake: removing it refuses the same claims later, after the ancestry `ps`. The native Copilot extension treats `E-RS-SEAT-RETIRED` on `/v1/register` as final: its receive and heartbeat loops stop and report `receive-held` once, instead of re-registering on a 5 s backoff.
 
 ## Adopt continuity order (plan 156)
 

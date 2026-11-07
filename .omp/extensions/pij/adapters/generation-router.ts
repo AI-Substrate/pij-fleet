@@ -410,6 +410,8 @@ export async function routeVerb(
 				proc_start: caller.procStart,
 				relay: false,
 				...(caller.pijParentId === undefined ? {} : { parent: caller.pijParentId }),
+				// Plan 211: a per-call preflight is counted apart from a deliberate register.
+				attempt: register ? "explicit" : "shim",
 			};
 			const registered = await callRs(
 				"inbox",
