@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "7b7fc1388b4de424776a0ce2aa61ab5834e72770",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6709424897",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:153",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After-deploy registration/report rates, owned task and global-gate wait/hold/backlog, CPU/RSS and same-PID/build launch measurements remain owed."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `7b7fc1388b4de424776a0ce2aa61ab5834e72770`.\n\nReviewed only `fcfca24..7b7fc13`. The prior audit-withholding closure and cost verdict stand, with the guard lifetime/scope updated below.\n\n**One owned Tokio task per admitted native registration**, not an executable or watchdog-tick task. `ReportedContext::exclusively` waits for the same global gate with lock_owned, moves its owned guard into the spawned future, and awaits that task. Cancellation while waiting for the gate starts no work; cancellation after admission no longer releases exclusion before the registry write and grant rotation finish.\n\nThe mutex is now Arc-backed: one small shared allocation per ReportedContext, owned-guard/reference bookkeeping and an additional task/future per native attempt. The handler moves claim/session into work and clones service handles; it does not add a queue scan, schema write, random grant generation or process read beyond the existing registration/grant work. Non-native registrations await that work directly without the new task/gate.\n\n**Critical-section scope improves:** it contains register_via plus grant creation/rotation, but **the reissue audit and response shaping now happen afterward**, outside the context gate. The old cost note including publication-audit wait in the context section is superseded. Audit persistence still gates release of a reissued token.\n\nThe retained section still includes existing host verification (five-second timeout component), owner/roster work, native-lock/SQL waits and grant work. It has no new whole-operation deadline. An abandoned caller now leaves its admitted registration and guard alive intentionally; unrelated reports may wait until it finishes instead of gaining unsafe early entry. Waiting requests retain metadata; no new per-seat map or concurrency cap.\n\n**Scaling unchanged:** R native registrations and B valid size applications contribute R+B gate acquisitions, with **R extra owned registration tasks**. No acquisition/task is added directly to the PA's minute round; no-context activity and status/generation reads keep their previous paths. Per-seat/burst contention and invalid-token-length qualifications from the fcfca24 verdict remain. Audit being outside the gate removes that component, not host/SQL head-of-line waiting. Live wait/hold/RSS data is still needed before declaring per-seat isolation necessary.\n\n**CI proof:** CLEAN at this exact head. [CI 42387081956](https://github.com/AI-Substrate/pij-fleet/actions/runs/42387081956), attempt 2, succeeds in all four jobs. JUnit records **2,105 executed cases, zero failures/errors**, five Rust skips separately. The new cancellation test runs both cancelled and non-cancelled schedules: a real SQLite write lock holds replacement commit, the waiter is aborted, the old checked report waits and then preserves replacement proc/state, size and generation. It composes the owned helper/registry/grant work directly, rather than cancelling a real HTTP connection.\n\nExisting audit-failure withholding, incarnation-race, gate-wait and all six spawn guards also execute. Latest delivers **42387081997** succeeds; **42387081960** was cancelled. Author-reported mutation failure was not rerun here.\n\nSource now places the context guard in the owned mutation task, addressing the ownership shape flagged in round 3. Bobcat/Squirrel own the full F004/C32 correctness grade. No local build, test, trigger, token request, runtime probe or worktree edit.\n\n**Still owed after deployment:** registration/reissue/report rates, same-PID/build launch sites, CPU/RSS and global-gate wait/hold/backlog under legitimate reload/report bursts, including work continuing after caller cancellation.\n"
+		}
+	]
+}
