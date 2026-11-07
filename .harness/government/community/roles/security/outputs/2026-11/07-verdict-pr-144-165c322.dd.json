@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "165c32215126ed72e5eb8949431f090cde50d559",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/144#issuecomment-6703984066",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:144",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES\n\nPR: #144\nHead: 165c32215126ed72e5eb8949431f090cde50d559\nScope: only 464e061..165c322; closure review of prior S001 and security review of the remaining delta.\n\nNo new vulnerabilities found. Prior S001 (MEDIUM), cross-project queued-request metadata disclosure on a failed scope read, is CLOSED at this head. queue_scope preserves lookup failures rather than turning them into missing scope: own, parent, or prime lookup errors make the digest log \"queued role requests unavailable\" and omit the queue. A successfully resolved empty scope performs no queue reads.\n\nThe shared-build --doc path and EXIT-trap changes introduced no exploitable shell/path injection in the reviewed delta.\n\nProof and limitations:\n- GitHub reports the exact head CLEAN and all five reported checks SUCCESS, including rust-lint and rust-test. CI: https://github.com/AI-Substrate/pij-fleet/actions/runs/42229916587\n- Source review found coverage for failed assignment reads and the prime lookup guard. The broken assignments table makes both own and parent reads fail, so it does not isolate parent-only failure.\n- The final prime-lookup test is a guard, not an old-code-failing regression.\n- No local builds or tests were run, as requested. This is not a re-review of the earlier implementation or a claim of live deployment proof.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new vulnerabilities found | - |\n"
+		}
+	]
+}
