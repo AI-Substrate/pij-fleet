@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "8e282c72d84fc000896e312c668a7a0367ea717a",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/164#issuecomment-6712231698",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:164",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #164 deployment-boundary addendum\n\n**BLOCK, P2** at `8e282c72d84fc000896e312c668a7a0367ea717a`.\n\nThis supersedes my earlier [pass-with-notes](https://github.com/AI-Substrate/pij-fleet/pull/164#issuecomment-6712129052) for deployment compatibility. Squirrel supplied a new persisted-state counterfactual; I verified both branches in the exact merged git objects. #164 merged at 19:42:52Z; it needs a follow-up repair before deployment, or roll-forward if already deployed.\n\n## F001: excluding ACK can strand an existing ACK-anchored stall\n\nThe prior production vocabulary counted delivery.inbox-ack, so it could legitimately persist a modal_stalls row anchored to that ACK. After #164 removes ACK, the latest counted own sequence can be lower than the saved row.\n\nCounterfactual: own seq 100, later ACK seq 110, old detector claims row quiet_seq=110, then this version starts with the seat still stalled and latest real own seq 100.\n\n- `daemon/src/modal_stall.rs:117-121` recognizes an existing stretch only when its quiet_seq equals the newly selected own sequence. The saved 110 row does not match 100.\n- `store/src/stalls.rs:35-40` replaces the saved row only when its sequence is lower than the proposed one. 110 < 100 is false, so claim_modal_stall returns false.\n- `daemon/src/modal_stall.rs:153-154` immediately continues without tell. An owed/refused recipient cannot retry, and a newly appearing PA cannot receive its notice, until a real own event exceeds 110.\n- If the dialog vanishes without an own event, the same mismatch also prevents set_open(false) (`:123-127`). The standing-open row may remain visible because no newer counted own event exceeds its saved sequence.\n\nThis is a valid old-version persisted state, not a claim that such a row is currently present in production. No production row scan, runtime probe or local test was performed. The new fresh-store regression does not exercise this upgrade state.\n\n## Required repair/proof\n\nRecognize/reconcile the legacy ACK anchor through the owned state boundary. Preserve accepted recipients, attempt reservations and message-ID/deduplication lineage for the same physical stretch; do not blindly relax the higher-sequence guard or reset notification history.\n\nAdd focused old-row cases: an owed recipient/new PA still gets its notice, a disappeared dialog clears its view, accepted recipients are not retold, and a genuinely newer own event still starts a new stretch. The live canary should include carry-over state, not only an empty table.\n\nThe fresh-row F108 fix and its CI proof remain valid. The additional deployment compatibility defect changes the overall correctness verdict to BLOCK. Performance/security verdicts remain independently owned.\n"
+		}
+	]
+}
