@@ -579,7 +579,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "162",
 					"machine": "ops.osk.lan",
+					"release_why": "#162 merged e5e011e",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-07T18:32:58.864Z",
 					"why": "AC4 docs PR #162 (guan)"
 				}
 			]
