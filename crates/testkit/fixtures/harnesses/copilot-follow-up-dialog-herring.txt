@@ -1,0 +1,30 @@
+    - 2266c8a, F002 (lynx): --drop-queued withdraws nothing unless every requester was told (E-RS-DIRECTORY-NOT-TOLD; the same command retries). The S001 test is now a            ┃
+    /bin/sh printf round-trip of a hostile instance (x$(id>dollar)`id>tick`;id>semi): the exact words come back, and no file is written.                                           ┃
+    - 565c818, F004 (bobcat): a retired or merged role named by an unfinished step's needs gets a retarget prompt (one ddocs set per step, pointing at the merge target or         ┃
+    role:<replaces-<id>>), never add. Absent roles still get add. Tested.                                                                                                          ┃
+    - 46463da: the requeue invariant, as comments at the drain-failure path and boot recovery, with the PR body naming four conditions: retire refuses while delivering;           ┃
+    the drain holds the gate from claim to settle; the immediate path records under the gate and abandons on failure; recovery runs before serving. Also F002 "gone": an           ┃
+    unknown or tombstoned requester is withdrawn, listed in data.gone, and its spine event has requester_gone: true. Any other hold failure refuses. One test covers both.         ┃
+    Bobcat: F004 closed, and the four invariant conditions hold on every path, including the failed drain and boot recovery. Herring: F002 closed (no withdrawal without a         ┃
+    successful tell, except a requester that's gone); the retarget prompt's placeholders and the ddocs set command go through shell_word; the /bin/sh round-trip. Ocelot:          ┃
+    the cost delta of these three commits only.                                                                                                                                    ┃
+    Write your verdict with pij output verdict --role <role> --subject pr:135 --head 46463da5e676de2196d828cf028c3727e0731be7 ... Bobcat: add --answers with this request          ┃
+    id. Herring and ocelot: send me the line too.                                                                                                                                  ┃
+     (pending)                                                                                                                                                                     ┃
+ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ┃
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Copilot needs information.
+ **#153 BLOCK** is committed, published, and sent to pm-001.
+ | # | Severity | File | Lines | Vulnerability | Confidence |
+ |---|----------|------|-------|---------------|------------|
+ | 1 | 🟡 MEDIUM | crates/daemon/src/http/fyi.rs | 233-255, 281-393 | Cross-seat context forgery bypasses cold-wake protection or forges victim alerts | 10/10 |
+ Choose an optional follow-up, or decline to leave the repair with the assigned coder.
+ Additional action:
+ The requested review and verdict publication are complete. No code changes will be made without your selection.
+ ❯ Fix highest severity issues
+   Fix all issues
+   Commit a summary of findings
+   Other (type your answer)
+ ↑/↓ select · enter accept · ctrl+d decline · esc cancel
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+14% pij-governance ⎇ prime-governance ⛓ pij-bumpy-herring • gpt-6.1-sol · high · 922K context • xhigh • 133k/922k • 552.28 AIU • 11.00 prem • 5h23m

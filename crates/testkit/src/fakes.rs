@@ -1866,6 +1866,8 @@ struct TmuxState {
     /// Served when the scripted queue is empty, so a test whose subject makes
     /// MANY captures does not have to script one per call.
     standing_capture: Option<String>,
+    /// No live control client: `capture_without_launch` answers `None`.
+    control_down: bool,
     typing: bool,
     /// What tmux reports for `#{pane_pid}`/`#{pane_current_path}`, per pane.
     ///
@@ -2051,6 +2053,14 @@ impl FakeTmux {
     /// CONTENT rather than the blank one `with_clear_composer` arranges.
     pub fn with_standing_capture(self, text: impl Into<String>) -> Self {
         self.state.lock().expect("fake tmux mutex").standing_capture = Some(text.into());
+        self
+    }
+
+    /// No live tmux control client: [`TmuxPort::capture_without_launch`]
+    /// answers `None`, as the real adapter does (plan 219).
+    #[must_use]
+    pub fn without_control_client(self) -> Self {
+        self.state.lock().expect("fake tmux mutex").control_down = true;
         self
     }
 
@@ -2465,6 +2475,26 @@ impl TmuxPort for FakeTmux {
         // An unscripted capture is an empty pane, not a panic: a fake that
         // explodes on an unexpected call makes tests about the fake.
         Ok(state.standing_capture.clone().unwrap_or_default())
+    }
+
+    async fn capture_without_launch(&self, pane: &str) -> Result<Option<String>> {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        state
+            .recorder
+            .record(format!("capture_without_launch:{pane}"));
+        if state.control_down {
+            return Ok(None);
+        }
+        if state.capture_failures.contains(pane) {
+            return Err(PijError::Adapter {
+                adapter: "fake-tmux".to_string(),
+                message: format!("can't find pane: {pane}"),
+            });
+        }
+        if let Some(capture) = state.captures.pop_front() {
+            return Ok(Some(capture));
+        }
+        Ok(Some(state.standing_capture.clone().unwrap_or_default()))
     }
 
     async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<()> {

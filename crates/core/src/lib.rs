@@ -28,6 +28,7 @@ pub mod fleet;
 pub mod framing;
 pub mod fyi;
 pub mod liveness;
+pub mod modal_stall;
 pub mod model;
 pub mod names;
 pub mod orchestration;

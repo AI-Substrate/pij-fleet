@@ -964,6 +964,14 @@ pub trait TmuxPort: Send + Sync {
     /// The last `lines` of a pane's visible output.
     async fn capture(&self, pane: &str, lines: u32) -> Result<String>;
 
+    /// A pane's visible output, only when it can be read WITHOUT launching a
+    /// process (over an already-live tmux control client); `Ok(None)` when it
+    /// can't. Never starts a client and never forks (plan 219). The default
+    /// answers `None`, so an adapter that can't promise this never launches.
+    async fn capture_without_launch(&self, _pane: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Attach an output tap for `pane`, writing raw terminal bytes to `sink`.
     /// Return success only after the world reports the pipe live: a lying attach
     /// feeds zero bytes into a policy that reads zero as HUMAN NOT TYPING, so the
