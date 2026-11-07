@@ -1,0 +1,32 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "697b6aa0d3eec8fbe9de3926148d6f04b837e15f",
+				"kind": "note",
+				"role": "security",
+				"subject": "issue:F103",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security note: F103\nSource examined: 697b6aa0d3eec8fbe9de3926148d6f04b837e15f; helpers predate the repair range.\n\nClassification: ungraded untrusted-authority-source limitation.\nRecommendation: a separate authorization-policy row, not the F88 identity-only residual or merely PRD003req-10.\n\nhttp/governance.rs:1285-1359 and store/governance.rs:686-760 impose state guards, not caller-authority requirements. prime.set refuses direct replacement of an active designation, but an unrelated correctly identified actor can retire the known current designation and then set itself. No identity spoofing is needed for that counterfactual.\n\nPer-incarnation identity binding alone would not determine which already-authenticated actors may set or retire prime designations. Clarify that intended policy and enforce it separately. Until then, do not treat the current designation as authoritative request permission; #149 correctly dropped that source in favor of projects.prime_id.\n\nNo high-confidence privileged consumer exploit was established in the examined paths. Consumers route signals/project visibility or protect a prime from placement; decision-answer authority remains actual self/current parent. Foreign-message read/send-as or code/holding/role mutation granted by this designation was not demonstrated. No speculative HIGH grade or automatic #149 blocker is assigned.\n\nNo local tests, setter/retire calls, runtime probes, credential reads or product changes.\n"
+		}
+	]
+}
