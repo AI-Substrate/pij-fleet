@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "4a0bc62b932da3f2783dbb21b32f7bb0413b73e4",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/160#issuecomment-6710909943",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:160",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `4a0bc62b932da3f2783dbb21b32f7bb0413b73e4`.\n\nBoth remaining LOW findings at `5021882` are closed in the scoped repair. No remaining high-confidence proposed-data-only bypass found for the reviewed exemption/coverage-identity boundaries.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 0 | None | N/A | N/A | No remaining reportable finding in the repair | N/A |\n\nRepeated required sections and row IDs produce findings before coverage/exemption processing (`harness/scripts/coverage-check.ts:102-133`). Later duplicate rows are skipped, retaining the first unfinished child for umbrella evaluation. Findings remain accumulated; any finding makes the CLI unsuccessful (`330-337`).\n\nRuntime exemption validation rejects invalid, duplicate and outside-baseline entries (`149-174`). Each checker-baseline address must have a matching valid JSON entry and refer to an existing uncovered obligation (`226-251`). Missing rows, missing JSON membership and covered targets fail. Deleted-row-plus-deleted-JSON no longer passes with the constant retained. The production entry uses the checker constant, not proposed JSON, as its baseline.\n\nExact membership and filesystem-derived document addresses prevent the reviewed normalization/collision bypasses. Owner/reason edits cannot broaden eligibility. Retiring an approved entry requires explicit removal from both locations.\n\nControls cover missing/covered/mismatched negatives and explicit-removal positives (`harness/scripts/coverage-check.test.ts:122-147`). Direct section arrays cover duplicates and preserve the unfinished-child umbrella finding (`232-285`). The duplicate-requirement fixture uses a delivered ID, not an approved exemption; the unconditional identity guard also applies to approved IDs.\n\nEarlier required-input failure guards remain intact. The four-file repair introduces no privacy disclosure, safety weakening or shipped-template/pin changes.\n\n**Proof:** exact-head CI [42397453707](https://github.com/AI-Substrate/pij-fleet/actions/runs/42397453707), attempt 1, passed all four jobs; Node 22 and Node 24 each executed 18 coverage-check tests. Mutation evidence remains author-reported, not independently rerun. F104/C20 ddocs remains UNAVAILABLE: no full-schema validation or historical/implementation provenance proof is claimed. Changing authoritative requirement definitions is not automatically treated as privilege escalation. No local builds/tests, credentials, role edits, live probes or product changes.\n"
+		}
+	]
+}
