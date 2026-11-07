@@ -55,6 +55,15 @@ would edit security: 1 line(s)
 
 Afterwards no `role.dd.json` and no `ROUTES.md` row in the governance tree cites `docs/project/roadmaps/` (bp-0007).
 
+In the same pass (the prime, through pm-001), the live wording followed the path: two more edits, `--why 'C29 rename (plan 210): workstream wording'`, changed "roadmap" to "workstream" in each live field that still said it:
+
+| role | field | governance commit |
+|---|---|---|
+| coder | scope rule 0 ("One workstream step ...") | 5e3715f |
+| pm-001 | title ("PM for workstream 001") and scope rule 0 ("Runs workstream 001 ...") | a127e0e |
+
+Each also regenerated its `ROUTES.md` row. After this, no live field in the eight roles' `role.dd.json` (changelogs excepted) and no `ROUTES.md` row says "roadmap". The hand-written `role.md` beside each role is pre-s02 history (community README), never written by the directory writer, so it is left as it was.
+
 ## Other items from phase 1's notes
 
 - s16 is added (complete), delivering req-30 and req-31, which are now shipped. req-24's `delivered_by` is `#141, #159` and req-27's is `#136, #159`.

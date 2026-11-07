@@ -83,7 +83,7 @@
           "claim": "Governance re-point (#135 merged: pij directory edit is live). The 8 live governance role prompts that cite the roadmap path are re-pointed with `pij directory edit` (docs-system runs it; the writer commits).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0007",
-          "receipt": "assets/evidence/phase-2.md#ac7-governance-re-point (8 writer commits after #160 merged: governance a93a486 to 869ad9f)"
+          "receipt": "assets/evidence/phase-2.md#ac7-governance-re-point (8 path edits after #160 merged: governance a93a486 to 869ad9f; workstream wording: coder 5e3715f, pm-001 a127e0e)"
         },
         {
           "id": "ac-0008",
