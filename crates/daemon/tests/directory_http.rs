@@ -3442,6 +3442,8 @@ async fn a_limit_checks_in_once_then_tells_the_pa_once_and_a_card_update_spares_
         .unwrap()
         .and_then(|request| request.delivered_at)
         .expect("delivered");
+    // The clock starts when it reaches the holder's session (plan 214, F73).
+    let delivered = arrive(&rig, "pij-holder", "req-limit").await.max(delivered);
     let kinds = |actions: Vec<pij_daemon::delivery::role_send::LimitAction>| {
         actions
             .into_iter()
@@ -4308,8 +4310,9 @@ async fn requests_lists_and_withdraw_closes_a_queued_request_for_its_requester_o
 const LIMIT_MS: u64 = 10 * 60_000;
 
 /// The s12 rig: a `pa` role (held by `pij-second` when `pa`), `pm-001` held by
-/// `pij-holder`, and request `req-limit` to it with a 10m limit. Returns the
-/// request's delivery time.
+/// `pij-holder`, and request `req-limit` to it with a 10m limit, which has
+/// reached the holder's session. Returns when it arrived: the limit clock's
+/// start (plan 214, F73).
 async fn limit_rig(name: &str, pa: bool) -> (Rig, Repo, u64) {
     limit_rig_as(name, pa, "pm-001").await
 }
@@ -4320,8 +4323,54 @@ async fn limit_rig_as(name: &str, pa: bool, target: &str) -> (Rig, Repo, u64) {
 }
 
 /// [`limit_rig_as`], with `holder` (registered here when it is not one of
-/// the rig's seats) assigned `target`.
+/// the rig's seats) assigned `target`. Returns when the request reached the
+/// holder's session.
 async fn limit_rig_held_by(name: &str, pa: bool, target: &str, holder: &str) -> (Rig, Repo, u64) {
+    let (rig, repo, delivered) = limit_rig_queued(name, pa, target, holder).await;
+    let arrived = arrive(&rig, holder, "req-limit").await.max(delivered);
+    (rig, repo, arrived)
+}
+
+/// The holder's session reads its inbox up to and including `msg_id`, as its
+/// extension would; returns when `msg_id` reached it (ms).
+async fn arrive(rig: &Rig, seat: &str, msg_id: &str) -> u64 {
+    let seat_id = SeatId::from(seat);
+    if let Some(at) = rig.store.message_reached_at(seat, msg_id).await.unwrap() {
+        return at;
+    }
+    for _ in 0..20 {
+        let claims = rig.delivery.claim_inbox(&seat_id, false).await.unwrap();
+        let Some(claim) = claims.first() else { break };
+        rig.delivery
+            .acknowledge_inbox(
+                &seat_id,
+                claim.job_id,
+                &pij_daemon::delivery::NativeInboxIdentity::default(),
+                None,
+            )
+            .await
+            .unwrap();
+        if claim.message.msg_id == msg_id {
+            return rig
+                .store
+                .message_reached_at(seat, msg_id)
+                .await
+                .unwrap()
+                .expect("reached");
+        }
+    }
+    panic!("{msg_id} never reached {seat}");
+}
+
+/// [`limit_rig`] with the request still held in delivery. Returns its
+/// delivery (admission) time.
+async fn limit_rig_held(name: &str, pa: bool) -> (Rig, Repo, u64) {
+    limit_rig_queued(name, pa, "pm-001", "pij-holder").await
+}
+
+/// The rig with `holder` assigned `target` and the request admitted but not
+/// yet read. Returns its delivery (admission) time.
+async fn limit_rig_queued(name: &str, pa: bool, target: &str, holder: &str) -> (Rig, Repo, u64) {
     let repo = repo(name);
     let rig = rig(Arc::new(NoHook)).await;
     if holder != "pij-holder" {
@@ -4747,6 +4796,7 @@ async fn an_answer_after_the_rounds_read_stops_the_check_in_and_the_notice() {
         .unwrap()
         .and_then(|request| request.delivered_at)
         .expect("delivered");
+    let late = arrive(&rig, "pij-holder", "req-late").await.max(late);
     let checked = late + LIMIT_MS;
     assert_eq!(
         limit_acts(time_limits(&rig.services, checked).await),
@@ -5024,6 +5074,778 @@ async fn an_admitted_notice_is_not_sent_again_to_a_rotated_pa() {
 #[tokio::test]
 async fn a_pinned_notice_never_admitted_goes_to_the_current_pa() {
     a_rotated_pa_after_a_pinned_notice("pij-limit-rotated-unsent", false).await;
+}
+
+/// Plan 214, F73: the limit clock starts when the request reaches the holder's
+/// session. While delivery still holds it behind a busy turn there is no
+/// check-in, however late; once it arrives the clock runs from then, and the
+/// check-in says how long delivery held it.
+#[tokio::test]
+async fn a_limit_counts_from_arrival_and_the_check_in_names_the_held_time() {
+    use pij_daemon::delivery::role_send::{time_limit_step, time_limits};
+    let (rig, _repo, delivered) = limit_rig_held("pij-limit-held", true).await;
+    for at in [delivered + LIMIT_MS, delivered + 6 * LIMIT_MS] {
+        assert_eq!(
+            limit_acts(time_limits(&rig.services, at).await),
+            [],
+            "still held: no check-in"
+        );
+    }
+    let arrived = arrive(&rig, "pij-holder", "req-limit").await.max(delivered);
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, arrived + LIMIT_MS - 1).await),
+        [],
+        "the clock runs from arrival"
+    );
+    // The round's read, as if delivery had held it for 20 minutes before the
+    // arrival the store recorded (the ledger keeps seconds).
+    let reached = rig
+        .store
+        .message_reached_at("pij-holder", "req-limit")
+        .await
+        .unwrap()
+        .expect("reached");
+    let mut read = rig
+        .store
+        .role_request("req-limit")
+        .await
+        .unwrap()
+        .expect("row");
+    read.delivered_at = Some(reached - 2 * LIMIT_MS);
+    let action = time_limit_step(&rig.services, &read, reached + LIMIT_MS)
+        .await
+        .expect("checked in");
+    assert_eq!((action.kind, action.admitted), ("check-in", true));
+    let bodies = inbox_bodies(&rig, "pij-holder").await;
+    assert!(
+        bodies
+            .iter()
+            .any(|body| body.contains("It waited 20m in delivery before it reached you")),
+        "{bodies:?}"
+    );
+}
+
+/// Plan 214, F68: a reply with --in-reply-to from the request's holder answers
+/// it, so no check-in follows; the same reply from another seat does not.
+#[tokio::test]
+async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let (rig, repo, arrived) = limit_rig("pij-limit-reply", true).await;
+    let third = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-holder",
+        "reply-third",
+        json!({"in_reply_to": "req-limit"}),
+    )
+    .await;
+    assert_eq!(third["ok"], true, "{third}");
+    let row = |id: &'static str| {
+        let store = rig.store.clone();
+        async move { store.role_request(id).await.unwrap().expect("row") }
+    };
+    assert_eq!(row("req-limit").await.answered_at, None, "not the holder");
+    let reply = send_to(
+        rig.addr,
+        &repo.main,
+        SEAT,
+        "reply-holder",
+        json!({
+            "from": "pij-holder",
+            "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert!(row("req-limit").await.answered_at.is_some(), "{reply}");
+    assert_eq!(
+        limit_acts(time_limits(&rig.services, arrived + 5 * LIMIT_MS).await),
+        [],
+        "an answered request is never checked in"
+    );
+}
+
+/// Review of #152, F002 and S152-001. A holder's reply addressed to a role
+/// answers the request it replies to, once, with one audit event; a replay and
+/// `pij output --answers` add nothing. A reply whose caller binds to another
+/// seat than its `from` is refused, and so is one with no caller context.
+#[tokio::test]
+async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
+    let (rig, repo, _) = limit_rig("pij-reply-role", true).await;
+    let row = |id: &'static str| {
+        let store = rig.store.clone();
+        async move { store.role_request(id).await.unwrap().expect("row") }
+    };
+    let answers = || {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move {
+            let events = call(
+                addr,
+                "/v1/spine",
+                &["spine", "events", "--peer", "pij-holder"],
+                &cwd,
+            )
+            .await;
+            events["data"]["events"]
+                .as_array()
+                .expect("events")
+                .iter()
+                .filter(|event| event["kind"] == "request.answered_by_reply")
+                .map(|event| {
+                    serde_json::from_str::<Value>(event["payload"].as_str().unwrap()).unwrap()
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+
+    let forged = send_to(
+        rig.addr,
+        &repo.main,
+        SEAT,
+        "reply-forged",
+        json!({"from": "pij-holder", "in_reply_to": "req-limit"}),
+    )
+    .await;
+    assert!(
+        forged["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("E-RS-REPLY-SENDER")),
+        "the caller is {SEAT}, not pij-holder: {forged}"
+    );
+    let unbound_other = send_to(
+        rig.addr,
+        &repo.main,
+        SEAT,
+        "reply-unbound-other",
+        json!({"from": "pij-second", "caller": null, "in_reply_to": "req-limit"}),
+    )
+    .await;
+    assert!(
+        unbound_other["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("E-RS-REPLY-IDENTITY")),
+        "{unbound_other}"
+    );
+    assert_eq!(row("req-limit").await.answered_at, None, "not the holder");
+
+    let role_reply = json!({
+        "from": "pij-holder",
+        "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+        "in_reply_to": "req-limit",
+    });
+    let replied = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pa",
+        "reply-role",
+        role_reply.clone(),
+    )
+    .await;
+    assert_eq!(replied["ok"], true, "{replied}");
+    let answered = row("req-limit")
+        .await
+        .answered_at
+        .expect("answered by a role reply");
+    let replay = send_to(rig.addr, &repo.main, "role:pa", "reply-role", role_reply).await;
+    assert_eq!(replay["ok"], true, "{replay}");
+    assert_eq!(
+        row("req-limit").await.answered_at,
+        Some(answered),
+        "set once"
+    );
+    assert!(
+        !rig.store
+            .mark_role_request_answered("req-limit", answered + 1)
+            .await
+            .unwrap(),
+        "output --answers stamps the same field and finds it set"
+    );
+    let audited = answers().await;
+    assert_eq!(audited.len(), 1, "{audited:?}");
+    assert_eq!(
+        (
+            audited[0]["request"].as_str(),
+            audited[0]["route"].as_str(),
+            audited[0]["bound"].as_str()
+        ),
+        (Some("req-limit"), Some("send"), Some("pane (derived)")),
+        "{audited:?}"
+    );
+    rig.server.abort();
+}
+
+/// Every live delivery job for `seat` from `from`, oldest first: (sender,
+/// msg id). Read from the queue table, not `peek_inbox`, which shows only the
+/// head job.
+async fn queued_from(rig: &Rig, seat: &str, from: &str) -> Vec<(String, String)> {
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    let payloads: Vec<(String,)> = sqlx::query_as(
+        "SELECT payload FROM jobs WHERE kind = ?1 AND state IN ('pending', 'running') ORDER BY id",
+    )
+    .bind(format!("delivery:{seat}"))
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    payloads
+        .into_iter()
+        .map(|(payload,)| {
+            let payload: Value = serde_json::from_str(&payload).unwrap();
+            let message = if payload["message"].is_object() {
+                &payload["message"]
+            } else {
+                &payload
+            };
+            (
+                message["from"].as_str().unwrap_or_default().to_string(),
+                message["msg_id"].as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .filter(|(sender, _)| sender == from)
+        .collect()
+}
+
+/// A shim send of `argv` with `caller` (or none).
+async fn shim_send(rig: &Rig, argv: &[&str], caller: Value) -> Value {
+    reqwest::Client::new()
+        .post(format!("http://{}/v1/shim/send", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({"argv": argv, "caller": caller}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+fn refused_identity(response: &Value) -> bool {
+    response["ok"] == false
+        && response["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("E-RS-REPLY-IDENTITY"))
+}
+
+/// How many `request.answered_by_reply` events name `seat`.
+async fn reply_answers(rig: &Rig, repo: &Repo, seat: &str) -> usize {
+    let events = call(
+        rig.addr,
+        "/v1/spine",
+        &["spine", "events", "--peer", seat],
+        &repo.main,
+    )
+    .await;
+    events["data"]["events"]
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|event| event["kind"] == "request.answered_by_reply")
+        .count()
+}
+
+/// Security review of #152, S152-001, under ruling C32 (1). A caller names the
+/// request's holder as `from` and replies to its request, to any recipient,
+/// with no identity context or with only an asserted session id (which the
+/// ladder checks for existence only). Delivering it would show the recipient a
+/// message from a seat that never sent it, so it is refused on `/v1/send` and
+/// on the shim, normal and FYI, to a seat and to a role: nothing is queued or
+/// held, and nothing is answered or audited. The pane-bound holder still
+/// delivers.
+#[tokio::test]
+async fn a_reply_without_a_bound_identity_is_refused_and_never_delivered_as_the_holder() {
+    let (rig, repo, _) = limit_rig("pij-reply-unbound", true).await;
+    let asserted = json!({"PIJ_SESSION_ID": "pij-holder", "cwd": repo.main});
+    for (to, fyi) in [
+        ("pij-second", false),
+        ("pij-second", true),
+        ("role:pa", false),
+        ("role:pa", true),
+    ] {
+        for (label, caller) in [("none", Value::Null), ("asserted", asserted.clone())] {
+            let msg_id = format!("forged-{}-{fyi}-{label}", to.replace(':', "-"));
+            let native = send_to(
+                rig.addr,
+                &repo.main,
+                to,
+                &msg_id,
+                json!({
+                    "from": "pij-holder",
+                    "caller": caller,
+                    "in_reply_to": "req-limit",
+                    "fyi": fyi,
+                }),
+            )
+            .await;
+            assert!(
+                refused_identity(&native),
+                "{to} fyi={fyi} {label}: {native}"
+            );
+            let mut argv = vec!["send", to, "forged", "--in-reply-to", "req-limit"];
+            if fyi {
+                argv.push("--fyi");
+            }
+            let shim = shim_send(&rig, &argv, caller.clone()).await;
+            assert_eq!(shim["ok"], false, "{to} fyi={fyi} {label}: {shim}");
+            if label == "asserted" {
+                // The shim resolves the asserted subject; the reply gate refuses it.
+                assert!(refused_identity(&shim), "{to} fyi={fyi}: {shim}");
+            }
+        }
+    }
+    assert_eq!(
+        queued_from(&rig, "pij-second", "pij-holder").await,
+        [],
+        "nothing queued"
+    );
+    let held = fyis(&rig, "pij-second").await;
+    assert!(
+        !held.iter().any(|(sender, _)| sender == "pij-holder"),
+        "nothing held: {held:?}"
+    );
+    let request = rig.store.role_request("req-limit").await.unwrap().unwrap();
+    assert_eq!(request.answered_at, None, "nothing answered");
+    assert_eq!(
+        reply_answers(&rig, &repo, "pij-holder").await,
+        0,
+        "nothing audited"
+    );
+
+    let bound = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-second",
+        "reply-bound",
+        json!({
+            "from": "pij-holder",
+            "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(bound["ok"], true, "{bound}");
+    assert_eq!(
+        queued_from(&rig, "pij-second", "pij-holder").await,
+        [("pij-holder".to_string(), "reply-bound".to_string())]
+    );
+    rig.server.abort();
+}
+
+/// Review of #152, S152-001: the OMP/Pi `pij_send` tool sets `in_reply_to`
+/// from the last inbound message, so its reply to a requester is correlated.
+/// The exact body it sends (the fixture its TS test checks it against) binds
+/// by pane and is delivered; the same body without `caller`, as the tool sent
+/// it before, is refused.
+#[tokio::test]
+async fn the_omp_reply_shape_binds_by_pane_and_is_refused_without_caller() {
+    let (rig, repo, _) = limit_rig("pij-reply-omp-shape", true).await;
+    let mut body: Value =
+        serde_json::from_str(include_str!("fixtures/omp-correlated-send.wire.json")).unwrap();
+    body.as_object_mut().unwrap().remove("_comment");
+    let post = |body: Value| async move {
+        reqwest::Client::new()
+            .post(format!("http://{}/v1/send", rig.addr))
+            .bearer_auth(KEY)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap()
+    };
+    let mut bare = body.clone();
+    bare.as_object_mut().unwrap().remove("caller");
+    let refused = post(bare).await;
+    assert!(refused_identity(&refused), "{refused}");
+    assert_eq!(queued_from(&rig, SEAT, "pij-holder").await, []);
+
+    let sent = post(body).await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    assert_eq!(
+        queued_from(&rig, SEAT, "pij-holder").await,
+        [("pij-holder".to_string(), "omp-correlated-reply".to_string())]
+    );
+    assert_eq!(
+        reply_answers(&rig, &repo, "pij-holder").await,
+        1,
+        "answered once"
+    );
+    rig.server.abort();
+}
+
+/// Security review of #152, S152-001 (round 5). A paneless pull seat's
+/// native session, PID and start are roster metadata any local client can
+/// read. A DIFFERENT client supplies a live paneless pull holder's matching
+/// metadata and replies to its request as that seat: refused on the shim and
+/// on `/v1/send`, normal and FYI, to a seat and to a role, with nothing queued,
+/// held, answered or audited. The refusal says what to do instead, and the
+/// uncorrelated send it suggests is delivered and answers nothing.
+#[tokio::test]
+async fn a_client_replaying_a_paneless_pull_holders_metadata_cannot_reply_as_it() {
+    let (rig, repo, _) = limit_rig_held_by("pij-reply-pull", true, "pm-001", "pij-pull").await;
+    // The holder is a live Copilot seat outside tmux: a paneless pull seat.
+    let mut pull = rig
+        .services
+        .registry
+        .get(&SeatId::from("pij-pull"))
+        .await
+        .unwrap()
+        .unwrap();
+    pull.harness = Harness::Copilot;
+    pull.pane = None;
+    pull.proc = Some(CALLER_PROC);
+    pull.harness_session = Some("native-pull".into());
+    rig.services.registry.put(pull).await.unwrap();
+    // Everything here is the victim's metadata, as `pij whoami pij-pull` shows it.
+    let replayed = json!({
+        "PIJ_SESSION_ID": "pij-pull",
+        "COPILOT_AGENT_SESSION_ID": "native-pull",
+        "pid": CALLER_PROC.pid,
+        "procStart": CALLER_PROC.proc_start,
+        "cwd": repo.main,
+    });
+    for (to, fyi) in [
+        ("pij-second", false),
+        ("pij-second", true),
+        ("role:pa", false),
+        ("role:pa", true),
+    ] {
+        let mut argv = vec!["send", to, "forged", "--in-reply-to", "req-limit"];
+        if fyi {
+            argv.push("--fyi");
+        }
+        let shim = shim_send(&rig, &argv, replayed.clone()).await;
+        assert!(refused_identity(&shim), "{to} fyi={fyi}: {shim}");
+        assert!(
+            shim["meta"]
+                .as_str()
+                .is_some_and(|meta| meta.contains("without --in-reply-to")
+                    && meta.contains("--answers req-limit")),
+            "the refusal says what to do instead: {shim}"
+        );
+        let msg_id = format!("forged-pull-{}-{fyi}", to.replace(':', "-"));
+        let native = send_to(
+            rig.addr,
+            &repo.main,
+            to,
+            &msg_id,
+            json!({
+                "from": "pij-pull",
+                "caller": replayed,
+                "in_reply_to": "req-limit",
+                "fyi": fyi,
+            }),
+        )
+        .await;
+        assert!(refused_identity(&native), "{to} fyi={fyi}: {native}");
+    }
+    assert_eq!(
+        queued_from(&rig, "pij-second", "pij-pull").await,
+        [],
+        "nothing queued"
+    );
+    let held = fyis(&rig, "pij-second").await;
+    assert!(
+        !held.iter().any(|(sender, _)| sender == "pij-pull"),
+        "nothing held: {held:?}"
+    );
+    let unanswered = || async {
+        rig.store
+            .role_request("req-limit")
+            .await
+            .unwrap()
+            .unwrap()
+            .answered_at
+    };
+    assert_eq!(unanswered().await, None, "nothing answered");
+    assert_eq!(
+        reply_answers(&rig, &repo, "pij-pull").await,
+        0,
+        "nothing audited"
+    );
+
+    // The refusal's advice: the same message without --in-reply-to is an
+    // uncorrelated send (PRD 003 req-10's), delivered and answering nothing.
+    let plain = shim_send(&rig, &["send", "pij-second", "plain"], replayed).await;
+    assert_eq!(plain["ok"], true, "{plain}");
+    assert_eq!(queued_from(&rig, "pij-second", "pij-pull").await.len(), 1);
+    assert_eq!(unanswered().await, None);
+    rig.server.abort();
+}
+
+/// DOCUMENTING regression, not a guarantee (security review of #152, round 6;
+/// ruling C32 (2) as clarified). A different client holding the daemon key
+/// supplies a live seat's roster pane on a correlated reply and is resolved
+/// by that pane, so the reply is delivered as the victim. Pane binding is
+/// registration strength; proving the caller runs in that pane is PRD 003
+/// req-10's. The same send-as is reachable today through any uncorrelated
+/// send with a `from`. When plan 221 phase 2 gates send-as, these assertions
+/// flip to refusals.
+#[tokio::test]
+async fn a_client_replaying_a_live_seats_pane_still_replies_as_it_until_req_10() {
+    let (rig, repo, _) = limit_rig("pij-reply-pane-replay", true).await;
+    // %51 is pij-holder's registered pane; this caller is not pij-holder.
+    let replayed = json!({"TMUX_PANE": "%51", "cwd": repo.main});
+    let native = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-second",
+        "pane-replay-native",
+        json!({"from": "pij-holder", "caller": replayed, "in_reply_to": "req-limit"}),
+    )
+    .await;
+    assert_eq!(native["ok"], true, "{native}");
+    let shim = shim_send(
+        &rig,
+        &[
+            "send",
+            "pij-second",
+            "replayed",
+            "--in-reply-to",
+            "req-limit",
+        ],
+        replayed,
+    )
+    .await;
+    assert_eq!(shim["ok"], true, "{shim}");
+    let delivered = queued_from(&rig, "pij-second", "pij-holder").await;
+    assert_eq!(
+        delivered.len(),
+        2,
+        "both delivered as the victim: {delivered:?}"
+    );
+    assert!(delivered.iter().all(|(from, _)| from == "pij-holder"));
+    rig.server.abort();
+}
+
+/// Review of #152, S152-001: a closed request (plan 212 moves it to
+/// `closed_role_requests`) is still a request, so a reply to it gets the same
+/// gate. No context and a contradicted caller are refused; the pane-bound
+/// holder delivers.
+#[tokio::test]
+async fn a_reply_to_a_closed_request_gets_the_same_gate() {
+    let (rig, repo, _) = limit_rig("pij-reply-closed", true).await;
+    let closed = call_as(
+        rig.addr,
+        "/v1/requests",
+        &["requests", "close", "req-limit", "--quiet", "--why", "done"],
+        &repo.main,
+        PANE,
+    )
+    .await;
+    assert_eq!(closed["ok"], true, "{closed}");
+    assert!(rig.store.role_request("req-limit").await.unwrap().is_none());
+    assert!(
+        rig.store
+            .closed_role_request("req-limit")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let reply = |msg_id: &'static str, caller: Value| {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move {
+            send_to(
+                addr,
+                &cwd,
+                "pij-second",
+                msg_id,
+                json!({"from": "pij-holder", "caller": caller, "in_reply_to": "req-limit"}),
+            )
+            .await
+        }
+    };
+    let none = reply("closed-none", Value::Null).await;
+    assert!(refused_identity(&none), "{none}");
+    let contradicted = reply(
+        "closed-contradicted",
+        json!({"TMUX_PANE": PANE, "cwd": repo.main}),
+    )
+    .await;
+    assert!(
+        contradicted["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("E-RS-REPLY-SENDER")),
+        "{contradicted}"
+    );
+    assert_eq!(queued_from(&rig, "pij-second", "pij-holder").await, []);
+    let bound = reply(
+        "closed-bound",
+        json!({"TMUX_PANE": "%51", "cwd": repo.main}),
+    )
+    .await;
+    assert_eq!(bound["ok"], true, "{bound}");
+    assert_eq!(
+        queued_from(&rig, "pij-second", "pij-holder").await,
+        [("pij-holder".to_string(), "closed-bound".to_string())]
+    );
+    rig.server.abort();
+}
+
+/// Review of #152, F002 and security S152-001 under ruling C32. A role send
+/// whose holder refuses the delivery is still HTTP 200, and answers nothing,
+/// on `/v1/send` and on the shim. A caller whose pane contradicts the id it
+/// asserts is refused before anything is delivered, answered or audited; the
+/// matching holder still answers.
+#[tokio::test]
+async fn a_refused_role_reply_and_a_contradicted_caller_answer_nothing() {
+    let (rig, repo, _) = limit_rig("pij-reply-refused", false).await;
+    // The PA is a native Copilot seat with no receiver: it refuses delivery.
+    let mut native = SeatDescriptor::new("pij-native-pa", Harness::Copilot, "/tmp");
+    native.proc = Some(pij_core::model::ProcIdentity {
+        pid: 191,
+        proc_start: 1910,
+    });
+    native.pane = Some("%91".into());
+    native.native_extension_delivery = true;
+    native.harness_session = Some("native-91".into());
+    rig.services.registry.put(native).await.unwrap();
+    let assigned = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "pa",
+            "pij-native-pa",
+            "--why",
+            "watch",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    // Its receiver was attested for one session, and the seat has since moved
+    // to another: the receiver no longer matches, so delivery is refused.
+    rig.delivery
+        .attest_native_receiver(
+            &SeatId::from("pij-native-pa"),
+            &pij_daemon::delivery::NativeInboxIdentity {
+                native_session: Some("native-91".into()),
+                pid: Some(191),
+                proc_start: Some(1910),
+            },
+        )
+        .await
+        .expect("attested");
+    let mut moved = rig
+        .services
+        .registry
+        .get(&SeatId::from("pij-native-pa"))
+        .await
+        .unwrap()
+        .unwrap();
+    moved.harness_session = Some("native-92".into());
+    rig.services.registry.put(moved).await.unwrap();
+    let answered = || {
+        let store = rig.store.clone();
+        async move {
+            store
+                .role_request("req-limit")
+                .await
+                .unwrap()
+                .and_then(|request| request.answered_at)
+        }
+    };
+    let audits = || {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move {
+            let events = call(
+                addr,
+                "/v1/spine",
+                &["spine", "events", "--peer", "pij-holder"],
+                &cwd,
+            )
+            .await;
+            events["data"]["events"]
+                .as_array()
+                .expect("events")
+                .iter()
+                .filter(|event| event["kind"] == "request.answered_by_reply")
+                .count()
+        }
+    };
+
+    let refused = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pa",
+        "reply-refused",
+        json!({
+            "from": "pij-holder",
+            "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(refused["ok"], true, "HTTP 200: {refused}");
+    assert!(
+        refused["data"]["request_warning"]
+            .as_str()
+            .is_some_and(|warning| warning.contains("refused")),
+        "{refused}"
+    );
+    let shim: Value = reqwest::Client::new()
+        .post(format!("http://{}/v1/shim/send", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({
+            "argv": ["send", "role:pa", "hi", "--in-reply-to", "req-limit"],
+            "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        shim["data"]["request_warning"]
+            .as_str()
+            .is_some_and(|warning| warning.contains("refused")),
+        "{shim}"
+    );
+    assert_eq!(answered().await, None, "a refused reply answers nothing");
+
+    let contradicted = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-second",
+        "reply-contradicted",
+        json!({
+            "from": "pij-holder",
+            "fyi": true,
+            "caller": {"TMUX_PANE": PANE, "PIJ_SESSION_ID": "pij-holder", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(contradicted["ok"], false, "{contradicted}");
+    assert!(
+        inbox_bodies(&rig, "pij-second").await.is_empty(),
+        "nothing delivered"
+    );
+    assert_eq!((answered().await, audits().await), (None, 0));
+
+    let matching = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-second",
+        "reply-matching",
+        json!({
+            "from": "pij-holder",
+            "fyi": true,
+            "caller": {"TMUX_PANE": "%51", "PIJ_SESSION_ID": "pij-holder", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(matching["ok"], true, "{matching}");
+    assert!(answered().await.is_some(), "the holder answers");
+    assert_eq!(audits().await, 1);
+    rig.server.abort();
 }
 
 fn role_of<'a>(view: &'a Value, id: &str) -> &'a Value {
@@ -5521,5 +6343,112 @@ async fn the_views_assign_for_a_queued_instance_drains_it() {
             .unwrap()
             .is_empty()
     );
+    rig.server.abort();
+}
+
+/// Plan 214, C31: `pij steer` switches a seat's mid-turn steering, on by
+/// default. The native receiver learns it with every claim; a claim made
+/// during a turn while it is off gets a `turn-wait` hold and claims nothing.
+/// A queued send to a working seat that cannot steer gets a receipt note;
+/// a seat that steers gets none.
+#[tokio::test]
+async fn steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts() {
+    use pij_core::model::{ProcIdentity, SystemState};
+    let repo = repo("pij-steer");
+    let rig = rig(Arc::new(NoHook)).await;
+    let mut native = SeatDescriptor::new("pij-native", Harness::Copilot, "/tmp");
+    native.proc = Some(ProcIdentity {
+        pid: 137,
+        proc_start: 1370,
+    });
+    native.harness_session = Some("native-137".into());
+    native.pane = Some("%137".into());
+    native.native_extension_delivery = true;
+    native.state = SystemState::Working;
+    rig.services.registry.put(native).await.unwrap();
+    let mut codex = SeatDescriptor::new("pij-codex", Harness::Codex, "/tmp");
+    codex.state = SystemState::Working;
+    rig.services.registry.put(codex).await.unwrap();
+
+    let steer = |argv: &'static [&'static str]| {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move { call(addr, "/v1/steer", argv, &cwd).await }
+    };
+    let claim = |during_turn: bool| {
+        let addr = rig.addr;
+        async move {
+            reqwest::Client::new()
+                .get(format!(
+                    "http://{addr}/v1/inbox?seat=pij-native&native_session=native-137&pid=137&proc_start=1370&during_turn={during_turn}"
+                ))
+                .bearer_auth(KEY)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+
+    let sent = send_to(rig.addr, &repo.main, "pij-native", "s-1", json!({})).await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    assert!(
+        sent["data"].get("warning").is_none(),
+        "steering on: no note: {sent}"
+    );
+    let page = claim(true).await;
+    assert_eq!(page["details"]["mid_turn_steer"], true, "{page}");
+    assert_eq!(
+        page["data"][0]["message"]["msg_id"], "s-1",
+        "claimed into the turn: {page}"
+    );
+
+    let off = steer(&["steer", "off", "pij-native"]).await;
+    assert_eq!(
+        (
+            off["data"]["steer"].as_bool(),
+            off["data"]["changed"].as_bool()
+        ),
+        (Some(false), Some(true)),
+        "{off}"
+    );
+    assert_eq!(off["data"]["subject_told"], "held (fyi)", "{off}");
+    let again = steer(&["steer", "off", "pij-native"]).await;
+    assert_eq!(again["data"]["changed"], false, "{again}");
+    let status = steer(&["steer", "status"]).await;
+    assert_eq!(status["data"]["off"][0]["seat"], "pij-native", "{status}");
+
+    let held = send_to(rig.addr, &repo.main, "pij-native", "s-2", json!({})).await;
+    assert!(
+        held["data"]["warning"]
+            .as_str()
+            .is_some_and(|note| note.contains("mid-turn steering is off")),
+        "{held}"
+    );
+    let waiting = claim(true).await;
+    assert_eq!(waiting["data"], json!([]), "{waiting}");
+    assert_eq!(waiting["details"]["mid_turn_steer"], false, "{waiting}");
+    assert!(
+        waiting["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("native-consumer-held:turn-wait")),
+        "{waiting}"
+    );
+
+    let codex = send_to(rig.addr, &repo.main, "pij-codex", "s-3", json!({})).await;
+    assert!(
+        codex["data"]["warning"]
+            .as_str()
+            .is_some_and(|note| note.starts_with("pij-codex is mid-turn")),
+        "{codex}"
+    );
+    let omp = send_to(rig.addr, &repo.main, "pij-holder", "s-4", json!({})).await;
+    assert!(omp["data"].get("warning").is_none(), "OMP steers: {omp}");
+
+    let on = steer(&["steer", "on", "pij-native"]).await;
+    assert_eq!(on["data"]["steer"], true, "{on}");
+    let status = steer(&["steer", "status", "pij-native"]).await;
+    assert_eq!(status["data"]["steer"], true, "{status}");
     rig.server.abort();
 }

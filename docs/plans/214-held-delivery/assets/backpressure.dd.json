@@ -1,0 +1,124 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 214 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00d6",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Store test per rung: held = acked_at - enqueued_at; a queued row reports its live age. Evidence: live claim-wait numbers before (warbler max 449 min) and after deploy.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00d6",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "pa_watchdog test: a message held 16 min behind a busy recipient is flagged once across two digests; 14 min is not; an idle recipient's queue is not flagged.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00d6",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Extension test: with a pij-started turn running, a second and third normal send are claimed and steered before turn end; an FYI is not; with the seat's switch off, the second send waits for turn end. Daemon test: the switch verb flips the setting and the extension reads it; a busy non-steering seat's receipt carries the note.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-00d6",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Live canary on a disposable Copilot seat; evidence file with the 5 msg ids and their enqueued/claimed/acked times inside one turn, the clean turn end, and the switch-off control.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-00d6",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "s12 test: a 20 min request held 19 min in delivery then delivered gets its check-in 20 min after delivery, not 1 min after; the check-in text names the held time.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6",
+          "phase": "ph-00d6",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "s12 test: a limited request answered by --in-reply-to from its holder gets no check-in; one from a non-holder still does; replaying the reply, or answering by both paths, is a no-op.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: cost",
+          "phase": "ph-00d6",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "No new timer, poll or launch. No new store write for held time (existing columns). The PA flag is one indexed query inside the existing PA digest round, constant per digest, not per seat per tick. Claiming during a running turn uses the extension's existing claim call, once per message, not per tick; the per-seat switch is read with that claim, not polled. Measure the live fleet before and after."
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8: docs and states",
+          "phase": "ph-00d6",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

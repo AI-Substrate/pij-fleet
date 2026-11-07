@@ -53,6 +53,24 @@ pub struct QueuedRequest {
     pub delivering_to: Option<SeatId>,
 }
 
+/// A message delivery held behind a busy turn past the threshold (plan 214,
+/// AC2): shown in one digest, then never again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldMessage {
+    /// The queue row, so the digest can mark it shown.
+    pub job_id: i64,
+    /// Who it was for.
+    pub recipient: SeatId,
+    /// Who sent it, when known.
+    pub sender: Option<SeatId>,
+    /// The message id.
+    pub msg_id: String,
+    /// How long it was held, in ms (to now while still queued).
+    pub held_ms: u64,
+    /// Still waiting for the recipient's turn to end.
+    pub still_queued: bool,
+}
+
 /// A PA's fleet: every live seat sharing its prime's repository.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FleetView {
@@ -68,6 +86,9 @@ pub struct FleetView {
     pub anomalies: Vec<FleetAnomaly>,
     /// Requests waiting on a role with no live holder (plan 199).
     pub queued: Vec<QueuedRequest>,
+    /// Messages held behind a busy turn past the threshold, not yet shown
+    /// (plan 214).
+    pub held: Vec<HeldMessage>,
     /// The watchdog interval, which also defines a ready seat as overdue.
     pub interval_ms: u64,
 }
@@ -188,6 +209,27 @@ impl FleetView {
                     request.requester,
                     request.delivering_to.as_ref().map_or("?", SeatId::as_str),
                     human_duration(request.waiting_ms)
+                );
+            }
+        }
+
+        if !self.held.is_empty() {
+            text.push_str(
+                "\nMessages held behind a busy turn (each shown once; a seat whose mid-turn steering is off, or whose harness cannot steer, waits for its turn to end):",
+            );
+            for held in &self.held {
+                let _ = write!(
+                    text,
+                    "\n  {} to {}: msg {} held {}{}",
+                    held.sender.as_ref().map_or("?", SeatId::as_str),
+                    held.recipient,
+                    held.msg_id,
+                    human_duration(held.held_ms),
+                    if held.still_queued {
+                        ", still queued"
+                    } else {
+                        ""
+                    }
                 );
             }
         }

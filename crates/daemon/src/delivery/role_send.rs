@@ -1137,6 +1137,62 @@ async fn deliver_drained(
     }
 }
 
+/// A reply answers a role request (plan 214, F68): a local send from the
+/// request's holder whose `--in-reply-to` names a delivered request sets its
+/// `answered_at`, which stops its check-in and escalation. A send from any
+/// other seat (the requester, a third party) answers nothing. The stamp is
+/// set once, the same field s06's `pij output --answers` sets, so neither
+/// path counts twice. One primary-key read per reply; a failure is logged and
+/// never fails the send. With `audit`, the stamp and the event commit in one
+/// transaction, run as their own task and then published (ruling C32 (3);
+/// review of #152, F006): no answer without its audit, and a failed append
+/// answers nothing, so a later reply can. True when this reply answered it.
+pub async fn answer_by_reply(
+    services: &Services,
+    from: &SeatId,
+    in_reply_to: Option<&str>,
+    now_ms: u64,
+    audit: Option<pij_core::model::Event>,
+) -> bool {
+    let Some(id) = in_reply_to else {
+        return false;
+    };
+    let store = services.governance.store();
+    let request = match store.role_request(id).await {
+        Ok(Some(request)) => request,
+        Ok(None) => return false,
+        Err(cause) => {
+            eprintln!("pij-rs: reply to request {id}: {cause}");
+            return false;
+        }
+    };
+    if request.state != RequestState::Delivered || request.holder.as_deref() != Some(from.as_str())
+    {
+        return false;
+    }
+    let stamped = match audit {
+        Some(audit) => {
+            let (store, id) = (store.clone(), id.to_string());
+            services
+                .event_bus
+                .publish_committed_batch(async move {
+                    store
+                        .mark_role_request_answered_audited(&id, now_ms, audit)
+                        .await
+                })
+                .await
+        }
+        None => store.mark_role_request_answered(id, now_ms).await,
+    };
+    match stamped {
+        Ok(stamped) => stamped,
+        Err(cause) => {
+            eprintln!("pij-rs: reply to request {id} not recorded as its answer: {cause}");
+            false
+        }
+    }
+}
+
 /// What the time-limit pass did for one request (plan 205, s12).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LimitAction {
@@ -1225,9 +1281,13 @@ pub async fn time_limit_step(
             return None;
         }
     };
-    let (stage, since) = match request.checkin_at {
-        None => (LimitStage::CheckIn, delivered_at),
-        Some(checked_in) => (LimitStage::Notice, checked_in),
+    let (stage, since, held_ms) = match request.checkin_at {
+        None => match arrival(services, request, &holder, delivered_at).await? {
+            Arrival::Reached(at) => (LimitStage::CheckIn, at, at.saturating_sub(delivered_at)),
+            // A gone holder never receives it; the PA hears from the limit.
+            Arrival::HolderGone => (LimitStage::CheckIn, delivered_at, 0),
+        },
+        Some(checked_in) => (LimitStage::Notice, checked_in, 0),
     };
     if now_ms < since.max(card_at).saturating_add(limit) {
         return None;
@@ -1274,7 +1334,7 @@ pub async fn time_limit_step(
         LimitStage::CheckIn => match live_seat(services.registry.as_ref(), holder.as_str()).await {
             Ok(Some(seat)) => Ok((
                 LimitStage::CheckIn,
-                check_in(services, request, &seat, limit, now_ms).await,
+                check_in(services, request, &seat, limit, held_ms, now_ms).await,
             )),
             Ok(None) => Ok((
                 LimitStage::Notice,
@@ -1410,11 +1470,50 @@ async fn send_limit(
     .0
 }
 
+/// Where a delivered request is on its way to the holder's session.
+enum Arrival {
+    /// It reached the session at this time (ms).
+    Reached(u64),
+    /// Still held, and the holder is no longer live.
+    HolderGone,
+}
+
+/// When the request reached its holder's session (plan 214, F73): the check-in
+/// clock starts there, not at admission, so time held behind a busy turn is
+/// never counted against the holder. `None` while it is still held for a live
+/// holder: no check-in yet. One indexed read, plus a registry read only while
+/// it is held.
+async fn arrival(
+    services: &Services,
+    request: &RoleRequest,
+    holder: &SeatId,
+    delivered_at: u64,
+) -> Option<Arrival> {
+    let store = services.governance.store();
+    match store.message_reached_at(holder.as_str(), &request.id).await {
+        Ok(Some(at)) => return Some(Arrival::Reached(at.max(delivered_at))),
+        Ok(None) => {}
+        Err(cause) => {
+            eprintln!("pij-rs: time limits: arrival of {}: {cause}", request.id);
+            return None;
+        }
+    }
+    match live_seat(services.registry.as_ref(), holder.as_str()).await {
+        Ok(None) => Some(Arrival::HolderGone),
+        Ok(Some(_)) => None,
+        Err(refusal) => {
+            eprintln!("pij-rs: time limits: holder {holder}: {}", refusal.message);
+            None
+        }
+    }
+}
+
 async fn check_in(
     services: &Services,
     request: &RoleRequest,
     seat: &SeatDescriptor,
     limit: u64,
+    held_ms: u64,
     now_ms: u64,
 ) -> LimitAction {
     let address = RoleAddress {
@@ -1422,8 +1521,17 @@ async fn check_in(
         instance: request.instance.clone(),
     }
     .display();
+    // F73: the clock ran from arrival; say how long delivery held it first.
+    let held = if held_ms >= 60_000 {
+        format!(
+            " It waited {} in delivery before it reached you; the limit counts from then.",
+            human_duration(held_ms)
+        )
+    } else {
+        String::new()
+    };
     let body = format!(
-        "[pij time limit] Request {} ({address} in {}, from {}) passed its limit of {} with no card update. \
+        "[pij time limit] Request {} ({address} in {}, from {}) passed its limit of {} with no card update.{held} \
          Write down what you have, update your card (pij report now \"<what you did>\" \"<what is next>\"), \
          and say why it needs longer. Nothing has been stopped.",
         request.id,
