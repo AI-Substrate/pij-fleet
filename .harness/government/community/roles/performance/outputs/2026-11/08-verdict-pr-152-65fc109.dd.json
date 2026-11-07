@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "65fc109ffc83dd4244aa6dd9f04a8ba1840d3ec5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6711957477",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:152",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After merge/deploy: same-incarnation launch/CPU/RSS reading and legitimate reply/claim/SDK latency/rates, including explicit paneless output-answer workaround cost; no live TS-to-daemon proof claimed."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `65fc109ffc83dd4244aa6dd9f04a8ba1840d3ec5`. **P152-F004 is closed.**\n\nReviewed `d8bf337..65fc109`. `ownProcStart` stores only this runtime instance's own process birth stamp. Boot, correlated replies, controls and the other own-PID caller context use `selfProcStart`; the only reader invocation left is inside that synchronous getter. This is a lifetime-bound own-process value, not a generic cache of potentially recycled external PIDs, and it does not replace daemon-side liveness checks.\n\n**Normal budget:** one existing ps observation at the first successful boot/read per OMP/Pi runtime instance, **zero additional process-start probes per subsequent send/control, zero per tick**. One numeric slot per runtime; no expiry timer, sweep or map. A failed initial observation throws without populating the cache, so a later retry can observe again; this is not a hard one-attempt failure cap. The legacy default startup ps helper is unchanged: this closes the newly repeated send path, not a claim that all runtime startup is launch-free.\n\nExact-head TS executes the new boot + correlated reply + control budget test: the reader seam receives only `[process.pid]`, and both messages keep the same caller procStart. Source inspection ties that one seam invocation to the unchanged default helper's one command. No local probe was needed.\n\n**Other delta:** VerifiedPull and its ephemeral proof allocation are removed. Paneless correlated requests now refuse; shim subject verification and ordinary reply-resolver reads can still be paid before refusal. Pane-bound requests retain the existing registry/liveness path. The conditional closed-table lookup remains: only on an open-table miss, with full closed-row/body materialization. No new timer, automatic retry, authentication exchange or launch site.\n\nThe intentional paneless workaround is not cost-free: an uncorrelated delivery plus a separate `pij output --answers` can pay the existing output writer's store/git/ddocs/notification work in addition to delivery. It is explicit per-action work, not a new background loop. No new no-delivery answer path was introduced.\n\nPrior recipient-scoped held queries, one shared terminal watcher, event-driven during-turn claims/15-second backstop, per-member retention and atomic answer/audit/publication-lock qualifications stand. Previously reviewed main changes are inherited.\n\n**CI:** exact-head [42405277900](https://github.com/AI-Substrate/pij-fleet/actions/runs/42405277900) succeeds. Node 22 runs **114 rust-runtime tests**, including the cache budget and shared OMP wire contract; Vitest **2,248 passed/six skipped**. JUnit has **2,161 executed Rust cases, zero failures/errors**, including metadata-replay refusal/advice/uncorrelated control, closed-request gate, pane/OMP positives, atomic answer/audit and all six spawn guards. Latest Delivers **42405292351** succeeds at this SHA. F106 remains: fixture replay is not a live TS-to-daemon run.\n\nNo local build, test, mutation, runtime probe or worktree edit. Migration 0043 is unchanged. Security/reviewer own the full C32 and reply-compatibility verdict. After-deploy same-incarnation launches/CPU/RSS and legitimate reply/claim/SDK latency/rates remain owed.\n"
+		}
+	]
+}
