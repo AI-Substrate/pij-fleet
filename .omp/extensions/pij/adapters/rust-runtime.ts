@@ -196,6 +196,8 @@ export class RustRuntimeSession {
 	private flushChain: Promise<void> = Promise.resolve();
 	private pushedChain: Promise<void> = Promise.resolve();
 	private readonly lastInbound = new Map<string, string>();
+	/** This process's start, observed once: it cannot change while the process lives. */
+	private ownProcStart: number | undefined;
 	/** Retained until native consumption AND a successful daemon acknowledgement. */
 	private readonly pendingConsumption = new Map<string, PendingConsumption>();
 	/** Claims are serialized, so only the latest ACK can overtake a claim response. */
@@ -301,7 +303,7 @@ export class RustRuntimeSession {
 		const previousSelf = this.self || undefined;
 		const replacing =
 			previousSelf !== undefined && (input.reason === "new" || input.reason === "fork");
-		const procStart = this.client.processStart(process.pid);
+		const procStart = this.selfProcStart();
 		const seats = await this.client.seats();
 		const choice = this.chooseIdentity(input, procStart, seats, replacing);
 		const accepted = await this.registerIdentity(choice, input.notice, (id) =>
@@ -479,6 +481,16 @@ export class RustRuntimeSession {
 		}
 	}
 
+	/**
+	 * The default reader launches `ps`, so it runs once per runtime, not per
+	 * send (review of #152, P152-F004).
+	 */
+	private selfProcStart(): number {
+		const start = this.ownProcStart ?? this.client.processStart(process.pid);
+		this.ownProcStart = start;
+		return start;
+	}
+
 	async send(
 		to: string,
 		body: string,
@@ -516,21 +528,24 @@ export class RustRuntimeSession {
 		// Keyed like `senderLabel`, so a reply to the shown sender threads onto its message.
 		const replyKey = renderDestination(destination.value);
 		const inReplyTo = this.lastInbound.get(replyKey);
+		// A control and a reply carry caller proof: the daemon binds a reply to
+		// a role request to its caller and refuses one with no context
+		// (ruling C32; review of #152, S152-001).
+		const caller =
+			command === undefined && inReplyTo === undefined
+				? undefined
+				: buildCallerContext(process.env, {
+						cwd: process.cwd(),
+						pid: process.pid,
+						procStart: this.selfProcStart(),
+					});
 		const receipt = await this.client.send({
 			from: this.self,
 			to: destination.value,
 			body,
 			msg_id: msgId,
-			...(command === undefined
-				? {}
-				: {
-						command,
-						caller: buildCallerContext(process.env, {
-							cwd: process.cwd(),
-							pid: process.pid,
-							procStart: this.client.processStart(process.pid),
-						}),
-					}),
+			...(command === undefined ? {} : { command }),
+			...(caller === undefined ? {} : { caller }),
 			...(fyi ? { fyi: true } : {}),
 			...(force === undefined ? {} : { force: true, reason: force.reason }),
 			...(inReplyTo === undefined ? {} : { in_reply_to: inReplyTo }),
@@ -1412,7 +1427,7 @@ export class RustRuntimeSession {
 									caller: buildCallerContext(process.env, {
 										cwd: process.cwd(),
 										pid: process.pid,
-										procStart: this.client.processStart(process.pid),
+										procStart: this.selfProcStart(),
 									}),
 								}),
 					});

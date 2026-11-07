@@ -61,7 +61,7 @@ use pij_core::model::{
     DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
 };
 use pij_core::orchestration::PrimeState;
-use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, QueuedRequest};
+use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, HeldMessage, QueuedRequest};
 use pij_core::ports::SeatFilter;
 use pij_core::ports::SpineWindow;
 use pij_core::report::CardRecord;
@@ -554,6 +554,7 @@ impl PaWatchdog {
                     now_ms,
                 )
                 .await;
+                flag_shown(services, &view, &delivery, now_ms).await;
                 audit(
                     services,
                     "watchdog.round",
@@ -593,6 +594,7 @@ impl PaWatchdog {
                 let body = prime_active_body(&prime.id, &view.digest());
                 let (sent, cold_check) =
                     wake_pa(services, pa, body, msg_id, PRIME_ACTIVE_REASON, now_ms).await;
+                flag_shown(services, &view, &sent, now_ms).await;
                 payload["seats"] = json!(view.rows.len());
                 payload["delivery"] = json!(sent);
                 payload["cold_check"] = json!(cold_check);
@@ -985,6 +987,7 @@ impl PaWatchdog {
             .collect::<Vec<_>>();
         let anomalies = stale_cards(services, &rows, now_ms).await;
         let queued = queued_requests(services, pa, now_ms).await;
+        let held = held_messages(services, &rows, now_ms).await;
         FleetView {
             pa: pa.id.clone(),
             prime: prime.map(|prime| prime.id.clone()),
@@ -992,6 +995,7 @@ impl PaWatchdog {
             rows,
             anomalies,
             queued,
+            held,
             interval_ms: interval_secs * 1_000,
         }
     }
@@ -1139,6 +1143,52 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
         DeliveryOutcome::Queued { .. } => "queued",
         DeliveryOutcome::Held { .. } => "held",
         DeliveryOutcome::Refused { .. } => "refused",
+    }
+}
+
+/// Messages to this fleet held past the threshold and not yet shown (plan
+/// 214, AC2): one read of two partial indexes per digest, constant per digest,
+/// never per seat. A failed read leaves the list empty.
+async fn held_messages(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec<HeldMessage> {
+    let fleet: Vec<&str> = rows.iter().map(|row| row.seat.id.as_str()).collect();
+    match services
+        .governance
+        .store()
+        .unflagged_held_deliveries(&fleet, now_ms / 1_000)
+        .await
+    {
+        Ok(held) => held
+            .into_iter()
+            .map(|held| HeldMessage {
+                job_id: held.job_id,
+                recipient: SeatId::from(held.recipient.as_str()),
+                sender: held.sender.as_deref().map(SeatId::from),
+                msg_id: held.msg_id,
+                held_ms: held.held_ms,
+                still_queued: held.still_queued,
+            })
+            .collect(),
+        Err(cause) => {
+            eprintln!("pa watchdog: held deliveries unavailable: {cause}");
+            Vec::new()
+        }
+    }
+}
+
+/// The digest carrying `view` was admitted: its held messages are never shown
+/// again. One write, only when it listed any.
+async fn flag_shown(services: &Services, view: &FleetView, delivery: &str, now_ms: u64) {
+    if view.held.is_empty() || !matches!(delivery, "delivered" | "queued" | "held") {
+        return;
+    }
+    let ids: Vec<i64> = view.held.iter().map(|held| held.job_id).collect();
+    if let Err(cause) = services
+        .governance
+        .store()
+        .flag_held_deliveries(&ids, now_ms / 1_000)
+        .await
+    {
+        eprintln!("pa watchdog: held deliveries not marked shown: {cause}");
     }
 }
 

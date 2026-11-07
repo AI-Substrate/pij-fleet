@@ -1542,30 +1542,7 @@ impl Queue for SqliteQueue {
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
-            sqlx::query(
-                "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine) \
-                 VALUES (?1, ?2, ?3, ?4) \
-             ON CONFLICT (recipient, sender_machine, msg_id) DO NOTHING",
-            )
-            .bind(&claimed.serial_key)
-            .bind(&claimed.dedupe_key)
-            .bind(encode_origin(origin))
-            .bind(claimed.dedupe_origin.as_deref().unwrap_or_default())
-            .execute(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
-            sqlx::query(
-                "DELETE FROM delivered_messages WHERE recipient = ?1 AND seq NOT IN (\
-                 SELECT seq FROM delivered_messages WHERE recipient = ?1 \
-                 ORDER BY seq DESC LIMIT ?2\
-             )",
-            )
-            .bind(&claimed.serial_key)
-            .bind(delivered_id_capacity)
-            .execute(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
-
+            record_delivered(&mut tx, job, &claimed, origin, delivered_id_capacity).await?;
             tx.commit().await.map_err(adapter_error)?;
             Ok(DeliveryAck {
                 recipient: SeatId(claimed.serial_key),
@@ -1611,4 +1588,53 @@ fn decode_origin(origin: &str) -> Result<DeliveryOrigin> {
             message: format!("delivered message has unknown origin {other:?}"),
         }),
     }
+}
+
+/// The record every delivery ack writes, in its transaction: the held flag
+/// (plan 214, AC2), the delivered-id ledger row and its per-recipient
+/// retention.
+async fn record_delivered(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    job: JobId,
+    claimed: &Job,
+    origin: DeliveryOrigin,
+    delivered_id_capacity: i64,
+) -> Result<()> {
+    // A hold past the threshold is remembered for the PA digest: a
+    // primary-key insert on the row just written; a message the digest
+    // already showed while queued keeps its flag.
+    sqlx::query(
+        "INSERT INTO held_deliveries (job_id, recipient) SELECT id, serial_key FROM jobs \
+         WHERE id = ?1 AND acked_at - enqueued_at > ?2 \
+     ON CONFLICT (job_id) DO NOTHING",
+    )
+    .bind(job.0 as i64)
+    .bind(crate::held::HELD_FLAG_SECS)
+    .execute(&mut **tx)
+    .await
+    .map_err(adapter_error)?;
+    sqlx::query(
+        "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine) \
+         VALUES (?1, ?2, ?3, ?4) \
+     ON CONFLICT (recipient, sender_machine, msg_id) DO NOTHING",
+    )
+    .bind(&claimed.serial_key)
+    .bind(&claimed.dedupe_key)
+    .bind(encode_origin(origin))
+    .bind(claimed.dedupe_origin.as_deref().unwrap_or_default())
+    .execute(&mut **tx)
+    .await
+    .map_err(adapter_error)?;
+    sqlx::query(
+        "DELETE FROM delivered_messages WHERE recipient = ?1 AND seq NOT IN (\
+         SELECT seq FROM delivered_messages WHERE recipient = ?1 \
+         ORDER BY seq DESC LIMIT ?2\
+     )",
+    )
+    .bind(&claimed.serial_key)
+    .bind(delivered_id_capacity)
+    .execute(&mut **tx)
+    .await
+    .map_err(adapter_error)?;
+    Ok(())
 }

@@ -42,6 +42,7 @@ fn view(rows: Vec<FleetRow>) -> FleetView {
         rows,
         anomalies: Vec::new(),
         queued: Vec::new(),
+        held: Vec::new(),
         interval_ms: INTERVAL_MS,
     }
 }
@@ -211,5 +212,37 @@ fn digest_lists_queued_role_requests_only_when_there_are_some() {
     assert!(
         !digest.contains("request req-b from pij-asker, waiting"),
         "a stuck request is not listed as queued: {digest}"
+    );
+}
+
+/// Plan 214, AC2: messages held behind a busy turn are listed with sender,
+/// recipient, msg id, held time and whether still queued; none, no section.
+#[test]
+fn the_digest_lists_messages_held_behind_a_busy_turn() {
+    use pij_core::pa_digest::HeldMessage;
+    let mut fleet = view(Vec::new());
+    assert!(!fleet.digest().contains("Messages held"));
+    fleet.held = vec![
+        HeldMessage {
+            job_id: 7,
+            recipient: SeatId::from("pij-busy".to_string()),
+            sender: Some(SeatId::from("pij-pm".to_string())),
+            msg_id: "m-1".into(),
+            held_ms: 95 * 60_000,
+            still_queued: false,
+        },
+        HeldMessage {
+            job_id: 8,
+            recipient: SeatId::from("pij-busy".to_string()),
+            sender: None,
+            msg_id: "m-2".into(),
+            held_ms: 20 * 60_000,
+            still_queued: true,
+        },
+    ];
+    let digest = fleet.digest();
+    assert!(
+        digest.contains("\n  pij-pm to pij-busy: msg m-1 held 1h35m\n  ? to pij-busy: msg m-2 held 20m, still queued"),
+        "{digest}"
     );
 }

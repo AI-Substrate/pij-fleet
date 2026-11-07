@@ -709,6 +709,19 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         Err(response) => return *response,
     };
     let msg_id = state.services.delivery.next_message_id();
+    // The shim derives its sender from the caller, so the reply check binds.
+    let reply = match super::reply_sender(
+        &state,
+        "shim",
+        &from,
+        call.in_reply_to.as_deref(),
+        request.caller.as_ref(),
+    )
+    .await
+    {
+        Ok(evidence) => evidence,
+        Err(response) => return *response,
+    };
     // A send to `role:<id>` resolves through the directory first (plan 199).
     if let Some(response) = super::role_send::route(
         &state,
@@ -734,6 +747,11 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
     )
     .await
     {
+        // A holder's reply addressed to a role answers too, when the role send
+        // was accepted; a refused receipt is HTTP 200 too (review of #152, F002).
+        if super::role_send::accepted(&response) {
+            super::answered_by(&state, &from, call.in_reply_to.as_deref(), reply).await;
+        }
         return response;
     }
     // `seat@machine`: the receiving daemon applies its own cold-wake guard and
@@ -790,6 +808,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
     };
     let question = call.fyi && pij_core::fyi::looks_like_a_question(&msg.body);
     let recipient = msg.to.clone();
+    let (reply_from, reply_to) = (msg.from.clone(), msg.in_reply_to.clone());
     let accepted = if call.fyi {
         state.services.delivery.hold_fyi(msg).await
     } else {
@@ -800,6 +819,15 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
             receipt.cold_check = cold_check;
             if call.fyi {
                 super::fyi::after_hold(&state, &recipient, question, &mut receipt).await;
+            }
+            if !matches!(
+                receipt.outcome,
+                pij_core::model::DeliveryOutcome::Refused { .. }
+            ) {
+                super::answered_by(&state, &reply_from, reply_to.as_deref(), reply).await;
+                if !call.fyi {
+                    super::note_turn_wait(&state, &recipient, &mut receipt).await;
+                }
             }
             super::envelope(
                 axum::http::StatusCode::OK,

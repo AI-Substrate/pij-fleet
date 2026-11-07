@@ -13,6 +13,7 @@ pub mod decisions;
 pub mod dispatch;
 pub mod fleet;
 pub mod governance;
+pub mod held;
 pub mod migrate;
 pub mod orchestration;
 pub mod outputs;
@@ -23,10 +24,12 @@ pub mod role_requests;
 pub mod spine;
 mod stalls;
 pub mod status;
+pub mod steering;
 
 pub use claims::{Claim, ClaimKey, DeliveryCommit, DeliveryNote, DeliveryRecord, ReleaseOutcome};
 pub use community::{Assignment, AssignmentCommit, CommunityPointer};
 pub use governance::GovernanceOutcome;
+pub use held::{HELD_FLAG_LIMIT, HELD_FLAG_SECS, HeldDelivery};
 pub use migrate::{SCHEMA_VERSION, StorePool, open, require_current_schema, schema_version};
 pub use orchestration::{
     BatonLease, DispatchAck, LeaseClaim, SpawnRecordOutcome, SqliteOrchestration, StreamReservation,
@@ -40,3 +43,4 @@ pub use role_requests::{
     REQUESTS_LIST_LIMIT, ReplyMode, RequestState, RoleRequest, WITHDRAWN_EVENT, Withdrawal,
 };
 pub use spine::SqliteSpine;
+pub use steering::SteeringSetting;

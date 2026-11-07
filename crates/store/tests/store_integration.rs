@@ -2481,3 +2481,106 @@ async fn role_requests_left_delivering_are_recovered_at_boot() {
         "a second recovery finds nothing"
     );
 }
+
+/// Review of #152, F006 (ruling C32 (3)): a reply's answer stamp and its audit
+/// event commit together. An append that fails leaves the request unanswered
+/// and writes no event; the retry answers it once with one event; a repeat,
+/// or `pij output --answers` afterwards, changes nothing.
+#[tokio::test]
+async fn a_reply_answer_and_its_audit_commit_together_or_not_at_all() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool.clone());
+    store
+        .record_role_request(&RoleRequest {
+            id: "req-audit".into(),
+            project: "pij".into(),
+            role: "coder".into(),
+            instance: String::new(),
+            requester: "pij-asker".into(),
+            body: "go".into(),
+            in_reply_to: None,
+            fyi: false,
+            reply: ReplyMode::Wake,
+            limit_ms: Some(60_000),
+            state: RequestState::Delivered,
+            holder: Some("pij-coder".into()),
+            created_at: 1,
+            delivered_at: Some(10),
+            checkin_at: None,
+            escalated_at: None,
+            answered_at: None,
+        })
+        .await
+        .expect("record");
+    let audit = || Event {
+        seq: None,
+        v: 1,
+        at: 20,
+        kind: "request.answered_by_reply".into(),
+        seat: Some(SeatId::from("pij-coder")),
+        payload: r#"{"request":"req-audit","from":"pij-coder"}"#.into(),
+    };
+    let audits = || {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM spine_events WHERE kind = 'request.answered_by_reply'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    let answered = || {
+        let store = store.clone();
+        async move {
+            store
+                .role_request("req-audit")
+                .await
+                .unwrap()
+                .and_then(|request| request.answered_at)
+        }
+    };
+    sqlx::query(
+        "CREATE TRIGGER fail_reply_audit BEFORE INSERT ON spine_events \
+         WHEN NEW.kind = 'request.answered_by_reply' \
+         BEGIN SELECT RAISE(ABORT, 'audit append failed'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        store
+            .mark_role_request_answered_audited("req-audit", 20, audit())
+            .await
+            .is_err()
+    );
+    assert_eq!(answered().await, None, "no answer without its audit");
+    assert_eq!(audits().await, 0);
+    sqlx::query("DROP TRIGGER fail_reply_audit")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (events, stamped) = store
+        .mark_role_request_answered_audited("req-audit", 21, audit())
+        .await
+        .unwrap();
+    assert!(stamped && events.len() == 1 && events[0].seq.is_some());
+    assert_eq!(answered().await, Some(21));
+    assert_eq!(audits().await, 1);
+    let (events, stamped) = store
+        .mark_role_request_answered_audited("req-audit", 22, audit())
+        .await
+        .unwrap();
+    assert!(!stamped && events.is_empty(), "set once, audited once");
+    assert!(
+        !store
+            .mark_role_request_answered("req-audit", 23)
+            .await
+            .unwrap(),
+        "output --answers finds it set"
+    );
+    assert_eq!((answered().await, audits().await), (Some(21), 1));
+}
