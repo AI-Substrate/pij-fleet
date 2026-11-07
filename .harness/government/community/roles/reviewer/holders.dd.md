@@ -68,3 +68,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 112 | 2026-11-07T18:57:39.750Z | 2026-11-07T20:02:38.230Z | pij-steady-otter | pij-steady-otter | PRD 003 + workstream 003 (#112) | #112 merged 5b62ef6a |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 164 | 2026-11-07T19:04:33.063Z | 2026-11-07T19:43:59.890Z | pij-steady-otter | pij-steady-otter | F108 detector fix (#164) | #164 merged 530ac84b |
 | — | pij-whole-spoonbill | copilot | 8fa7cf33-9797-46f9-886b-ac232f14af2e | ops.osk.lan | 163 | 2026-11-07T19:46:58.638Z | — | pij-steady-otter | — | second reviewer seat (scaling rule): #163 whole-PR verdict | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 165 | 2026-11-07T20:41:12.156Z | — | pij-steady-otter | — | F110 fix (#165) | — |

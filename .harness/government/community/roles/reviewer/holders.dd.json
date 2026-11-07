@@ -649,6 +649,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "second reviewer seat (scaling rule): #163 whole-PR verdict"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T20:41:12.156Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "165",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "F110 fix (#165)"
 				}
 			]
 		}
