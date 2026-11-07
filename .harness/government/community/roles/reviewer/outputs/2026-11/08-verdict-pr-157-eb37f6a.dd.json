@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b6da-bb62-7c00-a429-0ed4e50458de",
+				"date": "2026-11-08",
+				"head": "eb37f6a4aa586205da2711b0fc297c0efdf4759b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/157#issuecomment-6710006502",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:157",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #157 repair correctness review\n\n## A) Verdict\n\n**BLOCK** at `eb37f6a4aa586205da2711b0fc297c0efdf4759b`.\n\n**F001 and F003 closed. F002 partially open:** non-executed Delivers checks count as parser proof. **F004, new:** realpath lookup errors still permit silent CLI exit 0.\n\n## B) Scope and proof\n\nReviewed `0eb47a422d07903c065edf72b59d4876d2d256d4..eb37f6a4aa586205da2711b0fc297c0efdf4759b`, principally 6c01d4ba and its main merge. Previously reviewed main imports are separate.\n\nClean pinned checkout; GitHub and ls-remote agree, CLEAN. Latest checks passed, including the successful delivers run after the cancelled predecessor. CI `42391070697`, attempt 1, is at this exact head. Both Node jobs ran all 21 pr-freeze tests; each reports 2,225 Vitest cases passed and six skipped. Typecheck/lint succeeded.\n\nThe two counterexamples below are source-derived, not locally reproduced. No local builds/tests, script runs, dependency setup, fetches or worktree mutations were performed. The guard mutations are author-reported, not reviewer runs.\n\n## C) F002, P2: SKIPPED/NEUTRAL is not Delivers parser proof\n\n`harness/scripts/pr-freeze.ts:186` collapses SUCCESS, NEUTRAL and SKIPPED into `pass`. The new parser-absent fallback (`:402-409`) checks only that collapsed state, so it calls a skipped or neutral Delivers check \"passed on this head\".\n\nConcrete supported-input path: keep the healthy fake world's head/base/CLEAN/ready/migration/other checks; omit the parser; supply a completed latest delivers check with conclusion SKIPPED and a malformed Delivers body. checkState returns pass, both checks and delivers conditions succeed, report.final becomes true, render prints FINAL and main returns 0. NEUTRAL follows the same path. GitHub accepting a skipped check for merge is not evidence that CI's parser parsed this body.\n\nThe new absent/failing/queued/passing controls are correct but omit non-execution conclusions. Preserve the latest selected result's strict parser-success evidence, rather than reusing generic merge-acceptable state. Add skipped/neutral Delivers negatives with a real SUCCESS positive. No new parser is needed.\n\n## D) F004, P2: entrypoint lookup errors are swallowed outside main\n\n`isMain` catches every fileURL/realpath failure and returns false (`pr-freeze.ts:520-525`). The top-level guard then never calls main or process.exit (`:530-531`), and an otherwise normal CLI process falls through with no diagnostic and exit 0.\n\nThis affects a CLI already loaded by Node if an entry/module path becomes unavailable or a filesystem lookup fails before the guard, for example when the source/entry link disappears between load and realpath. The exception is not proof that the module was imported as a library. It also bypasses main's diagnostic/exit-2 catch.\n\nThe healthy-symlink test now proves that particular launch prints usage and exits 2. It does not cover entrypoint lookup failure. Separate a proven non-main comparison from lookup failure; fail the latter visibly instead of success-shaped fallthrough, with a CLI fault control requiring a diagnostic and nonzero tool-failure exit.\n\n## E) F001 and F003 closed\n\nLatest check selection now ignores start timestamps and orders same-workflow/name runs by Actions job id. Absent/null/empty/zero start cases, queued/in-progress runs, newer successful re-run, separate workflows with identical names, unordered runs and superseded failure are covered. Ambiguous multiple runs without job ordering do not pass.\n\nWorktree reporting/reuse requires the expected name, exact full head, detached marker and empty porcelain status. Branch-attached, dirty and wrong-head controls refuse reuse/creation; the tool never moves an existing checkout automatically. Worktree presence remains informational to PR finality, as specified.\n\n## F) Other paths and cost\n\nHead disagreement, missing head, non-main, non-CLEAN, draft, empty checks and failing latest checks remain explicit failures. The added-migration guard checks numbering above main and the matching top SCHEMA_VERSION. Built-parser body failure remains NOT FINAL.\n\nThe new URL processing is parsing, not execution. Commands still use argv/stdin, with raw SHA fetches into FETCH_HEAD and no constructed shell command. Per-matching-worktree status reads add finite local work to this manual invocation; there is no new recurring loop. Security and performance retain their independent verdict scopes.\n\n## G) Handover\n\nKeep the repaired ordering/worktree/symlink-positive controls. Fix strict Delivers proof and visible entrypoint-error handling, then freeze one new head with the focused negatives in CI. Harness observation DL-008 records both missing guards. No product code was changed by this reviewer.\n"
+		}
+	]
+}
