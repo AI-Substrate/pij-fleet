@@ -1,5 +1,5 @@
 {
-	"why": "Known coverage gaps, each with its owner (plan 210, req-31). harness/scripts/coverage-check.ts skips these rows and fails on an exemption that is now covered or names no row, so this list only shrinks. Never add a row to hide new work: deliver it or set it dropped.",
+	"why": "Known coverage gaps, each with its owner (plan 210, req-31). harness/scripts/coverage-check.ts skips these rows. Every address must also be in APPROVED_EXEMPTIONS in that file, so this list can only shrink: an added, swapped or duplicate row fails, as does a row that is now covered or names no row. When a gap is closed, delete its row here and in APPROVED_EXEMPTIONS. Never add a row to hide new work: deliver it or set it dropped.",
 	"rows": [
 		{
 			"address": "docs/project/prds/001-pij-community.dd.json#requirements/req-26",
