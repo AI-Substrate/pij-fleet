@@ -14,6 +14,7 @@ pub mod bg_routing;
 mod claude_bind;
 pub mod codex_bind;
 pub mod community;
+mod compaction_wake;
 pub mod death_sweep;
 pub mod delivery;
 pub mod events;

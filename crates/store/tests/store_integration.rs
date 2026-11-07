@@ -11,6 +11,7 @@
 
 mod support;
 
+use pij_core::compaction_wake::Settled;
 use pij_core::error::PijError;
 use pij_core::model::{
     Event, Harness, ProcIdentity, SeatDescriptor, SeatId, SemanticState, Seq, SystemState,
@@ -2583,4 +2584,50 @@ async fn a_reply_answer_and_its_audit_commit_together_or_not_at_all() {
         "output --answers finds it set"
     );
     assert_eq!((answered().await, audits().await), (Some(21), 1));
+}
+
+/// Review of #167, F004: the round read compaction A, then a newer compact B
+/// of the same seat was recorded before A's wake mark. The mark is refused,
+/// authorizes no send and leaves A pending; once B is given up, A's mark
+/// succeeds, once.
+#[tokio::test]
+async fn a_wake_mark_is_refused_while_a_newer_compaction_of_the_seat_is_pending() {
+    let fresh = FreshStore::new();
+    let store =
+        pij_store::SqliteOrchestration::new(pij_store::open(&fresh.path()).await.expect("open"));
+    let seat = SeatId::from("pij-coder");
+    store.record_compaction(&seat, "m-a", 1).await.unwrap();
+    let read = store.pending_compactions().await.unwrap();
+    assert_eq!(read.len(), 1);
+    store.record_compaction(&seat, "m-b", 2).await.unwrap();
+
+    assert!(
+        !store.mark_compaction_woken(&seat, "m-a", 3).await.unwrap(),
+        "a newer compaction is pending: no send"
+    );
+    assert_eq!(
+        store.compaction_settled(&seat, "m-a").await.unwrap(),
+        Some(None),
+        "left pending, not superseded"
+    );
+    // Another seat's pending compaction vetoes nothing.
+    store
+        .record_compaction(&SeatId::from("pij-other"), "m-c", 4)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .settle_compaction(&seat, "m-b", Settled::Undelivered, 5)
+            .await
+            .unwrap()
+    );
+    assert!(store.mark_compaction_woken(&seat, "m-a", 6).await.unwrap());
+    assert!(
+        !store.mark_compaction_woken(&seat, "m-a", 7).await.unwrap(),
+        "once"
+    );
+    assert_eq!(
+        store.compaction_settled(&seat, "m-a").await.unwrap(),
+        Some(Some("woken".to_string()))
+    );
 }

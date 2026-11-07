@@ -265,6 +265,24 @@ impl SqliteOrchestration {
         .await
     }
 
+    /// The claims `seat` holds open, in every project: one read through the
+    /// `claims_open_by_seat` partial index.
+    ///
+    /// # Errors
+    /// Store failures.
+    pub async fn open_claims(&self, seat: &SeatId) -> Result<Vec<Claim>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(&format!(
+            "SELECT {CLAIM_COLUMNS} FROM claims WHERE seat = ?1 AND released_at IS NULL \
+             ORDER BY project, kind, number"
+        ))
+        .bind(seat.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        rows.iter().map(claim).collect()
+    }
+
     /// Every claim in `project`, open and released, by kind then number.
     pub async fn claims(&self, project: &str) -> Result<Vec<Claim>> {
         require_current_schema(&self.pool).await?;
