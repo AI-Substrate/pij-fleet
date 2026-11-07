@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "464e901ee17a22156b4e10c6248a91859837d1aa",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/151#issuecomment-6704236596",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:151",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\n\nPR: #151\nHead: 464e901ee17a22156b4e10c6248a91859837d1aa\nScope: only 5911936acb9a20dec676dc9a43a2e87625d0902d..464e901ee17a22156b4e10c6248a91859837d1aa. The prior pass stands otherwise.\n\nConfirmed one forward commit changing only assets/tasks/phase-1/tasks.dd.json and its regenerated tasks.dd.md under docs/plans/209-fleet-followups. It adds the ac-0008 satisfies reference and rendered link. No security/privacy findings or machine-local paths in changed lines; consistent with C19/C21.\n\nCI run 42353240603 has all four jobs successful; the latest Delivers run 42353241842 succeeded, superseding an earlier cancelled Delivers run. The exact PR head is CLEAN.\n\nCI: https://github.com/AI-Substrate/pij-fleet/actions/runs/42353240603\nDelivers: https://github.com/AI-Substrate/pij-fleet/actions/runs/42353241842\n\nNo local builds/tests, credential-file reads, runtime probes or product changes.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | tasks.dd.json / tasks.dd.md | - | No security/privacy findings | - |\n"
+		}
+	]
+}
