@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "afa8659318d1663dd9af27e5f24be5d91ba65b00",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6714563010",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:167",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"#167 after-deploy same-incarnation launch/CPU/RSS reading and 20-second machine sample; real wake latency/failure/retention evidence remains unmeasured."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `afa8659318d1663dd9af27e5f24be5d91ba65b00`.\n\nSmall delta from `9cdcf3d8fac96966067901d6b8966d1cf76b844b`, carrying forward [round 3](https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6714315003), governance `cc7c4c6`, and its referenced full cost review.\n\n**New cost:** the wake mark replaces the existing settlement UPDATE with a guarded UPDATE in the same schema-checked owned write transaction. Its correlated `NOT EXISTS` asks only whether this seat has a higher-sequence pending compaction. Equality on `seat`, a range on `seq`, and `settled IS NULL` match the existing `(seat, seq)` partial index; existence needs no returned payload or materialized row list. The outer `(seat, msg_id)` lookup remains UNIQUE. This adds index-compatible existence work inside the write critical section, not another application SELECT, transaction, roster read or history sweep. No local query-plan or production-duration measurement is claimed.\n\nThe guard is reached only by `Step::Wake`, after the existing delivery/activity/age/idle/queue/holdings checks. **Empty steady-state work is unchanged:** one pending-index query plus its schema check per existing nominal 60-second watchdog round. No new loop, timer, poll or executable site; the owned Tokio write task replaces the prior one rather than adding a task per mark.\n\n**Once per wake-mark attempt, not necessarily once per compaction:** a newer pending row vetoes the mark, leaves the older row pending and sends nothing. A later eligible round can retry; every such attempt still acquires and commits the existing write transaction and pays the predicate. Errors are logged and also leave the row pending. No retry cap or pending-row bound was added. Successful marks still remove the row from the pending index before the existing one-send path; the at-most-one-attempt delivery qualification stands.\n\n**CI:** [42425691985](https://github.com/AI-Substrate/pij-fleet/actions/runs/42425691985) succeeds at this exact SHA, with Rust lint/test and Node 22/24 checks. Downloaded JUnit records **2,183 executed cases, zero failures/errors**: the new store guard regression, all **ten daemon compaction cases**, the core message case and **six launch guards** pass. The new store case reads A, records newer B, verifies A's mark is refused and remains pending, settles B undelivered, then verifies A can mark exactly once despite another seat's pending row. This is store-level behavior proof, not a live concurrent wake/latency benchmark. Delivers `42425694625` succeeds; the cancelled duplicate is not proof.\n\nThe worktree is clean and its HEAD matches GitHub's CLEAN/MERGEABLE head. No local build, test, mutation or runtime probe. **After-deploy launch/CPU/RSS and machine readings remain owed.** Existing AUTOINCREMENT/replay bookkeeping, O(P*N) seat matching, conditional one-hour cleanup, retained history and unmeasured real wake latency/failure/retention notes stand.\n"
+		}
+	]
+}
