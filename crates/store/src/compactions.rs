@@ -113,6 +113,47 @@ impl SqliteOrchestration {
         .await
     }
 
+    /// Mark `seat`'s compaction `msg_id` woken, BEFORE its resume message is
+    /// sent: `true` authorizes exactly one send. Refused (`false`, the row
+    /// left pending) when it is already settled, or when a newer compaction
+    /// of the same seat (a higher `seq`) is pending at commit: a compact
+    /// admitted after the round read its rows is in flight, and the older one
+    /// may still wake if that one is given up (review of #167, F004).
+    ///
+    /// # Errors
+    /// Store failures, or an out-of-range time.
+    pub async fn mark_compaction_woken(
+        &self,
+        seat: &SeatId,
+        msg_id: &str,
+        at: u64,
+    ) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (seat, msg_id) = (seat.to_string(), msg_id.to_string());
+        let at = sql_i64(at, "settled_at")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let done = sqlx::query(
+                "UPDATE compaction_wakes SET settled = ?3, settled_at = ?4 \
+                 WHERE seat = ?1 AND msg_id = ?2 AND settled IS NULL \
+                 AND NOT EXISTS (SELECT 1 FROM compaction_wakes AS newer \
+                 WHERE newer.seat = compaction_wakes.seat \
+                 AND newer.seq > compaction_wakes.seq AND newer.settled IS NULL)",
+            )
+            .bind(&seat)
+            .bind(&msg_id)
+            .bind(Settled::Woken.as_str())
+            .bind(at)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(done.rows_affected() > 0)
+        })
+        .await
+    }
+
     /// How `seat`'s compaction `msg_id` was settled: `None` with no row,
     /// `Some(None)` while pending.
     ///

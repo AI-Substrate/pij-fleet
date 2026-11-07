@@ -20,7 +20,9 @@
 //!    something is queued for it: wait;
 //! 5. it holds nothing (no open role holding, no open claim): settled
 //!    `holds-nothing`;
-//! 6. otherwise it is settled `woken` FIRST, then sent one normal message from
+//! 6. otherwise it is marked `woken` FIRST (refused, and left pending, if a
+//!    newer compact of the seat was recorded since the round read its rows),
+//!    then sent one normal message from
 //!    `pij-bg` naming what it holds, and its live parent an FYI. `woken` means
 //!    the one attempt was made, not that it was delivered: there is no retry.
 //!
@@ -107,8 +109,11 @@ pub(crate) async fn round(
             Step::Wake(held) => {
                 let Some(seat) = seat else { continue };
                 // Persist before the send (P9): a restart or an overlapping
-                // round finds it settled and sends nothing.
-                if !settle(services, compaction, Settled::Woken, now_ms).await {
+                // round finds it settled and sends nothing. The mark is
+                // refused, the row left pending and nothing sent, if a newer
+                // compact of the seat was recorded since this round read its
+                // rows (review of #167, F004).
+                if !mark_woken(services, compaction, now_ms).await {
                     continue;
                 }
                 outcomes.push(wake(services, seats, seat, compaction, &held, now_ms).await);
@@ -237,6 +242,24 @@ async fn step(
             Step::Wake(held)
         },
         delivered: true,
+    }
+}
+
+/// `true` when this call marked it woken, authorizing its one send.
+async fn mark_woken(services: &Services, compaction: &PendingCompaction, now_ms: u64) -> bool {
+    match services
+        .watchdogs()
+        .mark_compaction_woken(&compaction.seat, &compaction.msg_id, now_ms)
+        .await
+    {
+        Ok(marked) => marked,
+        Err(cause) => {
+            eprintln!(
+                "pa watchdog: compaction wake: mark {} woken: {cause}",
+                compaction.seat
+            );
+            false
+        }
     }
 }
 
