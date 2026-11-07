@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b6cc-4099-7bd3-89a8-79b09ba478ce",
+				"date": "2026-11-08",
+				"head": "e402ddef80ea44dd2e2fa08c58eec157cdfe7eff",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/159#issuecomment-6709766484",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:159",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #159: plan 210 phase 1 correctness review\n\n## A) Verdict\n\n**PASS-WITH-NOTES** at `e402ddef80ea44dd2e2fa08c58eec157cdfe7eff`.\n\nBasis: main `0c4078197c34fdf09d769b87c347b6fabb87e44c` through the three plan-210 commits. GitHub and ls-remote agree on the frozen head; the review checkout is clean. Latest checks passed, including the successful delivers run that superseded the cancelled one. No blocking correctness finding.\n\n## B) Summary\n\nThe workstream schema preserves roadmap shapes and adds the intended typed part_of link and lanes. The procedure explains the transitional folder/schema boundary rather than pretending the rename or coverage sensor has shipped. The six v3 templates retain the prior packet commands and prohibitions, with the requested workstream wording and PM shaping rule. Historical template bytes and previous delivery provenance are preserved.\n\n## C) Checks and proof\n\nDirect documentation validation in an isolated archive of this exact commit:\n\n- PRD 001 and blueprint 001: default-depth validation, zero errors/warnings.\n- Good umbrella/child fixtures: zero errors/warnings, including cross-file part_of and depends_on and a stream lane.\n- Each bad fixture fails with exactly its intended error: E402 missing branch, or E430 missing parent s09; both exit 1.\n- ddocs links exposes both child part_of edges to umbrella s02. Its inbound result is file-wide, so the s02 addresses, not the raw inbound count, are the relevant proof.\n- All six v3 templates: zero errors/warnings at depth 0. Existing roadmap 001 and the historical worked example still validate.\n- All five changed/generated faces are byte-identical to fresh ddocs build output: PRD, blueprint, plan, tasks and backpressure.\n- harness plan validate: zero errors/warnings/contradictions, with 20 open items and six semantic orphans. This is scoped phase progress, not whole-plan completion.\n\nIndependent source/history checks: all 22 previously shipped template files are byte-identical to main; all 28 current SHA256 pins match. Structural v2-to-v3 comparison shows only version/changelog/wording changes, plus the PM summary and inserted shaping rule. SHIPPED embeds the six new versions; latest selection and explicit old-version retrieval remain unchanged.\n\nExact-head CI `42390049084`, attempt 1: 2,110 JUnit cases, zero failures/errors. Eight template unit controls, seven template HTTP test entries and six skill-verb controls are present. Pinning, byte-for-byte embedding, latest selection, template creation/refusal and printed-command guards executed. Typecheck, lint, skill structure/budget checks and both Node suites passed.\n\n## D) Notes\n\n| ID | Priority | Location | Note |\n|---|---|---|---|\n| N001 | P3 | docs/plans/210-workstreams/assets/tasks/phase-1/tasks.dd.json:31,47,62,78 | The four receipt strings start assets/evidence/phase-1.md, which does not exist relative to this containing task document. Use ../../evidence/phase-1.md with the same anchors. The explicit review packet points to the actual evidence file, so this does not invalidate the evidence inspected here. |\n| N002 | Proof limit | .github/workflows/ci.yml:52-55; crates/daemon/tests/templates_http/mod.rs:540-550 | CI ddocs-check explicitly reports UNAVAILABLE, and the real_ddocs template test has an early return when ddocs is absent. A green JUnit entry is not proof that the real validator ran there. The schema/renderer proof above is direct isolated documentation validation, not CI or an HTTP writer reproduction. |\n\n## E) Consistency and scope\n\nNo folder moved. pij/roadmap only gains the superseded description, retaining its old link targets for existing docs. The new procedure explicitly forbids cross-schema nesting until conversion; phase 2 must convert the schema id together with the move and code readers. The roadmap procedure remains a compatibility pointer.\n\nThe workstream/stream distinction, sNN step versus sNNN branch distinction, cross-file ordering, PM ownership and shape/split/merge/nest rules agree across the procedure, route, protocol and template wording. No new recurring task, poll, hook, timer or launch site was introduced; runtime code changes only extend the embedded catalog.\n\n## F) Coverage and Delivers\n\n| Scope | Disposition |\n|---|---|\n| AC1 schema shapes/links | Validated; umbrella-completeness remains unchecked in tk-0005 for phase 2. |\n| AC3 skill | Delivered within this phase. |\n| AC4 PRD/blueprint amendments | Partial; req-30 is in-progress, req-31 planned, and neither is on Delivers. |\n| AC5 core templates v3 | Delivered; v1/v2 history preserved. |\n| Rename, coverage sensor, governance re-point, final states | Deferred, not graded as complete. |\n\nDelivers names exactly the seven amended rows: req-04,18,20,21,23,24,27. Their states and existing delivered_by values are unchanged; req-04 remains in-progress. req-13 and req-26 are entirely unchanged, and PRD 002 has no diff. The #158 provenance/changelog repair survives the rebase. This is an amendment receipt, not a claim that those features were first shipped here.\n\n## G) Commands\n\nRead-only git/gh inspection and CI artifact retrieval; structural JSON/history/hash comparison; isolated ddocs validate/build/links and harness plan validate. No local product builds/tests, daemon boot, live probe, credential read or product-code mutation. Scratch render writes stayed outside the review checkout.\n\n## H) Handover\n\nPhase 1 can proceed with the two notes above. Phase 2 owns the umbrella guard, folder/schema conversion, code readers, coverage sensor and PM v4 path update; later docs own req-26/PRD 002 coverage.\n\nHarness observation DL-006 captures the validator proof ceiling. The useful encoding for phase 2 is a fixture guard that asserts the good cases and the bad cases' exit/error codes, retaining an explicit UNAVAILABLE result when ddocs is absent. This review neither implements it nor advances canonical phase/AC states.\n"
+		}
+	]
+}
