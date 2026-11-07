@@ -52,8 +52,8 @@ use pij_core::delivery::{DEFAULT_TYPING_GRACE_MS, HeldEvent, ReleasedEvent};
 use pij_core::error::{PijError, Result};
 use pij_core::events::EventFilter;
 use pij_core::model::{
-    DeliveryOutcome, Envelope, ErrorKind, Event, Harness, Msg, ProcIdentity, SeatDescriptor,
-    SeatId, SemanticState, Seq,
+    DeliveryOutcome, Envelope, ErrorKind, Event, Harness, Msg, ProcIdentity, Receipt,
+    SeatDescriptor, SeatId, SemanticState, Seq,
 };
 use pij_core::names::memorable_pij_id_candidates;
 use pij_core::ports::Registry;
@@ -121,6 +121,8 @@ enum Endpoint {
     Inbox,
     InboxTyping,
     InboxAck,
+    /// Plan 214: a native receiver takes its urgent messages at a tool boundary.
+    InboxUrgent,
     InboxHeartbeat,
     InboxRelease,
     Hold,
@@ -216,7 +218,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 58] = [
+    const ALL: [Self; 59] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -228,6 +230,7 @@ impl Endpoint {
         Self::Inbox,
         Self::InboxTyping,
         Self::InboxAck,
+        Self::InboxUrgent,
         Self::InboxHeartbeat,
         Self::InboxRelease,
         Self::Hold,
@@ -290,6 +293,7 @@ impl Endpoint {
             Self::Inbox => "/v1/inbox",
             Self::InboxTyping => "/v1/inbox/typing",
             Self::InboxAck => "/v1/inbox/ack",
+            Self::InboxUrgent => "/v1/inbox/urgent",
             Self::InboxHeartbeat => "/v1/inbox/heartbeat",
             Self::InboxRelease => "/v1/inbox/release",
             Self::Hold => "/v1/hold",
@@ -354,6 +358,7 @@ impl Endpoint {
             | Self::Background
             | Self::BackgroundKill
             | Self::InboxAck
+            | Self::InboxUrgent
             | Self::InboxHeartbeat
             | Self::InboxRelease
             | Self::Hold
@@ -585,6 +590,7 @@ fn router_with_optional_federation(
                     | Endpoint::Background
                     | Endpoint::BackgroundKill
                     | Endpoint::InboxAck
+                    | Endpoint::InboxUrgent
                     | Endpoint::InboxHeartbeat
                     | Endpoint::InboxRelease
                     | Endpoint::Hold
@@ -649,6 +655,7 @@ fn router_with_optional_federation(
             Endpoint::Inbox => router.route(endpoint.path(), get(inbox)),
             Endpoint::InboxTyping => router.route(endpoint.path(), get(inbox_typing)),
             Endpoint::InboxAck => router.route(endpoint.path(), post(ack_inbox)),
+            Endpoint::InboxUrgent => router.route(endpoint.path(), post(take_urgent)),
             Endpoint::InboxHeartbeat => router.route(endpoint.path(), post(heartbeat_inbox)),
             Endpoint::InboxRelease => router.route(endpoint.path(), post(operator_release_inbox)),
             Endpoint::Hold => router.route(endpoint.path(), post(hold_inbox)),
@@ -1821,6 +1828,9 @@ async fn send(
             }
         }
     }
+    if request.message.urgent && request.message.fyi {
+        return urgent_fyi("pij send");
+    }
     // A send to `role:<id>` resolves through the directory first (plan 199).
     if let Some(response) = role_send::route(
         &state,
@@ -1832,6 +1842,7 @@ async fn send(
             msg_id: &request.message.msg_id,
             in_reply_to: request.message.in_reply_to.as_deref(),
             fyi: request.message.fyi,
+            urgent: request.message.urgent,
             control: request.command.is_some(),
             force: request.message.force,
             reason: request.message.reason.as_deref(),
@@ -1913,6 +1924,8 @@ async fn send(
         Err(response) => return *response,
     };
     let (reply_from, reply_to) = (request.from.clone(), request.in_reply_to.clone());
+    let urgent = request.urgent && !forwarded;
+    let urgent_to = request.to.seat.clone();
     let msg = Msg {
         from: request.from,
         // Stamped above from the authenticated peer key, or absent locally.
@@ -1933,11 +1946,80 @@ async fn send(
             receipt.cold_check = cold_check;
             if !forwarded && !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
                 answered_by(&state, &reply_from, reply_to.as_deref()).await;
+                if urgent {
+                    apply_urgent(&state, &reply_from, &urgent_to, &mut receipt).await;
+                }
             }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
         }
 
         Err(error) => send_failure("pij send", error),
+    }
+}
+
+/// `--urgent` with `--fyi` (plan 214): refused, nothing sent.
+pub(crate) fn urgent_fyi(command: &str) -> Response {
+    refused(
+        command,
+        format!(
+            "{}: --urgent asks for delivery mid-turn and --fyi holds the message for the next turn; pick one",
+            crate::delivery::urgent::E_URGENT_FYI
+        ),
+    )
+}
+
+/// After an urgent send was admitted (plan 214): mark it for the recipient's
+/// tool boundary, or warn on the receipt that it was downgraded, and write
+/// the one `send.urgent` spine event. A failed event is logged, never fails
+/// the send it describes.
+pub(crate) async fn apply_urgent(
+    state: &AppState,
+    from: &SeatId,
+    to: &SeatId,
+    receipt: &mut Receipt,
+) {
+    use crate::delivery::urgent::{URGENT_EVENT_KIND, UrgentRoute};
+    let to = match state.services.registry.get(to).await {
+        Ok(Some(to)) => to,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!(
+                "pij-rs: urgent send {}: recipient unreadable: {error}",
+                receipt.msg_id
+            );
+            return;
+        }
+    };
+    let route = UrgentRoute::for_seat(&to);
+    if route.marks(receipt) {
+        state.services.delivery.mark_urgent(&to.id, &receipt.msg_id);
+    }
+    if let Some(warning) = route.warning(&to) {
+        receipt.warning = Some(match receipt.warning.take() {
+            Some(earlier) => format!("{earlier}; {warning}"),
+            None => warning,
+        });
+    }
+    let event = Event {
+        seq: None,
+        v: pij_core::wire::EVENT_VERSION,
+        at: receipt.at,
+        kind: URGENT_EVENT_KIND.to_string(),
+        seat: Some(to.id.clone()),
+        payload: serde_json::json!({
+            "from": from,
+            "to": to.id,
+            "msg_id": receipt.msg_id,
+            "harness": to.harness,
+            "outcome": route.outcome(),
+        })
+        .to_string(),
+    };
+    if let Err(error) = state.services.event_bus.publish(event).await {
+        eprintln!(
+            "pij-rs: urgent send {}: audit not written: {error}",
+            receipt.msg_id
+        );
     }
 }
 
@@ -2731,6 +2813,46 @@ async fn heartbeat_inbox(
             &Envelope::ok(
                 "pij inbox",
                 serde_json::json!({"job_id": job_id, "state": job_state}),
+            ),
+        ),
+        Err(error) => inbox_failure(error),
+    }
+}
+
+/// `POST /v1/inbox/urgent` (plan 214): a native Copilot receiver, at a tool
+/// boundary, takes the queued `--urgent` messages it was told of on its
+/// heartbeat. Its host identity is checked as for a claim; each message is
+/// marked delivered as it is handed over.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UrgentTakeRequest {
+    seat: SeatId,
+    native_session: Option<String>,
+    pid: Option<u32>,
+    proc_start: Option<u64>,
+    msg_ids: Vec<String>,
+}
+
+async fn take_urgent(
+    State(state): State<AppState>,
+    Json(request): Json<UrgentTakeRequest>,
+) -> Response {
+    let identity = crate::delivery::NativeInboxIdentity {
+        native_session: request.native_session,
+        pid: request.pid,
+        proc_start: request.proc_start,
+    };
+    match state
+        .services
+        .delivery
+        .take_urgent(&request.seat, &identity, &request.msg_ids)
+        .await
+    {
+        Ok(messages) => envelope(
+            StatusCode::OK,
+            &Envelope::ok(
+                "pij inbox",
+                serde_json::json!({"messages": messages.iter().map(|message| serde_json::json!({"message": message})).collect::<Vec<_>>()}),
             ),
         ),
         Err(error) => inbox_failure(error),

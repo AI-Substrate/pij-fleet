@@ -388,6 +388,13 @@ enum Command {
         /// like a question.
         #[arg(long, conflicts_with = "command")]
         fyi: bool,
+        /// Deliver at the recipient's next tool call instead of when its turn
+        /// ends (plan 214). Only when it is mid-turn and its current work is
+        /// wrong without this message; everything else is a normal send or
+        /// --fyi. A harness with no tool-boundary path gets a normal send and
+        /// the receipt says why. Never with --fyi (E-RS-URGENT-FYI).
+        #[arg(long, conflicts_with_all = ["command", "fyi"])]
+        urgent: bool,
         /// Wake a cold recipient anyway (large context, idle past the cache TTL).
         /// Requires --reason; the forced wake and its estimated price are audited.
         #[arg(long, conflicts_with_all = ["command", "fyi"], requires = "reason")]
@@ -1412,6 +1419,7 @@ async fn run(cli: Cli) -> ExitCode {
             msg_id,
             in_reply_to,
             fyi,
+            urgent,
             force,
             reason,
             reply,
@@ -1460,6 +1468,7 @@ async fn run(cli: Cli) -> ExitCode {
                 limit,
                 project,
                 caller: to_role.then(caller_context),
+                urgent,
             };
             if to_role {
                 let mut response = client.send_role(&request).await;
@@ -1591,6 +1600,7 @@ async fn run(cli: Cli) -> ExitCode {
                 limit: None,
                 project: None,
                 caller: None,
+                urgent: false,
             };
             let mut response = client.send_control(&request, &caller_context()).await;
             let raw = response.raw_json.take();

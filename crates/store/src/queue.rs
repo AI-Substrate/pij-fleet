@@ -1503,6 +1503,46 @@ impl Queue for SqliteQueue {
         .await
     }
 
+    async fn take_pending_delivery(&self, recipient: &SeatId, msg_id: &str) -> Result<Option<Job>> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let delivered_id_capacity = self.delivered_id_capacity;
+        let (recipient, msg_id) = (recipient.0.clone(), msg_id.to_string());
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let row = sqlx::query(
+                "UPDATE jobs SET state = 'done', worker = 'urgent', outcome = NULL, \
+                 claimed_at = unixepoch(), acked_at = unixepoch() \
+                 WHERE kind = 'delivery:' || ?1 AND dedupe_origin = '' AND dedupe_key = ?2 \
+                   AND serial_key = ?1 AND state = 'pending' \
+                 RETURNING id, kind, serial_key, payload, dedupe_key, dedupe_origin, attempt",
+            )
+            .bind(&recipient)
+            .bind(&msg_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let Some(row) = row else {
+                tx.commit().await.map_err(adapter_error)?;
+                return Ok(None);
+            };
+            let id = JobId(row.try_get::<i64, _>("id").map_err(adapter_error)? as u64);
+            let taken = decode_job(&row)?;
+            require_delivery_job(&taken)?;
+            record_delivered(
+                &mut tx,
+                id,
+                &taken,
+                DeliveryOrigin::ReaderRead,
+                delivered_id_capacity,
+            )
+            .await?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(Some(taken))
+        })
+        .await
+    }
+
     async fn ack_delivery(&self, job: JobId, origin: DeliveryOrigin) -> Result<DeliveryAck> {
         require_current_schema(&self.pool).await?;
 
@@ -1542,30 +1582,7 @@ impl Queue for SqliteQueue {
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?;
-            sqlx::query(
-                "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine) \
-                 VALUES (?1, ?2, ?3, ?4) \
-             ON CONFLICT (recipient, sender_machine, msg_id) DO NOTHING",
-            )
-            .bind(&claimed.serial_key)
-            .bind(&claimed.dedupe_key)
-            .bind(encode_origin(origin))
-            .bind(claimed.dedupe_origin.as_deref().unwrap_or_default())
-            .execute(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
-            sqlx::query(
-                "DELETE FROM delivered_messages WHERE recipient = ?1 AND seq NOT IN (\
-                 SELECT seq FROM delivered_messages WHERE recipient = ?1 \
-                 ORDER BY seq DESC LIMIT ?2\
-             )",
-            )
-            .bind(&claimed.serial_key)
-            .bind(delivered_id_capacity)
-            .execute(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
-
+            record_delivered(&mut tx, job, &claimed, origin, delivered_id_capacity).await?;
             tx.commit().await.map_err(adapter_error)?;
             Ok(DeliveryAck {
                 recipient: SeatId(claimed.serial_key),
@@ -1611,4 +1628,53 @@ fn decode_origin(origin: &str) -> Result<DeliveryOrigin> {
             message: format!("delivered message has unknown origin {other:?}"),
         }),
     }
+}
+
+/// The record every delivery ack writes, in its transaction: the held flag
+/// (plan 214, AC2), the delivered-id ledger row and its per-recipient
+/// retention.
+async fn record_delivered(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    job: JobId,
+    claimed: &Job,
+    origin: DeliveryOrigin,
+    delivered_id_capacity: i64,
+) -> Result<()> {
+    // A hold past the threshold is remembered for the PA digest: a
+    // primary-key insert on the row just written; a message the digest
+    // already showed while queued keeps its flag.
+    sqlx::query(
+        "INSERT INTO held_deliveries (job_id) SELECT id FROM jobs \
+         WHERE id = ?1 AND acked_at - enqueued_at > ?2 \
+     ON CONFLICT (job_id) DO NOTHING",
+    )
+    .bind(job.0 as i64)
+    .bind(crate::held::HELD_FLAG_SECS)
+    .execute(&mut **tx)
+    .await
+    .map_err(adapter_error)?;
+    sqlx::query(
+        "INSERT INTO delivered_messages (recipient, msg_id, origin, sender_machine) \
+         VALUES (?1, ?2, ?3, ?4) \
+     ON CONFLICT (recipient, sender_machine, msg_id) DO NOTHING",
+    )
+    .bind(&claimed.serial_key)
+    .bind(&claimed.dedupe_key)
+    .bind(encode_origin(origin))
+    .bind(claimed.dedupe_origin.as_deref().unwrap_or_default())
+    .execute(&mut **tx)
+    .await
+    .map_err(adapter_error)?;
+    sqlx::query(
+        "DELETE FROM delivered_messages WHERE recipient = ?1 AND seq NOT IN (\
+         SELECT seq FROM delivered_messages WHERE recipient = ?1 \
+         ORDER BY seq DESC LIMIT ?2\
+     )",
+    )
+    .bind(&claimed.serial_key)
+    .bind(delivered_id_capacity)
+    .execute(&mut **tx)
+    .await
+    .map_err(adapter_error)?;
+    Ok(())
 }

@@ -111,6 +111,9 @@ pub struct SendRequest {
     /// Why a forced cold wake is worth it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Deliver at the recipient's next tool boundary (plan 214); never with `fyi`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub urgent: bool,
     /// `--reply` on a send to `role:<id>` (plan 199).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply: Option<String>,
@@ -894,6 +897,7 @@ mod tests {
             limit: None,
             project: None,
             caller: None,
+            urgent: false,
         };
 
         assert_eq!(

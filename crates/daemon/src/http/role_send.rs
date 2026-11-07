@@ -24,6 +24,8 @@ pub(crate) struct RoleSendCall<'a> {
     pub(crate) msg_id: &'a str,
     pub(crate) in_reply_to: Option<&'a str>,
     pub(crate) fyi: bool,
+    /// `--urgent` (plan 214): the holder's next tool boundary.
+    pub(crate) urgent: bool,
     pub(crate) control: bool,
     pub(crate) force: bool,
     pub(crate) reason: Option<&'a str>,
@@ -183,13 +185,16 @@ async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) ->
                         receipt
                     })
             };
-            let receipt = match delivered {
+            let mut receipt = match delivered {
                 Ok(receipt) => receipt,
                 Err(error) => {
                     abandon(&store, &request).await;
                     return send_failure(command, error);
                 }
             };
+            if call.urgent && !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
+                super::apply_urgent(state, call.from, &seat, &mut receipt).await;
+            }
             let mut data = serde_json::to_value(&receipt).unwrap_or(Value::Null);
             if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
                 abandon(&store, &request).await;

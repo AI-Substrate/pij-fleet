@@ -214,6 +214,8 @@ pub(crate) struct SendCall {
     pub force: bool,
     /// Why the forced wake is worth it.
     pub reason: Option<String>,
+    /// Deliver at the recipient's next tool boundary (plan 214).
+    pub urgent: bool,
     /// `--file <path> [--caption <text>]`, served only for `pij-telegram`.
     pub attachment: Option<Attachment>,
     /// `--reply wake|fyi|none` on a send to `role:<id>` (plan 199).
@@ -263,6 +265,7 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
     let mut command = None;
     let mut in_reply_to = None;
     let mut fyi = false;
+    let mut urgent = false;
     let mut force = false;
     let mut reason = None;
     let mut file: Option<String> = None;
@@ -294,6 +297,7 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
             // `--json` is answered by the shim's own projection layer, not here.
             "json" => {}
             "fyi" => fyi = true,
+            "urgent" => urgent = true,
             "force" => force = true,
             "reason" => {
                 if reason.is_some() {
@@ -412,12 +416,21 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
                 body: saw_body_file || positionals.len() > 1,
                 command: command.is_some(),
                 in_reply_to: in_reply_to.is_some(),
-                wake: fyi || force || reason.is_some(),
+                wake: fyi || urgent || force || reason.is_some(),
             },
         );
     }
     if fyi && command.is_some() {
         return Err("--fyi holds a message; a --command control cannot be held".to_string());
+    }
+    if urgent && fyi {
+        return Err(format!(
+            "{}: --urgent asks for delivery mid-turn and --fyi holds the message for the next turn; pick one",
+            crate::delivery::urgent::E_URGENT_FYI
+        ));
+    }
+    if urgent && command.is_some() {
+        return Err("--urgent applies to a message; a --command control is not one".to_string());
     }
     if let Some(command) = command {
         if saw_body_file {
@@ -449,6 +462,7 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
             command: Some(command),
             in_reply_to,
             fyi: false,
+            urgent: false,
             force: false,
             reason: None,
             attachment: None,
@@ -497,6 +511,7 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
         command: None,
         in_reply_to,
         fyi,
+        urgent,
         force,
         reason,
         attachment: None,
@@ -538,7 +553,7 @@ fn attachment_call(
     } else if conflicts.in_reply_to {
         Some("--in-reply-to")
     } else if conflicts.wake {
-        Some("--fyi/--force/--reason, which steer seat wakes; Telegram has none")
+        Some("--fyi/--urgent/--force/--reason, which steer seat wakes; Telegram has none")
     } else {
         None
     };
@@ -554,6 +569,7 @@ fn attachment_call(
         command: None,
         in_reply_to: None,
         fyi: false,
+        urgent: false,
         force: false,
         reason: None,
         attachment: Some(attachment),
@@ -720,6 +736,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
             msg_id: &msg_id,
             in_reply_to: call.in_reply_to.as_deref(),
             fyi: call.fyi,
+            urgent: call.urgent,
             control: false,
             force: call.force,
             reason: call.reason.as_deref(),
@@ -752,6 +769,7 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
                 fyi: call.fyi,
                 force: call.force,
                 reason: call.reason,
+                urgent: call.urgent,
             },
         )
         .await;
@@ -807,6 +825,9 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
                 pij_core::model::DeliveryOutcome::Refused { .. }
             ) {
                 super::answered_by(&state, &reply_from, reply_to.as_deref()).await;
+                if call.urgent {
+                    super::apply_urgent(&state, &reply_from, &recipient, &mut receipt).await;
+                }
             }
             super::envelope(
                 axum::http::StatusCode::OK,

@@ -58,6 +58,11 @@ async function startExtension() {
 	const signal = controller.signal;
 	let bridge;
 	let session;
+	// Plan 214: a tool boundary in this session takes pending urgent messages.
+	const urgentAt = (invocation) =>
+		session && bridge && !signal.aborted && invocation?.sessionId === session.sessionId
+			? bridge.takeUrgent()
+			: undefined;
 	let unsubscribe;
 	const nativeReport = createNativeReporter({
 		log: (message, options) => session.log(message, options),
@@ -102,6 +107,11 @@ async function startExtension() {
 								description:
 									"Hold until the recipient's next turn instead of opening one. Only when their next action doesn't depend on it: if they'd be stuck, wrong or waiting without it, send normally; if they'd be fine never reading it, don't send it. Never for work done, review verdicts, hand-offs, blockers, questions or decisions needed. Never with force",
 							},
+							urgent: {
+								type: "boolean",
+								description:
+									"Deliver at the recipient's next tool call instead of when its current turn ends. Only when the recipient is mid-turn and its current work is wrong without this message (stop, the plan changed, it is editing the wrong thing). Everything else is a normal send or fyi. Never with fyi",
+							},
 							force: {
 								type: "boolean",
 								description:
@@ -137,6 +147,10 @@ async function startExtension() {
 						return undefined;
 					return bridge.claimFyis();
 				},
+				// Plan 214: urgent messages land at the next tool boundary. With
+				// none pending this is a set-size check and no daemon call.
+				onPostToolUse: async (_input, invocation) => urgentAt(invocation),
+				onPostToolUseFailure: async (_input, invocation) => urgentAt(invocation),
 			},
 		});
 		signal.throwIfAborted();

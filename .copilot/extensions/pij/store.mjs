@@ -1037,6 +1037,9 @@ export class NativeBridge {
 		this.running = undefined;
 		this.unsubscribe = undefined;
 		this.completion = undefined;
+		// Plan 214: urgent msg_ids the daemon named on the last heartbeat. A tool
+		// boundary reads this set and calls the daemon only when it is non-empty.
+		this.urgentIds = new Set();
 		// Plan 158 addendum 3: busy/idle publication, serialized so a late
 		// `working` can never land after `idle`.
 		this.activity = Promise.resolve();
@@ -1248,6 +1251,7 @@ export class NativeBridge {
 					lease.renew_after_ms >= lease.lease_ms
 				)
 					throw new NativeError("Native receiver lease response is malformed; re-registering");
+				this.noteUrgent(lease.urgent);
 				if (unavailable) this.emit("receiver-lease-restored");
 				unavailable = false;
 				retry = INITIAL_RETRY_MS;
@@ -1281,6 +1285,49 @@ export class NativeBridge {
 				}
 				retry = Math.min(retry * 2, MAX_RETRY_MS);
 			}
+		}
+	}
+	/** Plan 214: the heartbeat's `urgent` msg_ids replace the pending set. */
+	noteUrgent(ids) {
+		this.urgentIds = new Set(Array.isArray(ids) ? ids.filter(nonempty) : []);
+	}
+	/**
+	 * Plan 214: at a tool boundary, take the urgent messages the daemon named and
+	 * hand them to the model as `additionalContext`. The daemon marks them
+	 * delivered as it hands them over, so they never arrive again at turn end.
+	 * With nothing pending this is a set-size check: no daemon call.
+	 */
+	async takeUrgent() {
+		if (this.urgentIds.size === 0 || !this.registered || this.controller.signal.aborted)
+			return undefined;
+		const msgIds = [...this.urgentIds];
+		this.urgentIds = new Set();
+		try {
+			const taken = await this.client.request(
+				"/v1/inbox/urgent",
+				{ ...this.tuple(), msg_ids: msgIds },
+				AbortSignal.any([this.controller.signal, AbortSignal.timeout(HOOK_REQUEST_TIMEOUT_MS)]),
+			);
+			const messages = Array.isArray(taken?.messages) ? taken.messages : [];
+			const blocks = messages
+				.filter((claim) => nonempty(claim?.message?.msg_id) && typeof claim.message.body === "string")
+				.map(
+					(claim) =>
+						`[pij urgent from ${JSON.stringify(senderLabel(claim.message))}; msg_id=${JSON.stringify(claim.message.msg_id)}]\n${claim.message.body}`,
+				);
+			if (blocks.length === 0) return undefined;
+			this.emit("urgent-delivered", {
+				msgIds: messages.map((claim) => claim.message.msg_id),
+				grade: "tool-boundary-context-not-model-complete",
+			});
+			return {
+				additionalContext: `Urgent pij message${blocks.length === 1 ? "" : "s"}, delivered at this tool boundary. Read before continuing; the sender says your current work depends on it:\n\n${blocks.join("\n\n")}`,
+			};
+		} catch (error) {
+			this.emit("urgent-take-failed", {
+				safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
+			});
+			return undefined;
 		}
 	}
 	tuple() {
@@ -1951,7 +1998,13 @@ export class NativeBridge {
 		if (!nonempty(input?.to) || !nonempty(input?.message))
 			return { ok: false, error: "pij_send requires nonempty to and message strings" };
 		const force = input.force === true;
+		const urgent = input.urgent === true;
 		// The daemon refuses these too; refusing here sends nothing at all.
+		if (urgent && input.fyi === true)
+			return {
+				ok: false,
+				error: "E-RS-URGENT-FYI: urgent asks for delivery mid-turn and fyi holds it for the next turn; pick one",
+			};
 		if (force && input.fyi === true)
 			return { ok: false, error: `${COLD_WAKE_CODE}: force wakes a message; never with fyi` };
 		if (force && !nonempty(input.reason))
@@ -1972,6 +2025,7 @@ export class NativeBridge {
 					body: input.message,
 					msg_id: msgId,
 					...(input.fyi === true ? { fyi: true } : {}),
+					...(urgent ? { urgent: true } : {}),
 					...(force ? { force: true, reason: input.reason } : {}),
 				},
 				this.controller.signal,

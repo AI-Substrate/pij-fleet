@@ -2543,3 +2543,111 @@ async fn forget_delivered_releases_a_claim_on_the_real_adapter() {
         "a released claim is claimable again: the message was never delivered"
     );
 }
+
+/// Plan 214, AC2: a delivery held past `HELD_FLAG_SECS` is listed once. The
+/// ack that ends a long hold records it; a message still queued past the
+/// threshold is listed live; a short hold is never listed; once a digest marks
+/// them shown, neither comes back, even when the queued one is acked later.
+#[tokio::test]
+async fn long_holds_are_listed_for_the_pa_once() {
+    use pij_store::HELD_FLAG_SECS;
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let queue = SqliteQueue::new(
+        pool.clone(),
+        Config::default().claim_lease_secs,
+        Config::default().delivered_id_capacity,
+    )
+    .expect("queue");
+    let store = pij_store::SqliteOrchestration::new(pool.clone());
+    let delivery = |seat: &str, msg: &str| Job {
+        kind: format!("delivery:{seat}"),
+        serial_key: seat.to_string(),
+        payload: format!(r#"{{"from":"pij-sender","to":"{seat}","body":"b"}}"#),
+        dedupe_key: msg.to_string(),
+        dedupe_origin: None,
+        attempt: 0,
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let mut ids = Vec::new();
+    for (seat, msg, age) in [
+        ("pij-a", "long", HELD_FLAG_SECS + 60),
+        ("pij-b", "short", 30),
+        ("pij-c", "waiting", HELD_FLAG_SECS + 120),
+    ] {
+        let id = queue.enqueue(delivery(seat, msg)).await.unwrap();
+        sqlx::query("UPDATE jobs SET enqueued_at = ?2 WHERE id = ?1")
+            .bind(id.0 as i64)
+            .bind(now - age)
+            .execute(&pool)
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+    for (seat, id) in [("pij-a", ids[0]), ("pij-b", ids[1])] {
+        let (claimed, _) = queue
+            .claim(&[format!("delivery:{seat}")], "reader")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(claimed, id);
+        queue
+            .ack_delivery(id, DeliveryOrigin::ReaderRead)
+            .await
+            .unwrap();
+    }
+
+    let listed = store.unflagged_held_deliveries(now as u64).await.unwrap();
+    let seen: Vec<(&str, &str, bool, Option<&str>)> = listed
+        .iter()
+        .map(|held| {
+            (
+                held.recipient.as_str(),
+                held.msg_id.as_str(),
+                held.still_queued,
+                held.sender.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            ("pij-c", "waiting", true, Some("pij-sender")),
+            ("pij-a", "long", false, Some("pij-sender")),
+        ]
+    );
+    assert!(listed[1].held_ms >= (HELD_FLAG_SECS as u64 + 60) * 1_000);
+
+    let shown: Vec<i64> = listed.iter().map(|held| held.job_id).collect();
+    store
+        .flag_held_deliveries(&shown, now as u64)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .unflagged_held_deliveries(now as u64)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let (claimed, _) = queue
+        .claim(&["delivery:pij-c".to_string()], "reader")
+        .await
+        .unwrap()
+        .unwrap();
+    queue
+        .ack_delivery(claimed, DeliveryOrigin::ReaderRead)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .unflagged_held_deliveries(now as u64 + 60)
+            .await
+            .unwrap()
+            .is_empty(),
+        "shown while queued, so its ack does not list it again"
+    );
+}

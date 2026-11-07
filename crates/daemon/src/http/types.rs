@@ -263,6 +263,10 @@ pub struct SendRequest {
     /// Why a forced cold wake is worth its price; recorded on the spine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Deliver at the recipient's next tool boundary, not its turn end (plan
+    /// 214). Never with `fyi`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub urgent: bool,
 }
 
 // `QueuedSend` is GONE. The send route persisted it under `delivery:<seat>` and

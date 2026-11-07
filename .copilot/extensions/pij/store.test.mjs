@@ -5457,3 +5457,71 @@ test("F5: a concurrent heartbeat carrying the newer prompt cannot swallow the re
 	await Promise.all([consumer, heartbeat]);
 	assert.deepEqual(waits, [], "a prompt newer than the refused register retries at once");
 });
+
+test("urgent: a tool boundary takes only what the heartbeat named, once, and nothing costs a call", async () => {
+	const f = fixture();
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	const calls = [];
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/inbox/heartbeat") {
+			const lease = await request(path, body, signal);
+			return { ...lease, urgent: ["u-1", "u-2", "", 7] };
+		}
+		if (path !== "/v1/inbox/urgent") return request(path, body, signal);
+		calls.push(body);
+		return {
+			messages: [
+				{ message: { from: "pij-pm", msg_id: "u-1", body: "stop: wrong branch" } },
+			],
+		};
+	};
+
+	f.bridge.noteUrgent([]);
+	assert.equal(await f.bridge.takeUrgent(), undefined, "nothing pending: no daemon call");
+	assert.equal(calls.length, 0);
+
+	f.bridge.noteUrgent(["u-1", "u-2", "", 7]);
+	const context = await f.bridge.takeUrgent();
+	assert.match(context.additionalContext, /^Urgent pij message, delivered at this tool boundary/);
+	assert.match(
+		context.additionalContext,
+		/\[pij urgent from "pij-pm"; msg_id="u-1"\]\nstop: wrong branch$/,
+	);
+	assert.deepEqual(calls[0].msg_ids, ["u-1", "u-2"], "only nonempty msg_ids are sent");
+	assert.equal(calls[0].seat, registration.id);
+	assert.equal(await f.bridge.takeUrgent(), undefined, "taken once");
+	assert.equal(calls.length, 1);
+
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/inbox/urgent") throw new Error("daemon away");
+		return request(path, body, signal);
+	};
+	f.bridge.noteUrgent(["u-3"]);
+	assert.equal(await f.bridge.takeUrgent(), undefined, "a failed take adds nothing");
+	assert.ok(f.reports.some((event) => event.kind === "urgent-take-failed"));
+	f.bridge.stop();
+	await run;
+});
+
+test("urgent: pij_send refuses urgent with fyi and passes urgent through", async () => {
+	const f = fixture();
+	const run = f.bridge.run();
+	await f.accepted.promise;
+	const refused = await f.bridge.send({ to: "pij-peer", message: "hi", urgent: true, fyi: true });
+	assert.equal(refused.ok, false);
+	assert.match(refused.error, /^E-RS-URGENT-FYI/);
+	const bodies = [];
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path !== "/v1/send") return request(path, body, signal);
+		bodies.push(body);
+		return { msg_id: body.msg_id, outcome: { outcome: "queued" } };
+	};
+	const sent = await f.bridge.send({ to: "pij-peer", message: "hi", urgent: true });
+	assert.equal(sent.ok, true, JSON.stringify(sent));
+	assert.equal(bodies[0].urgent, true);
+	f.bridge.stop();
+	await run;
+});

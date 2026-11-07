@@ -4065,3 +4065,162 @@ async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
         "an answered request is never checked in"
     );
 }
+
+/// Plan 214, AC3 and AC4: an urgent send to a working native Copilot seat is
+/// queued and named on its receiver heartbeat; its receiver takes it at a tool
+/// boundary, once, and it never arrives again at turn end. OMP steers already;
+/// Codex is downgraded with a receipt warning; every urgent send writes one
+/// `send.urgent` event; `--urgent --fyi` is refused.
+#[tokio::test]
+async fn an_urgent_send_reaches_a_working_copilot_seat_at_its_tool_boundary_once() {
+    use pij_core::model::{ProcIdentity, SystemState};
+    use pij_daemon::delivery::urgent::URGENT_EVENT_KIND;
+    let repo = repo("pij-urgent");
+    let rig = rig(Arc::new(NoHook)).await;
+    let mut native = SeatDescriptor::new("pij-native", Harness::Copilot, "/tmp");
+    native.proc = Some(ProcIdentity {
+        pid: 137,
+        proc_start: 1370,
+    });
+    native.harness_session = Some("native-137".into());
+    native.pane = Some("%137".into());
+    native.native_extension_delivery = true;
+    native.state = SystemState::Working;
+    rig.services.registry.put(native.clone()).await.unwrap();
+    let codex = SeatDescriptor::new("pij-codex", Harness::Codex, "/tmp");
+    rig.services.registry.put(codex).await.unwrap();
+
+    let sent = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-native",
+        "u-1",
+        json!({"urgent": true}),
+    )
+    .await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    assert_eq!(sent["data"]["outcome"]["outcome"], "queued", "{sent}");
+    assert!(sent["data"].get("warning").is_none(), "{sent}");
+    let seat = SeatId::from("pij-native");
+    assert_eq!(rig.delivery.urgent_pending(&seat), ["u-1"]);
+    let audit = rig
+        .bus
+        .latest_matching(&seat, &[URGENT_EVENT_KIND])
+        .await
+        .unwrap()
+        .expect("audited");
+    let payload: Value = serde_json::from_str(&audit.payload).unwrap();
+    assert_eq!(
+        (payload["from"].as_str(), payload["outcome"].as_str()),
+        (Some(SEAT), Some("injected"))
+    );
+
+    let take = |msg_ids: Value| {
+        let addr = rig.addr;
+        async move {
+            reqwest::Client::new()
+                .post(format!("http://{addr}/v1/inbox/urgent"))
+                .bearer_auth(KEY)
+                .json(&json!({
+                    "seat": "pij-native", "native_session": "native-137",
+                    "pid": 137, "proc_start": 1370, "msg_ids": msg_ids,
+                }))
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+    let taken = take(json!(["u-1", "not-urgent"])).await;
+    assert_eq!(taken["ok"], true, "{taken}");
+    assert_eq!(
+        taken["data"]["messages"][0]["message"]["body"],
+        "please u-1"
+    );
+    assert_eq!(taken["data"]["messages"].as_array().unwrap().len(), 1);
+    assert!(rig.delivery.urgent_pending(&seat).is_empty());
+    assert!(
+        rig.store
+            .message_reached_at("pij-native", "u-1")
+            .await
+            .unwrap()
+            .is_some(),
+        "the take is the delivery"
+    );
+    let again = take(json!(["u-1"])).await;
+    assert_eq!(again["data"]["messages"], json!([]), "taken once: {again}");
+    assert!(
+        rig.delivery.peek_inbox(&seat).await.unwrap().is_empty(),
+        "never again at turn end"
+    );
+    let stranger = reqwest::Client::new()
+        .post(format!("http://{}/v1/inbox/urgent", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({"seat": "pij-native", "native_session": "other", "pid": 1, "proc_start": 1, "msg_ids": ["u-1"]}))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(
+        stranger["ok"], false,
+        "another host takes nothing: {stranger}"
+    );
+
+    let steered = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-holder",
+        "u-2",
+        json!({"urgent": true}),
+    )
+    .await;
+    assert_eq!(steered["ok"], true, "{steered}");
+    assert!(steered["data"].get("warning").is_none(), "{steered}");
+    let downgraded = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-codex",
+        "u-3",
+        json!({"urgent": true}),
+    )
+    .await;
+    assert_eq!(downgraded["ok"], true, "{downgraded}");
+    assert!(
+        downgraded["data"]["warning"]
+            .as_str()
+            .is_some_and(|warning| warning.starts_with("--urgent downgraded for pij-codex (codex)")),
+        "{downgraded}"
+    );
+    for (seat, outcome) in [("pij-holder", "steered"), ("pij-codex", "downgraded")] {
+        let event = rig
+            .bus
+            .latest_matching(&SeatId::from(seat), &[URGENT_EVENT_KIND])
+            .await
+            .unwrap()
+            .expect("audited");
+        let payload: Value = serde_json::from_str(&event.payload).unwrap();
+        assert_eq!(payload["outcome"], outcome, "{seat}");
+    }
+    let both = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-holder",
+        "u-4",
+        json!({"urgent": true, "fyi": true}),
+    )
+    .await;
+    assert_eq!(both["ok"], false);
+    assert!(
+        both["meta"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("E-RS-URGENT-FYI")
+            || both.to_string().contains("E-RS-URGENT-FYI"),
+        "{both}"
+    );
+    rig.server.abort();
+}

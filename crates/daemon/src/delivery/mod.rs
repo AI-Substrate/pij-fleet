@@ -1,6 +1,7 @@
 //! Runtime message delivery over the frozen registry, queue, transport, and spine ports.
 
 pub mod role_send;
+pub mod urgent;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -140,6 +141,10 @@ pub struct NativeReceiverHeartbeat {
     state: &'static str,
     lease_ms: u64,
     renew_after_ms: u64,
+    /// Plan 214: queued `--urgent` msg_ids the receiver takes at its next
+    /// tool boundary. Omitted when there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    urgent: Vec<String>,
 }
 
 /// A registered external pull seat, never an extension, relay, or pane consumer.
@@ -235,6 +240,10 @@ pub struct DeliveryService {
     extension_claim_lease_secs: u64,
     recovery_authority_shared: bool,
     admissions: tokio::sync::Mutex<tokio::task::JoinSet<()>>,
+    /// Plan 214: queued messages marked `--urgent`, per native Copilot seat.
+    /// Held in memory only: a daemon restart delivers them at turn end, as
+    /// normal sends. Read on the receiver heartbeat with no store access.
+    urgent: std::sync::Mutex<HashMap<SeatId, std::collections::BTreeSet<String>>>,
 }
 
 impl DeliveryService {
@@ -298,6 +307,7 @@ impl DeliveryService {
             native_started_at: tokio::time::Instant::now(),
             native_deadline_checked_at: tokio::sync::Mutex::new(tokio::time::Instant::now()),
             native_receiver_changed: tokio::sync::Notify::new(),
+            urgent: std::sync::Mutex::new(HashMap::new()),
             extension_claim_lease_secs: std::env::var("PIJ_RS_EXT_CLAIM_LEASE_SECS")
                 .ok()
                 .and_then(|value| value.parse::<u64>().ok())
@@ -393,6 +403,7 @@ impl DeliveryService {
             lease_ms,
             renew_after_ms: (lease.as_millis() as u64 / NATIVE_RECEIVER_RENEWAL_DIVISOR)
                 .min(lease_ms.saturating_sub(1)),
+            urgent: self.urgent_pending(seat),
         })
     }
 
@@ -2100,6 +2111,98 @@ impl DeliveryService {
         Ok(())
     }
 
+    /// Plan 214: `msg_id`, queued for native Copilot seat `seat`, should reach
+    /// it at its next tool boundary instead of at its turn end.
+    pub fn mark_urgent(&self, seat: &SeatId, msg_id: &str) {
+        let mut urgent = self
+            .urgent
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        urgent
+            .entry(seat.clone())
+            .or_default()
+            .insert(msg_id.to_string());
+    }
+
+    /// The urgent msg_ids pending for `seat`, for its receiver heartbeat. A map
+    /// lookup; no store read.
+    pub fn urgent_pending(&self, seat: &SeatId) -> Vec<String> {
+        let urgent = self
+            .urgent
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        urgent
+            .get(seat)
+            .map(|ids| ids.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn forget_urgent(&self, seat: &SeatId, msg_id: &str) {
+        let mut urgent = self
+            .urgent
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(ids) = urgent.get_mut(seat) {
+            ids.remove(msg_id);
+            if ids.is_empty() {
+                urgent.remove(seat);
+            }
+        }
+    }
+
+    /// Plan 214: at a tool boundary, the native receiver of `seat` takes the
+    /// urgent messages among `msg_ids` that are still queued. Each moves from
+    /// pending to delivered in one store transaction (the ledger row the
+    /// turn-end path writes), so it never arrives again at turn end. Ids that
+    /// are not marked urgent, or no longer queued, are skipped. The receiver's
+    /// identity is checked as for a claim.
+    pub async fn take_urgent(
+        &self,
+        seat: &SeatId,
+        identity: &NativeInboxIdentity,
+        msg_ids: &[String],
+    ) -> Result<Vec<Msg>> {
+        let _native_guard = self.native_lock.lock().await;
+        let recipient = self.inbox_recipient(seat, identity).await?;
+        if !recipient.is_some_and(|recipient| recipient.harness == Harness::Copilot) {
+            return Err(native_refusal(
+                "urgent take requires the seat's current native Copilot receiver",
+            ));
+        }
+        let marked = self.urgent_pending(seat);
+        let mut taken = Vec::new();
+        for msg_id in msg_ids.iter().filter(|id| marked.contains(id)) {
+            self.forget_urgent(seat, msg_id);
+            let Some(job) = self.queue.take_pending_delivery(seat, msg_id).await? else {
+                continue;
+            };
+            let payload: ClaimedPayload =
+                serde_json::from_str(&job.payload).map_err(|error| PijError::Adapter {
+                    adapter: "daemon/delivery".into(),
+                    message: format!("invalid urgent delivery: {error}"),
+                })?;
+            let at = (self.clock)()?;
+            publish_outcome_with_control(
+                &self.event_bus,
+                seat,
+                &Receipt {
+                    msg_id: payload.message.msg_id.clone(),
+                    outcome: DeliveryOutcome::Delivered {
+                        origin: DeliveryOrigin::ReaderRead,
+                    },
+                    at,
+                    cold_check: None,
+                    warning: None,
+                },
+                "tool-boundary",
+                None,
+            )
+            .await?;
+            taken.push(payload.message);
+        }
+        Ok(taken)
+    }
+
     /// Record `ReaderRead` and return the authority-owned job identity committed.
     ///
     /// # Errors
@@ -2204,6 +2307,7 @@ impl DeliveryService {
             .queue
             .ack_delivery(job_id, DeliveryOrigin::ReaderRead)
             .await?;
+        self.forget_urgent(&ack.recipient, &ack.msg_id);
         drop(_native_guard);
         let at = (self.clock)()?;
         publish_socket_released(&self.event_bus, &ack.recipient, &ack.msg_id, at).await?;

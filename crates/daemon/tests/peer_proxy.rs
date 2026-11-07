@@ -110,6 +110,7 @@ async fn forward_once_under_the_inherited_environment() {
             fyi: false,
             force: false,
             reason: None,
+            urgent: false,
         })
         .await
         .expect("queued");
