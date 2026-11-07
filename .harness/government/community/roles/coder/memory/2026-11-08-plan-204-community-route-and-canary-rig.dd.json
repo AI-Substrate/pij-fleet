@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "read before editing the community route, templates, or running a fresh-seat canary",
+				"tags": [
+					"plan-204",
+					"canary",
+					"templates"
+				],
+				"title": "plan 204 community route and canary rig"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Plan 204 (s10, #136), merged 8e19abc. What to reuse:\n- Printed commands in skills and templates: single-quote every placeholder; crates/cli/tests/skill_verb_coverage.rs checks exact flags per leaf, Usage-block required flags and quoting. Run it after any route or template edit.\n- A shipped template version is never edited: add v<n+1> plus a SHIPPED row and a pinned sha256 in a_shipped_version_is_never_edited.\n- Fresh-seat canary rig: docs/plans/204-community-route/assets/evidence/canary-rig.sh (private daemon, private tmux, scratch project). The rig must pin PIJ_RS_ADDR/PIJ_RS_STATE_DIR in its pij wrapper and clear the driver's PIJ_SPAWN_ID and COPILOT_LOADER_PID/COPILOT_CLI* or a Copilot canary refuses native registration. Copilot seats self-register there; OMP too.\n- Verdict rounds: bobcat checks the test's own instrument (substring vs exact match); security wants literal shell words in any printed recipe.\n"
+		}
+	]
+}
