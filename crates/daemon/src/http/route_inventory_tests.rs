@@ -8,9 +8,10 @@
 //! (axum serves HEAD through each GET handler), and counts a pair as served
 //! unless axum answers 405. It fails on a served pair the inventory lacks, an entry
 //! the daemon does not serve, a duplicate, and an entry without a valid
-//! classification. One probe per run (`just route-inventory-check`): 59 paths
-//! times 7 methods, sequential local calls to an isolated test router, under
-//! a per-call and an overall timeout so a hang fails. Nothing runs per tick.
+//! classification. One probe per run (`just route-inventory-check`): every
+//! `Endpoint::ALL` path times 7 methods, sequential local calls to an isolated
+//! test router, under a per-call and an overall timeout so a hang fails.
+//! Nothing runs per tick.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
