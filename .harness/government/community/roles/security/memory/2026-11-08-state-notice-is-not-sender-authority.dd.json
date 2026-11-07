@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Read before treating automatic state FYIs or retry work as exceptions to C32 sender/audit limits.",
+				"tags": [
+					"policy",
+					"identity",
+					"notifications",
+					"audit"
+				],
+				"title": "State notice is not sender authority"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#149e0004f856f665cdeec03a62b0f48e769f342bea2 BLOCK underC32: initialclosed_by_actor auditnowatomic, S004/S005closed, butnonquiet asserted-holder closesemitMsg.from=claimedactor, preservedHeldFyi.sender/renderedfromB withcallerwhy. Structuredstateprefixdoesnotexemptsend-as fromC32(1). RetryfreshassertedB usesBsender, bodyoriginalDreason, marksnotice told, withoutatomicnewBaudit; originalDcloseauditdoesnotcovernewidentity-dependent effect. Use daemonsender+explicit assertedactor provenance and replayimmutableauditedintent oratomicallyauditretryassertion. No strongercrypto-originrequirementreopened. Source-only, no tests/probes. Verdict: security/outputs/2026-11/08-verdict-pr-149-e0004f8.dd.json."
+		}
+	]
+}
