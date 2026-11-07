@@ -234,6 +234,13 @@ note = "Live Copilot CLI, pij-bumpy-herring's pane %17 on 2026-11-07 (pm-001: tm
 answer = "A Copilot modal dialog: the footer '↑/↓ select · enter accept · ctrl+d decline · esc cancel' sits above the bottom rule and the status line. pij_harnesses::modal::modal_dialog matches it, first line 'Copilot needs information.', cleared by ctrl+d."
 
 [[fixture]]
+path = "harnesses/copilot-follow-up-dialog-herring-f108.txt"
+sha256 = "314114e1a638334b0cdd1db5021612dfaae165e1c7be8acbe3b446b5753cb31e"
+bytes = 1025
+note = "Live Copilot CLI, pij-bumpy-herring's pane %17 at 04:32:52 on 2026-11-08 (pij-watchful-badger: tmux capture-pane -p, blank rows and half-block rows dropped, last 10 rows; the top row, a table row quoting an open PR's finding, also dropped). The dialog stood 04:11:34 to 04:33:11 and the detector never fired: F108."
+answer = "A Copilot modal dialog: the footer above the bottom rule and the status line. modal_dialog matches it, cleared by ctrl+d; on a seat whose inbox reader acked a message mid-dialog, the round still claims it."
+
+[[fixture]]
 path = "harnesses/copilot-follow-up-dialog-lynx.txt"
 sha256 = "a3d7883c5cc1bdd97883313a9f248492b2726dee5618c0822ca835f4bdb88f9b"
 bytes = 1381

@@ -5,7 +5,7 @@
 //! its harness's dialogs ([`modal::watches`]) and it is a candidate
 //! ([`is_candidate`]): working, with a pane, and silent [`STALL_AFTER_MS`] by
 //! its own events. Each working seat with a pane on such a harness costs one
-//! `latest_matching` spine read per round (four indexed per-kind SELECTs in one
+//! `latest_matching` spine read per round (three indexed per-kind SELECTs in one
 //! read snapshot). A candidate's visible pane is read once per round ONLY over
 //! the daemon's already-live tmux control client
 //! ([`TmuxPort::capture_without_launch`]): never a client start, never a fork.

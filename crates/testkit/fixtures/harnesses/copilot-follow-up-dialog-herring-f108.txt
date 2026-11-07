@@ -1,0 +1,9 @@
+ The verdict is persisted and reported to pm-001. Select a follow-up action, or decline to leave this as a read-only review.
+ Follow-up action:
+ ❯ Fix highest severity issues
+   Fix all issues
+   Commit a summary of findings
+   Other (type your answer)
+ ↑/↓ select · enter accept · ctrl+d decline · esc cancel
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+9% pij-governance ⎇ prime-governance ⛓ pij-bumpy-herring • gpt-6.1-sol · high · 922K context • xhigh • 82k/922k • 5096.29 AIU • 51.00 prem • 11h1m
