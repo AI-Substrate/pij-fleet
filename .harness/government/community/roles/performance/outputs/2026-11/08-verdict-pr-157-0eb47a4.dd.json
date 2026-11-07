@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "0eb47a422d07903c065edf72b59d4876d2d256d4",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/157#issuecomment-6708447420",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:157",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `0eb47a422d07903c065edf72b59d4876d2d256d4`.\n\nFull PR-owned cost review against `cee011387937c7881318c98d86014526d94f2ca7`. Harness tooling and docs only; no daemon, timer, watcher, recurring poll or automatic retry added. This is a **cost pass, not an endorsement of FINAL's correctness**.\n\n## Process budget\n\n| Complete ordinary CLI run | Runner-issued calls |\n|---|---|\n| Git | **8**: root rev-parse; one ls-remote for main and PR; one fetch for both SHAs; migrations ls-tree; added-file diff; main schema show; head schema show; worktree list |\n| GitHub | **1 gh pr view** |\n| Delivers parser | **0 or 1** already-built binary invocation |\n| `--worktree` reuse | **1 additional git worktree list** |\n| `--worktree` creation | **2 additional git calls**: list and detached add |\n\nMaximum normal direct Runner budget is therefore **10 git + 1 gh + 1 optional parser = 12**, independent of migration/check/seat counts. Ordinary mode is eight git/one gh plus the optional parser. Tool errors or missing refs can stop earlier; failed finality conditions need not stop the fetch/local checks. Head disagreement refuses worktree creation.\n\nThe loops only traverse finite check rollup, ref listing, migration names, worktree blocks and at most six candidate parser locations. None invokes a command per check/migration or polls for a changed result. Rate is the caller's manual runs: before verdict dispatch and again before READY, or after a new head, **zero while idle and no per-seat fleet multiplier**.\n\n`justfile:213-214` invokes the existing local `node_modules/.bin/tsx`; no npx resolution, install or cargo build is performed. A missing parser only prints an explicit build suggestion; it does not build one.\n\n## Limits of a bounded invocation count\n\nThe counts cover this script's Runner, not just/tsx startup, gh's internal HTTP requests, or git's transport/pack/maintenance/filter children. Fetch can transfer and process commit/tree history; it is not a bounded-byte read and still runs on repeated checks. Worktree creation checks out the tracked tree and consumes disk; reuse avoids that checkout. FETCH_HEAD is written despite no intended branch-ref movement.\n\n`spawnSync` caps captured output at **64 MiB per stream/process**, not total parsed memory or repository transfer. Parsing/formatting costs scale with PR body/check count, listing bytes, migration names and worktree inventory. Calls have **no explicit deadline**, so network or git processing can block a manual run; fixed call count does not prove bounded duration, CPU or all descendant process launches.\n\nNo new dependency or daemon launch site needs spawn_sites coverage here. No local benchmark or freeze invocation was performed.\n\n## CI and scope\n\n[CI 42382327504](https://github.com/AI-Substrate/pij-fleet/actions/runs/42382327504) is successful at this CLEAN exact head. Node 22 executes **18 pr-freeze tests**, including recorded one-ls-remote/one-gh calls, fetched SHA arguments, no ordinary worktree add and optional create/reuse/refusal. The complete Vitest run records **2,222 passed / 6 skipped**; Node 24 and both Rust jobs also succeed. Both visible delivers checks pass, latest **42382905412**.\n\nThese tests fake gh/git/parser calls. They prove script control flow and asserted call shape, not real network/checkout latency, physical child-process totals or live performance. The PM reports a self-run FINAL; it was not reproduced here. No local tests, builds, probes or worktree changes.\n\n**Correctness handoff:** without a built parser, `delivers()` returns ok without requiring an actual latest passed `delivers` check. The test accepting malformed prose uses a rollup containing only rust-test/rust-lint. This was sent to Bobcat for the FINAL rule review; this performance pass does not close it. No migration or after-deploy daemon reading is required for a hand-run harness-only tool.\n"
+		}
+	]
+}
