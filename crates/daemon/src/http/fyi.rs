@@ -198,6 +198,17 @@ pub(crate) struct ActivityRequest {
     #[serde(default)]
     native_session: Option<String>,
     state: String,
+    /// The session's current context size, when the runtime knows it (plan
+    /// 217: Copilot's ephemeral `session.usage_info`).
+    #[serde(default)]
+    context_tokens: Option<u64>,
+    /// The model's context window, when the runtime knows it.
+    #[serde(default)]
+    context_window_tokens: Option<u64>,
+    /// The seat's report grant from its own registration (review S153-001):
+    /// required with `context_tokens`.
+    #[serde(default)]
+    context_token: Option<String>,
 }
 
 /// The seat's mechanical state after the publication.
@@ -225,6 +236,7 @@ pub(crate) async fn activity(
             );
         }
     };
+    let session = request.native_session.clone();
     let seat = match bound_seat(
         &state,
         ACTIVITY,
@@ -237,16 +249,76 @@ pub(crate) async fn activity(
         Ok(seat) => seat,
         Err(response) => return *response,
     };
-    // A targeted state write, never a put of the row read above: a tombstone,
-    // role or declaration landing in between must survive (review MEDIUM-2).
-    let changed = match state
-        .services
-        .registry
-        .set_activity(&seat.id, observed, None)
-        .await
+    // The pane and session above are in every roster, so they prove nothing
+    // about who is asking. A size moves the cold-wake guard and the prime's
+    // large-seat FYI: only the seat's own registration grant may report one,
+    // and a refused report changes nothing, its activity included.
+    let reports = &state.services.reported_context;
+    if request.context_tokens.is_some()
+        && !reports.authorized(
+            &seat.id,
+            seat.proc,
+            request.context_token.as_deref().unwrap_or_default(),
+        )
     {
-        Ok(seq) => seq.is_some(),
-        Err(error) => return internal(ACTIVITY, error),
+        return refused(
+            ACTIVITY,
+            format!(
+                "a context report for {} needs its own registration's grant \
+                 (`context_token`); nothing was changed",
+                seat.id
+            ),
+        );
+    }
+    let changed = match request.context_tokens {
+        // Review S153-002: the request may have been checked against an
+        // incarnation a registration has since replaced. `apply` checks again
+        // inside the critical section registration runs in, then writes.
+        Some(tokens) => match reports
+            .apply(
+                state.services.registry.as_ref(),
+                &seat.id,
+                seat.proc,
+                request.context_token.as_deref().unwrap_or_default(),
+                observed,
+                crate::reported_context::ContextReport {
+                    session: session.or_else(|| seat.harness_session.clone()),
+                    tokens,
+                    window: request.context_window_tokens,
+                },
+            )
+            .await
+        {
+            Ok(Some(changed)) => changed,
+            Ok(None) => {
+                return refused(
+                    ACTIVITY,
+                    format!(
+                        "{}'s process or grant changed while this report was in flight; \
+                         nothing was changed",
+                        seat.id
+                    ),
+                );
+            }
+            Err(error) => return internal(ACTIVITY, error),
+        },
+        None => {
+            // A targeted state write, never a put of the row read above: a
+            // tombstone, role or declaration landing in between must survive
+            // (review MEDIUM-2).
+            let changed = match state
+                .services
+                .registry
+                .set_activity(&seat.id, observed, None)
+                .await
+            {
+                Ok(seq) => seq.is_some(),
+                Err(error) => return internal(ACTIVITY, error),
+            };
+            // The seat may have worked since the watchdog last read its size.
+            reports.touch(&seat.id);
+            changed
+        }
     };
     envelope(
         StatusCode::OK,

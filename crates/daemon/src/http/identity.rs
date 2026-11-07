@@ -998,6 +998,8 @@ pub(crate) async fn adopt(
                     // one and must hear the same grace; answering 0 here would
                     // make adopt the one path that steps on a typing human.
                     typing_grace_ms: Some(super::resolve_typing_grace_ms()),
+                    // Adopt is not a native extension registration.
+                    context_token: None,
                 },
             );
             answer.meta = Some(format!(

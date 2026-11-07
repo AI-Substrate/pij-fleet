@@ -1,4 +1,5 @@
--- Closed role requests (plan 212, s05 dogfood F59 and F61; number from pij claim).
+-- Closed role requests (plan 212, s05 dogfood F59 and F61; number from pij claim,
+-- renumbered from 0037 after #153's 0039 merged first).
 --
 -- A queued request that no holder will ever take is closed: withdrawn by its
 -- requester, the PA or the prime (`pij requests withdraw <id> --why`), or
@@ -45,4 +46,4 @@ CREATE INDEX closed_role_requests_by_project
 CREATE INDEX role_requests_by_project
     ON role_requests (project, state, created_at);
 
-PRAGMA user_version = 37;
+PRAGMA user_version = 40;

@@ -1,0 +1,156 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Claude UDS delivery without ps (F82)",
+        "slug": "uds-start-in-process",
+        "ordinal": 218,
+        "complexity": "CS-2",
+        "summary": "Read a Claude peer's process start in-process and resolve its endpoint once per delivery, so delivering to a Claude seat launches nothing.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "After #141 the daemon's remaining launches were all ps.uds-peer-start: every Claude delivery pays 4 /bin/ps launches (6 for an FYI carrier) to confirm the peer's start time. Plan 182 already reads process starts in-process for registration; this plan reuses that reader in the Claude transport and stops resolving the endpoint twice per delivery. Small, one coder; not blocking anything."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Read a Claude peer's process start in-process and resolve its endpoint once per delivery, so delivering to a Claude seat launches nothing."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "A lifetime PID cache.",
+        "Changing Claude delivery semantics, consent or socket handling."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "No ps for a Claude peer. The Claude UDS transport's process-start check (crates/transport/src/uds.rs process_start, site ps.uds-peer-start) reads the start instant in-process, through the existing reader (crates/harnesses/src/proc.rs, plan 182: proc_pidinfo on macOS, /proc on Linux), injected into the transport as an observer so transport takes no new crate dependency it shouldn't. Both comparisons (the descriptor's local start and Claude's UTC record) use the one in-process instant; no /bin/ps launch remains on the delivery path. A fresh check per resolution, not a lifetime PID cache (PIDs recycle).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Resolve once per delivery. A normal delivery resolves the Claude endpoint once and uses it for both can_deliver and deliver (crates/transport/src/uds.rs 223-246); an FYI carrier's admission probe and its later worker delivery (crates/daemon/src/delivery/mod.rs 1125-1168, pointer/worker.rs 301-352) do not re-run discovery more than the liveness check needs. A stale endpoint between the two still fails closed and retries as today.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). The point of the plan. Before (pij-thorough-ocelot, 07 Nov, daemon 7956 at acf3646): ps.uds-peer-start +40 in 60.007 s = 0.67/s, all from 8 healthy Claude deliveries to 5 seats (4 direct x 4 ps + 4 FYI carriers x 6 ps); 0.90/s in an earlier window. After: 0 launches from this site; total daemon launches fall by that amount at the same traffic. Cost then scales with Claude deliveries only as in-process syscalls. No new timer, poll or launch.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Docs and states. docs/how/pij-rs-api.md (or the transport doc) notes the Claude peer check is in-process; docs/difficulties.md marks F82 resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00da",
+          "title": "Claude UDS delivery without ps (F82)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-2.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "F82, attributed by performance (pij-thorough-ocelot, governance roles/performance/outputs/2026-11/07-note-issue-f82.dd.json): after #141 the daemon's only launch site at rest was ps.uds-peer-start. Cause: healthy Claude deliveries, not polling or a stuck retry. Exact-PID discovery runs process_start twice (local wall start, then UTC for Claude's record), each a /bin/ps -p <pid> -o lstart=; can_deliver and deliver both discover, so 4 ps per direct delivery; an FYI carrier adds an admission probe, so 6. Pane fallback launches ps only for records matching the pane suffix. The in-process reader already exists for registration (plan 182, crates/harnesses/src/proc.rs). Ocelot's advice: fresh in-process start checks, not a blind lifetime PID cache."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
