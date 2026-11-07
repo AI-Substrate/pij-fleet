@@ -210,6 +210,17 @@ async fn take_turn(rig: &Rig, seat: &str, prompt: &Msg) {
         .unwrap();
 }
 
+/// The compactions recorded for the round to settle (plan 222), pending.
+async fn pending_compactions(rig: &Rig) -> Vec<(String, String)> {
+    pij_store::SqliteOrchestration::new(pij_store::open(&rig._store.path()).await.expect("store"))
+        .pending_compactions()
+        .await
+        .expect("pending")
+        .into_iter()
+        .map(|row| (row.seat.to_string(), row.msg_id))
+        .collect()
+}
+
 /// Whether the seat's queue head is a compact control.
 async fn compact_queued(rig: &Rig, seat: &str) -> bool {
     rig.queue
@@ -320,6 +331,11 @@ async fn a_seat_holding_no_role_is_closed_and_compacted_directly() {
     assert_eq!(compacted["ok"], true, "{compacted}");
     assert!(compacted["data"]["held"].is_null(), "{compacted}");
     assert!(compact_queued(&rig, "plain").await);
+    assert_eq!(
+        pending_compactions(&rig).await,
+        [("plain".to_string(), "compact-plain".to_string())],
+        "an admitted compact is recorded for the compaction wake"
+    );
     let closed = post(rig.addr, "/v1/close", close("plain", "prime")).await;
     assert_eq!(closed["ok"], true, "{closed}");
     assert!(closed["data"]["tombstoned_at"].is_number(), "{closed}");
@@ -360,6 +376,10 @@ async fn a_parents_compact_of_a_holder_is_held_and_admitted_after_the_turn() {
     let held = post(rig.addr, "/v1/send", compact("holder", "prime")).await;
     assert_eq!(held["data"]["held"], "memory-turn", "{held}");
     held_compact_receipt(&held, "compact-holder");
+    assert!(
+        pending_compactions(&rig).await.is_empty(),
+        "a held compact is not recorded"
+    );
     let prompt = prompt_for(&rig, "holder").await;
     take_turn(&rig, "holder", &prompt).await;
     let turn = turn_event(&rig, "holder").await;
@@ -367,6 +387,11 @@ async fn a_parents_compact_of_a_holder_is_held_and_admitted_after_the_turn() {
     assert!(
         compact_queued(&rig, "holder").await,
         "the compact follows the turn"
+    );
+    assert_eq!(
+        pending_compactions(&rig).await,
+        [("holder".to_string(), "compact-holder".to_string())],
+        "the compact the turn held is recorded when it is admitted"
     );
     rig.server.abort();
 }

@@ -16,6 +16,7 @@ pub mod anomalies;
 pub mod background;
 pub mod claims;
 pub mod cold_wake;
+pub mod compaction_wake;
 pub mod config;
 pub mod control;
 pub mod decisions;

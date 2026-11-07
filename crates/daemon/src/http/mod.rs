@@ -2539,9 +2539,20 @@ pub(crate) async fn send_control(
 
 /// Admit one authorized control: the single place a control enters delivery,
 /// so a compact held for a memory turn takes the same path when it runs.
-async fn admit_control(state: &AppState, msg: Msg) -> Result<pij_core::model::Receipt, PijError> {
+pub(crate) async fn admit_control(
+    state: &AppState,
+    msg: Msg,
+) -> Result<pij_core::model::Receipt, PijError> {
     let compact = msg.command.as_deref() == Some("compact");
     let target = msg.to.clone();
+    if compact {
+        // Plan 222: a holder this compaction leaves idle is woken once. The
+        // row is committed BEFORE the compact is admitted (P9), by a write
+        // that completes even if this caller is dropped, so no compact is
+        // ever admitted untracked. A failed write refuses the compact.
+        crate::compaction_wake::record(&state.services, &target, &msg.msg_id, system_time_ms()?)
+            .await?;
+    }
     let receipt = state.services.delivery.accept_control(msg).await?;
     if compact {
         // Held for the first turn after the compact (plan 202), here so a compact
@@ -4727,4 +4738,27 @@ pub(crate) async fn enqueue_telegram_document(
         body_job_id,
         files,
     })
+}
+
+/// An [`AppState`] over `services`, for tests outside this module.
+#[cfg(test)]
+pub(crate) fn test_state(services: Services) -> AppState {
+    AppState {
+        registration: RegistrationService::new(
+            Arc::clone(&services.registry),
+            Arc::clone(&services.liveness),
+            Arc::clone(&services.event_bus),
+            Vec::new(),
+            Arc::clone(&services.roles),
+        )
+        .with_native_delivery(Arc::clone(&services.delivery)),
+        services,
+        auth: AuthRing::local("key".to_string()),
+        machine_alias: "local".to_string(),
+        spawn_lock: Arc::new(tokio::sync::Mutex::new(())),
+        typing_lock: Arc::new(tokio::sync::Mutex::new(())),
+        double_seat_lock: Arc::new(tokio::sync::Mutex::new(())),
+        typing_grace_ms: DEFAULT_TYPING_GRACE_MS,
+        federation: None,
+    }
 }
