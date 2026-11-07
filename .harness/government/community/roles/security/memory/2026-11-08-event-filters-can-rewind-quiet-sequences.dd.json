@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Read before changing OWN_ACTIVITY_KINDS or upgrading modal-stall persistence.",
+				"tags": [
+					"modal-stall",
+					"rollout",
+					"sequences"
+				],
+				"title": "Event filters can rewind quiet sequences"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Changing an event allowlist can rewind a derived sequence without rewinding the spine.\n\nPR #164 at 8e282c72d84fc000896e312c668a7a0367ea717a removes delivery.inbox-ack from OWN_ACTIVITY_KINDS. A legacy modal_stalls row keyed to ACK seq 110 can then face latest-own seq 100. Greater-only replacement (crates/store/src/stalls.rs:35-40) rejects it; exact-match telling/attempt/close logic skips retries and new recipients, while the open view can persist.\n\nThis is a source-confirmed deployment/correctness transition gap, not a new unauthorized caller path or a claim about affected production rows. Bobcat owns the deployment BLOCK (6da0d8b7bffa43dfcda213586cd74f5c3dc9ad79); PM was notified. My security pass-with-notes does not clear deployment.\n\nWhen changing event-kind definitions, test persisted rows made by the old policy. Reconcile obsolete ACK-keyed stretches without removing stale-round concurrency protection blindly. A monotonic event sequence does not imply monotonic selection under a changed filter.\n\nCurrent review continuity is in outputs/handover-pij-annual-squirrel-2026-11-08.md. Latest #163 95bbd70a139feafedb16fbca2544383b410d636d is pass-with-notes (7e537dc8049b198b25a5a95f522f6fe6a9b33194), phase-1 design/inventory only. No verdict is in flight.\n"
+		}
+	]
+}
