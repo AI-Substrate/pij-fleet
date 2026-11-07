@@ -132,3 +132,8 @@
 2026-11-06 verdict pr-135 3ecec77f46ac335e6fe141ecf75baf5637378e7b block - https://github.com/AI-Substrate/pij-fleet/pull/135#issuecomment-6685088600
 
 2026-11-06 verdict pr-130 5d2202949705b7345fd78177784ac29a4bd5282e pass-with-notes - merge resolutions preserve both sides; batch routes callback runs once per distinct seat after assign_many, including non-adjacent duplicates; compact helper/key unchanged, drain prefix/order checks retained; exact-head CI 4/4 with 2,006 Rust tests passed, nonblocking missing batch FYI-count regression, no local runs.
+
+2026-11-06 verdict pr-144 464e06127edccf4356085c6e19075f52e292eef9 block - full 16-AC review: F001 P2 shared-build adds invalid --no-run to --doc (pinned Cargo source proves refusal); F002 P2 scope-read error becomes empty and can broaden PA digest to all projects; N001 phase-local lineage diagnostics, N002 real-validator aggregation unproven; both exact-head CI attempts 4/4 with 2,020 Rust tests passed plus delivers green, no local builds/tests/probes.
+
+2026-11-06 evidence pr-144 464e06127edccf4356085c6e19075f52e292eef9 N002-closed - warbler's real-ddocs positive/three-gap receipt (msg b20543a80c49a202-000000000000005b) confirms aggregation already existed; F37 fixes the all-flags next step, whose companion CI regression would fail on baseline; AC11 accepted, no push/reviewer run, F001/F002 block unchanged.
+2026-11-06 verdict pr-137 1fbe46c4ab695d0f43b3e8e65b189fa68ac8fb26 pass-with-notes - https://github.com/AI-Substrate/pij-fleet/pull/137#issuecomment-6686219808

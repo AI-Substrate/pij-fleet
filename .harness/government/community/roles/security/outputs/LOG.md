@@ -136,3 +136,5 @@
 
 2026-11-06 verdict pr:137 1fbe46c4ab695d0f43b3e8e65b189fa68ac8fb26 pass-with-notes - S001 closed by stored-request three-authority gate before commit/index/stamp/notice, former unauthorized creator refused and all allowed cases pass; project/path PK, commit-notice identity and native argv/stdin verified; retarget/main resolutions included; exact-tree four-green/2021-case proof, fake-ddocs/failure/revocation limits retained; 2026-11-06-pr-137-1fbe46c-security.md.
 
+2026-11-06 verdict pr:149 88509c3a80e6fa919ee3c5c75f0804e5d4402d67 block - Two HIGH9/10 findings: raw holding instance reaches job-capable tmux 3.6a rename formats (version-bound source proof), and unquoted refusal guidance becomes shell syntax. Stored-row withdrawal/list body/project/transaction guards otherwise retained; exact-tree four-green/2009-case CI lacks hostile-instance coverage, current DIRTY; no local execution; 2026-11-06-pr-149-88509c3-security.md.
+
