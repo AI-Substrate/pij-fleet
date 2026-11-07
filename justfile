@@ -213,6 +213,13 @@ local-path-check:
 ddocs-check *ARGS:
     node_modules/.bin/tsx harness/scripts/ddocs-check.ts {{ARGS}}
 
+# Workstream coverage (plan 210, req-31): every PRD requirement is delivered by
+# a workstream step (or dropped), every blueprint component is built by one,
+# and an umbrella step is complete only when its children are. Known gaps live,
+# each with an owner, in harness/scripts/coverage-exemptions.json.
+coverage-check:
+    node_modules/.bin/tsx harness/scripts/coverage-check.ts
+
 # Report-only attribution scan, scoped after merge-base with main.
 pij-commit-trailers *ARGS:
     node_modules/.bin/tsx harness/scripts/pij-commit-trailers.ts "$@"
@@ -270,6 +277,7 @@ copilot-models *ARGS:
 self-check:
     just local-path-check
     just ddocs-check
+    just coverage-check
     just pij-skill-check
     just lockfile-allowlist
     just typecheck

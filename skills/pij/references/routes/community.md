@@ -6,7 +6,7 @@
 
 **Why**: a PEC builds lasting knowledge of its problem space. Specialist roles hold what the fleet learns, in memory and outputs that outlive any seat, and are called on later: revived, or a fresh seat that reads the role. Long-running specialists are a feature, not a cost to minimise away, and none of this is engineering-specific: a design workshop, research or operations grows a PEC the same way (C30).
 
-A **workstream** orders PRD rows and blueprint pieces into steps (filed under `docs/project/roadmaps/` until the rename; [how to write one](../community/workstream.md)); it nests (`part_of`) and maps to 0..n lanes. A **pij stream** is one lane of a workstream (C29).
+A **workstream** orders PRD rows and blueprint pieces into steps (in `docs/project/workstreams/`; [how to write one](../community/workstream.md)); it nests (`part_of`) and maps to 0..n lanes. A **pij stream** is one lane of a workstream (C29).
 
 The directory lives on the governance branch under `<government-root>/community/` ([where that is](../prime/rituals/bootstrap.md#governance-branch--the-rules)). Only pij's writer changes it: every verb below validates with ddocs and commits only its own paths. Never hand-edit a role, holders, output or memory document. `pij directory '<verb>' --help` works with no daemon. The API and refusals are in [Community directory](../../../../docs/how/pij-rs-api.md#community-directory-plan-190).
 

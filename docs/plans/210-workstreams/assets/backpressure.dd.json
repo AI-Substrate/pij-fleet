@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: fixtures for nesting across files, an umbrella marked complete with an open child (fails), lanes, and a cross-file depends_on; ddocs validate passes the good ones and fails the bad ones by name.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: ddocs validate and build on docs/project pass; `pij claim workstream` returns 002; grep finds no live 'docs/project/roadmaps' outside history and the alias.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -71,7 +71,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: the stage passes on the head; deleting a delivers link makes it fail naming the row.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "crates/"
         },
         {
@@ -91,7 +91,7 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
           "note": "Docs and a sensor that runs once per `harness checks`; no daemon change beyond what #131 already carries. No loop, poll, timer or launch site."
         },

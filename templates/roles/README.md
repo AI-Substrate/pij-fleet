@@ -7,7 +7,7 @@ A PEC exists to build lasting knowledge of its problem space (ruling C30). Speci
 | Template | Kind | Holders | What it's for |
 |---|---|---|---|
 | [prime](prime/v3/role.dd.json) | general | one | Leads the community: the directory, rulings, routing, merges. |
-| [pm](pm/v3/role.dd.json) | general | one per top-level workstream | Runs one workstream: packets, assignments, numbers, true states. |
+| [pm](pm/v4/role.dd.json) | general | one per top-level workstream | Runs one workstream: packets, assignments, numbers, true states. |
 | [pa](pa/v3/role.dd.json) | general | one | Keeps seats healthy: memory before compaction, no silent stalls. |
 | [coder](coder/v3/role.dd.json) | general, per task | many | Builds one step from its packet and opens a PR. |
 | [reviewer](reviewer/v3/role.dd.json) | general, per task | many | Reviews one PR for correctness at its exact head. |
@@ -40,7 +40,7 @@ Text in `<angle brackets>` is project-specific: replace the project's placeholde
 
 ## Versions
 
-Each version lives in its own folder (`<name>/v1/`, `<name>/v2/`, …) and is never edited after it ships, so a role made from `<name>@vN` can be compared with the latest version. A role records the template and version it came from in `meta.template` and `meta.template_version`. A new version is a new folder plus one row in `SHIPPED` in `crates/daemon/src/community/templates.rs`; a test fails until every file here is compiled in, and another pins each shipped version's bytes, so editing one fails. The six core templates are at v3: v2 single-quoted the placeholders in their packet commands, and v3 says "workstream" where v2 said "roadmap" (ruling C29), with paths under `docs/project/` unchanged until plan 210 renames the folder.
+Each version lives in its own folder (`<name>/v1/`, `<name>/v2/`, …) and is never edited after it ships, so a role made from `<name>@vN` can be compared with the latest version. A role records the template and version it came from in `meta.template` and `meta.template_version`. A new version is a new folder plus one row in `SHIPPED` in `crates/daemon/src/community/templates.rs`; a test fails until every file here is compiled in, and another pins each shipped version's bytes, so editing one fails. The six core templates are at v3: v2 single-quoted the placeholders in their packet commands, and v3 says "workstream" where v2 said "roadmap" (ruling C29), with paths under `docs/project/` unchanged. pm is at v4, which changes only its path to `docs/project/workstreams/` after plan 210 moved the folder.
 
 ## Using one
 

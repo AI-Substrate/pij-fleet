@@ -1,12 +1,12 @@
 {
 	"dd": {
-		"schema": "pij/roadmap"
+		"schema": "pij/workstream"
 	},
 	"sections": [
 		{
 			"name": "meta",
 			"value": {
-				"title": "Roadmap 001: daily digest",
+				"title": "Workstream 001: daily digest",
 				"status": "draft",
 				"updated": "2026-11-04",
 				"owner": "pm-001"
@@ -55,6 +55,5 @@
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }
