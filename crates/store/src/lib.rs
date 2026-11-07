@@ -36,6 +36,6 @@ pub use registry::SqliteRegistry;
 pub use role_assertion::{Placement, PlacementCommit};
 pub use role_requests::{
     CloseOutcome, ClosedOrOpen, ClosedRoleRequest, LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage,
-    REQUESTS_LIST_LIMIT, ReplyMode, RequestState, RoleRequest,
+    REQUESTS_LIST_LIMIT, ReplyMode, RequestState, RoleRequest, WITHDRAWN_EVENT, Withdrawal,
 };
 pub use spine::SqliteSpine;

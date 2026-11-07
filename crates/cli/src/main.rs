@@ -3149,6 +3149,12 @@ fn render_directory_at(
         out.push_str(&head);
         // F22: one line per holder unless there is exactly one.
         match holders.as_slice() {
+            _ if role["state"] == "retired" => match role["merged_into"].as_str() {
+                Some(into) => {
+                    let _ = write!(out, "retired, merged into {into}");
+                }
+                None => out.push_str("retired"),
+            },
             [] => out.push_str("no holder"),
             [only] => out.push_str(only),
             many => {
@@ -3157,6 +3163,13 @@ fn render_directory_at(
                     let _ = write!(out, "\n    {holder}");
                 }
             }
+        }
+        let merged: Vec<&str> = role["merged_from"]
+            .as_array()
+            .map(|from| from.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        if !merged.is_empty() {
+            let _ = write!(out, "\n    merged from {}", merged.join(", "));
         }
         let requests = &role["requests"];
         if let Some(count) = requests["count"].as_u64() {
@@ -4001,6 +4014,34 @@ mod tests {
             text.contains("pij directory template-diff qa --project 'my remote'"),
             "{text}"
         );
+    }
+
+    /// Plan 206: a merged role reads as retired into its target, and the
+    /// target lists what was merged into it.
+    #[test]
+    fn the_view_names_retired_and_merged_roles() {
+        let view = serde_json::json!({
+            "project": "fleet",
+            "pending": [],
+            "roles": [
+                {"id": "qa", "kind": "general", "holders": "one", "live": [],
+                    "state": "retired", "merged_into": "review", "merged_from": []},
+                {"id": "review", "kind": "general", "holders": "many", "live": [],
+                    "state": "active", "merged_into": null, "merged_from": ["qa"]},
+                {"id": "old", "kind": "general", "holders": "one", "live": [],
+                    "state": "retired", "merged_into": null, "merged_from": []},
+            ],
+        });
+        let text = super::render_directory(&view);
+        assert!(
+            text.contains("qa (general, one): retired, merged into review"),
+            "{text}"
+        );
+        assert!(
+            text.contains("review (general, many): no holder\n    merged from qa"),
+            "{text}"
+        );
+        assert!(text.contains("old (general, one): retired"), "{text}");
     }
 
     /// Plan 203: the prime, holders one per line for a many-holder role, local

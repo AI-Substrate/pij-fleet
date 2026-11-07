@@ -386,9 +386,9 @@
 					"statement": "A pij emergent community is never fixed at setup. As the work changes, the prime or a human can add, merge or retire roles. A retired or merged role keeps its memory, outputs and lineage, and templates stay examples throughout.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A role can be retired, and two roles merged, each by a directory write that commits on the governance branch with a changelog row. Afterwards the retired role's memory, outputs and lineage are still readable, and the directory view lists it as retired rather than missing.",
-					"note": "Extends req-27 (grow from needs) to reshaping. Adding a role ships today (`pij directory add`); there is no retire or merge verb yet, and no roadmap step delivers this row.",
+					"note": "Extends req-27 (grow from needs) to reshaping. Plan 206 (s15) shipped `pij directory edit`, `retire` and `merge`; a retired role refuses sends to it and cannot be retired while requests wait queued for it. Adding a role shipped with s02.",
 					"source": "ruling C26"
 				},
 				{
@@ -536,6 +536,16 @@
 					"date": "2026-11-06",
 					"by": "pij-back-tapir",
 					"change": "Plan 203: req-12 and req-24 shipped (the view prompts the prime for each condition and for roles a roadmap step needs); req-29 added for ruling C28 (role recommendations name their signal; a role is not a seat; boundary reviews), in-progress until s10 (its statement carries C28's two truths and C30's memory at every boundary); req-27 stays in-progress (s09 adds the needs prompts and the PEC notice; s10 finishes it). The summary now leads with PEC's purpose (ruling C30): lasting, searchable knowledge of the problem space, held by specialist roles that outlive seats, in any domain."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "req-28 in progress: plan 206 (roadmap s15) adds pij directory retire and merge."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-exuberant-wildcat",
+					"change": "Plan 206: req-28 shipped (pij directory retire and merge, with the s05 send refusal and the queued-request guard)."
 				}
 			]
 		}

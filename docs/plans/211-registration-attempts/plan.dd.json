@@ -11,7 +11,7 @@
         "ordinal": 211,
         "complexity": "CS-3",
         "summary": "Issue #145: after #134, registration ps still runs at about 0.64/s at rest, so healthy seats re-register every few seconds. Count registration attempts by path, mode and outcome, find which seats and triggers repeat, and stop repeats that change nothing.",
-        "status": "draft",
+        "status": "shipped",
         "mode": "Full",
         "created": "2026-11-04",
         "backpressure": "assets/backpressure.dd.json#rows"
@@ -39,37 +39,39 @@
         {
           "id": "ac-0001",
           "claim": "Count. The daemon records bounded counters of registration attempts by entry path (receive, heartbeat, shim call, lease retry, explicit register), mode (pane or paneless) and outcome (new, unchanged, refused with reason), exposed in pij-rs --json ping beside spawns. No new launch, no per-attempt event write.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "Attribute. With the counters live on the fleet, a performance reading names the paths, and the seats where the daemon can tell, behind the residual ps rate, in a receipt attached to #145.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Stop no-op repeats. A repeat registration that would resolve to the same seat with nothing changed skips the ancestry ps. It's keyed on what proves nothing changed (for example, the seat's bound identity and the caller's own verified pid and start), not a blanket positive cache: a changed pid, start, pane or exec still triggers the full read. Retired or tombstoned contexts that keep retrying get refused cheaply (no ps), with the reason named once.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "na",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "note": "Partly shipped in #148: retired or other-session addresses are refused before any host observation (a brake). The no-op repeat skip was not built: after deploy, performance measured 0 registration attempts and 0 registration ps at rest (two readings, assets/evidence/phase-1.md), so there is nothing to skip. Reopen if a later reading shows it."
         },
         {
           "id": "ac-0004",
           "claim": "Client side. If a client (the Copilot extension, the OMP extension or the shim) re-registers on a timer while healthy, it stops, or only re-registers on a real change. The shim's per-call registration (F44) is either removed or made a no-op through AC3.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "na",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "note": "Partly shipped in #148: the Copilot extension treats E-RS-SEAT-RETIRED as final and stops its receive and heartbeat loops. The shim's per-call registration was left as is: the readings show no shim-path attempts growing at rest (assets/evidence/phase-1.md)."
         },
         {
           "id": "ac-0005",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). The goal is cost: registration ps near 0/s at rest. Counters are in-process (one mutex-guarded pair of bounded maps per daemon); no new launch site, timer or poll. Live BEFORE and AFTER on the fleet (pij-rs --json ping twice, 60 s apart, with data.pid).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },
         {
           "id": "ac-0006",
           "claim": "Docs and states. No workstream state changes (issue fix). The PR body says Delivers: none and Fixes #145. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0006"
         }
       ]
@@ -80,7 +82,7 @@
         {
           "id": "ph-00d3",
           "title": "Registration attempts: measure, then stop healthy re-registration",
-          "state": "unchecked",
+          "state": "checked",
           "brief": "All ACs. One coder. CS-3.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
