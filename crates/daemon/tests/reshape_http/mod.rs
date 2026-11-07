@@ -1635,3 +1635,128 @@ async fn a_requester_not_told_holds_the_withdrawal_back() {
             .is_empty()
     );
 }
+
+/// Review of #135, F004: an unfinished step that needs a retired role gets no
+/// `add` for it (its document stays, so add would refuse). A merged role's
+/// steps are pointed at the merge target and a retired role's at a role to
+/// name, with one `ddocs set` per step that replaces every retired role in
+/// it; a role that never existed is still
+/// offered `add`, and a complete step names nothing.
+#[tokio::test]
+async fn needs_naming_a_retired_role_are_retargeted_not_re_added() {
+    let repo = repo("pij-directory-reshape-needs");
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    for id in ["qa", "old", "review"] {
+        many_holders(addr, &repo, id).await;
+    }
+    let merged = directory(
+        addr,
+        &repo,
+        &["merge", "qa", "--into", "review", "--why", "w"],
+    )
+    .await;
+    assert_eq!(merged["ok"], true, "{merged}");
+    let retired = directory(addr, &repo, &["retire", "old", "--why", "w"]).await;
+    assert_eq!(retired["ok"], true, "{retired}");
+    let workstreams = repo.main.join("docs/project/workstreams");
+    std::fs::create_dir_all(&workstreams).unwrap();
+    std::fs::write(
+        workstreams.join("001-test.dd.json"),
+        json!({"sections": [{"name": "steps", "value": [
+            {"id": "s01", "state": "complete", "needs": ["role:qa"]},
+            {"id": "s09", "state": "planned", "needs": ["role:qa", "role:old", "role:fresh"]},
+            {"id": "s10", "state": "planned", "needs": ["role:qa"]}
+        ]}]})
+        .to_string(),
+    )
+    .unwrap();
+
+    let viewed = view(addr, &repo).await;
+    assert_eq!(viewed["ok"], true, "{viewed}");
+    let prompts = viewed["data"]["prompts"].as_array().unwrap();
+    let prompt = |role: &str| {
+        prompts
+            .iter()
+            .find(|prompt| prompt["role"] == role)
+            .unwrap_or_else(|| panic!("a prompt for {role}: {viewed}"))
+    };
+    for role in ["qa", "old"] {
+        assert!(
+            prompts.iter().all(|prompt| prompt["role"] != role
+                || !prompt["command"]
+                    .as_str()
+                    .unwrap()
+                    .contains("directory add")),
+            "no add for retired {role}: {viewed}"
+        );
+        assert_eq!(prompt(role)["act"], "retarget", "{viewed}");
+    }
+    assert!(
+        prompt("fresh")["command"]
+            .as_str()
+            .unwrap()
+            .starts_with("pij directory add fresh "),
+        "{viewed}"
+    );
+
+    // Each printed edit splits, under /bin/sh, into the step's address and
+    // its needs with the retired role replaced.
+    let words = |command: &str| -> Vec<String> {
+        let output = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("printf '%s\\037' {command}"))
+            .output()
+            .expect("run /bin/sh");
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .split('\x1f')
+            .filter(|word| !word.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    let edits = |role: &str| -> Vec<(String, Value)> {
+        prompt(role)["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|command| {
+                let words = words(command.as_str().unwrap());
+                assert_eq!(words[..3], ["ddocs", "set", "--value-json"], "{words:?}");
+                (words[3].clone(), serde_json::from_str(&words[4]).unwrap())
+            })
+            .collect()
+    };
+    let file = "docs/project/workstreams/001-test.dd.json";
+    assert_eq!(
+        edits("qa"),
+        [
+            (
+                format!("{file}#steps/s09/needs"),
+                json!(["role:review", "role:<replaces-old>", "role:fresh"])
+            ),
+            (format!("{file}#steps/s10/needs"), json!(["role:review"])),
+        ]
+    );
+    assert_eq!(prompt("qa")["in_order"], true);
+    assert!(
+        prompt("qa")["detail"]
+            .as_str()
+            .unwrap()
+            .contains("merged into review"),
+        "{viewed}"
+    );
+    assert_eq!(
+        edits("old"),
+        edits("qa")[..1],
+        "one step's edit is the same from either role"
+    );
+    assert!(
+        prompt("old")["detail"]
+            .as_str()
+            .unwrap()
+            .contains("retired"),
+        "{viewed}"
+    );
+}

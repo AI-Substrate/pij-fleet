@@ -1320,7 +1320,7 @@ shipped in plan 206, so a `mostly-idle` review offers both as `commands`.
 | `one-owner` | a path or system needs one owner | taught in the notice |
 | `worth-remembering` | this would be worth remembering: knowledge that should outlive the seat (ruling C30) | taught in the notice |
 | `core` | a core role a PEC starts from (C22); its template is an example | the other core prompts |
-| `step-needs` | a workstream step names this role in its needs | the `needed` prompts |
+| `step-needs` | a workstream step names this role in its needs | the `needed` prompts: `add` for a role that does not exist; for a retired role named by an unfinished step (its document stays, so `add` would refuse) a `retarget` prompt instead, with one `ddocs set --value-json <workstream>#steps/<id>/needs <json>` per step that points the step at the merge target, or at `role:<replaces-<id>>` to fill in for a plain retirement (plan 206) |
 | `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (both in `commands`) |
 
 A cold role with memory is never put up for retirement: a role is not a seat.

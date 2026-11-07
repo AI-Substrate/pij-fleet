@@ -464,13 +464,27 @@ impl DirectoryService {
         }
         let step_docs = picture::read_step_docs(repo);
         let mut prompts = templates::recommendations(project, &made_from);
-        picture::fold_needs(
-            project,
-            &mut prompts,
-            &picture::step_needs(&step_docs),
-            &made_from,
-            &self.templates,
-        );
+        // A retired role keeps its document, so a need naming it is
+        // retargeted, never answered with `add` (review of #135, F004).
+        let (needs, stale): (Vec<_>, Vec<_>) = picture::step_needs(&step_docs)
+            .into_iter()
+            .partition(|(need, _)| {
+                !ids.iter()
+                    .zip(&standings)
+                    .any(|(id, standing)| id == need && standing.retired())
+            });
+        picture::fold_needs(project, &mut prompts, &needs, &made_from, &self.templates);
+        let retired: Vec<(String, Option<String>)> = stale
+            .iter()
+            .filter_map(|(need, _)| {
+                ids.iter()
+                    .zip(&standings)
+                    .find(|(id, _)| *id == need)
+                    .map(|(id, standing)| (id.clone(), standing.merged_into.clone()))
+            })
+            .collect();
+        prompts.retain(|prompt| !retired.iter().any(|(id, _)| *id == prompt.role));
+        prompts.extend(picture::retarget(repo, &retired, &step_docs));
         // F21: a missing prime role document is not a missing prime.
         for prompt in prompts.iter_mut().filter(|prompt| prompt.role == "prime") {
             prompt.note = Some(match &prime {

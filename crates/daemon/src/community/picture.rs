@@ -223,6 +223,8 @@ pub enum Move {
     Merge,
     /// Retire a role.
     Retire,
+    /// Point work that names a retired role at another (plan 206).
+    Retarget,
 }
 
 impl Move {
@@ -233,6 +235,7 @@ impl Move {
             Self::Split => "split",
             Self::Merge => "merge",
             Self::Retire => "retire",
+            Self::Retarget => "retarget",
         }
     }
 }
@@ -524,6 +527,92 @@ pub fn step_needs(docs: &[StepDoc]) -> Vec<(String, Vec<String>)> {
         }
     }
     needs
+}
+
+/// The unfinished steps that still need a retired role (review of #135,
+/// F004). Its document and history stay, so `add` under its id would refuse;
+/// instead each step's needs are pointed at the role that does the work now:
+/// the merge target for a merged role, `<replaces-<id>>` to fill in for a
+/// retired one. `retired` is `(id, merged_into)`; one recommendation per role,
+/// with one `ddocs set` per step, its address relative to `repo`. Each edit
+/// replaces every retired role its step names, so two roles' edits of one
+/// step print the same command.
+pub fn retarget(
+    repo: &Path,
+    retired: &[(String, Option<String>)],
+    docs: &[StepDoc],
+) -> Vec<Recommendation> {
+    let replacement = |need: &str| -> Option<String> {
+        let id = need.strip_prefix("role:")?;
+        let (_, into) = retired.iter().find(|(retired, _)| retired == id)?;
+        Some(match into {
+            Some(into) => format!("role:{into}"),
+            None => format!("role:<replaces-{id}>"),
+        })
+    };
+    let mut out = Vec::new();
+    for (role, into) in retired {
+        let named = format!("role:{role}");
+        let (mut steps, mut commands) = (Vec::new(), Vec::new());
+        for doc in docs {
+            let file = doc.path.strip_prefix(repo).unwrap_or(&doc.path).display();
+            for step in section(&doc.document, "steps")
+                .iter()
+                .filter(|step| step["state"] != "complete")
+            {
+                let needs: Vec<&str> = step["needs"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
+                if !needs.contains(&named.as_str()) {
+                    continue;
+                }
+                let id = step["id"].as_str().unwrap_or("?");
+                steps.push(format!("{} {id}", doc.name));
+                let mut next: Vec<String> = Vec::new();
+                for need in needs {
+                    let need = replacement(need).unwrap_or_else(|| need.to_string());
+                    if !next.contains(&need) {
+                        next.push(need);
+                    }
+                }
+                commands.push(command(&[
+                    "ddocs",
+                    "set",
+                    "--value-json",
+                    &format!("{file}#steps/{id}/needs"),
+                    &json!(next).to_string(),
+                ]));
+            }
+        }
+        if commands.is_empty() {
+            continue;
+        }
+        let mut prompt = Recommendation::new(
+            role.clone(),
+            "needed",
+            Move::Retarget,
+            Signal::Needed,
+            commands.remove(0),
+        );
+        prompt.commands.extend(commands);
+        prompt.in_order = prompt.commands.len() > 1;
+        prompt.detail = Some(match into {
+            Some(into) => format!(
+                "{} still need role:{role}, which was merged into {into}; role:{into} does that work now",
+                steps.join(", ")
+            ),
+            None => format!(
+                "{} still need role:{role}, which is retired; name the role that does that work now",
+                steps.join(", ")
+            ),
+        });
+        prompt.needed_by = steps;
+        out.push(prompt);
+    }
+    out
 }
 
 /// Fold the workstream needs into the missing-role `prompts` (req-24, req-27):
