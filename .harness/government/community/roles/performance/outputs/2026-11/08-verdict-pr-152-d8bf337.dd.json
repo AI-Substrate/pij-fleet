@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "d8bf33717bff3805fa411d0113864810d99f895a",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6711564280",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:152",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: block** at `d8bf33717bff3805fa411d0113864810d99f895a`.\n\n**P152-F004: the new OMP correlated-send path adds one synchronous, uncached PATH-resolved `ps` launch per send.**\n\n`RustRuntimeSession.send` now calls `this.client.processStart(process.pid)` while building every correlated message's caller (`.omp/extensions/pij/adapters/rust-runtime.ts:522-529`). The real/default PijDaemonClient forwards that call directly to `observedProcessStart` (`adapters/daemon-http.ts:63-66,103-127,144-150`), which runs `execFileSync(\"ps\", [\"-o\", \"lstart=\", \"-p\", String(pid)], ...)` every time (`:561-567`). No cache or in-process observation intervenes.\n\nThe helper existed for controls/registration, but this fix activates it for ordinary correlated OMP replies. At r such send attempts/second per seat, that adds **r direct ps children/second per seat**, summed across sending seats, including attempts whose subsequent HTTP delivery fails. This is not a tick loop, but it is repeated executable work. It blocks the sender's event loop for the command duration, has no explicit command timeout, and clones the full process environment for ps. This caller-side launch is outside the daemon ping spawn counters.\n\nThe bare executable violates **AGENTS.md:103**, which requires absolute paths in any repeated path. The new fixture test supplies a fake process-start reader, so its passing shape assertions do not prove the actual launch cost/path. Rust daemon spawn guards cannot detect this TypeScript caller-side launch.\n\n**Required closure:** remove or fix the new repeated bare-name probe. Prefer reusing the already observed self-process incarnation with an explicit runtime lifetime, or an in-process observation; do not introduce a generic lifetime PID cache. If a per-send probe is retained, use an absolute executable and disclose that rate. Add a focused CI seam regression that covers the real/default process-start path or its command boundary, not only the returned fake number, while preserving the caller wire contract.\n\n**Other delta costs are acceptable:**\n\n- `reply_sender` first reads the open request. **Only on an open-table miss** does it read the closed table, so open requests add no closed query; closed or ordinary non-request correlations add one keyed closed lookup plus its schema check. A found closed row materializes the retained request/body and close metadata just to gate existence; this is not an ID-only read. No history sweep, new write, timer or retry.\n- VerifiedPull carries the shim subject's already completed session/host proof; the reply gate does not re-resolve it. There is a small proof/seat-ID allocation for already verified paneless subjects, but no second authentication exchange or liveness observation introduced by carrying it.\n- The previous pane-registry/liveness, shared terminal watcher, 15-second claim backstop, atomic answer/audit, body retention and publication-lock qualifications stand. The already-reviewed #157/#160 main changes are inherited, not new steering loops.\n\n**CI:** exact-head [42402097818](https://github.com/AI-Substrate/pij-fleet/actions/runs/42402097818) succeeds. Node 22 runs 113 rust-runtime cases, including the shared wire fixture; Vitest 2,247 passed/six skipped. JUnit has **2,161 executed Rust cases, zero failures/errors**, including bound-identity refusal, verified-paneless shim, closed-request gate, OMP fixture replay, atomic answer/audit and all six daemon spawn guards. These do not test the newly repeated real ps path. F106 remains: fixture replay is not a live TS-to-daemon run.\n\nNo local build, test, mutation, runtime probe, model traffic or worktree edit. Full C32 grading stays with security/reviewer. Migration 0043 is unchanged; legitimate deployment measurements remain owed after a releasable head.\n"
+		}
+	]
+}
