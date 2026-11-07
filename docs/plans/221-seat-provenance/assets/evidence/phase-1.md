@@ -25,7 +25,7 @@
   - performance, ocelot, P163-F001 (governance b78df40): in-process ancestry with a strict no-launch refusal, a bounded walk, a cache with an explicit lifetime, and the cost budget;
   - security, squirrel (governance f1d74f3): session ownership for shared Copilot hosts, and contracts a to f;
   - reviewer, bobcat (governance dc3b2aa): the pinned `UCred` API, named in-process readers, fresh-prefix cache hits, caller versus target, rollout evidence, the context grant's status, the residual worded as a limit.
-- It recommends option C with one owned session per incarnation. That rule is DECIDED by pm-001 (08 Nov), and the prime may override.
+- It recommends option C with one owned session per incarnation. That rule is RULED by the prime (08 Nov). Send-as is gated first by the prime's requirement.
 - The issuer is secured first, then operations are gated in order: send-as, inbox-claim, controls, role-and-holder, outputs, registration and adoption changes, activity, attribution.
 - PRD 003's q-02 to q-04 are open, prime-owned dependencies; nothing in the design depends on their answers.
 - Pending: security and reviewer verdicts at this head.
