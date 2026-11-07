@@ -9,7 +9,7 @@
         "title": "Seat identity provenance, phase 1: route inventory and capability bootstrap (PRD 003 req-10, F88)",
         "slug": "phase-1",
         "status": "draft",
-        "summary": ""
+        "summary": "The route inventory and its sensor, the capability bootstrap workshop, cost, and docs and states."
       }
     },
     {
@@ -18,11 +18,93 @@
     },
     {
       "name": "tasks",
-      "value": []
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "The route inventory and its sensor",
+          "phase": "ph-00dd",
+          "state": "checked",
+          "success": "harness/scripts/route-inventory.json classifies all 64 (method, path) pairs at main 2cc2ac3 (43 seat-authority, 20 machine-public, 1 job-token). just route-inventory-check probes the router from Endpoint::ALL and fails on a missing, stale, repeated or unclassified pair; it is a heavy harness checks stage and a self-check step.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001",
+          "receipt": "../../evidence/phase-1.md#ac1-route-inventory"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Workshop 001: capability bootstrap",
+          "phase": "ph-00dd",
+          "state": "unchecked",
+          "success": "workshops/001-capability-bootstrap.md compares options A, B and C against every question in AC2 and recommends C, with the route classes ordered for phase 2, send-as first.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002",
+          "receipt": "../../evidence/phase-1.md#ac2-the-workshop"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Cost",
+          "phase": "ph-00dd",
+          "state": "checked",
+          "success": "No daemon runtime change: the sensor is a cfg(test) module run once per harness checks invocation. The workshop states the chosen design's per-request cost and that nothing launches per tick per seat.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003",
+          "receipt": "../../evidence/phase-1.md#ac3-cost"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Docs and states",
+          "phase": "ph-00dd",
+          "state": "unchecked",
+          "success": "docs/how/pij-rs-api.md gains a Seat authority section pointing at the inventory; docs/difficulties.md records F88 (D-221-1); the plan states phases 2 and later as follow-up waves.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004",
+          "receipt": "../../evidence/phase-1.md#ac4-docs-and-states"
+        }
+      ]
     },
     {
       "name": "done_when",
-      "value": {}
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "route_inventory_tests: the repo inventory matches the probed routes, and a missing route, a stale entry, a duplicate, an unclassified or misclassified route, a job-token mismatch and a malformed file each fail; mutating the real JSON fails the repo test by name.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "Security and reviewer verdicts, pass or pass-with-notes, pinned to the workshop's commit.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "The only daemon source change is a #[cfg(test)] module declaration; no new launch site, loop, poll or timer.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "just ddocs-check passes; CI on the exact head; reviewer, security and performance verdicts.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ]
+      }
     },
     {
       "name": "goals",

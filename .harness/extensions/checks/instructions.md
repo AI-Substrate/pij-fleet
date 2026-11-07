@@ -24,10 +24,14 @@ failure), so one invocation surfaces every problem:
 6. `lint` — `just lint` (Biome errors + warnings clean)
 7. `test` — `just test` (vitest suite passes)
 8. `copilot-native` — `just copilot-native-test` (see below)
-9. `rust` — `just rust-check` (Cargo.lock current, fmt, clippy `-D warnings`,
+9. `route-inventory` — `just route-inventory-check` (every (method, path) pair
+   the daemon serves, probed through its router, is classified in
+   `harness/scripts/route-inventory.json` and no entry is stale; plan 221, F88)
+   — **heavy**
+10. `rust` — `just rust-check` (Cargo.lock current, fmt, clippy `-D warnings`,
    workspace tests) — **heavy**
-10. `smoke` — `just smoke` (tmux-driven driver scenarios) — **heavy**
-11. `pij-commit-trailers` — `just pij-commit-trailers --json` (advisory attribution
+11. `smoke` — `just smoke` (tmux-driven driver scenarios) — **heavy**
+12. `pij-commit-trailers` — `just pij-commit-trailers --json` (advisory attribution
    scan of harness-authored/co-authored commits after merge-base with `main`;
    old history is excluded, missing identity is reported rather than guessed).
 
@@ -43,7 +47,7 @@ results retain `output` with missing trailers and exact derivable lines to add;
 warnings and unavailable attribution never fail the gate. On failure,
 `data.failures[]` holds the last ~25 lines of each failing sensor's output.
 
-`--quick` skips heavy sensors (rust, smoke) for a fast static+unit gate.
+`--quick` skips heavy sensors (route-inventory, rust, smoke) for a fast static+unit gate.
 
 ## Your role (the inference part)
 

@@ -41,8 +41,9 @@
         {
           "id": "ac-0001",
           "claim": "The F88 route inventory is a checked artifact, not a note. A machine-readable inventory (harness/scripts/route-inventory.json or similar) lists every daemon HTTP method and route pair at the shipping head, each classified as machine-public (by explicit policy, with the reason) or seat-authority, and for seat-authority routes: the route class (send-as, inbox claim, role and holder actions, outputs, activity, registration, controls, adoption), which identities it grants authority by (seat, parent, prime, holder, owner, recipient), and the guard it uses today (the F88 note's R, B, N, S, C or provenance exception). It starts from squirrel's F88 note (governance roles/security/outputs/2026-11/07-note-issue-f88.dd.json, 63 pairs at a0ec952) refreshed to current main, including routes added since (#149 requests close, #152 steering, #153 presence, #156 modal stalls).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/phase-1.md#ac1-route-inventory"
         },
         {
           "id": "ac-0002",
@@ -53,8 +54,9 @@
         {
           "id": "ac-0003",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). Phase 1 adds no daemon runtime cost: the inventory sensor runs per harness checks invocation (one route enumeration plus one JSON read), not per tick. The workshop must state the chosen design's per-request cost (for example one hash compare per seat-authority request) and any per-seat launch (none is acceptable per tick).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "assets/evidence/phase-1.md#ac3-cost"
         },
         {
           "id": "ac-0004",
@@ -122,7 +124,7 @@
     },
     {
       "name": "implementation_summary",
-      "value": ""
+      "value": "Phase 1 ships the route inventory and its sensor, and workshop 001. Phases 2 and later are follow-up waves, planned from the workshop once its verdicts are in: 2a adds the bootstrap (Unix socket listener, spawn nonce, hashed per-incarnation token, counted per route class, nothing refused); 2b then gates the route classes in the workshop's order, send-as first, one class at a time once its uncapable count is zero on the live fleet."
     },
     {
       "name": "key_findings",

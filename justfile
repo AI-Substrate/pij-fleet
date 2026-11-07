@@ -230,6 +230,12 @@ ddocs-check *ARGS:
 coverage-check:
     node_modules/.bin/tsx harness/scripts/coverage-check.ts
 
+# Route inventory (plan 221, F88): every (method, path) pair the daemon really
+# serves (probed through the router from Endpoint::ALL) is classified in
+# harness/scripts/route-inventory.json, and nothing stale is listed there.
+route-inventory-check:
+    cargo test --locked -p pij-daemon --lib route_inventory_tests
+
 # Report-only attribution scan, scoped after merge-base with main.
 pij-commit-trailers *ARGS:
     node_modules/.bin/tsx harness/scripts/pij-commit-trailers.ts "$@"
@@ -294,6 +300,7 @@ self-check:
     just lint
     just test
     just copilot-native-test
+    just route-inventory-check
     just rust-check
     just smoke
     just pij-commit-trailers

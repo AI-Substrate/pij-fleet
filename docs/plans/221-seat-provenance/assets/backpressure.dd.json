@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "A sensor (`just route-inventory-check`, wired into harness checks and self-check) enumerates the routes the daemon actually serves (from the router table or Endpoint::ALL, never from the JSON) and fails on any route missing from the inventory, any inventory entry with no such route, and any seat-authority route with no class. Tests: a route added without an inventory entry fails; a stale entry fails; an unclassified seat-authority route fails.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md#ac1-route-inventory"
         },
         {
           "id": "bp-0002",
@@ -41,9 +42,10 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
-          "note": "Phase 1 adds no daemon runtime cost: the inventory sensor runs per harness checks invocation (one route enumeration plus one JSON read), not per tick. The workshop must state the chosen design's per-request cost (for example one hash compare per seat-authority request) and any per-seat launch (none is acceptable per tick)."
+          "note": "Phase 1 adds no daemon runtime cost: the inventory sensor runs per harness checks invocation (one route enumeration plus one JSON read), not per tick. The workshop must state the chosen design's per-request cost (for example one hash compare per seat-authority request) and any per-seat launch (none is acceptable per tick).",
+          "receipt": "assets/evidence/phase-1.md#ac3-cost"
         },
         {
           "id": "bp-0004",

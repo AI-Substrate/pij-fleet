@@ -14,7 +14,7 @@
 | ordinal | — |
 | status | draft |
 | complexity | — |
-| summary | — |
+| summary | The route inventory and its sensor, the capability bootstrap workshop, cost, and docs and states. |
 | backpressure | — |
 | log | — |
 | mode | — |
@@ -33,13 +33,40 @@ _Empty._
 
 ## Tasks
 
-_No entries._
+| id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tk-0001 | The route inventory and its sensor | — | ph-00dd | [x] checked | — | ../../evidence/phase-1.md#ac1-route-inventory | [tk-0001](tasks.dd.md#done-when) | harness/scripts/route-inventory.json classifies all 64 (method, path) pairs at main 2cc2ac3 (43 seat-authority, 20 machine-public, 1 job-token). just route-inventory-check probes the router from Endpoint::ALL and fails on a missing, stale, repeated or unclassified pair; it is a heavy harness checks stage and a self-check step. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Workshop 001: capability bootstrap | — | ph-00dd | [ ] unchecked | — | ../../evidence/phase-1.md#ac2-the-workshop | [tk-0002](tasks.dd.md#done-when) | workshops/001-capability-bootstrap.md compares options A, B and C against every question in AC2 and recommends C, with the route classes ordered for phase 2, send-as first. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Cost | — | ph-00dd | [x] checked | — | ../../evidence/phase-1.md#ac3-cost | [tk-0003](tasks.dd.md#done-when) | No daemon runtime change: the sensor is a cfg(test) module run once per harness checks invocation. The workshop states the chosen design's per-request cost and that nothing launches per tick per seat. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | Docs and states | — | ph-00dd | [ ] unchecked | — | ../../evidence/phase-1.md#ac4-docs-and-states | [tk-0004](tasks.dd.md#done-when) | docs/how/pij-rs-api.md gains a Seat authority section pointing at the inventory; docs/difficulties.md records F88 (D-221-1); the plan states phases 2 and later as follow-up waves. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
 ## Done when
 
-_No fields._
+### tk-0001
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0001 | route_inventory_tests: the repo inventory matches the probed routes, and a missing route, a stale entry, a duplicate, an unclassified or misclassified route, a job-token mismatch and a malformed file each fail; mutating the real JSON fails the repo test by name. | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | Security and reviewer verdicts, pass or pass-with-notes, pinned to the workshop's commit. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+
+### tk-0003
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0003 | The only daemon source change is a #[cfg(test)] module declaration; no new launch site, loop, poll or timer. | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
+
+### tk-0004
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0004 | just ddocs-check passes; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
 
 <a id="goals"></a>
 
