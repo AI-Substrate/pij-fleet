@@ -2805,6 +2805,10 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
     rig.server.abort();
 }
 
+/// Plan 206 (s15): edit (F20) and template-diff's missing version (F19).
+#[path = "reshape_http/mod.rs"]
+mod reshape;
+
 /// Review of #129 (pij-many-tiglon), F001 control: an identical retry to the
 /// same holder is one delivery.
 #[tokio::test]
@@ -4390,9 +4394,20 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
     let retire = review("dusty");
     assert_eq!(retire["act"], "retire");
     assert_eq!(signal(&retire), "mostly-idle");
+    // s15 ships retire and merge (plan 206): both are offered to run.
+    let offered: Vec<&str> = retire["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
     assert!(
-        retire["commands"].as_array().unwrap().is_empty() && retire["later"].is_array(),
-        "s15's verbs are shown, not offered: {retire}"
+        offered.len() == 2
+            && offered[0].starts_with("pij directory retire dusty ")
+            && offered[1].starts_with("pij directory merge dusty --into ")
+            && retire["command"] == offered[0]
+            && retire["later"].is_null(),
+        "{retire}"
     );
     assert!(
         viewed["data"]["reviews"]

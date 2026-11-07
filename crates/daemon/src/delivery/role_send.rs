@@ -28,9 +28,10 @@ use pij_store::{
 use serde_json::{Value, json};
 
 use crate::Services;
-use crate::community::directory::{AfterAssign, E_ROLE_MISSING};
+use crate::community::directory::{AfterAssign, E_RETIRED, E_ROLE_MISSING};
 use crate::community::holders::seat_role_for;
 use crate::community::layout::RolePaths;
+use crate::community::role;
 use crate::community::{Refusal, root};
 
 /// Every role address starts with this.
@@ -153,6 +154,11 @@ pub enum Routed {
         /// Already recorded: a send interrupted after its claim resumes to
         /// the holder it claimed, never a new one.
         recorded: bool,
+        /// The role's admission gate, for a claim not yet recorded: hand it
+        /// to the recording write, so a retire cannot slip between this
+        /// route's standing read and the `delivering` row it then refuses on
+        /// (review of #135, F001). `None` for a recorded claim.
+        gate: Option<tokio::sync::OwnedMutexGuard<()>>,
     },
     /// A retry of a request already queued or delivered: nothing is sent
     /// again, and the stored request is the answer.
@@ -188,7 +194,14 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     {
         return replay(&send, existing);
     }
+    // Held from the standing read until a queued request is recorded, so a
+    // retire or merge never lands between them (review of #135, F001).
+    let gate = services
+        .directory
+        .admission(&send.project, &send.address.role)
+        .await;
     let document = role_document(&send.repo, &send.project, &send.address.role)?;
+    refuse_retired(&send, &role::standing(&document))?;
     let meta = section(&document, "meta");
     if !send.address.instance.is_empty()
         && meta.and_then(|meta| meta["holders"].as_str()) == Some("one")
@@ -257,7 +270,9 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
     };
     match live.as_slice() {
         [] => {
-            if let Err(error) = store.record_role_request(&request).await {
+            // The gate goes with the write: a cancelled send still holds it
+            // until its insert has landed or failed (review of #135, F001).
+            if let Err(error) = store.record_role_request_keeping(&request, gate).await {
                 // An identical send recorded it first: answer from that one.
                 if let Ok(Some(existing)) = store.role_request(&request.id).await {
                     return replay(&send, existing);
@@ -297,6 +312,7 @@ pub async fn route(services: &Services, send: RoleSend, now_ms: u64) -> Result<R
                 body: framed_body(&request),
                 request,
                 recorded: false,
+                gate: Some(gate),
             })
         }
         several => Err(Refusal::new(
@@ -352,6 +368,7 @@ fn replay(send: &RoleSend, existing: RoleRequest) -> Result<Routed, Refusal> {
             body: framed_body(&existing),
             request: existing,
             recorded: true,
+            gate: None,
         }),
         _ => Ok(Routed::Replay { request: existing }),
     }
@@ -440,6 +457,33 @@ fn role_document(repo: &Path, project: &str, role: &str) -> Result<Value, Refusa
             "E-RS-ARG",
             format!("{} is not a role document: {error}", path.display()),
         )
+    })
+}
+
+/// A retired role takes no sends; a merged one names where its work went
+/// (plan 206, req-28). Nothing is queued for either.
+fn refuse_retired(send: &RoleSend, standing: &role::Standing) -> Result<(), Refusal> {
+    if !standing.retired() {
+        return Ok(());
+    }
+    let role = &send.address.role;
+    Err(match &standing.merged_into {
+        Some(into) => Refusal::new(
+            E_RETIRED,
+            format!(
+                "role {role} in project {} was merged into {into}; nothing was sent",
+                send.project
+            ),
+        )
+        .with_next(format!("Send to {ROLE_PREFIX}{into} instead.")),
+        None => Refusal::new(
+            E_RETIRED,
+            format!(
+                "role {role} in project {} is retired; nothing was sent",
+                send.project
+            ),
+        )
+        .with_next(format!("pij directory view --project {}", send.project)),
     })
 }
 
@@ -729,6 +773,11 @@ pub async fn drain(
     };
     let mut outcomes = Vec::new();
     for mut request in queued {
+        // From the claim until it is settled, delivered or back on the queue,
+        // the role's gate is held: a retire or merge waits for it, and its
+        // queued-request read and withdrawal never race a claim (review of
+        // #135, F001).
+        let _gate = services.directory.admission(project, role).await;
         match store.claim_role_request(&request.id, seat.as_str()).await {
             Ok(true) => {}
             Ok(false) => continue,
@@ -748,7 +797,11 @@ pub async fn drain(
             Err(cause) => Err(cause),
         };
         if outcome.is_err() {
-            // Back on the queue for the next assign.
+            // Back on the queue for the next assign. This never lands behind a
+            // retired role (plan 206, review of #135): retire and merge refuse
+            // while any request for the role is delivering, and this drain has
+            // held the role's gate since its claim, so no retirement can land
+            // between the claim and this release.
             let _ = store
                 .release_role_request_claim(&request.id, seat.as_str())
                 .await;
@@ -761,6 +814,11 @@ pub async fn drain(
 /// At boot, settle the requests a stopped daemon left `delivering` (review
 /// of #129): one delivery already took is marked delivered, any other is
 /// re-queued for the next assign. A failure is logged; boot carries on.
+///
+/// A re-queued request never lands behind a retired role (plan 206, review of
+/// #135): retire and merge refuse while any request for the role is
+/// delivering, so a role that was retired before the stop had none, and this
+/// runs before anything is served, so no retirement races it.
 pub async fn recover_requests(services: &Services) {
     let now_ms = match crate::http::system_time_ms() {
         Ok(now) => now,

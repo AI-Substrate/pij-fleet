@@ -1,0 +1,171 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Registration attempts: measure, then stop healthy re-registration",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Counters: in-process registration attempts by path, mode and outcome, with ancestry ps reads, per seat (bounded), in ping beside spawns",
+          "phase": "ph-00d3",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "notes": "registration/attempts.rs; RegistrationService::register_via; advisory attempt on /v1/register; claude/codex bind and adopt name their paths."
+        },
+        {
+          "id": "tk-0002",
+          "title": "Clients label attempts: the Copilot extension (explicit, receive, heartbeat, lease-retry) and the shim's paneless preflight (shim)",
+          "phase": "ph-00d3",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "notes": "store.mjs register(attempt); generation-router.ts."
+        },
+        {
+          "id": "tk-0003",
+          "title": "Attribution: counters live on the fleet; performance names the paths and seats behind the residual ps rate, receipt on #145",
+          "phase": "ph-00d3",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "notes": "Needs a daemon from this head."
+        },
+        {
+          "id": "tk-0004",
+          "title": "Stop no-op repeats: skip the ancestry ps for a repeat that proves nothing changed; refuse retired or tombstoned retries cheaply, reason named once",
+          "phase": "ph-00d3",
+          "state": "na",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "notes": "Cheap refusal done: a native claim naming an address recorded for another session is refused (retired or different-session) before host observation; test with a no-observation count and a negative control. The no-op repeat skip (keyed on bound identity plus verified pid/start) waits for AC2 to show it is needed.",
+          "note": "Not built: the no-op repeat skip has nothing to skip. After deploy, 0 registration attempts at rest in two readings (assets/evidence/phase-1.md). The cheap retired or other-session refusal shipped in #148."
+        },
+        {
+          "id": "tk-0005",
+          "title": "Client side: no healthy timer re-registration; a non-retryable refusal ends the retry loop; the shim's per-call registration made a no-op through AC3 or removed",
+          "phase": "ph-00d3",
+          "state": "na",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "notes": "Copilot extension: E-RS-SEAT-RETIRED on /v1/register is final; receive and heartbeat loops stop and report receive-held once. Shim per-call registration unchanged until AC2 measures it.",
+          "note": "Shim per-call registration left as is: no shim-path attempts grew at rest (assets/evidence/phase-1.md). The Copilot client's stop on E-RS-SEAT-RETIRED shipped in #148."
+        },
+        {
+          "id": "tk-0006",
+          "title": "Cost: live BEFORE and AFTER (ping twice, 60 s apart, same pid); registration ps near 0/s at rest",
+          "phase": "ph-00d3",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ]
+        },
+        {
+          "id": "tk-0007",
+          "title": "Docs: pij-rs-api.md (ping registrations, attempt), PR body Delivers: none and Fixes #145",
+          "phase": "ph-00d3",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}

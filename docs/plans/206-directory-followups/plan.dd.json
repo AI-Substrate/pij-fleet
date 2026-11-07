@@ -1,0 +1,173 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Reshape: edit, retire and merge roles (roadmap s15, req-28)",
+        "slug": "directory-followups",
+        "ordinal": 206,
+        "complexity": "CS-3",
+        "summary": "Delivers req-28 (C26, PEC: communities are reshaped as the work changes) as new roadmap step s15: `pij directory edit` (F20), `retire` and `merge`, plus F19's template-diff refusal. The polish follow-ups moved to plan 208.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Split from the s04 follow-ups on the prime's instruction (06 Nov): this plan is the reshape half (edit, retire, merge, s15). Zones, lock retry, window name, closed-seat lineage, batch assign and the #122 F003 flake moved to plan 208 (lane D, marsupial, after 207)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Follow-ups from s04's review and the wave B dogfood: record closed seats in lineage, assign many holders in one commit, fix the latent same-second test, and stamp changelog dates with a zone."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Retire (req-28). `pij directory retire <role> --why <text>` marks a role retired by a writer commit with a changelog row; it refuses while the role has a live holder (release first) or queued requests (s05), naming them. Its memory, outputs and lineage stay readable, and `pij directory` lists it as retired, not missing; `--json` carries the state. Sends to a retired role refuse by name.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Merge (req-28). `pij directory merge <from> --into <to> --why <text>` retires <from> pointing at <to> in one writer commit (both roles' changelogs get a row; <from>'s memory and outputs stay where they are and are listed under <to> as merged-from). Both roles' memory, outputs and lineage are preserved and stay readable afterwards (none moved or rewritten). A send to <from> afterwards refuses and names <to>.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Roadmap step s15 (pm-001's decision, reported to the prime). In this PR, roadmap 001 gains step s15 'Reshape: retire and merge roles', delivering req-28, depending on s04, with its plan cell set to docs/plans/206-directory-followups, state complete; req-28 goes to shipped. PR #125 (which adds req-28) must merge first.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "F19 (medium, s03 dogfood): `pij directory template-diff <id>` on a role with a `template` but no `template_version` refuses with a misleading E-RS-ARG ('template_version \"\" is not a version number', next null; directory.rs:251 unwrap_or_default). It should say the role records no template version, and name the fix (record one with the edit verb from F20).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "F20 (medium, s03 dogfood; needed for reshape, req-28): `pij directory edit <id> --why <text> (--set <field>=<value>... | --file <json>)` changes an existing role through the writer (validate, build, commit, changelog row). Today add refuses an existing role, so imported roles can't be corrected without hand edits.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). Edit, retire and merge are one writer commit each. No timer or poll.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Docs and states. docs/how/pij-rs-api.md documents edit, retire and merge and their refusals; the skill's verb coverage carries them; difficulties rows F19 and F20 resolved; `just ddocs-check` and `ddocs validate` pass; the PR body has a `Delivers:` line (s15, req-28).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00ce",
+          "title": "Reshape: edit, retire and merge roles (roadmap s15, req-28)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder (lane E, wildcat, after s11). CS-3.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: crates/daemon/src/community/ (holders, directory), crates/daemon/tests/pr122_review/, the dogfood report (governance roles/docs-system/outputs/2026-11/wave-b-dogfood.md). No migration expected."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}
