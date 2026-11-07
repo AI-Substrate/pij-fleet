@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "baa21add0f94f83c014f1c9a0fe8c20bf0a7af5b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6707223972",
+				"result": "block",
+				"role": "performance",
+				"subject": "pr:153",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"P153-F002: no standing grant release after failed durable audit, or explicit acceptance of best-effort audit; add append-failure regression.",
+				"After resolution and authorized deploy: registration/reissue/event rates, matched launch/CPU/RSS and prior per-round/input-length contention limits."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: block** at `baa21add0f94f83c014f1c9a0fe8c20bf0a7af5b`.\n\nReviewed only `a0ec952..baa21ad`, commit `baa21ad`. The accepted registration-strength limit (F88) is not re-opened. The prior size-cache closure and cost qualifications stand. The new append has no executable launch or timer, but it is best-effort while the accepted condition requires an audit for every released existing grant.\n\n## P153-F002: audit failure does not prevent unaudited grant release\n\n`http/mod.rs:958-1009` makes `audit_grant_reissue` return `()`. A clock error returns after logging; a failed `event_bus.publish` is also only logged. Registration awaits that helper and then still maps the existing grant into the successful response (`1138-1153`).\n\nA targeted store failure, such as aborting only inserts of kind `context.grant.reissued`, therefore permits registration to return the standing grant without the required event. The successful-path regression does not cover this case. This is a condition-1 gap, not disagreement with the prime's accepted underlying strength.\n\nWithhold the reissued grant unless its audit persisted, while preserving the valid seat registration, or obtain explicit acceptance of best-effort audit. Add a failure-path test that refuses the audit append and verifies no standing grant is returned without that record. Source-level finding only; no local injection or reproduction was performed. Bobcat has the pointer.\n\n## Cost delta\n\n| Surface | Cost and scaling |\n|---|---|\n| Reissue detection | `ReportedContext::grant` now returns `(token, reissued)`. An unchanged seat/process uses the existing locked map lookup and token clone, with no new random read. A first/new-incarnation grant returns false and takes the previous random-generation path; it generates no audit. |\n| Metadata capture | Every request reaching the service now clones the claim, session and attempt before registration, including non-native/first-grant cases that will not audit. Heap/CPU follows those input-string bytes and concurrent registrations, not just the final event. Audit formatting additionally serializes the selected metadata and origin. |\n| Origin | The optional `ConnectInfo` comes from the production server's existing connection extension (`serve.rs:29-57`). Reading/stringifying it adds no lsof, ps, socket discovery or separate process check. |\n| Append/publication | On a reissue, the route awaits one event publication. The existing publisher takes its shared publication-order lock, uses its owned task/commit path, appends to SQLite and distributes the committed event to live subscribers (`events/mod.rs:78-93,131-146`). This is additional task/transaction/broadcast work at reissue rate, not free because the primitive already exists. No context-state mutex or native registration gate is held across the new await. |\n| Response latency and storage | Successful reissues include publication-lock wait and spine-commit latency before the token response. No new whole-operation bound is introduced. Event bytes scale with captured claim/session/attempt strings; the append-only spine gains one retained row per successful reissue audit, with no new volume cap or dedupe. Native startups that allocate then register, reloads and lease recovery can legitimately produce these events; they are not proof of an attack. |\n| Rate | Let R be native registrations receiving a standing grant: normal path adds R audit rows/publication attempts and their payload bytes. This is API/re-registration driven, not per watchdog round or per seat per tick. The two #145 minute windows had zero registration attempts, so they imply zero such audit work in those windows, not zero under another workload or a caller repeatedly exercising the accepted F88 path. Existing registration ancestry-read/launch costs still precede the audit. |\n\nP153-F002 means the code currently guarantees at most one append attempt per reissue, not the promised durable event on every grant release. A failure may reduce recorded rows while still handing out the grant; that cannot be counted as an audit-cost optimization.\n\n**CI proof:** GitHub is CLEAN at this exact head. [CI 42373655076](https://github.com/AI-Substrate/pij-fleet/actions/runs/42373655076) attempts **1 and 2** succeed. Latest JUnit records **2,096 executed cases, zero failures/errors**, including `reissued_grant_is_audited_known_limit_f88`, grant-incarnation checks, generation-aware idle-size regression, the isolated presence launch test and all six spawn guards. Five Rust tests were skipped separately. Delivers **42373656191** succeeded; the superseded earlier run was cancelled. These tests prove the successful reissue/first-grant/token-omission path, not audit failure behavior.\n\nNo local builds, tests, probes, token requests or review-tree changes. Squirrel owns the full accepted Known-limit/payload verdict.\n\n**Still owed:** after the audit condition is resolved and deployment authorized, matched launch/CPU/RSS readings and registration/reissue/event rates, including ordinary startup versus steady activity. Prior shared-mutex/input-length, negative-cache TTL and per-round read/cardinality limits remain unmeasured.\n"
+		}
+	]
+}
