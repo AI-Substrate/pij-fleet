@@ -76,8 +76,9 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
             "transcriber",
         ]
     );
-    // coder shipped v1 in plan 194 and v2 in plan 204 (security review of #136).
-    assert_eq!(listed["data"]["templates"][0]["versions"], json!([1, 2]));
+    // coder shipped v1 in plan 194, v2 in plan 204 (security review of #136)
+    // and v3 in plan 210 (workstream wording, ruling C29).
+    assert_eq!(listed["data"]["templates"][0]["versions"], json!([1, 2, 3]));
 
     for name in names {
         let id = format!("{name}-x");

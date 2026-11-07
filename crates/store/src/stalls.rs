@@ -1,4 +1,4 @@
-//! Modal-dialog stalls (plan 219, F47, migration 0040).
+//! Modal-dialog stalls (plan 219, F47, migration 0042).
 //!
 //! The PA watchdog claims a stall here before it tells anyone, keyed by the
 //! seat and the stretch's identity (the spine sequence of its last own event),

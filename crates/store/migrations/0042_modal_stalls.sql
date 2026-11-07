@@ -1,4 +1,4 @@
--- Modal-dialog stalls (plan 219, F47; number claimed with pm-001).
+-- Modal-dialog stalls (plan 219, F47; 0042: 0040 went to #149, 0041 is reserved for #152).
 --
 -- One row per seat: the stretch in which the PA watchdog last found it on its
 -- harness's own dialog. The row is claimed BEFORE the parent and the PA are
@@ -24,4 +24,4 @@ CREATE TABLE modal_stalls (
     failed      TEXT NOT NULL DEFAULT '{}'
 ) STRICT;
 
-PRAGMA user_version = 40;
+PRAGMA user_version = 42;
