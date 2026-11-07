@@ -1218,9 +1218,20 @@ async fn hold(
             })
             .await?
     } else {
-        directory
+        let mut receipt = directory
             .release(&project, repo, role, instance, &seat_id, actor, &why)
-            .await?
+            .await?;
+        // F57: a live seat's window follows its remaining holdings.
+        if let Ok(Some(descriptor)) = state.services.registry.get(&seat_id).await
+            && descriptor.tombstoned_at.is_none()
+        {
+            receipt.window = Some(
+                directory
+                    .window_after_release(&descriptor, &receipt.row)
+                    .await,
+            );
+        }
+        receipt
     };
     let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
     if call.leaf == "assign" {

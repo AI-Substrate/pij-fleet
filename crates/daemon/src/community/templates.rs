@@ -57,9 +57,10 @@ macro_rules! shipped {
 
 /// Every shipped `templates/roles/<name>/v<n>/role.dd.json`. A version is
 /// never edited after it ships; a new one is a new row here.
-const SHIPPED: [(&str, u32, &[u8]); 22] = shipped![
+const SHIPPED: [(&str, u32, &[u8]); 28] = shipped![
     ("coder", 1),
     ("coder", 2),
+    ("coder", 3),
     ("designer", 1),
     ("devcontainer", 1),
     ("docs-keeper", 1),
@@ -67,17 +68,22 @@ const SHIPPED: [(&str, u32, &[u8]); 22] = shipped![
     ("note-taker", 1),
     ("pa", 1),
     ("pa", 2),
+    ("pa", 3),
     ("pm", 1),
     ("pm", 2),
+    ("pm", 3),
     ("prime", 1),
     ("prime", 2),
+    ("prime", 3),
     ("qa", 1),
     ("release", 1),
     ("researcher", 1),
     ("reviewer", 1),
     ("reviewer", 2),
+    ("reviewer", 3),
     ("security", 1),
     ("security", 2),
+    ("security", 3),
     ("topic-expert", 1),
     ("transcriber", 1),
 ];
@@ -674,7 +680,7 @@ mod tests {
     #[test]
     fn a_shipped_version_is_never_edited() {
         use sha2::{Digest, Sha256};
-        const PINNED: [(&str, u32, &str); 22] = [
+        const PINNED: [(&str, u32, &str); 28] = [
             (
                 "coder",
                 1,
@@ -684,6 +690,11 @@ mod tests {
                 "coder",
                 2,
                 "9462fd31371f189597fbf41fc06baef239bfec61564dcf1eb683dc8f49f6d1d1",
+            ),
+            (
+                "coder",
+                3,
+                "10c92c3b6a65130b5b4d610ee0a7ff8b187a59a395a4a263bb455f0755edc974",
             ),
             (
                 "designer",
@@ -721,6 +732,11 @@ mod tests {
                 "e3209c7abd4d6de318313e17118f1699e827a9a36e7ee2c146ba40a580fbbe49",
             ),
             (
+                "pa",
+                3,
+                "c3dab9977f055142adc6d33f292996d8d9f270fce2f9e1d334330978e69d7cae",
+            ),
+            (
                 "pm",
                 1,
                 "ee809ccec2e700374a36e611abf111c3e26ab9ec0b6c4327156005ed80b14577",
@@ -731,6 +747,11 @@ mod tests {
                 "7c7acaa3ace20b02559696b75a76b6c0cff1ee693a44d9c3dfb41d8e8673551a",
             ),
             (
+                "pm",
+                3,
+                "6ca65faa5bd77e9cd1f34dfe82fbfbe96cee7a8b1d76c570b20e08593d14d8f7",
+            ),
+            (
                 "prime",
                 1,
                 "95f695f0ff4ea6d81ff3b1ec262dad76b2ac002c4d347db36b77bee455f918bb",
@@ -739,6 +760,11 @@ mod tests {
                 "prime",
                 2,
                 "f54fce81be1e3a0280bd7a6b1cd3cc74bbdfa9f2c9d18a78a9428de5b98dbb56",
+            ),
+            (
+                "prime",
+                3,
+                "62139e8f77e92d5b32f16cde1865c9902a7616773b7b5a7a009760f3e9091cdc",
             ),
             (
                 "qa",
@@ -766,6 +792,11 @@ mod tests {
                 "68d3ef499cc0c9a1e875b59407beaf3e5cd9eab2723564778d75d02185b4d56c",
             ),
             (
+                "reviewer",
+                3,
+                "84b10c2cc51c91dbe16e61ecbff6bc361bbb75dae6a667b714ebd775cc83b0be",
+            ),
+            (
                 "security",
                 1,
                 "749c1b1a5cf649d21aa6812382ec9430f66a013e117454f1e8fe743c1b745536",
@@ -774,6 +805,11 @@ mod tests {
                 "security",
                 2,
                 "a1e7ac96297e3e90c18378256e474dcb9dfc021f8da88c05e1446279fc730991",
+            ),
+            (
+                "security",
+                3,
+                "310761dcfd0a740085fb0ad30778f557cdd371c55c4d46c0b9cac2f63081a534",
             ),
             (
                 "topic-expert",

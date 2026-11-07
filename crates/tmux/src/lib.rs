@@ -1485,9 +1485,10 @@ impl TmuxPort for TmuxAdapter {
 
     async fn rename_window(&self, pane: &str, name: &str) -> Result<()> {
         // A pane target resolves to the window holding it.
+        let name = literal_window_name(name);
         self.run(
             "rename-window",
-            &os_args(["rename-window", "-t", pane, "--", name]),
+            &os_args(["rename-window", "-t", pane, "--", &name]),
         )?;
         Ok(())
     }
@@ -1527,6 +1528,15 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+/// A window name tmux shows as given. `rename-window` and `new-window -n`
+/// expand formats in the name even from fixed argv after `--` (tmux 3.6a), so
+/// `#{...}` would read server state and `#(...)` would run a shell job. A
+/// doubled `#` is tmux's literal `#`, so the name can carry stored text
+/// (a holding's instance) safely.
+fn literal_window_name(name: &str) -> String {
+    name.replace('#', "##")
+}
+
 fn new_window_args(
     session: &str,
     name: &str,
@@ -1542,7 +1552,7 @@ fn new_window_args(
         OsString::from("-t"),
         OsString::from(format!("{session}:")),
         OsString::from("-n"),
-        OsString::from(name),
+        OsString::from(literal_window_name(name)),
         OsString::from("-c"),
         OsString::from(cwd),
     ];
@@ -2054,6 +2064,13 @@ mod tests {
                 "selector; not shell",
             ]
         );
+    }
+
+    #[test]
+    fn a_new_window_name_reaches_tmux_literal() {
+        let actual = new_window_args("session", "fleet:reviewer-#(id)#{pane_pid}", "/abs", None);
+        let at = actual.iter().position(|arg| arg == "-n").expect("-n");
+        assert_eq!(actual[at + 1], "fleet:reviewer-##(id)##{pane_pid}");
     }
 
     #[test]

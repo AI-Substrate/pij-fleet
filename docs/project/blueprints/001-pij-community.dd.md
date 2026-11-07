@@ -19,7 +19,7 @@
 
 ## Overview
 
-Pij Emergent Communities (PEC) rest on a per-project community directory that the prime and humans reshape as the work changes. Its definitions, memory and outputs are ddocs on the governance branch, written by one daemon-side writer through the ddocs CLI. The store holds pointers and live state (assignments, lineage, requests), and can be rebuilt from the branch. Delivery learns one new address form, `role:<id>`, and one new request field, the reply mode. Product docs (PRDs, blueprints, roadmaps) live on main under docs/project and are joined by ddocs links.
+Pij Emergent Communities (PEC) rest on a per-project community directory that the prime and humans reshape as the work changes. Its definitions, memory and outputs are ddocs on the governance branch, written by one daemon-side writer through the ddocs CLI. The store holds pointers and live state (assignments, lineage, requests), and can be rebuilt from the branch. Delivery learns one new address form, `role:<id>`, and one new request field, the reply mode. Product docs (PRDs, blueprints, workstreams) live on main under docs/project and are joined by ddocs links.
 
 <a id="components"></a>
 
@@ -27,7 +27,7 @@ Pij Emergent Communities (PEC) rest on a per-project community directory that th
 
 | id | name | kind | where | responsibility | realises | state | note |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| c-doc-schemas | Project docs schemas | schema | .dd/schemas/pij/{prd,blueprint,roadmap} | The three schemas behind docs/project, joined by typed link cells. | [req-18](../prds/001-pij-community.dd.md#requirements) | [x] shipped | — |
+| c-doc-schemas | Project docs schemas | schema | .dd/schemas/pij/{prd,blueprint,workstream} | The schemas behind docs/project, joined by typed link cells: pij/prd, pij/blueprint and pij/workstream (C29; pij/roadmap stays, superseded, until plan 210 moves the roadmap docs). | [req-18](../prds/001-pij-community.dd.md#requirements), [req-30](../prds/001-pij-community.dd.md#requirements) | [x] shipped | — |
 | c-role-schema | Role schema | schema | .dd/schemas/pij/role | The `pij/role` schema for role definitions, plus `pij/output` and `pij/memory` for outputs and memory notes. | [req-04](../prds/001-pij-community.dd.md#requirements), [req-10](../prds/001-pij-community.dd.md#requirements) | [x] shipped | — |
 | c-layout | Community layout | file | &lt;government-root&gt;/community/ | `roles/&lt;id&gt;/role.dd.json`, `roles/&lt;id&gt;/memory/` (one note per file and a generated `INDEX.md`), `roles/&lt;id&gt;/outputs/&lt;yyyy-mm&gt;/`, `ROUTES.md`, `external.dd.json`. Rulings stay outside it. | [req-02](../prds/001-pij-community.dd.md#requirements), [req-09](../prds/001-pij-community.dd.md#requirements), [req-16](../prds/001-pij-community.dd.md#requirements) | [x] shipped | — |
 | c-writer | Governance writer | module | crates/daemon | Writes a ddoc, runs `ddocs validate` and `ddocs build` by absolute path, and commits only the paths it wrote in the standing governance worktree with `git add` then `git commit --only` (ruling C8), refusing when those paths carry edits it did not make; no plumbing moves the branch under a checkout. Keeps copies of the `pij/*` schemas on the governance branch (ruling C9) and records the pointer. One writer per project, serialised by the daemon; a batch mode for imports. Named refusals for missing governance or ddocs. | [req-02](../prds/001-pij-community.dd.md#requirements), [req-03](../prds/001-pij-community.dd.md#requirements), [req-05](../prds/001-pij-community.dd.md#requirements), [req-09](../prds/001-pij-community.dd.md#requirements) | [x] shipped | — |
@@ -87,3 +87,4 @@ Pij Emergent Communities (PEC) rest on a per-project community directory that th
 | 2026-11-06 | pij-back-tapir | c-orient shipped (plan 203): the directory view and its prompts. |
 | 2026-11-06 | pij-exuberant-wildcat | c-verbs realises req-28: plan 206 adds pij directory retire and merge (roadmap s15). |
 | 2026-11-07 | pij-following-marsupial | Plan 204: c-skill and c-templates shipped (the community route, and the optional role templates beside the core ones). |
+| 2026-11-08 | docs-system | Ruling C29, plan 210 phase 1: c-doc-schemas adds pij/workstream (nesting and lanes) and marks pij/roadmap superseded, and realises req-30; the overview says workstreams. |

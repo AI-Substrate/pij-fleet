@@ -8,7 +8,7 @@
 			"value": {
 				"title": "PRD 001: Pij Emergent Communities (PEC)",
 				"status": "draft",
-				"updated": "2026-11-06",
+				"updated": "2026-11-08",
 				"owner": "pij-far-jackal",
 				"summary": "A pij emergent community (PEC) builds lasting, searchable knowledge of its problem space (ruling C30). Specialist roles hold what the fleet learns, in role memory and outputs that outlive any seat, and can be called on later, revived or read by a fresh seat; long-running specialists are a feature, not a cost to minimise. Nothing in PEC is engineering-specific: the problem space may be an engineering project, a design workshop, research or operations. A PEC is a project's agents operating as one cohesive fleet across many concurrent tasks. The prime and humans build whatever community the work needs now and reshape it as the work changes. Its directory names every role, specialist and general, with its scope, holders, memory and outputs, so roles outlive seats and the community's knowledge grows."
 			}
@@ -138,7 +138,7 @@
 				{
 					"id": "req-04",
 					"title": "Role definitions are pij/role ddocs",
-					"statement": "A role definition holds: id, title, kind (specialist or general), lifecycle (long-lived or per-task), holders (one or many), instance key for many-holder roles (for example a roadmap number), scope (paths and rules, such as 'reviews every PR'), out of scope, forbidden paths, default seat (harness, model, effort), inputs, output kinds, standing packet (inline or by reference to an existing brief file), template and version it came from, and a changelog.",
+					"statement": "A role definition holds: id, title, kind (specialist or general), lifecycle (long-lived or per-task), holders (one or many), instance key for many-holder roles (for example a workstream number), scope (paths and rules, such as 'reviews every PR'), out of scope, forbidden paths, default seat (harness, model, effort), inputs, output kinds, standing packet (inline or by reference to an existing brief file), template and version it came from, and a changelog.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "in-progress",
@@ -281,11 +281,11 @@
 				{
 					"id": "req-18",
 					"title": "Project docs system, one standard layout",
-					"statement": "Every project uses `docs/project/{prds,blueprints,roadmaps,workshops}/`, and every file or folder there is numbered `NNN-<slug>`. PRDs, blueprints and roadmaps are separate files using the `pij/prd`, `pij/blueprint` and `pij/roadmap` schemas, joined by ddocs link cells: roadmap steps deliver requirement rows and build components, and components realise rows. A blueprint may serve many PRDs.",
+					"statement": "Every project uses `docs/project/{prds,blueprints,workstreams,workshops}/`, and every file or folder there is numbered `NNN-<slug>`. PRDs, blueprints and workstreams are separate files using the `pij/prd`, `pij/blueprint` and `pij/workstream` schemas, joined by ddocs link cells: workstream steps deliver requirement rows and build components, and components realise rows. Until plan 210 moves them, workstreams are filed under `roadmaps/` and the existing ones use `pij/roadmap`, now superseded (ruling C29). A blueprint may serve many PRDs.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "shipped",
-					"done_when": "`ddocs validate` is clean at default depth on PRD 001, blueprint 001 and roadmap 001; `ddocs graph` draws roadmap to PRD to blueprint.",
+					"done_when": "`ddocs validate` is clean at default depth on PRD 001, blueprint 001 and workstream 001; `ddocs graph` draws workstream to PRD to blueprint.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
 				{
@@ -301,7 +301,7 @@
 				{
 					"id": "req-20",
 					"title": "Number claims",
-					"statement": "`pij claim prd|roadmap|blueprint|migration|<kind>` hands out the next NNN for a project, recorded with the claiming seat, and releases it when the work merges or the seat closes. Parallel PMs never collide on a number.",
+					"statement": "`pij claim prd|workstream|blueprint|migration|<kind>` (`roadmap` is workstream's old name and claims the same numbers) hands out the next NNN for a project, recorded with the claiming seat, and releases it when the work merges or the seat closes. Parallel PMs never collide on a number.",
 					"actor": "pm",
 					"priority": "must",
 					"state": "shipped",
@@ -322,17 +322,17 @@
 				{
 					"id": "req-23",
 					"title": "Procedures and examples for project docs",
-					"statement": "The pij skill ships a short procedure and a worked example for writing a PRD, a blueprint and a roadmap, and for folding a ruling into them. By default the PM that owns the work writes them and the prime helps; the prime writes them itself when the operator asks, especially early in a project.",
+					"statement": "The pij skill ships a short procedure and a worked example for writing a PRD, a blueprint and a workstream, and for folding a ruling into them. By default the PM that owns the work writes them and the prime helps; the prime writes them itself when the operator asks, especially early in a project.",
 					"actor": "pm",
 					"priority": "must",
 					"state": "shipped",
-					"done_when": "A fresh PM following the procedure writes a PRD and roadmap that validate clean and link to each other.",
+					"done_when": "A fresh PM following the procedure writes a PRD and workstream that validate clean and link to each other.",
 					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
 				},
 				{
 					"id": "req-24",
-					"title": "Roadmap steps name the roles they need",
-					"statement": "A roadmap step lists the roles it needs (`needs: role:devcontainer`). The prime's view flags a needed role that does not exist, and the prime offers to create it from a template or as a new definition with the operator.",
+					"title": "Workstream steps name the roles they need",
+					"statement": "A workstream step lists the roles it needs (`needs: role:devcontainer`). The prime's view flags a needed role that does not exist, and the prime offers to create it from a template or as a new definition with the operator.",
 					"actor": "prime",
 					"priority": "should",
 					"state": "shipped",
@@ -353,7 +353,7 @@
 				{
 					"id": "req-21",
 					"title": "Delivery recorded at merge",
-					"statement": "When a PR merges, pij records which requirement rows and roadmap steps it delivered (from the PR's links), fills `delivered_by`, and puts it on the owning PM's card, so states stop lagging the code.",
+					"statement": "When a PR merges, pij records which requirement rows and workstream steps it delivered (from the PR's links), fills `delivered_by`, and puts it on the owning PM's card, so states stop lagging the code.",
 					"actor": "pm",
 					"priority": "must",
 					"state": "shipped",
@@ -379,7 +379,7 @@
 					"actor": "prime",
 					"priority": "should",
 					"state": "shipped",
-					"done_when": "The `/pij community` route and the prime's prompts state that templates are examples; with a roadmap need that no role or template covers, the prime is prompted to create a role for it, and the new role validates without coming from a template.",
+					"done_when": "The `/pij community` route and the prime's prompts state that templates are examples; with a workstream need that no role or template covers, the prime is prompted to create a role for it, and the new role validates without coming from a template.",
 					"note": "Delivered across s03 (templates), s09 (prime prompts) and s10 (the route).",
 					"source": "ruling C18",
 					"delivered_by": "#136"
@@ -407,6 +407,28 @@
 					"note": "s09 (plan 203) puts the signals in the prime prompts and boundary reviews in the directory view; s10 (the route) finishes it.",
 					"source": "rulings C28, C30",
 					"delivered_by": "#136"
+				},
+				{
+					"id": "req-30",
+					"title": "Workstreams nest and map to lanes",
+					"statement": "A workstream step may be `part_of` an umbrella step in the same workstream or another, and `depends_on` may cross files; an umbrella step is complete only when every child step is. A step lists 0..n lanes where it is built: a branch, optionally a worktree and a pij stream id. PRs are not stored on the step; they come from the deliveries `pij delivered` records. A pij stream is one lane of a workstream, and in a PEC project the workstream docs govern ordering over prime-flow items. Workstreams are shaped, split, merged and nested as the work demands.",
+					"actor": "pm",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "`ddocs validate` passes on a workstream whose step is `part_of` a step in another workstream file and lists a lane with a stream id, and fails on a lane with no branch; the skill's workstream procedure teaches shaping, splitting, merging, nesting and lanes and defines workstream and pij stream so they never overlap; the coverage check (req-31) fails on a complete umbrella step with an unfinished child.",
+					"note": "Plan 210 phase 1 ships the `pij/workstream` schema and the skill; ddocs can't express the umbrella rule, so phase 2's coverage check holds it.",
+					"source": "ruling C29"
+				},
+				{
+					"id": "req-31",
+					"title": "Coverage is a check, not a habit",
+					"statement": "`harness checks` fails, naming the row, when a PRD requirement is delivered by no workstream step or a blueprint component is built by no step. It runs once per check, with no loop or poll.",
+					"actor": "pm",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "`harness checks` passes on pij's project docs and fails naming the row on a fixture with a requirement no step delivers, a component no step builds, or a complete umbrella step with an unfinished child.",
+					"note": "Plan 210 phase 2 (the coverage sensor).",
+					"source": "ruling C29"
 				}
 			]
 		},
@@ -562,6 +584,11 @@
 					"date": "2026-11-08",
 					"by": "docs-system",
 					"change": "delivered_by recorded from the deliveries `pij delivered` wrote: req-12 and req-24 by #141 (s09), req-28 by #135 (s15), req-15, req-27 and req-29 by #136 (s10). req-13 keeps no delivered_by: s03 shipped it before #136 named it again."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "Ruling C29, plan 210 phase 1: req-04, req-18, req-20, req-21, req-23, req-24 and req-27 say workstream where they said roadmap (req-18 notes the folder and schema move in phase 2); req-30 (workstreams nest and map to lanes, in progress) and req-31 (coverage is a harness check, planned) added."
 				}
 			]
 		}
