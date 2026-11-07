@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "03ba18533d267b66d666bfedddb39771535e573d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/148#issuecomment-6705463945",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:148",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"AC2/AC5: matched live attribution after deployment; reconcile registration/spawn counters after in-flight admitted work settles.",
+				"tk-0004/tk-0005: healthy no-op repeat skip and shim per-call registration removal remain deferred."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `03ba18533d267b66d666bfedddb39771535e573d`.\n\nDelta review only: `5de084c..03ba185`, repair `4789a79` and the Linux dead-code annotation `03ba185`. **P148-F001 and P148-F002 are closed.** The prior verdict's other cost limits and deployment/deferred-work obligations remain. No new executable launch site, timer, poll, store read/write or per-attempt event from this repair.\n\n| Repair | Result and cost |\n|---|---|\n| Late-read accounting, P148-F001 | `registration/attempts.rs:31-68` serializes `Reads::begin` and `close` on one attempt-local mutex. Admission increments the tally while open; after closure it refuses. `registration.rs:147-151,1730-1745` closes before recording the result and checks admission immediately before the existing argv reader. A detached observer requesting admission after timeout/closure cannot launch. The deterministic threaded test covers an open admission, closure, and a delayed admission denied afterward. |\n| Lock contention and timing | Each `register_via` attempt allocates an Arc/read-state mutex instead of its former atomic; each host-named argv cache miss takes one short admission lock and completion takes one close lock. Reclaim keeps its existing direct count without this observer state. Existing ancestry/cache bounds remain. These locks update only two scalars: no ps execution, process wait, map formatting or await occurs under them. They are not shared between unrelated attempts. The existing shared counter-map mutex remains the cross-seat contention point. |\n| **Closure qualification** | This is read-admission accounting, not a scheduler/child cancellation barrier. A worker admitted before `close` already contributes to the returned tally and may physically launch/finish afterward. No attribution is lost, but an in-flight ping can temporarily lead the global spawn counter. AC2 must compare after surviving work settles, not equate instantaneous snapshots. The test proves the gate, not a macOS end-to-end timeout/drain benchmark. |\n| Route refusals, P148-F002 | `http/mod.rs:953-1028` counts invalid-role, pane-observation, out-of-subtree and vanished-pane outcomes only on branches that immediately return. The remaining path enters `register_via`, which counts once at completion. No added registry lookup. The early path clones the service/claim and updates the existing bounded maps; its temporary copying scales with claim-string bytes. Service completion also materializes the selected seat string before recording. |\n| Counter bounds | Still at most 180 path/mode/outcome combinations and 64 individually retained seat keys plus overflow; named keys now cap at 64 bytes. Unknown refused names fall into `(other)` unless the existing map already knows them; named retired/held errors and successful registrations provide their known identity without another registry read. Retained seat-key bytes are about 4 KiB plus overflow, excluding map/allocator overhead. Ping still formats/sums/clones under the one shared map mutex, but its key-byte cost is now bounded too. |\n| Client labels | Fresh address allocation adds the explicit label; allocation after standby and a held first registration use lease-retry. The receive ternary now prioritizes standby. These are payload/branch changes only: no additional HTTP request, retry, delay or heartbeat timer. The healthy heartbeat labeling path is unchanged. |\n| Final commit | `03ba185` only annotates `Reads::begin` for Linux, where production ancestry uses `/proc`. It changes no runtime behavior. Documentation now correctly names the mutex-guarded maps rather than atomics-only counters. |\n\n**CI proof:** this head is CLEAN. [CI 42362221981](https://github.com/AI-Substrate/pij-fleet/actions/runs/42362221981) has all four jobs successful, and [delivers 42362222056](https://github.com/AI-Substrate/pij-fleet/actions/runs/42362222056) succeeds. Rust JUnit lists **2,062 executed cases, zero failures/errors**, including the late-read gate, per-key/per-seat sums, key count/byte/unknown-name bounds, service counting, early-route-plus-service ping control and all six spawn guards. Five Rust tests were skipped separately. Both Node 22 and 24 native gates report **324/324**, including fresh allocation labels and the first-registration standby case.\n\nLinux CI tests the read-state contract but does not compile the production macOS observer branch. The packet reports macOS clippy clean; this review performed no local build, test or runtime probe. No review-worktree mutation.\n\n**Still owed:** AC2/AC5 live attribution and a matched fleet-cost reading after authorized deployment, with PID/build, actual elapsed time, by-key/by-seat deltas, overflow and global registration-spawn reconciliation after in-flight work settles. The healthy no-op repeat skip and shim per-call registration removal remain deferred under tk-0004/tk-0005. This verdict does not declare the plan complete or issue #145 fixed.\n"
+		}
+	]
+}
