@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b82a-2a4c-7572-825b-df182f28fded",
+				"date": "2026-11-08",
+				"head": "75271b1651c1c2fee7070c180760c0c498a3db34",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/168#issuecomment-6714083995",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:168",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "CI run 42421163319 associated with requested head, junit-linux",
+					"exit_code": 0,
+					"log": "2180 passing Rust cases, zero failures/errors; sequential reassignment, refused-write retry and missing-merge-time regressions passed; https://github.com/AI-Substrate/pij-fleet/actions/runs/42421163319"
+				},
+				{
+					"command": "node harness/scripts/pr-freeze.ts 168",
+					"exit_code": 0,
+					"log": "FINAL at 75271b1651c1c2fee7070c180760c0c498a3db34; matching heads, CLEAN, successful latest checks, ready, no migration added"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #168 round-2 delta correctness verdict\n\n**BLOCK** at `75271b1651c1c2fee7070c180760c0c498a3db34`. The sequential replay defect is repaired, but the selected holding generation is still lost before the actual write.\n\n## F001, P2: the merge cutoff is not rechecked under the writer lock\n\n`crates/daemon/src/http/claims.rs:508-532`; `crates/daemon/src/community/directory.rs:136-145,1912-1931`\n\n`end_holdings` verifies a store snapshot's `from < mergedAt`, then constructs a ReleaseTarget containing only role, instance and seat. Later, under the directory writer lock, `release_many` finds the currently open row with those three fields and ends it. Neither the original `from` nor the cutoff participates in that match.\n\nA permitted interleaving still releases new work:\n\n1. A delayed delivered call selects an old, eligible holding.\n2. Another directory operation ends it and reassigns the same role/instance to the same seat after the merge.\n3. The delayed writer finds that replacement as the current open row and ends it.\n\nThe final store update uses the replacement row's own `from`, so it does not restore the original cutoff. The writer lock serializes document changes but starts too late to make the earlier store selection authoritative.\n\n**Fix:** carry the full selected holding identity, including `from`, into the automatic-release request and validate the actual matched row under the writer lock. A replacement must be skipped/named, not released. Preserve explicit release/batch semantics and retry after a refused first write. Add a controlled selection/write interleaving regression requiring the replacement to remain open and the delayed call to write nothing.\n\nThis is source-confirmed correctness/integrity reasoning, not an executed concurrent reproduction by this reviewer. Security independently recorded the same race at this exact head in governance `32bc4b62ed5f6dde3b7977d6039f0b2a42f9c4b7`. Its pass-with-notes security disposition explicitly does not certify cutoff correctness. This is not a new F88 privilege-escalation finding.\n\n## Verified round-2 repairs\n\n- `mergedAt` is included in the existing gh read and parsed from its response, not from caller arguments or the PR body (`community/gh.rs:31,158-195`).\n- Snapshot selection excludes equality/later starts and leaves them named; missing or unparseable merge time releases nothing. Normal serial replay after reassignment preserves coder, reviewer and security holdings.\n- Retry after a foreign-edit refusal still releases the original pre-merge holdings. There is no blanket replay early-return that would break recovery or first calls with `Delivers: none`.\n- The three requested regressions passed in CI: `a_rerun_after_reassigning_the_keys_leaves_the_new_holdings`, `a_rerun_after_a_refused_release_ends_the_holdings_from_before_the_merge`, and `without_a_merge_time_delivered_ends_nothing_and_says_so` (`tests/directory_http.rs:6874-6982`). They are sequential and do not cover F001's interleaving.\n- The API/PR body now state inherited any-seat authority, plan paths as a selection mechanism rather than completion proof, directory-write-only atomicity, and the two-clock cutoff limitation. The previous unrelated paths are unchanged.\n\nThe PR reports that dropping the cutoff kills the reassignment regression. Its source and passing baseline were inspected; a detailed author mutation receipt had not arrived at publication, and no local mutant execution is claimed.\n\n## Evidence and limits\n\nCI run `42421163319`, associated with the requested PR head, succeeded. JUnit records **2,180 passing Rust cases with zero failures/errors**, including the three new regressions, the original delivered replay test and batch atomicity. CI uses the synthetic PR merge incorporating this head, not a claimed local pure-tip test run.\n\n`node harness/scripts/pr-freeze.ts 168` reported FINAL immediately before this verdict: matching remote/GitHub head, CLEAN, ready, successful latest checks, no added migration. `git diff --check origin/main...HEAD` passed.\n\n**No local reviewer builds or tests.** No product edits, live-fleet probes, credentials, merge or push. The detached worktree remains clean at this exact SHA. Round 3's controlled concurrent regression and identity pin are outside this verdict.\n"
+		}
+	]
+}
