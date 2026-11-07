@@ -4,7 +4,6 @@ use std::future::Future;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::error::PijError;
@@ -128,7 +127,7 @@ impl RegistrationService {
             attempts::Mode::Paneless
         };
         let claimed = claim.id.clone();
-        let reads = Arc::new(AtomicU64::new(0));
+        let reads = Arc::new(attempts::Reads::default());
         let result = match native {
             Some(tmux) => {
                 self.register_native_with_observer(
@@ -148,11 +147,31 @@ impl RegistrationService {
                 .await
             }
         };
-        self.count(path, mode, &claimed, &result, reads.load(Ordering::Relaxed));
+        self.count(path, mode, &claimed, &result, reads.close())
+            .await;
         result
     }
 
-    fn count(
+    /// Count an attempt the HTTP route refused before the service saw it (an
+    /// invalid role, a pane that cannot be observed or no longer holds the
+    /// claimed process), so every parsed `/v1/register` counts once (review
+    /// of #148, F001).
+    pub(crate) async fn count_early(
+        &self,
+        path: attempts::Path,
+        claim: &Registration,
+        outcome: attempts::Outcome,
+    ) {
+        let mode = if claim.pane.is_some() {
+            attempts::Mode::Pane
+        } else {
+            attempts::Mode::Paneless
+        };
+        self.attempts
+            .record(path, mode, outcome, &claim.id, false, 0);
+    }
+
+    async fn count(
         &self,
         path: attempts::Path,
         mode: attempts::Mode,
@@ -161,7 +180,10 @@ impl RegistrationService {
         ps: u64,
     ) {
         use attempts::Outcome;
-        let (outcome, seat) = match result {
+        // The seat is known when the registration landed on it or the refusal
+        // names it (retired, or held by its owner); otherwise the claimed id
+        // is only what the client said (review of #148).
+        let (outcome, seat, known) = match result {
             Ok((descriptor, report)) => (
                 if report.inserted {
                     Outcome::New
@@ -170,7 +192,8 @@ impl RegistrationService {
                 } else {
                     Outcome::Unchanged
                 },
-                descriptor.id.0.as_str(),
+                descriptor.id.to_string(),
+                true,
             ),
             Err(error) => (
                 match error {
@@ -181,10 +204,21 @@ impl RegistrationService {
                     RegistrationError::NativeHolderCurrent(_) => Outcome::HolderCurrent,
                     RegistrationError::Runtime(_) => Outcome::Error,
                 },
-                claimed,
+                match error {
+                    RegistrationError::Retired { seat, .. }
+                    | RegistrationError::NativeSessionHold(seat)
+                    | RegistrationError::NativeHolderCurrent(seat) => seat.to_string(),
+                    _ => claimed.to_string(),
+                },
+                matches!(
+                    error,
+                    RegistrationError::Retired { .. }
+                        | RegistrationError::NativeSessionHold(_)
+                        | RegistrationError::NativeHolderCurrent(_)
+                ),
             ),
         };
-        self.attempts.record(path, mode, outcome, seat, ps);
+        self.attempts.record(path, mode, outcome, &seat, known, ps);
     }
 
     /// Share delivery's native exclusion and its receiver leases.
@@ -274,7 +308,8 @@ impl RegistrationService {
         let result = self
             .register_inner(claim, None, RegistrationMode::Reclaim)
             .await;
-        self.count(attempts::Path::Adopt, mode, &claimed, &result, 0);
+        self.count(attempts::Path::Adopt, mode, &claimed, &result, 0)
+            .await;
         result.map(|(descriptor, _)| descriptor)
     }
 
@@ -1692,13 +1727,19 @@ type ObserveFuture = std::pin::Pin<
 /// registration launches at most one `ps` per host-named ancestor (ruling C27
 /// as amended), each counted in `reads` (plan 211). Linux: `/proc`, which
 /// launches nothing.
-fn native_observer(reads: Arc<AtomicU64>) -> impl FnMut(u32) -> ObserveFuture {
+fn native_observer(reads: Arc<attempts::Reads>) -> impl FnMut(u32) -> ObserveFuture {
     #[cfg(not(target_os = "linux"))]
     {
         let ancestry = Arc::new(std::sync::Mutex::new(AncestryReads::new(
             pij_harnesses::proc::parent_and_name,
             move |pid| {
-                reads.fetch_add(1, Ordering::Relaxed);
+                // A timeout can drop the registration while this worker still
+                // runs; once its attempt is counted, it may not launch.
+                if !reads.begin() {
+                    return Err(native_refusal(
+                        "the registration attempt ended before this ancestor's argv was read",
+                    ));
+                }
                 read_argv_with_ps(pid)
             },
         )));

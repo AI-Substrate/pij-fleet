@@ -4,8 +4,9 @@
 //!
 //! In-process counters only: no launch, no event, no store write per attempt.
 //! Bounded by construction: path, mode and outcome are enums, and the per-seat
-//! tally keeps at most [`SEATS`] addresses, counting the rest under
-//! [`OVERFLOW`]. Nothing reads them to decide anything, so they cannot change
+//! tally keeps at most [`SEATS`] addresses of at most [`SEAT_BYTES`] bytes,
+//! counting the rest under [`OVERFLOW`]. The counts sit in one mutex-guarded
+//! pair of maps, read in one step. Nothing reads them to decide anything, so they cannot change
 //! behaviour. The path a client names is advisory: it labels a count, never
 //! grants anything.
 
@@ -17,8 +18,47 @@ use serde::Serialize;
 /// The most seat addresses tallied one by one; later ones share [`OVERFLOW`].
 pub const SEATS: usize = 64;
 
-/// Where attempts beyond [`SEATS`] distinct addresses are counted.
+/// The longest address tallied by name; a longer one counts under [`OVERFLOW`]
+/// (review of #148: 64 keys alone are not a byte bound).
+pub const SEAT_BYTES: usize = 64;
+
+/// Where attempts beyond [`SEATS`] distinct addresses, over-long addresses
+/// and refused claims on addresses that are not seats are counted.
 pub const OVERFLOW: &str = "(other)";
+
+/// One attempt's ancestry reads, closed when the attempt's count is taken
+/// (review of #148, P148-F001). An observer that a timeout left running asks
+/// [`Self::begin`] before its `ps`: while open the read is counted, once
+/// closed it is refused and never launched, so no read goes unattributed.
+#[derive(Default)]
+pub struct Reads {
+    state: Mutex<(bool, u64)>,
+}
+
+impl Reads {
+    /// Whether a read may launch; counts it when it may.
+    pub fn begin(&self) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.0 {
+            return false;
+        }
+        state.1 += 1;
+        true
+    }
+
+    /// Close the tally and return it; every later [`Self::begin`] refuses.
+    pub fn close(&self) -> u64 {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.0 = true;
+        state.1
+    }
+}
 
 /// Why a registration was attempted: the client's advisory reason on
 /// `/v1/register` (`attempt`), or the daemon caller that registered.
@@ -178,8 +218,19 @@ pub struct Attempts {
 
 impl Attempts {
     /// Count one attempt by `path`, `mode` and `outcome` for `seat`, which
-    /// paid `ps` ancestry reads.
-    pub fn record(&self, path: Path, mode: Mode, outcome: Outcome, seat: &str, ps: u64) {
+    /// paid `ps` ancestry reads. `known` says the seat exists (a registration
+    /// landed on it, or a refusal named it); an unknown address keeps its name
+    /// only when a known attempt already tallied it, else counts under
+    /// [`OVERFLOW`], so a client cannot fill the tally with names it made up.
+    pub fn record(
+        &self,
+        path: Path,
+        mode: Mode,
+        outcome: Outcome,
+        seat: &str,
+        known: bool,
+        ps: u64,
+    ) {
         // A poisoned lock still holds valid counts: a panic cannot interrupt `+= 1`.
         let mut counts = self
             .counts
@@ -190,7 +241,13 @@ impl Attempts {
             .entry((path, mode, outcome))
             .or_default()
             .add(ps);
-        let seat = if seat.is_empty() { "(unnamed)" } else { seat };
+        let seat = if seat.is_empty() {
+            "(unnamed)"
+        } else if seat.len() > SEAT_BYTES || !(known || counts.by_seat.contains_key(seat)) {
+            OVERFLOW
+        } else {
+            seat
+        };
         let key = if counts.by_seat.contains_key(seat) || counts.by_seat.len() < SEATS {
             seat
         } else {
@@ -231,9 +288,30 @@ mod tests {
     #[test]
     fn attempts_count_by_path_mode_and_outcome_with_their_ps_reads() {
         let attempts = Attempts::default();
-        attempts.record(Path::Heartbeat, Mode::Pane, Outcome::Unchanged, "pij-a", 2);
-        attempts.record(Path::Heartbeat, Mode::Pane, Outcome::Unchanged, "pij-a", 0);
-        attempts.record(Path::Shim, Mode::Paneless, Outcome::Retired, "pij-old", 3);
+        attempts.record(
+            Path::Heartbeat,
+            Mode::Pane,
+            Outcome::Unchanged,
+            "pij-a",
+            true,
+            2,
+        );
+        attempts.record(
+            Path::Heartbeat,
+            Mode::Pane,
+            Outcome::Unchanged,
+            "pij-a",
+            true,
+            0,
+        );
+        attempts.record(
+            Path::Shim,
+            Mode::Paneless,
+            Outcome::Retired,
+            "pij-old",
+            true,
+            3,
+        );
         let counts = attempts.snapshot();
         assert_eq!((counts.total, counts.ps), (3, 5));
         assert_eq!(
@@ -260,10 +338,11 @@ mod tests {
                 Mode::Pane,
                 Outcome::New,
                 &format!("pij-{n}"),
+                true,
                 1,
             );
         }
-        attempts.record(Path::Receive, Mode::Pane, Outcome::New, "pij-0", 1);
+        attempts.record(Path::Receive, Mode::Pane, Outcome::New, "pij-0", true, 1);
         let counts = attempts.snapshot();
         assert_eq!(counts.by_seat.len(), SEATS + 1);
         assert_eq!(counts.by_seat[OVERFLOW], Tally { count: 3, ps: 3 });
@@ -279,6 +358,84 @@ mod tests {
                 .sum::<u64>(),
             counts.total
         );
+    }
+
+    #[test]
+    fn an_unknown_address_counts_under_other_until_a_known_attempt_names_it() {
+        let attempts = Attempts::default();
+        attempts.record(
+            Path::Shim,
+            Mode::Paneless,
+            Outcome::Refused,
+            "pij-made-up",
+            false,
+            0,
+        );
+        attempts.record(
+            Path::Explicit,
+            Mode::Pane,
+            Outcome::New,
+            "pij-real",
+            true,
+            0,
+        );
+        attempts.record(
+            Path::Receive,
+            Mode::Pane,
+            Outcome::Refused,
+            "pij-real",
+            false,
+            0,
+        );
+        let counts = attempts.snapshot();
+        assert_eq!(counts.by_seat[OVERFLOW].count, 1);
+        assert!(!counts.by_seat.contains_key("pij-made-up"));
+        assert_eq!(counts.by_seat["pij-real"].count, 2);
+    }
+
+    #[test]
+    fn an_over_long_address_counts_under_other() {
+        let attempts = Attempts::default();
+        attempts.record(
+            Path::Shim,
+            Mode::Paneless,
+            Outcome::Refused,
+            &"x".repeat(SEAT_BYTES + 1),
+            true,
+            0,
+        );
+        attempts.record(
+            Path::Shim,
+            Mode::Paneless,
+            Outcome::Refused,
+            &"y".repeat(SEAT_BYTES),
+            true,
+            0,
+        );
+        let counts = attempts.snapshot();
+        assert_eq!(counts.by_seat[OVERFLOW].count, 1);
+        assert!(counts.by_seat.keys().all(|key| key.len() <= SEAT_BYTES));
+    }
+
+    /// Review of #148 (P148-F001): an observer held before its argv read past
+    /// the moment its attempt is counted never launches, so the count holds
+    /// every read that ran; one that asks while open is counted.
+    #[test]
+    fn a_read_after_the_attempt_is_counted_never_launches() {
+        let reads = std::sync::Arc::new(Reads::default());
+        assert!(reads.begin(), "a read while the attempt runs is counted");
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        let held = {
+            let reads = std::sync::Arc::clone(&reads);
+            std::thread::spawn(move || {
+                wait.recv().unwrap();
+                reads.begin()
+            })
+        };
+        assert_eq!(reads.close(), 1, "the attempt ends: one read");
+        go.send(()).unwrap();
+        assert!(!held.join().unwrap(), "the held observer may not launch");
+        assert_eq!(reads.close(), 1, "and nothing was added after the count");
     }
 
     #[test]

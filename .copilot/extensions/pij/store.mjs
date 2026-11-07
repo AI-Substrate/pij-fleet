@@ -409,9 +409,21 @@ function verifyRegisteredSeat(seat, registration) {
 }
 
 /** Resolve a new address before creating its durable journal namespace. */
-export async function resolveRegistration(client, registration, signal, precedence) {
+/** `attempt` names why (plan 211): `explicit`, or `lease-retry` after a standby. */
+export async function resolveRegistration(
+	client,
+	registration,
+	signal,
+	precedence,
+	attempt = "explicit",
+) {
 	if (registration.id !== "") return registration;
-	const seat = await registerWithPrecedence(client, registration, signal, precedence);
+	const seat = await registerWithPrecedence(
+		client,
+		{ ...registration, attempt },
+		signal,
+		precedence,
+	);
 	throwIfStopped(signal);
 	verifyRegisteredSeat(seat, registration);
 	const bound = { ...registration, id: seat.id };
@@ -1380,8 +1392,10 @@ export class NativeBridge {
 			while (!signal.aborted) {
 				try {
 					if (!this.registered) {
+						// A retry after a standby is a lease retry even before the first
+						// registration succeeded (review of #148, F002).
 						await this.register(
-							!this.reconnectRegistration ? "explicit" : standingBy ? "lease-retry" : "receive",
+							standingBy ? "lease-retry" : !this.reconnectRegistration ? "explicit" : "receive",
 						);
 						if (holdStarted !== undefined || standingBy) {
 							this.emit("connection-ready");

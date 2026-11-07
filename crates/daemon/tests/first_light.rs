@@ -82,6 +82,19 @@ async fn ping_counts_registration_attempts_by_path_mode_and_outcome() {
         .await
         .expect("register");
     assert!(!refused.status().is_success(), "no session: refused");
+    // Review of #148 (F001): refused by the route before the service, still
+    // counted once, and under "(other)": the client's made-up name is not kept.
+    let invalid = client
+        .post(format!("http://{}/v1/register", daemon.addr))
+        .header(reqwest::header::AUTHORIZATION, daemon.key.header())
+        .json(&serde_json::json!({
+            "id": "pij-made-up", "harness": "omp", "folder": dir.display().to_string(),
+            "relay": false, "role": "not-a-seat-role", "attempt": "explicit"
+        }))
+        .send()
+        .await
+        .expect("register");
+    assert!(!invalid.status().is_success(), "an invalid role is refused");
     let body = client
         .get(format!("http://{}/health", daemon.addr))
         .header(reqwest::header::AUTHORIZATION, daemon.key.header())
@@ -94,7 +107,13 @@ async fn ping_counts_registration_attempts_by_path_mode_and_outcome() {
     let envelope: pij_core::model::Envelope<serde_json::Value> =
         wire::decode_envelope(&body).expect("a v1 envelope");
     let counts = envelope.data.expect("ping data")["registrations"].clone();
-    assert_eq!(counts["total"], 1, "{counts}");
+    assert_eq!(counts["total"], 2, "each attempt once: {counts}");
+    assert_eq!(
+        counts["by_key"]["explicit.paneless.refused"]["count"], 1,
+        "{counts}"
+    );
+    assert_eq!(counts["by_seat"]["(other)"]["count"], 1, "{counts}");
+    assert!(counts["by_seat"].get("pij-made-up").is_none(), "{counts}");
     assert_eq!(
         counts["by_key"]["shim.paneless.refused"]["count"], 1,
         "{counts}"

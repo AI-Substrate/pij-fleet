@@ -62,7 +62,7 @@
         },
         {
           "id": "ac-0005",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). The goal is cost: registration ps near 0/s at rest. Counters are in-process atomics; no new launch site, timer or poll. Live BEFORE and AFTER on the fleet (pij-rs --json ping twice, 60 s apart, with data.pid).",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). The goal is cost: registration ps near 0/s at rest. Counters are in-process (one mutex-guarded pair of bounded maps per daemon); no new launch site, timer or poll. Live BEFORE and AFTER on the fleet (pij-rs --json ping twice, 60 s apart, with data.pid).",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },

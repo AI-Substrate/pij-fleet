@@ -950,6 +950,15 @@ async fn register(
     State(state): State<AppState>,
     Json(mut request): Json<RegistrationRequest>,
 ) -> Response {
+    use crate::registration::attempts::{Outcome, Path};
+    let path = Path::from_client(request.attempt.as_deref());
+    // Every parsed attempt counts once (plan 211; review of #148, F001): a
+    // refusal here before the service is counted here, the rest by the service.
+    let early = |claim: &Registration, outcome: Outcome| {
+        let registration = state.registration.clone();
+        let claim = claim.clone();
+        async move { registration.count_early(path, &claim, outcome).await }
+    };
     // Vocabulary is a refusal, never a serde rejection (plan 166).
     if let Some(Err(reason)) = request
         .claim
@@ -957,6 +966,7 @@ async fn register(
         .as_deref()
         .map(pij_core::orchestration::check_seat_role)
     {
+        early(&request.claim, Outcome::Refused).await;
         return role::RoleError::Invalid(reason).into_response("pij register");
     }
     // Native claims carry their own verified host tuple. Do not replace it with
@@ -972,7 +982,10 @@ async fn register(
     {
         let observed = match state.services.tmux.pane_process(pane).await {
             Ok(observed) => observed,
-            Err(error) => return internal("pij register", error),
+            Err(error) => {
+                early(&request.claim, Outcome::Error).await;
+                return internal("pij register", error);
+            }
         };
         if let Some(observed) = observed {
             match pane_harness_identity(&state, observed.pid, harness).await {
@@ -986,6 +999,7 @@ async fn register(
                             .zip(request.claim.proc_start)
                             .map(|(pid, proc_start)| ProcIdentity { pid, proc_start });
                         if !claim.is_some_and(|claim| observed.subtree.contains(&claim)) {
+                            early(&request.claim, Outcome::Refused).await;
                             return refused(
                                 "pij register",
                                 "claimed pid/proc_start is not in the daemon-observed pane process subtree; nothing was written",
@@ -998,16 +1012,19 @@ async fn register(
                     proc_source = Some(observed.source);
                 }
                 Ok(None) => {
+                    early(&request.claim, Outcome::Refused).await;
                     return refused(
                         "pij register",
                         "pane process disappeared before registration; nothing was written",
                     );
                 }
-                Err(error) => return internal("pij register", error),
+                Err(error) => {
+                    early(&request.claim, Outcome::Error).await;
+                    return internal("pij register", error);
+                }
             }
         }
     }
-    let path = crate::registration::attempts::Path::from_client(request.attempt.as_deref());
     let registered = state
         .registration
         .register_via(

@@ -66,10 +66,16 @@ reads those attempts paid. `path` is the client's advisory `attempt` on
 `unspecified` when absent, `other` when unknown) or the daemon caller (`adopt`,
 `claude-bind`, `codex-bind`); `mode` is `pane` or `paneless`; `outcome` is
 `new`, `rebound`, `unchanged`, `refused`, `retired`, `retryable`,
-`session-hold`, `holder-current` or `error`. `by_seat` is per address (the
-resolved seat, else the claimed id, else `(unnamed)`), at most 64 of them, the
-rest under `(other)`. The counters are in-process: no launch, event or store
-write per attempt, and nothing reads them to decide anything. `data.ddocs` is the ddocs path the daemon resolved once at
+`session-hold`, `holder-current` or `error`. Every parsed `/v1/register`
+counts once, including one the route refuses before registration (an invalid
+role, a pane it cannot observe). `by_seat` is per address: the resolved seat, or
+for a refusal the claimed id when it is a seat (`(unnamed)` when empty);
+addresses that are not seats, longer than 64 bytes, or beyond the first 64
+count under `(other)`. Each attempt's `ps` tally closes when the attempt is
+counted: an observer a timeout left running may not launch afterwards, so no
+read goes uncounted. The counters are in-process (one mutex-guarded pair of
+maps): no launch, event or store write per attempt, and nothing reads them to
+decide anything. `data.ddocs` is the ddocs path the daemon resolved once at
 start (`PIJ_DDOCS`, which must be absolute, else PATH), or `null` when it found
 none; `just doctor` prints it. A relative or empty PATH entry is taken relative
 to the daemon's directory at start, so the kept path is always absolute. `data.gh` is

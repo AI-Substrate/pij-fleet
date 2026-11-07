@@ -63,7 +63,7 @@
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
           "state": "unchecked",
           "probe": "pij-rs --json ping",
-          "note": "The goal is cost: registration ps near 0/s at rest. Counters are in-process atomics; no new launch site, timer or poll. Live BEFORE and AFTER on the fleet (pij-rs --json ping twice, 60 s apart, with data.pid)."
+          "note": "The goal is cost: registration ps near 0/s at rest. Counters are in-process (one mutex-guarded pair of bounded maps per daemon); no new launch site, timer or poll. Live BEFORE and AFTER on the fleet (pij-rs --json ping twice, 60 s apart, with data.pid)."
         },
         {
           "id": "bp-0006",

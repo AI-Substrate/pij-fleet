@@ -1877,6 +1877,42 @@ test("foreign harness cannot nominate a native session or yield its occupied pan
 	);
 });
 
+test("plan 211: a fresh native address is allocated as explicit, or as a lease retry after a standby", async () => {
+	const bodies = [];
+	const client = {
+		request: async (_path, body) => {
+			bodies.push(body);
+			return {
+				...descriptor,
+				id: "pij-bright-otter",
+				session: body.harness_session,
+				proc: { pid: body.pid, proc_start: body.proc_start },
+				pane: body.pane,
+			};
+		},
+	};
+	const request = chooseRegistration({
+		sessionId: "native-A",
+		host: { ...descriptor.proc, pane: descriptor.pane },
+		folder: "/work",
+		env: {},
+		seats: [],
+	});
+	assert.equal(request.id, "");
+	await resolveRegistration(client, request, new AbortController().signal);
+	await resolveRegistration(
+		client,
+		request,
+		new AbortController().signal,
+		undefined,
+		"lease-retry",
+	);
+	assert.deepEqual(
+		bodies.map((body) => body.attempt),
+		["explicit", "lease-retry"],
+	);
+});
+
 test("same-process A to B to A restores the retired native address and accepted journal", async (t) => {
 	const home = await mkdtemp(join(tmpdir(), "pij-native-retired-"));
 	t.after(() => rm(home, { recursive: true, force: true }));
@@ -5199,9 +5235,11 @@ test("standby: a newer same-process holder is a quiet wait that this session's o
 	});
 	const request = f.client.request.bind(f.client);
 	const registers = [];
+	const attempts = [];
 	f.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
 			registers.push(body.native_precedence);
+			attempts.push(body.attempt);
 			if (held) throw new NativeError("held", true, "Pij HTTP 409", "native-holder");
 		}
 		return request(path, body, signal);
@@ -5222,6 +5260,9 @@ test("standby: a newer same-process holder is a quiet wait that this session's o
 	await acknowledged.promise;
 	f.bridge.stop();
 	assert.deepEqual(registers.at(-1), { last_user_message_at: 90_000, loaded_at: 1_000 });
+	// Plan 211 (review of #148, F002): the first registration is explicit and
+	// the one after the standby is a lease retry, though none succeeded before.
+	assert.deepEqual([attempts[0], attempts.at(-1)], ["explicit", "lease-retry"]);
 	assert.deepEqual(logs, []);
 	assert.ok(captured.some((event) => event.kind === "standby-ended"));
 });
