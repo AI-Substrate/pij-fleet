@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b749-4787-7682-a6e1-d6a7efb5ab1d",
+				"date": "2026-11-08",
+				"head": "5b862a147c8dc02ab9d0a2aa0c96fe3abaced55e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/161#issuecomment-6711520738",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:161",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #161 plan 210 closeout review\n\n**PASS-WITH-NOTES** at `5b862a147c8dc02ab9d0a2aa0c96fe3abaced55e`.\n\nPlan 210 is complete in its workstream-infrastructure/planning scope. This does not claim implementation of PRD 002's planned work or req-26's planned s17.\n\n## Receipt verification\n\nAll nine checked ACs, their pressure rows and the phase tasks trace to existing evidence:\n\n| AC / pressure | Verified basis |\n|---|---|\n| 1 | Phase-1 schema fixtures plus phase-2 umbrella control |\n| 2 | Same-commit move/schema change, dual-folder readers and phase-2 evidence |\n| 3,5 | Phase-1 skill and immutable-template/embedding controls |\n| 4 | Phase-1 amendments plus reviewed #162 planned coverage and retired exemptions |\n| 6 | Reviewed #160 final guard/Reader/duplicate controls and exact-head CI |\n| 7 | Ten actual governance writer commits and current live fields |\n| 8 | Indexed ocelot verdict ecbbf94: command-only cost, no new recurring daemon work |\n| 9 | Three indexed #160 verdicts at 4a0bc62, main delivery/state evidence and ledger |\n\nTask receipt paths resolve from their containing files. The new phase-2 task file covers AC2/6/7/8/9; tk-0011 supplies AC4's full planning disposition. Pressure proof is carried by those AC/task receipts, not by merely trusting checked flags.\n\n## Governance and delivery\n\nAll eight recorded path commits exist for the stated roles. Structural parent/commit comparison confirms only the roadmap-to-workstream path replacement, preserving every earlier changelog row and appending exactly one row with the recorded why. The coder and pm-001 wording commits likewise contain only the stated live-field edits plus their changelogs.\n\nAt governance snapshot `94d59879c15834b991e8e56781c9e898a923546d`, all nine role documents' live sections and ROUTES.md have no roadmap wording; historical changelogs/role.md files are not rewritten.\n\nThe read-only deliveries ledger records #160 for req-30 and req-31, merge `09aa3101cdceea84882bb8ac43ace87870c94d41`. Both delivered_by values match. Reviewer/security/performance receipts 329c018/c1216cf/ecbbf94 are real indexed pass-with-notes verdicts for the exact 4a0bc62 head.\n\n## Validation\n\nIsolated `harness plan validate --complete` reports zero errors/warnings/open/contradictions/orphans across 42 completable items. All five changed DD sources validate at zero errors/warnings; all five regenerated faces match exactly.\n\nThe pinned checkout is clean; GitHub and ls-remote agree, CLEAN, latest Delivers SUCCESS. CI `42401403732`, attempt 1, succeeded at this exact head. Delivers:none is appropriate for closeout metadata; no feature is newly implemented here.\n\nNo local product tests/builds, live role mutation, credential-file or old private-register read. Temporary validation files were cleaned.\n\n## Notes\n\nThe PR body's verification checkbox still quotes the older seven-doc/15-exemption result; the current branch has an empty exemption baseline. Update that mutable summary to the final state.\n\nbp-0008 retains the seed private/live measurement recipe. Its actual checked disposition is the command-only performance verdict, which explicitly says no daemon after-deploy reading is needed. Do not interpret checked as evidence those obsolete measurements were performed. F104's CI ddocs limitation and the inherited performance qualifications remain explicit.\n\nNo blocking closeout repair requested. No product code or governance documents were edited by this reviewer.\n"
+		}
+	]
+}
