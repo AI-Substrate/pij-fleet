@@ -7,10 +7,15 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
+import { scaled } from "./time-scale.js";
 
-const COMMAND = 10_000;
-const STARTUP = 30_000;
-const STOP = 3_000;
+// Budgets on real child processes, stretched by PIJ_TEST_TIME_SCALE (F28).
+const COMMAND = scaled(10_000);
+const STARTUP = scaled(30_000);
+const STOP = scaled(3_000);
+// The daemon's own graceful drain may take SHUTDOWN_DRAIN_TIMEOUT (5 s) after
+// SIGINT; a SIGKILL inside that window reads as a failed shutdown (F27).
+const DAEMON_STOP = scaled(10_000);
 const BUILD = 180_000;
 const POLL = 25;
 const require = createRequire(import.meta.url);
@@ -25,7 +30,7 @@ export interface OwnedProcess {
 	readonly child: ChildProcess;
 	readonly result: Promise<CommandResult>;
 	output(): { stdout: string; stderr: string };
-	stop(): Promise<void>;
+	stop(grace?: number): Promise<void>;
 }
 
 /** Only this unreplaced child handle can select a signal target. */
@@ -95,16 +100,17 @@ class ManagedProcess implements OwnedProcess {
 		}
 	}
 
-	stop(): Promise<void> {
-		this.stopping ??= this.stopOwned();
+	/** SIGINT, then SIGKILL if it has not exited within `grace` ms. */
+	stop(grace: number = STOP): Promise<void> {
+		this.stopping ??= this.stopOwned(grace);
 		return this.stopping;
 	}
 
-	private async stopOwned(): Promise<void> {
+	private async stopOwned(grace: number): Promise<void> {
 		if (!this.closed && this.child.exitCode === null && this.child.signalCode === null) {
 			this.child.kill("SIGINT");
 		}
-		if (!(await this.wait(STOP))) {
+		if (!(await this.wait(grace))) {
 			if (this.child.exitCode === null && this.child.signalCode === null)
 				this.child.kill("SIGKILL");
 			if (!(await this.wait(STOP))) {
@@ -554,7 +560,7 @@ export class PrivateGovernanceFixture {
 		if (this.daemon) {
 			const daemon = this.daemon;
 			await attempt(async () => {
-				await daemon.stop();
+				await daemon.stop(DAEMON_STOP);
 				successful(await daemon.result, "private daemon shutdown");
 			});
 		}

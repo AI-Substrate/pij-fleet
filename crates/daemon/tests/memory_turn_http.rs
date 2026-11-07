@@ -521,6 +521,8 @@ async fn a_repeat_request_while_one_is_held_is_refused_by_name() {
 /// while it holds a delivery for its grace window.
 struct SlowSocket {
     delay: Duration,
+    /// What the socket answers once the delay passes.
+    outcome: pij_core::model::DeliveryOutcome,
 }
 
 #[async_trait::async_trait]
@@ -539,10 +541,64 @@ impl pij_core::ports::Transport for SlowSocket {
         _: &Msg,
     ) -> pij_core::error::Result<pij_core::model::DeliveryOutcome> {
         tokio::time::sleep(self.delay).await;
-        Ok(pij_core::model::DeliveryOutcome::Delivered {
-            origin: pij_core::model::DeliveryOrigin::InjectedToTransport,
-        })
+        Ok(self.outcome.clone())
     }
+}
+
+/// A holder whose prompt goes to a socket that answers `outcome` after 1 s,
+/// under a 300 ms bound; it is closed by the prime. Returns its turn event.
+async fn late_admission(outcome: pij_core::model::DeliveryOutcome) -> (Rig, Value) {
+    let rig = rig_with(Duration::from_millis(300), &["holder"], |services| {
+        services.delivery = Arc::new(
+            pij_daemon::delivery::DeliveryService::new(
+                services.registry.clone(),
+                services.queue.clone(),
+                Arc::new(SlowSocket {
+                    delay: Duration::from_secs(1),
+                    outcome,
+                }),
+                services.interaction.clone(),
+                Arc::clone(&services.event_bus),
+            )
+            .expect("delivery"),
+        );
+    })
+    .await;
+    let mut holder = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    holder.harness = Harness::Claude;
+    rig.registry.put(holder).await.unwrap();
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let turn = turn_event(&rig, "holder").await;
+    (rig, turn)
+}
+
+/// Plan 209 (#132 F005, option B): past the bound the close runs, and the
+/// turn's event then says how the late prompt's admission settled.
+#[tokio::test]
+async fn a_late_admission_is_recorded_after_the_action_never_withdrawn() {
+    let (rig, turn) = late_admission(pij_core::model::DeliveryOutcome::Delivered {
+        origin: pij_core::model::DeliveryOrigin::InjectedToTransport,
+    })
+    .await;
+    assert_eq!(turn["ended"], "bound", "{turn}");
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert_eq!(turn["admission"], "delivered-late", "{turn}");
+    let waited = turn["waited_ms"].as_u64().unwrap();
+    assert!(
+        (300..1_000).contains(&waited),
+        "the close ran at the bound, before the 1 s admission settled: {turn}"
+    );
+    assert!(tombstoned(&rig, "holder").await);
+    rig.server.abort();
+
+    let (rig, turn) = late_admission(pij_core::model::DeliveryOutcome::Refused {
+        reason: "the operator declined".to_string(),
+    })
+    .await;
+    assert_eq!(turn["then"], "closed", "{turn}");
+    assert_eq!(turn["admission"], "refused", "{turn}");
+    rig.server.abort();
 }
 
 #[tokio::test]
@@ -552,8 +608,13 @@ async fn an_admission_slower_than_the_bound_still_ends_at_the_bound() {
             pij_daemon::delivery::DeliveryService::new(
                 services.registry.clone(),
                 services.queue.clone(),
+                // Well past the bound; since plan 209 the turn's event waits for
+                // this admission to settle, so it stays inside turn_event's wait.
                 Arc::new(SlowSocket {
-                    delay: Duration::from_secs(5),
+                    delay: Duration::from_secs(2),
+                    outcome: pij_core::model::DeliveryOutcome::Delivered {
+                        origin: pij_core::model::DeliveryOrigin::InjectedToTransport,
+                    },
                 }),
                 services.interaction.clone(),
                 Arc::clone(&services.event_bus),
@@ -575,7 +636,7 @@ async fn an_admission_slower_than_the_bound_still_ends_at_the_bound() {
     let waited = turn["waited_ms"].as_u64().unwrap();
     assert!(
         (300..2_000).contains(&waited),
-        "the turn ends at the 300 ms bound, not after the 5 s admission: {turn}"
+        "the turn ends at the 300 ms bound, not after the 2 s admission: {turn}"
     );
     assert!(
         turn["note"]

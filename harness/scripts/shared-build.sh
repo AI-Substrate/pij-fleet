@@ -8,6 +8,10 @@
 # atomic mkdir lock for the whole batch, checks the disk floor, rebuilds the
 # caller's own sources, and always releases.
 #
+# Builds run niced and tests run nice-only (below); a test's wall-clock
+# budgets on real child processes stretch with PIJ_TEST_TIME_SCALE (plan 209,
+# F28; AGENTS.md, resource cost item 5).
+#
 #   PIJ_SHARED_TARGET=<absolute target dir> \
 #     just shared-build [--timeout <minutes>|<seconds>s] -- <cargo args> [--then <cargo args>]...
 #
@@ -27,10 +31,19 @@
 # can never starve the seats around it. rustc and linkers inherit both. Each
 # wrapper is skipped if absent. (Fleet cost rule, plan 208.)
 #
+# A `cargo test` compiles that way (`cargo test ... --no-run`), then runs the
+# same command under `nice -n 19` alone, which finds the test binaries built
+# and runs them: background QoS slows a test's own child processes past its
+# wall-clock budgets (F63, plan 209). The run step is not compile-free: cargo
+# builds doctests as they run, so they compile there, nice-only. It refuses
+# `--doc --no-run`, so `cargo test --doc` skips the compile step and is one
+# nice-only run (#144 F001).
+#
 # Cost: nothing at rest. Waiting: one df, one mkdir and one sleep per poll
 # (20 s) per waiting caller. Holding: one df per cargo command, plus the nice
 # and taskpolicy launches, each of which execs into the next (one or two
-# launches per cargo command, never per poll).
+# launches per cargo command, never per poll); a `cargo test` adds one more
+# cargo and nice for its run step (a `cargo test --doc` is one step).
 
 set -uo pipefail
 
@@ -207,14 +220,25 @@ on_signal() {
 	if [ -n "$child" ]; then
 		drain "$child"
 		wait "$child" 2>/dev/null
+		child=""
 	fi
 	release
 	exit "$1"
 }
 
-trap release EXIT
+# Any other exit with cargo running (an untrapped signal such as USR1, which
+# bash still runs this trap for) drains its group before the lock goes (F48).
+on_exit() {
+	[ -z "$child" ] || drain "$child"
+	release
+}
+
+trap on_exit EXIT
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
+# A closed terminal sends HUP: cargo runs in its own group and would otherwise
+# keep building, holding the lock's target, with nothing waiting (F48).
+trap 'on_signal 129' HUP
 
 # Free KiB on the volume holding the target (or its nearest existing parent).
 # Builtins only past the one df: this runs once per poll while waiting.
@@ -299,19 +323,24 @@ for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
 done
 [ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
 
-wrap=()
-[ -x "$NICE" ] && wrap+=("$NICE" -n 19)
+# Compiling runs niced and in background QoS; running tests runs niced only.
+nice_only=()
+[ -x "$NICE" ] && nice_only+=("$NICE" -n 19)
+wrap=(${nice_only[@]+"${nice_only[@]}"})
 [ -x "$TASKPOLICY" ] && wrap+=("$TASKPOLICY" -b)
 
-export CARGO_TARGET_DIR="$target"
-export CARGO_INCREMENTAL=0
-for command in "${commands[@]}"; do
-	check_floor
-	eval "set -- $command"
-	# In the background under `wait`, so a signal is handled at once rather
-	# than after cargo finishes; `set -m` gives the job its own process group.
+# One cargo command under a wrapper, in its own process group, drained after.
+# In the background under `wait`, so a signal is handled at once rather than
+# after cargo finishes; `set -m` gives the job its own process group.
+run_cargo() { # <wrap|nice_only> <cargo args>...
+	local mode=$1 status
+	shift
 	set -m
-	${wrap[@]+"${wrap[@]}"} cargo "$@" &
+	if [ "$mode" = wrap ]; then
+		${wrap[@]+"${wrap[@]}"} cargo "$@" &
+	else
+		${nice_only[@]+"${nice_only[@]}"} cargo "$@" &
+	fi
 	child=$!
 	set +m
 	wait "$child"
@@ -319,5 +348,44 @@ for command in "${commands[@]}"; do
 	# Whatever cargo left running in its group must not outlive the hold.
 	drain "$child"
 	child=""
-	[ "$status" -eq 0 ] || exit "$status"
+	return "$status"
+}
+
+# `cargo test <args> [-- <test args>]` compiles as `cargo test <args> --no-run`:
+# the build options without anything after `--`.
+build_only() {
+	local arg
+	for arg in "$@"; do
+		[ "$arg" = "--" ] && break
+		printf '%s\0' "$arg"
+	done
+	printf '%s\0' --no-run
+}
+
+export CARGO_TARGET_DIR="$target"
+export CARGO_INCREMENTAL=0
+for command in "${commands[@]}"; do
+	check_floor
+	eval "set -- $command"
+	runs_tests=0
+	if [ "${1:-}" = test ]; then
+		runs_tests=1
+		for arg in "$@"; do
+			[ "$arg" = "--" ] && break
+			[ "$arg" = "--no-run" ] && runs_tests=0
+			# Doctests compile while they run; there is no --no-run step.
+			[ "$arg" = "--doc" ] && runs_tests=2
+		done
+	fi
+	if [ "$runs_tests" = 2 ]; then
+		run_cargo nice_only "$@" || exit $?
+	elif [ "$runs_tests" = 1 ]; then
+		compile=()
+		while IFS= read -r -d '' arg; do compile+=("$arg"); done < <(build_only "$@")
+		run_cargo wrap "${compile[@]}" || exit $?
+		check_floor
+		run_cargo nice_only "$@" || exit $?
+	else
+		run_cargo wrap "$@" || exit $?
+	fi
 done

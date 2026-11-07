@@ -24,6 +24,11 @@ toml = { workspace = true }
 name = "pij-arch-check"
 path = "src/bin/arch_check.rs"
 
+# A PR body's `Delivers:` line, checked before the merge (plan 209, F65).
+[[bin]]
+name = "pij-delivers-check"
+path = "src/bin/delivers_check.rs"
+
 # The one command (ac-0007): toolchain -> fmt -> clippy -> test -> arch.
 [[bin]]
 name = "pij-gate"

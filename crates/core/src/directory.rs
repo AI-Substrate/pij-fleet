@@ -61,6 +61,7 @@ Usage:
   pij directory assign --batch <file> --why <text>      many holdings, one commit
   pij directory release <role>[/<instance>] <seat> --why <text>
   pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
+  pij directory lineage add --batch <file> --why <text>   many past holdings, one commit
   pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]
   pij directory rebuild                               the store from the branch head
   pij directory routes [--write --why <text>]         the routing table, with live holders
@@ -85,6 +86,16 @@ Usage:
   pij directory add <id> --why <text> --file <role.dd.json>
   pij directory add <id> --from template:<name>[@v<n>] --why <text> [flags]
   pij directory add --batch <dir> --why <text>
+
+Required, unless --file or --from template supplies them: --why, --title,
+--kind, --lifecycle, --holders, at least one --rule, and one of --packet or
+--brief. The shortest add:
+  pij directory add qa --why \"a QA role\" --title QA --kind specialist \\
+    --lifecycle long-lived --holders one --rule \"A verdict on every PR.\" \\
+    --packet \"Review each PR at its head.\"
+
+Each add is its own commit: a chain of adds that stops part-way leaves the
+earlier roles committed. --batch <dir> is all or nothing.
 
 Flags:
   --why <text>              required; becomes the changelog row
@@ -121,6 +132,7 @@ Usage:
   pij directory assign --batch <file> --why <text> [--project <slug>]
   pij directory release <role>[/<instance>] <seat> --why <text> [--project <slug>]
   pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
+  pij directory lineage add --batch <file> --why <text> [--project <slug>]
 
 assign appends a row to roles/<id>/holders.dd.json, sets the seat's role (pa,
 pm for pm-<n>, else worker; a prime keeps prime) and names its tmux window
@@ -132,7 +144,9 @@ the row. `pij close <seat>` ends every holding.
 
 lineage add (the prime only) records a closed seat's past holding: no live seat
 needed, no seat role set. Times are RFC 3339 with Z or an offset, or a date
-(UTC midnight); a holding that overlaps the seat's others is refused.";
+(UTC midnight); a holding that overlaps the seat's others is refused. --batch
+takes one `<role>[/<instance>] <seat> <from> <to>` per line and writes them all
+in one commit, or none.";
 
 const EXTERNAL: &str = "\
 pij directory external add: note a seat borrowed from another project.
@@ -180,13 +194,13 @@ const MEMORY: &str = "\
 pij directory memory: a role's memory, one note per file (pij/memory).
 
 Usage:
-  pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>
-  pij directory memory add <role> --title <t> --hook <h> --body-file <path|->
+  pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] [--slug <s>] --body <text>
+  pij directory memory add <role> --title <t> --hook <h> [--slug <s>] --body-file <path|->
   pij directory memory <role>                     print memory/INDEX.md
   pij directory memory <role> --note <slug>       print one note
 
 add writes roles/<role>/memory/<yyyy-mm-dd>-<slug>.dd.json, the slug taken
-from --title, and regenerates memory/INDEX.md with one line per note, keeping
+from --title (at most 40 characters, cut on a word) unless --slug gives it, and regenerates memory/INDEX.md with one line per note, keeping
 every line pij did not write. One commit per note. --tags repeats or takes a
 comma list. --body-file - reads stdin. Notes are never capped, pruned or
 deleted; there is no delete verb.
@@ -231,5 +245,24 @@ mod tests {
         assert_eq!(shell_word("it's"), "'it'\\''s'");
         assert_eq!(shell_word("$(x)"), "'$(x)'");
         assert_eq!(shell_word(""), "''");
+    }
+
+    /// Plan 209, F35: add --help names the required flags and the shortest add.
+    #[test]
+    fn add_help_names_the_required_flags() {
+        let add = help(Some("add")).unwrap();
+        assert!(
+            add.contains("at least one --rule, and one of --packet or\n--brief"),
+            "{add}"
+        );
+        assert!(add.contains("The shortest add:"), "{add}");
+    }
+
+    /// Plan 209, F38: add --help says each add commits on its own.
+    #[test]
+    fn add_help_says_each_add_is_its_own_commit() {
+        let add = help(Some("add")).unwrap();
+        assert!(add.contains("Each add is its own commit"), "{add}");
+        assert!(add.contains("--batch <dir> is all or nothing"), "{add}");
     }
 }
