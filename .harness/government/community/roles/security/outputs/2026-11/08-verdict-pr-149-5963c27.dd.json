@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "5963c27c9957bfd97cdaf84092493a44dd6fdbb1",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/149#issuecomment-6709911625",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:149",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Source-only atomicity/platform proof; private PR-local0037 installs need migration handling; competing0040 must renumber if merged first."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS WITH NOTES\n\nPR: #149\nHead: 5963c27c9957bfd97cdaf84092493a44dd6fdbb1\nScope: only e0004f8..5963c27, retaining prior review proof. No reportable in-scope vulnerability remains under clarified C32.\n\nS003 is CLOSED under all four conditions:\n1. All close/withdraw/owed notifications use the internal pij-bg sender. Attribution and reason come from the stored original close, not the retrier; no request body is exposed. Client ingress rejects impersonating pij-bg. Quiet/self-close sends nothing; gone-recipient failure does not reroute.\n2. Pane/asserted-ID contradiction still refuses. Asserted-only withdrawal is stored requester only; close permits stored requester/holder, never PA/prime. Stored-row authority is checked before mutation. This does not claim capability-strength origin authentication.\n3. close_bound, state and request.closed_by_actor persist in one owned transaction (role_requests.rs:957-993). Append failure prevents commit. Owed retries (requests.rs:341-366) replay immutable audited sender/recipient/actor/binding/reason/message ID. The retrier only triggers recovery, so no newly attributed close/audit is created. Publication failure after commit affects visibility, not durable audit.\n4. The Known limit precisely names asserted-owner state authority, atomic audit, daemon-only notices and PRD003 req-10/F88.\n\nS004 remains CLOSED: prime authority uses scoped projects.prime_id, not role labels/current designation. S005 remains CLOSED, with the hostile-holder /bin/sh generated-notice regression. Original S001/S002, role gates, owned drain, project routing and body omission survive the merge. N001 now surfaces the unchanged-window error.\n\nProof notes:\n- Owed-retry regression covers a different asserted retrier, preserved original actor/binding/reason, neutral sender, requester retry and no repeat notice. Its owed row is seeded; atomicity/failure/cancellation are source-reviewed here.\n- Prior real-tmux version/skip/positive-control and platform limits remain; no local tests were executed.\n- Migration0040/schema40 follows merged main39 and preserves close/audit-intent fields. Existing private PR-local0037 installations need separate migration handling. If #156's competing0040 merges first, renumber during integration.\n\nExact-head CI42390381816 and latest Delivers42390382534 independently verified SUCCESS.\nhttps://github.com/AI-Substrate/pij-fleet/actions/runs/42390381816\n\nNo local builds/tests, runtime probes, close calls, role assertions, credential reads or product edits.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | Reviewed delta | - | No remaining in-scope vulnerability under C32 | - |\n"
+		}
+	]
+}
