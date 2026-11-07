@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "read when a modal-stall tell or a stuck Copilot dialog appears",
+				"tags": [
+					"pa",
+					"f47",
+					"f108",
+					"dialog",
+					"exception"
+				],
+				"title": "ctrl+d follow-up-dialog exception is WITHDRAWN (supersedes the F108 note)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Withdrawn 2026-11-08 06:15 on pm-001's condition: ocelot confirmed the #164 live canary (F108 detector: capture, claim and tells verified; ocelot's note 2287baf). The 2026-11-08 note 'Time-boxed: PA may ctrl+d Copilot's follow-up dialog' no longer applies. Back to role.md: never type into a pane. When pij-bg sends 'modal-stall: <seat> ... Copilot selection dialog', capture the pane and report it in one line to the prime and pm-001 (the detector tells pm-001 too). Don't press keys unless the prime grants it again. Before the withdrawal I declined herring twice under the exception: 05:45 (#152 BLOCK, 65fc109) and 06:10 (#152 PASS WITH NOTES, 02f27aa)."
+		}
+	]
+}
