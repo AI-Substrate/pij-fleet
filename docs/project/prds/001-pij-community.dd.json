@@ -224,7 +224,8 @@
 					"priority": "must",
 					"state": "shipped",
 					"done_when": "Each of the four conditions, set up in a test project, produces its prompt with a runnable command.",
-					"source": "workshops/001-pij-community/001-community-directory.md"
+					"source": "workshops/001-pij-community/001-community-directory.md",
+					"delivered_by": "#141"
 				},
 				{
 					"id": "req-13",
@@ -254,7 +255,8 @@
 					"priority": "should",
 					"state": "shipped",
 					"done_when": "The route exists, is token-lean, and a fresh prime following it sets up a directory with core roles and a security role.",
-					"source": "workshops/001-pij-community/001-community-directory.md"
+					"source": "workshops/001-pij-community/001-community-directory.md",
+					"delivered_by": "#136"
 				},
 				{
 					"id": "req-16",
@@ -335,7 +337,8 @@
 					"priority": "should",
 					"state": "shipped",
 					"done_when": "A step needing a missing role shows a prompt in `pij directory`; creating the role clears it.",
-					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
+					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md",
+					"delivered_by": "#141"
 				},
 				{
 					"id": "req-25",
@@ -378,7 +381,8 @@
 					"state": "shipped",
 					"done_when": "The `/pij community` route and the prime's prompts state that templates are examples; with a roadmap need that no role or template covers, the prime is prompted to create a role for it, and the new role validates without coming from a template.",
 					"note": "Delivered across s03 (templates), s09 (prime prompts) and s10 (the route).",
-					"source": "ruling C18"
+					"source": "ruling C18",
+					"delivered_by": "#136"
 				},
 				{
 					"id": "req-28",
@@ -389,7 +393,8 @@
 					"state": "shipped",
 					"done_when": "A role can be retired, and two roles merged, each by a directory write that commits on the governance branch with a changelog row. Afterwards the retired role's memory, outputs and lineage are still readable, and the directory view lists it as retired rather than missing.",
 					"note": "Extends req-27 (grow from needs) to reshaping. Plan 206 (s15) shipped `pij directory edit`, `retire` and `merge`; a retired role refuses sends to it and cannot be retired while requests wait queued for it. Adding a role shipped with s02.",
-					"source": "ruling C26"
+					"source": "ruling C26",
+					"delivered_by": "#135"
 				},
 				{
 					"id": "req-29",
@@ -400,7 +405,8 @@
 					"state": "shipped",
 					"done_when": "Every role recommendation the prime is shown names its signal, and none can be built without one; the prompts teach the signals for and against, that a role is not a seat, and the boundary review; the `/pij community` route says the same.",
 					"note": "s09 (plan 203) puts the signals in the prime prompts and boundary reviews in the directory view; s10 (the route) finishes it.",
-					"source": "rulings C28, C30"
+					"source": "rulings C28, C30",
+					"delivered_by": "#136"
 				}
 			]
 		},
@@ -551,6 +557,11 @@
 					"date": "2026-11-07",
 					"by": "pij-following-marsupial",
 					"change": "Plan 204: req-15, req-27 and req-29 shipped (the /pij community route teaches growing a PEC from need, with the signals the view prints; s09 shipped the prompts)."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "docs-system",
+					"change": "delivered_by recorded from the deliveries `pij delivered` wrote: req-12 and req-24 by #141 (s09), req-28 by #135 (s15), req-15, req-27 and req-29 by #136 (s10). req-13 keeps no delivered_by: s03 shipped it before #136 named it again."
 				}
 			]
 		}
