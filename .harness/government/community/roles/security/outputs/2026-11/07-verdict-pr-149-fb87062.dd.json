@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "fb87062f7ebcb6f850279923ecb683833dffa45f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/149#issuecomment-6707785675",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:149",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S004 HIGH: remove self-asserted Prime role fallback from request authorization; use scoped authoritative records and self-labelled stranger controls.",
+				"S003 MEDIUM: bind actual close caller; reject existence-only victim identity before stored-row checks, including quiet-close spoof controls."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: BLOCK\n\nPR: #149\nHead: fb87062f7ebcb6f850279923ecb683833dffa45f\nScope: 88509c3..fb87062, including F83, combining the retained repair-delta reviews with the final close commit. Remote Git ref and PR metadata both confirm this requested head.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟠 HIGH | crates/daemon/src/http/requests.rs | 336-341 | Self-asserted prime role grants cross-project request authority | 9/10 |\n| 2 | 🟡 MEDIUM | crates/daemon/src/http/requests.rs | 233-247 | Existence-only actor identity permits quiet foreign-request closure | 9/10 |\n\nS004: self-asserted role launders prime authority.\n\nAfter authoritative project-prime/current-designation checks fail, may_withdraw accepts any actor's global seat_roles Prime assertion. http/role.rs:159-202 lets a live, correctly attributed seat assert that label on itself without designation. A real unrelated caller can therefore self-label Prime and quietly close another project's delivered request. No victim identity is spoofed; fixing S003 does not fix this.\n\nThe fallback and queued-withdraw exposure already existed at88509c3. F83 adds a new privileged delivered-close path using it, so that close exposure is in this delta. Removing F83 would not fix the baseline queued-withdraw issue identified by the full reviewer's F001.\n\nRequired repair: remove the role-label fallback; retain legitimate stored requester/holder and explicitly scoped authoritative PA/prime/designation permissions. Test a correctly attributed self-labelled stranger against foreign withdraw and ordinary/quiet close, with unchanged rows/notifications/limits, plus actual-authoritative-prime positive controls.\n\nS003: actor existence is not caller ownership.\n\nClose accepts Resolved::Seat(seat, _) without requiring independently established origin. With no pane, identity.rs:1335-1339 accepts caller-supplied PIJ_SESSION_ID after checking that the seat exists and is not tombstoned. A machine-authenticated caller can claim a live recorded requester's identity and quietly close its foreign delivered request, stopping the limit clock without notification.\n\nRequired repair: bind the actual caller before stored-row authorization; do not use existence-only identity as mutation authority. Merely requiring a caller-supplied pane is insufficient origin proof. Test ordinary/quiet requests claiming correct victim identifiers; neither foreign state, notification nor limit accounting may change. The current F83 test covers honestly identified actors, not this spoofing path.\n\nOriginal blockers:\n- S001 is source-closed: the native adapter doubles every # at rename-window and new-window -n format boundaries. The real-tmux fixture does not attest3.6a and may skip; new-window coverage is argv-only, and there is no unescaped marker-positive control.\n- Original S002 is source-closed: repaired recommendations quote complete dynamic arguments through picture::command/shell_word. The added /bin/sh printf test checks exact words and no files, but only the selected hostile recommendation, not every variant or branch.\n- Inherited unquoted pij state holder guidance at role_send.rs:1368 remains; no universal renderer-coverage claim. Known F85/http-output guidance is tracked separately as directed.\n\nOther effect properties:\nClose reads the stored request identity/project/holder before its owned, Delivered-only transaction. Queued/delivering states are not moved. Already-closed replay does not write again or restart the clock. Default FYI follows the close; failure/cancellation notification guarantees remain the separate correctness qualification, not a claim of atomic close-and-tell.\n\nEvidence and limits:\n- Exact-head CI42372442784 has all four jobs successful; latest Delivers42372724688 succeeded.\n- CI: https://github.com/AI-Substrate/pij-fleet/actions/runs/42372442784\n- Delivers: https://github.com/AI-Substrate/pij-fleet/actions/runs/42372724688\n- GitHub reports DIRTY/CONFLICTING against main despite these retained green checks. This source block is not merge clearance; the main merge needs a new pin and integration proof.\n- No local builds/tests, role assertions, tmux/shell payload execution, runtime probes, credential reads or product edits. Source-confirmed attacks were not executed.\n"
+		}
+	]
+}
