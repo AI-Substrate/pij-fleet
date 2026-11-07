@@ -5571,9 +5571,7 @@ test("urgent: a tool boundary takes only what the heartbeat named, once, and not
 		if (path !== "/v1/inbox/urgent") return request(path, body, signal);
 		calls.push(body);
 		return {
-			messages: [
-				{ message: { from: "pij-pm", msg_id: "u-1", body: "stop: wrong branch" } },
-			],
+			messages: [{ message: { from: "pij-pm", msg_id: "u-1", body: "stop: wrong branch" } }],
 		};
 	};
 

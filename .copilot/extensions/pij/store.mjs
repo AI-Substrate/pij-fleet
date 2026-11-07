@@ -1348,7 +1348,9 @@ export class NativeBridge {
 			);
 			const messages = Array.isArray(taken?.messages) ? taken.messages : [];
 			const blocks = messages
-				.filter((claim) => nonempty(claim?.message?.msg_id) && typeof claim.message.body === "string")
+				.filter(
+					(claim) => nonempty(claim?.message?.msg_id) && typeof claim.message.body === "string",
+				)
 				.map(
 					(claim) =>
 						`[pij urgent from ${JSON.stringify(senderLabel(claim.message))}; msg_id=${JSON.stringify(claim.message.msg_id)}]\n${claim.message.body}`,
@@ -2045,7 +2047,8 @@ export class NativeBridge {
 		if (urgent && input.fyi === true)
 			return {
 				ok: false,
-				error: "E-RS-URGENT-FYI: urgent asks for delivery mid-turn and fyi holds it for the next turn; pick one",
+				error:
+					"E-RS-URGENT-FYI: urgent asks for delivery mid-turn and fyi holds it for the next turn; pick one",
 			};
 		if (force && input.fyi === true)
 			return { ok: false, error: `${COLD_WAKE_CODE}: force wakes a message; never with fyi` };
