@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "06150897749bcb05d72d4319f59014e338beb245",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/150#issuecomment-6704100693",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:150",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\n\nPR: #150\nHead: 06150897749bcb05d72d4319f59014e338beb245\nScope: only 6cc92eb8d1ae7e55bdba2d72087a2b8e566e5758..06150897749bcb05d72d4319f59014e338beb245, the documentation merge refresh. The prior security pass stands otherwise.\n\nNo security/privacy findings in changed lines under C19/C21: no secrets or tokens, private owner/name identities, identifiable private content, or machine-local paths outside pij's own layout. The compared merge delta contains 15 documentation files, including imported main documentation; their changed lines were scanned.\n\nThe ledger takes main's resolved state for D-WB-46 through D-WB-49 and marks D-WB-61, D-WB-63 and D-WB-65 resolved by plan 209 (#144), describing shipped work. Their severities are unchanged. These public product/plan references are permitted by C21.\n\nGitHub reports this exact head CLEAN, with all five reported checks SUCCESS, including Delivers. CI: https://github.com/AI-Substrate/pij-fleet/actions/runs/42352145334\n\nNo local builds/tests or credential-file inspection were performed. Private-content provenance was not independently verified; this grades changed public content, not history.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | Documentation merge delta | - | No vulnerabilities found | - |\n"
+		}
+	]
+}
