@@ -1852,6 +1852,50 @@ async fn clearing_another_anomaly_does_not_resurrect_a_cleared_stale_card() {
     );
 }
 
+/// F112: a seat whose pane tap the observer refused is flagged in the digest
+/// as `tap-refused`, with the refusal (which names the repair) as its detail.
+#[tokio::test]
+async fn a_refused_pane_tap_is_flagged_in_the_digest() {
+    let (services, _store) = services().await;
+    let mut prime = seat("pij-prime", "/tap-refused", None);
+    prime.pane = Some("%7".into());
+    services.registry.put(prime.clone()).await.unwrap();
+    services
+        .registry
+        .put(seat("pij-pa", "/tap-refused", Some("pij-prime")))
+        .await
+        .unwrap();
+    services
+        .roles
+        .assert_role(&"pij-prime".into(), &"pij-pa".into(), Some("pa".into()))
+        .await
+        .unwrap();
+    services.tap_refusals.record(
+        "%7",
+        "pane \"%7\" already has an output pipe not owned by this sink".into(),
+        tokio::time::Instant::now(),
+        std::time::Duration::from_millis(600),
+    );
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    set_state(&services, &prime, SystemState::Working).await;
+    watchdog.round(&services, INTERVAL, start).await.unwrap();
+    set_state(&services, &prime, SystemState::Idle).await;
+    watchdog
+        .round(&services, INTERVAL, start + 60_000)
+        .await
+        .unwrap();
+    let digests = drain(&services, "pij-pa").await;
+    assert_eq!(digests.len(), 1);
+    assert!(
+        digests[0]
+            .body
+            .contains("pij-prime  tap-refused: pane \"%7\" already has an output pipe not owned"),
+        "{}",
+        digests[0].body
+    );
+}
+
 /// Plan 178 AC1 (#68): a rejection whose reset, plus the margin, has passed is
 /// not a stop. A worker that hit a limit and was never restarted (it had
 /// finished) no longer silences its PA for the whole repository: the reset

@@ -287,7 +287,7 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
 #[test]
 fn retired_launches_stay_retired() {
     // (file the pattern is retired in, or every daemon file; pattern; why)
-    const RETIRED: [(Option<&str>, &str, &str); 4] = [
+    const RETIRED: [(Option<&str>, &str, &str); 5] = [
         (
             None,
             "\"date.utc-offset\"",
@@ -307,6 +307,11 @@ fn retired_launches_stay_retired() {
             Some("crates/transport/src/uds.rs"),
             "Command::new(",
             "plan 218 (F82): the Claude socket transport launches nothing",
+        ),
+        (
+            None,
+            "\"ps.tmux-legacy-tap-writer\"",
+            "F112: the retired TS daemon's legacy tap census ran a whole-machine `ps` every observer tick; tap ownership never reads the process table",
         ),
     ];
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

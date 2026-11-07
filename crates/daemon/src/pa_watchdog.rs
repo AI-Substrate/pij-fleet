@@ -998,7 +998,8 @@ impl PaWatchdog {
                 seat,
             })
             .collect::<Vec<_>>();
-        let anomalies = stale_cards(services, &rows, now_ms).await;
+        let mut anomalies = stale_cards(services, &rows, now_ms).await;
+        anomalies.extend(refused_taps(services, &rows));
         let queued = queued_requests(services, pa, now_ms).await;
         let held = held_messages(services, &rows, now_ms).await;
         FleetView {
@@ -1334,6 +1335,26 @@ async fn queued_requests(
 ///
 /// Reads follow the fleet and its stale cards, never history. The other
 /// kinds stay with `pij anomalies`.
+/// Seats whose pane tap the observer could not attach (F112): an in-memory
+/// read, no launch. Each one's detail is the refusal, naming the repair.
+fn refused_taps(services: &Services, rows: &[FleetRow]) -> Vec<FleetAnomaly> {
+    let refused = services.tap_refusals.list();
+    if refused.is_empty() {
+        return Vec::new();
+    }
+    rows.iter()
+        .filter_map(|row| {
+            let pane = row.seat.pane.as_deref()?;
+            let refusal = refused.iter().find(|refusal| refusal.pane == pane)?;
+            Some(FleetAnomaly {
+                seat: row.seat.id.clone(),
+                kind: "tap-refused".to_string(),
+                detail: refusal.detail.clone(),
+            })
+        })
+        .collect()
+}
+
 async fn stale_cards(services: &Services, rows: &[FleetRow], now_ms: u64) -> Vec<FleetAnomaly> {
     let mut seats = Vec::new();
     let mut cards = Vec::new();
