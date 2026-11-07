@@ -65,3 +65,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 162 | 2026-11-07T18:07:15.052Z | 2026-11-07T18:32:58.864Z | pij-steady-otter | pij-steady-otter | AC4 docs PR #162 (guan) | #162 merged e5e011e |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 161 | 2026-11-07T18:33:15.056Z | 2026-11-07T18:46:10.788Z | pij-steady-otter | pij-steady-otter | plan 210 closing states PR #161 | #161 merged 2cc2ac3b |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 163 | 2026-11-07T18:54:33.917Z | — | pij-steady-otter | — | plan 221 capability-bootstrap workshop (AC3) | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 112 | 2026-11-07T18:57:39.750Z | — | pij-steady-otter | — | PRD 003 + workstream 003 (#112) | — |
