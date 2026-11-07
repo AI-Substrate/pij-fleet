@@ -147,3 +147,128 @@ fn parser_strips_leaf_annotations_and_stops_at_next_heading() {
         .collect();
     assert_eq!(verbs, ["peers", "ping"]);
 }
+
+/// Plan 204: every `pij` command the community route and the role templates
+/// print (in a fenced block or a backtick span) names a real verb, and each of
+/// its `--flags` appears in pij-rs's help for that verb or leaf.
+fn printed_commands(text: &str) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut prose = String::new();
+    for (index, chunk) in text.split("```").enumerate() {
+        if index % 2 == 1 {
+            lines.extend(chunk.lines().skip(1).map(str::to_string));
+        } else {
+            prose.push_str(chunk);
+        }
+    }
+    lines.extend(
+        prose
+            .split('`')
+            .skip(1)
+            .step_by(2)
+            .filter(|span| !span.contains('\n'))
+            .map(str::to_string),
+    );
+    lines
+        .iter()
+        .filter_map(|line| {
+            let line = line.trim_start();
+            let rest = line.strip_prefix("pij ")?;
+            rest.starts_with(|c: char| c.is_ascii_lowercase())
+                .then(|| line.split('#').next().unwrap_or(line).trim().to_string())
+        })
+        .collect()
+}
+
+fn help(args: &[&str]) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_pij-rs"))
+        .args(args)
+        .arg("--help")
+        .env(
+            "PIJ_RS_STATE_DIR",
+            std::env::temp_dir().join("pij-skill-no-daemon"),
+        )
+        .env("PIJ_RS_ADDR", "127.0.0.1:9")
+        .output()
+        .expect("run pij-rs --help");
+    String::from_utf8_lossy(&output.stdout).into_owned() + &String::from_utf8_lossy(&output.stderr)
+}
+
+/// Commands whose verb or flags pij-rs does not know, with why.
+fn unknown_commands(commands: &[String], native: &BTreeSet<String>) -> Vec<String> {
+    let mut wrong = Vec::new();
+    for command in commands {
+        let words: Vec<&str> = command.split_whitespace().collect();
+        let verb = words[1];
+        if !native.contains(verb) {
+            wrong.push(format!("{command}: no verb `{verb}`"));
+            continue;
+        }
+        let leaf = words
+            .get(2)
+            .filter(|word| word.chars().all(|c| c.is_ascii_lowercase() || c == '-'));
+        let mut text = help(&[verb]);
+        if let Some(leaf) = leaf {
+            text.push_str(&help(&[verb, leaf]));
+        }
+        for flag in command
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+            .filter(|word| word.starts_with("--") && word.len() > 2)
+        {
+            if !text.contains(flag) && !["--help", "--json"].contains(&flag) {
+                wrong.push(format!("{command}: pij-rs {verb} does not take {flag}"));
+            }
+        }
+    }
+    wrong
+}
+
+fn community_sources() -> Vec<(String, String)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut sources = vec![(
+        "route".to_string(),
+        std::fs::read_to_string(root.join("skills/pij/references/routes/community.md"))
+            .expect("read the community route"),
+    )];
+    for entry in std::fs::read_dir(root.join("templates/roles")).expect("templates/roles") {
+        let dir = entry.expect("a template").path();
+        let Ok(versions) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for version in versions {
+            let file = version.expect("a version").path().join("role.dd.json");
+            if let Ok(json) = std::fs::read_to_string(&file) {
+                let value: serde_json::Value = serde_json::from_str(&json).expect("template JSON");
+                sources.push((
+                    file.display().to_string(),
+                    value.to_string().replace("\\n", "\n"),
+                ));
+            }
+        }
+    }
+    sources
+}
+
+#[test]
+fn the_community_route_and_templates_print_real_commands() {
+    let native = native_verbs();
+    let mut commands = Vec::new();
+    for (_, text) in community_sources() {
+        commands.extend(printed_commands(&text));
+    }
+    commands.sort();
+    commands.dedup();
+    assert!(
+        commands
+            .iter()
+            .any(|c| c.starts_with("pij directory retire")),
+        "the route prints too few commands: {commands:?}"
+    );
+    assert_eq!(unknown_commands(&commands, &native), Vec::<String>::new());
+    // Negative controls: an unknown verb and an unknown flag are both caught.
+    let bad = [
+        "pij teleport now".to_string(),
+        "pij directory retire x --frobnicate".to_string(),
+    ];
+    assert_eq!(unknown_commands(&bad, &native).len(), 2);
+}

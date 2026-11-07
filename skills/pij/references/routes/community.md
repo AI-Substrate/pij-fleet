@@ -13,22 +13,28 @@ The directory lives on the governance branch under `<government-root>/community/
 ## Prime: build from needs, then reshape
 
 ```bash
-pij directory                                    # the prime, roles (holders, requests, outputs, memory, drift), prompts, actions
+pij directory [--suggest]                        # the prime, roles, actions, prompts, the boundary review; --suggest: every suggestion
 pij directory templates [--show <name>[@vN]]     # the shipped examples, and one template's body
 pij directory add <id> --from template:<name> --why "<the need>"  [flags override fields]
 pij directory add <id> --from file:<brief> --why "<the need>" --rule <text> ...
 pij directory add <id> --why "<the need>" --title ... --rule ... --packet ...   # a role no template describes
 pij directory assign <role>[/<instance>] <seat> --why <text>
 pij directory release <role>[/<instance>] <seat> --why <text>
+pij directory edit <id> --why <text> --set <field>=<value> [role flags]
+pij directory retire <role> --why <text> [--drop-queued]
+pij directory merge <from> --into <to> --why <text> [--drop-queued]
 pij directory template-diff <id>                 # upstream change since the role's version; never applied
+pij directory routes [--write --why <text>]      # who owns which paths, with live holders
 ```
 
-1. **Start from the work.** Read the workstream's steps (their `needs` are roles; `depends_on` is the order), then the view. Its prompts name missing core roles, security and unmet `needs`; its actions name a role with requests waiting and no live holder, two live holders on a one-holder role, or memory gone stale. Each prints runnable lines. Add a role when a need has no owner, not because a template exists ([when to recommend one](#when-to-recommend-a-role-c28)).
-2. **The core roles are prompted, not required.** prime, pm, pa, coder and reviewer are prompted until each exists, and security until a security role exists. A role counts when its id or its template matches (`pm-001` from `pm`). The prime is designated, never assigned (C24): the view's `prime` names its seat, and a prime prompt only adds the role's document.
-3. **Reshape as needs shift.** Add a role for a new need. To merge two roles, add the merged one, assign it and release the old holders. To retire a role, release its holders and say why; its document and lineage stay as history. Reassign rather than respawn.
+`add --from template:` copies the template as it is. Replace every `<placeholder>` (`<project>`, `<government-root>`, `<roadmap number>`) with flags or a later `edit --set`, and give real `--scope-path`s, since scopes become ROUTES.md. A repeated flag (`--rule`, `--scope-path`) replaces the template's list. Each packet sends its holder to `<government-root>/community/README.md`: write that once by hand (what the community is for, where its docs live).
+
+1. **Start from the work.** Read the workstream's steps (their `needs` are roles; `depends_on` is the order), then the view. Its actions name a role with requests waiting and no live holder, two live holders on a one-holder role, or memory gone stale. Its prompts name roles a step `needs` (core ones included), paths no role owns and work aimed at a retired role; the other core roles and security wait under `--suggest`. Each prints runnable lines and the signal it rests on. Add a role when a need has no owner, not because a template exists ([when to recommend one](#when-to-recommend-a-role-c28)).
+2. **The core roles are suggested, not required.** Until each exists, those no step needs (of prime, pm, pa, coder, reviewer and security) are named on one "Suggested roles not yet here" line; `pij directory --suggest` prints each with its `add` command. A pm is kept per workstream: `pij directory add pm-001 --from template:pm --instance-key 001`, the id the docs' `owner` fields name. A role counts when its id or its template matches (`pm-001` from `pm`). The prime is designated, never assigned (C24): the view's `prime` names its seat, and a prime prompt only adds the role's document.
+3. **Reshape as needs shift.** `edit` changes a role in place (one changelog row each). `retire` ends a role and `merge <from> --into <to>` folds one into another; release live holders first, and requests still queued refuse until you assign a holder or pass `--drop-queued` (each requester is told). Nothing is deleted: memory, outputs and lineage stay readable, and sends to a retired role refuse. Reassign rather than respawn.
 4. **Drift is advice.** A role whose template moved ahead is marked; read `template-diff` and copy what you want by hand.
 5. **Borrowed seats**: `pij directory external add <seat> --from-project <slug> --why <note>`.
-6. **Routing**: a role's `scope` paths say who owns what; keep them true when you reshape (a generated routing table is planned).
+6. **Routing**: `routes` builds the table from role scopes into `community/ROUTES.md` in the same commit as each role change, and seats get it as an FYI when assigned. Keep scopes true when you reshape.
 7. **Project docs** (PRDs, blueprints, workstreams, rulings): follow [the doc procedures](../community/README.md).
 
 ### When to recommend a role (C28)
@@ -38,8 +44,8 @@ Keep the fleet small but expert. Small contexts are cheaper and sharper, and an 
 - **For a new role**: it would be worth remembering (C30); the same system or paths keep coming up across tasks; a finding is re-derived (the same one twice); a judgment must be independent of the author (security, performance); a seat is bloating because it carries two domains; a path or system needs one owner.
 - **Against**: one-off work; overlap with an existing role (extend that one); nothing worth remembering; it would mostly sit idle.
 - **A role is not a seat.** Roles can be many and cold: their memory, lineage and queue wait, and a holder is assigned when work arrives. Live seats stay few.
-- **Review at boundaries** (wave end, compact, PR merge): split an overloaded role, merge or retire idle ones (item 3 above), and have each holder write memory at the boundary.
-- **Name the signal.** Every recommendation says which signal it rests on, and the `--why` carries it: `--why "same finding twice: pane reads in s07 and s09"`.
+- **Review at boundaries** (wave end, compact, PR merge): the view's boundary review proposes splitting a seat that holds two roles and retiring (or merging) a role idle 30 days with nothing to remember. A cold role with memory is kept and called on (`pij send role:<id>`). Have each holder write memory at the boundary.
+- **Name the signal.** Each recommendation the view prints ends `signal: <which>`; carry it into the `--why`: `--why "same finding twice: pane reads in s07 and s09"`.
 
 ## PM: staff a workstream's steps
 

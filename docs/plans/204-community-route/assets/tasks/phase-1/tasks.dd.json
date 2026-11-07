@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "The /pij community route, its registry row and PEC in bootstrap.md",
           "phase": "ph-00cc",
-          "state": "unchecked",
+          "state": "checked",
           "success": "skills/pij/references/routes/community.md teaches the prime, the PM and the PA in the PEC wording (C26, C18), linking the doc procedures; SKILL.md registers it; pij-skill-check knows it and states its line budget; bootstrap.md names PEC.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
@@ -34,7 +34,7 @@
           "id": "tk-0002",
           "title": "Optional role templates, written fresh and embedded",
           "phase": "ph-00cc",
-          "state": "unchecked",
+          "state": "checked",
           "success": "v1 templates for the optional roles under templates/roles/<name>/v1/, each validating, public-safe and marked as an example in the README; compiled into the daemon through SHIPPED.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
@@ -45,7 +45,7 @@
           "id": "tk-0003",
           "title": "pij directory templates --show <name>[@vN] (F23)",
           "phase": "ph-00cc",
-          "state": "unchecked",
+          "state": "checked",
           "success": "--show prints the embedded body with its repo path; unknown names and versions refuse by name and list what exists; nothing launches.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
@@ -59,7 +59,7 @@
           "id": "tk-0004",
           "title": "Fresh-prime canary (after s09 merges)",
           "phase": "ph-00cc",
-          "state": "unchecked",
+          "state": "checked",
           "success": "An OMP seat with no prior context, in a plain scratch clone, follows only the route and stands up a directory with core roles and security; hesitations fixed or recorded in assets/evidence/.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
@@ -70,7 +70,7 @@
           "id": "tk-0005",
           "title": "Docs, states and cost",
           "phase": "ph-00cc",
-          "state": "unchecked",
+          "state": "checked",
           "success": "pij-rs-api.md documents --show; the skill verb table carries it; s10 complete, req-13, req-15, req-27 shipped, c-skill and c-templates shipped; no launch, loop or timer added; ddocs-check clean; PR has a Delivers line.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0005",
@@ -98,7 +98,7 @@
           {
             "id": "dw-0001",
             "assertion": "bash harness/scripts/pij-skill-check.sh passes with the community route registered, sibling-blind and within its stated line budget.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -106,7 +106,7 @@
           {
             "id": "dw-0002",
             "assertion": "ddocs validate is 0/0 on each new template; a scan for machine paths, private repos and seat ids finds nothing; the embedding test passes in CI.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -114,7 +114,7 @@
           {
             "id": "dw-0003",
             "assertion": "An HTTP test shows --show returns the exact embedded bytes and path, and an unknown name or version refuses listing what exists (CI).",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0004"
           }
         ],
@@ -122,7 +122,7 @@
           {
             "id": "dw-0004",
             "assertion": "A canary transcript summary is in assets/evidence/ and the scratch directory validates.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ],
@@ -130,7 +130,7 @@
           {
             "id": "dw-0005",
             "assertion": "just ddocs-check passes; the skill verb coverage tests pass in CI; no new launch site (spawn_sites green in CI).",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0006"
           }
         ],

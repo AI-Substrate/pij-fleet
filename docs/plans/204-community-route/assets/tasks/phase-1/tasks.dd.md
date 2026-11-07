@@ -35,11 +35,11 @@ _Empty._
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | The /pij community route, its registry row and PEC in bootstrap.md | — | ph-00cc | [ ] unchecked | — | — | [tk-0001](tasks.dd.md#done-when) | skills/pij/references/routes/community.md teaches the prime, the PM and the PA in the PEC wording (C26, C18), linking the doc procedures; SKILL.md registers it; pij-skill-check knows it and states its line budget; bootstrap.md names PEC. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Optional role templates, written fresh and embedded | — | ph-00cc | [ ] unchecked | — | — | [tk-0002](tasks.dd.md#done-when) | v1 templates for the optional roles under templates/roles/&lt;name&gt;/v1/, each validating, public-safe and marked as an example in the README; compiled into the daemon through SHIPPED. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | pij directory templates --show &lt;name&gt;[@vN] (F23) | — | ph-00cc | [ ] unchecked | — | — | [tk-0003](tasks.dd.md#done-when) | --show prints the embedded body with its repo path; unknown names and versions refuse by name and list what exists; nothing launches. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
-| tk-0004 | Fresh-prime canary (after s09 merges) | — | ph-00cc | [ ] unchecked | — | — | [tk-0004](tasks.dd.md#done-when) | An OMP seat with no prior context, in a plain scratch clone, follows only the route and stands up a directory with core roles and security; hesitations fixed or recorded in assets/evidence/. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | Docs, states and cost | — | ph-00cc | [ ] unchecked | — | — | [tk-0005](tasks.dd.md#done-when) | pij-rs-api.md documents --show; the skill verb table carries it; s10 complete, req-13, req-15, req-27 shipped, c-skill and c-templates shipped; no launch, loop or timer added; ddocs-check clean; PR has a Delivers line. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | The /pij community route, its registry row and PEC in bootstrap.md | — | ph-00cc | [x] checked | — | — | [tk-0001](tasks.dd.md#done-when) | skills/pij/references/routes/community.md teaches the prime, the PM and the PA in the PEC wording (C26, C18), linking the doc procedures; SKILL.md registers it; pij-skill-check knows it and states its line budget; bootstrap.md names PEC. | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Optional role templates, written fresh and embedded | — | ph-00cc | [x] checked | — | — | [tk-0002](tasks.dd.md#done-when) | v1 templates for the optional roles under templates/roles/&lt;name&gt;/v1/, each validating, public-safe and marked as an example in the README; compiled into the daemon through SHIPPED. | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | pij directory templates --show &lt;name&gt;[@vN] (F23) | — | ph-00cc | [x] checked | — | — | [tk-0003](tasks.dd.md#done-when) | --show prints the embedded body with its repo path; unknown names and versions refuse by name and list what exists; nothing launches. | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0004 | Fresh-prime canary (after s09 merges) | — | ph-00cc | [x] checked | — | — | [tk-0004](tasks.dd.md#done-when) | An OMP seat with no prior context, in a plain scratch clone, follows only the route and stands up a directory with core roles and security; hesitations fixed or recorded in assets/evidence/. | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | Docs, states and cost | — | ph-00cc | [x] checked | — | — | [tk-0005](tasks.dd.md#done-when) | pij-rs-api.md documents --show; the skill verb table carries it; s10 complete, req-13, req-15, req-27 shipped, c-skill and c-templates shipped; no launch, loop or timer added; ddocs-check clean; PR has a Delivers line. | — | [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 | tk-0006 | C28 in the community route: recommend roles from need | — | ph-00cc | [ ] unchecked | — | — | [tk-0006](tasks.dd.md#done-when) | The route's prime section teaches C28: signals for and against a new role, a role is not a seat, boundary reviews (split, merge, retire), every recommendation names its signal, templates stay examples; within the route's 100-line budget. | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
@@ -50,31 +50,31 @@ _Empty._
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | bash harness/scripts/pij-skill-check.sh passes with the community route registered, sibling-blind and within its stated line budget. | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0001 | bash harness/scripts/pij-skill-check.sh passes with the community route registered, sibling-blind and within its stated line budget. | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | ddocs validate is 0/0 on each new template; a scan for machine paths, private repos and seat ids finds nothing; the embedding test passes in CI. | [ ] unchecked | [bp-0002](../../backpressure.dd.md#rows) |
+| dw-0002 | ddocs validate is 0/0 on each new template; a scan for machine paths, private repos and seat ids finds nothing; the embedding test passes in CI. | [x] checked | [bp-0002](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | An HTTP test shows --show returns the exact embedded bytes and path, and an unknown name or version refuses listing what exists (CI). | [ ] unchecked | [bp-0004](../../backpressure.dd.md#rows) |
+| dw-0003 | An HTTP test shows --show returns the exact embedded bytes and path, and an unknown name or version refuses listing what exists (CI). | [x] checked | [bp-0004](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0004 | A canary transcript summary is in assets/evidence/ and the scratch directory validates. | [ ] unchecked | [bp-0003](../../backpressure.dd.md#rows) |
+| dw-0004 | A canary transcript summary is in assets/evidence/ and the scratch directory validates. | [x] checked | [bp-0003](../../backpressure.dd.md#rows) |
 
 ### tk-0005
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0005 | just ddocs-check passes; the skill verb coverage tests pass in CI; no new launch site (spawn_sites green in CI). | [ ] unchecked | [bp-0006](../../backpressure.dd.md#rows) |
+| dw-0005 | just ddocs-check passes; the skill verb coverage tests pass in CI; no new launch site (spawn_sites green in CI). | [x] checked | [bp-0006](../../backpressure.dd.md#rows) |
 
 ### tk-0006
 

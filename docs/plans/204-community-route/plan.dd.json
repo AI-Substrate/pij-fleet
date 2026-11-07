@@ -39,38 +39,44 @@
         {
           "id": "ac-0001",
           "claim": "Route. `skills/pij/references/routes/community.md` (and its SKILL.md routing entry) teaches the prime (stand up and reshape a community from needs), the PM (assign and release for its work; claims via s11) and the PA (memory before compacts), linking the doc procedures; token-lean.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/phase-1.md: route at 89/100 lines, pij-skill-check green; skill_verb_coverage::the_community_route_and_templates_print_real_commands"
         },
         {
           "id": "ac-0002",
           "claim": "Optional templates. v1 templates for some or all of: devcontainer, researcher, note-taker, topic expert, docs-keeper, infra, release, test and QA, designer, transcriber; each validates, is public-safe, and is marked as an example.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "ten v1 templates under templates/roles/, each validating; templates_http in CI"
         },
         {
           "id": "ac-0003",
           "claim": "Fresh-prime canary. A seat with no prior context follows only the route and stands up a directory with core roles and a security role in a scratch project; where it hesitated is fixed or recorded.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "assets/evidence/canary.md: a fresh OMP prime stood up 7 roles (core plus security plus performance) from the route alone; route fixed at each hesitation"
         },
         {
           "id": "ac-0004",
           "claim": "F23 (low, s03 dogfood): `pij directory templates --show <name>[@vN]` prints a template's body (and its embedded path), so a prime can read a template before `add --from template:`.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "receipt": "templates_http: --show returns the exact embedded body and path; unknown names refuse listing what exists (CI)"
         },
         {
           "id": "ac-0005",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). Docs and embedded templates only: no launch, loop or timer.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005",
+          "receipt": "assets/evidence/phase-1.md#cost-ac5: docs, embedded templates and one test; no launch site"
         },
         {
           "id": "ac-0006",
           "claim": "Docs and states. In this PR: roadmap s10 goes to complete (plan cell docs/plans/204-community-route); req-13, req-15, req-27 and req-29 go to shipped (s09 adds the req-29 row); c-skill and c-templates go to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006",
+          "receipt": "assets/evidence/phase-1.md#what-this-round-changed: s10 complete, req-15/27/29 shipped, c-skill and c-templates shipped, changelog rows; Delivers: in the PR body"
         },
         {
           "id": "ac-0007",

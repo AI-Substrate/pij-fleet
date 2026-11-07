@@ -21,8 +21,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: skill tests pass; the route is linked from the skill's router; a length budget is stated and met.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
         },
         {
           "id": "bp-0002",
@@ -31,8 +32,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: each validates 0/0; the public-safety scan finds 0; embedded per s03's mechanism.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "templates_http (CI)"
         },
         {
           "id": "bp-0003",
@@ -41,8 +43,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: canary transcript summary in assets/evidence/; the scratch directory validates.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/canary.md"
         },
         {
           "id": "bp-0004",
@@ -51,8 +54,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "BUILD: --show prints the exact embedded body; an unknown name or version refuses and lists what exists.",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "templates_http (CI)"
         },
         {
           "id": "bp-0005",
@@ -61,9 +65,10 @@
           "mode": "EXTEND",
           "tier": "computational",
           "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "pij-rs --json ping",
-          "note": "Docs and embedded templates only: no launch, loop or timer."
+          "note": "Docs and embedded templates only: no launch, loop or timer.",
+          "receipt": "assets/evidence/phase-1.md"
         },
         {
           "id": "bp-0006",
