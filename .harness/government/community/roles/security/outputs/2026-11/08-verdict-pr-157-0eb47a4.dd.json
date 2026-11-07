@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "0eb47a422d07903c065edf72b59d4876d2d256d4",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/157#issuecomment-6708455897",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:157",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `0eb47a422d07903c065edf72b59d4876d2d256d4`.\n\nNo high-confidence exploitable security vulnerability found in the complete 13-file PR-owned delta against `cee011387937c7881318c98d86014526d94f2ca7`.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 0 | None | N/A | N/A | No high-confidence exploitable finding | N/A |\n\n`spawnSync(program, args)` uses no shell (`harness/scripts/pr-freeze.ts:361-362`), and just forwards positional arguments through quoted `\"$@\"` (`justfile:14,213-214`). PR titles are not read; branch/body text does not become subprocess options or worktree paths. Delivers content travels through stdin. PR numbers are validated before subprocesses; SHA values originate in exact-ref Git output, not PR prose, and GitHub disagreement prevents worktree creation.\n\nThe fetch is `git fetch -q --no-tags origin <main-sha> <pr-head-sha>` (`pr-freeze.ts:235`). It disables tag following and supplies no destination refspecs. Under normal configuration this does not move branches or remote-tracking refs, but it writes FETCH_HEAD and objects, even potentially before head-disagreement refusal. No explicit refmap override is supplied; this is not an unconditional all-ref guarantee under arbitrary local configuration.\n\nNew worktree paths derive from the local repository parent, validated PR number and Git-produced SHA prefix, with `--detach` at the full SHA (`pr-freeze.ts:325-335`). Reuse does not reset, clean or check out an existing worktree.\n\n**Reviewer-integrity notes, not exploitable security findings:** reuse checks HEAD and filename suffix, not detached state or cleanliness (`pr-freeze.ts:167-172`); boolean `--worktree` is supported, an explicit destination is not (`387-393`); the missing-Delivers-parser fallback does not independently require a named successful delivers check (`305-311`). Current-head delivers receipts did pass, but generic green checks alone would not prove that fallback claim.\n\nNo credential/token literals, private owner/name identities, private content or foreign machine-layout paths found. Own pij layout/product references and generic fixtures are permitted. No daemon or migration changes.\n\n**Proof:** exact-head CI [42382327504](https://github.com/AI-Substrate/pij-fleet/actions/runs/42382327504) passed the Node 22/24 and Rust gates, with successful delivers receipts. Both Node logs record all 18 pr-freeze tests passing. These mock subprocesses; they do not prove real ref-write or dirty-worktree behavior. Source and CI review only: no local builds/tests, script execution, fetch/worktree mutations, credential reads or exploits.\n"
+		}
+	]
+}
