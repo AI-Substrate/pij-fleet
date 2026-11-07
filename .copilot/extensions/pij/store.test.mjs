@@ -1483,9 +1483,19 @@ test("activity: foreground turns publish working then idle in order; failures ne
 	await run;
 });
 
-/** A running bridge whose /v1/activity requests are recorded; stopped after the test. */
-async function activityBridge(t, answer = () => ({ changed: true })) {
+/**
+ * A running bridge whose /v1/activity requests are recorded; stopped after the test.
+ * `grant` is the context-report grant its registration answers with (plan 217).
+ */
+async function activityBridge(t, answer = () => ({ changed: true }), { grant } = {}) {
 	const f = fixture();
+	if (grant !== undefined) {
+		const register = f.client.request;
+		f.client.request = async (path, body, signal) => {
+			const answered = await register.call(f.client, path, body, signal);
+			return path === "/v1/register" ? { ...answered, context_token: grant } : answered;
+		};
+	}
 	const run = f.bridge.run();
 	t.after(() => {
 		f.bridge.stop();
@@ -1558,16 +1568,21 @@ test("activity: session.idle settles a working seat to idle", async (t) => {
 	assert.deepEqual(states(), ["working", "idle"]);
 });
 
-// Plan 217 AC6: the size the daemon cannot read from events.jsonl.
-test("activity: the latest session.usage_info size rides the next post; an older daemon's refusal drops it", async (t) => {
+// Plan 217 AC6: the size the daemon cannot read from events.jsonl, sent only
+// with this registration's grant (review S153-001).
+test("activity: the latest session.usage_info size rides the next post with the registration's grant", async (t) => {
 	let refuseContext = false;
 	const bodies = [];
-	const { f } = await activityBridge(t, (body) => {
-		bodies.push(body);
-		return refuseContext && "context_tokens" in body
-			? Object.assign(new Error("Pij HTTP 422"), { status: 422 })
-			: { changed: true };
-	});
+	const { f } = await activityBridge(
+		t,
+		(body) => {
+			bodies.push(body);
+			return refuseContext && "context_tokens" in body
+				? Object.assign(new Error("Pij HTTP 400"), { status: 400 })
+				: { changed: true };
+		},
+		{ grant: "grant-1" },
+	);
 	const usage = (id, currentTokens, extra = {}) =>
 		f.event({
 			type: "session.usage_info",
@@ -1577,7 +1592,12 @@ test("activity: the latest session.usage_info size rides the next post; an older
 			data: { currentTokens, tokenLimit: 952000, messagesLength: 40 },
 		});
 	const sent = () =>
-		bodies.map((body) => [body.state, body.context_tokens, body.context_window_tokens]);
+		bodies.map((body) => [
+			body.state,
+			body.context_tokens,
+			body.context_window_tokens,
+			body.context_token,
+		]);
 	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
 	await flush();
 	usage("u-sub", 9, { agentId: "sub-agent-9" });
@@ -1585,20 +1605,39 @@ test("activity: the latest session.usage_info size rides the next post; an older
 	f.event({ type: "assistant.turn_end", id: "turn-1-end", data: {} });
 	await flush();
 	assert.deepEqual(sent(), [
-		["working", undefined, undefined],
-		["idle", 640000, 952000],
+		["working", undefined, undefined, undefined],
+		["idle", 640000, 952000, "grant-1"],
 	]);
+	// A refused report (a stale grant) still publishes the state, then stops
+	// reporting until a registration answers with a new grant.
 	refuseContext = true;
 	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
 	await flush();
 	f.event({ type: "assistant.turn_end", id: "turn-2-end", data: {} });
 	await flush();
 	assert.deepEqual(sent().slice(2), [
-		["working", 640000, 952000],
-		["working", undefined, undefined],
-		["idle", undefined, undefined],
+		["working", 640000, 952000, "grant-1"],
+		["working", undefined, undefined, undefined],
+		["idle", undefined, undefined, undefined],
 	]);
 	assert.equal(f.reports.filter(({ kind }) => kind === "activity-unpublished").length, 0);
+});
+
+test("activity: a registration without a grant never reports a size", async (t) => {
+	const bodies = [];
+	const { f } = await activityBridge(t, (body) => {
+		bodies.push(body);
+		return { changed: true };
+	});
+	f.event({
+		type: "session.usage_info",
+		id: "u-1",
+		ephemeral: true,
+		data: { currentTokens: 640000, tokenLimit: 952000, messagesLength: 40 },
+	});
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	assert.deepEqual(Object.keys(bodies[0]).sort(), ["native_session", "seat", "state"]);
 });
 
 test("activity: working and idle still publish while receiving is held", async (t) => {

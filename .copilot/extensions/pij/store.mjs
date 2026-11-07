@@ -1071,7 +1071,8 @@ export class NativeBridge {
 		this.activityPublished = undefined;
 		/** Plan 217: the latest `session.usage_info`, sent with each activity post. */
 		this.context = undefined;
-		this.contextUnsupported = false;
+		/** This incarnation's report grant from its registration; none, no reports. */
+		this.contextToken = undefined;
 		this.stopped = undefined;
 	}
 	emit(kind, details = {}) {
@@ -1221,6 +1222,9 @@ export class NativeBridge {
 		);
 		throwIfStopped(signal);
 		verifyRegisteredSeat(seat, registration);
+		// Plan 217 (review S153-001): only this registration's grant may report
+		// the seat's context size. An older daemon issues none.
+		this.contextToken = typeof seat?.context_token === "string" ? seat.context_token : undefined;
 		this.registered = true;
 		if (!this.reconnectRegistration) {
 			this.reconnectRegistration = { ...registration };
@@ -1965,16 +1969,18 @@ export class NativeBridge {
 			native_session: this.registration.harness_session,
 			state,
 		};
-		const context = this.contextUnsupported ? undefined : this.context;
+		const token = this.contextToken;
+		const context = token && this.context ? { ...this.context, context_token: token } : undefined;
 		try {
 			try {
 				await this.client.request("/v1/activity", { ...body, ...context }, this.controller.signal);
 			} catch (error) {
-				// A daemon older than plan 217 rejects the unknown fields: stop
-				// sending them and publish the state alone.
+				// A refused report (a grant from before a daemon restart, or a
+				// daemon that knows no reports) still publishes the state; reports
+				// resume with the next registration's grant.
 				if (!context || ![400, 422].includes(error?.status) || this.controller.signal.aborted)
 					throw error;
-				this.contextUnsupported = true;
+				if (this.contextToken === token) this.contextToken = undefined;
 				await this.client.request("/v1/activity", body, this.controller.signal);
 			}
 			this.activityPublished = state;
