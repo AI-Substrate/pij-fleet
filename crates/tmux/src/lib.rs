@@ -158,7 +158,6 @@ pub struct TmuxAdapter {
     server: Option<String>,
     session: Option<String>,
     tap_root: PathBuf,
-    legacy_tap_root: Option<PathBuf>,
     submit_lock: Arc<AsyncMutex<()>>,
     taps: Arc<Mutex<BTreeMap<String, TapState>>>,
     /// Plan 180: reads ride one persistent control-mode client, not a process each.
@@ -182,7 +181,6 @@ impl TmuxAdapter {
             server: None,
             session: None,
             tap_root: tap_root.into(),
-            legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: true,
@@ -193,16 +191,6 @@ impl TmuxAdapter {
             )),
         }
     }
-    /// Use `tmux` with an explicitly injected legacy-generation tap root.
-    pub fn with_legacy_tap_root(
-        tap_root: impl Into<PathBuf>,
-        legacy_tap_root: impl Into<PathBuf>,
-    ) -> Self {
-        let mut adapter = Self::new(tap_root);
-        adapter.legacy_tap_root = Some(legacy_tap_root.into());
-        adapter
-    }
-
     /// Limit listings, new windows, and destructive guards to `session`.
     pub fn for_session(session: impl Into<String>, tap_root: impl Into<PathBuf>) -> Self {
         Self {
@@ -210,7 +198,6 @@ impl TmuxAdapter {
             server: None,
             session: Some(session.into()),
             tap_root: tap_root.into(),
-            legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: true,
@@ -231,7 +218,6 @@ impl TmuxAdapter {
             server: None,
             session: None,
             tap_root: tap_root.into(),
-            legacy_tap_root: None,
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: true,
@@ -253,23 +239,11 @@ impl TmuxAdapter {
             binary: OsString::from("tmux"),
             server: Some(server),
             session: None,
-            legacy_tap_root: None,
             tap_root: tap_root.into(),
             submit_lock: Arc::new(AsyncMutex::new(())),
             taps: Arc::new(Mutex::new(BTreeMap::new())),
             claims_legacy_sinks: false,
         }
-    }
-
-    /// Use an isolated tmux server with an explicitly injected legacy tap root.
-    pub fn for_server_with_legacy_tap_root(
-        server: impl Into<String>,
-        tap_root: impl Into<PathBuf>,
-        legacy_tap_root: impl Into<PathBuf>,
-    ) -> Self {
-        let mut adapter = Self::for_server(server, tap_root);
-        adapter.legacy_tap_root = Some(legacy_tap_root.into());
-        adapter
     }
 
     /// Override whether the orphan sweep claims pre-ledger sinks once. On by
@@ -576,47 +550,6 @@ impl TmuxAdapter {
 
     fn expected_tap_sink(&self, pane: &str) -> PathBuf {
         tap_sink_path(&self.tap_root, pane)
-    }
-
-    fn has_live_legacy_tap_writer(&self, pane: &str) -> Result<bool> {
-        let Some(root) = &self.legacy_tap_root else {
-            return Ok(false);
-        };
-        let sink = tap_sink_path(root, pane);
-        let metadata = match fs::symlink_metadata(&sink) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => {
-                return Err(self.error(format!(
-                    "could not inspect legacy tap signature {sink:?} for pane {pane:?}: {error}"
-                )));
-            }
-        };
-        if !metadata.file_type().is_file() {
-            return Ok(false);
-        }
-        let sink_text = sink.to_str().ok_or_else(|| {
-            self.error(format!(
-                "legacy tap sink {sink:?} is not valid Unicode — refusing to replace pane {pane:?}"
-            ))
-        })?;
-        pij_core::spawns::record("ps.tmux-legacy-tap-writer");
-        let output = Command::new("/bin/ps")
-            .args(["-axo", "command="])
-            .output()
-            .map_err(|error| {
-                self.error(format!("could not inspect legacy tap writers: {error}"))
-            })?;
-        if !output.status.success() {
-            return Err(self.error(format!(
-                "could not inspect legacy tap writers: ps exited {} ({})",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .any(|command| command.contains("cat >>") && command.contains(sink_text)))
     }
 
     fn tap_marker(&self, pane: &str) -> Result<Option<String>> {
@@ -1192,25 +1125,14 @@ impl TmuxPort for TmuxAdapter {
             // A matching pane-scoped marker is durable ownership evidence from a
             // prior daemon. Replacing that orphan is adoption, not clobbering.
             "1" if marker_matches => {}
-            "1" if marker.is_none() && self.has_live_legacy_tap_writer(pane)? => {
-                // These are one-directional safety interlocks, not retention policy:
-                // the absent marker, regular sink, and live associated writer can
-                // only spare a pipe. Removing any check would close the same set or more.
-                self.run(
-                    "pipe-pane detach legacy",
-                    &os_args(["pipe-pane", "-t", pane]),
-                )?;
-                let legacy_sink = self
-                    .legacy_tap_root
-                    .as_ref()
-                    .map(|root| tap_sink_path(root, pane))
-                    .expect("legacy signature requires an injected root");
-                self.wait_for_pipe_state(pane, &legacy_sink, "0", "legacy supersede")
-                    .await?;
-            }
             "1" => {
+                // No census: whose pipe it is can't be read without the
+                // process table (F112). Name the manual repair instead.
                 return Err(self.error(format!(
-                    "pane {pane:?} already has an output pipe not owned by this sink — refusing to replace it"
+                    "pane {pane:?} already has an output pipe not owned by this sink — refusing to replace it. \
+                     If that pipe is this daemon's own (a `cat >> {sink}` child of the tmux server), \
+                     re-stamp its owner: tmux set-option -p -t {pane} {TAP_SINK_OPTION} {sink}",
+                    sink = shell_quote(sink_text),
                 )));
             }
             other => {
@@ -1268,9 +1190,16 @@ impl TmuxPort for TmuxAdapter {
             "pipe-pane attach",
             &os_args(["pipe-pane", "-O", "-t", pane, &command]),
         ) {
-            let _ = self.clear_tap_marker(pane);
-            if !tracked {
-                let _ = fs::remove_file(sink);
+            // Undo only what this attempt created. When the marker was already
+            // ours (adopting a prior daemon's orphan), its pipe can outlive a
+            // failed replace; clearing the marker would strand our own pipe as
+            // unowned, refused on every tick (F112). Keeping it lets the next
+            // attempt adopt again.
+            if !marker_matches {
+                let _ = self.clear_tap_marker(pane);
+                if !tracked {
+                    let _ = fs::remove_file(sink);
+                }
             }
             return Err(error);
         }
@@ -1782,17 +1711,13 @@ mod resolve_once {
 mod control_defaults {
     use super::TmuxAdapter;
 
-    /// The daemon composes `new` / `with_legacy_tap_root`: reads must ride the
+    /// The daemon composes `new` / `for_server`: reads must ride the
     /// control client there. Fake executables keep plain forks unless opted in.
     #[test]
     fn production_constructors_use_control_mode_and_fakes_opt_in() {
         let tap = std::env::temp_dir();
         assert!(TmuxAdapter::new(&tap).control.enabled());
-        assert!(
-            TmuxAdapter::with_legacy_tap_root(&tap, &tap)
-                .control
-                .enabled()
-        );
+        assert!(TmuxAdapter::new(&tap).control.enabled());
         assert!(TmuxAdapter::for_session("s", &tap).control.enabled());
         assert!(TmuxAdapter::for_server("srv", &tap).control.enabled());
         assert!(
