@@ -24,7 +24,7 @@
           "title": "The route inventory and its sensor",
           "phase": "ph-00dd",
           "state": "checked",
-          "success": "harness/scripts/route-inventory.json classifies all 64 (method, path) pairs at main 2cc2ac3 (43 seat-authority, 20 machine-public, 1 job-token). just route-inventory-check probes the router from Endpoint::ALL and fails on a missing, stale, repeated or unclassified pair; it is a heavy harness checks stage and a self-check step.",
+          "success": "harness/scripts/route-inventory.json classifies all 76 (method, path) pairs main serves (46 seat-authority, 29 machine-public, 1 job-token; 12 of them implicit HEAD). just route-inventory-check probes the router from Endpoint::ALL under every standard method and fails on a missing, stale, repeated or unclassified pair; it is a heavy harness checks stage and a self-check step, niced, with timeouts.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],

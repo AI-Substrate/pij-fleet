@@ -9,7 +9,7 @@
 - **The issuer is secured first**, as phase 2's prerequisite.
 - **Then phase 2 gates the operations in this order:** send-as, inbox-claim, controls, role-and-holder, outputs, registration and adoption changes, activity, attribution.
 
-**Revision 1** answers ocelot (P163-F001, governance b78df40), squirrel (governance f1d74f3) and bobcat (governance dc3b2aa) at bf89eed. It adds in-process ancestry with a strict no-launch refusal and a cache with an explicit lifetime, session ownership for shared Copilot hosts, issuer-first, nonce and incarnation transactions, secret and transport rules, operation-level gating, and PRD 003's open dependencies.
+**Revision 1** answers ocelot (P163-F001, governance b78df40), squirrel (governance f1d74f3) and bobcat (governance dc3b2aa) at bf89eed. **Revision 2** answers spoonbill (governance b2bb85d) and ocelot's notes at f5c25d4. It drops the ancestry cache: every tokenless request walks to the boundary, and only a capped boundary index is kept. It also adds implicit HEAD to gate-by-operation. It adds in-process ancestry with a strict no-launch refusal and a cache with an explicit lifetime, session ownership for shared Copilot hosts, issuer-first, nonce and incarnation transactions, secret and transport rules, operation-level gating, and PRD 003's open dependencies.
 
 ## What exists today
 
@@ -53,7 +53,7 @@ The daemon adds a Unix socket listener (`<state-dir>/daemon.sock`, 0600, in a 07
 - **Spawned, revived, adopted and hand-started seats all work the same way**, with nothing to deliver: the evidence is which process connected.
 - **Clients.** All of them switch from TCP to the socket. Subprocesses (bash tools, hooks) are descendants of the harness, so they pass as the seat. A process outside the seat's tree, even with the daemon key, does not.
 - **Rotation and death.** Nothing to rotate. The registered pid and start die with the incarnation.
-- **Per-request cost.** A connecting pid that isn't the harness itself needs an ancestry walk. With the strict in-process path (see [Peer credentials and the ancestry cache](#peer-credentials-and-the-ancestry-cache-contract-c-with-ocelots-p163-f001)), that is O(D) kernel reads and no launch, on macOS as on Linux. So cost alone doesn't rule B out. It does put a lineage walk on every request, including the long-lived clients' per-tick heartbeat, inbox and activity calls, where a token would be one hash compare.
+- **Per-request cost.** A connecting pid that isn't the harness itself needs an ancestry walk. With the strict in-process path (see [Peer credentials and the boundary walk](#peer-credentials-and-the-boundary-walk-contract-c)), that is O(D) kernel reads and no launch, on macOS as on Linux. So cost alone doesn't rule B out. It does put a lineage walk on every request, including the long-lived clients' per-tick heartbeat, inbox and activity calls, where a token would be one hash compare.
 - **Residual.** A process that runs inside the victim's tree (a typed command in its pane) passes, and so does a pid reused after the victim died, unless process start is checked. F88 also notes peer credentials can't tell apart two sessions sharing one host process. req-10 itself calls peer credentials bootstrap evidence, not the whole control.
 
 ### C. Both: peer credentials (or a spawn nonce) as bootstrap evidence, the token as the per-request control
@@ -99,7 +99,7 @@ The parts below are contracts for phase 2: design, not code.
 - **Revocation.** Tombstone, supersede or an observed-dead owner deletes the incarnation's digests in the transaction that records the change.
 - **Lost token.** Only the owner holds the token, so losing it means the owner process restarted, and that is a new incarnation: it bootstraps again, through peer credentials or a fresh nonce. Digests are never "recovered" into plaintext.
 
-#### Peer credentials and the ancestry cache (contract c, with ocelot's P163-F001)
+#### Peer credentials and the boundary walk (contract c)
 
 - **Credentials come from the accepted connection, never from headers, the body or a claimed pid.** The API is pinned: `tokio::net::UnixStream::peer_cred()` on the accepted stream, giving `UCred` uid plus pid on Linux (`SO_PEERCRED`) and macOS (`LOCAL_PEERCRED` plus `LOCAL_PEERPID`). They are read once at accept. A missing pid, an error, or a uid other than the daemon's is a failure that refuses every seat-authority request on that connection. It never falls back to body identifiers. The peer's start is read in-process immediately, and the (pid, start) pair is bound to the connection.
 - **Every request re-reads the peer's start.** A connection inherited by a child, passed with `SCM_RIGHTS`, or pooled keeps the original connector's credentials. If that process has died, its start re-read fails and the request is refused. If it is alive and handed its connection on, it chose to delegate its own authority. Clients must not pool connections across sessions.
@@ -108,24 +108,23 @@ The parts below are contracts for phase 2: design, not code.
   - **Start:** `pij_harnesses::proc::observed_start`, which reads the kernel start (`kernel_start`, macOS BSD info or Linux `/proc/<pid>/stat`, `proc.rs:161-177`). It launches nothing, and returns `None`, failing closed, when the kernel won't say (`proc.rs:258-271`). Plan 218's Claude socket peer check already uses it this way.
   - Never the `ProcLiveness` wrapper, which can fall back to `ps`.
 - **Unreadable evidence is refused, never escalated.** A read that doesn't answer (the process is gone, or the kernel won't say) refuses the request by name (`E-RS-SEAT-PROVENANCE`). It never falls back to `ps` the way the `ProcLiveness` wrapper can, so the recurring path is strictly launch-free. C27's argv check, which does launch `ps`, stays in bootstrap: registration and adoption, once per incarnation.
-- **The walk.** It starts at the peer pid and follows parents for at most D = 16 hops. It stops at the **nearest** registered harness boundary, whose start must match, or at the first cached ancestor.
+- **Every tokenless request walks to the boundary.** The walk starts at the peer pid and follows parents for at most D = 16 hops until it reaches the **nearest** registered harness boundary, whose start must match.
   - It never continues past a harness boundary, so a sibling or a shared tmux server, login shell or launchd above it never validates.
   - Reaching pid 1, launchd or a tmux server without a boundary, or using up D, is a refusal.
-  - The work is O(D) kernel reads.
-- **How a fresh pid reaches the cache.** A new shim process names nothing, so the walk is what finds its ancestor: at each hop it looks up (pid, start) in the cache, and the first hit ends it. Its shell, or the harness, is usually one or two hops up.
-- **Entries.** An entry is keyed by (ancestor pid, ancestor start) and maps to the boundary (harness pid and start) and the one live incarnation it owns. It is inserted only for ancestors that a walk proved sit below that boundary.
-- **A hit proves only the current prefix.** A hit authorizes a peer only because that peer's own walk, read fresh on this request, reached the cached ancestor. The prefix from the peer up to the ancestor is current membership; the cache only saves the rest of the climb. A cached root never authorizes a sibling, or a process that has left its tree.
-- **Each hit is re-checked.** A surviving ancestor alone never validates:
-  - the ancestor's current start must equal the key's (pid reuse);
-  - the boundary must still be alive, with the same start;
-  - the incarnation must still be current: not tombstoned, not superseded, same session;
-  - the boundary must still own exactly one live session (ambiguity).
-- **Invalidation.**
-  - Lazily, on a failed re-check: death, pid reuse, the incarnation ending, or ambiguity.
-  - On events: tombstone, supersede, re-registration with a new incarnation, token rotation, a session change, or a second session registering under the boundary drops every entry indexed under that boundary or incarnation.
-  - Changed ancestry, pid reuse and ancestor death fail the fresh prefix walk or the start re-check, and drop the entry.
-  - Reparenting can't grant wrongly. A hit needs the peer's own walk to pass through the cached ancestor now, and a reparented process's walk no longer does.
-- **Storage.** At most 64 entries per incarnation (least recently used goes first) and a global cap. Retirement is lazy and event-driven. **No new poll or sweep.**
+  - Every hop is read fresh on that request, from the peer's parent up to the boundary.
+- **No ancestry cache.** Nothing remembers that an ancestor once sat below a boundary. Revision 1 cached that, and spoonbill showed it is unsound (governance b2bb85d). Take a chain H (harness) to M to S (cached) to P (a fresh peer). If M dies and S is reparented outside H:
+  - S and H keep their pids and starts, and H's incarnation stays current;
+  - P's fresh prefix still reaches S, so every hit check passes;
+  - yet a full walk from P now reaches the system root, not H.
+
+  A cache of ancestry authorization can't see that, so phase 2 keeps none. **Phase 2 carries this exact chain as a regression test**: the walk refuses P.
+- **The one index kept is lookup metadata, never authorization.** Registration events maintain a map from boundary (harness pid, start) to the live incarnations it owns.
+  - A hop asks "is this (pid, start) a registered boundary?" with one hash lookup. No roster scan, per hop or otherwise.
+  - Entries are added at registration, and removed on tombstone, supersede, observed death or a new incarnation, in the same transaction that records the change.
+  - A lookup re-reads the boundary's start (already read for the hop), so a stale entry for a reused pid never matches.
+  - **Global cap: 4,096 entries**, one per live registered boundary, which is far above any fleet's seat count. At the cap, a new registration is refused by name (`E-RS-SEAT-INDEX-FULL`); a live entry is never evicted.
+  - No poll or sweep: retirement is event-driven, plus lazily on a failed start match.
+- **Ambiguity is checked on the same lookup.** A boundary owning two or more live sessions refuses tokenless authority (session ownership, above).
 
 #### Secret handling and transport (contract d)
 
@@ -145,6 +144,7 @@ The parts below are contracts for phase 2: design, not code.
   - dispatch ACK;
   - role-bearing spawn and the revive override;
   - context-grant recovery.
+- **Implicit HEAD is the same operation as its GET.** axum serves HEAD through each GET handler, effects included: `HEAD /v1/inbox` claims as `GET /v1/inbox` does. So HEAD is gated with its GET, never left open because it returns no body. The inventory lists the 12 implicit HEAD pairs.
 - **Intentionally machine-wide operations stay public:** the roster, events, cards and canonical reads.
 - **The inventory follows.** It may grow a per-operation column in phase 2.
 
@@ -155,15 +155,14 @@ Budgets for phase 2; no syscall count or latency is proven here.
 | Path | Cost | Launches |
 |---|---|---|
 | Long-lived token request | One SHA-256 of a fixed 32-byte token, a constant-time compare and a lookup in a warm digest-to-incarnation map. This is added authentication cost, not the route's whole cost. | none |
-| Short-lived, cache hit | A constant number of peer-credential calls per connection, the walk up to the first cached ancestor, and the re-checks above. Not free. | none |
-| Short-lived, cache miss | At most D parent-and-start reads plus a binding lookup. No whole-machine census. | none |
+| Short-lived (tokenless) request | One peer-credential read per connection, a start re-read per request, then the walk: at most D = 16 hops, each one in-process parent read, one start read and one hash lookup in the boundary index. Typically one to three hops (shell, then harness). Not free. No roster scan, no whole-machine census. | none |
 | Bootstrap and rotation | Nonce and token hashing, single-use nonce consumption, digest persistence and a map update. Any C27 argv check (`ps`) runs only here, once per incarnation or adoption. | bounded, per incarnation |
 
 - **Nothing launches per request, so nothing launches per tick per seat.** That holds even where a status line or harness hook runs on the harness's own timer.
 - **Lifecycle budgets phase 2 must fix:**
   - token-map load after a daemon bounce: one store read of live incarnations' digests;
   - unused nonces: they expire with the registration window;
-  - the cache's capacity, as above.
+  - the boundary index's global cap (4,096 entries) and its event-driven upkeep, as above.
 - **Rollout counters** are bounded aggregates (operation class × outcome), read as interval deltas on routes that actually carried traffic. A zero "neither" on an unused route is not migration proof.
 - **Phase 2's backpressure** states the measured rates and records any new launch site in `spawn_sites.rs`.
 
