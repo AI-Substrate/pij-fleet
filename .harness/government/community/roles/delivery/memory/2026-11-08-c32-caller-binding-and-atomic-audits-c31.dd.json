@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Open before any identity-dependent effect (answer, close, withdraw, notice), editing the native Copilot receiver's steering, or freezing a PR without node_modules",
+				"tags": [
+					"c32",
+					"delivery",
+					"steering",
+					"audit",
+					"plan-212",
+					"plan-214"
+				],
+				"title": "C32 caller binding and atomic audits; C31 steering; tooling without node_modules"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Lessons from #149 (plan 212) and #152 (plan 214), 2026-11-07/08.\n\n**Ruling C32: identity-dependent effects (answering, closing or withdrawing a role request).**\n- Bind the caller where it is known. A pane resolved through `identity::resolve_seat` gives `ResolvedBy::Pane`.\n- An identity-ladder *refusal* stays a refusal (pane contradicts the asserted id, unregistered pane, failed read). Only a caller with no pane and no session is unbound, and it acts only as the request's stored requester or holder, never as its PA or prime.\n- The audit is ATOMIC with the change. Add an `_audited` store method that appends the event with `append_in_transaction` inside the same `owned_write` transaction, and only when the row actually changed. Commit it through `event_bus.publish_committed_batch`, which also runs it as an owned task, so a cancelled caller can't split the change from its audit. Templates: `close_role_request_audited`, `mark_role_request_answered_audited`.\n- Never send as a seat. Daemon notices come from `pij_core::BG_ACTOR` (`pij-bg`), with attribution in the body. A retry of an owed notice replays the stored intent (closer, binding, reason), never the retrying caller.\n- Every Known limit names PRD 003 req-10.\n- Prime authority is `projects.prime_id` only. `pij orchestration prime set` has no authority check (F103).\n\n**HTTP 200 is not acceptance.** A role send's refused holder receipt still returns 200. Answer accounting reads the `RoleSendAccepted` response extension (`http/role_send.rs`), not the status.\n\n**C31 mid-turn steering, in the native Copilot receiver.**\n- The receiver claims during a turn its own pij message started, with `during_turn=true`.\n- The daemon re-reads `seat_steering` at the hand-off, after the job is claimed; if steering is off, it releases the job with `retry(0)` and returns the `turn-wait` hold.\n- During-turn waits are event-driven (enqueue or `steer.changed`), with a 15 s backstop, never the 500 ms tick.\n- One shared turn watcher per turn: steered messages join the owner's watcher, and live events reach the owner too.\n- Root `abort`, `session.error` and `session.fusion_completed` are discard boundaries.\n- Live canary: `docs/plans/214-held-delivery/assets/evidence/steer-canary.mjs`. It runs a real Copilot CLI against a private daemon and tmux socket with a fixture model. Copilot 1.0.108 refuses `--no-remote`.\n\n**Tooling without node_modules (C25).**\n- biome: `~/pi-hacking/pij/node_modules/.bin/biome check .` (2.4.14, the version CI expects).\n- pr-freeze: `node harness/scripts/<copy>.ts <pr>` (node strips types natively).\n- A sqlite `CREATE TRIGGER ... RAISE(ABORT)` in a store test injects an append failure.\n\n**Merge-order migrations.** At each push, renumber to the number pm-001 or the prime gives, else main's highest + 1. Claim it, then update the file name, `PRAGMA user_version`, `SCHEMA_VERSION` and the doc mention.\n\n**Crossed PM messages are normal.** Before acting on one, check `git ls-remote` and what is already pushed. Trust ls-remote and ask. No force-push without an explicit go. A stop order must be a normal send (F87).\n"
+		}
+	]
+}
