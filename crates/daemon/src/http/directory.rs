@@ -1918,16 +1918,13 @@ mod tests {
             "2026-10-01",
         )
         .expect("idle");
-        assert!(
-            idle.commands.is_empty(),
-            "nothing runnable ships for retire"
-        );
+        assert!(idle.later.is_empty(), "retire and merge ship with s15");
         let kinds: HashSet<&str> = prompts.iter().map(|prompt| prompt.kind).collect();
         for kind in ["core", "needed", "recurring", "two-domains"] {
             assert!(kinds.contains(kind), "the fixture prints a {kind} prompt");
         }
 
-        let all: Vec<&String> = printed.iter().chain(&idle.later).collect();
+        let all: Vec<&String> = printed.iter().chain(&idle.commands).collect();
         let dir = pij_testkit::fresh_dir("printed-commands");
         let script: String = all
             .iter()
@@ -1970,20 +1967,12 @@ mod tests {
                 **command,
                 "the shell split {command} into exactly its words"
             );
-            let later = idle.later.contains(command);
             match words_ref.as_slice() {
                 // Native clap; the CLI's own test replays this shape.
                 ["pij-rs", "revive", _] => {}
                 ["pij", "send", ..] => {
                     crate::http::shim::parse_send(&words[1..], Some("text"))
                         .unwrap_or_else(|error| panic!("{command}: {error}"));
-                }
-                ["pij", "directory", ..] if later => {
-                    assert_eq!(
-                        Arguments::parse(&words[1..]).map(|_| ()).unwrap_err().code,
-                        "E-RS-UNPORTED",
-                        "{command}: s15's verbs have not shipped, so they stay in `later`"
-                    );
                 }
                 ["pij", "directory", ..] => {
                     let call = Arguments::parse(&words[1..])

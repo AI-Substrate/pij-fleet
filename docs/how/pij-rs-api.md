@@ -1283,9 +1283,9 @@ Every recommendation to create, split, merge or retire a role is a
 Each one in `prompts` (create) and `reviews` (split, merge, retire) carries
 `act`, `signal: {code, says}`, `command` and `commands`, and may carry `detail`.
 `in_order: true` marks `commands` as steps (release, then assign) rather than
-alternatives. `later` holds lines for verbs that have not shipped (s15's
-`retire` and `merge`): shown with a `note`, never in `commands`, so `command`
-is `null` until they ship.
+alternatives. `later` holds lines for verbs that have not shipped: shown with a
+`note`, never in `commands`. None use it today: s15's `retire` and `merge`
+shipped in plan 206, so a `mostly-idle` review offers both as `commands`.
 
 | signal `code` | says | used by |
 |---|---|---|
@@ -1297,7 +1297,7 @@ is `null` until they ship.
 | `worth-remembering` | this would be worth remembering: knowledge that should outlive the seat (ruling C30) | taught in the notice |
 | `core` | a core role a PEC starts from (C22); its template is an example | the other core prompts |
 | `step-needs` | a workstream step names this role in its needs | the `needed` prompts |
-| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (the s15 verbs, in `later`) |
+| `one-off`, `overlap`, `nothing-to-remember`, `mostly-idle` | the signals against | `mostly-idle`: a role with no memory notes, outputs, waiting requests or live holder and nothing started or ended for 30 days (`IDLE_DAYS`): retire it, or merge it into another (both in `commands`) |
 
 A cold role with memory is never put up for retirement: a role is not a seat.
 `data.reviews` is the boundary review the prime runs at a wave end, a compact

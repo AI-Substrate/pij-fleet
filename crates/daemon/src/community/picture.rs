@@ -258,8 +258,9 @@ pub struct Recommendation {
     /// Whether [`Self::commands`] are steps run in order (release, then
     /// assign) rather than alternatives.
     pub in_order: bool,
-    /// Commands for verbs that have not shipped (s15's `retire` and `merge`):
-    /// shown so the move is clear, never offered as runnable.
+    /// Commands for verbs that have not shipped: shown so the move is clear,
+    /// never offered as runnable. None today: s15's `retire` and `merge` ship
+    /// in plan 206.
     pub later: Vec<String>,
     /// A note, such as who the designated prime is.
     pub note: Option<String>,
@@ -875,12 +876,6 @@ pub fn idle(project: &str, role: &RoleActivity<'_>, cutoff: &str) -> Option<Reco
         "--project",
         project,
     ]));
-    // Neither verb has shipped (s15): the move is shown, not offered to run.
-    prompt.later = std::mem::take(&mut prompt.commands);
-    prompt.note = Some(
-        "retire and merge are s15's verbs and have not shipped; until then the role stays, cold"
-            .to_string(),
-    );
     prompt.detail = Some(format!(
         "{} has no memory, outputs, waiting requests or live holder, and nothing has happened since {last}",
         role.role
@@ -1383,19 +1378,18 @@ mod tests {
         let json = idle("fleet", &base, "2026-10-07").expect("idle").json();
         assert_eq!(json["act"], "retire");
         assert_eq!(json["signal"]["code"], "mostly-idle");
-        assert_eq!(json["command"], Value::Null, "nothing runnable ships yet");
-        assert_eq!(json["commands"], json!([]));
         assert_eq!(
-            json["later"][0],
-            "pij directory retire qa --why 'idle since 2026-09-02, nothing to remember' --project fleet"
+            json["command"],
+            "pij directory retire qa --why 'idle since 2026-09-02, nothing to remember' --project fleet",
+            "s15 ships retire and merge (plan 206): both are runnable"
         );
         assert!(
-            json["later"][1]
+            json["commands"][1]
                 .as_str()
                 .unwrap()
                 .starts_with("pij directory merge qa --into '<role>' ")
         );
-        assert!(json["note"].as_str().unwrap().contains("s15"), "{json}");
+        assert_eq!(json["later"], Value::Null, "{json}");
         let kept = RoleActivity { notes: 1, ..base };
         assert!(
             idle("fleet", &kept, "2026-10-07").is_none(),
