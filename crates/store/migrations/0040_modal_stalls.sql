@@ -2,19 +2,24 @@
 --
 -- One row per seat: the stretch in which the PA watchdog last found it on its
 -- harness's own dialog. The row is claimed BEFORE the parent and the PA are
--- told, keyed by the stretch's start (`quiet_since`, the seat's last own
--- event), so a restart or an overlapping round never tells twice; a later
--- stretch replaces it. `open` is whether the last pane read still showed the
--- dialog. A row whose seat has an own event after `quiet_since` is history:
--- `pij list` and the state card show it only while no such event exists.
+-- told, keyed by the stretch's identity (`quiet_seq`, the spine sequence of the
+-- seat's last own event; `quiet_since` is that event's time, for duration
+-- only), so a restart or an overlapping round never tells twice; a later
+-- stretch (a higher sequence) replaces it. `told` lists the recipients that
+-- accepted the message; the rest are told on a later round. `dialog` is the
+-- marker's fixed label, never pane text. `open` is whether the last pane read
+-- still showed the dialog. A row whose seat has an own event after `quiet_seq`
+-- is history: `pij list` and the state card show it only while none exists.
 CREATE TABLE modal_stalls (
     seat        TEXT PRIMARY KEY,
+    quiet_seq   INTEGER NOT NULL,
     quiet_since INTEGER NOT NULL,
     claimed_at  INTEGER NOT NULL,
     dialog      TEXT NOT NULL,
     key         TEXT NOT NULL,
     clears      TEXT NOT NULL,
-    open        INTEGER NOT NULL CHECK (open IN (0, 1))
+    open        INTEGER NOT NULL CHECK (open IN (0, 1)),
+    told        TEXT NOT NULL DEFAULT '[]'
 ) STRICT;
 
 PRAGMA user_version = 40;

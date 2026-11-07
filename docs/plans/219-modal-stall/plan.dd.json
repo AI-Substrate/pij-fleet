@@ -40,7 +40,7 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "Spot a stalled working seat. Inside an existing daemon round (the PA watchdog's 60 s round, or the session-status refresh it already does), a seat whose state is working, whose harness is Copilot, Claude, OMP or Pi with a pane, and which has had no event (no activity post, no model call, no delivery ack) for 20 minutes is a candidate. Only candidates are inspected; a healthy working seat costs nothing extra.",
+          "claim": "Spot a stalled working seat. Inside an existing daemon round (the PA watchdog's 60 s round), a live seat whose state is working, with a pane, on a harness with known dialog markers (Copilot and Claude; OMP and Pi have none captured yet), and which has had no OWN event (activity post, report, inbox ack; deliveries to it don't count) for 20 minutes is a candidate. Only candidates' panes are read. A healthy working seat on such a harness costs one spine read per round (one snapshot of four indexed per-kind SELECTs) and no pane read; other seats cost nothing.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
@@ -64,7 +64,7 @@
         },
         {
           "id": "ac-0005",
-          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch. Candidates are found from state the daemon already holds; only a seat working and silent 20+ min gets one capture-pane per round through the existing persistent control client (no process). Steady state with no stalled seat: zero added reads. Per stalled seat: one control-client read per 60 s round until it clears. Measure before and after: ping spawns flat; control-client read count per round with one fixture-stalled seat.",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch. Per round: one spine read (four indexed per-kind SELECTs) per working seat with a pane on Copilot or Claude; each candidate (silent 20+ min by its own events) gets one capture-pane over the already-live control client only; with no live client the round skips its candidates and records the skip, launching nothing (pm-001's ruling on P156-F001). One modal_stalls read per round only when a seat is a candidate; a write only to claim, record a recipient, or open or close a row. Measure before and after: ping spawns flat (no tmux.capture-pane or tmux.control-client from this path); control-client read count per round with one fixture-stalled seat.",
           "state": "unchecked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         },

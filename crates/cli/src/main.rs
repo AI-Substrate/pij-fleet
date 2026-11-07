@@ -4140,14 +4140,14 @@ PEC notice";
             super::render_state(&pij_core::model::Envelope::ok("pij state", card), false)
         };
         let human = card(serde_json::json!({
-            "dialog": "Copilot needs information.", "key": "ctrl+d",
+            "dialog": "Copilot's selection dialog", "key": "ctrl+d",
             "clears": "ctrl+d declines", "since_ms": 0,
         }));
-        assert!(human.contains("\nblocked on a dialog for "), "{human}");
         assert!(
-            human.ends_with(": Copilot needs information. (clears with ctrl+d declines)"),
+            human.contains("\nblocked on a dialog: Copilot's selection dialog, no own event for "),
             "{human}"
         );
+        assert!(human.ends_with(" (clears with ctrl+d declines)"), "{human}");
         assert!(!card(serde_json::Value::Null).contains("blocked on a dialog"));
     }
 

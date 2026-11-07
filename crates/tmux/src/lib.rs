@@ -1142,6 +1142,17 @@ impl TmuxPort for TmuxAdapter {
         Ok(rows[rows.len() - keep..].join("\n"))
     }
 
+    async fn capture_without_launch(&self, pane: &str) -> Result<Option<String>> {
+        // The live control client or nothing: no start, no fork (plan 219).
+        match self
+            .control
+            .query_live(&os_args(["capture-pane", "-p", "-t", pane]))
+        {
+            Some(reply) => self.control_stdout("capture-pane", reply).map(Some),
+            None => Ok(None),
+        }
+    }
+
     async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<()> {
         let expected = self.expected_tap_sink(pane);
         if sink != expected {

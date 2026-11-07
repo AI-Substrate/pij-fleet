@@ -166,8 +166,14 @@ pub enum RoundOutcome {
     ModalStall {
         /// The stalled seat.
         seat: SeatId,
-        /// Who was told, with delivery's receipt outcome or error.
+        /// Who was told this round, with delivery's receipt outcome or error.
         told: Vec<(SeatId, String)>,
+    },
+    /// The round's modal-stall candidates were skipped: no pane can be read
+    /// without a launch (plan 219, P156-F001).
+    ModalStallSkipped {
+        /// Why.
+        reason: String,
     },
     /// The prime started working after the PA's fleet went idle (plan 173).
     PrimeActive {

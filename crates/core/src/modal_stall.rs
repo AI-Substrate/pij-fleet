@@ -8,9 +8,12 @@
 //! ([`OWN_ACTIVITY_KINDS`]). Only those panes are read, and only the harness's
 //! own dialog chrome is matched (`pij_harnesses::modal`). On a match the seat's
 //! parent and the PA in its scope (else the prime) are told once per stretch:
-//! the claim is stored first, keyed by the stretch's start, so a restart or an
-//! overlapping round never tells twice, and a new own event starts a new
-//! stretch. pij never presses a key for the seat.
+//! the claim is stored first, keyed by the sequence of the seat's last own
+//! event, and each recipient that accepted is recorded, so a restart or an
+//! overlapping round never tells one twice, a failed tell is retried, and a
+//! new own event (a higher sequence, whatever its clock) starts a new stretch.
+//! The dialog is named by a fixed label, never by text read from the pane.
+//! pij never presses a key for the seat.
 
 use serde::{Deserialize, Serialize};
 
@@ -42,12 +45,15 @@ pub const MODAL_STALL_KIND: &str = "watchdog.modal-stall";
 pub struct ModalStall {
     /// The stalled seat.
     pub seat: SeatId,
-    /// The stretch: the seat's last own event, epoch ms. A newer own event
-    /// ends the stretch.
+    /// The stretch's identity: the spine sequence of the seat's last own
+    /// event. An own event with a higher sequence ends the stretch, whatever
+    /// its clock says (freshness follows sequence, not time).
+    pub quiet_seq: u64,
+    /// That event's time, epoch ms: only for how long it has been silent.
     pub quiet_since_ms: u64,
     /// When the stall was claimed, epoch ms.
     pub claimed_at_ms: u64,
-    /// The dialog's first line, as the pane showed it.
+    /// The dialog's fixed label from the marker table, never pane text.
     pub dialog: String,
     /// The key that clears it, short: `ctrl+d`, `esc`.
     pub key: String,
@@ -55,6 +61,9 @@ pub struct ModalStall {
     pub clears: String,
     /// Whether the last read still showed the dialog.
     pub open: bool,
+    /// Who accepted this stretch's message. Anyone else is told on a later
+    /// round.
+    pub told: Vec<SeatId>,
 }
 
 impl ModalStall {
@@ -73,7 +82,7 @@ impl ModalStall {
 /// A standing stall as the roster and the state card carry it (`dialog`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DialogView {
-    /// The dialog's first line.
+    /// The dialog's fixed label.
     pub dialog: String,
     /// The key that clears it, short.
     pub key: String,
@@ -94,9 +103,9 @@ pub fn blocked_cell(view: &DialogView) -> String {
 #[must_use]
 pub fn blocked_line(view: &DialogView, now_ms: u64) -> String {
     format!(
-        "blocked on a dialog for {}: {} (clears with {})",
-        human_duration(now_ms.saturating_sub(view.since_ms)),
+        "blocked on a dialog: {}, no own event for {} (clears with {})",
         view.dialog,
+        human_duration(now_ms.saturating_sub(view.since_ms)),
         view.clears
     )
 }
@@ -118,12 +127,11 @@ pub fn is_candidate(seat: &SeatDescriptor, last_own_event_ms: Option<u64>, now_m
 #[must_use]
 pub fn stall_body(seat: &SeatId, harness: Harness, stall: &ModalStall, now_ms: u64) -> String {
     format!(
-        "pij: {seat} ({harness}) has shown a dialog for at least {}, with no event from it since then, while pij reads it working.\n\
-         Dialog: {}\n\
+        "pij: {seat} ({harness}) is showing {} and has had no event of its own for {}, while pij reads it working.\n\
          It clears with: {}. Look at the pane first (tmux capture-pane -p -t <pane>), then clear it, and ask the seat in text what it wanted. Never choose an option for it.\n\
          pij will not tell you again until the seat records a new event.",
-        human_duration(now_ms.saturating_sub(stall.quiet_since_ms)),
         stall.dialog,
+        human_duration(now_ms.saturating_sub(stall.quiet_since_ms)),
         stall.clears,
     )
 }

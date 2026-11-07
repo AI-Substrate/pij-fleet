@@ -551,7 +551,7 @@ answer = "Header `❄ <seat> is cold (<ctx>, idle <dur>). Options:`, then one al
 
 [[fixture]]
 path = "golden/cli/list-sized.json"
-sha256 = "78445cdcabfd33924d3b7edf8d2725fbe55f4d65fc5ba54249f8346ea1aa5596"
+sha256 = "1401e5e4f0a5f6782bb561dac485d1d92d5d1fb5cc716c176a286dc1ac850705"
 bytes = 1177
 note = "Plan 160: a /v1/seats?sizes=true payload. A cold Claude seat, a warm working OMP seat, a Copilot seat with unknown context, a working Copilot seat with a standing dialog stall (plan 219), a remote seat without size columns, and an unavailable peer."
 answer = "Input for pij list's human table: both the Rust CLI (pij_cli::roster::render_table) and the TS shim (renderRosterTable) must render list-sized.txt from it."

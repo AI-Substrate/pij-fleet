@@ -8,6 +8,10 @@
 //! transcript (a seat whose work is about dialogs, a fixture printed to the
 //! pane) sit above the composer and its footer, so they never match.
 //!
+//! A match is named by the marker's fixed `label`, never by text read from
+//! the pane: the dialog's own lines can quote the seat's work, and the label
+//! is stored, sent to other seats and shown on the roster (security S156001).
+//!
 //! **Adding a harness.** Capture the dialog's real screen (`tmux capture-pane
 //! -p -t <pane>`) and a normal working screen, commit both under
 //! `crates/testkit/fixtures/harnesses/` with a MANIFEST row, add a row here
@@ -39,6 +43,8 @@ pub struct ModalMarker {
     pub harness: Harness,
     /// Where its marker sits.
     pub chrome: Chrome,
+    /// What the dialog is, in fixed words: all pij ever says about its text.
+    pub label: &'static str,
     /// The key that clears it, short, for `pij list`.
     pub key: &'static str,
     /// The key that clears it, in words, for the parent and the PA.
@@ -57,31 +63,31 @@ pub const MODAL_MARKERS: &[ModalMarker] = &[
     ModalMarker {
         harness: Harness::Copilot,
         chrome: Chrome::FooterAboveStatus("↑/↓ select · enter accept · ctrl+d decline"),
+        label: "Copilot's selection dialog",
         key: "ctrl+d",
         clears: COPILOT_CLEARS,
     },
     ModalMarker {
         harness: Harness::Copilot,
         chrome: Chrome::TitleAboveStatus("Copilot needs information"),
+        label: "Copilot's question dialog (Copilot needs information)",
         key: "ctrl+d",
         clears: COPILOT_CLEARS,
     },
     ModalMarker {
         harness: Harness::Claude,
         chrome: Chrome::LastLine("Esc to cancel"),
+        label: "Claude's permission prompt",
         key: "esc",
         clears: "esc cancels the request (enter would approve the highlighted option)",
     },
 ];
 
-/// The longest dialog line a message carries.
-const FIRST_LINE_CHARS: usize = 160;
-
 /// A dialog found on a screen.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModalMatch {
-    /// The dialog's first line, trimmed.
-    pub first_line: String,
+    /// The marker's fixed label.
+    pub label: &'static str,
     /// The key that clears it, short.
     pub key: &'static str,
     /// The key that clears it, in words.
@@ -106,36 +112,35 @@ pub fn modal_dialog(harness: Harness, screen: &str) -> Option<ModalMatch> {
     MODAL_MARKERS
         .iter()
         .filter(|marker| marker.harness == harness)
-        .find_map(|marker| {
-            let top = dialog_top(&rows, marker.chrome)?;
-            Some(ModalMatch {
-                first_line: first_line(rows.get(top).copied()?),
-                key: marker.key,
-                clears: marker.clears,
-            })
+        .find(|marker| shows(&rows, marker.chrome))
+        .map(|marker| ModalMatch {
+            label: marker.label,
+            key: marker.key,
+            clears: marker.clears,
         })
 }
 
-/// Where the dialog starts, when `chrome` matches the bottom of `rows`.
-fn dialog_top(rows: &[&str], chrome: Chrome) -> Option<usize> {
+/// Does `chrome` sit at the bottom of `rows`?
+fn shows(rows: &[&str], chrome: Chrome) -> bool {
     let n = rows.len();
     match chrome {
         Chrome::FooterAboveStatus(marker) => {
-            let footer = n.checked_sub(3)?;
-            (is_rule(rows[n - 2]) && starts(rows[footer], marker)).then(|| region_top(rows, footer))
+            n >= 3 && is_rule(rows[n - 2]) && starts(rows[n - 3], marker)
         }
         Chrome::TitleAboveStatus(marker) => {
-            let bottom_rule = n.checked_sub(2)?;
-            if !is_rule(rows[bottom_rule]) {
-                return None;
-            }
+            let Some(bottom_rule) = n.checked_sub(2) else {
+                return false;
+            };
             let top = region_top(rows, bottom_rule);
-            (top > 0 && top < bottom_rule && starts(rows[top], marker)).then_some(top)
+            is_rule(rows[bottom_rule]) && top > 0 && top < bottom_rule && starts(rows[top], marker)
         }
         Chrome::LastLine(marker) => {
-            let last = n.checked_sub(1)?;
-            let rule = rows.iter().rposition(|row| is_rule(row))?;
-            (rule < last && starts(rows[last], marker)).then_some(rule + 1)
+            let Some(last) = n.checked_sub(1) else {
+                return false;
+            };
+            rows.iter()
+                .rposition(|row| is_rule(row))
+                .is_some_and(|rule| rule < last && starts(rows[last], marker))
         }
     }
 }
@@ -156,10 +161,6 @@ fn is_rule(row: &str) -> bool {
 
 fn starts(row: &str, marker: &str) -> bool {
     row.trim_start().starts_with(marker)
-}
-
-fn first_line(row: &str) -> String {
-    row.trim().chars().take(FIRST_LINE_CHARS).collect()
 }
 
 #[cfg(test)]
@@ -184,7 +185,7 @@ mod tests {
             &fixture("copilot-follow-up-dialog-herring.txt"),
         )
         .expect("herring's screen is a dialog");
-        assert_eq!(herring.first_line, "Copilot needs information.");
+        assert_eq!(herring.label, "Copilot's selection dialog");
         assert_eq!(herring.key, "ctrl+d");
         assert!(herring.clears.starts_with("ctrl+d declines"));
         let lynx = modal_dialog(
@@ -203,7 +204,10 @@ mod tests {
             "enter submit · esc cancel",
         );
         let found = modal_dialog(Harness::Copilot, &screen).expect("titled dialog");
-        assert_eq!(found.first_line, "Copilot needs information.");
+        assert_eq!(
+            found.label,
+            "Copilot's question dialog (Copilot needs information)"
+        );
     }
 
     #[test]
@@ -213,7 +217,7 @@ mod tests {
             &fixture("claude-2.1.284-permission-dialog.txt"),
         )
         .expect("Claude's permission dialog");
-        assert_eq!(found.first_line, "Bash command");
+        assert_eq!(found.label, "Claude's permission prompt");
         assert_eq!(found.key, "esc");
         assert!(found.clears.starts_with("esc cancels"));
     }
@@ -257,6 +261,36 @@ mod tests {
         assert!(modal_dialog(Harness::Copilot, &untitled).is_some());
         let typed = untitled.replace(" ↑/↓ select · enter accept", " ❯ ↑/↓ select · enter accept");
         assert_eq!(modal_dialog(Harness::Copilot, &typed), None);
+    }
+
+    /// Security S156001: a match is named by its fixed label, whatever the
+    /// dialog's own lines say, including a cropped dialog whose top row is
+    /// the seat's work.
+    #[test]
+    fn a_match_never_carries_text_from_the_pane() {
+        const CANARY: &str = "PIJ-CANARY-S156001";
+        let herring = fixture("copilot-follow-up-dialog-herring.txt")
+            .replace("Copilot needs information.", CANARY)
+            .replace("Choose an optional follow-up", CANARY);
+        let lynx = format!(
+            "{CANARY} secret table row\n{}",
+            fixture("copilot-follow-up-dialog-lynx.txt")
+        );
+        let claude =
+            fixture("claude-2.1.284-permission-dialog.txt").replace("Bash command", CANARY);
+        for (harness, screen) in [
+            (Harness::Copilot, herring),
+            (Harness::Copilot, lynx),
+            (Harness::Claude, claude),
+        ] {
+            let found = modal_dialog(harness, &screen).expect("still detected");
+            assert!(!format!("{found:?}").contains(CANARY), "{found:?}");
+            assert!(
+                MODAL_MARKERS
+                    .iter()
+                    .any(|marker| marker.label == found.label)
+            );
+        }
     }
 
     /// Markers are per harness: Claude's prompt on a Copilot seat is not

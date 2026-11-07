@@ -227,6 +227,17 @@ impl ControlClient {
 
     /// Answer a read over the control client, or `None` to make the caller fork.
     pub(crate) fn query(&self, args: &[OsString]) -> Option<Reply> {
+        self.ask(args, true)
+    }
+
+    /// Answer a read over a client that is ALREADY live, or `None`. It never
+    /// starts or replaces a client and the caller never forks (plan 219: the
+    /// modal-stall detector reads only what costs no process).
+    pub(crate) fn query_live(&self, args: &[OsString]) -> Option<Reply> {
+        self.ask(args, false)
+    }
+
+    fn ask(&self, args: &[OsString], may_start: bool) -> Option<Reply> {
         if !self.enabled || !is_read(args) {
             return None;
         }
@@ -245,7 +256,7 @@ impl ControlClient {
                 }
             }
             if state.live.is_none() {
-                if state.retry_after.is_some_and(|at| Instant::now() < at) {
+                if !may_start || state.retry_after.is_some_and(|at| Instant::now() < at) {
                     return None;
                 }
                 match self.start() {
