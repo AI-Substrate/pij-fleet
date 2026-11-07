@@ -428,6 +428,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-double-bobcat",
 					"why": "#135 round af50381"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T10:53:35.716Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "153",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "first verdict on #153 (plan 217)"
 				}
 			]
 		}
