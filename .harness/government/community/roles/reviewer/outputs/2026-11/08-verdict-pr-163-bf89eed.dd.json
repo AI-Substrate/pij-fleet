@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b75c-cb18-7481-8519-92df7b49d510",
+				"date": "2026-11-08",
+				"head": "bf89eeda333da430b0d0272f8a6e745e65885c26",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/163#issuecomment-6711924445",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:163",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #163: capability-bootstrap workshop verdict\n\n**WORKSHOP ONLY: BLOCK** at `bf89eeda333da430b0d0272f8a6e745e65885c26`.\n\nOption C is a reasonable recommendation and covers the principal AC2 lifecycle/client questions, but its macOS cost comparison and ancestry-cache contract need correction before phase 2 is planned. This does not grade the route-inventory sensor or approve PR/implementation readiness.\n\n## Scope and basis\n\nReviewed the pinned workshop, plan 221 AC2/AC3 and relevant current code. The workshop checkout is clean and remains bf89eed. The PR has since advanced to fb54fb1 and is ready rather than draft; that newer subject is outside this verdict.\n\nNo local builds/tests, live process/credential probes, credential-file reads or secret creation. This is design/source evidence, not proof of an implemented security control.\n\n## F001, P2: macOS ancestry does not inherently require ps\n\nWorkshop lines 47,60,69 reject B and price C on C27's one ps launch per ancestor. The code already has an in-process parent/name reader using ProcBSDShortInfo (`crates/harnesses/src/proc.rs:339-355`) and an in-process live start reader using proc_pidinfo (`:158-168`). The ps liveness path is a fallback for unanswered cases, not the ordinary live-process implementation.\n\nConsequently B's per-tick-per-seat process launch is not an inherent consequence of Unix credentials. Correct the comparison and specify which reader the shim uses, including fail-closed or explicitly bounded fallback behavior. C can still be preferred because req-10 explicitly separates bootstrap evidence from the private per-request capability; that rationale does not need a false launch premise.\n\nOcelot received these source locations for the independent cost model.\n\n## F002, P2: live-root caching is not current caller-membership proof\n\nLine 57 caches ancestry per live ancestor/pid-start for its lifetime and calls repeated tool-shell calls free. A fresh pij-rs/shim process has a new peer PID; finding that it belongs to a cached ancestor still requires establishing its current ancestry prefix. Keeping the ancestor alive alone also does not establish that an earlier caller remains its descendant after intermediate-parent death/reparenting.\n\nSpecify the cache key, the peer-to-ancestor checks that remain on a hit, and invalidation for PID reuse, changed ancestry, ancestor death, supersede and incarnation rotation. A cached root identity must not authorize a sibling or a caller that is no longer in its tree. Adjust the cost statement accordingly: cached metadata is not a free fresh-caller proof.\n\nThis is an incomplete design invariant, not a locally reproduced attack or a requirement to introduce a new periodic watcher.\n\n## Verified AC2 coverage and code facts\n\nThe workshop compares A/B/C and addresses spawn, revive, adoption, hand-start, long-/short-lived clients, subprocess authority, re-registration, death/rotation, restart persistence, residual and rollout.\n\nThe important facts hold:\n\n- The daemon HTTP API is TCP-only; both local/optional remote listeners serve the same router (`daemon/src/lib.rs:764-835,1138-1154`; `serve.rs:22-32`).\n- Spawn uses PIJ_SESSION_ID/PIJ_SPAWN_ID command arguments and tmux new_window (`harnesses/src/spawn.rs:141-150`; `http/mod.rs:1534-1537`). Successful revive shares that launch path (`http/revive.rs:411-439`). An ordinary inherited daemon fd is not delivered through this existing tmux-server launch mechanism.\n- The boot key is 32 random bytes staged 0600 and compared in constant time (`daemon/src/auth.rs:117-127,187-193`; `http/auth.rs:129-145`).\n- Background jobs model digest-only token storage, while ReportedContext retains/reissues plaintext for a matching public incarnation (`background.rs:374-395`; `reported_context.rs:84-126`). The workshop correctly says the capability must not repeat that reissue.\n\nThe public Tokio UCred documentation/source supports kernel peer PID on Linux/macOS. Phase 2 must pin the dependency/API and treat unavailable credentials as failure, not substitute body identifiers.\n\n## Gate order and phase-2 conditions\n\nSend-as first is a sensible effect priority, but strong bootstrap/issuance is a prerequisite, not something to defer until registration/adoption class 6. Clarify phase 2a's \"nothing refused\": legacy requests may remain compatible, but they must not receive/reissue/rotate a privileged token from public facts. Token/nonce issuance, nonce consumption/incarnation binding, revocation and all-listener guard plumbing must already uphold C before the first effect gate.\n\nSeparate the authenticated caller from the operation's target. The caller's asserted identity must match its token; legitimate parent/PA/prime operations on another seat need existing authorization checks, not that target's private token.\n\nZero \"neither\" requests across a day is insufficient if a class was not exercised. Require positive representative client/route execution and negative missing-capability evidence; account explicitly for nonce-authenticated first registration in rollout metrics.\n\nThe named host-multiplexing, hook-lineage and context-grant-folding questions remain honest phase-2 prerequisites. Do not treat the current context grant as the new capability until its public-fact reissue path is closed.\n\n## Prime questions and residual\n\nPRD 003 q-02 (inbound policy) and q-03 (which prime is reachable) are not needed to select the authentication bootstrap. Keep them out of this choice. The residual's sidecar/system/job-token/public-route list must not silently decide q-04's operator/Telegram/system-message permission exemptions. If it intends such an exemption, flag q-04 to the prime; otherwise state that this is authentication classification only.\n\nSame-user private-state theft is a reasonable stated limit. \"Visible in its own right\" is not a detector guarantee: the proposal does not instrument memory/environment reads, and a duplicate nonce claim proves neither theft nor innocence by itself.\n\nRevise the two blocking points and clarify these phase-2 preconditions, then return a newly pinned workshop. No code or canonical plan states were changed by this reviewer.\n"
+		}
+	]
+}
