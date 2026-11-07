@@ -36,7 +36,7 @@
 - It recommends option C with one owned session per incarnation. That rule is RULED by the prime (08 Nov). Send-as is gated first by the prime's requirement.
 - The issuer is secured first, then operations are gated in order: send-as, inbox-claim, controls, role-and-holder, outputs, registration and adoption changes, activity, attribution.
 - PRD 003's q-02 to q-04 are open, prime-owned dependencies; nothing in the design depends on their answers.
-- **Verdicts.** The f5c25d4 blocks were answered in revision 2. At the final head 95bbd70, all three verdicts pass:
+- **Verdicts.** The f5c25d4 blocks were answered in revision 2. At the final head 95bbd70, all three verdicts are pass-with-notes:
   - reviewer, spoonbill: governance 889d432;
   - security, squirrel: governance 7e537dc;
   - performance, ocelot: governance 6ac90d5.
@@ -63,5 +63,5 @@ Phase 1 adds no daemon runtime cost. The only daemon source change is a `#[cfg(t
 - `docs/difficulties.md` records F88 as D-221-1, open until phase 2's gates ship.
 - The plan's implementation summary states phases 2 and later as follow-up waves.
 - No new verbs or refusals.
-- **Verdicts and merge:** #163 merged at ed9a3d7c, with reviewer, security and performance verdicts at its final head 95bbd70 (spoonbill 889d432, squirrel 7e537dc, ocelot 6ac90d5). CI was green there, and the PR body carried `Delivers: none`.
+- **Verdicts and merge:** #163 merged at ed9a3d7c, with pass-with-notes verdicts from reviewer, security and performance at its final head 95bbd70 (spoonbill 889d432, squirrel 7e537dc, ocelot 6ac90d5). CI was green there, and the PR body carried `Delivers: none`.
 - **Plan closed:** this states PR checks AC2 and AC4 and sets the plan `shipped`. Plan 221 plans phase 1 only. Phase 2 (the issuer, then send-as) is a new plan, written from the workshop. Workstream 003 s01 (req-10) stays `in-progress` until phase 2 ships.
