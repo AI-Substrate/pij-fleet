@@ -9,7 +9,7 @@ How to write the docs under `docs/project/`. One procedure per type, plus one fo
 | order the work into steps and plans | [workstream.md](workstream.md) |
 | change the docs after a ruling | [fold-a-ruling.md](fold-a-ruling.md) |
 
-Worked examples: a small linked set in [examples/](examples/) (`prds/`, `blueprints/`, `roadmaps/` `001-daily-digest`; the roadmap is a workstream without nesting or lanes). The full-size set is pij's own, for Pij Emergent Communities (PEC): `docs/project/prds/001-pij-community.dd.json`, `docs/project/blueprints/001-pij-community.dd.json`, `docs/project/roadmaps/001-pij-community.dd.json` (workstream 001).
+Worked examples: a small linked set in [examples/](examples/) (`prds/`, `blueprints/`, `workstreams/` `001-daily-digest`; the workstream has no nesting or lanes). The full-size set is pij's own, for Pij Emergent Communities (PEC): `docs/project/prds/001-pij-community.dd.json`, `docs/project/blueprints/001-pij-community.dd.json`, `docs/project/roadmaps/001-pij-community.dd.json` (workstream 001).
 
 ## Who writes
 
@@ -17,7 +17,7 @@ The PM that owns the work writes its docs, and the prime helps when asked. The p
 
 ## Rules for every type
 
-1. **Where.** `docs/project/{prds,blueprints,roadmaps}/NNN-<slug>.dd.json`; workstreams are filed under `roadmaps/` until plan 210 renames the folder. The slug is a few kebab-case words naming the feature (`seat-bookmarks`); use the same slug for a project's PRD, blueprint and workstream so they pair by name. Workshops go in `docs/project/workshops/NNN-<slug>/NNN-<topic>.md`.
+1. **Where.** `docs/project/{prds,blueprints,workstreams}/NNN-<slug>.dd.json`. The slug is a few kebab-case words naming the feature (`seat-bookmarks`); use the same slug for a project's PRD, blueprint and workstream so they pair by name. Workshops go in `docs/project/workshops/NNN-<slug>/NNN-<topic>.md`.
 2. **The number.** Claim it: `pij claim prd --for <slug>` (or `workstream`, `blueprint`, `workshop`; `roadmap` is workstream's old name and claims the same numbers; `plan` and `migration` work the same way). It hands out the next NNN for your project with your seat on record, so parallel PMs never collide. Never guess a number from the folder listing; another seat may hold it. `pij claims` lists who holds what; `pij claim release <kind> <number>` gives one back (a released number is never reused).
 3. **Run ddocs from the repo root.** From a subdirectory it can't find the `pij/*` schemas and every file fails with `E401 schema ... was not found`.
 4. **Create** a file by writing its `.dd.json`. Start from the matching example and replace every value. `owner` and changelog `by` are the role you hold (`pm-001`), or your seat id if you hold none yet. Dates are local `date +%F`. The schema is `pij/prd`, `pij/blueprint` or `pij/workstream` (existing roadmap docs keep `pij/roadmap`, now superseded, until plan 210 moves them). `ddocs schema show pij/prd` lists its sections and enums but not the fields of each row; those are in the procedure for each type and in the examples.

@@ -1,6 +1,6 @@
 # Write a workstream
 
-A workstream puts PRD rows and blueprint pieces in an order humans and agents can follow (ruling C29). Each step delivers requirement rows, builds components, names the roles it needs and points at the builder plan that does it. Read [README.md](README.md) first. Example: [examples/roadmaps/001-daily-digest.dd.json](examples/roadmaps/001-daily-digest.dd.json) (written as a roadmap: the same steps, without `part_of` or `lanes`).
+A workstream puts PRD rows and blueprint pieces in an order humans and agents can follow (ruling C29). Each step delivers requirement rows, builds components, names the roles it needs and points at the builder plan that does it. Read [README.md](README.md) first. Example: [examples/workstreams/001-daily-digest.dd.json](examples/workstreams/001-daily-digest.dd.json) (written as a roadmap: the same steps, without `part_of` or `lanes`).
 
 ## Two words that never overlap
 
@@ -9,11 +9,11 @@ A workstream puts PRD rows and blueprint pieces in an order humans and agents ca
 - In a PEC project the workstream docs govern ordering. A prime-flow item that runs workstream work names its step and does not reorder it.
 - A step id is `sNN` (`s10`), scoped to its file: write "workstream 001 s10" or the address. A stream's branch is `sNNN/<slug>` and its window `s<ordinal>-<slug>`. Don't use a bare `sNN` where a stream could be meant.
 
-Until plan 210 renames the folder, workstream files live in `docs/project/roadmaps/`, and the existing ones still use `pij/roadmap`. A `pij/workstream` doc can't link into a `pij/roadmap` one (ddocs E406), so nest only between `pij/workstream` docs.
+Workstream files live in `docs/project/workstreams/` (plan 210 moved them from `roadmaps/`). A `pij/workstream` doc can't link into a `pij/roadmap` one (ddocs E406), so nest only between `pij/workstream` docs.
 
 ## Steps
 
-1. Claim the number (`pij claim workstream --for '<slug>'`; `roadmap` is its old name and claims the same numbers) and create `docs/project/roadmaps/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/workstream"}`.
+1. Claim the number (`pij claim workstream --for '<slug>'`; `roadmap` is its old name and claims the same numbers) and create `docs/project/workstreams/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/workstream"}`.
 2. Fill the sections. Required ones are marked *.
    - **meta*** `title` ("Workstream NNN: <name>"), `status`, `updated`, `owner`.
    - **goal*** one sentence.

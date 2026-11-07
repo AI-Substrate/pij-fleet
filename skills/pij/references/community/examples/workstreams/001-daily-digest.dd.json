@@ -1,0 +1,74 @@
+{
+  "dd": {
+    "schema": "pij/workstream"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Workstream 001: daily digest",
+        "status": "draft",
+        "updated": "2026-11-04",
+        "owner": "pm-001"
+      }
+    },
+    {
+      "name": "goal",
+      "value": "Ship the daily digest."
+    },
+    {
+      "name": "steps",
+      "value": [
+        {
+          "id": "s01",
+          "title": "Digest job",
+          "state": "planned",
+          "delivers": [
+            "../prds/001-daily-digest.dd.json#requirements/req-01",
+            "../prds/001-daily-digest.dd.json#requirements/req-03"
+          ],
+          "builds": [
+            "../blueprints/001-daily-digest.dd.json#components/c-digest-job"
+          ],
+          "depends_on": [],
+          "needs": [
+            "role:coder",
+            "role:reviewer",
+            "role:performance"
+          ],
+          "done_when": "A day's digest is written and the idle day launches nothing.",
+          "plan": "docs/plans/NNN-digest-job"
+        },
+        {
+          "id": "s02",
+          "title": "The pij digest verb, decisions first",
+          "state": "planned",
+          "delivers": [
+            "../prds/001-daily-digest.dd.json#requirements/req-02"
+          ],
+          "builds": [
+            "../blueprints/001-daily-digest.dd.json#components/c-digest-verb"
+          ],
+          "depends_on": [
+            "#steps/s01"
+          ],
+          "needs": [
+            "role:coder",
+            "role:reviewer"
+          ],
+          "done_when": "`pij digest` prints the latest digest with open questions first."
+        }
+      ]
+    },
+    {
+      "name": "changelog",
+      "value": [
+        {
+          "date": "2026-11-04",
+          "by": "pm-001",
+          "change": "First draft."
+        }
+      ]
+    }
+  ]
+}

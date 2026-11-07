@@ -30,7 +30,7 @@ cp "$REPO/docs/how/pij-rs-api.md" "$S/ref/docs/how/"
 # The scratch project: the daily-digest example's PRD, blueprint and workstream.
 M="$S/digest" G="$S/digest-gov"
 mkdir -p "$M/docs/project"
-for kind in prds blueprints roadmaps; do
+for kind in prds blueprints workstreams; do
   mkdir -p "$M/docs/project/$kind"
   cp "$REPO/skills/pij/references/community/examples/$kind/"001-daily-digest.dd.* "$M/docs/project/$kind/"
 done

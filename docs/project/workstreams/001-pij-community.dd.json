@@ -1,14 +1,14 @@
 {
 	"dd": {
-		"schema": "pij/roadmap"
+		"schema": "pij/workstream"
 	},
 	"sections": [
 		{
 			"name": "meta",
 			"value": {
-				"title": "Roadmap 001: Pij Emergent Communities (PEC)",
+				"title": "Workstream 001: Pij Emergent Communities (PEC)",
 				"status": "draft",
-				"updated": "2026-11-06",
+				"updated": "2026-11-08",
 				"owner": "pij-far-jackal"
 			}
 		},
@@ -316,6 +316,11 @@
 					"date": "2026-11-07",
 					"by": "pij-following-marsupial",
 					"change": "Plan 204: s10 complete (the /pij community route, ten optional templates, templates --show; a fresh-prime canary stood up a community from the route). s10 also delivers req-27 and req-29, the route half of C26 and C28."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 phase 2 (ruling C29): moved from docs/project/roadmaps/ to docs/project/workstreams/ and switched to the pij/workstream schema in the same commit."
 				}
 			]
 		}
