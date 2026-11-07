@@ -32,8 +32,8 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use pij_core::error::{PijError, Result};
-use pij_core::model::{ProcIdentity, SeatId};
-use pij_core::ports::SessionStatusPort;
+use pij_core::model::{ProcIdentity, SeatId, SystemState};
+use pij_core::ports::{Registry, SessionStatusPort};
 use pij_core::session_status::{Fact, SessionStatusReply, SessionTarget};
 
 /// One seat's latest report.
@@ -58,11 +58,26 @@ struct State {
     generations: HashMap<SeatId, u64>,
 }
 
+/// One authorized size report, as `/v1/activity` carries it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContextReport {
+    /// The session it was reported from.
+    pub session: Option<String>,
+    /// The session's context size, in tokens.
+    pub tokens: u64,
+    /// The model's context window, when the runtime knows it.
+    pub window: Option<u64>,
+}
+
 /// The latest context size each seat reported, who may report it, and how
 /// often each seat's activity changed.
 #[derive(Debug, Default)]
 pub struct ReportedContext {
     state: Mutex<State>,
+    /// One critical section for a native registration (which may replace a
+    /// seat's process and rotate its grant) and for applying a size report
+    /// (review S153-002). Both are rare, short and per turn boundary at most.
+    gate: tokio::sync::Mutex<()>,
 }
 
 impl ReportedContext {
@@ -109,6 +124,41 @@ impl ReportedContext {
         self.lock().grants.get(seat).is_some_and(|grant| {
             grant.proc == proc && crate::http::auth::constant_time_eq(&grant.token, presented)
         })
+    }
+
+    /// Hold the critical section a native registration runs in, so no size
+    /// report applies while it replaces a process or rotates a grant.
+    pub async fn exclusive(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.gate.lock().await
+    }
+
+    /// Apply an authorized report: `seat`'s activity and size, only if, at
+    /// this moment and inside the critical section, the seat is live, still
+    /// the incarnation `proc` the request was checked against, and `token` is
+    /// still that incarnation's grant. `None` means the request's incarnation
+    /// was replaced (or its grant rotated) since it was checked: nothing is
+    /// changed. `Some(changed)` is whether the stored state changed.
+    ///
+    /// # Errors
+    /// Registry failures.
+    pub async fn apply(
+        &self,
+        registry: &dyn Registry,
+        seat: &SeatId,
+        proc: Option<ProcIdentity>,
+        token: &str,
+        observed: SystemState,
+        report: ContextReport,
+    ) -> Result<Option<bool>> {
+        let _gate = self.gate.lock().await;
+        let current = registry.get(seat).await?;
+        let same = current.is_some_and(|row| row.tombstoned_at.is_none() && row.proc == proc);
+        if !same || !self.authorized(seat, proc, token) {
+            return Ok(None);
+        }
+        let changed = registry.set_activity(seat, observed, None).await?.is_some();
+        self.record(seat, report.session, report.tokens, report.window);
+        Ok(Some(changed))
     }
 
     /// Record `seat`'s latest size, for the session it reported from. The
@@ -238,6 +288,50 @@ mod tests {
             Fact::Unknown,
             "another session's report never applies"
         );
+    }
+
+    /// Review S153-002: a report applies only between registrations, never
+    /// inside one that may be replacing the process or rotating the grant.
+    #[tokio::test]
+    async fn a_report_waits_for_a_registration_in_progress() {
+        let proc = Some(ProcIdentity {
+            pid: 10,
+            proc_start: 1,
+        });
+        let mut seat = pij_core::model::SeatDescriptor::new("pij-c", Harness::Copilot, "/abs");
+        seat.proc = proc;
+        let registry: Arc<dyn Registry> =
+            Arc::new(pij_testkit::fakes::FakeRegistry::new().with_seat(seat.clone()));
+        let reports = Arc::new(ReportedContext::default());
+        let (token, _) = reports.grant(&seat.id, proc).unwrap();
+        let registration = reports.exclusive().await;
+        let report = tokio::spawn({
+            let (reports, registry, id) = (Arc::clone(&reports), Arc::clone(&registry), seat.id);
+            async move {
+                reports
+                    .apply(
+                        registry.as_ref(),
+                        &id,
+                        proc,
+                        &token,
+                        SystemState::Working,
+                        ContextReport {
+                            session: None,
+                            tokens: 5,
+                            window: None,
+                        },
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            !report.is_finished(),
+            "the report waits for the registration"
+        );
+        drop(registration);
+        assert!(report.await.unwrap().is_some());
     }
 
     /// Review S153-001: a grant is per incarnation; only its own token passes.

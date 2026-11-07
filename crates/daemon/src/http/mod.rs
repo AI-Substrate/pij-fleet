@@ -951,9 +951,10 @@ struct RegistrationResponse {
 /// The spine kind of a re-issued context grant (plan 217, F88).
 pub const GRANT_REISSUED_KIND: &str = "context.grant.reissued";
 
-/// Record that a registration was handed a seat's standing context grant,
-/// with everything the caller claimed and the connection it came from. A
-/// failed write is logged; it never fails the registration.
+/// Record that a registration is about to be handed a seat's standing
+/// context grant, with everything the caller claimed and the connection it
+/// came from. `true` only once the event is durable on the spine; on `false`
+/// the caller withholds the grant (the registration itself stands).
 #[allow(clippy::too_many_arguments)]
 async fn audit_grant_reissue(
     state: &AppState,
@@ -964,15 +965,15 @@ async fn audit_grant_reissue(
     binding: RegistrationBinding,
     proc_source: Option<ProcSource>,
     origin: Option<std::net::SocketAddr>,
-) {
+) -> bool {
     let at = match system_time_ms() {
         Ok(at) => at,
         Err(error) => {
             eprintln!(
-                "pij register: {GRANT_REISSUED_KIND} for {}: {error}",
+                "pij register: {GRANT_REISSUED_KIND} for {}: {error}; grant withheld",
                 seat.id
             );
-            return;
+            return false;
         }
     };
     let payload = serde_json::json!({
@@ -997,11 +998,15 @@ async fn audit_grant_reissue(
         seat: Some(seat.id.clone()),
         payload: payload.to_string(),
     };
-    if let Err(error) = state.services.event_bus.publish(event).await {
-        eprintln!(
-            "pij register: {GRANT_REISSUED_KIND} for {}: {error}",
-            seat.id
-        );
+    match state.services.event_bus.publish(event).await {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!(
+                "pij register: {GRANT_REISSUED_KIND} for {}: {error}; grant withheld",
+                seat.id
+            );
+            false
+        }
     }
 }
 
@@ -1093,6 +1098,14 @@ async fn register(
     let claimed = request.claim.clone();
     let claimed_session = request.harness_session.clone();
     let attempt = request.attempt.clone();
+    // Review S153-002: a native registration may replace the seat's process
+    // and rotate its grant; no size report applies in between.
+    let reports = Arc::clone(&state.services.reported_context);
+    let _gate = if native {
+        Some(reports.exclusive().await)
+    } else {
+        None
+    };
     let registered = state
         .registration
         .register_via(
@@ -1138,8 +1151,10 @@ async fn register(
             // Registration does not prove the caller is this seat's host (F88,
             // PRD 003): a standing grant handed out again is audited with the
             // caller's evidence, and never the token, so a theft is visible.
-            if let Some((_, true)) = &grant {
-                audit_grant_reissue(
+            // An audit that did not persist withholds the reissued grant: the
+            // registration stands, and the seat gets one on a later attempt.
+            let context_token = match grant {
+                Some((token, true)) => audit_grant_reissue(
                     &state,
                     &descriptor,
                     &claimed,
@@ -1149,9 +1164,11 @@ async fn register(
                     proc_source,
                     connection.map(|Extension(axum::extract::ConnectInfo(peer))| peer),
                 )
-                .await;
-            }
-            let context_token = grant.map(|(token, _)| token);
+                .await
+                .then_some(token),
+                Some((token, false)) => Some(token),
+                None => None,
+            };
             let mut answer = Envelope::ok(
                 "pij register",
                 RegistrationResponse {
