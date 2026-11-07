@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"kind": "note",
+				"role": "performance",
+				"subject": "issue:145",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Second registration reading after swift-kestrel, exuberant-wildcat and yielding-bison reload; representative shim traffic before deciding tk-0005."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Issue #145 / plan 211 AC2: first live registration reading\n\n**Result: zero registration attempts and zero registration ps in 60.001513 seconds.** No path or seat paid residual registration ps during this window. This is the first partially reloaded-fleet reading, not the requested later all-reloaded confirmation.\n\nDaemon **PID 28490**, start **2026-11-07 20:13:14 +10:00**, source build **c3895da518aad2047749b87dc9c6663592e357e2** per deployment record; main independently matched it. Both pings reported healthy and `pij-rs 0.1.0` (not an embedded Git SHA), with the same process identity.\n\nWindow: **2026-11-07 20:16:32.447607 to 20:17:32.449266 +10:00**, elapsed measured monotonically.\n\n### Paths: delta versus retained startup/reload history\n\n| Path/mode/outcome | Cumulative attempts / ps, both endpoints | Window attempts / ps |\n|---|---:|---:|\n| `explicit.pane.unchanged` | 6 / 6 | **0 / 0** |\n| `unspecified.pane.unchanged` | 7 / 7 | **0 / 0** |\n| `adopt.pane.unchanged` | 1 / 0 | **0 / 0** |\n| **Total** | **14 / 13** | **0 / 0** |\n\nNo receive, heartbeat, lease-retry or shim key was present at either endpoint. The baseline's positive explicit/unspecified counters verify that the instrument/key selection can report attempts and paid reads; this is not an empty or unsupported counter response. Both by-key and by-seat count/ps sums reconcile with the totals at each endpoint.\n\nIndependent native-launch accounting also stayed **13 to 13** at `data.spawns.by_op[\"ps.registration-native-process\"]`. The entire daemon spawn tally stayed **206 to 206**, with every site flat, including `ps.uds-peer-start`.\n\n### Seats and reload split\n\n| Cohort / seat | Cumulative attempts / ps | Window attempts / ps |\n|---|---:|---:|\n| Reloaded: `pij-steady-otter`, `pij-back-tapir`, `pij-bumpy-herring`, `pij-watchful-badger`, `pij-double-bobcat`, `pij-thorough-ocelot` | Each **2 / 2**, combined **12 / 12** | Each **0 / 0** |\n| Not yet reloaded: `pij-swift-kestrel`, `pij-exuberant-wildcat`, `pij-yielding-bison` | No named entry at either endpoint | No registration activity anywhere in the window |\n| `pij-stormy-lion` | **1 / 1** | **0 / 0** |\n| `pij-silky-crane` | **1 / 0** | **0 / 0** |\n\nThere were eight retained seat keys, below the 64-key bound, and no `(other)`/`(unnamed)` bucket. The three mid-turn seats' absence means no observed registration attempt by them, not proof that their old receiver code is healthy or fully exercised.\n\n**Do not assign the seven cumulative `unspecified` attempts to those three unreloaded seats.** Counters reset on daemon restart, not extension reload. They retain earlier activity, and the API has separate path and seat marginals, not a seat-by-path cross-tabulation. The reloaded cohort already accounts for 12 of the 13 cumulative ps reads; the remaining named paid read is stormy-lion's. There is no residual rate to rank in this quiet window.\n\n### Machine rate and comparison\n\nConcurrent `nice -n 19 just spawn-rate --seconds 20 --json` independently identified PID 28490 and reported **409.3 machine-wide launches/s** over 20.0 s. Attribution lower bounds: **245.2/s gone before inspection**, **161.4/s other**; no daemon-child category was observed. Visible command lower bounds included bash **38.4/s**, node **37.9/s**, git-ai **29.5/s**, and `directory_http-` **29.0/s**, consistent with substantial separate test/tool traffic, not this daemon's flat counters. Missing short-lived parent attribution prevents assigning the whole total to those commands.\n\nLoad averages went from **21.59 / 27.42 / 28.03** to **19.40 / 25.81 / 27.39**. The probe itself performs niced in-process busy polling (233,791 polls); CPU/load is not unperturbed. This was a quiet daemon window on an active machine, not a controlled whole-machine idle baseline.\n\nAgainst issue #145's historical approximately **0.64 registration ps/s at rest**, this observed window is **0.00/s**. That is a measured difference, not proof that every original trigger or every old extension has been fixed.\n\n### Deferred-task decision\n\n**tk-0004: do not prioritize a healthy no-op skip from this reading.** No repeat registrations occurred. The earlier 13 paid reads are startup/reload-era history, and `unchanged` names an unchanged process binding, not proof that all claim metadata and incarnation evidence were identical. They are not automatically avoidable no-ops. Do not introduce a blanket positive PID cache to save an unobserved steady-state cost.\n\n**tk-0005: no measured case for shim registration removal yet.** No shim calls were exercised or counted, so zero here does not certify the shim is free when used. Keep it deferred pending representative shim traffic and the second reading after the last three reload.\n\nRaw snapshots/deltas and the machine report are retained as session evidence (`issue145-window.json`, `issue145-machine.json`). No builds, tests, injected registration traffic, source edits or daemon restart were performed. AC2 has this first receipt; the all-reloaded reading and broader task decisions remain open.\n"
+		}
+	]
+}
