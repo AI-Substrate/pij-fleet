@@ -60,4 +60,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 156 | 2026-11-07T14:29:11.460Z | — | pij-steady-otter | — | first verdict on #156 (plan 219) | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 157 | 2026-11-07T14:44:47.791Z | — | pij-steady-otter | — | first verdict on #157 (plan 220) | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 158 | 2026-11-07T15:50:03.415Z | 2026-11-07T16:02:08.967Z | pij-steady-otter | pij-steady-otter | docs PR #158 (delivered_by), bobcat is the reviewer seat | #158 verdicts done (pass) |
-| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 159 | 2026-11-07T16:16:41.298Z | — | pij-steady-otter | — | plan 210 phase 1 (#159) | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 159 | 2026-11-07T16:16:41.298Z | 2026-11-07T16:24:36.218Z | pij-steady-otter | pij-steady-otter | plan 210 phase 1 (#159) | #159 merged 59120b3 |

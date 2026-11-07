@@ -544,7 +544,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "159",
 					"machine": "ops.osk.lan",
+					"release_why": "#159 merged 59120b3",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-07T16:24:36.218Z",
 					"why": "plan 210 phase 1 (#159)"
 				}
 			]
