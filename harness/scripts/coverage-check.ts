@@ -6,11 +6,11 @@
  * - a blueprint component is built by no step (unless `dropped`);
  * - an umbrella step is `complete` while a step that is `part_of` it is not
  *   complete or abandoned (req-30; ddocs can't express this one).
- * Known gaps are listed in `coverage-exemptions.json`, each with an owner. The
- * file may only shrink: every row must be one of `APPROVED_EXEMPTIONS` below,
- * so adding or swapping an address needs a reviewed change to this file. An
- * exemption or a baseline address for a row that is now covered fails, as
- * does an exemption that names no row, so a closed gap can't be reopened.
+ * Known gaps are listed in `coverage-exemptions.json`, each with an owner, and
+ * frozen in `APPROVED_EXEMPTIONS` below. The two must list the same addresses,
+ * and each must be an existing row that is still uncovered. So adding or
+ * swapping an address needs a reviewed change to this file, and a closed gap
+ * (covered, or its row deleted) must leave both, so it can't be reopened.
  * Inputs fail closed: a required folder, document, section or the exemptions
  * file that can't be read or has the wrong shape is a finding, never an empty
  * list. Only the old `roadmaps` folder may be absent. Reads files once; no
@@ -58,9 +58,9 @@ export const EXEMPTIONS = "harness/scripts/coverage-exemptions.json";
 
 /**
  * The approved gaps (pm-001, plan 210 AC6; owner docs-system, plan 210 AC4).
- * `coverage-exemptions.json` may list only these. When a gap is closed, delete
- * its row here and in the JSON (a covered address left here fails); never add
- * one to hide new work.
+ * `coverage-exemptions.json` lists exactly these. When a gap is closed (its row
+ * covered or deleted), delete its address here and its row in the JSON; never
+ * add one to hide new work.
  */
 export const APPROVED_EXEMPTIONS: readonly string[] = [
 	"docs/project/prds/001-pij-community.dd.json#requirements/req-26",
@@ -164,7 +164,7 @@ export function coverageFindings(
 	blueprints: readonly Doc[],
 	workstreams: readonly Doc[],
 	exemptionsFile: unknown,
-	approved: readonly string[] = APPROVED_EXEMPTIONS,
+	approved: readonly string[],
 ): string[] {
 	const findings: string[] = [];
 	const delivered = new Set<string>();
@@ -214,17 +214,24 @@ export function coverageFindings(
 	const known = new Set(obligations.map(({ address }) => address));
 	for (const entry of valid.exemptions) {
 		if (!known.has(entry.address))
-			findings.push(`${entry.address}: exempted, but no such row; remove the exemption`);
+			findings.push(
+				`${entry.address}: exempted, but no such row; remove the exemption here and in APPROVED_EXEMPTIONS`,
+			);
 		else if (!gaps.has(entry.address))
 			findings.push(
 				`${entry.address}: exempted, but now covered; remove the exemption here and in APPROVED_EXEMPTIONS (owner ${entry.owner})`,
 			);
 	}
-	for (const address of approved)
-		if (known.has(address) && !gaps.has(address) && !exempt.has(address))
+	for (const address of new Set(approved)) {
+		if (exempt.has(address)) continue;
+		const baseline = "the baseline (APPROVED_EXEMPTIONS in coverage-check.ts)";
+		if (!known.has(address)) findings.push(`${address}: row missing; remove it from ${baseline}`);
+		else if (!gaps.has(address)) findings.push(`${address}: covered; remove it from ${baseline}`);
+		else
 			findings.push(
-				`${address}: covered; remove it from the baseline (APPROVED_EXEMPTIONS in coverage-check.ts)`,
+				`${address}: in ${baseline} but has no valid row in ${EXEMPTIONS}; the two must list the same addresses`,
 			);
+	}
 	for (const [parent, kids] of children) {
 		const umbrella = steps.get(parent);
 		if (umbrella === undefined) {
@@ -278,6 +285,7 @@ export function readDocs(
 export function repoFindings(
 	root: string,
 	reader: Reader = NODE_READER,
+	approved: readonly string[] = APPROVED_EXEMPTIONS,
 ): { findings: string[]; exempted: number } {
 	const prds = readDocs(root, PRDS, reader);
 	const blueprints = readDocs(root, BLUEPRINTS, reader);
@@ -291,9 +299,15 @@ export function repoFindings(
 		findings.push(`${EXEMPTIONS}: cannot read or parse (${reason(error)})`);
 	}
 	findings.push(
-		...coverageFindings(prds.docs, blueprints.docs, [...workstreams.docs, ...legacy.docs], file),
+		...coverageFindings(
+			prds.docs,
+			blueprints.docs,
+			[...workstreams.docs, ...legacy.docs],
+			file,
+			approved,
+		),
 	);
-	return { findings, exempted: validExemptions(file, APPROVED_EXEMPTIONS).exemptions.length };
+	return { findings, exempted: validExemptions(file, approved).exemptions.length };
 }
 
 function main(): void {

@@ -50,6 +50,7 @@ describe("coverage-check (plan 210, req-31)", () => {
 				}),
 			],
 			NONE,
+			[],
 		);
 		expect(findings).toHaveLength(2);
 		expect(findings[0]).toMatch(
@@ -62,18 +63,25 @@ describe("coverage-check (plan 210, req-31)", () => {
 		const umbrella = (state: string) => steps(W1, { id: "s01", state });
 		const child = (state: string) =>
 			steps(W2, { id: "s01", state, part_of: "001-x.dd.json#steps/s01" });
-		expect(coverageFindings([], [], [umbrella("complete"), child("in-progress")], NONE)).toEqual([
-			`${W1}#steps/s01: complete while its child ${W2}#steps/s01 is in-progress`,
-		]);
-		expect(coverageFindings([], [], [umbrella("complete"), child("complete")], NONE)).toEqual([]);
-		expect(coverageFindings([], [], [umbrella("complete"), child("abandoned")], NONE)).toEqual([]);
-		expect(coverageFindings([], [], [umbrella("in-progress"), child("planned")], NONE)).toEqual([]);
+		expect(
+			coverageFindings([], [], [umbrella("complete"), child("in-progress")], NONE, []),
+		).toEqual([`${W1}#steps/s01: complete while its child ${W2}#steps/s01 is in-progress`]);
+		expect(coverageFindings([], [], [umbrella("complete"), child("complete")], NONE, [])).toEqual(
+			[],
+		);
+		expect(coverageFindings([], [], [umbrella("complete"), child("abandoned")], NONE, [])).toEqual(
+			[],
+		);
+		expect(coverageFindings([], [], [umbrella("in-progress"), child("planned")], NONE, [])).toEqual(
+			[],
+		);
 		expect(
 			coverageFindings(
 				[],
 				[],
 				[steps(W2, { id: "s01", state: "planned", part_of: "#steps/s09" })],
 				NONE,
+				[],
 			),
 		).toEqual([`${W2}#steps/s01: part_of ${W2}#steps/s09, which is no step`]);
 	});
@@ -122,6 +130,22 @@ describe("coverage-check (plan 210, req-31)", () => {
 			).toEqual([]);
 		});
 
+		it("a deleted row left in the baseline fails; removed from the PRD, JSON and baseline it passes", () => {
+			expect(check(["req-01", "req-02"], ["req-01"], [exempt("req-02")])).toEqual([
+				`${PRD}#requirements/req-03: row missing; remove it from the baseline (APPROVED_EXEMPTIONS in coverage-check.ts)`,
+			]);
+			expect(
+				check(["req-01", "req-02"], ["req-01"], [exempt("req-02")], [`${PRD}#requirements/req-02`]),
+			).toEqual([]);
+		});
+
+		it("a baseline and JSON that list different addresses fail", () => {
+			expect(check(["req-01", "req-02", "req-03"], ["req-01"], [exempt("req-02")])).toEqual([
+				`${PRD}#requirements/req-03: no workstream step delivers this requirement (deliver it, or set it dropped)`,
+				`${PRD}#requirements/req-03: in the baseline (APPROVED_EXEMPTIONS in coverage-check.ts) but has no valid row in ${EXEMPTIONS}; the two must list the same addresses`,
+			]);
+		});
+
 		it("a new real planned requirement with an exemption for it fails", () => {
 			expect(
 				check(
@@ -158,6 +182,7 @@ describe("coverage-check (plan 210, req-31)", () => {
 				expect(check(rows, ["req-01"], [exempt("req-02"), bad])).toEqual([
 					`${PRD}#requirements/req-03: exemption needs a non-empty address, owner and why`,
 					`${PRD}#requirements/req-03: no workstream step delivers this requirement (deliver it, or set it dropped)`,
+					`${PRD}#requirements/req-03: in the baseline (APPROVED_EXEMPTIONS in coverage-check.ts) but has no valid row in ${EXEMPTIONS}; the two must list the same addresses`,
 				]);
 		});
 
@@ -179,11 +204,13 @@ describe("coverage-check (plan 210, req-31)", () => {
 					[exempt("req-02"), exempt("req-03"), exempt("req-99")],
 					approved,
 				),
-			).toEqual([`${PRD}#requirements/req-99: exempted, but no such row; remove the exemption`]);
+			).toEqual([
+				`${PRD}#requirements/req-99: exempted, but no such row; remove the exemption here and in APPROVED_EXEMPTIONS`,
+			]);
 		});
 
 		it("a malformed exemptions file fails", () => {
-			expect(coverageFindings([], [], [], { entries: [] })).toEqual([
+			expect(coverageFindings([], [], [], { entries: [] }, [])).toEqual([
 				`${EXEMPTIONS}: rows is not an array`,
 			]);
 		});
@@ -191,13 +218,13 @@ describe("coverage-check (plan 210, req-31)", () => {
 
 	describe("inputs fail closed", () => {
 		it("a missing or non-array required section fails", () => {
-			expect(coverageFindings([doc(PRD, { requirements: "req-01" })], [], [], NONE)).toEqual([
+			expect(coverageFindings([doc(PRD, { requirements: "req-01" })], [], [], NONE, [])).toEqual([
 				`${PRD}: required section requirements is not an array`,
 			]);
-			expect(coverageFindings([], [doc(BLUEPRINT, {})], [], NONE)).toEqual([
+			expect(coverageFindings([], [doc(BLUEPRINT, {})], [], NONE, [])).toEqual([
 				`${BLUEPRINT}: required section components is missing`,
 			]);
-			expect(coverageFindings([], [], [{ path: W1, body: {} }], NONE)).toEqual([
+			expect(coverageFindings([], [], [{ path: W1, body: {} }], NONE, [])).toEqual([
 				`${W1}: has no sections array`,
 			]);
 		});
@@ -245,25 +272,25 @@ describe("coverage-check (plan 210, req-31)", () => {
 		});
 
 		it("a healthy repo with no legacy roadmaps folder passes", () => {
-			expect(repoFindings("/r", reader()).findings).toEqual([]);
+			expect(repoFindings("/r", reader(), []).findings).toEqual([]);
 		});
 
 		it("a required folder that can't be listed fails, even when absent; only the legacy alias may be absent", () => {
 			for (const code of ["EACCES", "EIO", "ENOENT"])
-				expect(repoFindings("/r", reader({ "docs/project/blueprints": code })).findings).toEqual([
-					`docs/project/blueprints: cannot read this folder (${code})`,
-				]);
-			expect(repoFindings("/r", reader({ "docs/project/roadmaps": "EACCES" })).findings).toEqual([
-				"docs/project/roadmaps: cannot read this folder (EACCES)",
-			]);
+				expect(
+					repoFindings("/r", reader({ "docs/project/blueprints": code }), []).findings,
+				).toEqual([`docs/project/blueprints: cannot read this folder (${code})`]);
+			expect(
+				repoFindings("/r", reader({ "docs/project/roadmaps": "EACCES" }), []).findings,
+			).toEqual(["docs/project/roadmaps: cannot read this folder (EACCES)"]);
 		});
 
 		it("a required folder with no documents, or a document that won't parse, fails", () => {
 			expect(
-				repoFindings("/r", reader({}, { ...healthy, "docs/project/blueprints": {} })).findings,
+				repoFindings("/r", reader({}, { ...healthy, "docs/project/blueprints": {} }), []).findings,
 			).toEqual(["docs/project/blueprints: required folder has no .dd.json documents"]);
 			const broken = { ...healthy, "docs/project/prds": { "001-x.dd.json": "{ not json" } };
-			expect(repoFindings("/r", reader({}, broken)).findings).toEqual([
+			expect(repoFindings("/r", reader({}, broken), []).findings).toEqual([
 				expect.stringMatching(/^docs\/project\/prds\/001-x\.dd\.json: cannot read or parse/),
 			]);
 		});
