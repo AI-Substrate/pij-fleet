@@ -123,7 +123,10 @@
 					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
 					"instance_key": "206",
 					"machine": "ops.osk.lan",
+					"release_why": "#135 merged bb753b8",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-exuberant-wildcat",
+					"to": "2026-11-07T12:33:43.135Z",
 					"why": "plan 206 reshape (s15)"
 				},
 				{
