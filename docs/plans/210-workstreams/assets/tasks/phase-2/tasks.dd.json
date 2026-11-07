@@ -1,0 +1,203 @@
+{
+	"dd": {
+		"schema": "builder/plan"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Phase 2: rename, code paths, coverage sensor (coder)",
+				"slug": "phase-2",
+				"status": "draft",
+				"summary": "Roadmaps move to workstreams (folder and schema), the coverage sensor joins harness checks, and the governance roles are re-pointed after the merge. Delivered by #160 and #161."
+			}
+		},
+		{
+			"name": "summary",
+			"value": ""
+		},
+		{
+			"name": "tasks",
+			"value": [
+				{
+					"id": "tk-0006",
+					"title": "The rename: roadmaps to workstreams",
+					"phase": "ph-00d3",
+					"state": "checked",
+					"success": "docs/project/roadmaps and the skill's examples/roadmaps move to workstreams/ with git mv and switch to pij/workstream in the same commit (ddocs E406), with changelog rows; every live reference follows; s16 is added and complete. Readers (claims, delivered, the directory needs fold) already scan both folders.",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0002"
+					],
+					"done": "tasks.dd.json#done_when/tk-0006",
+					"receipt": "../../evidence/phase-2.md#ac2-the-rename"
+				},
+				{
+					"id": "tk-0007",
+					"title": "The coverage sensor",
+					"phase": "ph-00d3",
+					"state": "checked",
+					"success": "harness/scripts/coverage-check.ts runs as just coverage-check, a coverage stage in harness checks and a step in just self-check. It names every undelivered requirement, unbuilt component and complete umbrella with an unfinished child; inputs fail closed; APPROVED_EXEMPTIONS and coverage-exemptions.json are the same set of existing, uncovered rows; repeated sections and row ids fail.",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0006"
+					],
+					"done": "tasks.dd.json#done_when/tk-0007",
+					"receipt": "../../evidence/phase-2.md#ac6-the-coverage-sensor"
+				},
+				{
+					"id": "tk-0008",
+					"title": "Governance re-point",
+					"phase": "ph-00d3",
+					"state": "checked",
+					"success": "After #160 merged, ac7-repoint.sh re-pointed the 8 live roles to docs/project/workstreams/ with pij directory edit, one writer commit each; the live wording followed (coder and pm-001 say workstream).",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0007"
+					],
+					"done": "tasks.dd.json#done_when/tk-0008",
+					"receipt": "../../evidence/phase-2.md#ac7-governance-re-point"
+				},
+				{
+					"id": "tk-0009",
+					"title": "Cost",
+					"phase": "ph-00d3",
+					"state": "checked",
+					"success": "The sensor reads three folders of JSON once per harness checks run. No loop, poll, timer, hook or launch site, and no daemon change.",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0008"
+					],
+					"done": "tasks.dd.json#done_when/tk-0009",
+					"receipt": "../../evidence/phase-2.md#ac6-the-coverage-sensor"
+				},
+				{
+					"id": "tk-0010",
+					"title": "Docs, states and verdicts",
+					"phase": "ph-00d3",
+					"state": "checked",
+					"success": "s16 complete; req-30 and req-31 shipped with delivered_by #160; the PR body carries a Delivers line; the plan's states and evidence are true.",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0009"
+					],
+					"done": "tasks.dd.json#done_when/tk-0010",
+					"receipt": "../../evidence/phase-2.md#verdicts-and-states"
+				}
+			]
+		},
+		{
+			"name": "done_when",
+			"value": {
+				"tk-0006": [
+					{
+						"id": "dw-0006",
+						"assertion": "ddocs-check and ddocs validate pass on docs/project; no live docs/project/roadmaps path remains outside history, shipped template bytes and the claim alias; claims_http, directory_http and community:: tests pass.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0002"
+					}
+				],
+				"tk-0007": [
+					{
+						"id": "dw-0007",
+						"assertion": "coverage-check passes on the head, and its vitest cases (missing coverage, the umbrella, every exemption rule, fail-closed reads, duplicates) pass in CI; each guard was mutation-checked.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0006"
+					}
+				],
+				"tk-0008": [
+					{
+						"id": "dw-0008",
+						"assertion": "No live field in the 8 roles' role.dd.json and no ROUTES.md row cites docs/project/roadmaps/ or says roadmap; the writer commits are listed in the evidence.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0007"
+					}
+				],
+				"tk-0009": [
+					{
+						"id": "dw-0009",
+						"assertion": "Performance's verdict on #160 at 4a0bc62 (ocelot ecbbf94) finds no new recurring daemon cost.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0008"
+					}
+				],
+				"tk-0010": [
+					{
+						"id": "dw-0010",
+						"assertion": "just ddocs-check passes; CI green and pr-freeze FINAL on #160's head; reviewer, security and performance verdicts pass-with-notes at 4a0bc62.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0009"
+					}
+				]
+			}
+		},
+		{
+			"name": "goals",
+			"value": []
+		},
+		{
+			"name": "non_goals",
+			"value": []
+		},
+		{
+			"name": "acceptance_criteria",
+			"value": []
+		},
+		{
+			"name": "phases",
+			"value": []
+		},
+		{
+			"name": "research_context",
+			"value": ""
+		},
+		{
+			"name": "testing_strategy",
+			"value": {}
+		},
+		{
+			"name": "documentation_strategy",
+			"value": {}
+		},
+		{
+			"name": "risks_assumptions",
+			"value": ""
+		},
+		{
+			"name": "open_questions",
+			"value": []
+		},
+		{
+			"name": "workshop_opportunities",
+			"value": []
+		},
+		{
+			"name": "clarifications",
+			"value": []
+		},
+		{
+			"name": "planning_seam",
+			"value": []
+		},
+		{
+			"name": "gate_matrix",
+			"value": []
+		},
+		{
+			"name": "implementation_summary",
+			"value": ""
+		},
+		{
+			"name": "key_findings",
+			"value": []
+		},
+		{
+			"name": "acceptance_coverage",
+			"value": []
+		},
+		{
+			"name": "risks",
+			"value": []
+		},
+		{
+			"name": "execution_guardrails",
+			"value": []
+		}
+	],
+	"references": []
+}
