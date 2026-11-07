@@ -221,7 +221,10 @@
 					"harness_session": "24bcbe7f-020f-4f4f-ac9d-48b0d12247ec",
 					"instance_key": "217",
 					"machine": "ops.osk.lan",
+					"release_why": "#153 merged 4e60e6a",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-yielding-bison",
+					"to": "2026-11-07T16:00:16.034Z",
 					"why": "plan 217 PA presence (prime, Jordan's go)"
 				},
 				{
