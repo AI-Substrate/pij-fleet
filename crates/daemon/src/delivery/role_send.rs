@@ -896,7 +896,13 @@ pub async fn drain(
         if request.requester == seat.as_str() {
             let at = crate::http::system_time_ms().map_err(|cause| cause.to_string())?;
             match store
-                .close_role_request(&request.id, seat.as_str(), REQUESTER_TOOK_ROLE, at)
+                .close_role_request(
+                    &request.id,
+                    RequestState::Queued,
+                    seat.as_str(),
+                    REQUESTER_TOOK_ROLE,
+                    at,
+                )
                 .await
             {
                 Ok(CloseOutcome::Closed(_)) => outcomes.push(settled(Ok(DrainedAs::Closed))),

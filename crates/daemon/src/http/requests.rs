@@ -1,15 +1,18 @@
-//! `pij requests` and `pij requests withdraw` (plan 212, F59).
+//! `pij requests`, `pij requests withdraw` and `pij requests close` (plan
+//! 212, F59, F83).
 //!
 //! The role queue had no read verb: neither a request's sender, its holder nor
 //! the PA could see whether a request was still queued, and a mistaken one
 //! could only be cleared by assigning a holder, who then got it. This lists a
 //! project's requests by state and lets the requester, the PA or the prime
-//! close a queued one. Store reads and one write; nothing is launched.
+//! close a queued one. `close` does the same for a delivered request that was
+//! answered or abandoned, which stops its time limit (F83). Store reads, one
+//! write and at most one FYI; nothing is launched.
 
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use pij_core::model::{Envelope, ErrorKind, SeatId};
+use pij_core::model::{Envelope, ErrorKind, Msg, SeatId};
 use pij_core::orchestration::PrimeState;
 use pij_store::{
     CloseOutcome, ClosedOrOpen, ClosedRoleRequest, REQUESTS_LIST_LIMIT, RequestState, RoleRequest,
@@ -26,10 +29,15 @@ use crate::community::Refusal;
 pub const E_REQUEST_NOT_QUEUED: &str = "E-RS-REQUEST-NOT-QUEUED";
 /// The request was closed before.
 pub const E_REQUEST_CLOSED: &str = "E-RS-REQUEST-CLOSED";
+/// Only a delivered request can be closed with `close`.
+pub const E_REQUEST_NOT_DELIVERED: &str = "E-RS-REQUEST-NOT-DELIVERED";
 
 const LIST_USAGE: &str =
     "pij requests [--role <id>] [--state queued|delivering|delivered|closed] [--project <slug>]";
 const WITHDRAW_USAGE: &str = "pij requests withdraw <id> --why <text>";
+const CLOSE_USAGE: &str = "pij requests close <id> [--why <text>] [--quiet]";
+/// The close's `why` when none is given.
+const CLOSE_WHY: &str = "answered or abandoned";
 
 /// `POST /v1/requests`: argv is `requests ...`.
 pub(crate) async fn handle(
@@ -37,11 +45,11 @@ pub(crate) async fn handle(
     Json(request): Json<GovernanceRequest>,
 ) -> Response {
     let args = request.argv.get(1..).unwrap_or_default();
-    let withdrawing = args.first().is_some_and(|leaf| leaf == "withdraw");
-    let command = if withdrawing {
-        "pij requests withdraw"
-    } else {
-        "pij requests"
+    let leaf = args.first().map(String::as_str);
+    let command = match leaf {
+        Some("withdraw") => "pij requests withdraw",
+        Some("close") => "pij requests close",
+        _ => "pij requests",
     };
     if pij_core::directory::wants_help(args) {
         return envelope(
@@ -60,10 +68,10 @@ pub(crate) async fn handle(
         Resolved::Seat(seat, _) => seat.id,
         Resolved::Refusal(response) => return response,
     };
-    let result = if withdrawing {
-        withdraw(&state, &actor, &args[1..]).await
-    } else {
-        list(&state, &request.caller, args).await
+    let result = match leaf {
+        Some("withdraw") => withdraw(&state, &actor, &args[1..]).await,
+        Some("close") => close(&state, &actor, &args[1..]).await,
+        _ => list(&state, &request.caller, args).await,
     };
     match result {
         Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
@@ -183,7 +191,7 @@ async fn withdraw(state: &AppState, actor: &SeatId, args: &[String]) -> Result<V
     }
     let at = system_time_ms().map_err(store_refusal)?;
     match store
-        .close_role_request(id, actor.as_str(), &why, at)
+        .close_role_request(id, RequestState::Queued, actor.as_str(), &why, at)
         .await
         .map_err(store_refusal)?
     {
@@ -192,9 +200,98 @@ async fn withdraw(state: &AppState, actor: &SeatId, args: &[String]) -> Result<V
             data["line"] = json!(format!("request {id} withdrawn by {actor}: {why}"));
             Ok(data)
         }
-        CloseOutcome::NotQueued(request) => Err(not_queued(&request)),
+        CloseOutcome::OtherState(request) => Err(not_queued(&request)),
         CloseOutcome::AlreadyClosed(closed) => Err(already_closed(&closed)),
         CloseOutcome::Unknown => Err(unknown(id)),
+    }
+}
+
+/// `pij requests close <id> [--why] [--quiet]` (F83): close a delivered
+/// request that was answered or abandoned, so its time limit stops. Withdraw's
+/// authority plus the request's holder. One store write; then, unless the
+/// requester closed it or `--quiet`, one FYI telling the requester.
+async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Value, Refusal> {
+    let quiet = args.iter().any(|arg| arg == "--quiet");
+    let args: Vec<String> = args
+        .iter()
+        .filter(|arg| *arg != "--quiet")
+        .cloned()
+        .collect();
+    let (positions, flags) = parse(&args, &["why"], CLOSE_USAGE)?;
+    let [id] = positions.as_slice() else {
+        return Err(Refusal::new("E-RS-ARG", format!("usage: {CLOSE_USAGE}")));
+    };
+    let why = flag(&flags, "why").unwrap_or_else(|| CLOSE_WHY.to_string());
+    let store = state.services.governance.store();
+    let request = match store.role_request(id).await.map_err(store_refusal)? {
+        Some(request) => request,
+        None => match store.closed_role_request(id).await.map_err(store_refusal)? {
+            Some(closed) => return Err(already_closed(&closed)),
+            None => return Err(unknown(id)),
+        },
+    };
+    let holder = request.holder.as_deref() == Some(actor.as_str());
+    if !holder && !may_withdraw(state, actor, &request).await? {
+        return Err(Refusal::new(
+            "E-RS-OWNERSHIP",
+            format!(
+                "request {id} was sent by {} to {}; only its requester, its holder, the PA of {} or the prime closes it",
+                request.requester,
+                request.holder.as_deref().unwrap_or("no holder yet"),
+                request.project
+            ),
+        ));
+    }
+    let at = system_time_ms().map_err(store_refusal)?;
+    let closed = match store
+        .close_role_request(id, RequestState::Delivered, actor.as_str(), &why, at)
+        .await
+        .map_err(store_refusal)?
+    {
+        CloseOutcome::Closed(closed) => closed,
+        CloseOutcome::OtherState(request) => return Err(not_delivered(&request)),
+        CloseOutcome::AlreadyClosed(closed) => return Err(already_closed(&closed)),
+        CloseOutcome::Unknown => return Err(unknown(id)),
+    };
+    let mut data = closed_entry(&closed);
+    data["line"] = json!(format!("request {id} closed by {actor}: {why}"));
+    data["told"] = if quiet || closed.request.requester == actor.as_str() {
+        Value::Null
+    } else {
+        tell_requester(state, actor, &closed, &why).await
+    };
+    Ok(data)
+}
+
+/// One FYI to the requester that its request was closed. Its msg id is the
+/// request's, so a repeat is one message.
+async fn tell_requester(
+    state: &AppState,
+    actor: &SeatId,
+    closed: &ClosedRoleRequest,
+    why: &str,
+) -> Value {
+    let request = &closed.request;
+    let address = if request.instance.is_empty() {
+        format!("role:{}", request.role)
+    } else {
+        format!("role:{}/{}", request.role, request.instance)
+    };
+    let msg = Msg {
+        from: actor.clone(),
+        from_machine: None,
+        to: SeatId::from(request.requester.as_str()),
+        body: format!(
+            "[pij request closed] your request {} to {address} in {} was closed by {actor}: {why}",
+            request.id, request.project
+        ),
+        msg_id: format!("request-closed-{}", request.id),
+        in_reply_to: Some(request.id.clone()),
+        command: None,
+    };
+    match state.services.delivery.hold_fyi(msg).await {
+        Ok(receipt) => json!({"seat": request.requester, "outcome": receipt.outcome}),
+        Err(error) => json!({"seat": request.requester, "outcome": format!("not told: {error}")}),
     }
 }
 
@@ -285,6 +382,29 @@ fn not_queued(request: &RoleRequest) -> Refusal {
             request.holder.as_deref().unwrap_or("its holder")
         ),
     )
+}
+
+fn not_delivered(request: &RoleRequest) -> Refusal {
+    let refusal = Refusal::new(
+        E_REQUEST_NOT_DELIVERED,
+        format!(
+            "request {} is {}; only a delivered request can be closed",
+            request.id,
+            request.state.as_str()
+        ),
+    );
+    if request.state == RequestState::Queued {
+        refusal.with_next(crate::community::picture::command(&[
+            "pij",
+            "requests",
+            "withdraw",
+            &request.id,
+            "--why",
+            "<why>",
+        ]))
+    } else {
+        refusal
+    }
 }
 
 fn already_closed(closed: &ClosedRoleRequest) -> Refusal {

@@ -4148,6 +4148,99 @@ async fn limit_rig(name: &str, pa: bool) -> (Rig, Repo, u64) {
     (rig, repo, delivered)
 }
 
+/// F83: a delivered request answered by a plain reply stays open, so s12
+/// keeps checking in. `pij requests close` moves it to closed: with `--quiet`
+/// no check-in and no FYI; without it, the requester is told once. A queued
+/// request points to withdraw, and only the request's people may close it.
+#[tokio::test]
+async fn closing_a_delivered_request_stops_its_limit_and_quiet_tells_nobody() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let (rig, repo, delivered) = limit_rig("pij-requests-close", false).await;
+    let requests = |argv: Vec<&'static str>, pane: &'static str| {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move { call_as(addr, "/v1/requests", &argv, &cwd, pane).await }
+    };
+    let fyis = || async {
+        rig.services
+            .queue
+            .pending_fyi_count(&SeatId::from(SEAT))
+            .await
+            .unwrap()
+    };
+    let before = fyis().await;
+    let mut stranger = SeatDescriptor::new("pij-stranger", Harness::Omp, "/tmp");
+    stranger.pane = Some("%71".to_string());
+    rig.services
+        .registry
+        .put(stranger)
+        .await
+        .expect("seed a seat with no part in the request");
+
+    let stranger = requests(vec!["requests", "close", "req-limit"], "%71").await;
+    assert_eq!(refusal_code(&stranger), "E-RS-OWNERSHIP", "{stranger}");
+    let quiet = requests(
+        vec![
+            "requests",
+            "close",
+            "req-limit",
+            "--quiet",
+            "--why",
+            "answered",
+        ],
+        "%51",
+    )
+    .await;
+    assert_eq!(
+        quiet["data"]["line"], "request req-limit closed by pij-holder: answered",
+        "{quiet}"
+    );
+    assert_eq!(quiet["data"]["holder"], "pij-holder", "{quiet}");
+    assert!(quiet["data"]["told"].is_null(), "{quiet}");
+    assert!(
+        limit_acts(time_limits(&rig.services, delivered + 3 * LIMIT_MS).await).is_empty(),
+        "a closed request gets no check-in"
+    );
+    assert_eq!(fyis().await, before, "--quiet tells nobody");
+    let again = requests(vec!["requests", "close", "req-limit"], "%51").await;
+    assert_eq!(refusal_code(&again), "E-RS-REQUEST-CLOSED", "{again}");
+
+    let sent = send_to(rig.addr, &repo.main, "role:pm-001", "req-told", json!({})).await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    let told = requests(vec!["requests", "close", "req-told"], "%51").await;
+    assert_eq!(told["data"]["why"], "answered or abandoned", "{told}");
+    assert_eq!(told["data"]["told"]["seat"], SEAT, "{told}");
+    assert_eq!(fyis().await, before + 1, "the requester is told once");
+
+    let released = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "release",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "gap",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(released["ok"], true, "{released}");
+    let queued = send_to(rig.addr, &repo.main, "role:pm-001", "req-queued", json!({})).await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+    let early = requests(vec!["requests", "close", "req-queued"], PANE).await;
+    assert_eq!(
+        refusal_code(&early),
+        "E-RS-REQUEST-NOT-DELIVERED",
+        "{early}"
+    );
+    assert_eq!(
+        early["details"]["next"], "pij requests withdraw req-queued --why '<why>'",
+        "{early}"
+    );
+    rig.server.abort();
+}
+
 /// Each action's request, kind, recipient and whether delivery admitted it.
 fn limit_acts(
     actions: Vec<pij_daemon::delivery::role_send::LimitAction>,

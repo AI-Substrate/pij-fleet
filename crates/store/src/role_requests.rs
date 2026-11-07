@@ -97,12 +97,12 @@ pub struct ClosedRoleRequest {
 /// What [`SqliteOrchestration::close_role_request`] did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CloseOutcome {
-    /// It was queued and is now closed.
+    /// It was in the state asked for and is now closed.
     Closed(ClosedRoleRequest),
     /// No request has that id.
     Unknown,
-    /// It is delivering or delivered, so a holder has it.
-    NotQueued(RoleRequest),
+    /// It is open in another state than the one asked for.
+    OtherState(RoleRequest),
     /// It was closed before.
     AlreadyClosed(ClosedRoleRequest),
 }
@@ -205,7 +205,7 @@ const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to
 
 /// A closed row read through [`role_request`], plus who closed it.
 const CLOSED_COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, \
-     reply, limit_ms, 'closed' AS state, NULL AS holder, created_at, NULL AS delivered_at, \
+     reply, limit_ms, 'closed' AS state, holder, created_at, delivered_at, \
      NULL AS checkin_at, NULL AS escalated_at, NULL AS answered_at, closed_at, closed_by, close_why";
 
 /// How many rows one `pij requests` read returns at most, newest first.
@@ -756,13 +756,16 @@ impl SqliteOrchestration {
 }
 
 impl SqliteOrchestration {
-    /// Close queued request `id` as `by`, at `at`, for `why` (plan 212): move it
-    /// to `closed_role_requests` and out of the queue in one transaction, so
-    /// no drain can deliver it and the PA digest drops it. Only a queued
-    /// request closes; the outcome says what stood in the way otherwise.
+    /// Close request `id`, in state `from`, as `by`, at `at`, for `why`
+    /// (plan 212): move it to `closed_role_requests` and out of `role_requests`
+    /// in one transaction. A queued one (withdraw, F59) can then never be
+    /// drained and leaves the PA digest; a delivered one (F83) leaves the time
+    /// limit's rounds. Only a request in `from` closes; the outcome says what
+    /// stood in the way otherwise.
     pub async fn close_role_request(
         &self,
         id: &str,
+        from: RequestState,
         by: &str,
         why: &str,
         at: u64,
@@ -770,29 +773,33 @@ impl SqliteOrchestration {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let (owned_id, by, why) = (id.to_string(), by.to_string(), why.to_string());
+        let from = from.as_str();
         let at = sql_i64(at, "closed_at")?;
         let moved = owned_write(async move {
             let id = owned_id;
             let mut tx = begin_write(&pool).await?;
             let moved = sqlx::query(
                 "INSERT INTO closed_role_requests (id, project, role, instance, requester, body, \
-                 in_reply_to, fyi, reply, limit_ms, created_at, closed_at, closed_by, close_why) \
+                 in_reply_to, fyi, reply, limit_ms, created_at, holder, delivered_at, closed_at, \
+                 closed_by, close_why) \
                  SELECT id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
-                 limit_ms, created_at, ?2, ?3, ?4 FROM role_requests \
-                 WHERE id = ?1 AND state = 'queued'",
+                 limit_ms, created_at, holder, delivered_at, ?2, ?3, ?4 FROM role_requests \
+                 WHERE id = ?1 AND state = ?5",
             )
             .bind(&id)
             .bind(at)
             .bind(&by)
             .bind(&why)
+            .bind(from)
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?
             .rows_affected()
                 == 1;
             if moved {
-                sqlx::query("DELETE FROM role_requests WHERE id = ?1 AND state = 'queued'")
+                sqlx::query("DELETE FROM role_requests WHERE id = ?1 AND state = ?2")
                     .bind(&id)
+                    .bind(from)
                     .execute(&mut *tx)
                     .await
                     .map_err(adapter_error)?;
@@ -806,7 +813,7 @@ impl SqliteOrchestration {
             (true, Some(closed)) => CloseOutcome::Closed(closed),
             (false, Some(closed)) => CloseOutcome::AlreadyClosed(closed),
             (_, None) => match self.role_request(id).await? {
-                Some(open) => CloseOutcome::NotQueued(open),
+                Some(open) => CloseOutcome::OtherState(open),
                 None => CloseOutcome::Unknown,
             },
         })

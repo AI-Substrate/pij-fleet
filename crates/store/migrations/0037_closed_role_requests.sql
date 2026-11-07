@@ -7,7 +7,9 @@
 -- deletes it from `role_requests` in one transaction, so the queue, the drain
 -- and the PA digest never see it again, and `role_requests.state` keeps its
 -- three values (no table rebuild). The columns are the request as sent, plus
--- who closed it, when and why.
+-- who closed it, when and why. A delivered request that was answered or
+-- abandoned closes the same way (`pij requests close <id>`, F83), which stops
+-- its time limit; `holder` and `delivered_at` keep who had it and when.
 CREATE TABLE closed_role_requests (
     id          TEXT PRIMARY KEY,
     project     TEXT NOT NULL,
@@ -20,6 +22,8 @@ CREATE TABLE closed_role_requests (
     reply       TEXT NOT NULL CHECK (reply IN ('wake', 'fyi', 'none')),
     limit_ms    INTEGER,
     created_at  INTEGER NOT NULL,
+    holder      TEXT,
+    delivered_at INTEGER,
     closed_at   INTEGER NOT NULL,
     closed_by   TEXT NOT NULL,
     close_why   TEXT NOT NULL
