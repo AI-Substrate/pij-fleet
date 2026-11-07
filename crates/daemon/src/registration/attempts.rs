@@ -37,6 +37,9 @@ pub struct Reads {
 
 impl Reads {
     /// Whether a read may launch; counts it when it may.
+    // Linux reads ancestry from /proc and launches no ps, so only the macOS
+    // observer calls this outside tests.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn begin(&self) -> bool {
         let mut state = self
             .state
