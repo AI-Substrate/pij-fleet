@@ -58,7 +58,10 @@ has `ok:true`, `data.status:"healthy"` and
 `data.store:{status:"healthy",timeout_ms:2000}`. `data.spawns:{total,by_op}` counts
 the processes this daemon has launched since it started, by `<program>.<site>`
 operation (`ps.proc-liveness`, `tmux.send-keys`, `git.orchestration-repo`, ...); the
-`by_op` values sum to `total` (plan 180). `data.pid` is the daemon's own process
+`by_op` values sum to `total` (plan 180). Delivering to a Claude seat launches
+nothing: the socket transport reads the peer's start in-process, once per
+resolution, and `deliver` reuses the endpoint its own probe resolved after a fresh
+start re-read (plan 218, retiring `ps.uds-peer-start`). `data.pid` is the daemon's own process
 id (plan 190): the spawn counter resets on restart, so two readings compare only
 when their pids match. `data.registrations:{total,ps,by_key,by_seat}` counts registration
 attempts since start (plan 211, issue #145): `by_key` is per
