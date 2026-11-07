@@ -1,0 +1,40 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "5911936acb9a20dec676dc9a43a2e87625d0902d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/151#issuecomment-6704149558",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:151",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 151 --repo AI-Substrate/pij-fleet --watch --interval 30 --fail-fast",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/42352834657"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\n\nPR: #151\nHead: 5911936acb9a20dec676dc9a43a2e87625d0902d\nScope: changed lines in the six files under docs/plans/209-fleet-followups: plan.dd.json/.md, assets/backpressure.dd.json/.md, and assets/tasks/phase-1/tasks.dd.json/.md.\n\nNo security/privacy findings: no secrets or tokens, private owner/name identities, identifiable private content, or machine-local paths in changed lines. Public plan/PR references and the numerical after-deploy receipt do not introduce prohibited private identifiers or paths. C19/C21 apply to the current public-content delta, not a history rewrite.\n\nThis is a light public-content scan. Correctness owns shipped-state and receipt accuracy; this security verdict does not independently certify the live measurement or whole-plan acceptance.\n\nNo local builds/tests, runtime probes, credential-file reads or product changes were performed. CI evidence: https://github.com/AI-Substrate/pij-fleet/actions/runs/42352834657 ; final exact-head check results are verified before publication.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | docs/plans/209-fleet-followups | - | No vulnerabilities found | - |\n"
+		}
+	]
+}
