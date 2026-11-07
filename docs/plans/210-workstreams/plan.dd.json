@@ -81,7 +81,8 @@
           "id": "ac-0007",
           "claim": "Governance re-point (#135 merged: pij directory edit is live). The 8 live governance role prompts that cite the roadmap path are re-pointed with `pij directory edit` (docs-system runs it; the writer commits).",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007",
+          "note": "runs at merge: ac7-repoint.sh runs right after this PR merges (dry run for the 8 roles in assets/evidence/phase-2.md); a states PR records the writer commits and checks AC7"
         },
         {
           "id": "ac-0008",

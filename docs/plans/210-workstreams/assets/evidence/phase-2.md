@@ -40,14 +40,14 @@ would edit reviewer: 1 line(s)
 would edit security: 1 line(s)
 ```
 
-It runs at the merge, so the role prompts and the folder flip together. The writer's commits are listed in the PR once run.
+**Runs at merge:** it runs right after this PR merges, so a prompt never points at a folder main lacks. A small states PR then records the 8 writer commits and checks AC7.
 
 ## Other items from phase 1's notes
 
 - s16 is added (complete), delivering req-30 and req-31, which are now shipped. req-24's `delivered_by` is `#141, #159` and req-27's is `#136, #159`.
 - pm template v4 has only the path change. v1 to v3 stay pinned; the pins now cover 29 versions.
 - Four phase-1 task receipts now resolve from their folder (`../../evidence/`).
-- F104 (CI's ddocs check has no validator) is out of this PR. ddocs isn't on npm, so failing closed needs a CI install decision; I raised it with pm-001.
+- **Known limit:** CI validates no ddocs until @ai-substrate/dd is on npm (F104, ruling C20); the step warns UNAVAILABLE on every run. `ci.yml` is untouched.
 
 ## Gates
 
