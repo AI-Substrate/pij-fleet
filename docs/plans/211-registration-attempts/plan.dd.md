@@ -12,7 +12,7 @@
 | title | Registration attempts: measure, then stop healthy re-registration |
 | slug | registration-attempts |
 | ordinal | 211 |
-| status | draft |
+| status | shipped |
 | complexity | CS-3 |
 | summary | Issue #145: after #134, registration ps still runs at about 0.64/s at rest, so healthy seats re-register every few seconds. Count registration attempts by path, mode and outcome, find which seats and triggers repeat, and stop repeats that change nothing. |
 | backpressure | [rows](assets/backpressure.dd.md#rows) |
@@ -47,12 +47,12 @@ Source: issue #145, and performance's attribution (governance roles/performance/
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | Count. The daemon records bounded counters of registration attempts by entry path (receive, heartbeat, shim call, lease retry, explicit register), mode (pane or paneless) and outcome (new, unchanged, refused with reason), exposed in pij-rs --json ping beside spawns. No new launch, no per-attempt event write. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | Attribute. With the counters live on the fleet, a performance reading names the paths, and the seats where the daemon can tell, behind the residual ps rate, in a receipt attached to #145. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Stop no-op repeats. A repeat registration that would resolve to the same seat with nothing changed skips the ancestry ps. It's keyed on what proves nothing changed (for example, the seat's bound identity and the caller's own verified pid and start), not a blanket positive cache: a changed pid, start, pane or exec still triggers the full read. Retired or tombstoned contexts that keep retrying get refused cheaply (no ps), with the reason named once. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | Client side. If a client (the Copilot extension, the OMP extension or the shim) re-registers on a timer while healthy, it stops, or only re-registers on a real change. The shim's per-call registration (F44) is either removed or made a no-op through AC3. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | Cost (AGENTS.md, resource cost is a correctness property). The goal is cost: registration ps near 0/s at rest. Counters are in-process (one mutex-guarded pair of bounded maps per daemon); no new launch site, timer or poll. Live BEFORE and AFTER on the fleet (pij-rs --json ping twice, 60 s apart, with data.pid). | [ ] unchecked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
-| ac-0006 | Docs and states. No workstream state changes (issue fix). The PR body says Delivers: none and Fixes #145. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line. | [ ] unchecked | — | — | [bp-0006](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | Count. The daemon records bounded counters of registration attempts by entry path (receive, heartbeat, shim call, lease retry, explicit register), mode (pane or paneless) and outcome (new, unchanged, refused with reason), exposed in pij-rs --json ping beside spawns. No new launch, no per-attempt event write. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | Attribute. With the counters live on the fleet, a performance reading names the paths, and the seats where the daemon can tell, behind the residual ps rate, in a receipt attached to #145. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Stop no-op repeats. A repeat registration that would resolve to the same seat with nothing changed skips the ancestry ps. It's keyed on what proves nothing changed (for example, the seat's bound identity and the caller's own verified pid and start), not a blanket positive cache: a changed pid, start, pane or exec still triggers the full read. Retired or tombstoned contexts that keep retrying get refused cheaply (no ps), with the reason named once. | [x] na | Partly shipped in #148: retired or other-session addresses are refused before any host observation (a brake). The no-op repeat skip was not built: after deploy, performance measured 0 registration attempts and 0 registration ps at rest (two readings, assets/evidence/phase-1.md), so there is nothing to skip. Reopen if a later reading shows it. | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | Client side. If a client (the Copilot extension, the OMP extension or the shim) re-registers on a timer while healthy, it stops, or only re-registers on a real change. The shim's per-call registration (F44) is either removed or made a no-op through AC3. | [x] na | Partly shipped in #148: the Copilot extension treats E-RS-SEAT-RETIRED as final and stops its receive and heartbeat loops. The shim's per-call registration was left as is: the readings show no shim-path attempts growing at rest (assets/evidence/phase-1.md). | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | Cost (AGENTS.md, resource cost is a correctness property). The goal is cost: registration ps near 0/s at rest. Counters are in-process (one mutex-guarded pair of bounded maps per daemon); no new launch site, timer or poll. Live BEFORE and AFTER on the fleet (pij-rs --json ping twice, 60 s apart, with data.pid). | [x] checked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
+| ac-0006 | Docs and states. No workstream state changes (issue fix). The PR body says Delivers: none and Fixes #145. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line. | [x] checked | — | — | [bp-0006](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -60,7 +60,7 @@ Source: issue #145, and performance's attribution (governance roles/performance/
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-00d3 | Registration attempts: measure, then stop healthy re-registration | All ACs. One coder. CS-3. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-00d3 | Registration attempts: measure, then stop healthy re-registration | All ACs. One coder. CS-3. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 
