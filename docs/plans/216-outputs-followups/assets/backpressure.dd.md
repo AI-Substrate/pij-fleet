@@ -28,7 +28,7 @@
 | bp-0006 | AC6: cost | ph-00d8 | EXTEND | computational | EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping \| jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`). | [ ] unchecked | No new timer, poll or launch. Prefix matching is one indexed range read on the existing outputs index; warnings are computed from data already read. | — | pij-rs --json ping |
 | bp-0007 | AC7: docs and states | ph-00d8 | EXISTS | computational | `just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts. | [ ] unchecked | — | — | docs/project/ |
 | bp-0008 | AC8 | ph-00d8 | BUILD | computational | Daemon test: a delivered, limited request closed with --quiet gets no check-in and no FYI; without --quiet the requester gets one FYI; a non-allowed seat is refused before any write; a queued request is refused (use withdraw). | [x] na | F83 delivered by #149 (fb87062). | — | crates/ |
-| bp-0009 | AC9 | ph-00d8 | BUILD | computational | Test: a hostile role or project value in the stored request comes back as one quoted word through a /bin/sh round-trip of the printed next step. | [x] na | F85 delivered by #149. | — | crates/ |
+| bp-0009 | AC9 | ph-00d8 | BUILD | computational | Test: a hostile role or project value in the stored request comes back as one quoted word through a /bin/sh round-trip of the printed next step. | [ ] unchecked | Kestrel has this ready on kestrel/216-requests-close-f83 (ef079fa: output.rs quoted, with a /bin/sh round-trip test). | — | crates/ |
 
 <a id="sensors"></a>
 

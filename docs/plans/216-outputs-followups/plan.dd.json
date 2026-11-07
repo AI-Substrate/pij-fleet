@@ -6,7 +6,7 @@
     {
       "name": "meta",
       "value": {
-        "title": "Outputs follow-ups (F75-F79)",
+        "title": "Outputs follow-ups (F75-F79, F85)",
         "slug": "outputs-followups",
         "ordinal": 216,
         "complexity": "CS-1",
@@ -89,9 +89,8 @@
         {
           "id": "ac-0009",
           "claim": "F85 (wildcat, 07 Nov): no printed next step carries an unquoted stored value. crates/daemon/src/http/output.rs (E-RS-OUTPUT-NOT-HOLDER's next, about lines 257-258) interpolates request.role and request.project raw; put each complete word through pij_core::directory::shell_word (or picture::command), and sweep http/output.rs for any other printed command built from stored values.",
-          "state": "na",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0009",
-          "note": "Delivered by #149 (plan 212): output.rs's printed next step quotes stored values, with a /bin/sh round-trip test (kestrel ef079fa, in #149's final push)."
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0009"
         }
       ]
     },
