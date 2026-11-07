@@ -215,7 +215,7 @@ impl FleetView {
 
         if !self.held.is_empty() {
             text.push_str(
-                "\nMessages held behind a busy turn (each shown once; `--urgent` reaches a working Copilot seat at its next tool call):",
+                "\nMessages held behind a busy turn (each shown once; a seat whose mid-turn steering is off, or whose harness cannot steer, waits for its turn to end):",
             );
             for held in &self.held {
                 let _ = write!(

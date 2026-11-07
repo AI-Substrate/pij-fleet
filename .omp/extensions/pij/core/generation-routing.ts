@@ -277,6 +277,7 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		"role",
 		"link",
 		"watchdog",
+		"steer",
 		"report",
 		"close",
 		"reap",

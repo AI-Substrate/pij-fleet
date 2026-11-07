@@ -1503,46 +1503,6 @@ impl Queue for SqliteQueue {
         .await
     }
 
-    async fn take_pending_delivery(&self, recipient: &SeatId, msg_id: &str) -> Result<Option<Job>> {
-        require_current_schema(&self.pool).await?;
-        let pool = self.pool.clone();
-        let delivered_id_capacity = self.delivered_id_capacity;
-        let (recipient, msg_id) = (recipient.0.clone(), msg_id.to_string());
-        owned_write(async move {
-            let mut tx = begin_write(&pool).await?;
-            let row = sqlx::query(
-                "UPDATE jobs SET state = 'done', worker = 'urgent', outcome = NULL, \
-                 claimed_at = unixepoch(), acked_at = unixepoch() \
-                 WHERE kind = 'delivery:' || ?1 AND dedupe_origin = '' AND dedupe_key = ?2 \
-                   AND serial_key = ?1 AND state = 'pending' \
-                 RETURNING id, kind, serial_key, payload, dedupe_key, dedupe_origin, attempt",
-            )
-            .bind(&recipient)
-            .bind(&msg_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(adapter_error)?;
-            let Some(row) = row else {
-                tx.commit().await.map_err(adapter_error)?;
-                return Ok(None);
-            };
-            let id = JobId(row.try_get::<i64, _>("id").map_err(adapter_error)? as u64);
-            let taken = decode_job(&row)?;
-            require_delivery_job(&taken)?;
-            record_delivered(
-                &mut tx,
-                id,
-                &taken,
-                DeliveryOrigin::ReaderRead,
-                delivered_id_capacity,
-            )
-            .await?;
-            tx.commit().await.map_err(adapter_error)?;
-            Ok(Some(taken))
-        })
-        .await
-    }
-
     async fn ack_delivery(&self, job: JobId, origin: DeliveryOrigin) -> Result<DeliveryAck> {
         require_current_schema(&self.pool).await?;
 

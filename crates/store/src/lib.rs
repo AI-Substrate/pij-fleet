@@ -23,6 +23,7 @@ mod role_assertion;
 pub mod role_requests;
 pub mod spine;
 pub mod status;
+pub mod steering;
 
 pub use claims::{Claim, ClaimKey, DeliveryCommit, DeliveryNote, DeliveryRecord, ReleaseOutcome};
 pub use community::{Assignment, AssignmentCommit, CommunityPointer};
@@ -40,3 +41,4 @@ pub use role_requests::{
     LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage, ReplyMode, RequestState, RoleRequest,
 };
 pub use spine::SqliteSpine;
+pub use steering::SteeringSetting;

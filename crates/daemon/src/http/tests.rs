@@ -1404,6 +1404,7 @@ async fn typing_release_wakes_an_already_waiting_inbox_reader() {
             native_session: None,
             pid: None,
             proc_start: None,
+            during_turn: false,
         }),
     );
     tokio::pin!(waiting);
@@ -2380,7 +2381,6 @@ fn send_request_uses_resolved_destination_object_and_optional_reply_id() {
         body: "answer".to_string(),
         msg_id: "m-2".to_string(),
         in_reply_to: Some("m-1".to_string()),
-        urgent: false,
     };
     let json = serde_json::to_value(&request).expect("send request json");
     assert_eq!(json["to"]["seat"], "pij-b");
@@ -4551,7 +4551,6 @@ async fn send_enqueues_exactly_once_and_refuses_remote_without_federation() {
         body: "hello".to_string(),
         msg_id: "m-1".to_string(),
         in_reply_to: Some("m-0".to_string()),
-        urgent: false,
     };
 
     let response = client
@@ -5373,7 +5372,6 @@ async fn two_daemons_forward_remote_send_into_destination_queue_and_spine() {
         msg_id: "remote-m-1".to_string(),
         from_machine: None,
         in_reply_to: None,
-        urgent: false,
     };
     let response = reqwest::Client::new()
         .post(format!("http://{a_addr}/v1/send"))
@@ -5496,7 +5494,6 @@ async fn wrong_peer_key_is_permanent_and_never_hot_loops() {
             msg_id: "auth-m-1".to_string(),
             from_machine: None,
             in_reply_to: None,
-            urgent: false,
         })
         .await
         .expect("enqueue");

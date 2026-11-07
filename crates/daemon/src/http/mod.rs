@@ -26,6 +26,7 @@ pub mod role;
 mod role_send;
 mod routes;
 mod shim;
+pub mod steer;
 mod types;
 mod watchdog;
 
@@ -121,8 +122,6 @@ enum Endpoint {
     Inbox,
     InboxTyping,
     InboxAck,
-    /// Plan 214: a native receiver takes its urgent messages at a tool boundary.
-    InboxUrgent,
     InboxHeartbeat,
     InboxRelease,
     Hold,
@@ -184,6 +183,8 @@ enum Endpoint {
     Link,
     /// Opt-in watchdog control (`pij watchdog on|off|status`).
     Watchdog,
+    /// Mid-turn steering, per seat (`pij steer on|off|status`, plan 214, C31).
+    Steer,
     Close,
     Reap,
     Anomalies,
@@ -230,7 +231,6 @@ impl Endpoint {
         Self::Inbox,
         Self::InboxTyping,
         Self::InboxAck,
-        Self::InboxUrgent,
         Self::InboxHeartbeat,
         Self::InboxRelease,
         Self::Hold,
@@ -255,6 +255,7 @@ impl Endpoint {
         Self::Role,
         Self::Link,
         Self::Watchdog,
+        Self::Steer,
         Self::Close,
         Self::Reap,
         Self::Anomalies,
@@ -293,7 +294,6 @@ impl Endpoint {
             Self::Inbox => "/v1/inbox",
             Self::InboxTyping => "/v1/inbox/typing",
             Self::InboxAck => "/v1/inbox/ack",
-            Self::InboxUrgent => "/v1/inbox/urgent",
             Self::InboxHeartbeat => "/v1/inbox/heartbeat",
             Self::InboxRelease => "/v1/inbox/release",
             Self::Hold => "/v1/hold",
@@ -313,6 +313,7 @@ impl Endpoint {
             Self::Role => "/v1/role",
             Self::Link => "/v1/link",
             Self::Watchdog => "/v1/watchdog",
+            Self::Steer => "/v1/steer",
             Self::Close => "/v1/close",
             Self::Reap => "/v1/reap",
             Self::Anomalies => "/v1/anomalies",
@@ -358,7 +359,6 @@ impl Endpoint {
             | Self::Background
             | Self::BackgroundKill
             | Self::InboxAck
-            | Self::InboxUrgent
             | Self::InboxHeartbeat
             | Self::InboxRelease
             | Self::Hold
@@ -370,6 +370,7 @@ impl Endpoint {
             Self::Role
             | Self::Link
             | Self::Watchdog
+            | Self::Steer
             | Self::Close
             | Self::Reap
             | Self::Anomalies
@@ -590,7 +591,6 @@ fn router_with_optional_federation(
                     | Endpoint::Background
                     | Endpoint::BackgroundKill
                     | Endpoint::InboxAck
-                    | Endpoint::InboxUrgent
                     | Endpoint::InboxHeartbeat
                     | Endpoint::InboxRelease
                     | Endpoint::Hold
@@ -611,6 +611,7 @@ fn router_with_optional_federation(
                     | Endpoint::Role
                     | Endpoint::Link
                     | Endpoint::Watchdog
+                    | Endpoint::Steer
                     | Endpoint::Close
                     | Endpoint::Reap
                     | Endpoint::Anomalies
@@ -655,7 +656,6 @@ fn router_with_optional_federation(
             Endpoint::Inbox => router.route(endpoint.path(), get(inbox)),
             Endpoint::InboxTyping => router.route(endpoint.path(), get(inbox_typing)),
             Endpoint::InboxAck => router.route(endpoint.path(), post(ack_inbox)),
-            Endpoint::InboxUrgent => router.route(endpoint.path(), post(take_urgent)),
             Endpoint::InboxHeartbeat => router.route(endpoint.path(), post(heartbeat_inbox)),
             Endpoint::InboxRelease => router.route(endpoint.path(), post(operator_release_inbox)),
             Endpoint::Hold => router.route(endpoint.path(), post(hold_inbox)),
@@ -683,6 +683,7 @@ fn router_with_optional_federation(
             Endpoint::Role => router.route(endpoint.path(), post(role::role)),
             Endpoint::Link => router.route(endpoint.path(), post(role::link)),
             Endpoint::Watchdog => router.route(endpoint.path(), post(watchdog::watchdog)),
+            Endpoint::Steer => router.route(endpoint.path(), post(steer::steer)),
             Endpoint::Close => router.route(endpoint.path(), post(lifecycle::close)),
             Endpoint::Reap => router.route(endpoint.path(), post(lifecycle::reap)),
             Endpoint::Anomalies => router.route(
@@ -1852,9 +1853,6 @@ async fn send(
             }
         }
     }
-    if request.message.urgent && request.message.fyi {
-        return urgent_fyi("pij send");
-    }
     // A send to `role:<id>` resolves through the directory first (plan 199).
     if let Some(response) = role_send::route(
         &state,
@@ -1866,7 +1864,6 @@ async fn send(
             msg_id: &request.message.msg_id,
             in_reply_to: request.message.in_reply_to.as_deref(),
             fyi: request.message.fyi,
-            urgent: request.message.urgent,
             control: request.command.is_some(),
             force: request.message.force,
             reason: request.message.reason.as_deref(),
@@ -1948,8 +1945,7 @@ async fn send(
         Err(response) => return *response,
     };
     let (reply_from, reply_to) = (request.from.clone(), request.in_reply_to.clone());
-    let urgent = request.urgent && !forwarded;
-    let urgent_to = request.to.seat.clone();
+    let note_to = request.to.seat.clone();
     let msg = Msg {
         from: request.from,
         // Stamped above from the authenticated peer key, or absent locally.
@@ -1970,9 +1966,7 @@ async fn send(
             receipt.cold_check = cold_check;
             if !forwarded && !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
                 answered_by(&state, &reply_from, reply_to.as_deref()).await;
-                if urgent {
-                    apply_urgent(&state, &reply_from, &urgent_to, &mut receipt).await;
-                }
+                note_turn_wait(&state, &note_to, &mut receipt).await;
             }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
         }
@@ -1981,70 +1975,50 @@ async fn send(
     }
 }
 
-/// `--urgent` with `--fyi` (plan 214): refused, nothing sent.
-pub(crate) fn urgent_fyi(command: &str) -> Response {
-    refused(
-        command,
-        format!(
-            "{}: --urgent asks for delivery mid-turn and --fyi holds the message for the next turn; pick one",
-            crate::delivery::urgent::E_URGENT_FYI
-        ),
-    )
-}
-
-/// After an urgent send was admitted (plan 214): mark it for the recipient's
-/// tool boundary, or warn on the receipt that it was downgraded, and write
-/// the one `send.urgent` spine event. A failed event is logged, never fails
-/// the send it describes.
-pub(crate) async fn apply_urgent(
-    state: &AppState,
-    from: &SeatId,
-    to: &SeatId,
-    receipt: &mut Receipt,
-) {
-    use crate::delivery::urgent::{URGENT_EVENT_KIND, UrgentRoute};
-    let to = match state.services.registry.get(to).await {
-        Ok(Some(to)) => to,
-        Ok(None) => return,
-        Err(error) => {
-            eprintln!(
-                "pij-rs: urgent send {}: recipient unreadable: {error}",
-                receipt.msg_id
-            );
-            return;
+/// A normal send queued for a seat that is mid-turn and cannot take it until
+/// that turn ends gets a receipt note saying so, and why (plan 214, C31).
+/// Seats that steer (OMP, Pi, socket Claude, native Copilot with steering on)
+/// get none. One registry read and, for native Copilot, one setting read,
+/// only when the receipt is queued.
+pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut Receipt) {
+    if !matches!(receipt.outcome, DeliveryOutcome::Queued { .. }) {
+        return;
+    }
+    let Ok(Some(seat)) = state.services.registry.get(to).await else {
+        return;
+    };
+    if seat.state != pij_core::model::SystemState::Working {
+        return;
+    }
+    let why = match seat.harness {
+        Harness::Omp | Harness::Pi => return,
+        Harness::Claude if seat.cross_session_inbound_accept == Some(true) => return,
+        Harness::Copilot if seat.native_extension_delivery => {
+            match state
+                .services
+                .governance
+                .store()
+                .mid_turn_steering(seat.id.as_str())
+                .await
+            {
+                Ok(false) => "its mid-turn steering is off (`pij steer on` turns it back on)",
+                _ => return,
+            }
         }
+        Harness::Copilot => "this Copilot seat has no native pij extension to steer it in",
+        Harness::Claude => {
+            "this Claude seat has no inbound socket, so pij can only type at turn end"
+        }
+        Harness::Codex => "Codex has no way for pij to reach a running turn",
     };
-    let route = UrgentRoute::for_seat(&to);
-    if route.marks(receipt) {
-        state.services.delivery.mark_urgent(&to.id, &receipt.msg_id);
-    }
-    if let Some(warning) = route.warning(&to) {
-        receipt.warning = Some(match receipt.warning.take() {
-            Some(earlier) => format!("{earlier}; {warning}"),
-            None => warning,
-        });
-    }
-    let event = Event {
-        seq: None,
-        v: pij_core::wire::EVENT_VERSION,
-        at: receipt.at,
-        kind: URGENT_EVENT_KIND.to_string(),
-        seat: Some(to.id.clone()),
-        payload: serde_json::json!({
-            "from": from,
-            "to": to.id,
-            "msg_id": receipt.msg_id,
-            "harness": to.harness,
-            "outcome": route.outcome(),
-        })
-        .to_string(),
-    };
-    if let Err(error) = state.services.event_bus.publish(event).await {
-        eprintln!(
-            "pij-rs: urgent send {}: audit not written: {error}",
-            receipt.msg_id
-        );
-    }
+    let note = format!(
+        "{} is mid-turn and {why}: this message may wait for that turn to end.",
+        seat.id
+    );
+    receipt.warning = Some(match receipt.warning.take() {
+        Some(earlier) => format!("{earlier}; {note}"),
+        None => note,
+    });
 }
 
 /// A reply from a role request's holder answers it (plan 214, F68).
@@ -2347,7 +2321,16 @@ struct InboxQuery {
     native_session: Option<String>,
     pid: Option<u32>,
     proc_start: Option<u64>,
+    /// The receiver asks during a turn its own claim started (plan 214, C31):
+    /// with the seat's steering off, nothing is claimed and it waits for the
+    /// turn to end.
+    #[serde(default)]
+    during_turn: bool,
 }
+
+/// The hold a receiver gets for a claim during a turn when its seat's
+/// mid-turn steering is off (plan 214, C31).
+pub const TURN_WAIT_HOLD: &str = "turn-wait: mid-turn steering is off for this seat (pij steer on)";
 
 /// Read one inbox message. The default path claims it for explicit client ack;
 /// `peek=true` is observation-only and never changes queue state.
@@ -2369,12 +2352,31 @@ async fn inbox(State(state): State<AppState>, Query(query): Query<InboxQuery>) -
         pid: query.pid,
         proc_start: query.proc_start,
     };
+    // C31: the switch is read with the claim, never polled: one primary-key
+    // read per claim, reported to the receiver as `details.mid_turn_steer`.
+    let steer = match state
+        .services
+        .governance
+        .store()
+        .mid_turn_steering(query.seat.as_str())
+        .await
+    {
+        Ok(steer) => steer,
+        Err(error) => return internal("pij inbox", error),
+    };
+    if query.during_turn && !steer {
+        let page = Ok(crate::delivery::NativeInboxPage {
+            claims: Vec::new(),
+            held_reason: Some(TURN_WAIT_HOLD.to_string()),
+        });
+        return native_inbox_reply_steering(&state, &query.seat, page, Some(steer)).await;
+    }
     let result = state
         .services
         .delivery
         .claim_native_inbox(&query.seat, query.wait, &identity)
         .await;
-    native_inbox_reply(&state, &query.seat, result).await
+    native_inbox_reply_steering(&state, &query.seat, result, Some(steer)).await
 }
 
 #[derive(Deserialize)]
@@ -2411,12 +2413,31 @@ async fn native_inbox_reply(
     seat: &SeatId,
     result: Result<crate::delivery::NativeInboxPage>,
 ) -> Response {
+    native_inbox_reply_steering(state, seat, result, None).await
+}
+
+/// [`native_inbox_reply`], carrying the seat's mid-turn steering (plan 214).
+async fn native_inbox_reply_steering(
+    state: &AppState,
+    seat: &SeatId,
+    result: Result<crate::delivery::NativeInboxPage>,
+    steer: Option<bool>,
+) -> Response {
     let reason = match state.services.delivery.native_receiver_reason(seat).await {
         Ok(reason) => reason,
         Err(error) => return internal("pij inbox", error),
     };
     match result {
-        Ok(page) => native_inbox_response(page, reason),
+        Ok(page) => {
+            let mut response = native_inbox_envelope(page, reason);
+            if let Some(steer) = steer {
+                response
+                    .details
+                    .get_or_insert_with(|| serde_json::json!({}))["mid_turn_steer"] =
+                    serde_json::json!(steer);
+            }
+            envelope(StatusCode::OK, &response)
+        }
         Err(error) => inbox_failure_with_reason(error, reason),
     }
 }
@@ -2436,13 +2457,21 @@ fn receiver_diagnostic<T>(answer: &mut Envelope<T>, reason: Option<&str>) {
     }
 }
 
+#[cfg(test)]
 fn native_inbox_response(page: crate::delivery::NativeInboxPage, reason: Option<&str>) -> Response {
+    envelope(StatusCode::OK, &native_inbox_envelope(page, reason))
+}
+
+fn native_inbox_envelope(
+    page: crate::delivery::NativeInboxPage,
+    reason: Option<&str>,
+) -> Envelope<Vec<crate::delivery::InboxClaim>> {
     let mut answer = Envelope::ok("pij inbox", page.claims);
     answer.meta = page
         .held_reason
         .map(|reason| format!("native-consumer-held:{reason}"));
     receiver_diagnostic(&mut answer, reason);
-    envelope(StatusCode::OK, &answer)
+    answer
 }
 
 fn inbox_failure(error: PijError) -> Response {
@@ -2837,46 +2866,6 @@ async fn heartbeat_inbox(
             &Envelope::ok(
                 "pij inbox",
                 serde_json::json!({"job_id": job_id, "state": job_state}),
-            ),
-        ),
-        Err(error) => inbox_failure(error),
-    }
-}
-
-/// `POST /v1/inbox/urgent` (plan 214): a native Copilot receiver, at a tool
-/// boundary, takes the queued `--urgent` messages it was told of on its
-/// heartbeat. Its host identity is checked as for a claim; each message is
-/// marked delivered as it is handed over.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct UrgentTakeRequest {
-    seat: SeatId,
-    native_session: Option<String>,
-    pid: Option<u32>,
-    proc_start: Option<u64>,
-    msg_ids: Vec<String>,
-}
-
-async fn take_urgent(
-    State(state): State<AppState>,
-    Json(request): Json<UrgentTakeRequest>,
-) -> Response {
-    let identity = crate::delivery::NativeInboxIdentity {
-        native_session: request.native_session,
-        pid: request.pid,
-        proc_start: request.proc_start,
-    };
-    match state
-        .services
-        .delivery
-        .take_urgent(&request.seat, &identity, &request.msg_ids)
-        .await
-    {
-        Ok(messages) => envelope(
-            StatusCode::OK,
-            &Envelope::ok(
-                "pij inbox",
-                serde_json::json!({"messages": messages.iter().map(|message| serde_json::json!({"message": message})).collect::<Vec<_>>()}),
             ),
         ),
         Err(error) => inbox_failure(error),

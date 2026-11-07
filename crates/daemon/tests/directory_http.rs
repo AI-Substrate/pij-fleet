@@ -4174,165 +4174,6 @@ async fn a_reply_from_the_holder_answers_the_request_and_stops_its_clock() {
     );
 }
 
-/// Plan 214, AC3 and AC4: an urgent send to a working native Copilot seat is
-/// queued and named on its receiver heartbeat; its receiver takes it at a tool
-/// boundary, once, and it never arrives again at turn end. OMP steers already;
-/// Codex is downgraded with a receipt warning; every urgent send writes one
-/// `send.urgent` event; `--urgent --fyi` is refused.
-#[tokio::test]
-async fn an_urgent_send_reaches_a_working_copilot_seat_at_its_tool_boundary_once() {
-    use pij_core::model::{ProcIdentity, SystemState};
-    use pij_daemon::delivery::urgent::URGENT_EVENT_KIND;
-    let repo = repo("pij-urgent");
-    let rig = rig(Arc::new(NoHook)).await;
-    let mut native = SeatDescriptor::new("pij-native", Harness::Copilot, "/tmp");
-    native.proc = Some(ProcIdentity {
-        pid: 137,
-        proc_start: 1370,
-    });
-    native.harness_session = Some("native-137".into());
-    native.pane = Some("%137".into());
-    native.native_extension_delivery = true;
-    native.state = SystemState::Working;
-    rig.services.registry.put(native.clone()).await.unwrap();
-    let codex = SeatDescriptor::new("pij-codex", Harness::Codex, "/tmp");
-    rig.services.registry.put(codex).await.unwrap();
-
-    let sent = send_to(
-        rig.addr,
-        &repo.main,
-        "pij-native",
-        "u-1",
-        json!({"urgent": true}),
-    )
-    .await;
-    assert_eq!(sent["ok"], true, "{sent}");
-    assert_eq!(sent["data"]["outcome"]["outcome"], "queued", "{sent}");
-    assert!(sent["data"].get("warning").is_none(), "{sent}");
-    let seat = SeatId::from("pij-native");
-    assert_eq!(rig.delivery.urgent_pending(&seat), ["u-1"]);
-    let audit = rig
-        .bus
-        .latest_matching(&seat, &[URGENT_EVENT_KIND])
-        .await
-        .unwrap()
-        .expect("audited");
-    let payload: Value = serde_json::from_str(&audit.payload).unwrap();
-    assert_eq!(
-        (payload["from"].as_str(), payload["outcome"].as_str()),
-        (Some(SEAT), Some("injected"))
-    );
-
-    let take = |msg_ids: Value| {
-        let addr = rig.addr;
-        async move {
-            reqwest::Client::new()
-                .post(format!("http://{addr}/v1/inbox/urgent"))
-                .bearer_auth(KEY)
-                .json(&json!({
-                    "seat": "pij-native", "native_session": "native-137",
-                    "pid": 137, "proc_start": 1370, "msg_ids": msg_ids,
-                }))
-                .send()
-                .await
-                .unwrap()
-                .json::<Value>()
-                .await
-                .unwrap()
-        }
-    };
-    let taken = take(json!(["u-1", "not-urgent"])).await;
-    assert_eq!(taken["ok"], true, "{taken}");
-    assert_eq!(
-        taken["data"]["messages"][0]["message"]["body"],
-        "please u-1"
-    );
-    assert_eq!(taken["data"]["messages"].as_array().unwrap().len(), 1);
-    assert!(rig.delivery.urgent_pending(&seat).is_empty());
-    assert!(
-        rig.store
-            .message_reached_at("pij-native", "u-1")
-            .await
-            .unwrap()
-            .is_some(),
-        "the take is the delivery"
-    );
-    let again = take(json!(["u-1"])).await;
-    assert_eq!(again["data"]["messages"], json!([]), "taken once: {again}");
-    assert!(
-        rig.delivery.peek_inbox(&seat).await.unwrap().is_empty(),
-        "never again at turn end"
-    );
-    let stranger = reqwest::Client::new()
-        .post(format!("http://{}/v1/inbox/urgent", rig.addr))
-        .bearer_auth(KEY)
-        .json(&json!({"seat": "pij-native", "native_session": "other", "pid": 1, "proc_start": 1, "msg_ids": ["u-1"]}))
-        .send()
-        .await
-        .unwrap()
-        .json::<Value>()
-        .await
-        .unwrap();
-    assert_eq!(
-        stranger["ok"], false,
-        "another host takes nothing: {stranger}"
-    );
-
-    let steered = send_to(
-        rig.addr,
-        &repo.main,
-        "pij-holder",
-        "u-2",
-        json!({"urgent": true}),
-    )
-    .await;
-    assert_eq!(steered["ok"], true, "{steered}");
-    assert!(steered["data"].get("warning").is_none(), "{steered}");
-    let downgraded = send_to(
-        rig.addr,
-        &repo.main,
-        "pij-codex",
-        "u-3",
-        json!({"urgent": true}),
-    )
-    .await;
-    assert_eq!(downgraded["ok"], true, "{downgraded}");
-    assert!(
-        downgraded["data"]["warning"]
-            .as_str()
-            .is_some_and(|warning| warning.starts_with("--urgent downgraded for pij-codex (codex)")),
-        "{downgraded}"
-    );
-    for (seat, outcome) in [("pij-holder", "steered"), ("pij-codex", "downgraded")] {
-        let event = rig
-            .bus
-            .latest_matching(&SeatId::from(seat), &[URGENT_EVENT_KIND])
-            .await
-            .unwrap()
-            .expect("audited");
-        let payload: Value = serde_json::from_str(&event.payload).unwrap();
-        assert_eq!(payload["outcome"], outcome, "{seat}");
-    }
-    let both = send_to(
-        rig.addr,
-        &repo.main,
-        "pij-holder",
-        "u-4",
-        json!({"urgent": true, "fyi": true}),
-    )
-    .await;
-    assert_eq!(both["ok"], false);
-    assert!(
-        both["meta"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("E-RS-URGENT-FYI")
-            || both.to_string().contains("E-RS-URGENT-FYI"),
-        "{both}"
-    );
-    rig.server.abort();
-}
-
 fn role_of<'a>(view: &'a Value, id: &str) -> &'a Value {
     view["data"]["roles"]
         .as_array()
@@ -4817,5 +4658,103 @@ async fn the_views_assign_for_a_queued_instance_drains_it() {
             .unwrap()
             .is_empty()
     );
+    rig.server.abort();
+}
+
+/// Plan 214, C31: `pij steer` switches a seat's mid-turn steering, on by
+/// default. The native receiver learns it with every claim; a claim made
+/// during a turn while it is off gets a `turn-wait` hold and claims nothing.
+/// A queued send to a working seat that cannot steer gets a receipt note;
+/// a seat that steers gets none.
+#[tokio::test]
+async fn steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts() {
+    use pij_core::model::{ProcIdentity, SystemState};
+    let repo = repo("pij-steer");
+    let rig = rig(Arc::new(NoHook)).await;
+    let mut native = SeatDescriptor::new("pij-native", Harness::Copilot, "/tmp");
+    native.proc = Some(ProcIdentity {
+        pid: 137,
+        proc_start: 1370,
+    });
+    native.harness_session = Some("native-137".into());
+    native.pane = Some("%137".into());
+    native.native_extension_delivery = true;
+    native.state = SystemState::Working;
+    rig.services.registry.put(native).await.unwrap();
+    let mut codex = SeatDescriptor::new("pij-codex", Harness::Codex, "/tmp");
+    codex.state = SystemState::Working;
+    rig.services.registry.put(codex).await.unwrap();
+
+    let steer = |argv: &'static [&'static str]| {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move { call(addr, "/v1/steer", argv, &cwd).await }
+    };
+    let claim = |during_turn: bool| {
+        let addr = rig.addr;
+        async move {
+            reqwest::Client::new()
+                .get(format!(
+                    "http://{addr}/v1/inbox?seat=pij-native&native_session=native-137&pid=137&proc_start=1370&during_turn={during_turn}"
+                ))
+                .bearer_auth(KEY)
+                .send()
+                .await
+                .unwrap()
+                .json::<Value>()
+                .await
+                .unwrap()
+        }
+    };
+
+    let sent = send_to(rig.addr, &repo.main, "pij-native", "s-1", json!({})).await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    assert!(sent["data"].get("warning").is_none(), "steering on: no note: {sent}");
+    let page = claim(true).await;
+    assert_eq!(page["details"]["mid_turn_steer"], true, "{page}");
+    assert_eq!(page["data"][0]["message"]["msg_id"], "s-1", "claimed into the turn: {page}");
+
+    let off = steer(&["steer", "off", "pij-native"]).await;
+    assert_eq!(
+        (off["data"]["steer"].as_bool(), off["data"]["changed"].as_bool()),
+        (Some(false), Some(true)),
+        "{off}"
+    );
+    assert_eq!(off["data"]["subject_told"], "held (fyi)", "{off}");
+    let again = steer(&["steer", "off", "pij-native"]).await;
+    assert_eq!(again["data"]["changed"], false, "{again}");
+    let status = steer(&["steer", "status"]).await;
+    assert_eq!(status["data"]["off"][0]["seat"], "pij-native", "{status}");
+
+    let held = send_to(rig.addr, &repo.main, "pij-native", "s-2", json!({})).await;
+    assert!(
+        held["data"]["warning"]
+            .as_str()
+            .is_some_and(|note| note.contains("mid-turn steering is off")),
+        "{held}"
+    );
+    let waiting = claim(true).await;
+    assert_eq!(waiting["data"], json!([]), "{waiting}");
+    assert_eq!(waiting["details"]["mid_turn_steer"], false, "{waiting}");
+    assert!(
+        waiting["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.starts_with("native-consumer-held:turn-wait")),
+        "{waiting}"
+    );
+
+    let codex = send_to(rig.addr, &repo.main, "pij-codex", "s-3", json!({})).await;
+    assert!(
+        codex["data"]["warning"]
+            .as_str()
+            .is_some_and(|note| note.starts_with("pij-codex is mid-turn")),
+        "{codex}"
+    );
+    let omp = send_to(rig.addr, &repo.main, "pij-holder", "s-4", json!({})).await;
+    assert!(omp["data"].get("warning").is_none(), "OMP steers: {omp}");
+
+    let on = steer(&["steer", "on", "pij-native"]).await;
+    assert_eq!(on["data"]["steer"], true, "{on}");
+    let status = steer(&["steer", "status", "pij-native"]).await;
+    assert_eq!(status["data"]["steer"], true, "{status}");
     rig.server.abort();
 }

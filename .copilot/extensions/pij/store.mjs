@@ -457,9 +457,19 @@ export class DaemonClient {
 		return (await this.#requestEnvelope(path, body, signal)).data;
 	}
 
-	/** @returns {Promise<{claims: unknown[], hold: {kind: "consent" | "native-target", reason: string} | null}>} */
-	async claimInbox(tuple, signal) {
-		const query = new URLSearchParams({ ...tuple, wait: "true" });
+	/**
+	 * `duringTurn`: this claim is made while a turn a pij message started is
+	 * still running (plan 214, C31); the daemon answers a `turn-wait` hold when
+	 * the seat's mid-turn steering is off.
+	 * `steer` is the seat's mid-turn steering as the daemon reports it (absent: off).
+	 * @returns {Promise<{claims: unknown[], steer: boolean, hold: {kind: "consent" | "native-target" | "turn-wait", reason: string} | null}>}
+	 */
+	async claimInbox(tuple, signal, duringTurn = false) {
+		const query = new URLSearchParams({
+			...tuple,
+			wait: "true",
+			...(duringTurn ? { during_turn: "true" } : {}),
+		});
 		const envelope = await this.#requestEnvelope(`/v1/inbox?${query}`, undefined, signal, true);
 		if (envelope.meta != null && typeof envelope.meta !== "string")
 			throw new NativeError(
@@ -469,11 +479,16 @@ export class DaemonClient {
 		const reason = envelope.meta?.startsWith(prefix) ? envelope.meta.slice(prefix.length) : null;
 		return {
 			claims: envelope.data,
+			steer: envelope.details?.mid_turn_steer === true,
 			hold:
 				reason === null
 					? null
 					: {
-							kind: reason.startsWith("native-target-session:") ? "native-target" : "consent",
+							kind: reason.startsWith("native-target-session:")
+								? "native-target"
+								: reason.startsWith("turn-wait")
+									? "turn-wait"
+									: "consent",
 							reason,
 						},
 		};
@@ -1062,9 +1077,9 @@ export class NativeBridge {
 		this.running = undefined;
 		this.unsubscribe = undefined;
 		this.completion = undefined;
-		// Plan 214: urgent msg_ids the daemon named on the last heartbeat. A tool
-		// boundary reads this set and calls the daemon only when it is non-empty.
-		this.urgentIds = new Set();
+		// Plan 214 (C31): the seat's mid-turn steering, as the daemon reported it
+		// with the last claim. Unknown is off: the post-ack barrier holds.
+		this.steerMidTurn = false;
 		// Plan 158 addendum 3: busy/idle publication, serialized so a late
 		// `working` can never land after `idle`.
 		this.activity = Promise.resolve();
@@ -1282,7 +1297,6 @@ export class NativeBridge {
 					lease.renew_after_ms >= lease.lease_ms
 				)
 					throw new NativeError("Native receiver lease response is malformed; re-registering");
-				this.noteUrgent(lease.urgent);
 				if (unavailable) this.emit("receiver-lease-restored");
 				unavailable = false;
 				retry = INITIAL_RETRY_MS;
@@ -1323,51 +1337,6 @@ export class NativeBridge {
 				}
 				retry = Math.min(retry * 2, MAX_RETRY_MS);
 			}
-		}
-	}
-	/** Plan 214: the heartbeat's `urgent` msg_ids replace the pending set. */
-	noteUrgent(ids) {
-		this.urgentIds = new Set(Array.isArray(ids) ? ids.filter(nonempty) : []);
-	}
-	/**
-	 * Plan 214: at a tool boundary, take the urgent messages the daemon named and
-	 * hand them to the model as `additionalContext`. The daemon marks them
-	 * delivered as it hands them over, so they never arrive again at turn end.
-	 * With nothing pending this is a set-size check: no daemon call.
-	 */
-	async takeUrgent() {
-		if (this.urgentIds.size === 0 || !this.registered || this.controller.signal.aborted)
-			return undefined;
-		const msgIds = [...this.urgentIds];
-		this.urgentIds = new Set();
-		try {
-			const taken = await this.client.request(
-				"/v1/inbox/urgent",
-				{ ...this.tuple(), msg_ids: msgIds },
-				AbortSignal.any([this.controller.signal, AbortSignal.timeout(HOOK_REQUEST_TIMEOUT_MS)]),
-			);
-			const messages = Array.isArray(taken?.messages) ? taken.messages : [];
-			const blocks = messages
-				.filter(
-					(claim) => nonempty(claim?.message?.msg_id) && typeof claim.message.body === "string",
-				)
-				.map(
-					(claim) =>
-						`[pij urgent from ${JSON.stringify(senderLabel(claim.message))}; msg_id=${JSON.stringify(claim.message.msg_id)}]\n${claim.message.body}`,
-				);
-			if (blocks.length === 0) return undefined;
-			this.emit("urgent-delivered", {
-				msgIds: messages.map((claim) => claim.message.msg_id),
-				grade: "tool-boundary-context-not-model-complete",
-			});
-			return {
-				additionalContext: `Urgent pij message${blocks.length === 1 ? "" : "s"}, delivered at this tool boundary. Read before continuing; the sender says your current work depends on it:\n\n${blocks.join("\n\n")}`,
-			};
-		} catch (error) {
-			this.emit("urgent-take-failed", {
-				safeDiagnostic: error instanceof NativeError ? error.safeDiagnostic : null,
-			});
-			return undefined;
 		}
 	}
 	tuple() {
@@ -1457,9 +1426,26 @@ export class NativeBridge {
 						await this.observeStartup();
 						this.heartbeat = this.keepReceiverAlive();
 					}
-					if (this.completion) await this.waitForCompletion();
+					// C31 (plan 214): a turn a pij message started no longer blocks the
+					// next claim. Only a turn already ended is settled first; one still
+					// running is claimed into, and the message steers in (send mode
+					// immediate), unless the daemon says this seat's steering is off.
+					// Steering off (or unknown: an older daemon says nothing) keeps the
+					// barrier: the next claim waits for that turn to end.
+					if (this.completion && (this.completion.terminal || !this.steerMidTurn))
+						await (this.completion.settling ?? this.waitForCompletion());
 					throwIfStopped(signal);
-					const { claims, hold } = await this.client.claimInbox(this.tuple(), signal);
+					const duringTurn =
+						this.steerMidTurn && this.completion !== undefined && !this.completion.reported;
+					// The running turn is still reported when it ends, while the
+					// receiver waits in a claim.
+					const turnEnded = duringTurn ? this.settleInBackground(this.completion) : undefined;
+					const { claims, hold, steer } = await this.client.claimInbox(
+						this.tuple(),
+						signal,
+						duringTurn,
+					);
+					this.steerMidTurn = steer;
 					throwIfStopped(signal);
 					if (!Array.isArray(claims) || claims.length > 1)
 						throw new NativeError("Expected zero or one native claim; receiving held");
@@ -1475,6 +1461,17 @@ export class NativeBridge {
 								"Resume the targeted native session or use a new seat and intentionally reissue the message; no acknowledgement was sent.",
 						});
 						return;
+					}
+					if (hold?.kind === "turn-wait") {
+						this.emit("turn-wait", { reason: hold.reason });
+						await turnEnded;
+						continue;
+					}
+					if (turnEnded && !hold && claims.length === 0) {
+						// Nothing yet: claim again when the turn ends or the usual
+						// retry comes round, whichever is first.
+						await Promise.race([turnEnded, this.delay(retry, signal)]);
+						continue;
 					}
 					if (hold || claims.length === 0) {
 						if (hold) this.emit("consent-held", { reason: hold.reason, retryMs: retry });
@@ -1546,8 +1543,23 @@ export class NativeBridge {
 			this.receiverController.abort();
 		}
 	}
-	async waitForCompletion() {
-		const completion = this.completion;
+	/**
+	 * Report `completion` when its turn ends, without blocking the receiver
+	 * (plan 214, C31). Once per completion; a failure surfaces to whoever
+	 * awaits the result, never as an unhandled rejection.
+	 */
+	settleInBackground(completion) {
+		if (!completion.settling) {
+			const settling = this.waitForCompletion(completion);
+			completion.settling = settling;
+			// A failed wait is retried by the next caller, as the blocking wait is.
+			settling.catch(() => {
+				if (completion.settling === settling) completion.settling = undefined;
+			});
+		}
+		return completion.settling;
+	}
+	async waitForCompletion(completion = this.completion) {
 		if (completion.reported) return;
 		this.emit("completion-wait", {
 			msgId: completion.msgId,
@@ -2042,14 +2054,7 @@ export class NativeBridge {
 		if (!nonempty(input?.to) || !nonempty(input?.message))
 			return { ok: false, error: "pij_send requires nonempty to and message strings" };
 		const force = input.force === true;
-		const urgent = input.urgent === true;
 		// The daemon refuses these too; refusing here sends nothing at all.
-		if (urgent && input.fyi === true)
-			return {
-				ok: false,
-				error:
-					"E-RS-URGENT-FYI: urgent asks for delivery mid-turn and fyi holds it for the next turn; pick one",
-			};
 		if (force && input.fyi === true)
 			return { ok: false, error: `${COLD_WAKE_CODE}: force wakes a message; never with fyi` };
 		if (force && !nonempty(input.reason))
@@ -2070,7 +2075,6 @@ export class NativeBridge {
 					body: input.message,
 					msg_id: msgId,
 					...(input.fyi === true ? { fyi: true } : {}),
-					...(urgent ? { urgent: true } : {}),
 					...(force ? { force: true, reason: input.reason } : {}),
 				},
 				this.controller.signal,

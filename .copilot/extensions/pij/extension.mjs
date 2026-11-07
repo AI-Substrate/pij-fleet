@@ -58,11 +58,6 @@ async function startExtension() {
 	const signal = controller.signal;
 	let bridge;
 	let session;
-	// Plan 214: a tool boundary in this session takes pending urgent messages.
-	const urgentAt = (invocation) =>
-		session && bridge && !signal.aborted && invocation?.sessionId === session.sessionId
-			? bridge.takeUrgent()
-			: undefined;
 	let unsubscribe;
 	const nativeReport = createNativeReporter({
 		log: (message, options) => session.log(message, options),
@@ -92,7 +87,7 @@ async function startExtension() {
 				{
 					name: "pij_send",
 					description:
-						"Send a message to a Pij peer from this native Copilot seat. A receipt proves queue/native acceptance, not completed model work. Call explicitly; replies are never automatically forwarded. `fyi: true` holds a message and rides along on the recipient's next turn instead of opening one. Use `fyi: true` only when the recipient's next action doesn't depend on it. If they'd be stuck, wrong or waiting without it, it's a normal send. If they'd be fine not reading it until their next turn, it's `fyi: true`. If they'd be fine never reading it, don't send it. Always normal sends: work done or a phase complete, review verdicts, hand-offs, blockers, questions, decisions needed. FYI examples: \"merged #452, nothing needed from you\"; \"heads-up: main moved, rebase when you next touch it\"; progress notes nobody is waiting on. A cold recipient (large context, idle past its prompt-cache TTL, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; resend with fyi if their next action doesn't depend on it, or with force and a reason only when the wake is worth that price (audited).",
+						"Send a message to a Pij peer from this native Copilot seat. A receipt proves queue/native acceptance, not completed model work. Call explicitly; replies are never automatically forwarded. `fyi: true` holds a message and rides along on the recipient's next turn instead of opening one. A normal send lands inside a turn the recipient is already in, so choose fyi unless their current work depends on it. Use `fyi: true` only when the recipient's next action doesn't depend on it. If they'd be stuck, wrong or waiting without it, it's a normal send. If they'd be fine not reading it until their next turn, it's `fyi: true`. If they'd be fine never reading it, don't send it. Always normal sends: work done or a phase complete, review verdicts, hand-offs, blockers, questions, decisions needed. FYI examples: \"merged #452, nothing needed from you\"; \"heads-up: main moved, rebase when you next touch it\"; progress notes nobody is waiting on. A cold recipient (large context, idle past its prompt-cache TTL, not working) refuses a waking message with E-RS-COLD-WAKE naming the price; resend with fyi if their next action doesn't depend on it, or with force and a reason only when the wake is worth that price (audited).",
 					parameters: {
 						type: "object",
 						properties: {
@@ -106,11 +101,6 @@ async function startExtension() {
 								type: "boolean",
 								description:
 									"Hold until the recipient's next turn instead of opening one. Only when their next action doesn't depend on it: if they'd be stuck, wrong or waiting without it, send normally; if they'd be fine never reading it, don't send it. Never for work done, review verdicts, hand-offs, blockers, questions or decisions needed. Never with force",
-							},
-							urgent: {
-								type: "boolean",
-								description:
-									"Deliver at the recipient's next tool call instead of when its current turn ends. Only when the recipient is mid-turn and its current work is wrong without this message (stop, the plan changed, it is editing the wrong thing). Everything else is a normal send or fyi. Never with fyi",
 							},
 							force: {
 								type: "boolean",
@@ -147,10 +137,6 @@ async function startExtension() {
 						return undefined;
 					return bridge.claimFyis();
 				},
-				// Plan 214: urgent messages land at the next tool boundary. With
-				// none pending this is a set-size check and no daemon call.
-				onPostToolUse: async (_input, invocation) => urgentAt(invocation),
-				onPostToolUseFailure: async (_input, invocation) => urgentAt(invocation),
 			},
 		});
 		signal.throwIfAborted();

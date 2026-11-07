@@ -577,21 +577,6 @@ pub trait Queue: Send + Sync {
     /// it for audit attribution instead of trusting a request-body seat.
     async fn ack_delivery(&self, job: JobId, origin: DeliveryOrigin) -> Result<DeliveryAck>;
 
-    /// Plan 214: deliver queued (pending) message `msg_id` to `recipient` now,
-    /// at a tool boundary, without claiming it: pending straight to done, with
-    /// the same ledger record and retention as [`Self::ack_delivery`] in one
-    /// transaction. Never running, so the one-running-row-per-recipient rule
-    /// holds. `None` when it is no longer pending (delivered at turn end, or
-    /// claimed by the receiver first). Queues without tool-boundary delivery
-    /// take nothing.
-    async fn take_pending_delivery(
-        &self,
-        _recipient: &SeatId,
-        _msg_id: &str,
-    ) -> Result<Option<Job>> {
-        Ok(None)
-    }
-
     /// CLAIM the right to deliver `msg_id` to `recipient`, or learn who already did.
     ///
     /// **R4-AMEND-4.** Returns `None` when the claim is now ours, `Some(origin)`

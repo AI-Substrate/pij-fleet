@@ -900,7 +900,6 @@ mod tests {
             msg_id: "m-1".to_string(),
             from_machine: None,
             in_reply_to: None,
-            urgent: false,
         }
     }
 

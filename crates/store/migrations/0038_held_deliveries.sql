@@ -1,4 +1,5 @@
--- Deliveries held behind a busy turn (plan 214, AC2; number from pij claim).
+-- Held deliveries and mid-turn steering (plan 214, AC2 and AC3, ruling C31;
+-- number from pij claim).
 --
 -- A delivery's held time is `jobs.acked_at - jobs.enqueued_at`: queued to
 -- reached-the-session on every rung (the ack is written after the body reaches
@@ -20,5 +21,17 @@ CREATE INDEX held_deliveries_unflagged
 -- Still-queued deliveries, oldest first, for the digest's live half.
 CREATE INDEX jobs_live_delivery
     ON jobs (enqueued_at) WHERE state IN ('pending', 'running') AND kind LIKE 'delivery:%';
+
+-- Mid-turn steering, per seat (C31). A native Copilot seat's extension keeps
+-- claiming while a turn it started is still running and steers each normal
+-- send into it. No row means on; `pij steer off <seat>` writes `steer = 0`, and
+-- the claim made during such a turn reads it, so the switch takes effect
+-- without a restart and is never polled.
+CREATE TABLE seat_steering (
+    seat      TEXT PRIMARY KEY,
+    steer     INTEGER NOT NULL CHECK (steer IN (0, 1)),
+    set_by    TEXT NOT NULL,
+    set_at_ms INTEGER NOT NULL
+) STRICT;
 
 PRAGMA user_version = 38;

@@ -764,6 +764,20 @@ It changes only the seat's mechanical `state` (a targeted write that never rewri
   - **A killed or exited process** fires nothing. The death sweep's tombstone, or a new incarnation registering the seat, resets it to `idle`.
   - While a seat reads `working`, the cold-wake guard treats it as busy and allows the send. That is the safe direction for a brake.
 
+### Mid-turn steering (plan 214, ruling C31)
+
+A normal send lands inside a turn the recipient is already in, wherever the harness can take it there: OMP and Pi steer every message into a running turn, Claude's socket transport delivers between tool calls, and the native Copilot extension steers too. Until C31 the Copilot extension claimed its next pij message only after the turn its previous pij message started had ended (the post-ack barrier), which held messages for hours behind long turns (F25). Now, while such a turn runs, it keeps claiming, and each claimed normal send goes in with `send` mode `immediate`, which steers it into the running turn. The turn is still observed and reported (`native-completed`) when it ends. FYIs are unchanged: held until the recipient's next real turn.
+
+**The switch.** `pij steer on|off|status [<seat>]` (`POST /v1/steer`, argv + `caller`) sets a seat's mid-turn steering; on by default, and the seat defaults to the caller. Any seat may switch any live seat, as with the watchdog. A real change appends a `steer.changed` event, and a seat changed by another is told in a held FYI. `status` lists `{default: "on", off: [{seat, set_by, set_at_ms}]}`, with `{seat, steer}` when a seat is named. The setting lives in `seat_steering` (migration 0038); no row means on.
+
+**How the receiver reads it.** Every native claim (`GET /v1/inbox`) reports the seat's setting as `details.mid_turn_steer`; the extension keeps the last value and treats a missing one as off, so an older daemon keeps the barrier. During a turn its own message started, the extension claims only when the last value was on, and marks the claim `during_turn=true`. The daemon re-reads the setting for that claim; when it is off, nothing is claimed and the answer is the hold `native-consumer-held:turn-wait: …`, and the extension waits for the turn to end before its next claim. A change therefore takes effect at the seat's next claim, with no restart and no poll: one primary-key read per claim.
+
+**Receipt note.** A normal send that is queued for a working seat that cannot take it before its turn ends gets a receipt `warning`: `<seat> is mid-turn and <why>: this message may wait for that turn to end.` The reasons are steering off, a Copilot seat with no native extension, a Claude seat with no inbound socket, and Codex. OMP, Pi, socket Claude and native Copilot with steering on get no note.
+
+A message still held long behind a busy turn shows up in the PA digest (`Messages held behind a busy turn`, below), which is how a wedge or a seat with steering off is noticed.
+
+Cost: no timer, poll or launch. One primary-key read per native claim (the switch), a registry read per queued send (the note), and one more claim per message during a turn instead of one after it.
+
 ### Cold-wake guard (plan 157 phase 2)
 
 Waking a seat whose prompt cache has expired re-writes its whole context at cache-write prices. The daemon therefore refuses a waking send to a **cold** recipient. The constants, the price table and the pure rule live in [`cold_wake.rs`](../../crates/core/src/cold_wake.rs): context over `COLD_CONTEXT_TOKENS`, last API call older than `COLD_IDLE_MS`, and the daemon does not see the seat working. The guard is a brake: it only ever refuses, and it never changes what is delivered.
@@ -818,25 +832,6 @@ A role request with a limit (`--limit`, else the role's `default_limit`, C5; wit
 
 Cost per round: one indexed read of the open limited requests (delivered, limited, not escalated, not answered), plus one `LIMIT 1` card read per open request; a check-in or notice is one claim, one pin, one delivery and one stamp; a retry of a stopped daemon's claim adds up to two indexed admission probes. A notice with nobody to tell is retried each round, at one claim, one assignments read and one release per such request. No launch site and no timer.
 
-## Urgent sends (plan 214)
-
-`pij send <seat|role:...> --urgent` (and `urgent: true` on the native Copilot `pij_send` tool) asks for delivery at the recipient's next tool call instead of when its current turn ends. Use it only when the recipient is mid-turn and its current work is wrong without the message (stop, the plan changed, it is editing the wrong thing); everything else is a normal send or `--fyi`. An idle recipient gets an urgent send exactly as a normal one, cold-wake rules included. `--urgent` with `--fyi` is refused, `E-RS-URGENT-FYI`, and nothing is sent; `--urgent` with `--command` is refused too.
-
-| Recipient | What happens | `send.urgent` outcome |
-|---|---|---|
-| Copilot with the native pij extension | Queued as usual and marked urgent. The receiver's heartbeat (every 20 s) carries `urgent: [msg_id…]`; at its next tool call the extension's `onPostToolUse` / `onPostToolUseFailure` hook calls `POST /v1/inbox/urgent` with its host tuple and those msg_ids, and returns the bodies as `additionalContext`. The daemon moves each from pending to delivered in one store transaction (the same ledger row a turn-end delivery writes), so it never arrives again at turn end. Whichever comes first, the tool boundary or the turn end, delivers it, once. | `injected` |
-| OMP, Pi | Already steered into a running turn; urgent changes nothing. | `steered` |
-| Claude with an inbound socket | The socket transport already delivers between tool calls. | `injected` |
-| Claude without a socket, Copilot without the native extension, Codex | Sent as a normal message, at turn end; the receipt's `warning` names the seat, its harness and why. | `downgraded` |
-
-Every urgent send that is admitted writes one `send.urgent` spine event on the recipient, `{from, to, msg_id, harness, outcome}`, so the PA can count urgent sends per sender. There is no rate cap: the event makes overuse visible. The urgent mark lives in daemon memory; a daemon restart delivers a marked message at turn end, as a normal send. A forwarded (remote) send is never urgent here. A role send that queues for want of a holder is drained normally when one is assigned.
-
-Cost: no new timer, poll or launch. The heartbeat's urgent list is a map lookup. On a tool call the extension checks a set's size and calls the daemon only when it is non-empty; that call is one indexed update per message (`jobs_by_dedupe`).
-
-| Refusal | When |
-|---|---|
-| `E-RS-URGENT-FYI` | `--urgent` with `--fyi` |
-
 ## Governance route inventory
 
 All POST families below use argv/caller unless the typed alternative is named. Unknown leaves refuse; unsupported flags are not dropped. These are the daemon routes, not invented `/v1/report/<leaf>` endpoints.
@@ -855,6 +850,7 @@ All POST families below use argv/caller unless the typed alternative is named. U
 | POST `/v1/orchestration` | `orchestration baton define/list/show/request/grant/return/reclaim`; `prime set/retire/unset <seat>`; `role set <seat> <role>` / `role unset <seat>` | `baton-define`, `baton-list`, `baton-show`, `baton-request`, `baton-grant`, `baton-return`, `baton-reclaim`, `prime-set`, `prime-retire`, `prime-unset`, `orchestration-role-set`, `role-unset` |
 | POST `/v1/role` | `role [<seat>] <role>` / `role [<seat>] --unset`; typed `{seat?, role, caller}` | `role-set` |
 | POST `/v1/link` | `link <seat> [--parent <you>] --role <pm/worker/pa>`; argv + `caller` only | — (`crates/cli/tests/seat_roles.rs`) |
+| POST `/v1/steer` | `steer on [<seat>]`; `off [<seat>]`; `status [<seat>]`; argv + `caller` only | — ([Mid-turn steering](#mid-turn-steering-plan-214-ruling-c31)) |
 | POST `/v1/watchdog` | `watchdog on [<seat>] [--every <duration>]`; `off [<seat>]`; `status [<seat>]`; argv + `caller` only | — ([Opt-in watchdog](#opt-in-watchdog)) |
 | POST `/v1/report` | `report now/state/question/blocked/clear/verify`; state metadata flags below | `report-question`, `report-verify` |
 | GET and POST `/v1/anomalies` | `anomalies [--here] [--project <slug>]`; GET `here=<absolute-path>&project=<slug>` | `anomalies-list`, `anomalies-argv` |
