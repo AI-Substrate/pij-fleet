@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "dc772d6810945eaabbfa77c9438dd24954cd691c",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6713392274",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:167",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #167, exact head `dc772d6810945eaabbfa77c9438dd24954cd691c`.\n\nReviewed all 24 changed files against base `ed9a3d7cf2f7386c6817cc7bb3394e9d59221160`, plus the dependent admission, identity, delivery and store boundaries. No new high-confidence exploitable security vulnerability was identified.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new vulnerability identified | - |\n\n### Wake authority\n\n`crates/daemon/src/http/mod.rs:2421-2550` requires a pane-derived live actor, rejects a contradictory `from`, validates the compact control, and records its admitted target and receipt ID. Existing compact policy already allows compaction of another seat (`crates/core/src/control.rs:80-93`); its fixed subsequent wake is reachable through that admission, not a new caller-selected target/body route. External `pij-bg` impersonation is refused (`http/mod.rs:1930-1934`).\n\n`crates/daemon/src/compaction_wake.rs:85-148` requires a pending compact admission and the exact seat/message delivery outcome before inspecting activity, idle state, settle time and queue emptiness. Caller-authored spine events cannot supply that required delivery payload because the append handler constructs its payload itself (`crates/daemon/src/http/governance.rs:1466-1490`). Inherited activity assertions do not independently create a pending compact.\n\nCurrent C32 was read at `.harness/government/community/RULINGS.md:36`. Live-pane identity is registration strength under the clarified rule. Inherited raw-from/send-as limitations remain explicitly disclosed and regression-tested (`docs/how/pij-rs-api.md:862`; `crates/daemon/tests/directory_http.rs:5579-5627`); this verdict does not certify stronger caller provenance.\n\n### Recipients and disclosure\n\n`compaction_wake.rs:150-172,203-260` constructs the resume/FYI bodies from role, project and instance labels, plus claim kind, number and project. It does not include claim subjects, handover contents, credentials, grants, tokens or private paths. The wake targets the compacted seat; the FYI targets its recorded, untombstoned parent from the registry snapshot, not the requester or a global prime.\n\nHoldings metadata also enters the existing machine-readable audit stream; the messages are not the only representation of that metadata. No new confidential content or wider message recipient was identified. Changed public docs, tests and logging expressions introduce no C19/C21 forward-disclosure violation.\n\n### Migration and persistent marker\n\n`crates/store/migrations/0044_compaction_wakes.sql:11-24` is additive and uniquely above this base's highest migration, 0043. `crates/store/src/compactions.rs:22-121` uses parameterized, cancellation-owned transactions: insertion and supersession commit together, and settlement conditionally updates only the exact pending seat/message row. No caller-facing marker reset or expanded retry authority was added.\n\nThe marker guarantees **at-most-once wake initiation, not atomic exactly-once delivery**. Compact admission/recording and settle/send/audit are separate operations; cancellation or send failure can lose the wake. Holdings-read errors become empty holdings while claim-read errors defer. These are correctness/reliability limits, not demonstrated authority or confidentiality exploits, and this security verdict does not clear them.\n\n### Proof\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA. GitHub initially reported CLEAN but returned UNKNOWN at the final pre-publication check with the same head; current integration readiness is unconfirmed. CI run `42416354906` and Delivers run `42416354938` both identify this SHA and success.\n\nNo local tests, builds, runtime compactions/wakes, fault injection, credential reads or payload execution were performed. Migration safety and guards were source-reviewed; their execution proof is exact-head CI.\n"
+		}
+	]
+}
