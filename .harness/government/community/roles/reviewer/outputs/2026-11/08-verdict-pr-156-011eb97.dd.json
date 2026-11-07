@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b6cf-72dc-7c50-b6a4-85972cdb746c",
+				"date": "2026-11-08",
+				"head": "011eb97664562a2acc980f53161f0a97a6056593",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/156#issuecomment-6709852195",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:156",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #156 repair review\n\n## A) Verdict\n\n**BLOCK** at `011eb97664562a2acc980f53161f0a97a6056593`.\n\n**F001 remains partially open:** a semantic delivery refusal consumes that recipient's notification permanently. **F002 and N001 are closed.**\n\n## B) Scope and proof\n\nReviewed `a7a0f4a470532ae54d0103528b2bf338abff3bfe..011eb97664562a2acc980f53161f0a97a6056593`, principally repair commits b6d9407b and 10065a5b and the final merge seam. The already-reviewed #155/#153/#136 imports are separate from this repair assessment.\n\nClean pinned checkout; GitHub and ls-remote agree, CLEAN. Exact-head CI `42390021868`, attempt 1, passed: 2,129 JUnit cases, zero failures/errors. The retry, bound, sequence, marker, control-only and state controls are present. No local builds/tests, mutations, captures or live cost probes were run. The requested told-guard mutation is author-reported, not a reviewer mutation.\n\n## C) F001, P2: Refused is still recorded as told\n\n`crates/daemon/src/modal_stall.rs:244-254` classifies only strings starting with `error` as failures. Every other result, including `refused`, calls mark_modal_stall_told. `stall.owes` subsequently suppresses that recipient for the same quiet_seq, including after restart.\n\nThis is a real transient outcome, not just an adapter exception:\n\n- `pa_watchdog.rs:369-372` maps an Ok delivery receipt through outcome_word; `:1114-1120` maps DeliveryOutcome::Refused to `refused`.\n- `delivery/mod.rs:1052-1078` returns an Ok Refused receipt when a live native Copilot recipient's receiver lease is absent. It does not enqueue this message.\n- The same recipient can renew its native receiver and recover; the existing CI test native_receiver_wrong_incarnation_cannot_renew_and_current_receiver_can_recover exercises refusal followed by heartbeat and successful delivery.\n\nThus a stalled seat's native parent or PA can miss its notice while its receiver is temporarily unavailable. The notification row says that recipient was told, so recovery does not cause another attempt; only a new own event by the stalled seat re-arms it.\n\nThe new partial-failure/restart and bound tests instead inject `error: refused by the test` (`modal_stall.rs:238`, `modal_stall_tests.rs:496`). They cover exception recovery, not the actual Refused receipt, and therefore pass with this defect.\n\nTreat a Refused receipt as an unsuccessful tell, record its bounded failure count, and retain the stable message id for retry. Prefer the structured receipt/acceptance result over a rendered string prefix. Add a real native-receiver refusal/recovery control with the already-successful other target still deduplicated. Error recovery, later-target discovery and the five-failure bound otherwise work.\n\n## D) F002 and N001 closed\n\nThe detector now retains the latest own event's seq as quiet_seq. Claim/replacement, open updates and recipient stamps are sequence-bound; standing reads use e.seq > m.quiet_seq, not timestamps. Duration alone uses event.at. The store control verifies earlier and equal clocks clear the view; the daemon earlier-clock control re-arms and sends a second notice. The increasing-clock/restart control still passes.\n\nMessages and human state output now say the seat is silent for a duration, with a fixed label on screen. They do not claim that the dialog existed for that whole duration.\n\n## E) Control-only path and label consistency\n\ncapture_without_launch defaults to None. The real tmux adapter calls query_live, which passes may_start=false; all no-client/lost/disabled paths return without starting or falling back to a capture process. The real isolated-tmux CI control checks cold/disabled, live positive read and lost-client zero-launch cases. The daemon two-candidate control verifies one recorded skip per seat and no tells when unavailable.\n\nThe marker result carries only static label/key/clears fields. The three labels match the packet. The canary control checks stored rows, queued messages, events and roster/card; cropped lynx and other harness fixture controls remain covered. Security's independent verdict still owns S156001.\n\n## F) Merge, migration and cost\n\nThe final merge retains ModalStall, ModalStallSkipped and Presence variants and both modal/presence calls in the watchdog round. SCHEMA_VERSION and migration 0040 are 40, above imported main's 0039. The unmerged prototype now contains quiet_seq, told and failed; an already-applied private prototype would not be checksum-compatible, not a production upgrade claim.\n\nNo new recurring loop was added. Reads remain one latest-own-event snapshot per eligible working seat and one control-only capture per candidate when available. Failed exception retries are capped at five per target per stretch. Live deployment measurements remain performance-owned and owed; this correctness review does not certify them.\n\n## G) Handover\n\nKeep the closed sequence, wording, no-launch and fixed-label repairs. Close the remaining semantic-refusal hole in F001 and return one frozen head with the actual refusal/recovery control. Harness observation DL-007 records why the current synthetic error injection misses that outcome. No product code was changed by this reviewer.\n"
+		}
+	]
+}
