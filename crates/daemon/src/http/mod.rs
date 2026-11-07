@@ -2544,6 +2544,8 @@ async fn admit_control(state: &AppState, msg: Msg) -> Result<pij_core::model::Re
     let target = msg.to.clone();
     let receipt = state.services.delivery.accept_control(msg).await?;
     if compact {
+        // Plan 222: a holder this compaction leaves idle is woken once.
+        crate::compaction_wake::record(&state.services, &target, &receipt.msg_id, receipt.at).await;
         // Held for the first turn after the compact (plan 202), here so a compact
         // the memory turn held gets it too. Keyed to the compact's recipient and
         // id: a replay holds nothing new, and another seat's compact with the same

@@ -181,6 +181,17 @@ pub enum RoundOutcome {
         /// Why.
         reason: String,
     },
+    /// A seat a compaction left idle while it holds work was sent its resume
+    /// message, and its parent an FYI (plan 222). Also a
+    /// `watchdog.compaction-wake` event.
+    CompactionWake {
+        /// The woken seat.
+        seat: SeatId,
+        /// The resume message's delivery outcome word, or `error: ...`.
+        delivery: String,
+        /// The parent told, and its FYI's outcome word.
+        parent: Option<(SeatId, String)>,
+    },
     /// A presence message (plan 217) was handed to delivery: the missing-PA
     /// or unresponsive-PA alert to the prime, the dormant wake to the PA, or
     /// the large-seat FYI to the prime.
@@ -343,7 +354,7 @@ pub(crate) async fn audit_cold_wake(
     Ok(verdict.receipt_label(true))
 }
 
-fn bg_msg(to: &SeatId, body: String, msg_id: String) -> Msg {
+pub(crate) fn bg_msg(to: &SeatId, body: String, msg_id: String) -> Msg {
     Msg {
         from: SeatId::from(BG_ACTOR),
         to: to.clone(),
@@ -464,6 +475,8 @@ impl PaWatchdog {
         );
         // Seats stalled on a dialog ride it too (plan 219).
         outcomes.extend(crate::modal_stall::round(self, services, &seats, now_ms).await);
+        // And holders a compaction left idle (plan 222).
+        outcomes.extend(crate::compaction_wake::round(services, &seats, now_ms).await);
 
         let pas: Vec<&SeatDescriptor> = seats.iter().filter(|seat| is_watched_pa(seat)).collect();
         // The designated prime is a supervisor whatever its role says: its

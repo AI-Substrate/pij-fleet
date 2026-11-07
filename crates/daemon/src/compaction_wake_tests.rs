@@ -1,0 +1,411 @@
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use pij_core::compaction_wake::{COMPACT_DELIVERY_BOUND_MS, COMPACT_SETTLE_MS};
+use pij_core::config::{AdapterChoice, Adapters, Config};
+use pij_core::model::{Event, Harness, Msg, SeatDescriptor, SeatId, SystemState};
+use pij_testkit::FreshStore;
+use pij_testkit::fakes::FakeTmux;
+
+use crate::pa_watchdog::{PaWatchdog, RoundOutcome};
+
+const INTERVAL: u64 = 1_200;
+const MINUTE: u64 = 60_000;
+const SEAT: &str = "pij-coder";
+const PARENT: &str = "pij-pm";
+
+async fn services() -> (crate::Services, FreshStore, Config, String) {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let store = FreshStore::new();
+    let config = Config {
+        adapters: Adapters {
+            registry: AdapterChoice::Real,
+            spine: AdapterChoice::Real,
+            queue: AdapterChoice::Real,
+            ..Adapters::default()
+        },
+        store_path: store.path(),
+        ..Config::default()
+    };
+    let mut services = build(&config, &store).await;
+    services.tmux = Arc::new(FakeTmux::new());
+    let folder = std::env::temp_dir().join(format!(
+        "pij-compaction-wake-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&folder).unwrap();
+    (services, store, config, folder.display().to_string())
+}
+
+async fn build(config: &Config, store: &FreshStore) -> crate::Services {
+    crate::build_services(config, &Path::new(&store.path()).with_extension("signals"))
+        .await
+        .expect("real store services")
+}
+
+/// The PM and its idle Copilot coder.
+async fn fleet(services: &crate::Services, folder: &str) {
+    let mut pm = SeatDescriptor::new(PARENT, Harness::Claude, folder);
+    pm.pane = Some("%20".into());
+    let mut coder = SeatDescriptor::new(SEAT, Harness::Copilot, folder);
+    coder.parent = Some(SeatId::from(PARENT));
+    coder.pane = Some("%21".into());
+    coder.state = SystemState::Idle;
+    for seat in [pm, coder] {
+        services.registry.put(seat).await.unwrap();
+    }
+}
+
+/// `coder/222` in pij-fleet.
+async fn hold_role(services: &crate::Services) {
+    services
+        .watchdogs()
+        .record_assignment_committed(
+            &pij_store::Assignment {
+                project: "pij-fleet".into(),
+                role: "coder".into(),
+                instance: "222".into(),
+                seat: SEAT.into(),
+                harness: Some("copilot".into()),
+                session: None,
+                machine: None,
+                from: "2026-11-08T00:00:00Z".into(),
+                to: None,
+                assigned_by: PARENT.into(),
+                released_by: None,
+                why: "test".into(),
+                release_why: None,
+                end_pending: false,
+            },
+            Some("worker"),
+            1,
+        )
+        .await
+        .expect("holding");
+}
+
+async fn append(services: &crate::Services, kind: &str, at: u64, payload: serde_json::Value) {
+    let _ = services
+        .spine
+        .append(Event {
+            seq: None,
+            v: 1,
+            at,
+            kind: kind.into(),
+            seat: Some(SeatId::from(SEAT)),
+            payload: payload.to_string(),
+        })
+        .await
+        .unwrap();
+}
+
+/// A compact control admitted at `at` (recorded as `admit_control` records
+/// it), pushed, then delivered a second later: wildcat's 23:02:35 to 23:03:01.
+async fn compact(services: &crate::Services, msg_id: &str, at: u64) {
+    crate::compaction_wake::record(services, &SeatId::from(SEAT), msg_id, at).await;
+    append(
+        services,
+        "message.pushed",
+        at,
+        serde_json::json!({"msg_id": msg_id, "from": SEAT, "body": "", "command": "compact"}),
+    )
+    .await;
+    append(
+        services,
+        crate::delivery::OUTCOME_EVENT_KIND,
+        at + 1_000,
+        serde_json::json!({"msg_id": msg_id, "outcome": {"outcome": "delivered", "origin": "injected-to-transport"}, "transport": "pty"}),
+    )
+    .await;
+}
+
+fn wakes(outcomes: Vec<RoundOutcome>) -> Vec<RoundOutcome> {
+    outcomes
+        .into_iter()
+        .filter(|outcome| matches!(outcome, RoundOutcome::CompactionWake { .. }))
+        .collect()
+}
+
+/// Messages queued for the seat, drained: the resume messages among them.
+async fn resumes(services: &crate::Services) -> Vec<Msg> {
+    let mut messages = Vec::new();
+    while let Some((job, payload)) = services
+        .queue
+        .claim(&[format!("delivery:{SEAT}")], "test-drain")
+        .await
+        .unwrap()
+    {
+        let msg: Msg = serde_json::from_str(&payload.payload).unwrap();
+        if msg.msg_id.starts_with("compaction-wake:") {
+            messages.push(msg);
+        }
+        services
+            .queue
+            .ack(job, pij_core::model::Outcome::Done)
+            .await
+            .unwrap();
+    }
+    messages
+}
+
+async fn settled(services: &crate::Services, msg_id: &str) -> Option<String> {
+    services
+        .watchdogs()
+        .compaction_settled(&SeatId::from(SEAT), msg_id)
+        .await
+        .unwrap()
+        .expect("recorded")
+}
+
+/// bp-0001: F111's shape. A holder idle after its compaction with nothing
+/// queued: not inside the settle bound, then once, naming its holding and
+/// claim, with an FYI to its parent; later rounds and a restarted daemon send
+/// nothing more.
+#[tokio::test]
+async fn a_holder_left_idle_by_its_compaction_is_woken_once() {
+    let (services, store, config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold_role(&services).await;
+    services
+        .watchdogs()
+        .claim_number(
+            "pij-fleet",
+            "migration",
+            &SeatId::from(SEAT),
+            "compaction wakes",
+            43,
+            1,
+        )
+        .await
+        .expect("claim");
+    let start = crate::http::system_time_ms().unwrap();
+    compact(&services, "m-compact", start).await;
+    let watchdog = PaWatchdog::default();
+
+    let settling = watchdog
+        .round(&services, INTERVAL, start + COMPACT_SETTLE_MS)
+        .await
+        .unwrap();
+    assert!(wakes(settling).is_empty(), "inside the settle bound");
+    assert_eq!(settled(&services, "m-compact").await, None);
+
+    let due = start + COMPACT_SETTLE_MS + MINUTE;
+    assert_eq!(
+        wakes(watchdog.round(&services, INTERVAL, due).await.unwrap()),
+        vec![RoundOutcome::CompactionWake {
+            seat: SEAT.into(),
+            delivery: "queued".into(),
+            parent: Some((PARENT.into(), "held".into())),
+        }]
+    );
+    assert_eq!(
+        settled(&services, "m-compact").await.as_deref(),
+        Some("woken")
+    );
+    let sent = resumes(&services).await;
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].from.as_str(), "pij-bg");
+    assert_eq!(sent[0].command, None, "a normal message");
+    assert!(
+        sent[0].body.starts_with(
+            "resume: you hold coder/222 (project pij-fleet) and migration 0044 (project pij-fleet); \
+             re-read your handover and continue, or tell your parent if you're blocked."
+        ),
+        "{}",
+        sent[0].body
+    );
+    assert_eq!(
+        services
+            .delivery
+            .pending_fyi_count(&SeatId::from(PARENT))
+            .await
+            .unwrap(),
+        1
+    );
+
+    assert!(
+        wakes(
+            watchdog
+                .round(&services, INTERVAL, due + MINUTE)
+                .await
+                .unwrap()
+        )
+        .is_empty()
+    );
+    // A restart: the mark is in the store, not in memory.
+    let restarted = build(&config, &store).await;
+    assert!(
+        wakes(
+            PaWatchdog::default()
+                .round(&restarted, INTERVAL, due + 2 * MINUTE)
+                .await
+                .unwrap()
+        )
+        .is_empty()
+    );
+    assert!(resumes(&services).await.is_empty());
+}
+
+/// bp-0001: a seat holding nothing is never sent it.
+#[tokio::test]
+async fn a_seat_holding_nothing_is_not_woken() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    let start = crate::http::system_time_ms().unwrap();
+    compact(&services, "m-compact", start).await;
+
+    let outcomes = PaWatchdog::default()
+        .round(&services, INTERVAL, start + COMPACT_SETTLE_MS + MINUTE)
+        .await
+        .unwrap();
+    assert!(wakes(outcomes).is_empty());
+    assert_eq!(
+        settled(&services, "m-compact").await.as_deref(),
+        Some("holds-nothing")
+    );
+    assert!(resumes(&services).await.is_empty());
+}
+
+/// bp-0001: while something is queued for it the seat isn't sent it; once
+/// that drains with nothing started, it is.
+#[tokio::test]
+async fn a_seat_with_something_queued_is_not_woken_until_it_drains() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold_role(&services).await;
+    services
+        .delivery
+        .accept(Msg {
+            from: SeatId::from(PARENT),
+            to: SeatId::from(SEAT),
+            body: "sent before the compact, not delivered yet".into(),
+            msg_id: "m-earlier".into(),
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .expect("queued");
+    let start = crate::http::system_time_ms().unwrap();
+    compact(&services, "m-compact", start).await;
+    let watchdog = PaWatchdog::default();
+
+    let due = start + COMPACT_SETTLE_MS + MINUTE;
+    assert!(wakes(watchdog.round(&services, INTERVAL, due).await.unwrap()).is_empty());
+    assert_eq!(settled(&services, "m-compact").await, None, "still owed");
+
+    assert!(resumes(&services).await.is_empty(), "drained: m-earlier");
+    assert_eq!(
+        wakes(
+            watchdog
+                .round(&services, INTERVAL, due + MINUTE)
+                .await
+                .unwrap()
+        )
+        .len(),
+        1
+    );
+}
+
+/// bp-0001: a seat that starts anything after its compact (a turn, a report,
+/// or a message pushed to it) isn't sent it. Claude's `/compact` posts one
+/// `seat.activity` idle as it ends, and that alone doesn't count.
+#[tokio::test]
+async fn only_a_turn_report_or_message_after_the_compact_cancels_the_wake() {
+    for (kind, payload, expected) in [
+        (
+            "seat.activity",
+            serde_json::json!({"state": "idle"}),
+            "woken",
+        ),
+        (
+            "seat.activity",
+            serde_json::json!({"state": "working"}),
+            "resumed",
+        ),
+        (
+            "report.now",
+            serde_json::json!({"text": "on it"}),
+            "resumed",
+        ),
+        (
+            "message.pushed",
+            serde_json::json!({"msg_id": "m-next", "from": PARENT, "body": "next"}),
+            "resumed",
+        ),
+    ] {
+        let (services, _store, _config, folder) = services().await;
+        fleet(&services, &folder).await;
+        hold_role(&services).await;
+        let start = crate::http::system_time_ms().unwrap();
+        compact(&services, "m-compact", start).await;
+        append(&services, kind, start + 3_000, payload.clone()).await;
+
+        let _ = PaWatchdog::default()
+            .round(&services, INTERVAL, start + COMPACT_SETTLE_MS + MINUTE)
+            .await
+            .unwrap();
+        assert_eq!(
+            settled(&services, "m-compact").await.as_deref(),
+            Some(expected),
+            "{kind} {payload}"
+        );
+        assert_eq!(
+            resumes(&services).await.len(),
+            usize::from(expected == "woken"),
+            "{kind} {payload}"
+        );
+    }
+}
+
+/// bp-0001: a new compaction re-arms the wake; a newer compact supersedes an
+/// older one still pending; a compact never delivered is given up on.
+#[tokio::test]
+async fn a_new_compaction_rearms_the_wake() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold_role(&services).await;
+    let watchdog = PaWatchdog::default();
+    let start = crate::http::system_time_ms().unwrap();
+    compact(&services, "m-first", start).await;
+    let first = start + COMPACT_SETTLE_MS + MINUTE;
+    assert_eq!(
+        wakes(watchdog.round(&services, INTERVAL, first).await.unwrap()).len(),
+        1
+    );
+    assert_eq!(resumes(&services).await.len(), 1);
+
+    let seat = SeatId::from(SEAT);
+    crate::compaction_wake::record(&services, &seat, "m-stuck", first + MINUTE).await;
+    let second = first + 2 * MINUTE;
+    compact(&services, "m-second", second).await;
+    assert_eq!(
+        settled(&services, "m-stuck").await.as_deref(),
+        Some("superseded")
+    );
+    assert_eq!(
+        wakes(
+            watchdog
+                .round(&services, INTERVAL, second + COMPACT_SETTLE_MS + MINUTE)
+                .await
+                .unwrap()
+        )
+        .len(),
+        1
+    );
+    assert_eq!(resumes(&services).await.len(), 1);
+
+    let lost = second + 10 * MINUTE;
+    crate::compaction_wake::record(&services, &seat, "m-lost", lost).await;
+    let _ = watchdog
+        .round(&services, INTERVAL, lost + COMPACT_DELIVERY_BOUND_MS)
+        .await
+        .unwrap();
+    assert_eq!(
+        settled(&services, "m-lost").await.as_deref(),
+        Some("undelivered")
+    );
+    assert!(resumes(&services).await.is_empty());
+}

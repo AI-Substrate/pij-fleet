@@ -56,9 +56,12 @@ the handover files you check, you are read-only.
      c. `pij send <seat> --command compact`. Copilot seats compact like Claude seats (plan 186).
         Paneless seats refuse it (`E-RS-CONTROL-PANELESS`), so don't try; report the size to the prime.
      d. Verify **on the next nudge**: its context dropped and then grew, or a turn started. A "~0k"
-        footer right after compaction is an artefact, not a reading. If it is idle with work in flight:
-        `pij send <seat> '<prime-id> PA: post-compaction check: re-read <handover> and resume <item>.'`
-        If it had nothing in flight, say so; don't call that "resumed".
+        footer right after compaction is an artefact, not a reading. A seat holding a role or a claim
+        that the compaction left idle is sent one `resume: you hold ...` message by pij itself, about
+        5 minutes after the compact lands (plan 222), and its parent an FYI; don't send your own.
+        Only if it is still idle with work in flight after that: `pij send <seat> '<prime-id> PA:
+        post-compaction check: re-read <handover> and resume <item>.'` If it had nothing in flight,
+        say so; don't call that "resumed".
 2. **Watchdog duty** — the Needs a look list.
    - `ready`/idle, quiet a whole interval: is it stalled or just done? Capture its pane. If it is
      stalled, send **one** specific ask. If it is done, tell the prime in your round line.
