@@ -33,6 +33,19 @@ impl DaemonClient {
         .await
     }
 
+    /// Forward steer arguments (without the leading verb) and caller evidence.
+    pub async fn steer(&self, args: &[String], caller: &CallerContext) -> Envelope<Value> {
+        let argv: Vec<&str> = std::iter::once("steer")
+            .chain(args.iter().map(String::as_str))
+            .collect();
+        self.post(
+            "pij steer",
+            "/v1/steer",
+            &json!({"argv":argv,"caller":caller}),
+        )
+        .await
+    }
+
     /// Forward link arguments (without the leading verb) and caller evidence.
     pub async fn link(&self, args: &[String], caller: &CallerContext) -> Envelope<Value> {
         let argv: Vec<&str> = std::iter::once("link")

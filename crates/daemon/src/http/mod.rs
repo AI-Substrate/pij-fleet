@@ -27,6 +27,7 @@ pub mod role;
 mod role_send;
 mod routes;
 mod shim;
+pub mod steer;
 mod types;
 mod watchdog;
 
@@ -53,8 +54,8 @@ use pij_core::delivery::{DEFAULT_TYPING_GRACE_MS, HeldEvent, ReleasedEvent};
 use pij_core::error::{PijError, Result};
 use pij_core::events::EventFilter;
 use pij_core::model::{
-    DeliveryOutcome, Envelope, ErrorKind, Event, Harness, Msg, ProcIdentity, SeatDescriptor,
-    SeatId, SemanticState, Seq,
+    DeliveryOutcome, Envelope, ErrorKind, Event, Harness, Msg, ProcIdentity, Receipt,
+    SeatDescriptor, SeatId, SemanticState, Seq,
 };
 use pij_core::names::memorable_pij_id_candidates;
 use pij_core::ports::Registry;
@@ -183,6 +184,8 @@ enum Endpoint {
     Link,
     /// Opt-in watchdog control (`pij watchdog on|off|status`).
     Watchdog,
+    /// Mid-turn steering, per seat (`pij steer on|off|status`, plan 214, C31).
+    Steer,
     Close,
     Reap,
     Anomalies,
@@ -219,7 +222,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 59] = [
+    const ALL: [Self; 60] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -255,6 +258,7 @@ impl Endpoint {
         Self::Role,
         Self::Link,
         Self::Watchdog,
+        Self::Steer,
         Self::Close,
         Self::Reap,
         Self::Anomalies,
@@ -313,6 +317,7 @@ impl Endpoint {
             Self::Role => "/v1/role",
             Self::Link => "/v1/link",
             Self::Watchdog => "/v1/watchdog",
+            Self::Steer => "/v1/steer",
             Self::Close => "/v1/close",
             Self::Reap => "/v1/reap",
             Self::Anomalies => "/v1/anomalies",
@@ -370,6 +375,7 @@ impl Endpoint {
             Self::Role
             | Self::Link
             | Self::Watchdog
+            | Self::Steer
             | Self::Close
             | Self::Reap
             | Self::Anomalies
@@ -611,6 +617,7 @@ fn router_with_optional_federation(
                     | Endpoint::Role
                     | Endpoint::Link
                     | Endpoint::Watchdog
+                    | Endpoint::Steer
                     | Endpoint::Close
                     | Endpoint::Reap
                     | Endpoint::Anomalies
@@ -683,6 +690,7 @@ fn router_with_optional_federation(
             Endpoint::Role => router.route(endpoint.path(), post(role::role)),
             Endpoint::Link => router.route(endpoint.path(), post(role::link)),
             Endpoint::Watchdog => router.route(endpoint.path(), post(watchdog::watchdog)),
+            Endpoint::Steer => router.route(endpoint.path(), post(steer::steer)),
             Endpoint::Close => router.route(endpoint.path(), post(lifecycle::close)),
             Endpoint::Reap => router.route(endpoint.path(), post(lifecycle::reap)),
             Endpoint::Anomalies => router.route(
@@ -1973,6 +1981,22 @@ async fn send(
             }
         }
     }
+    let reply = if request.message.from_machine.is_none() {
+        match reply_sender(
+            &state,
+            "send",
+            &request.message.from,
+            request.message.in_reply_to.as_deref(),
+            request.caller.as_ref(),
+        )
+        .await
+        {
+            Ok(evidence) => evidence,
+            Err(response) => return *response,
+        }
+    } else {
+        None
+    };
     // A send to `role:<id>` resolves through the directory first (plan 199).
     if let Some(response) = role_send::route(
         &state,
@@ -1998,10 +2022,29 @@ async fn send(
     )
     .await
     {
+        // A holder's reply addressed to a role answers too, when the role send
+        // was accepted; a refused receipt is HTTP 200 too (review of #152, F002).
+        if role_send::accepted(&response) {
+            answered_by(
+                &state,
+                &request.message.from,
+                request.message.in_reply_to.as_deref(),
+                reply,
+            )
+            .await;
+        }
         return response;
     }
     if request.message.fyi {
-        return hold_fyi(&state, request).await;
+        let (from, in_reply_to) = (
+            request.message.from.clone(),
+            request.message.in_reply_to.clone(),
+        );
+        let response = hold_fyi(&state, request).await;
+        if response.status().is_success() {
+            answered_by(&state, &from, in_reply_to.as_deref(), reply).await;
+        }
+        return response;
     }
     if let Some(command) = request.command {
         if request.message.to.machine.is_some() {
@@ -2055,6 +2098,8 @@ async fn send(
         Ok(label) => label,
         Err(response) => return *response,
     };
+    let (reply_from, reply_to) = (request.from.clone(), request.in_reply_to.clone());
+    let note_to = request.to.seat.clone();
     let msg = Msg {
         from: request.from,
         // Stamped above from the authenticated peer key, or absent locally.
@@ -2073,11 +2118,173 @@ async fn send(
     match accepted {
         Ok(mut receipt) => {
             receipt.cold_check = cold_check;
+            if !forwarded && !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
+                answered_by(&state, &reply_from, reply_to.as_deref(), reply).await;
+                note_turn_wait(&state, &note_to, &mut receipt).await;
+            }
             envelope(StatusCode::OK, &Envelope::ok("pij send", receipt))
         }
 
         Err(error) => send_failure("pij send", error),
     }
+}
+
+/// A normal send queued for a seat that is mid-turn and cannot take it until
+/// that turn ends gets a receipt note saying so, and why (plan 214, C31).
+/// Seats that steer (OMP, Pi, socket Claude, native Copilot with steering on)
+/// get none. One registry read and, for native Copilot, one setting read,
+/// only when the receipt is queued.
+pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut Receipt) {
+    if !matches!(receipt.outcome, DeliveryOutcome::Queued { .. }) {
+        return;
+    }
+    let Ok(Some(seat)) = state.services.registry.get(to).await else {
+        return;
+    };
+    if seat.state != pij_core::model::SystemState::Working {
+        return;
+    }
+    let why = match seat.harness {
+        Harness::Omp | Harness::Pi => return,
+        Harness::Claude if seat.cross_session_inbound_accept == Some(true) => return,
+        Harness::Copilot if seat.native_extension_delivery => {
+            match state
+                .services
+                .governance
+                .store()
+                .mid_turn_steering(seat.id.as_str())
+                .await
+            {
+                Ok(false) => {
+                    "its mid-turn steering is off (`pij steer on` turns it back on), so if a pij \
+                     message started this turn"
+                }
+                _ => return,
+            }
+        }
+        Harness::Copilot => "this Copilot seat has no native pij extension to steer it in",
+        Harness::Claude => {
+            "this Claude seat has no inbound socket, so pij can only type at turn end"
+        }
+        Harness::Codex => "Codex has no way for pij to reach a running turn",
+    };
+    let note = format!(
+        "{} is mid-turn and {why}: this message may wait for that turn to end.",
+        seat.id
+    );
+    receipt.warning = Some(match receipt.warning.take() {
+        Some(earlier) => format!("{earlier}; {note}"),
+        None => note,
+    });
+}
+
+/// The audit event for a reply that answered a role request (S152-001).
+pub const REPLY_ANSWER_EVENT_KIND: &str = "request.answered_by_reply";
+
+/// How a reply's sender was established, for the audit: the route, and what
+/// bound the caller to a seat (`pane (derived)` or an asserted session id)
+/// with the evidence it gave. A reply is never unbound (C32 (1)).
+pub(crate) type ReplyEvidence = serde_json::Value;
+
+/// Check a reply's sender before anything is sent (S152-001, F88; ruling C32).
+/// Only a send whose `in_reply_to` names a role request is checked. When the
+/// caller's context resolves to a seat, that seat is the sender: a different
+/// `from` is refused `E-RS-REPLY-SENDER`, and context that cannot be resolved
+/// is refused as the identity ladder refuses it. A caller with no context at
+/// all is refused `E-RS-REPLY-IDENTITY`, normal or FYI: its `from` is only a
+/// claim, and delivering it would show the recipient a message from a seat
+/// that never sent it (C32 (1); security review of #152, S152-001).
+pub(crate) async fn reply_sender(
+    state: &AppState,
+    route: &'static str,
+    from: &SeatId,
+    in_reply_to: Option<&str>,
+    caller: Option<&CallerContext>,
+) -> std::result::Result<Option<ReplyEvidence>, Box<Response>> {
+    let Some(id) = in_reply_to else {
+        return Ok(None);
+    };
+    match state.services.governance.store().role_request(id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return Ok(None),
+        // Unknown whether it is a request, so unknown whether it must bind.
+        Err(error) => return Err(Box::new(internal("pij send", error))),
+    }
+    let pane = caller.and_then(|caller| caller.pane.clone());
+    let session = caller.and_then(|caller| caller.session_id.clone());
+    if pane.is_none() && session.is_none() {
+        return Err(Box::new(refused(
+            "pij send",
+            format!(
+                "E-RS-REPLY-IDENTITY: this reply to request {id} carries no caller identity \
+                 context (no TMUX_PANE or PIJ_SESSION_ID), so pij cannot tell which seat sends \
+                 it, and it never delivers a reply as {from} on that seat's word; send it from \
+                 {from}'s own session"
+            ),
+        )));
+    }
+    match identity::resolve_seat(state, "pij send", session.clone(), pane.clone()).await {
+        identity::Resolved::Seat(seat, by) if seat.id != *from => Err(Box::new(refused(
+            "pij send",
+            format!(
+                "E-RS-REPLY-SENDER: this reply to request {id} says it is from {from}, but its caller \
+                 is {} (by {}); a reply answers a request only as the seat that sends it",
+                seat.id,
+                by.as_str()
+            ),
+        ))),
+        identity::Resolved::Seat(seat, by) => Ok(Some(serde_json::json!({
+            "route": route,
+            "bound": by.as_str(),
+            "pane": pane,
+            "session": session,
+            "pid": seat.proc.map(|proc| proc.pid),
+            "proc_start": seat.proc.map(|proc| proc.proc_start),
+        }))),
+        // Known evidence that does not resolve (a pane that contradicts the
+        // asserted id, an unregistered pane, a failed read) is refused, never
+        // downgraded to an unbound reply (ruling C32 (2); S152-001).
+        identity::Resolved::Refusal(response) => Err(Box::new(response)),
+    }
+}
+
+/// A reply from a role request's holder answers it (plan 214, F68): the
+/// stored holder only, once, with its audit event in the same transaction
+/// (S152-001; ruling C32 (3)).
+pub(crate) async fn answered_by(
+    state: &AppState,
+    from: &SeatId,
+    in_reply_to: Option<&str>,
+    evidence: Option<ReplyEvidence>,
+) {
+    let (Some(id), Some(evidence)) = (in_reply_to, evidence) else {
+        return;
+    };
+    let Ok(now_ms) = system_time_ms() else {
+        return;
+    };
+    let mut payload = serde_json::json!({"request": id, "from": from});
+    if let (Some(payload), serde_json::Value::Object(evidence)) =
+        (payload.as_object_mut(), evidence)
+    {
+        payload.extend(evidence);
+    }
+    let audit = Event {
+        seq: None,
+        v: 1,
+        at: now_ms,
+        kind: REPLY_ANSWER_EVENT_KIND.into(),
+        seat: Some(from.clone()),
+        payload: payload.to_string(),
+    };
+    crate::delivery::role_send::answer_by_reply(
+        &state.services,
+        from,
+        Some(id),
+        now_ms,
+        Some(audit),
+    )
+    .await;
 }
 
 /// `@` is the address separator, so NO msg_id carries it, local or forwarded:
@@ -2369,7 +2576,16 @@ struct InboxQuery {
     native_session: Option<String>,
     pid: Option<u32>,
     proc_start: Option<u64>,
+    /// The receiver asks during a turn its own claim started (plan 214, C31):
+    /// with the seat's steering off, nothing is claimed and it waits for the
+    /// turn to end.
+    #[serde(default)]
+    during_turn: bool,
 }
+
+/// The hold a receiver gets for a claim during a turn when its seat's
+/// mid-turn steering is off (plan 214, C31).
+pub use crate::delivery::TURN_WAIT_HOLD;
 
 /// Read one inbox message. The default path claims it for explicit client ack;
 /// `peek=true` is observation-only and never changes queue state.
@@ -2391,12 +2607,48 @@ async fn inbox(State(state): State<AppState>, Query(query): Query<InboxQuery>) -
         pid: query.pid,
         proc_start: query.proc_start,
     };
+    // C31: the switch is read with the claim, never polled: one primary-key
+    // read per claim, reported to the receiver as `details.mid_turn_steer`.
+    let steer = match state
+        .services
+        .governance
+        .store()
+        .mid_turn_steering(query.seat.as_str())
+        .await
+    {
+        Ok(steer) => steer,
+        Err(error) => return internal("pij inbox", error),
+    };
+    if query.during_turn && !steer {
+        let page = Ok(crate::delivery::NativeInboxPage {
+            claims: Vec::new(),
+            held_reason: Some(TURN_WAIT_HOLD.to_string()),
+        });
+        return native_inbox_reply_steering(&state, &query.seat, page, Some(steer)).await;
+    }
+    if !query.during_turn {
+        let result = state
+            .services
+            .delivery
+            .claim_native_inbox(&query.seat, query.wait, &identity)
+            .await;
+        return native_inbox_reply_steering(&state, &query.seat, result, Some(steer)).await;
+    }
+    // Re-read at the hand-off, so a claim that waits sees `off` set meanwhile.
+    let store = state.services.governance.store().clone();
+    let seat = query.seat.clone();
+    let steering = move || {
+        let (store, seat) = (store.clone(), seat.clone());
+        Box::pin(async move { store.mid_turn_steering(seat.as_str()).await })
+            as std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool>> + Send>>
+    };
     let result = state
         .services
         .delivery
-        .claim_native_inbox(&query.seat, query.wait, &identity)
+        .claim_native_inbox_during_turn(&query.seat, query.wait, &identity, &steering)
         .await;
-    native_inbox_reply(&state, &query.seat, result).await
+    let steer = !matches!(&result, Ok(page) if page.held_reason.as_deref() == Some(TURN_WAIT_HOLD));
+    native_inbox_reply_steering(&state, &query.seat, result, Some(steer)).await
 }
 
 #[derive(Deserialize)]
@@ -2433,12 +2685,31 @@ async fn native_inbox_reply(
     seat: &SeatId,
     result: Result<crate::delivery::NativeInboxPage>,
 ) -> Response {
+    native_inbox_reply_steering(state, seat, result, None).await
+}
+
+/// [`native_inbox_reply`], carrying the seat's mid-turn steering (plan 214).
+async fn native_inbox_reply_steering(
+    state: &AppState,
+    seat: &SeatId,
+    result: Result<crate::delivery::NativeInboxPage>,
+    steer: Option<bool>,
+) -> Response {
     let reason = match state.services.delivery.native_receiver_reason(seat).await {
         Ok(reason) => reason,
         Err(error) => return internal("pij inbox", error),
     };
     match result {
-        Ok(page) => native_inbox_response(page, reason),
+        Ok(page) => {
+            let mut response = native_inbox_envelope(page, reason);
+            if let Some(steer) = steer {
+                response
+                    .details
+                    .get_or_insert_with(|| serde_json::json!({}))["mid_turn_steer"] =
+                    serde_json::json!(steer);
+            }
+            envelope(StatusCode::OK, &response)
+        }
         Err(error) => inbox_failure_with_reason(error, reason),
     }
 }
@@ -2458,13 +2729,21 @@ fn receiver_diagnostic<T>(answer: &mut Envelope<T>, reason: Option<&str>) {
     }
 }
 
+#[cfg(test)]
 fn native_inbox_response(page: crate::delivery::NativeInboxPage, reason: Option<&str>) -> Response {
+    envelope(StatusCode::OK, &native_inbox_envelope(page, reason))
+}
+
+fn native_inbox_envelope(
+    page: crate::delivery::NativeInboxPage,
+    reason: Option<&str>,
+) -> Envelope<Vec<crate::delivery::InboxClaim>> {
     let mut answer = Envelope::ok("pij inbox", page.claims);
     answer.meta = page
         .held_reason
         .map(|reason| format!("native-consumer-held:{reason}"));
     receiver_diagnostic(&mut answer, reason);
-    envelope(StatusCode::OK, &answer)
+    answer
 }
 
 fn inbox_failure(error: PijError) -> Response {

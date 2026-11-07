@@ -228,6 +228,21 @@ const ADMITTED_SQL: &str = "SELECT \
        OR EXISTS (SELECT 1 FROM fyis \
          WHERE fyis.origin = '' AND fyis.id = ?2 AND fyis.recipient = ?1)";
 
+/// When local message `?2` reached recipient `?1`'s session, in ms (plan 214,
+/// F73): its delivery ledger row; else its acknowledged delivery job (the
+/// ledger keeps only each recipient's latest rows; `outcome IS NULL` is a
+/// real `ack_delivery`, not a refusal acked done); else its FYI, once
+/// delivered. NULL while it is still held. Each probe is an indexed SEARCH.
+const REACHED_SQL: &str = "SELECT COALESCE( \
+       (SELECT ledger.delivered_at * 1000 FROM delivered_messages AS ledger \
+         WHERE ledger.recipient = ?1 AND ledger.sender_machine = '' AND ledger.msg_id = ?2), \
+       (SELECT max(jobs.acked_at) * 1000 FROM jobs \
+         WHERE jobs.kind = 'delivery:' || ?1 AND jobs.dedupe_origin = '' AND jobs.dedupe_key = ?2 \
+         AND jobs.state = 'done' AND jobs.outcome IS NULL), \
+       (SELECT fyis.settled_at_ms FROM fyis \
+         WHERE fyis.origin = '' AND fyis.id = ?2 AND fyis.recipient = ?1 \
+         AND fyis.state = 'delivered'))";
+
 const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
      limit_ms, state, holder, created_at, delivered_at, checkin_at, escalated_at, answered_at";
 
@@ -670,6 +685,19 @@ impl SqliteOrchestration {
         .await
     }
 
+    /// When local message `msg_id` reached `recipient`'s session, in ms, or
+    /// `None` while it is still held (plan 214, F73): see [`REACHED_SQL`].
+    pub async fn message_reached_at(&self, recipient: &str, msg_id: &str) -> Result<Option<u64>> {
+        require_current_schema(&self.pool).await?;
+        let at: Option<i64> = sqlx::query_scalar(REACHED_SQL)
+            .bind(recipient)
+            .bind(msg_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(adapter_error)?;
+        at.map(|at| sql_u64(at, "reached_at")).transpose()
+    }
+
     /// Did delivery already take local message `msg_id` for `recipient`? The
     /// same evidence boot recovery uses: a ledger row, a `delivery:<recipient>`
     /// job in any state, or a held FYI, each an indexed SEARCH.
@@ -756,6 +784,45 @@ impl SqliteOrchestration {
     }
 
     /// Set `column` once: a second call changes nothing and returns `false`.
+    /// [`Self::mark_role_request_answered`] with its audit: the stamp and the
+    /// `audit` event commit in one transaction, the event only when the stamp
+    /// changed a row (ruling C32 (3); review of #152, F006). A failed append
+    /// leaves the request unanswered, so the next reply answers it. Returns
+    /// the appended event, for the caller to publish, and whether it stamped.
+    pub async fn mark_role_request_answered_audited(
+        &self,
+        id: &str,
+        at: u64,
+        audit: Event,
+    ) -> Result<(Vec<Event>, bool)> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let at = sql_i64(at, "answered_at")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let changed = sqlx::query(
+                "UPDATE role_requests SET answered_at = ?2 WHERE id = ?1 AND answered_at IS NULL",
+            )
+            .bind(&id)
+            .bind(at)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            let mut events = Vec::new();
+            if changed {
+                let mut audit = audit;
+                audit.seq = Some(append_in_transaction(&mut tx, &audit).await?);
+                events.push(audit);
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok((events, changed))
+        })
+        .await
+    }
+
     async fn stamp_once(&self, id: &str, column: &'static str, at: u64) -> Result<bool> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
@@ -1226,10 +1293,17 @@ mod tests {
     #[tokio::test]
     async fn limit_admission_probes_are_indexed_searches() {
         let pool = crate::open("").await.expect("memory");
-        let plan: Vec<String> = sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::ADMITTED_SQL))
+        // Plan 214: the arrival probe (F73) reads the same three indexes.
+        for sql in [super::ADMITTED_SQL, super::REACHED_SQL] {
+            limit_probe_is_indexed(&pool, sql).await;
+        }
+    }
+
+    async fn limit_probe_is_indexed(pool: &crate::StorePool, sql: &str) {
+        let plan: Vec<String> = sqlx::query(&format!("EXPLAIN QUERY PLAN {sql}"))
             .bind("pij-pa")
             .bind("role-limit-notice-r")
-            .fetch_all(&pool)
+            .fetch_all(pool)
             .await
             .expect("plan")
             .iter()

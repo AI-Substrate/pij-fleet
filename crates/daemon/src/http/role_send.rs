@@ -33,6 +33,23 @@ pub(crate) struct RoleSendCall<'a> {
     pub(crate) caller: Option<&'a CallerContext>,
 }
 
+/// Marks a role send's answer as accepted: queued for the role, delivered to
+/// its holder, or a replay of a request that was. A refusal, or a holder's
+/// refused receipt (which is still HTTP 200), carries no mark, so it never
+/// answers the request it replies to (review of #152, F002).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RoleSendAccepted;
+
+/// Whether `response` is an accepted role send (see [`RoleSendAccepted`]).
+pub(crate) fn accepted(response: &Response) -> bool {
+    response.extensions().get::<RoleSendAccepted>().is_some()
+}
+
+fn mark_accepted(mut response: Response) -> Response {
+    response.extensions_mut().insert(RoleSendAccepted);
+    response
+}
+
 /// `None` when this is an ordinary send to a seat: the caller carries on.
 /// Otherwise the whole answer: a refusal, a queued request, or the holder's
 /// receipt with the request on it.
@@ -115,9 +132,9 @@ async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) ->
             let mut data = serde_json::to_value(&receipt).unwrap_or(Value::Null);
             data["request"] = request_json(&request);
             data["woke"] = woke;
-            envelope(StatusCode::OK, &Envelope::ok(command, data))
+            mark_accepted(envelope(StatusCode::OK, &Envelope::ok(command, data)))
         }
-        Ok(Routed::Replay { request }) => replay_response(command, &request, now_ms),
+        Ok(Routed::Replay { request }) => mark_accepted(replay_response(command, &request, now_ms)),
         Ok(Routed::Holder {
             seat,
             body,
@@ -133,7 +150,7 @@ async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) ->
             {
                 return match store.role_request(&request.id).await {
                     Ok(Some(existing)) if existing.state != RequestState::Delivering => {
-                        replay_response(command, &existing, now_ms)
+                        mark_accepted(replay_response(command, &existing, now_ms))
                     }
                     _ => send_failure(command, error),
                 };
@@ -187,13 +204,16 @@ async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) ->
                         receipt
                     })
             };
-            let receipt = match delivered {
+            let mut receipt = match delivered {
                 Ok(receipt) => receipt,
                 Err(error) => {
                     abandon(&store, &request).await;
                     return send_failure(command, error);
                 }
             };
+            if !call.fyi {
+                super::note_turn_wait(state, &seat, &mut receipt).await;
+            }
             let mut data = serde_json::to_value(&receipt).unwrap_or(Value::Null);
             if matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) {
                 abandon(&store, &request).await;
@@ -213,7 +233,7 @@ async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) ->
                 Err(cause) => data["request_warning"] = json!(cause.to_string()),
             }
             data["request"] = request_json(&request);
-            envelope(StatusCode::OK, &Envelope::ok(command, data))
+            mark_accepted(envelope(StatusCode::OK, &Envelope::ok(command, data)))
         }
     }
 }

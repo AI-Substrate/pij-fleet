@@ -517,6 +517,12 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Mid-turn steering for a seat: `steer on|off|status [<seat>]` (plan 214).
+    /// Off restores the post-ack barrier for a turn a pij message started.
+    Steer {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Tombstone a seat owned by this caller without killing its process or pane.
     Close {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1456,8 +1462,11 @@ async fn run(cli: Cli) -> ExitCode {
                     }
                 }
             };
-            // A control keeps its own caller field; only a role message carries one here.
+            // A control keeps its own caller field; a role message and a reply
+            // carry one here, since the daemon binds a reply to its caller
+            // (ruling C32; review of #152, S152-001).
             let to_role = to.seat.as_str().starts_with("role:") && command.is_none();
+            let caller = message_caller(to_role, in_reply_to.is_some(), command.is_some());
             let request = SendRequest {
                 from: acting,
                 to,
@@ -1471,7 +1480,7 @@ async fn run(cli: Cli) -> ExitCode {
                 reply,
                 limit,
                 project,
-                caller: to_role.then(caller_context),
+                caller,
             };
             if to_role {
                 let mut response = client.send_role(&request).await;
@@ -1769,6 +1778,10 @@ async fn run(cli: Cli) -> ExitCode {
         Command::Watchdog { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             emit(&client.watchdog(&args, &caller_context()).await, as_json)
+        }
+        Command::Steer { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            emit(&client.steer(&args, &caller_context()).await, as_json)
         }
         Command::Close { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
@@ -2375,6 +2388,12 @@ fn shell_pwd() -> PathBuf {
         }
         _ => cwd,
     }
+}
+
+/// The caller evidence a non-control send carries: a role message's and a
+/// reply's. A control sends its own.
+fn message_caller(to_role: bool, reply: bool, control: bool) -> Option<CallerContext> {
+    (!control && (to_role || reply)).then(caller_context)
 }
 
 fn caller_context() -> CallerContext {
@@ -4000,6 +4019,7 @@ impl Command {
             Command::Role { .. } => "pij role",
             Command::Link { .. } => "pij link",
             Command::Watchdog { .. } => "pij watchdog",
+            Command::Steer { .. } => "pij steer",
             Command::Close { .. } => "pij close",
             Command::Reap { .. } => "pij reap",
             Command::Anomalies { .. } => "pij anomalies",
@@ -4530,6 +4550,7 @@ PEC notice";
                 "role",
                 "link",
                 "watchdog",
+                "steer",
                 "close",
                 "reap",
                 "anomalies",
@@ -4665,6 +4686,22 @@ PEC notice";
             panic!("expected send");
         };
         assert_eq!(body_file.as_deref(), Some("-"));
+    }
+
+    /// Review of #152, S152-001: the daemon refuses a reply to a role request
+    /// that carries no caller context, so a seat's reply sends its own.
+    #[test]
+    fn a_reply_carries_its_caller_and_a_plain_seat_send_does_not() {
+        assert!(super::message_caller(false, true, false).is_some(), "reply");
+        assert!(super::message_caller(true, false, false).is_some(), "role");
+        assert!(
+            super::message_caller(false, false, false).is_none(),
+            "plain"
+        );
+        assert!(
+            super::message_caller(false, true, true).is_none(),
+            "control"
+        );
     }
 
     #[test]
