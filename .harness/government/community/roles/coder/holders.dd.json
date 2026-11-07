@@ -233,6 +233,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-following-marsupial",
 					"why": "revived for #136's final push (s10)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T13:01:51.665Z",
+					"harness": "copilot",
+					"harness_session": "cc88fc7c-b066-44d1-a82d-fa6560786ddf",
+					"instance_key": "215",
+					"machine": "ops.osk.lan",
+					"seat": "pij-exuberant-wildcat",
+					"why": "plan 215 holdings end with their work"
 				}
 			]
 		}
