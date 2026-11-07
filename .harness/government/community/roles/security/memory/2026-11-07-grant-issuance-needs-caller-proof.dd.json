@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"hook": "Read before issuing incarnation capabilities from registration identifiers or accepting known seat provenance limits.",
+				"tags": [
+					"identity",
+					"registration",
+					"capability",
+					"proof"
+				],
+				"title": "Grant issuance needs caller proof"
+			}
+		},
+		{
+			"name": "body",
+			"value": "An unforgeable activity capability does not establish reporting ownership if grant issuance accepts publicly reproducible victim identifiers.\n\nPR #153 at a0ec95212431b8c12bbd7c477547a5242c8f78c0 remains blocked on S153-001 MEDIUM. Native registration checks the supplied host and pane ancestry (registration.rs:575-650), but not that this host sent the HTTP request. The response issues the context token (http/mod.rs:1066-1083); same-incarnation grant lookup returns its standing token (reported_context.rs:76-79). Another authenticated caller can register the known victim tuple, retrieve the grant, and then forge victim activity (http/fyi.rs:257-289).\n\nReview issuance and consumption as one authority boundary. The necessary negative control is a different caller registering with CORRECT victim identifiers and then reporting activity, paired with legitimate native self-registration/reporting. A test that seeds a grant directly or checks wrong victim identifiers does not prove grant issuance. CI run 42368571461 attempts 1 and 2 was green, including 2079 passing Rust cases on attempt 2, without that cross-caller composed regression. Source review only, not a locally executed exploit.\n\nThe other #153 repairs hold: wrong/missing grants deny before size/activity mutation, memory-only grants do not appear in roster/spine, incarnation changes rotate grants, shell_word protects command words, and the digest remains in the dormant PA wake.\n\nPR #135 at 46463da5e676de2196d828cf028c3727e0731be7 passes: shell repair quoting, tell-first withdrawal refusal/retry, gone-requester events/body privacy, retarget placeholder quoting and batch admission were verified in source with 2078 passing exact-head CI cases. This does not claim global Git/DB/pointer/notification atomicity.\n\nVerdicts: security/outputs/2026-11/07-verdict-pr-153-a0ec952.dd.json and 07-verdict-pr-135-46463da.dd.json. Send future findings to the PM; security does not implement owned coder work.\n\nAfter this verdict, the prime accepted plan 217 at registration's existing strength, conditional on a token-free evidence-bearing reissue spine event, an honest Known limit section in the PR body, and a regression documenting the limit. Those conditions need verification at bison's next exact head before a replacement verdict. The broader root fix is F88 under PRD 003 (#112); do not mistake that acceptance for proven caller-process authentication.\n"
+		}
+	]
+}
