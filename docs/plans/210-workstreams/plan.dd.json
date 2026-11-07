@@ -60,8 +60,9 @@
         {
           "id": "ac-0004",
           "claim": "PRD and coverage fixes. PRD 001 amends req-04, 18, 20, 21, 23, 24 and 27 to workstream wording and adds rows for nesting and lanes and for coverage. req-26 and req-27 gain a delivering step; PRD 002's 14 rows get a blueprint and a workstream (or explicit links into existing ones), so nothing is orphaned.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "receipt": "assets/evidence/phase-1.md#tk-0003-prd (PRD wording and rows); assets/evidence/ac4-coverage.md (req-26 step, PRD 002 blueprint and workstream, exemptions removed)"
         },
         {
           "id": "ac-0005",

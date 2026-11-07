@@ -62,23 +62,7 @@ export const EXEMPTIONS = "harness/scripts/coverage-exemptions.json";
  * covered or deleted), delete its address here and its row in the JSON; never
  * add one to hide new work.
  */
-export const APPROVED_EXEMPTIONS: readonly string[] = [
-	"docs/project/prds/001-pij-community.dd.json#requirements/req-26",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-01",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-02",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-03",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-04",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-05",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-06",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-07",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-08",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-09",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-10",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-11",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-12",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-13",
-	"docs/project/prds/002-pij-base.dd.json#requirements/req-14",
-];
+export const APPROVED_EXEMPTIONS: readonly string[] = [];
 
 const NODE_READER: Reader = {
 	readdir: (path) => readdirSync(path),
