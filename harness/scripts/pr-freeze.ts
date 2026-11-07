@@ -144,6 +144,10 @@ export function jobId(check: Rollup): number | undefined {
 export interface LatestCheck {
 	readonly state: CheckState;
 	readonly runs: number;
+	/** The latest run's own conclusion (a status's state), when it is ordered:
+	 *  exactly `SUCCESS` is positive evidence; NEUTRAL or SKIPPED pass the
+	 *  generic check but prove nothing about what the check verifies. */
+	readonly conclusion?: string;
 }
 
 /** Each check's latest run, by name. Runs are ordered by job id only (never
@@ -161,17 +165,24 @@ export function latestChecks(rollup: readonly Rollup[]): Map<string, LatestCheck
 	for (const [key, runs] of groups) {
 		const ids = runs.map(jobId);
 		let state: CheckState;
+		let newest: Rollup | undefined;
 		if (runs.length === 1) {
-			state = checkState(runs[0] as Rollup);
+			newest = runs[0];
 		} else if (ids.every((id) => id !== undefined)) {
-			const newest = runs.reduce((best, run, index) =>
+			newest = runs.reduce((best, run, index) =>
 				(ids[index] ?? 0) > (jobId(best) ?? 0) ? run : best,
 			);
+		}
+		if (newest) {
 			state = checkState(newest);
 		} else {
 			state = runs.some((run) => checkState(run) === "running") ? "running" : "unordered";
 		}
-		latest.set(key, { state, runs: runs.length });
+		latest.set(key, {
+			state,
+			runs: runs.length,
+			conclusion: newest ? (newest.conclusion ?? newest.state ?? undefined) : undefined,
+		});
 	}
 	return latest;
 }
@@ -313,8 +324,14 @@ export function check(pr: number, run: Runner, env: Environment): Report {
 	});
 	conditions.push({
 		name: "draft",
-		ok: !view.isDraft,
-		detail: view.isDraft ? "draft" : "ready",
+		// Positive evidence only: an absent isDraft is not "ready".
+		ok: view.isDraft === false,
+		detail:
+			view.isDraft === false
+				? "ready"
+				: view.isDraft === true
+					? "draft"
+					: "draft state not reported",
 		next: `Next: gh pr ready ${pr}`,
 	});
 
@@ -400,17 +417,21 @@ function delivers(
 	checks: Map<string, LatestCheck>,
 ): Condition {
 	if (!env.deliversCheck) {
+		// Exactly SUCCESS: a NEUTRAL or SKIPPED delivers run parsed nothing.
 		const ci = [...checks.entries()].filter(
 			([name]) => name === "delivers" || name.endsWith(" / delivers"),
 		);
-		const passed = ci.length > 0 && ci.every(([, check]) => check.state === "pass");
+		const succeeded = ci.length > 0 && ci.every(([, check]) => check.conclusion === "SUCCESS");
+		const seen = ci.map(([, check]) =>
+			check.state === "pass" ? (check.conclusion ?? "pass") : check.state,
+		);
 		return {
 			name: "delivers",
-			ok: passed,
-			detail: passed
-				? "not parsed here (no pij-delivers-check); CI's delivers check passed on this head"
-				: `not parsed here (no pij-delivers-check), and CI's delivers check ${ci.length === 0 ? "is absent" : `is ${ci.map(([, check]) => check.state).join(", ")}`}`,
-			next: "Next: build the parser (just shared-build -- build -p pij-testkit --bin pij-delivers-check) or wait for CI's delivers check, then rerun",
+			ok: succeeded,
+			detail: succeeded
+				? "not parsed here (no pij-delivers-check); CI's delivers check succeeded on this head"
+				: `not parsed here (no pij-delivers-check), and CI's delivers check ${ci.length === 0 ? "is absent" : `is ${seen.join(", ")}, not SUCCESS`}`,
+			next: "Next: build the parser (just shared-build -- build -p pij-testkit --bin pij-delivers-check) or get CI's delivers check to run and succeed, then rerun",
 		};
 	}
 	const result = run(env.deliversCheck, [], body);
@@ -515,18 +536,52 @@ function main(argv: readonly string[]): number {
 	}
 }
 
-/** Is this module the script being run? Compared by real path, so a run
- *  through a symlink (macOS /tmp is one) still runs, and never passes silently. */
-export function isMain(moduleUrl: string, argv1: string | undefined): boolean {
-	if (!argv1) return false;
+/** Is this module the script being run? `run` or `import` only on a proven
+ *  comparison of real paths, so a run through a symlink (macOS /tmp is one)
+ *  still runs; a lookup that fails is neither (`error`), never a silent skip. */
+export type Entry =
+	| { readonly kind: "run" }
+	| { readonly kind: "import" }
+	| { readonly kind: "error"; readonly message: string };
+
+export function entry(
+	moduleUrl: string,
+	argv1: string | undefined,
+	realpath: (path: string) => string = realpathSync,
+): Entry {
+	// No script path: imported into a REPL or an `-e` program, not run.
+	if (!argv1) return { kind: "import" };
 	try {
-		return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argv1);
-	} catch {
-		return false;
+		return realpath(fileURLToPath(moduleUrl)) === realpath(argv1)
+			? { kind: "run" }
+			: { kind: "import" };
+	} catch (error) {
+		return {
+			kind: "error",
+			message: `pr-freeze: could not tell whether it was run as a script (${error instanceof Error ? error.message : String(error)}); refusing to exit silently`,
+		};
 	}
 }
 
-// Run as CLI only (not when imported by tests).
-if (isMain(import.meta.url, process.argv[1])) {
-	process.exit(main(process.argv.slice(2)));
+/** Act on [`entry`]: run, do nothing for an import, or print the lookup
+ *  failure and exit 2. Never prints nothing and exits 0 as a script. */
+export function guard(
+	decided: Entry,
+	run: () => number,
+	exit: (code: number) => void,
+	report: (message: string) => void,
+): void {
+	if (decided.kind === "run") {
+		exit(run());
+	} else if (decided.kind === "error") {
+		report(decided.message);
+		exit(2);
+	}
 }
+
+guard(
+	entry(import.meta.url, process.argv[1]),
+	() => main(process.argv.slice(2)),
+	(code) => process.exit(code),
+	(message) => console.error(message),
+);

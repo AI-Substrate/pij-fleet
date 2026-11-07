@@ -8,7 +8,8 @@ import {
 	check,
 	checkState,
 	createWorktree,
-	isMain,
+	entry,
+	guard,
 	latestChecks,
 	migrationNumbers,
 	type Ran,
@@ -281,7 +282,7 @@ describe("pr-freeze (plan 220, F92)", () => {
 		passed.rollup = [...good().rollup, pass("delivers", 100, "delivers")];
 		expect(failing(passed, null)).toEqual([]);
 		expect(render(check(PR, fake(passed).run, { root: ROOT }))).toContain(
-			"CI's delivers check passed",
+			"CI's delivers check succeeded",
 		);
 	});
 
@@ -342,14 +343,81 @@ describe("pr-freeze (plan 220, F92)", () => {
 		}
 	});
 
+	it("without the parser, a SKIPPED or NEUTRAL delivers run is not FINAL; only SUCCESS stands in", () => {
+		for (const conclusion of ["SKIPPED", "NEUTRAL"]) {
+			const world = good();
+			world.body = "Delivers: the s05 send path, roughly\n";
+			world.rollup = [...good().rollup, { ...pass("delivers", 100, "delivers"), conclusion }];
+			// The generic checks condition still accepts it; the Delivers fallback doesn't.
+			expect(failing(world, null)).toEqual(["delivers"]);
+			const text = render(check(PR, fake(world).run, { root: ROOT }));
+			expect(text).toContain(`CI's delivers check is ${conclusion}, not SUCCESS`);
+			expect(text).toContain("Next: build the parser");
+		}
+		const success = good();
+		success.rollup = [...good().rollup, pass("delivers", 100, "delivers")];
+		expect(failing(success, null)).toEqual([]);
+	});
+
+	it("never calls a PR ready without positive evidence: an absent isDraft is not ready", () => {
+		const world = good() as Omit<World, "draft"> & { draft?: boolean };
+		world.draft = undefined;
+		expect(failing(world as World)).toEqual(["draft"]);
+		expect(
+			render(check(PR, fake(world as World).run, { root: ROOT, deliversCheck: PARSER })),
+		).toContain("draft state not reported");
+	});
+
+	it("a failed path lookup prints a diagnostic and exits 2, never nothing and 0", () => {
+		const url = pathToFileURL(SCRIPT).href;
+		const decided = entry(url, SCRIPT, () => {
+			throw new Error("EACCES: permission denied");
+		});
+		expect(decided.kind).toBe("error");
+		const calls: string[] = [];
+		guard(
+			decided,
+			() => {
+				calls.push("run");
+				return 0;
+			},
+			(code) => calls.push(`exit ${code}`),
+			(message) => calls.push(message),
+		);
+		expect(calls).toHaveLength(2);
+		expect(calls[0]).toContain(
+			"could not tell whether it was run as a script (EACCES: permission denied)",
+		);
+		expect(calls[1]).toBe("exit 2");
+		// A proven import does nothing; a proven run exits by main's result.
+		const importCalls: string[] = [];
+		guard(
+			{ kind: "import" },
+			() => 0,
+			(code) => importCalls.push(`exit ${code}`),
+			(message) => importCalls.push(message),
+		);
+		expect(importCalls).toEqual([]);
+		const runCalls: string[] = [];
+		guard(
+			{ kind: "run" },
+			() => 1,
+			(code) => runCalls.push(`exit ${code}`),
+			(message) => runCalls.push(message),
+		);
+		expect(runCalls).toEqual(["exit 1"]);
+	});
+
 	it("runs, prints and exits by its result when invoked through a symlink", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pr-freeze-"));
 		try {
 			const link = join(dir, "pr-freeze.ts");
 			symlinkSync(SCRIPT, link);
-			expect(isMain(pathToFileURL(SCRIPT).href, link)).toBe(true);
-			expect(isMain(pathToFileURL(SCRIPT).href, join(dir, "other.ts"))).toBe(false);
-			expect(isMain(pathToFileURL(SCRIPT).href, undefined)).toBe(false);
+			const url = pathToFileURL(SCRIPT).href;
+			expect(entry(url, link)).toEqual({ kind: "run" });
+			expect(entry(url, SCRIPT)).toEqual({ kind: "run" });
+			expect(entry(url, dir)).toEqual({ kind: "import" });
+			expect(entry(url, undefined)).toEqual({ kind: "import" });
 			const result = spawnSync(TSX, [link], { encoding: "utf8" });
 			expect(result.status).toBe(2);
 			expect(result.stderr).toContain("usage: just pr-freeze <pr number>");
