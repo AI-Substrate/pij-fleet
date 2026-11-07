@@ -281,7 +281,7 @@
 				{
 					"id": "req-18",
 					"title": "Project docs system, one standard layout",
-					"statement": "Every project uses `docs/project/{prds,blueprints,workstreams,workshops}/`, and every file or folder there is numbered `NNN-<slug>`. PRDs, blueprints and workstreams are separate files using the `pij/prd`, `pij/blueprint` and `pij/workstream` schemas, joined by ddocs link cells: workstream steps deliver requirement rows and build components, and components realise rows. Until plan 210 moves them, workstreams are filed under `roadmaps/` and the existing ones use `pij/roadmap`, now superseded (ruling C29). A blueprint may serve many PRDs.",
+					"statement": "Every project uses `docs/project/{prds,blueprints,workstreams,workshops}/`, and every file or folder there is numbered `NNN-<slug>`. PRDs, blueprints and workstreams are separate files using the `pij/prd`, `pij/blueprint` and `pij/workstream` schemas, joined by ddocs link cells: workstream steps deliver requirement rows and build components, and components realise rows. Plan 210 moved the workstreams out of `roadmaps/` and off `pij/roadmap`, which is superseded (ruling C29). A blueprint may serve many PRDs.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "shipped",
@@ -594,6 +594,11 @@
 					"date": "2026-11-08",
 					"by": "pij-following-marsupial",
 					"change": "Plan 210 phase 2: req-30 and req-31 shipped (workstream 001 s16); req-24 delivered_by #141, #159 and req-27 delivered_by #136, #159, from pij delivered 159."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 phase 2 round 1: req-18 says the workstreams have moved (no more until plan 210 wording)."
 				}
 			]
 		}
