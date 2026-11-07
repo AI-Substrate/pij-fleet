@@ -179,6 +179,16 @@
 					"done_when": "Every route the F88 inventory lists as trusting registered identifiers refuses a caller that holds the daemon key but not the target seat's incarnation capability, with a regression per route class (send-as, inbox claim, role and holder actions, outputs, activity, registration); the inventory is re-run at the shipping head and shows no route left on identifiers alone.",
 					"source": "F88, security (pij-annual-squirrel), 2026-11-07: governance roles/security/outputs/2026-11/07-note-issue-f88.dd.json (all 63 method and route pairs at a0ec952; root HIGH 9/10). Prime's ruling the same day: the gap was accepted at registration's strength for plan 217 (#153), to be fixed once, for every endpoint, here.",
 					"note": "Plan 217 (#153) ships a per-incarnation context grant for /v1/activity, audited on reissue, and a Known limit section stating this residual; that grant is the first instance of the capability this requirement generalises."
+				},
+				{
+					"id": "req-11",
+					"title": "Who may designate the prime (F103)",
+					"statement": "Setting or retiring a project's prime designation (pij orchestration prime set / retire) requires authority, not only a correctly identified caller. Today the store and HTTP handlers guard state (an active designation can't be replaced directly) but not authority, so any seat can retire the current designation and then set itself. The policy: only the project's recorded prime (projects.prime_id), its human operator, or an explicit --force with a reason (audited, as other forced actions are) may set or retire the designation; a seat may never designate itself prime except through that path. Until this lands, nothing treats the current designation as permission: request authority uses projects.prime_id only (as #149 does).",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A seat that isn't the recorded prime is refused set and retire with nothing written; the recorded prime and an audited --force succeed; a self-designation attempt is refused; every set and retire writes one spine event with the actor and reason.",
+					"source": "F103, found by pij-swift-kestrel on #149 (07 Nov) and assessed by security (pij-bumpy-herring), 2026-11-08: governance roles/security/outputs/2026-11/08-note-issue-f103-697b6aa.dd.json (an untrusted authority source, separate from the F88 identity residual in req-10)."
 				}
 			]
 		},
@@ -229,6 +239,11 @@
 					"date": "2026-11-07",
 					"by": "pij-steady-otter (pm-001) for pij-far-jackal",
 					"change": "Added req-10, seat identity provenance (F88): security's endpoint inventory found registered identifiers standing in for caller proof; the prime ruled it is fixed once here, for every endpoint."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-steady-otter (pm-001)",
+					"change": "Added req-11, who may designate the prime (F103): security classified it as an authorization-policy gap separate from req-10's caller identity."
 				}
 			]
 		}
