@@ -3007,6 +3007,9 @@ fn render_holdings(data: &Value) -> String {
                     _ => format!("  window {name} unchanged"),
                 },
             );
+        } else if let Some(reason) = window["reason"].as_str() {
+            // A failed holdings lookup names no window (review of #149, N001).
+            out.push(format!("  window unchanged: {reason}"));
         }
         for drained in holding["drained"].as_array().into_iter().flatten() {
             let mut line = format!(
@@ -4130,6 +4133,24 @@ PEC notice";
 
     /// Plan 203: the picture's revive line parses as `pij-rs revive` (the
     /// daemon's test replays its `pij directory` and `pij send` lines).
+    /// Review of #149, N001: a release whose holdings lookup failed names no
+    /// window, and its printed line still says why the window kept its name.
+    #[test]
+    fn a_failed_holdings_lookup_is_printed_in_the_release_line() {
+        let out = super::render_holdings(&serde_json::json!({
+            "role": "pm-001", "seat": "pij-a", "project": "fleet", "commit": "abc",
+            "row": {"from": "2026-11-01T00:00:00Z"},
+            "window": {"name": null, "renamed": false,
+                "reason": "the seat's open holdings could not be read (store down), so the window keeps its name"},
+        }));
+        assert!(
+            out.contains(
+                "window unchanged: the seat's open holdings could not be read (store down)"
+            ),
+            "{out}"
+        );
+    }
+
     #[test]
     fn the_pictures_revive_line_parses_as_native_revive() {
         let gone = pij_store::Assignment {

@@ -141,12 +141,22 @@ async fn close_audited(
     };
     let store = state.services.governance.store().clone();
     let (id, by, why) = (request.id.clone(), actor.to_string(), why.to_string());
+    let bound = caller.by.as_str();
     state
         .services
         .event_bus
         .publish_committed_batch(async move {
             store
-                .close_role_request_audited(&id, from, &by, &why, at, notice, Some(audit))
+                .close_role_request_audited(
+                    &id,
+                    from,
+                    &by,
+                    &why,
+                    at,
+                    notice,
+                    Some(bound),
+                    Some(audit),
+                )
                 .await
         })
         .await
@@ -329,12 +339,21 @@ async fn close(
         Some(request) => request,
         None => match store.closed_role_request(id).await.map_err(store_refusal)? {
             Some(closed) if closed.notice.as_deref() == Some("owed") => {
+                // A retry replays the close as it was recorded and audited:
+                // its closer, binding and reason, sent by the daemon. The
+                // retrying caller only needs the authority to trigger it, and
+                // its own --why is not used (ruling C32; review of #149).
                 may_close(state, actor, caller, &closed.request).await?;
-                let told = notify_owned(state, actor, &closed).await;
+                let told = notify_owned(state, &closed).await;
                 let mut data = closed_entry(&closed);
+                let ignored = if flag(&flags, "why").is_some() {
+                    " (the close's own reason is sent; this --why is not used)"
+                } else {
+                    ""
+                };
                 data["line"] = json!(match &told {
                     Ok(_) => format!(
-                        "request {id} was already closed by {}; its notice to {} is sent now",
+                        "request {id} was already closed by {}; its notice to {} is sent now{ignored}",
                         closed.closed_by, closed.request.requester
                     ),
                     Err(cause) => not_told_line(
@@ -382,7 +401,7 @@ async fn close(
         data["told"] = Value::Null;
         return Ok(data);
     }
-    let told = notify_owned(state, actor, &closed).await;
+    let told = notify_owned(state, &closed).await;
     data["line"] = json!(match &told {
         Ok(_) => line,
         Err(cause) => not_told_line(&line, &closed, cause),
@@ -422,12 +441,11 @@ async fn may_close(
 /// cancel it.
 async fn notify_owned(
     state: &AppState,
-    actor: &SeatId,
     closed: &ClosedRoleRequest,
 ) -> Result<pij_core::model::DeliveryOutcome, String> {
-    let (state, actor, closed) = (state.clone(), actor.clone(), closed.clone());
+    let (state, closed) = (state.clone(), closed.clone());
     tokio::spawn(async move {
-        let outcome = tell_requester(&state, &actor, &closed).await?;
+        let outcome = tell_requester(&state, &closed).await?;
         state
             .services
             .governance
@@ -461,11 +479,12 @@ fn not_told_line(head: &str, closed: &ClosedRoleRequest, cause: &str) -> String 
     )
 }
 
-/// One FYI to the requester that its request was closed. Its msg id is the
-/// request's, so a repeat is one message.
+/// One FYI to the requester that its request was closed, from the daemon,
+/// never as the closer (ruling C32 (1)): its body names who closed it, how
+/// that caller was bound, and the reason recorded at the close. Its msg id is
+/// the request's, so a repeat is one message.
 async fn tell_requester(
     state: &AppState,
-    actor: &SeatId,
     closed: &ClosedRoleRequest,
 ) -> Result<pij_core::model::DeliveryOutcome, String> {
     let request = &closed.request;
@@ -474,12 +493,17 @@ async fn tell_requester(
     } else {
         format!("role:{}/{}", request.role, request.instance)
     };
+    let bound = match closed.bound.as_deref() {
+        Some("pane (derived)") => "bound by pane",
+        Some(_) => "asserted seat id",
+        None => "binding not recorded",
+    };
     let msg = Msg {
-        from: actor.clone(),
+        from: SeatId::from(pij_core::BG_ACTOR),
         from_machine: None,
         to: SeatId::from(request.requester.as_str()),
         body: format!(
-            "[pij request closed] your request {} to {address} in {} was closed by {}: {}",
+            "[pij request closed] your request {} to {address} in {} was closed by {} ({bound}): {}",
             request.id, request.project, closed.closed_by, closed.why
         ),
         msg_id: format!("request-closed-{}", request.id),

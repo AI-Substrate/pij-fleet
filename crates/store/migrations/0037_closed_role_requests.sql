@@ -29,6 +29,10 @@ CREATE TABLE closed_role_requests (
     -- withdraw or drain close. A close that ends with `owed` is retried by the
     -- next `pij requests close <id>` (review of #149, F005).
     notice      TEXT CHECK (notice IN ('quiet', 'owed', 'told')),
+    -- How the closer was bound when it closed (`pane (derived)` or an
+    -- asserted id), recorded with the close so an owed notice's retry
+    -- replays this intent rather than the retrying caller's (ruling C32).
+    close_bound TEXT,
     closed_at   INTEGER NOT NULL,
     closed_by   TEXT NOT NULL,
     close_why   TEXT NOT NULL

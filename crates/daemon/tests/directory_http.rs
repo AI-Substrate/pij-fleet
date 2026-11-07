@@ -4492,33 +4492,55 @@ async fn closing_a_delivered_request_stops_its_limit_and_quiet_tells_nobody() {
     assert_eq!(told["data"]["told"]["seat"], SEAT, "{told}");
     assert_eq!(fyis().await, before + 1, "the requester is told once");
 
-    // Review of #149, F005: a close that committed but never sent its owed FYI
-    // (its caller cancelled, or the delivery failed) is completed by the next
-    // close of the same request, once; the one after that sends nothing.
+    // Review of #149, F005 and ruling C32: a close that committed but never
+    // sent its owed FYI is completed by the next close of the same request,
+    // once. The retry replays the close as recorded (its closer, binding and
+    // reason), sent by the daemon: an asserted holder triggering it is neither
+    // the sender nor named, and its own --why is not used.
+    let owed_close = |id: &'static str, by: &'static str| {
+        let store = rig.store.clone();
+        async move {
+            store
+                .close_role_request_audited(
+                    id,
+                    pij_store::RequestState::Delivered,
+                    by,
+                    "answered",
+                    delivered + 1,
+                    Some("owed"),
+                    Some("pane (derived)"),
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+    };
     let sent = send_to(rig.addr, &repo.main, "role:pm-001", "req-owed", json!({})).await;
     assert_eq!(sent["ok"], true, "{sent}");
-    rig.store
-        .close_role_request(
-            "req-owed",
-            pij_store::RequestState::Delivered,
-            "pij-holder",
-            "answered",
-            delivered + 1,
-            Some("owed"),
-        )
-        .await
-        .unwrap();
+    owed_close("req-owed", "pij-second").await;
     let owed = fyis().await;
-    let resent = requests(vec!["requests", "close", "req-owed"], "%51").await;
+    let resent = requests_as(
+        rig.addr,
+        &["requests", "close", "req-owed", "--why", "mine"],
+        json!({"PIJ_SESSION_ID": "pij-holder", "cwd": repo.main}),
+    )
+    .await;
     assert_eq!(
         resent["data"]["line"],
         format!(
-            "request req-owed was already closed by pij-holder; its notice to {SEAT} is sent now"
+            "request req-owed was already closed by pij-second; its notice to {SEAT} is sent now \
+             (the close's own reason is sent; this --why is not used)"
         ),
         "{resent}"
     );
-    assert_eq!(resent["data"]["notice"], "owed", "{resent}");
     assert_eq!(fyis().await, owed + 1, "the owed notice, once");
+    let held = crate::fyis(&rig, SEAT).await;
+    let (sender, body) = held.last().expect("the notice");
+    assert_eq!(sender, "pij-bg", "sent by the daemon, never as a seat");
+    assert!(
+        body.contains("closed by pij-second (bound by pane): answered") && !body.contains("mine"),
+        "{body}"
+    );
     let after = requests(vec!["requests", "close", "req-owed"], "%51").await;
     assert_eq!(refusal_code(&after), "E-RS-REQUEST-CLOSED", "{after}");
     assert_eq!(fyis().await, owed + 1, "no second notice");
@@ -4531,6 +4553,13 @@ async fn closing_a_delivered_request_stops_its_limit_and_quiet_tells_nobody() {
             .as_deref(),
         Some("told")
     );
+    // The requester may trigger it too: the daemon sends to it, no self-send.
+    let sent = send_to(rig.addr, &repo.main, "role:pm-001", "req-owed-2", json!({})).await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    owed_close("req-owed-2", "pij-holder").await;
+    let by_requester = requests(vec!["requests", "close", "req-owed-2"], PANE).await;
+    assert_eq!(by_requester["ok"], true, "{by_requester}");
+    assert_eq!(fyis().await, owed + 2, "the requester's retry settles it");
 
     let released = call(
         rig.addr,

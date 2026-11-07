@@ -117,6 +117,9 @@ pub struct ClosedRoleRequest {
     /// What the close owes the requester: `quiet`, `owed` or `told`; `None`
     /// for a withdraw or drain close (review of #149, F005).
     pub notice: Option<String>,
+    /// How the closer was bound at the close (`pane (derived)` or an
+    /// asserted id); `None` for a withdraw or drain close without one.
+    pub bound: Option<String>,
 }
 
 /// What [`SqliteOrchestration::close_role_request`] did.
@@ -232,7 +235,7 @@ const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to
 const CLOSED_COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, \
      reply, limit_ms, 'closed' AS state, holder, created_at, delivered_at, \
      NULL AS checkin_at, NULL AS escalated_at, NULL AS answered_at, closed_at, closed_by, close_why, \
-     notice";
+     notice, close_bound";
 
 /// How many rows one `pij requests` read returns at most, newest first.
 pub const REQUESTS_LIST_LIMIT: u32 = 100;
@@ -923,7 +926,7 @@ impl SqliteOrchestration {
         at: u64,
         notice: Option<&str>,
     ) -> Result<CloseOutcome> {
-        self.close_role_request_audited(id, from, by, why, at, notice, None)
+        self.close_role_request_audited(id, from, by, why, at, notice, None, None)
             .await
             .map(|(_, outcome)| outcome)
     }
@@ -941,12 +944,14 @@ impl SqliteOrchestration {
         why: &str,
         at: u64,
         notice: Option<&str>,
+        bound: Option<&str>,
         audit: Option<Event>,
     ) -> Result<(Vec<Event>, CloseOutcome)> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let (owned_id, by, why) = (id.to_string(), by.to_string(), why.to_string());
         let notice = notice.map(str::to_string);
+        let bound = bound.map(str::to_string);
         let from = from.as_str();
         let at = sql_i64(at, "closed_at")?;
         let (moved, events) = owned_write(async move {
@@ -955,9 +960,9 @@ impl SqliteOrchestration {
             let moved = sqlx::query(
                 "INSERT INTO closed_role_requests (id, project, role, instance, requester, body, \
                  in_reply_to, fyi, reply, limit_ms, created_at, holder, delivered_at, closed_at, \
-                 closed_by, close_why, notice) \
+                 closed_by, close_why, notice, close_bound) \
                  SELECT id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
-                 limit_ms, created_at, holder, delivered_at, ?2, ?3, ?4, ?6 FROM role_requests \
+                 limit_ms, created_at, holder, delivered_at, ?2, ?3, ?4, ?6, ?7 FROM role_requests \
                  WHERE id = ?1 AND state = ?5",
             )
             .bind(&id)
@@ -966,6 +971,7 @@ impl SqliteOrchestration {
             .bind(&why)
             .bind(from)
             .bind(&notice)
+            .bind(&bound)
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?
@@ -1113,6 +1119,7 @@ fn closed_role_request(row: &sqlx::sqlite::SqliteRow) -> Result<ClosedRoleReques
         closed_by: row.try_get("closed_by").map_err(adapter_error)?,
         why: row.try_get("close_why").map_err(adapter_error)?,
         notice: row.try_get("notice").map_err(adapter_error)?,
+        bound: row.try_get("close_bound").map_err(adapter_error)?,
     })
 }
 
