@@ -1090,8 +1090,19 @@ async fn reshape(
             reshaped.finish()
         )));
     }
+    // A requester that is no longer a seat has nobody to tell: its request is
+    // withdrawn, listed in `gone`, and its spine event says so.
+    let gone: Vec<String> = told
+        .iter()
+        .filter(|row| {
+            row["told"]
+                .as_str()
+                .is_some_and(|told| told.starts_with("gone"))
+        })
+        .filter_map(|row| row["id"].as_str().map(str::to_string))
+        .collect();
     directory
-        .withdraw(reshaped, &project, id, actor, &why)
+        .withdraw(reshaped, &project, id, actor, &why, gone.clone())
         .await?;
     Ok(json!({
         "project": project,
@@ -1102,6 +1113,7 @@ async fn reshape(
         "paths": paths,
         "resumed": resumed,
         "withdrawn": told,
+        "gone": gone,
         "routes": routes,
     }))
 }

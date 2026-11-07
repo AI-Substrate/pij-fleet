@@ -1634,6 +1634,19 @@ async fn a_requester_not_told_holds_the_withdrawal_back() {
             .unwrap()
             .is_empty()
     );
+    // The gone requester is visible in the receipt and in its spine event.
+    assert_eq!(finished["data"]["gone"], json!(["req-ghost"]), "{finished}");
+    for (seat, gone) in [("pij-ghost", true), ("pij-holder", false)] {
+        let events = rig
+            .services
+            .spine
+            .all_matching(&SeatId::from(seat), &[pij_store::WITHDRAWN_EVENT])
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 1, "{seat}: one withdrawal event");
+        let payload: Value = serde_json::from_str(&events[0].payload).unwrap();
+        assert_eq!(payload["requester_gone"], gone, "{seat}: {payload}");
+    }
 }
 
 /// Review of #135, F004: an unfinished step that needs a retired role gets no

@@ -797,7 +797,11 @@ pub async fn drain(
             Err(cause) => Err(cause),
         };
         if outcome.is_err() {
-            // Back on the queue for the next assign.
+            // Back on the queue for the next assign. This never lands behind a
+            // retired role (plan 206, review of #135): retire and merge refuse
+            // while any request for the role is delivering, and this drain has
+            // held the role's gate since its claim, so no retirement can land
+            // between the claim and this release.
             let _ = store
                 .release_role_request_claim(&request.id, seat.as_str())
                 .await;
@@ -810,6 +814,11 @@ pub async fn drain(
 /// At boot, settle the requests a stopped daemon left `delivering` (review
 /// of #129): one delivery already took is marked delivered, any other is
 /// re-queued for the next assign. A failure is logged; boot carries on.
+///
+/// A re-queued request never lands behind a retired role (plan 206, review of
+/// #135): retire and merge refuse while any request for the role is
+/// delivering, so a role that was retired before the stop had none, and this
+/// runs before anything is served, so no retirement races it.
 pub async fn recover_requests(services: &Services) {
     let now_ms = match crate::http::system_time_ms() {
         Ok(now) => now,

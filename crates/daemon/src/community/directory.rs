@@ -1082,6 +1082,7 @@ impl DirectoryService {
         role: &str,
         actor: &SeatId,
         why: &str,
+        gone: Vec<String>,
     ) -> Result<Vec<pij_store::RoleRequest>, Refusal> {
         let Reshaped {
             written,
@@ -1093,19 +1094,19 @@ impl DirectoryService {
         if queued.is_empty() {
             return Ok(Vec::new());
         }
-        let (store, project_id, role_id, by, reason, at) = (
-            self.store.clone(),
-            project.to_string(),
-            role.to_string(),
-            actor.to_string(),
-            why.to_string(),
-            system_ms(),
-        );
+        let (store, project_id, role_id) =
+            (self.store.clone(), project.to_string(), role.to_string());
+        let withdrawal = pij_store::Withdrawal {
+            by: actor.to_string(),
+            why: why.to_string(),
+            at: system_ms(),
+            gone,
+        };
         let withdrawn = self
             .event_bus
             .publish_committed_batch(async move {
                 store
-                    .withdraw_queued_role_requests(&project_id, &role_id, &by, &reason, at, gate)
+                    .withdraw_queued_role_requests(&project_id, &role_id, &withdrawal, gate)
                     .await
             })
             .await

@@ -19,6 +19,20 @@ use crate::spine::append_in_transaction;
 /// this is the record of who asked, what role, who withdrew it and why.
 pub const WITHDRAWN_EVENT: &str = "role.request.withdrawn";
 
+/// Who withdraws queued requests, and why (plan 206, `--drop-queued`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Withdrawal {
+    /// The seat that withdrew them.
+    pub by: String,
+    /// The retirement's reason.
+    pub why: String,
+    /// When, in ms.
+    pub at: u64,
+    /// Requests whose requester is no longer a seat, so nobody was told
+    /// (security review of #135, F002); their events say `requester_gone`.
+    pub gone: Vec<String>,
+}
+
 /// How the requester wants to hear that its request was answered (req-08).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReplyMode {
@@ -325,7 +339,8 @@ impl SqliteOrchestration {
 
     /// Withdraw every request still queued for `role` in `project` (plan
     /// 206, `retire --drop-queued`): each row is deleted and one
-    /// [`WITHDRAWN_EVENT`] naming its requester, `by` and `why` is appended,
+    /// [`WITHDRAWN_EVENT`] naming its requester, `by`, `why` and whether the
+    /// requester was gone ([`Withdrawal::gone`]) is appended,
     /// in one write transaction. Only `queued` rows are touched, so a request
     /// a drain has already claimed is never withdrawn. `keep` (the caller's
     /// admission guard) is held by the write task until the transaction ends.
@@ -335,19 +350,13 @@ impl SqliteOrchestration {
         &self,
         project: &str,
         role: &str,
-        by: &str,
-        why: &str,
-        at: u64,
+        withdrawal: &Withdrawal,
         keep: K,
     ) -> Result<(Vec<Event>, Vec<RoleRequest>)> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
-        let (project, role, by, why) = (
-            project.to_string(),
-            role.to_string(),
-            by.to_string(),
-            why.to_string(),
-        );
+        let (project, role, withdrawal) =
+            (project.to_string(), role.to_string(), withdrawal.clone());
         owned_write(async move {
             let _keep = keep;
             let mut tx = begin_write(&pool).await?;
@@ -372,7 +381,7 @@ impl SqliteOrchestration {
                 let mut event = Event {
                     seq: None,
                     v: wire::EVENT_VERSION,
-                    at,
+                    at: withdrawal.at,
                     kind: WITHDRAWN_EVENT.to_string(),
                     seat: Some(SeatId::from(request.requester.as_str())),
                     payload: json!({
@@ -382,8 +391,9 @@ impl SqliteOrchestration {
                         "instance": request.instance,
                         "requester": request.requester,
                         "created_at": request.created_at,
-                        "withdrawn_by": by,
-                        "why": why,
+                        "withdrawn_by": withdrawal.by,
+                        "why": withdrawal.why,
+                        "requester_gone": withdrawal.gone.contains(&request.id),
                     })
                     .to_string(),
                 };

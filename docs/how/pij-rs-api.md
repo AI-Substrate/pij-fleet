@@ -1203,10 +1203,12 @@ why, and repeats the request's body, and then every request still queued for
 it (any instance) is withdrawn in one store transaction: its `role_requests`
 row is deleted and a `role.request.withdrawn` spine event, with the requester
 as its seat, records `{id, project, role, instance, requester, created_at,
-withdrawn_by, why}`. The retiring seat's own requests are not echoed back to
+withdrawn_by, why, requester_gone}`. The retiring seat's own requests are not echoed back to
 it. `data.withdrawn` lists `{id, requester, instance, created_at, told}`, where
 `told` is `held`, `self`, or `gone: <why>` for a requester that is no longer a
-seat (nobody to tell). Nothing is withdrawn unless every other requester's FYI
+seat (unknown or tombstoned: nobody to tell). Those are still withdrawn, listed
+again in `data.gone` (request ids), and their events carry
+`requester_gone: true`. Nothing is withdrawn unless every other requester's FYI
 was held: one that could not be (`not told: <why>`) refuses
 `E-RS-DIRECTORY-NOT-TOLD` after the retirement landed, with the requests still
 queued, and the same command tells and withdraws them. If the withdrawal
