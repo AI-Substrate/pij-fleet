@@ -106,6 +106,8 @@ pub struct Services {
     pub tmux: Arc<dyn TmuxPort>,
     /// Shared human-interaction veto for every pane-facing delivery path.
     pub interaction: Arc<InteractionGate>,
+    /// Panes whose tap the pane observer could not attach (F112), for the PA digest.
+    pub tap_refusals: Arc<pane_observer::TapRefusals>,
     /// Per-harness adapters, one per `Harness` variant.
     ///
     /// A registry rather than a single `Arc<dyn HarnessPort>`: the wave-0 shape
@@ -438,23 +440,14 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             pij_harnesses::proc::observed_start,
         ))?),
     };
-    // Legacy and Rust daemons intentionally coexist during migration. Resolve the
-    // legacy signature at the composition root and inject it; the tmux adapter
-    // never reads process-global HOME on its own.
-    let legacy_pane_signal_dir = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| home.join(".pij/pane-signals"));
+    // The retired TS daemon's legacy tap root is no longer wired in: nothing
+    // writes it, and checking it ran a whole-machine `ps` census on every
+    // observer tick for a pane it matched (F112).
     let tmux: Arc<dyn TmuxPort> = match config.adapters.tmux {
         AdapterChoice::Fake => Arc::new(FakeTmux::new()),
-        AdapterChoice::Real => Arc::new(match (&config.tmux_server, legacy_pane_signal_dir) {
-            (Some(server), Some(legacy_root)) => {
-                TmuxAdapter::for_server_with_legacy_tap_root(server, pane_signal_dir, legacy_root)
-            }
-            (Some(server), None) => TmuxAdapter::for_server(server, pane_signal_dir),
-            (None, Some(legacy_root)) => {
-                TmuxAdapter::with_legacy_tap_root(pane_signal_dir, legacy_root)
-            }
-            (None, None) => TmuxAdapter::new(pane_signal_dir),
+        AdapterChoice::Real => Arc::new(match &config.tmux_server {
+            Some(server) => TmuxAdapter::for_server(server, pane_signal_dir),
+            None => TmuxAdapter::new(pane_signal_dir),
         }),
     };
     // One politeness gate, shared by direct delivery, queued retries, and the
@@ -606,6 +599,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         transport,
         tmux,
         interaction,
+        tap_refusals: Arc::new(pane_observer::TapRefusals::new()),
         harnesses,
         liveness,
         session_status,
@@ -959,13 +953,16 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     // 6. The pane observer feeds the SAME `InteractionGate` used by first-attempt
     //    delivery and the drain worker. Unknown or active human input vetoes both
     //    paths; only two independently clear signals authorize injection.
-    let pane_observer = Arc::new(pane_observer::PaneObserver::new(
-        Arc::clone(&services.registry),
-        Arc::clone(&services.tmux),
-        Arc::clone(&services.interaction),
-        pane_signal_dir,
-        Duration::from_millis(config.pane_observer_interval_ms),
-    )?);
+    let pane_observer = Arc::new(
+        pane_observer::PaneObserver::new(
+            Arc::clone(&services.registry),
+            Arc::clone(&services.tmux),
+            Arc::clone(&services.interaction),
+            pane_signal_dir,
+            Duration::from_millis(config.pane_observer_interval_ms),
+        )?
+        .with_tap_refusals(Arc::clone(&services.tap_refusals)),
+    );
     let claude_binder = Arc::new(claude_bind::ClaudeBinder::new(
         Arc::clone(&services.registry),
         Arc::clone(&services.liveness),
