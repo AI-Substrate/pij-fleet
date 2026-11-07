@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "ed9a3d7cf2f7386c6817cc7bb3394e9d59221160",
+				"kind": "note",
+				"link": "https://github.com/AI-Substrate/pij-fleet/blob/ed9a3d7cf2f7386c6817cc7bb3394e9d59221160/crates/tmux/src/lib.rs#L581-L619",
+				"role": "performance",
+				"subject": "issue:f112",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**F112: yes, a per-observer-tick ps path remains live on main and breaks the resource-cost rule. Separate from #167.**\n\nSource pinned to main `ed9a3d7cf2f7386c6817cc7bb3394e9d59221160`. Tapir's supplied before-reading reports **+100 ps.tmux-legacy-tap-writer /60 s = 1.6667 direct launches/s**, out of +119 total. I did not generate a new live census or benchmark.\n\n**What it is:** `TmuxAdapter::has_live_legacy_tap_writer` (`crates/tmux/src/lib.rs:581-619`) checks for a regular legacy tap sink file, then records this key and runs absolute `/bin/ps -axo command=`. It scans the whole process command table for a `cat >>` command containing that sink path.\n\n`attach_pane_tap` reaches it when the pane has an active pipe, no ownership marker, and the legacy signature file exists (`:1149-1214`). A successful legacy adoption should install the native marker and leave this path. But a negative/unresolved ownership result refuses replacement; it is not cached or bounded.\n\nThe pane observer calls attach_pane_tap for every wanted live pane each pass (`crates/daemon/src/pane_observer.rs:126-267`). On failure it deduplicates the log signature, **not the work**: the next pass tries again. Its default cadence is **600 ms** (`crates/core/src/config.rs:202`).\n\nAt that nominal cadence, L qualifying unresolved panes can cost **L/0.6 launches/s**, about **100*L/min**, plus repeated O(machine-process-count) command-table scanning. The supplied +100/min is consistent with one such retrying candidate at the default cadence; the aggregate counter alone does not identify a pane or prove an actual live legacy writer. A stale regular signature file is enough to reach the scan.\n\n**Why it violates cost policy:** absolute path avoids PATH amplification, but AGENTS.md's \"launch nothing per tick per seat\" is still violated. A whole-table census is also contrary to the bounded exact-process inspection direction of C27. This is legacy tap-ownership compatibility, not the watchdog, compaction wake, F82's retired UDS liveness probe or a healthy marked native tap.\n\n**Fix direction for its owner:** stop retrying a whole-machine census every observer tick. Prefer explicit ownership/known-writer incarnation metadata or a bounded bootstrap/migration decision, with conservative refusal for an unknown foreign pipe. Do not remove the ownership interlock or blindly detach that pipe; do not add a generic lifetime PID cache. Prove repeated unresolved observations stop launching, and take the matched after-reading.\n\nNo production change or live repair was performed. #167's tmux code is unchanged; this pre-existing issue does not block its cost verdict.\n"
+		}
+	]
+}
