@@ -665,6 +665,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-07T20:49:20.948Z",
 					"why": "F110 fix (#165)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T21:36:40.129Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "166",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "plan 221 states PR #166 (spoonbill reviewed #163)"
 				}
 			]
 		}
