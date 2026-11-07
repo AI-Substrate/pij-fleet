@@ -235,16 +235,40 @@ fn local_lstart(epoch_seconds: i64) -> Option<u64> {
     // macOS: re-read the zone the way a fresh `ps` would (sound there; see ADR 0001).
     #[cfg(target_os = "macos")]
     let _ = time::util::refresh_tz();
-    let local = instant.to_offset(time::UtcOffset::local_offset_at(instant).ok()?);
-    let year = u64::try_from(local.year()).ok()?;
+    pack(instant.to_offset(time::UtcOffset::local_offset_at(instant).ok()?))
+}
+
+/// Pack a start instant as `TZ=UTC ps -o lstart=` prints it.
+fn utc_lstart(epoch_seconds: i64) -> Option<u64> {
+    pack(time::OffsetDateTime::from_unix_timestamp(epoch_seconds).ok()?)
+}
+
+fn pack(wall: time::OffsetDateTime) -> Option<u64> {
+    let year = u64::try_from(wall.year()).ok()?;
     Some(
         year * 10_000_000_000
-            + u64::from(u8::from(local.month())) * 100_000_000
-            + u64::from(local.day()) * 1_000_000
-            + u64::from(local.hour()) * 10_000
-            + u64::from(local.minute()) * 100
-            + u64::from(local.second()),
+            + u64::from(u8::from(wall.month())) * 100_000_000
+            + u64::from(wall.day()) * 1_000_000
+            + u64::from(wall.hour()) * 10_000
+            + u64::from(wall.minute()) * 100
+            + u64::from(wall.second()),
     )
+}
+
+/// Plan 218 (F82): a process's start, read once in-process and packed in both
+/// timebases, for the Claude socket transport's peer check. It launches
+/// nothing. `None` when the kernel will not say: no such process, a zombie, or
+/// (macOS) another user's process. A Claude peer is this user's own live
+/// process, so `None` is a peer this daemon could not deliver to anyway, and
+/// the transport treats it as unreachable (fail closed). A fresh read on every
+/// call, never cached: pids recycle.
+#[must_use]
+pub fn observed_start(pid: u32) -> Option<pij_core::model::ObservedStart> {
+    let start = kernel_start(pid)?;
+    Some(pij_core::model::ObservedStart {
+        local: local_lstart(start)?,
+        utc: utc_lstart(start)?,
+    })
 }
 
 struct CommandOutput {

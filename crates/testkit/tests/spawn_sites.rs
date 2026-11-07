@@ -287,7 +287,7 @@ fn no_daemon_launch_searches_path_for_ps_or_date() {
 #[test]
 fn retired_launches_stay_retired() {
     // (file the pattern is retired in, or every daemon file; pattern; why)
-    const RETIRED: [(Option<&str>, &str, &str); 2] = [
+    const RETIRED: [(Option<&str>, &str, &str); 4] = [
         (
             None,
             "\"date.utc-offset\"",
@@ -297,6 +297,16 @@ fn retired_launches_stay_retired() {
             Some("crates/harnesses/src/proc.rs"),
             "Command::new(\"/bin/date\")",
             "#127: the UTC-offset path launches no date",
+        ),
+        (
+            None,
+            "\"ps.uds-peer-start\"",
+            "plan 218 (F82): a Claude peer's start is read in-process (pij_harnesses::proc::observed_start)",
+        ),
+        (
+            Some("crates/transport/src/uds.rs"),
+            "Command::new(",
+            "plan 218 (F82): the Claude socket transport launches nothing",
         ),
     ];
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -312,6 +322,12 @@ fn retired_launches_stay_retired() {
             .iter()
             .any(|line| line.contains("pub fn local_utc_offset_minutes()")),
         "the scan no longer sees local_utc_offset_minutes; fix the scanner"
+    );
+    assert!(
+        production_lines(&root.join("crates/transport/src/uds.rs"))
+            .iter()
+            .any(|line| line.contains("fn discover(&self")),
+        "the scan no longer sees the Claude transport's discovery; fix the scanner"
     );
     let mut returned = Vec::new();
     for path in &files {
