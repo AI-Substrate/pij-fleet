@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "65fc109ffc83dd4244aa6dd9f04a8ba1840d3ec5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6711935067",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:152",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: BLOCK\n\nPR #152, exact head `65fc109ffc83dd4244aa6dd9f04a8ba1840d3ec5`.\n\nReviewed `d8bf337..65fc109` and the directly dependent correlated-reply boundaries. Removing VerifiedPull closes the paneless metadata exception. S152-001 remains open because a caller-supplied victim pane still becomes sender authority without proving that the requesting client owns that pane.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/http/mod.rs | 2250-2264 | Caller-supplied victim pane obtains reply authority and permits correlated send-as (S152-001) | 9/10 |\n\n### S152-001: recognizing a pane's occupant is not binding the caller\n\nA different local client holding the daemon key can supply a live victim B's pane and optionally its matching seat ID. The resolver identifies the registered occupant and observes B's process, then returns `ResolvedBy::Pane`. It does not prove that the requesting HTTP client is running inside B's pane or holds its receiver capability.\n\nSource trace, not an executed probe:\n\n- Authentication proves machine access; caller context is deserialized request data (`crates/daemon/src/http/mod.rs:754-770,1906-1929`).\n- The descriptor projection exposes the victim's pane (`crates/daemon/src/http/identity.rs:1078-1114`; `crates/core/src/model.rs:389-393`).\n- The inherited resolver matches the supplied pane against stored seats and observes the victim's process. A matching or omitted asserted seat ID reaches `ResolvedBy::Pane` (`crates/daemon/src/http/identity.rs:1244-1261,1322-1335`).\n- The correlated-reply gate accepts that classification (`crates/daemon/src/http/mod.rs:2250-2264`). Native routing then permits seat/role and normal/FYI delivery (`1983-2047`).\n- The shim likewise derives `from` from that result and retains it in delivery; a successful holder reply can also stamp the request answered (`crates/daemon/src/http/shim.rs:707-724,800-827`).\n\nPrerequisites are local daemon-key access, a live paned victim, a known active or archived request ID, and an accepting destination. No victim registration change, receiver capability or execution inside the victim's pane is required. Normal sends retain ordinary cold-wake admission; FYIs need no wake.\n\nThe pane resolver predates this delta. This is a surviving authorization path in the reviewed correlated-send gate, not a claim that round 5 introduced the resolver or an unrelated registration finding. Removing one replayable metadata exception does not establish caller ownership for the remaining pane metadata.\n\n### C32 assessment\n\nAuthority: `.harness/government/community/RULINGS.md:36`, including clarified C32(3).\n\n- **C32(1), PRD 003 req-10: fails.** Correlated arbitrary content can still be delivered as another seat. This is explicitly outside accepted work-signal/request-state residuals, not a request to strengthen an otherwise accepted state-only assertion.\n- **C32(2), PRD 003 req-10: fails for the pane replay.** The requirement is caller binding, not merely locating a registered pane occupant. Consistent victim pane/session metadata passes contradiction checks and becomes sender authority without independently establishing the caller's ownership.\n- **C32(3), PRD 003 req-10: answer-audit repair preserved.** The first answer stamp and audit remain one owned transaction (`crates/store/src/role_requests.rs:792-823`). Atomic accounting cannot authenticate the earlier delivery. No additional per-action audit requirement for capability-authorized downstream actions is imposed.\n- **C32(4), PRD 003 req-10: the Known limit omits the surviving correlated pane replay.** The PR correctly names uncorrelated assertion/raw-from and the loss of paneless correlation until plan 221, but neither describes this correlated send-as path.\n\nTreat a pane as reply authority only when its ownership is independently established for the caller; otherwise refuse correlation. Add a different-client victim-pane replay regression covering native/shim, normal/FYI and seat/role destinations.\n\n### Closures and proof limits\n\nVerifiedPull is removed. Paneless session/PID/start metadata and receiver leases no longer obtain correlated-reply authority. No-context and asserted-only callers refuse. Active and archived lookups fail closed, and contradictory pane/session claims refuse before delivery. IDs absent from both tables intentionally remain uncorrelated.\n\nThe new negative regression tests paneless metadata replay, not victim-pane replay. Pane and OMP positives demonstrate accepted wire shape, not client ownership. Process-start caching introduces no identified new injection/privacy path; its measured cost belongs to the performance verdict. TS adapter/shared fixture evidence remains wire-shape testing plus Rust replay, not a live TS-to-daemon run (F106).\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA. CI run `42405277900` and latest successful Delivers run `42405292351` both identify that exact SHA and success; the earlier cancelled Delivers run is superseded. GitHub reported CLEAN at the initial check. No local builds, tests, probes, credential reads, mutation tests or transport/payload execution were performed.\n"
+		}
+	]
+}
