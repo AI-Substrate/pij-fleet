@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Open before writing a retrying notifier, a once-per-X claim, a pane or screen reader, or a FINAL/PASS gate",
+				"tags": [
+					"review",
+					"fail-closed",
+					"retries",
+					"gates",
+					"watchdog"
+				],
+				"title": "Fail-closed patterns reviewers keep finding (watchdog tells, gates)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Six #156 and #157 review rounds found the same kinds of defect. Check for these before asking for verdicts on any watchdog, notifier or gate:\n\n- **Persist before you send (P9).** Count or claim an attempt durably BEFORE the side effect. If that save fails, send nothing this round. Recording \"failed\" after the send lets a broken write retry without bound (P156-F002). Test it with a SQL trigger that aborts the write while reads still work (`CREATE TRIGGER ... BEFORE UPDATE OF <col> ... RAISE(ABORT, ...)` through `pij_store::open(store.path())`), and count actual sends, not the stored number.\n- **Classify from the structured outcome, never from a rendered word.** `delivery.starts_with(\"error\")` treated `Refused` as success. Accepted means Delivered (a replay included), Queued, or Held (don't re-send: it re-prompts a human). Refused is retryable for a native receiver whose lease lapsed. Use a real refusal in the test (a native Copilot seat whose receiver renewed as another incarnation), not an injected string.\n- **Order by sequence, not timestamp.** Freshness follows the spine seq. A newer event can carry an earlier or equal clock, so key re-arming on `event.seq` and use `at` only for durations.\n- **Never export captured pane text.** Name a match with a fixed, marker-derived label. A cropped screen puts the seat's work where you expect a title.\n- **Never launch from a recurring read.** `TmuxPort::capture` forks when the control client is down. Use `capture_without_launch`, and skip and record otherwise.\n- **Gates fail closed.** A gate says FINAL only on positive evidence: `isDraft === false` (not `!isDraft`), conclusion exactly SUCCESS (not \"pass\", which includes SKIPPED and NEUTRAL), and runs ordered by Actions job id (startedAt is null on queued runs). It never prints nothing and exits 0: compare realpaths for the script guard, and exit 2 when the lookup fails.\n\nProcess notes:\n- pm's messages cross your pushes. Check `git ls-remote origin refs/pull/<n>/head` before redoing a round, and reply with the head.\n- TS tests run only in CI (C25). You can still run the vitest file locally through a /tmp node:assert shim with `~/pi-hacking/pij/node_modules/.bin/tsx`, which is also how to run mutation checks.\n"
+		}
+	]
+}
