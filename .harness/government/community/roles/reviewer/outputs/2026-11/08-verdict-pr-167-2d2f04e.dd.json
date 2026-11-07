@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b821-c4e5-7172-a449-49a3fe7d0c73",
+				"date": "2026-11-08",
+				"head": "2d2f04e592bc405fa958f8954fa86f0a94748cad",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6713960689",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:167",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #167 round 2 correctness verdict\n\n**BLOCK** at `2d2f04e592bc405fa958f8954fa86f0a94748cad`.\n\n**F001 and F002 are closed.** The persist-first/fallible-read repair is sound, including its intentional change to refuse a compact when tracking cannot be committed. New **F003** concerns the supersession ordering introduced by that repair.\n\n## Closed findings\n\n**F001:** try_holdings_of propagates the role-read error; the round logs and waits rather than settling holds-nothing. The original memory-turn holdings wrapper deliberately keeps its prior fail-open behavior. The role-only failure test renames the assignments table, checks three failed rounds remain pending, restores it and verifies one wake.\n\n**F002:** admit_control now awaits the owned tracking write BEFORE starting accept_control. A caller dropped during that write may leave an undelivered pending row, but cannot start control admission first; a caller dropped during the independently owned admission already has a committed row. A write error propagates and admits no compact.\n\nThe write-failure test verifies no queued control/no tracking row under an abort trigger, then recovery and replay deduplication. The dropped-caller test advances through increasing poll counts and requires a positive case whose admission continued after dropping its unfinished waiter, with its row present.\n\nThis stricter write-failure behavior is justified by the approved persist-first invariant: it explicitly fails the operation instead of silently losing the promised resume tracking. It affects all compact admissions, while preserving normal success/replay behavior and the memory-turn read policy.\n\n## F003, P2: wall-clock ordering can supersede the newest actual compact\n\n`store/src/compactions.rs:58-59` returns pending rows ordered by seat, admitted_at. The round reverses that order and treats the first delivered row as proof that every following row of the same seat is older (`daemon/src/compaction_wake.rs:79-96`). admitted_at is system_time_ms, sampled before the owned write/admission, not a monotonic compaction sequence (`http/mod.rs:2553-2554`).\n\nA valid clock-rollback case:\n\n1. Compact A is recorded/delivered.\n2. After the clock steps backward, compact B is recorded with a LOWER admitted_at, but its pushed/delivery spine events have HIGHER sequences. B is the later compaction. Both rows remain pending; the seat is idle after B and the settle interval has elapsed.\n3. The query/reverse loop processes A first. started_since(A) sees B's later message.pushed, so A is classified resumed, with delivered=true.\n4. The loop then treats that as a newer delivered compact and settles B as superseded without evaluating B. No resume is sent for the compaction that actually left the seat idle.\n\nThe same ordering is not explicitly defined for equal millisecond timestamps. Timing is useful for settle age, not an authoritative supersession identity.\n\nUse a durable monotonic ordering/sequence for compactions, respecting delivered-control order rather than inferring it from wall-clock timestamps. Add a focused case with decreasing timestamps but increasing delivery sequences; the latest compact must still get its one wake. Preserve in-flight waiting, replay and mark-before-send.\n\nThis is source-derived, not a production clock mutation or locally executed counterexample.\n\n## Positive supersession and P9 proof\n\nFor monotonically ordered timestamps, the revised tests correctly cover an older row waiting behind a newer in-flight row, that newer row expiring undelivered, the older one then waking, and delivered-newer supersession. Replay remains INSERT OR IGNORE; settlement compares the exact seat/msg_id and unsettled state.\n\nThe wake still marks woken before sending and sends nothing if that mark fails/already settled. The docs now correctly distinguish one attempted wake from successful delivery and state that settled rows remain history.\n\n## Exact-head evidence and merge\n\nCI **42420467930** passed at this exact SHA: **2180 JUnit cases, zero failures/errors**. All nine daemon compaction-wake tests executed, including both failure repairs, dropped callers, in-flight fallback, queue/idle exclusions, rearming and restart. They do not cover F003.\n\nThe main merge changes plan-221 docs and a route-inventory test comment, not compaction behavior. The reviewed checkout is detached/clean and matches the remote CLEAN/ready head. No local product build/test, mutation, dependency change or live probe was run.\n\nMigration 0044 remains the unmerged schema addition. Security/performance and after-deploy evidence remain independently owned.\n"
+		}
+	]
+}
