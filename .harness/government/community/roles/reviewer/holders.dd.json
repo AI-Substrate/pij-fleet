@@ -452,7 +452,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "152",
 					"machine": "ops.osk.lan",
+					"release_why": "#152 merged cb0ce43",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-07T20:06:24.780Z",
 					"why": "first verdict on #152 (plan 214, C31)"
 				},
 				{
