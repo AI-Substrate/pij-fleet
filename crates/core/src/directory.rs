@@ -60,7 +60,7 @@ Usage:
   pij directory edit <id> --why <text> (--set <field>=<value>... | role flags | --file <json>)
   pij directory retire <role> --why <text>             a role no longer in use
   pij directory merge <from> --into <to> --why <text>  fold one role into another
-  pij directory templates                             the role templates and versions
+  pij directory templates [--show <name>[@vN]]        the role templates, or one's body
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
   pij directory assign --batch <file> --why <text>      many holdings, one commit
@@ -200,9 +200,11 @@ pij directory templates | template-diff: the role templates pij ships.
 
 Usage:
   pij directory templates
+  pij directory templates --show <name>[@vN]
   pij directory template-diff <id> [--project <slug>]
 
-templates lists each template with its versions. Templates are examples to
+templates lists each template with its versions; --show prints one
+template's exact body (the latest version by default) and its path. Templates are examples to
 adapt, not a checklist. template-diff shows what changed between the template
 version role <id> came from and the latest one. Nothing is ever applied: the
 role keeps its own edits, and you copy any change you want by hand.";
