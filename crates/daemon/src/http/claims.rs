@@ -390,7 +390,7 @@ async fn delivered(
         actor,
         &project,
         &repo,
-        number,
+        &pull,
         &merge_commit,
         &plans,
         &mut notes,
@@ -465,11 +465,12 @@ const PR_ROLES: [&str; 3] = ["reviewer", "security", "performance"];
 
 /// End the holdings PR `number` finished (plan 215, F70): `reviewer`,
 /// `security` and `performance` keyed by the PR, and `coder` keyed by each
-/// plan the PR's files deliver. One writer commit for all of them, never one
-/// per holding, and none when nothing is open, so a re-run is a no-op. A
-/// holding the store lists but the holders document does not is left alone
-/// and named in `notes`. Each live seat's window then follows what it still
-/// holds.
+/// plan the PR's files deliver. The plan paths select which coder holdings
+/// end; they are not proof the plan's work is complete. One writer commit for
+/// all of them, never one per holding, and none when nothing is open, so a
+/// re-run is a no-op. A holding the store lists but the holders document does
+/// not is left alone and named in `notes`. Each live seat's window then
+/// follows what it still holds.
 ///
 /// # Errors
 /// A writer refusal, naming the re-run that finishes it: the delivery is
@@ -480,35 +481,62 @@ async fn end_holdings(
     actor: &SeatId,
     project: &str,
     repo: &Path,
-    number: u64,
+    pull: &PullRequest,
     merge_commit: &str,
     plans: &BTreeSet<u64>,
     notes: &mut Vec<String>,
 ) -> Result<Vec<HoldingReceipt>, Refusal> {
+    let number = pull.number;
     let pr = number.to_string();
-    let targets: Vec<ReleaseTarget> = state
+    // Releases are bound to the work the PR ended: only a holding that began
+    // before the merge ends (review of #168). A holding assigned later is new
+    // work under the same key and stays, so a re-run never ends it, while a
+    // retry after a refused first run still ends what predates the merge.
+    // mergedAt is GitHub's clock and `from` is this machine's: skew only
+    // matters for a holding assigned within seconds of the merge, which is
+    // accepted.
+    let Some(merged) = pull
+        .merged_at
+        .as_deref()
+        .and_then(crate::community::holders::parse_time)
+    else {
+        notes.push(format!(
+            "no holding released: gh gave no merge time for PR #{number}, so pij cannot tell its work from later work; release by hand"
+        ));
+        return Ok(Vec::new());
+    };
+    let mut targets = Vec::new();
+    for held in state
         .services
         .governance
         .store()
         .assignments(project)
         .await
         .map_err(store_refusal)?
-        .into_iter()
-        .filter(|held| held.to.is_none() && !held.end_pending)
-        .filter(|held| {
-            (PR_ROLES.contains(&held.role.as_str()) && held.instance == pr)
-                || (held.role == "coder"
-                    && held
-                        .instance
-                        .parse::<u64>()
-                        .is_ok_and(|plan| plans.contains(&plan)))
-        })
-        .map(|held| ReleaseTarget {
+    {
+        let finished = (PR_ROLES.contains(&held.role.as_str()) && held.instance == pr)
+            || (held.role == "coder"
+                && held
+                    .instance
+                    .parse::<u64>()
+                    .is_ok_and(|plan| plans.contains(&plan)));
+        if !finished || held.to.is_some() || held.end_pending {
+            continue;
+        }
+        let target = ReleaseTarget {
             role: held.role,
             instance: held.instance,
             seat: held.seat,
-        })
-        .collect();
+        };
+        if crate::community::holders::parse_time(&held.from).is_some_and(|from| from < merged) {
+            targets.push(target);
+        } else {
+            notes.push(format!(
+                "holding left open: {target} began at {}, after the merge",
+                held.from
+            ));
+        }
+    }
     if targets.is_empty() {
         return Ok(Vec::new());
     }

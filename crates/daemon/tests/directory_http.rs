@@ -6457,7 +6457,20 @@ async fn steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts
 // Plan 215: holdings end with their work.
 
 /// Answers every PR as merged, touching plan 215's folder; `Delivers: none`.
+/// Its merge time is what [`merge_now`] set for that PR number, else none.
 struct MergedGh;
+
+static MERGED_AT: std::sync::Mutex<Vec<(u64, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// PR `number` merges now: later holdings are new work.
+fn merge_now(number: u64) {
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    MERGED_AT
+        .lock()
+        .unwrap()
+        .push((number, pij_daemon::community::holders::now()));
+    std::thread::sleep(std::time::Duration::from_millis(5));
+}
 
 impl pij_daemon::community::gh::PullRequests for MergedGh {
     fn view(
@@ -6469,6 +6482,12 @@ impl pij_daemon::community::gh::PullRequests for MergedGh {
             number,
             state: "MERGED".into(),
             merge_commit: Some(format!("{number:0>40}")),
+            merged_at: MERGED_AT
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(pr, _)| *pr == number)
+                .map(|(_, at)| at.clone()),
             body: "Delivers: none\n".into(),
             files: vec![
                 "docs/plans/215-holdings-followups/plan.dd.json".into(),
@@ -6588,6 +6607,7 @@ async fn delivered_ends_the_holdings_its_pr_finished_in_one_commit_once() {
         )
         .await
         .unwrap();
+    merge_now(215);
     let start = head(&repo);
 
     let first = call(rig.addr, "/v1/delivered", &["delivered", "215"], &repo.main).await;
@@ -6800,5 +6820,163 @@ async fn an_assign_repairs_a_stale_routes_table_in_its_commit() {
         "current: no rewrite"
     );
     assert_eq!(fyis(&rig, "pij-second").await.len(), told);
+    rig.server.abort();
+}
+
+/// A fleet with pm-001, reviewer, coder and security roles.
+async fn delivered_rig(name: &str) -> (Repo, Rig) {
+    let repo = repo(name);
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    for id in ["coder", "security"] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--holders",
+                "many",
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    (repo, rig)
+}
+
+async fn open_holdings(rig: &Rig) -> Vec<String> {
+    let mut open: Vec<String> = rig
+        .store
+        .assignments("fleet")
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.to.is_none())
+        .map(|row| format!("{}/{} {}", row.role, row.instance, row.seat))
+        .collect();
+    open.sort();
+    open
+}
+
+/// Review of #168 (spoonbill): a re-run of `delivered` after the coder,
+/// reviewer and security keys were reassigned for new work ends nothing. The
+/// merge time binds the release to the work the PR ended.
+#[tokio::test]
+async fn a_rerun_after_reassigning_the_keys_leaves_the_new_holdings() {
+    let (repo, rig) = delivered_rig("pij-delivered-reassign").await;
+    let lines = "coder/215 pij-holder\nreviewer/217 pij-holder\nsecurity/217 pij-second\n";
+    assert_eq!(batch(&rig, &repo, "assign", lines).await["ok"], true);
+    merge_now(217);
+    let first = call(rig.addr, "/v1/delivered", &["delivered", "217"], &repo.main).await;
+    assert_eq!(
+        released(&first["data"]["holdings"]),
+        [
+            "coder/215 pij-holder",
+            "reviewer/217 pij-holder",
+            "security/217 pij-second"
+        ],
+        "{first}"
+    );
+    let reassigned = "coder/215 pij-second\nreviewer/217 pij-second\nsecurity/217 pij-holder\n";
+    assert_eq!(batch(&rig, &repo, "assign", reassigned).await["ok"], true);
+    let before = head(&repo);
+
+    let again = call(rig.addr, "/v1/delivered", &["delivered", "217"], &repo.main).await;
+    assert_eq!(again["ok"], true, "{again}");
+    assert_eq!(again["data"]["holdings"], json!([]), "{again}");
+    assert_eq!(head(&repo), before, "nothing written");
+    let notes = again["data"]["notes"].to_string();
+    for key in [
+        "coder/215 pij-second",
+        "reviewer/217 pij-second",
+        "security/217 pij-holder",
+    ] {
+        assert!(
+            notes.contains(&format!("holding left open: {key} began at")),
+            "{key}: {notes}"
+        );
+    }
+    assert_eq!(
+        open_holdings(&rig).await,
+        [
+            "coder/215 pij-second",
+            "reviewer/217 pij-second",
+            "security/217 pij-holder"
+        ]
+    );
+    rig.server.abort();
+}
+
+/// Review of #168 (pm-001): a first run the writer refused ended nothing, so
+/// a re-run still ends the holdings from before the merge.
+#[tokio::test]
+async fn a_rerun_after_a_refused_release_ends_the_holdings_from_before_the_merge() {
+    let (repo, rig) = delivered_rig("pij-delivered-retry").await;
+    let lines = "coder/215 pij-holder\nreviewer/218 pij-second\n";
+    assert_eq!(batch(&rig, &repo, "assign", lines).await["ok"], true);
+    merge_now(218);
+    // A foreign edit to a holders document: the writer refuses.
+    let holders = repo
+        .gov
+        .join(".harness/government/community/roles/coder/holders.dd.json");
+    let original = std::fs::read_to_string(&holders).unwrap();
+    std::fs::write(&holders, format!("{original}\n")).unwrap();
+    let start = head(&repo);
+    let refused = call(rig.addr, "/v1/delivered", &["delivered", "218"], &repo.main).await;
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert!(
+        refused
+            .to_string()
+            .contains("delivery is recorded, but its holdings were not released")
+            && refused.to_string().contains("pij delivered 218"),
+        "{refused}"
+    );
+    assert_eq!(head(&repo), start);
+    assert_eq!(
+        open_holdings(&rig).await,
+        ["coder/215 pij-holder", "reviewer/218 pij-second"]
+    );
+
+    std::fs::write(&holders, original).unwrap();
+    let retried = call(rig.addr, "/v1/delivered", &["delivered", "218"], &repo.main).await;
+    assert_eq!(retried["ok"], true, "{retried}");
+    assert_eq!(
+        released(&retried["data"]["holdings"]),
+        ["coder/215 pij-holder", "reviewer/218 pij-second"]
+    );
+    assert!(open_holdings(&rig).await.is_empty());
+    rig.server.abort();
+}
+
+/// Review of #168 (pm-001): with no merge time from gh, nothing ends and a
+/// note says why.
+#[tokio::test]
+async fn without_a_merge_time_delivered_ends_nothing_and_says_so() {
+    let (repo, rig) = delivered_rig("pij-delivered-no-merge-time").await;
+    assert_eq!(
+        batch(&rig, &repo, "assign", "reviewer/219 pij-holder\n").await["ok"],
+        true
+    );
+    let start = head(&repo);
+    let data = call(rig.addr, "/v1/delivered", &["delivered", "219"], &repo.main).await;
+    assert_eq!(data["ok"], true, "{data}");
+    assert_eq!(data["data"]["holdings"], json!([]));
+    assert!(
+        data["data"]["notes"]
+            .to_string()
+            .contains("gh gave no merge time for PR #219"),
+        "{data}"
+    );
+    assert_eq!(head(&repo), start);
+    assert_eq!(open_holdings(&rig).await, ["reviewer/219 pij-holder"]);
     rig.server.abort();
 }

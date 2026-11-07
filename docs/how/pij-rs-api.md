@@ -1040,7 +1040,11 @@ gives it (store row, seat role, hook, window rule). The envelope carries
 (`to`, `released_by`, `release_why`); seat roles are left as they are.
 `pij directory release --batch <file> --why <text>` (plan 215, F71) reads the
 same `<role>[/<instance>] <seat>` lines and ends every holding in one writer
-commit (`community: release <n> holdings`), all or nothing. Its diagnostics are
+commit (`community: release <n> holdings`), all or nothing for the directory
+write: the holders documents either all change in that commit or none do. A git
+or store-index failure partway through is the writer's inherited split (the
+commit landed, the store did not index it; `pij directory rebuild` restores
+it), not a global recovery. Its diagnostics are
 phase-local: a malformed line refuses `E-RS-ARG` naming every malformed line;
 only a file that parses is checked against the holders documents, where a
 holding that is not open, a line repeated, or a missing role refuses
@@ -1684,7 +1688,7 @@ or a designated prime. A released number is never handed out again.
 
 `pij delivered <pr>` is the verb the merger runs once after a merge (ruling C23;
 no webhook, hook or poll). It reads the PR with one gh launch
-(`gh pr view <pr> --json number,state,mergeCommit,body,files,url`, with `--repo`
+(`gh pr view <pr> --json number,state,mergeCommit,mergedAt,body,files,url`, with `--repo`
 taken from the checkout's `origin` when it is on github.com) and takes the
 delivered addresses from the body's `Delivers:` lines: full ddocs addresses
 separated by commas or spaces, or `none`. It records (project, PR, address,
@@ -1713,9 +1717,17 @@ what was skipped and why.
 It then ends the holdings the PR finished (plan 215, F70): each open
 `reviewer/<pr>`, `security/<pr>` and `performance/<pr>`, and `coder/<plan>` for
 each plan number in the PR's `docs/plans/NNN-*` files (the scan that releases
-claims). They end in one directory writer commit, `release_why` `PR #<n> merged
-(<sha>)`, never one commit per holding and none when nothing is open, so a
-re-run ends nothing more. `data.holdings[]` has one release receipt each (the
+claims). The plan paths a PR touches select which coder holdings end; they are
+not proof the plan's work is complete. Only a holding whose `from` is before
+the PR's `mergedAt` ends: the merge time binds the release to the work the PR
+ended, so a key reassigned after the merge (new work under the same
+`coder/<plan>` or `reviewer/<pr>`) is left open and named in `data.notes[]`,
+and a retry after a refused first run still ends what predates the merge.
+`mergedAt` is GitHub's clock and `from` is the daemon's, so skew matters only
+for a holding assigned within seconds of the merge. With no merge time from gh
+nothing ends, and a note says to release by hand. They end in one directory
+writer commit, `release_why` `PR #<n> merged (<sha>)`, never one commit per
+holding and none when nothing is open, so a re-run ends nothing more. `data.holdings[]` has one release receipt each (the
 shim prints `released <role>/<instance> from <seat> (commit <sha>)` per line),
 the line counts them, and each live seat's window follows what it still holds.
 A holding the store lists but the holders document does not is left alone and
@@ -1723,6 +1735,10 @@ named in `data.notes[]`. If the writer refuses, the delivery stays recorded
 and the refusal says to run `pij delivered <pr>` again, which ends what is
 still open. Cost: one store read, at most one writer commit (git 7, ddocs 2 per
 holders document) and at most one tmux rename per released live seat.
+Known limit: `delivered` and `release --batch` end holdings under the caller's
+inherited any-seat release authority (as a single `release` does), so any
+registered seat can run them. That is F88's root, owned by PRD 003 req-10
+(plan 223) under ruling C32; this plan adds no authority check.
 `pij delivered` changes no project file and pushes nothing.
 
 | Refusal | When |
