@@ -219,6 +219,7 @@ async function startExtension() {
 					}),
 					signal,
 					precedence,
+					standingBy ? "lease-retry" : "explicit",
 				);
 				signal.throwIfAborted();
 				if (holdStarted !== undefined || standingBy) nativeReport({ kind: "connection-ready" });

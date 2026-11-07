@@ -121,8 +121,30 @@ impl Validator for Ddocs {
     }
 }
 
+/// The `pij directory add` flag that fills a pij/role location ddocs found
+/// missing (plan 209, F36).
+fn role_flag(location: &str) -> Option<&'static str> {
+    const FLAGS: [(&str, &str); 7] = [
+        ("[meta].value.title", "--title <text>"),
+        ("[meta].value.kind", "--kind specialist|general"),
+        ("[meta].value.lifecycle", "--lifecycle long-lived|per-task"),
+        ("[meta].value.holders", "--holders one|many"),
+        ("sections[scope]", "--rule <text>"),
+        (
+            "sections[standing_packet]",
+            "--packet <text> or --brief <path>",
+        ),
+        ("sections[default_seat]", "--harness <h>"),
+    ];
+    FLAGS
+        .iter()
+        .find(|(at, _)| location.contains(at))
+        .map(|(_, flag)| *flag)
+}
+
 /// ddocs' own words: its error message, each issue's location and message, and
-/// its next action. Falls back to raw output when it printed no envelope.
+/// its next action. Falls back to raw output when it printed no envelope. For
+/// a role, the next step names the flags to add, never a hand edit (F36).
 fn ddocs_message(stdout: &[u8], stderr: &[u8]) -> String {
     let Ok(envelope) = serde_json::from_slice::<Value>(stdout) else {
         let raw = String::from_utf8_lossy(if stdout.is_empty() { stderr } else { stdout });
@@ -133,12 +155,24 @@ fn ddocs_message(stdout: &[u8], stderr: &[u8]) -> String {
         .as_str()
         .unwrap_or("ddocs refused the document")
         .to_string();
+    let role = error["details"]["schema"].as_str() == Some("pij/role");
+    let mut flags: Vec<&str> = Vec::new();
     for issue in error["details"]["issues"].as_array().into_iter().flatten() {
         let location = issue["location"].as_str().unwrap_or("?");
         let text = issue["message"].as_str().unwrap_or("");
         message.push_str(&format!("\n  {location}: {text}"));
+        if let Some(flag) = role.then(|| role_flag(location)).flatten()
+            && !flags.contains(&flag)
+        {
+            flags.push(flag);
+        }
     }
-    if let Some(next) = envelope["next_action"].as_str() {
+    if !flags.is_empty() {
+        message.push_str(&format!(
+            "\nNothing was written. Add {} and run the add again.",
+            flags.join(", ")
+        ));
+    } else if let Some(next) = envelope["next_action"].as_str() {
         message.push_str(&format!("\n{next}"));
     }
     message
@@ -206,6 +240,49 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
+
+    /// ddocs' refusal of a role missing kind, scope and its standing packet.
+    fn three_gaps() -> String {
+        let envelope = serde_json::json!({
+            "error": {
+                "message": "missing required field \"kind\"",
+                "details": {"schema": "pij/role", "issues": [
+                    {"location": "$.sections[meta].value.kind", "message": "missing required field \"kind\""},
+                    {"location": "$.sections[scope]", "message": "missing required section \"scope\""},
+                    {"location": "$.sections[standing_packet]", "message": "missing required section \"standing_packet\""},
+                ]},
+            },
+            "next_action": "Fix role.dd.json at $.sections[meta].value.kind, then re-run `ddocs validate`.",
+        });
+        ddocs_message(envelope.to_string().as_bytes(), b"")
+    }
+
+    /// Plan 209, F36: the next step names the flags to add, never a hand edit.
+    #[test]
+    fn a_role_refusal_names_the_flag_for_each_gap_not_a_hand_edit() {
+        let message = three_gaps();
+        assert!(
+            message.ends_with(
+                "Nothing was written. Add --kind specialist|general, --rule <text>, \
+                 --packet <text> or --brief <path> and run the add again."
+            ),
+            "{message}"
+        );
+        assert!(!message.contains("Fix role.dd.json"), "{message}");
+    }
+
+    /// Plan 209, F37: one refusal lists every missing section.
+    #[test]
+    fn a_role_refusal_lists_every_gap_at_once() {
+        let message = three_gaps();
+        for gap in [
+            "$.sections[meta].value.kind: missing",
+            "$.sections[scope]: missing",
+            "$.sections[standing_packet]: missing",
+        ] {
+            assert!(message.contains(gap), "{gap}: {message}");
+        }
+    }
 
     fn tool(dir: &Path, name: &str, mode: u32) -> PathBuf {
         std::fs::create_dir_all(dir).unwrap();

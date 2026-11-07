@@ -28,7 +28,7 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 27] = [
+const SINGLE: [&str; 28] = [
     "why",
     "from",
     "to",
@@ -56,6 +56,7 @@ const SINGLE: [&str; 27] = [
     "body",
     "body-file",
     "note",
+    "slug",
 ];
 const REPEATED: [&str; 7] = [
     "scope-path",
@@ -67,7 +68,8 @@ const REPEATED: [&str; 7] = [
     "tags",
 ];
 /// Flags a `memory` call may carry (plan 201).
-const MEMORY: [&str; 8] = [
+const MEMORY: [&str; 9] = [
+    "slug",
     "title",
     "tags",
     "hook",
@@ -93,6 +95,9 @@ const CONTROL: [&str; 9] = [
 #[derive(Debug, Default)]
 struct Arguments {
     leaf: String,
+    /// `--suggest` on the view: every role suggestion, not only those a need
+    /// or signal points at (F39).
+    suggest: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -147,6 +152,16 @@ impl Arguments {
                 continue;
             };
             if flag == "json" {
+                continue;
+            }
+            if flag == "suggest" {
+                if call.leaf != "view" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--suggest belongs to the view: pij directory --suggest",
+                    ));
+                }
+                call.suggest = true;
                 continue;
             }
             if flag == "write" {
@@ -243,18 +258,25 @@ impl Arguments {
                 "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
             ));
         }
-        if call.leaf == "lineage"
-            && (call.positions.len() != 3
-                || call.positions[0] != "add"
-                || call.single.keys().any(|flag| {
-                    !matches!(flag.as_str(), "why" | "project" | "actor" | "from" | "to")
-                })
-                || !call.repeated.is_empty())
-        {
-            return Err(Refusal::new(
-                "E-RS-ARG",
-                "usage: pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text> [--project <slug>]",
-            ));
+        if call.leaf == "lineage" {
+            // One holding by flags, or a file of them with --batch (F67).
+            let batch = call.get("batch").is_some();
+            let flags = call.single.keys().all(|flag| {
+                matches!(flag.as_str(), "why" | "project" | "actor")
+                    || (batch && flag == "batch")
+                    || (!batch && matches!(flag.as_str(), "from" | "to"))
+            });
+            if !flags
+                || call.positions.first().map(String::as_str) != Some("add")
+                || call.positions.len() != if batch { 1 } else { 3 }
+                || !call.repeated.is_empty()
+            {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    "usage: pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text> [--project <slug>], \
+                     or pij directory lineage add --batch <file> --why <text> [--project <slug>]",
+                ));
+            }
         }
         if call.leaf != "lineage" && call.single.contains_key("to") {
             return Err(Refusal::new(
@@ -322,7 +344,7 @@ impl Arguments {
                 format!("directory memory: unsupported --{flag}"),
             ));
         }
-        let writes = ["title", "tags", "hook", "body", "body-file"];
+        let writes = ["title", "tags", "hook", "body", "body-file", "slug"];
         match self.positions.as_slice() {
             [verb, _] if verb == "add" => {
                 if self.get("note").is_some() {
@@ -470,9 +492,16 @@ pub(crate) async fn handle(
         "memory" => memory(&state, &actor.id, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
-                Ok((project, repo)) if call.leaf == "view" => {
-                    state.services.directory.view(&project, &repo).await
-                }
+                Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
+                    Ok(live) => {
+                        state
+                            .services
+                            .directory
+                            .view(&project, &repo, &live, call.suggest)
+                            .await
+                    }
+                    Err(refusal) => Err(refusal),
+                },
                 Ok((project, repo)) => state.services.directory.rebuild(&project, repo).await,
                 Err(refusal) => Err(refusal),
             }
@@ -483,6 +512,20 @@ pub(crate) async fn handle(
         Ok(data) => envelope(StatusCode::OK, &Envelope::ok(COMMAND, data)),
         Err(refusal) => refused(&refusal),
     }
+}
+
+/// The registered, untombstoned seats: one registry read per view.
+async fn live_seats(state: &AppState) -> Result<std::collections::HashSet<String>, Refusal> {
+    Ok(state
+        .services
+        .registry
+        .list(pij_core::ports::SeatFilter::default())
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .into_iter()
+        .filter(|seat| seat.tombstoned_at.is_none())
+        .map(|seat| seat.id.to_string())
+        .collect())
 }
 
 async fn add(
@@ -857,25 +900,111 @@ async fn hold(
 
 /// `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time>
 /// --why <text>` (plan 208, F15): the prime records a closed seat's past
-/// holding. No live seat is needed.
+/// holding. No live seat is needed. With `--batch <file>` (plan 209, F67), one
+/// `<role>[/<instance>] <seat> <from> <to>` per line, blank and `#` lines
+/// skipped, all in one writer commit or none; every bad line is named.
 async fn lineage(
     state: &AppState,
     actor: &SeatId,
     caller: &CallerContext,
     call: &Arguments,
 ) -> Result<Value, Refusal> {
-    use crate::community::holders::{parse_time, stamp};
     let why = call
         .get("why")
         .filter(|why| !why.trim().is_empty())
         .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
-    let (role, instance) = role_and_instance(&call.positions[1])?;
-    let seat = call.positions[2].clone();
-    let when = |flag: &str| -> Result<time::OffsetDateTime, Refusal> {
-        let given = call
-            .get(flag)
+    let batch = call.get("batch");
+    let single = match &batch {
+        Some(_) => None,
+        None => Some(past_holding(
+            actor,
+            &why,
+            &call.positions[1],
+            &call.positions[2],
+            call.get("from").as_deref(),
+            call.get("to").as_deref(),
+        )?),
+    };
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    require_prime(state, actor, &project).await?;
+    let directory = &state.services.directory;
+    let Some(file) = batch else {
+        let mut row = single.expect("a single lineage add parsed its row");
+        row.project.clone_from(&project);
+        let (role, seat) = (row.role.clone(), row.seat.clone());
+        let receipt = directory.lineage_add(repo, row, actor).await?;
+        let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+        data["project"] = json!(project);
+        data["role"] = json!(role);
+        data["seat"] = json!(seat);
+        return Ok(data);
+    };
+    let path = caller_path(caller, &file)?;
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("cannot read {}: {error}", path.display()),
+        )
+    })?;
+    let mut rows = Vec::new();
+    let mut problems = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let [target, seat, from, to] = fields.as_slice() else {
+            problems.push(format!(
+                "line {number}: want `<role>[/<instance>] <seat> <from> <to>`"
+            ));
+            continue;
+        };
+        match past_holding(actor, &why, target, seat, Some(from), Some(to)) {
+            Ok(mut row) => {
+                row.project.clone_from(&project);
+                rows.push(row);
+            }
+            Err(refusal) => problems.push(format!("line {number}: {}", refusal.message)),
+        }
+    }
+    if !problems.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("the batch wrote nothing: {}", problems.join("; ")),
+        ));
+    }
+    if rows.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{} names no holdings", path.display()),
+        ));
+    }
+    let receipts = directory.lineage_many(repo, rows, actor).await?;
+    Ok(json!({
+        "project": project,
+        "commit": receipts[0].commit,
+        "holdings": receipts,
+    }))
+}
+
+/// One closed holding, checked: RFC 3339 times (or a date), `from` before
+/// `to`, `to` not in the future. `project` is left for the caller.
+fn past_holding(
+    actor: &SeatId,
+    why: &str,
+    target: &str,
+    seat: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<pij_store::Assignment, Refusal> {
+    use crate::community::holders::{parse_time, stamp};
+    let (role, instance) = role_and_instance(target)?;
+    let when = |flag: &str, given: Option<&str>| -> Result<time::OffsetDateTime, Refusal> {
+        let given = given
             .ok_or_else(|| Refusal::new("E-RS-ARG", format!("--{flag} <time> is required")))?;
-        parse_time(&given).ok_or_else(|| {
+        parse_time(given).ok_or_else(|| {
             Refusal::new(
                 "E-RS-ARG",
                 format!(
@@ -884,7 +1013,7 @@ async fn lineage(
             )
         })
     };
-    let (from, to) = (when("from")?, when("to")?);
+    let (from, to) = (when("from", from)?, when("to", to)?);
     if from >= to {
         return Err(Refusal::new("E-RS-ARG", "--from must be before --to"));
     }
@@ -894,7 +1023,27 @@ async fn lineage(
             "--to is in the future; lineage add records holdings that have ended (use assign for a live seat)",
         ));
     }
-    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    Ok(pij_store::Assignment {
+        project: String::new(),
+        role: role.to_string(),
+        instance: instance.to_string(),
+        seat: seat.to_string(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: stamp(from),
+        to: Some(stamp(to)),
+        assigned_by: actor.to_string(),
+        released_by: Some(actor.to_string()),
+        why: why.to_string(),
+        release_why: Some("lineage add".to_string()),
+        end_pending: false,
+    })
+}
+
+/// Only the project's prime records past holdings: its `prime_id`, or for a
+/// project that names none, a seat whose role is prime.
+async fn require_prime(state: &AppState, actor: &SeatId, project: &str) -> Result<(), Refusal> {
     let project_prime = state
         .services
         .governance
@@ -905,8 +1054,6 @@ async fn lineage(
         .into_iter()
         .find(|known| known.slug == project)
         .and_then(|known| known.prime_id);
-    // The project's own prime; a project that names none falls back to a
-    // seat whose role is prime.
     let is_prime = match &project_prime {
         Some(prime) => prime == actor,
         None => {
@@ -920,38 +1067,14 @@ async fn lineage(
                 == Some("prime")
         }
     };
-    if !is_prime {
-        return Err(Refusal::new(
+    if is_prime {
+        Ok(())
+    } else {
+        Err(Refusal::new(
             "E-RS-OWNERSHIP",
             format!("only the prime records past holdings; {actor} is not the prime of {project}"),
-        ));
+        ))
     }
-    let row = pij_store::Assignment {
-        project: project.clone(),
-        role: role.to_string(),
-        instance: instance.to_string(),
-        seat: seat.clone(),
-        harness: None,
-        session: None,
-        machine: None,
-        from: stamp(from),
-        to: Some(stamp(to)),
-        assigned_by: actor.to_string(),
-        released_by: Some(actor.to_string()),
-        why: why.clone(),
-        release_why: Some("lineage add".to_string()),
-        end_pending: false,
-    };
-    let receipt = state
-        .services
-        .directory
-        .lineage_add(repo, row, actor)
-        .await?;
-    let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
-    data["project"] = json!(project);
-    data["role"] = json!(role);
-    data["seat"] = json!(seat);
-    Ok(data)
 }
 
 /// `<role>[/<instance>]`, checked.
@@ -1141,7 +1264,7 @@ async fn memory(
         (None, Some(file)) if file == "-" => {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "--body-file - reads stdin, which only the pij CLI can do; pass --body or a file path",
+                "--body-file - reads stdin, which the daemon cannot; `pij` and `pij-rs` send it as --body, or pass --body or a file path",
             ));
         }
         (None, Some(file)) => {
@@ -1167,6 +1290,7 @@ async fn memory(
             .collect(),
         hook: call.get("hook").unwrap_or_default(),
         body,
+        slug: call.get("slug"),
     };
     // Refuse a bad note before taking the writer lock.
     memory::note(&holders::today(), &fields)?;
@@ -1398,6 +1522,221 @@ mod tests {
 
     fn argv(tokens: &[&str]) -> Vec<String> {
         tokens.iter().map(|token| (*token).to_string()).collect()
+    }
+
+    /// Every command the picture prints (plan 203), built from hostile repo
+    /// and store text, is split by a real `/bin/sh` and replayed through the
+    /// parser its verb reaches: nothing in it runs, the shell hands the verb
+    /// exactly the words the picture meant, and the verb accepts them. A role
+    /// it creates carries every section `pij/role` requires (#141 review and
+    /// security S001).
+    #[test]
+    fn every_printed_command_runs_as_written_through_the_real_parsers() {
+        use std::collections::HashSet;
+
+        use crate::community::picture::{self, RoleActivity};
+        use crate::community::templates::{self, Catalog};
+
+        let hostile = "s09$(touch dollar)`touch tick`;touch semi \"dq\" 'sq'\nnext";
+        let seat = "pij-a;touch seat";
+        let project = "fleet";
+        let holding = |role: &str, instance: &str, seat: &str, from: &str, to: Option<&str>| {
+            pij_store::Assignment {
+                project: project.into(),
+                role: role.into(),
+                instance: instance.into(),
+                seat: seat.into(),
+                harness: None,
+                session: None,
+                machine: None,
+                from: from.into(),
+                to: to.map(Into::into),
+                assigned_by: "prime".into(),
+                released_by: None,
+                why: "w".into(),
+                release_why: to.map(|_| "close".to_string()),
+                end_pending: false,
+            }
+        };
+        let closed = [
+            holding(
+                "reviewer",
+                "",
+                "pij-old",
+                "2026-11-01T00:00:00Z",
+                Some("2026-11-02T00:00:00Z"),
+            ),
+            holding(
+                "reviewer",
+                "",
+                "pij-old",
+                "2026-11-03T00:00:00Z",
+                Some("2026-11-04T00:00:00Z"),
+            ),
+        ];
+        let open = [
+            holding("reviewer", "115", seat, "2026-11-05T00:00:00Z", None),
+            holding("reviewer", "", "pij-b", "2026-11-06T00:00:00Z", None),
+        ];
+        let rows: Vec<&pij_store::Assignment> = closed.iter().chain(&open).collect();
+        let seats: HashSet<String> = [seat.to_string(), "pij-b".to_string()].into();
+        let mut printed: Vec<String> = Vec::new();
+        let mut take = |actions: Vec<Value>| {
+            for action in actions {
+                for command in action["commands"].as_array().unwrap() {
+                    printed.push(command.as_str().unwrap().to_string());
+                }
+            }
+        };
+        take(picture::actions(
+            project,
+            "reviewer",
+            "one",
+            &rows,
+            &HashSet::new(),
+            &["", "115"],
+            None,
+        ));
+        take(picture::actions(
+            project,
+            "reviewer",
+            "one",
+            &rows,
+            &seats,
+            &[],
+            Some("2026-11-05"),
+        ));
+        let mut prompts = templates::recommendations(project, &[]);
+        let needs = vec![
+            ("qa".to_string(), vec![format!("001 {hostile}")]),
+            (format!("docs{hostile}"), vec![format!("001 {hostile}")]),
+        ];
+        picture::fold_needs(project, &mut prompts, &needs, &[], &Catalog::shipped());
+        prompts.extend(picture::unowned(
+            project,
+            &[(
+                format!("crates/{hostile}"),
+                vec!["a".into(), "b".into(), "c".into()],
+            )],
+            &[],
+        ));
+        let mut two = open.to_vec();
+        two.push(holding("pm", "", seat, "2026-11-01T00:00:00Z", None));
+        prompts.extend(picture::two_domains(project, &two, &seats));
+        for prompt in &prompts {
+            printed.extend(prompt.commands.iter().cloned());
+        }
+        printed.extend(picture::call_on(project, hostile, false, 1));
+        let idle = picture::idle(
+            project,
+            &RoleActivity {
+                role: hostile,
+                created: Some("2026-01-01"),
+                rows: &[],
+                live_holder: false,
+                waiting: 0,
+                has_output: false,
+                notes: 0,
+            },
+            "2026-10-01",
+        )
+        .expect("idle");
+        assert!(
+            idle.commands.is_empty(),
+            "nothing runnable ships for retire"
+        );
+        let kinds: HashSet<&str> = prompts.iter().map(|prompt| prompt.kind).collect();
+        for kind in ["core", "needed", "recurring", "two-domains"] {
+            assert!(kinds.contains(kind), "the fixture prints a {kind} prompt");
+        }
+
+        let all: Vec<&String> = printed.iter().chain(&idle.later).collect();
+        let dir = pij_testkit::fresh_dir("printed-commands");
+        let script: String = all
+            .iter()
+            .map(|command| format!("printf '%s\\037' {command}; printf '\\036'\n"))
+            .collect();
+        let shell = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(&script)
+            .current_dir(&dir)
+            .output()
+            .expect("run /bin/sh");
+        assert!(shell.status.success(), "{shell:?}");
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            0,
+            "nothing in a printed command ran, and nothing was redirected"
+        );
+        let stdout = String::from_utf8(shell.stdout).unwrap();
+        let split: Vec<Vec<String>> = stdout
+            .split('\x1e')
+            .filter(|record| !record.is_empty())
+            .map(|record| {
+                record
+                    .split('\x1f')
+                    .filter(|word| !word.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(split.len(), all.len());
+
+        let schema: Value = serde_json::from_slice(include_bytes!(
+            "../../../../.dd/schemas/pij/role/schema.json"
+        ))
+        .unwrap();
+        for (command, words) in all.iter().zip(&split) {
+            let words_ref: Vec<&str> = words.iter().map(String::as_str).collect();
+            assert_eq!(
+                picture::command(&words_ref),
+                **command,
+                "the shell split {command} into exactly its words"
+            );
+            let later = idle.later.contains(command);
+            match words_ref.as_slice() {
+                // Native clap; the CLI's own test replays this shape.
+                ["pij-rs", "revive", _] => {}
+                ["pij", "send", ..] => {
+                    crate::http::shim::parse_send(&words[1..], Some("text"))
+                        .unwrap_or_else(|error| panic!("{command}: {error}"));
+                }
+                ["pij", "directory", ..] if later => {
+                    assert_eq!(
+                        Arguments::parse(&words[1..]).map(|_| ()).unwrap_err().code,
+                        "E-RS-UNPORTED",
+                        "{command}: s15's verbs have not shipped, so they stay in `later`"
+                    );
+                }
+                ["pij", "directory", ..] => {
+                    let call = Arguments::parse(&words[1..])
+                        .unwrap_or_else(|refusal| panic!("{command}: {refusal:?}"));
+                    if call.leaf != "add" || call.get("from").is_some() {
+                        continue;
+                    }
+                    let document = role::from_fields(&call.positions[0], &call.fields())
+                        .unwrap_or_else(|refusal| panic!("{command}: {refusal:?}"));
+                    for (name, rule) in schema["sections"].as_object().unwrap() {
+                        if rule["required"] != true || name == "changelog" {
+                            continue;
+                        }
+                        let section = document["sections"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|section| section["name"] == *name)
+                            .unwrap_or_else(|| panic!("{command}: pij/role requires {name}"));
+                        for field in rule["shape"]["required"].as_array().into_iter().flatten() {
+                            assert!(
+                                !section["value"][field.as_str().unwrap()].is_null(),
+                                "{command}: pij/role requires {name}.{field}"
+                            );
+                        }
+                    }
+                }
+                _ => panic!("{command}: a verb with no replay"),
+            }
+        }
     }
 
     #[test]

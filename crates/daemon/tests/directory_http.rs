@@ -583,14 +583,15 @@ async fn help_is_answered_not_refused() {
 // Plan 195: holding roles.
 
 async fn with_roles(addr: SocketAddr, repo: &Repo) {
+    with_roles_and_prime(addr, repo, &[]).await;
+}
+
+/// [`with_roles`], with `extra` project-create flags such as `--prime <seat>`.
+async fn with_roles_and_prime(addr: SocketAddr, repo: &Repo, extra: &[&str]) {
     let main = repo.main.to_str().unwrap();
-    let created = call(
-        addr,
-        "/v1/project",
-        &["project", "create", "fleet", "--repo", main],
-        &repo.main,
-    )
-    .await;
+    let mut argv = vec!["project", "create", "fleet", "--repo", main];
+    argv.extend_from_slice(extra);
+    let created = call(addr, "/v1/project", &argv, &repo.main).await;
     assert_eq!(created["ok"], true, "{created}");
     for (id, holders) in [("pm-001", "one"), ("reviewer", "many")] {
         let added = call(
@@ -2161,6 +2162,113 @@ async fn a_batch_assign_is_one_commit_all_or_nothing() {
     assert_eq!(holders_at_head(&repo, "reviewer").len(), 7);
     assert_eq!(holders_at_head(&repo, "pm-001").len(), 1);
     assert_eq!(rig.store.assignments("fleet").await.unwrap().len(), 8);
+    rig.server.abort();
+}
+
+/// Plan 209 F67: `lineage add --batch` records many past holdings in one
+/// commit, and a file with any bad line (an overlap inside the batch, a
+/// missing role, a reversed span) writes nothing and names every one.
+#[tokio::test]
+async fn a_lineage_batch_is_one_commit_all_or_nothing() {
+    let repo = repo("pij-directory-lineage-batch");
+    let rig = rig(Arc::new(NoHook)).await;
+    let main = repo.main.to_str().unwrap();
+    let created = call(
+        rig.addr,
+        "/v1/project",
+        &[
+            "project", "create", "fleet", "--repo", main, "--prime", SEAT,
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    for id in ["docs-system", "reviewer"] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    let file = repo.root.join("lineage.txt");
+    let batch = |text: &str| {
+        std::fs::write(&file, text).unwrap();
+        let file = file.to_str().unwrap().to_string();
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move {
+            call(
+                addr,
+                "/v1/directory",
+                &[
+                    "directory",
+                    "lineage",
+                    "add",
+                    "--batch",
+                    file.as_str(),
+                    "--why",
+                    "from HOLDERS.md",
+                ],
+                &main,
+            )
+            .await
+        }
+    };
+    let start = head(&repo);
+    let bad = batch(
+        "docs-system pij-heron 2026-10-01 2026-10-05\n\
+         docs-system pij-heron 2026-10-04 2026-10-06\n\
+         qa pij-wren 2026-10-01 2026-10-02\n",
+    )
+    .await;
+    assert_eq!(bad["ok"], false, "{bad}");
+    let text = bad.to_string();
+    for named in ["overlaps", "role \\\"qa\\\" does not exist"] {
+        assert!(text.contains(named), "{named}: {bad}");
+    }
+    assert_eq!(head(&repo), start, "nothing written");
+    let reversed = batch("reviewer pij-wren 2026-10-02 2026-10-01\n").await;
+    assert!(
+        reversed
+            .to_string()
+            .contains("line 1: --from must be before --to"),
+        "{reversed}"
+    );
+    assert_eq!(head(&repo), start, "nothing written");
+
+    let landed = batch(
+        "# past holders\n\
+         docs-system pij-heron 2026-10-01 2026-10-05\n\
+         docs-system pij-heron 2026-10-06 2026-10-08\n\
+         reviewer/1 pij-wren 2026-10-01T09:00:00+10:00 2026-10-03\n",
+    )
+    .await;
+    assert_eq!(landed["ok"], true, "{landed}");
+    assert_eq!(landed["data"]["holdings"].as_array().unwrap().len(), 3);
+    assert_eq!(landed["data"]["commit"], head(&repo));
+    assert_eq!(
+        git(
+            &repo.gov,
+            &["rev-list", "--count", &format!("{start}..HEAD")]
+        )
+        .trim(),
+        "1",
+        "one commit for three past holdings"
+    );
+    assert_eq!(holders_at_head(&repo, "docs-system").len(), 2);
+    assert_eq!(holders_at_head(&repo, "reviewer").len(), 1);
     rig.server.abort();
 }
 
@@ -4221,6 +4329,493 @@ async fn an_urgent_send_reaches_a_working_copilot_seat_at_its_tool_boundary_once
             .contains("E-RS-URGENT-FYI")
             || both.to_string().contains("E-RS-URGENT-FYI"),
         "{both}"
+    );
+    rig.server.abort();
+}
+
+fn role_of<'a>(view: &'a Value, id: &str) -> &'a Value {
+    view["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == id)
+        .unwrap_or_else(|| panic!("no role {id} in {view}"))
+}
+
+fn action<'a>(view: &'a Value, role: &str, condition: &str) -> Option<&'a Value> {
+    view["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["role"] == role && action["condition"] == condition)
+}
+
+fn prompt<'a>(view: &'a Value, role: &str) -> Option<&'a Value> {
+    view["data"]["prompts"]
+        .as_array()
+        .and_then(|prompts| prompts.iter().find(|prompt| prompt["role"] == role))
+}
+
+/// Plan 203 (s09), AC1 to AC4: the prime's operating picture. Per role the
+/// holders (with seat liveness), waiting requests, latest output and memory
+/// freshness; the three condition actions with runnable commands; a roadmap
+/// need prompting a missing role until it exists; the designated prime named,
+/// and the missing prime role document worded as a document.
+#[tokio::test]
+async fn the_view_shows_the_picture_and_prompts_the_prime() {
+    let repo = repo("pij-directory-picture");
+    let rig = rig(Arc::new(NoHook)).await;
+    // qa's two closed holdings, seeded before any assign writes rows.
+    let closed = |seat: &str, from: &str, to: &str| pij_store::Assignment {
+        project: "fleet".into(),
+        role: "qa".into(),
+        instance: String::new(),
+        seat: seat.into(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: from.into(),
+        to: Some(to.into()),
+        assigned_by: SEAT.into(),
+        released_by: Some(seat.into()),
+        why: "qa".into(),
+        release_why: Some("close".into()),
+        end_pending: false,
+    };
+    rig.store
+        .replace_assignments(
+            "fleet",
+            &[
+                closed(
+                    "pij-qa-1",
+                    "2026-10-01T00:00:00.000Z",
+                    "2026-10-02T00:00:00.000Z",
+                ),
+                closed(
+                    "pij-qa-2",
+                    "2026-10-03T00:00:00.000Z",
+                    "2026-10-04T00:00:00.000Z",
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+    with_roles_and_prime(rig.addr, &repo, &["--prime", SEAT]).await;
+    for (id, holders) in [("qa", "one")] {
+        let added = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                "add",
+                id,
+                "--title",
+                id,
+                "--kind",
+                "general",
+                "--lifecycle",
+                "long-lived",
+                "--holders",
+                holders,
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--why",
+                "w",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    for argv in [
+        &[
+            "directory",
+            "assign",
+            "pm-001",
+            "pij-holder",
+            "--why",
+            "lead",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "pm-001",
+            SEAT,
+            "--why",
+            "second lead",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "reviewer/114",
+            "pij-second",
+            "--why",
+            "review",
+        ][..],
+        &[
+            "directory",
+            "assign",
+            "reviewer/115",
+            "pij-holder",
+            "--why",
+            "a second domain",
+        ][..],
+        &[
+            "directory",
+            "memory",
+            "add",
+            "reviewer",
+            "--title",
+            "What broke",
+            "--hook",
+            "h",
+            "--body",
+            "b",
+        ][..],
+    ] {
+        let done = call(rig.addr, "/v1/directory", argv, &repo.main).await;
+        assert_eq!(done["ok"], true, "{argv:?}: {done}");
+    }
+    let request = pij_store::RoleRequest {
+        id: "req-qa-1".into(),
+        project: "fleet".into(),
+        role: "qa".into(),
+        instance: String::new(),
+        requester: "pij-second".into(),
+        body: "check it".into(),
+        in_reply_to: None,
+        fyi: false,
+        reply: pij_store::ReplyMode::Wake,
+        limit_ms: None,
+        state: pij_store::RequestState::Queued,
+        holder: None,
+        created_at: 1_793_934_000_000,
+        delivered_at: None,
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
+    };
+    rig.store.record_role_request(&request).await.unwrap();
+    rig.store
+        .record_output(&pij_store::CommunityOutput {
+            path: "roles/reviewer/outputs/2026-11/06-verdict-pr-200-0123456.dd.json".into(),
+            project: "fleet".into(),
+            role: "reviewer".into(),
+            kind: "verdict".into(),
+            subject: "pr:200".into(),
+            head: Some("0123456789".into()),
+            result: Some("pass".into()),
+            writer: "pij-second".into(),
+            holds_role: true,
+            answers: None,
+            commit: "c0ffee".into(),
+            created_at: 1_793_934_100_000,
+        })
+        .await
+        .unwrap();
+    // Ruling C29: step documents live under workstreams (roadmaps is the fallback).
+    let roadmaps = repo.main.join("docs/project/workstreams");
+    let blueprints = repo.main.join("docs/project/blueprints");
+    std::fs::create_dir_all(&roadmaps).unwrap();
+    std::fs::create_dir_all(&blueprints).unwrap();
+    std::fs::write(
+        blueprints.join("001-test.dd.json"),
+        json!({"sections": [{"name": "components", "value": [
+            {"id": "c-core", "where": "crates/engine"}
+        ]}]})
+        .to_string(),
+    )
+    .unwrap();
+    let engine = ["../blueprints/001-test.dd.json#components/c-core"];
+    std::fs::write(
+        roadmaps.join("001-test.dd.json"),
+        json!({"sections": [{"name": "steps", "value": [
+            {"id": "s01", "state": "complete", "needs": ["role:ancient"], "builds": engine},
+            {"id": "s02", "state": "complete", "builds": engine},
+            {"id": "s09", "state": "planned", "needs": ["role:docs-system", "role:security", "role:qa"], "builds": engine}
+        ]}]})
+        .to_string(),
+    )
+    .unwrap();
+    // A hand-made role, long cold, with nothing to remember.
+    let dusty = repo.gov.join(".harness/government/community/roles/dusty");
+    std::fs::create_dir_all(&dusty).unwrap();
+    std::fs::write(
+        dusty.join("role.dd.json"),
+        json!({"sections": [
+            {"name": "meta", "value": {"id": "dusty", "title": "dusty", "kind": "general", "holders": "one"}},
+            {"name": "changelog", "value": [{"date": "2025-01-01", "by": "prime", "change": "added"}]}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+
+    let before = head(&repo);
+    let viewed = view(rig.addr, &repo).await;
+    assert_eq!(viewed["ok"], true, "{viewed}");
+    assert_eq!(head(&repo), before, "the view writes nothing");
+
+    // AC1: holders with liveness, requests, latest output, memory.
+    let reviewer = role_of(&viewed, "reviewer");
+    assert_eq!(reviewer["live"][0]["seat"], "pij-second");
+    assert_eq!(reviewer["live"][0]["seat_live"], true);
+    assert_eq!(reviewer["latest_output"]["kind"], "verdict");
+    assert_eq!(reviewer["latest_output"]["result"], "pass");
+    assert_eq!(reviewer["memory"]["notes"], 1);
+    assert!(reviewer["memory"]["latest"].is_string(), "{reviewer}");
+    assert!(reviewer["requests"].is_null());
+    assert!(
+        reviewer["call_on"].is_null(),
+        "a live holder is asked directly"
+    );
+    let qa = role_of(&viewed, "qa");
+    assert_eq!(
+        qa["requests"],
+        json!({"count": 1, "oldest_at": 1_793_934_000_000_u64})
+    );
+    assert_eq!(qa["memory"], json!({"notes": 0, "latest": null}));
+    assert!(qa["latest_output"].is_null());
+
+    // AC2: each condition, with runnable commands.
+    let none = action(&viewed, "qa", "no-live-holder").expect("qa has no live holder");
+    assert_eq!(
+        none["commands"],
+        json!([
+            "pij-rs revive pij-qa-2",
+            "pij directory assign qa '<seat>' --why '<why>' --project fleet"
+        ])
+    );
+    let two = action(&viewed, "pm-001", "two-live-holders").expect("pm-001 has two");
+    assert_eq!(
+        two["commands"],
+        json!([
+            "pij directory release pm-001 pij-holder --why 'a one-holder role had 2 live holders' --project fleet"
+        ])
+    );
+    let stale = action(&viewed, "qa", "memory-stale").expect("qa's closes left no note");
+    assert!(
+        stale["commands"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("pij directory memory add qa "),
+        "{stale}"
+    );
+    assert!(action(&viewed, "reviewer", "memory-stale").is_none());
+
+    // AC3: a step's need prompts the missing role; the PEC notice stands.
+    let docs = prompt(&viewed, "docs-system").expect("docs-system is needed");
+    assert_eq!(docs["kind"], "needed");
+    assert_eq!(docs["needed_by"], json!(["001-test s09"]));
+    assert_eq!(
+        prompt(&viewed, "security").unwrap()["needed_by"],
+        json!(["001-test s09"])
+    );
+    assert!(
+        prompt(&viewed, "ancient").is_none(),
+        "a complete step needs nothing"
+    );
+    assert!(prompt(&viewed, "qa").is_none(), "qa exists");
+    let notice = viewed["data"]["notice"].as_str().unwrap();
+    assert!(notice.contains("no role here covers"), "{notice}");
+    assert!(notice.contains("whatever the work needs now"), "{notice}");
+
+    // AC4: the designated prime is named; the prime prompt is the document.
+    // F39: with nothing pointing at it, the prime prompt waits for --suggest.
+    assert_eq!(viewed["data"]["prime"], SEAT);
+    assert_eq!(viewed["data"]["prime_document"], false);
+    assert!(prompt(&viewed, "prime").is_none(), "{viewed}");
+    assert!(
+        viewed["data"]["suggestions"]["roles"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("prime"))
+    );
+    let suggested = call(
+        rig.addr,
+        "/v1/directory",
+        &["directory", "--suggest", "--json"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(
+        prompt(&suggested, "prime").unwrap()["note"],
+        format!("the project's prime is {SEAT}; this adds the prime role's document")
+    );
+
+    // AC8 (C28): every recommendation names its signal; boundary reviews.
+    let signal = |item: &Value| item["signal"]["code"].as_str().unwrap().to_string();
+    for item in viewed["data"]["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(viewed["data"]["reviews"].as_array().unwrap())
+    {
+        assert!(item["signal"]["says"].is_string(), "{item}");
+    }
+    assert_eq!(signal(prompt(&suggested, "prime").unwrap()), "core");
+    assert_eq!(
+        signal(prompt(&viewed, "security").unwrap()),
+        "independent-judgment"
+    );
+    assert_eq!(signal(docs), "step-needs");
+    let engine = prompt(&viewed, "engine").expect("crates/engine recurs with no owner");
+    assert_eq!(signal(engine), "recurring");
+    assert_eq!(engine["act"], "create");
+    let review = |role: &str| {
+        viewed["data"]["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["role"] == role)
+            .unwrap_or_else(|| panic!("no review for {role}: {viewed}"))
+            .clone()
+    };
+    let split = review("reviewer");
+    assert_eq!(split["act"], "split");
+    assert_eq!(signal(&split), "two-domains");
+    assert_eq!(
+        split["detail"],
+        "pij-holder holds pm-001 and reviewer at once"
+    );
+    let retire = review("dusty");
+    assert_eq!(retire["act"], "retire");
+    assert_eq!(signal(&retire), "mostly-idle");
+    assert!(
+        retire["commands"].as_array().unwrap().is_empty() && retire["later"].is_array(),
+        "s15's verbs are shown, not offered: {retire}"
+    );
+    assert!(
+        viewed["data"]["reviews"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["role"] != "qa"),
+        "qa has requests waiting: not idle"
+    );
+    assert!(notice.contains("A role is not a seat"), "{notice}");
+    assert!(notice.contains("Templates are examples"), "{notice}");
+
+    std::fs::remove_dir_all(&dusty).unwrap();
+
+    // Adding the needed role clears its prompt.
+    let added = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "add",
+            "docs-system",
+            "--title",
+            "docs",
+            "--kind",
+            "general",
+            "--lifecycle",
+            "long-lived",
+            "--holders",
+            "one",
+            "--rule",
+            "r",
+            "--packet",
+            "p",
+            "--why",
+            "w",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    assert!(prompt(&view(rig.addr, &repo).await, "docs-system").is_none());
+    rig.server.abort();
+}
+
+/// Plan 199, AC2 and AC3: with no live holder a send queues (an --fyi send
+/// too, C2) and wakes the project's PA once, naming the last holder to revive
+/// and the assign command. A refused assign drains nothing; an assign delivers
+/// the queue to the new holder in order and marks each request delivered (C6).
+/// Review of #141 (F006), end to end: a request queued on `role:reviewer/141`
+/// with no holder gets a view action naming the instance, and running the
+/// assign it prints drains the request to the new holder.
+#[tokio::test]
+async fn the_views_assign_for_a_queued_instance_drains_it() {
+    let repo = repo("pij-picture-instance-drain");
+    let rig = draining_rig().await;
+    with_roles(rig.addr, &repo).await;
+    let dir = |argv: Vec<String>| {
+        let (addr, main) = (rig.addr, repo.main.clone());
+        async move {
+            let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+            call(addr, "/v1/directory", &argv, &main).await
+        }
+    };
+    let words = |text: &str| -> Vec<String> { text.split(' ').map(str::to_string).collect() };
+    for argv in [
+        "directory add pa --title pa --kind general --lifecycle long-lived --holders one --rule r --packet p --why w",
+        "directory assign pa pij-second --why watch",
+    ] {
+        let done = dir(words(argv)).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let queued = send_to(
+        rig.addr,
+        &repo.main,
+        "role:reviewer/141",
+        "req-141",
+        json!({}),
+    )
+    .await;
+    assert_eq!(queued["data"]["request"]["state"], "queued", "{queued}");
+
+    let viewed = dir(words("directory")).await;
+    let action = viewed["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["role"] == "reviewer" && action["condition"] == "no-live-holder")
+        .unwrap_or_else(|| panic!("no action: {viewed}"))
+        .clone();
+    assert_eq!(action["instance"], "141", "{action}");
+    let printed = action["commands"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        printed,
+        "pij directory assign reviewer/141 '<seat>' --why '<why>' --project fleet"
+    );
+    // Fill the placeholders, as the prime would, and run it.
+    let filled = printed
+        .replace("'<seat>'", "pij-holder")
+        .replace("'<why>'", "take-141");
+    let run = words(&filled);
+    assert_eq!(&run[..2], ["pij", "directory"]);
+    let assigned = dir(run[1..].to_vec()).await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    let mut drained = false;
+    for _ in 0..100 {
+        let request = rig
+            .store
+            .role_request("req-141")
+            .await
+            .unwrap()
+            .expect("row");
+        if request.holder.as_deref() == Some("pij-holder") {
+            drained = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(drained, "the printed assign drained the instance's request");
+    assert!(
+        rig.store
+            .queued_role_requests("fleet", "reviewer", "141")
+            .await
+            .unwrap()
+            .is_empty()
     );
     rig.server.abort();
 }

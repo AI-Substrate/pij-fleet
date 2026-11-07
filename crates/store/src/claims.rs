@@ -38,8 +38,9 @@ pub const PM_DELIVERY_STEP_SQL: &str = "SELECT DISTINCT project, pr, recorded_at
      ORDER BY project, pr LIMIT ?3";
 
 /// The card's second read: every address one PR delivered, through the
-/// primary key `(project, pr, address)` in key order (no sort).
-pub const DELIVERY_ADDRESSES_SQL: &str = "SELECT address, merge_commit, recorded_by FROM deliveries \
+/// primary key `(project, pr, address)` in key order (no sort). Each row's
+/// `recorded_at` lets the card name the recorder of its newest recording.
+pub const DELIVERY_ADDRESSES_SQL: &str = "SELECT address, merge_commit, recorded_by, recorded_at FROM deliveries \
      WHERE project = ?1 AND pr = ?2 ORDER BY address";
 
 /// One number handed out.
@@ -431,9 +432,18 @@ impl SqliteOrchestration {
                 .await
                 .map_err(adapter_error)?;
             let Some(first) = rows.first() else { continue };
+            // The recorder and time come from one recording: a later retry by
+            // another seat is that seat's (#131 N002).
+            let newest = rows
+                .iter()
+                .find(|row| {
+                    row.try_get::<i64, _>("recorded_at")
+                        .is_ok_and(|at| at == recorded_at)
+                })
+                .unwrap_or(first);
             notes.push(DeliveryNote {
-                merge_commit: first.try_get("merge_commit").map_err(adapter_error)?,
-                recorded_by: first.try_get("recorded_by").map_err(adapter_error)?,
+                merge_commit: newest.try_get("merge_commit").map_err(adapter_error)?,
+                recorded_by: newest.try_get("recorded_by").map_err(adapter_error)?,
                 addresses: rows
                     .iter()
                     .map(|row| row.try_get("address"))
