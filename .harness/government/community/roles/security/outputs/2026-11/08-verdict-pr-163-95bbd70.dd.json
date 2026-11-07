@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "95bbd70a139feafedb16fbca2544383b410d636d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/163#issuecomment-6712902527",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:163",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `95bbd70a139feafedb16fbca2544383b410d636d`.\n\nWhole phase-1 PR verdict: inventory code and revised workshop, using the complete `f5c25d4` assessment plus repair/merge deltas. Prior blocking shared-host, cached-ancestry and HEAD-coverage findings are closed as specified below. F88 enforcement is not yet deployed by this PR.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | ⚪ LOW | harness/scripts/route-inventory.json | 48 | Registration guard metadata describes native N, not the ordinary branch | 10/10 |\n| 2 | ⚪ LOW | harness/scripts/route-inventory.json | 83 | POST background authority metadata omits parent | 10/10 |\n| 3 | ⚪ LOW | harness/scripts/route-inventory.json | 335 | Compact-self send aliases omit parent-authorized controls | 10/10 |\n\nThese are nonblocking descriptive metadata notes, not executable authorization defects. Correct them before phase 2 consumes the inventory; operation-level checks remain authoritative.\n\n## Blocking findings closed\n\nThe ruled owned-process/incarnation boundary, private issuer and ambiguity refusal prevent public session hints selecting another owned principal. This is design-contract closure, not implementation proof.\n\nEvery tokenless request now walks freshly to the nearest boundary, D16 bounded, with no cached ancestor authorization. The 4,096-entry boundary index is lookup metadata only and cannot bypass ancestry. Capacity exhaustion refuses registration rather than evicting boundaries. The H-M-S-P counterexample is retained as a phase-2 regression (`docs/plans/221-seat-provenance/workshops/001-capability-bootstrap.md:104-147`).\n\nThe probe includes HEAD and OPTIONS; all 12 implicit HEAD entries inherit GET classifications. HEAD `/v1/inbox` is inbox-claim, and background HEAD routes retain owner/parent protection (`crates/daemon/src/http/route_inventory_tests.rs:30-41,154-216`).\n\n## Whole-PR classification and safety\n\nThe 77 unique pairs comprise 47 seat-authority, 29 machine-authenticated public and one independent job-token route. No false machine-public or HEAD/GET classification found. POST `/v1/steer` is attribution: the caller is resolved separately from the freely selectable target; audit/FYI are not caller authentication (`crates/daemon/src/http/steer.rs:122-235`).\n\nSecure issuer first, owner-memory tokens, accepted-connection PID credentials, missing-evidence refusal, no bare-tuple TCP fallback and send-as-first enforcement order remain intact. Previously verified Tokio macOS PID support stands.\n\nThe test sensor has bounded per-call/overall timeouts and isolated fake-service/loopback fixtures; compilation/execution priority split and probe skip integration are present. No local execution or cost measurement was done; performance remains separately owned.\n\n## Evidence and limits\n\nExact-head CI [42410293125](https://github.com/AI-Substrate/pij-fleet/actions/runs/42410293125), attempt 1, passed all four jobs. JUnit lists 2,169 passing cases, including real-router inventory and malformed/missing/stale/repeated/classification/job-token controls. HEAD-specific assertions were source-checked within these cases.\n\nPhase 2 is not implemented; workstream s01 remains in-progress, not delivered. q-02 to q-04 remain permission-policy questions, not settled by authentication classification. Same-user private-state theft, connector delegation and execution within the owned process boundary remain stated residuals.\n\nNo C19/C21 disclosure found. No local tests/builds, sensor runs, probes, credentials, source edits or full imported-main implementation re-review. This is the current whole-PR verdict, superseding the old workshop-only disposition and unpublished `f5c25d4` source assessment.\n"
+		}
+	]
+}
