@@ -25,12 +25,12 @@
 use pij_core::modal_stall::{
     MODAL_STALL_KIND, MODAL_STALL_REASON, ModalStall, OWN_ACTIVITY_KINDS, is_candidate, stall_body,
 };
-use pij_core::model::{SeatDescriptor, SeatId, SystemState};
+use pij_core::model::{DeliveryOutcome, SeatDescriptor, SeatId, SystemState};
 use pij_harnesses::modal;
 use serde_json::json;
 
 use crate::Services;
-use crate::pa_watchdog::{PaWatchdog, RoundOutcome, audit, wake_pa};
+use crate::pa_watchdog::{PaWatchdog, RoundOutcome, audit, outcome_text, wake_pa_receipt};
 
 /// Why a round skipped a candidate.
 pub(crate) const NO_LIVE_CONTROL_CLIENT: &str =
@@ -198,11 +198,12 @@ async fn set_open(services: &Services, seat: &SeatId, quiet_seq: u64, open: bool
 }
 
 /// Tell the seat's live parent and the PA in its scope (else the prime) that
-/// are still owed this stretch's message, never the seat itself. A delivery
-/// answer (delivered, queued, held, refused) is acceptance and is recorded; an
-/// error is counted, and that recipient is tried again next round until it
-/// has failed `MAX_TELL_TRIES` times. Returns who was tried this round and
-/// delivery's answer.
+/// are still owed this stretch's message, never the seat itself. Only an
+/// accepted receipt ([`accepted`]) records the recipient as told; a refusal
+/// (a native receiver whose lease lapsed refuses, then recovers) or an error
+/// is counted, and that recipient is tried again next round with the same
+/// message id until it has failed `MAX_TELL_TRIES` times. Returns who was
+/// tried this round and delivery's answer.
 async fn tell(
     watchdog: &PaWatchdog,
     services: &Services,
@@ -234,23 +235,24 @@ async fn tell(
         }
         let msg_id = format!("modal-stall:{}:{}:{}", seat.id, stall.quiet_seq, target.id);
         let body = stall_body(&seat.id, seat.harness, stall, now_ms);
-        let delivery = if refused_for_test(&target.id) {
-            "error: refused by the test".to_string()
+        let outcome = if failed_for_test(&target.id) {
+            Err("injected by the test".to_string())
         } else {
-            wake_pa(services, target, body, msg_id, MODAL_STALL_REASON, now_ms)
+            wake_pa_receipt(services, target, body, msg_id, MODAL_STALL_REASON, now_ms)
                 .await
                 .0
         };
-        let recorded = if delivery.starts_with("error") {
+        let delivery = outcome_text(&outcome);
+        let recorded = if accepted(&outcome) {
             services
                 .watchdogs()
-                .record_modal_stall_failure(&seat.id, stall.quiet_seq, &target.id)
+                .mark_modal_stall_told(&seat.id, stall.quiet_seq, &target.id)
                 .await
                 .map(drop)
         } else {
             services
                 .watchdogs()
-                .mark_modal_stall_told(&seat.id, stall.quiet_seq, &target.id)
+                .record_modal_stall_failure(&seat.id, stall.quiet_seq, &target.id)
                 .await
                 .map(drop)
         };
@@ -265,20 +267,33 @@ async fn tell(
     tried
 }
 
-/// Recipients whose tell fails, so tests can show a failed tell is retried.
+/// Did delivery take the message? Delivered (a replay of an earlier delivery
+/// included) or durably queued; or held, which is pending a human's approval
+/// and must not be re-sent (`DeliveryOutcome::Held`: retrying re-prompts).
+/// A refusal is not acceptance: it is retried, bounded. Classified from the
+/// structured receipt, never from its rendered word.
+fn accepted(outcome: &std::result::Result<DeliveryOutcome, String>) -> bool {
+    matches!(
+        outcome,
+        Ok(DeliveryOutcome::Delivered { .. }
+            | DeliveryOutcome::Queued { .. }
+            | DeliveryOutcome::Held { .. })
+    )
+}
+
+/// Recipients whose tell errors, so tests can show a failed tell is retried.
 #[cfg(test)]
-pub(crate) static REFUSE_FOR_TEST: std::sync::Mutex<Vec<SeatId>> =
-    std::sync::Mutex::new(Vec::new());
+pub(crate) static FAIL_FOR_TEST: std::sync::Mutex<Vec<SeatId>> = std::sync::Mutex::new(Vec::new());
 
 #[cfg(test)]
-fn refused_for_test(target: &SeatId) -> bool {
-    REFUSE_FOR_TEST
+fn failed_for_test(target: &SeatId) -> bool {
+    FAIL_FOR_TEST
         .lock()
-        .is_ok_and(|refused| refused.contains(target))
+        .is_ok_and(|failed| failed.contains(target))
 }
 
 #[cfg(not(test))]
-const fn refused_for_test(_: &SeatId) -> bool {
+const fn failed_for_test(_: &SeatId) -> bool {
     false
 }
 

@@ -366,12 +366,34 @@ pub(crate) async fn wake_pa(
     reason: &str,
     now_ms: u64,
 ) -> (String, String) {
+    let (outcome, cold_check) = wake_pa_receipt(services, pa, body, msg_id, reason, now_ms).await;
+    (outcome_text(&outcome), cold_check)
+}
+
+/// [`wake_pa`], keeping delivery's structured outcome (or the error's text)
+/// for a caller that must tell an accepted delivery from a refused one.
+pub(crate) async fn wake_pa_receipt(
+    services: &Services,
+    pa: &SeatDescriptor,
+    body: String,
+    msg_id: String,
+    reason: &str,
+    now_ms: u64,
+) -> (std::result::Result<DeliveryOutcome, String>, String) {
     match audit_cold_wake(services, pa, BG_ACTOR, &msg_id, reason, now_ms).await {
         Ok(cold_check) => match services.delivery.accept(bg_msg(&pa.id, body, msg_id)).await {
-            Ok(receipt) => (outcome_word(&receipt.outcome).to_string(), cold_check),
-            Err(cause) => (format!("error: {cause}"), cold_check),
+            Ok(receipt) => (Ok(receipt.outcome), cold_check),
+            Err(cause) => (Err(cause.to_string()), cold_check),
         },
-        Err(cause) => (format!("error: {cause}"), "unknown".to_string()),
+        Err(cause) => (Err(cause.to_string()), "unknown".to_string()),
+    }
+}
+
+/// The outcome word, or `error: <cause>`.
+pub(crate) fn outcome_text(outcome: &std::result::Result<DeliveryOutcome, String>) -> String {
+    match outcome {
+        Ok(outcome) => outcome_word(outcome).to_string(),
+        Err(cause) => format!("error: {cause}"),
     }
 }
 

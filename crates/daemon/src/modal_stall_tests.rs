@@ -475,7 +475,7 @@ async fn add_pa(services: &crate::Services, folder: &str, id: &str) {
 }
 
 fn refuse(prefix: &str, ids: &[&str]) {
-    let mut refused = super::REFUSE_FOR_TEST.lock().unwrap();
+    let mut refused = super::FAIL_FOR_TEST.lock().unwrap();
     refused.retain(|id| !id.as_str().starts_with(prefix));
     refused.extend(ids.iter().map(|id| SeatId::from(format!("{prefix}-{id}"))));
 }
@@ -493,7 +493,7 @@ fn told_now(outcomes: Vec<RoundOutcome>) -> Vec<(String, String)> {
     told
 }
 
-const REFUSED: &str = "error: refused by the test";
+const INJECTED_ERROR: &str = "error: injected by the test";
 
 /// Review F001: a failed tell doesn't consume the stretch. The PA fails while
 /// the parent succeeds; after a restart, the next round tells only the PA,
@@ -517,7 +517,7 @@ async fn a_failed_tell_is_retried_and_an_accepted_one_is_not_repeated() {
                 .unwrap()
         ),
         vec![
-            (format!("{p}-pa"), REFUSED.to_string()),
+            (format!("{p}-pa"), INJECTED_ERROR.to_string()),
             (format!("{p}-pm"), "queued".to_string()),
         ]
     );
@@ -675,4 +675,115 @@ async fn the_dialogs_own_text_reaches_no_record_message_or_view() {
         "the label is there"
     );
     assert!(!seen.contains(CANARY), "pane text leaked: {seen}");
+}
+
+/// Review F001 (round 2): a real `Refused` receipt is not acceptance. A native
+/// Copilot parent whose receiver lease doesn't match its current incarnation
+/// refuses the tell; once its receiver renews, the next round tells it with
+/// the same message id. The PA, told on the first round, stays told once.
+#[tokio::test]
+async fn a_refused_tell_is_retried_until_the_native_receiver_recovers() {
+    use crate::delivery::NativeInboxIdentity;
+    use pij_core::model::ProcIdentity;
+
+    let p = "pij-native";
+    let (services, _tmux, _store, folder) =
+        services(&fixture("copilot-follow-up-dialog-herring.txt")).await;
+    retry_fleet(&services, &folder, p, true).await;
+    let parent = SeatId::from(format!("{p}-pm"));
+    let identity = |proc_start| NativeInboxIdentity {
+        native_session: Some("native-137".into()),
+        pid: Some(137),
+        proc_start: Some(proc_start),
+    };
+    let incarnation = |proc_start| {
+        let mut seat = seat(
+            &format!("{p}-pm"),
+            Harness::Copilot,
+            &folder,
+            Some("pij-prime"),
+        );
+        seat.proc = Some(ProcIdentity {
+            pid: 137,
+            proc_start,
+        });
+        seat.harness_session = Some("native-137".into());
+        seat.native_extension_delivery = true;
+        seat
+    };
+    // The parent's receiver renewed as one incarnation; the seat is now another.
+    services.registry.put(incarnation(1370)).await.unwrap();
+    services
+        .delivery
+        .heartbeat_native_receiver(&parent, &identity(1370), 0, 0, None)
+        .await
+        .unwrap();
+    services.registry.put(incarnation(1371)).await.unwrap();
+
+    let start = crate::http::system_time_ms().unwrap();
+    own_event(&services, &format!("{p}-asking"), start).await;
+    let at = |minutes: u64| start + STALL_AFTER_MS + minutes * MINUTE;
+    let watchdog = PaWatchdog::default();
+    assert_eq!(
+        told_now(watchdog.round(&services, INTERVAL, at(1)).await.unwrap()),
+        vec![
+            (format!("{p}-pa"), "queued".to_string()),
+            (format!("{p}-pm"), "refused".to_string()),
+        ]
+    );
+    let stall = services.watchdogs().modal_stalls().await.unwrap().remove(0);
+    assert_eq!(stall.told, vec![SeatId::from(format!("{p}-pa"))]);
+    assert_eq!(stall.failed.get(&parent), Some(&1));
+    let msg_id = format!("modal-stall:{p}-asking:{}:{p}-pm", stall.quiet_seq);
+    let outcomes = |events: Vec<pij_core::model::Event>| -> Vec<serde_json::Value> {
+        events
+            .into_iter()
+            .filter(|event| event.kind == "delivery.outcome")
+            .map(|event| serde_json::from_str(&event.payload).unwrap())
+            .collect()
+    };
+    let refused = outcomes(
+        services
+            .spine
+            .tail(Some(&parent), pij_core::model::Seq(0))
+            .await
+            .unwrap(),
+    );
+    assert!(
+        refused
+            .iter()
+            .any(|outcome| outcome["msg_id"] == msg_id.as_str()
+                && outcome["outcome"]["outcome"] == "refused"),
+        "{refused:?}"
+    );
+
+    // The current incarnation's receiver renews: the parent is told now, with
+    // the same message id, and only the parent.
+    services
+        .delivery
+        .heartbeat_native_receiver(&parent, &identity(1371), 1, 1, None)
+        .await
+        .unwrap();
+    let retried = told_now(watchdog.round(&services, INTERVAL, at(2)).await.unwrap());
+    assert_eq!(retried.len(), 1, "{retried:?}");
+    assert_eq!(retried[0].0, format!("{p}-pm"));
+    assert_ne!(retried[0].1, "refused");
+    assert!(told_now(watchdog.round(&services, INTERVAL, at(3)).await.unwrap()).is_empty());
+    let stall = services.watchdogs().modal_stalls().await.unwrap().remove(0);
+    assert_eq!(stall.told.len(), 2);
+    let latest = outcomes(
+        services
+            .spine
+            .tail(Some(&parent), pij_core::model::Seq(0))
+            .await
+            .unwrap(),
+    )
+    .pop()
+    .unwrap();
+    assert_eq!(
+        latest["msg_id"],
+        msg_id.as_str(),
+        "the retry keeps the stable id"
+    );
+    assert_eq!(told(&services, &format!("{p}-pa")).await.len(), 1);
 }
