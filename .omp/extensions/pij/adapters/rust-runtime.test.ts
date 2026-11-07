@@ -80,6 +80,7 @@ async function bootPushedEvent(
 	pi: FakePiRuntime,
 	claimResponse: unknown | Promise<unknown> = inboxClaimFixture(),
 	sendReceipt: Record<string, unknown> = { outcome: "accepted", at: 1 },
+	processStart: (pid: number) => number = () => 20260829103052,
 ) {
 	vi.stubEnv("PIJ_ANNOUNCE_TO", "");
 	vi.stubEnv("PIJ_SPAWN_ID", "");
@@ -140,7 +141,7 @@ async function bootPushedEvent(
 	const deps: DaemonHttpDeps = {
 		fetch: fetchMock as typeof fetch,
 		readFile: async () => "secret",
-		processStart: () => 20260829103052,
+		processStart,
 	};
 	const runtime = new RustRuntimeSession(
 		new PijDaemonClient({ addr: "127.0.0.1:7461", stateDir: "/tmp/state" }, "secret", deps),
@@ -508,6 +509,33 @@ describe("RustRuntimeSession", () => {
 			await runtime.send("pij-from", "again");
 			expect(sends.at(-1)).not.toHaveProperty("in_reply_to");
 			expect(sends.at(-1)).not.toHaveProperty("caller");
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+	it("observes its own process start once per runtime, not per send", async () => {
+		// Review of #152, P152-F004: the default reader launches `ps`. Boot, a
+		// correlated reply and a control each need the start; it is read once.
+		vi.stubEnv("TMUX_PANE", "%51");
+		const observed: number[] = [];
+		const { acknowledgements, runtime, sends } = await bootPushedEvent(
+			PUSHED_EVENT_WIRE,
+			new FakePiRuntime(),
+			inboxClaimFixture(),
+			{ outcome: "accepted", at: 1 },
+			(pid) => {
+				observed.push(pid);
+				return 20260829103052;
+			},
+		);
+		try {
+			await vi.waitFor(() => expect(acknowledgements).toHaveLength(1));
+			await runtime.send("pij-from", "reply");
+			await runtime.send("pij-target", frame("pij-from", ""), { command: "compact" });
+			expect(sends.map((sent) => (sent.caller as Record<string, unknown>).procStart)).toEqual([
+				20260829103052, 20260829103052,
+			]);
+			expect(observed).toEqual([process.pid]);
 		} finally {
 			runtime.shutdown("quit");
 		}
