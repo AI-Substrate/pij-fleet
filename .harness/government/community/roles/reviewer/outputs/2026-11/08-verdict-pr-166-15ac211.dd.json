@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b7f1-3411-7b03-a20c-06bfbcec509e",
+				"date": "2026-11-08",
+				"head": "15ac21166575fdd15d09cd00b8e3ef89abe99524",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/166#issuecomment-6713346246",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:166",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "harness plan validate --complete docs/plans/221-seat-provenance",
+					"exit_code": 0,
+					"log": "status ok; 0 errors, 0 warnings, 0 open, 0 contradictions, 0 orphans"
+				},
+				{
+					"command": "node harness/scripts/pr-freeze.ts 166",
+					"exit_code": 0,
+					"log": "FINAL at 15ac21166575fdd15d09cd00b8e3ef89abe99524; matching heads, CLEAN, successful latest checks, ready"
+				},
+				{
+					"command": "Exact-head CI 42416288074",
+					"exit_code": 0,
+					"log": "Node 22/24 checks, rust-lint and rust-test succeeded; https://github.com/AI-Substrate/pij-fleet/actions/runs/42416288074"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #166 correctness verdict\n\n**PASS** at `15ac21166575fdd15d09cd00b8e3ef89abe99524`. The phase-1 closing states are supported by the pinned approvals. No new correctness findings.\n\n- **AC2 and AC4:** both checked, with receipts in `docs/plans/221-seat-provenance/plan.dd.json:47-68`. The evidence identifies the reviewed head `95bbd70a139feafedb16fbca2544383b410d636d`, reviewer commit `889d4324fd8142211dcb8d6ef13b8ffadb09c8e7`, security commit `7e537dc8049b198b25a5a95f522f6fe6a9b33194`, and performance commit `6ac90d59c0cffeb883a3587af53a079acca153de`. All three verdicts are pass-with-notes; bp-0002 explicitly accepts pass or pass-with-notes. They approve phase 1, not deployed F88 enforcement.\n- **Dependent states:** bp-0002/bp-0004, tk-0002/tk-0004 and their done_when assertions are checked consistently (`assets/backpressure.dd.json:28-62`; `assets/tasks/phase-1/tasks.dd.json:33-107`). Existing nonblocking inventory/method-coverage notes remain follow-up work; this states PR does not erase them.\n- **Call count:** the shipping source has `Endpoint::ALL: [Self; 60]` and `METHODS: [Method; 7]`, so **420 calls** is correct. The evidence and bp-0003 note now use that count, and the Rust doc comment no longer hard-codes 59 paths. The Rust change is comment-only. Retained cold/warm timings are prior author observations, not a fresh benchmark by this reviewer.\n- **Scope of completion:** the plan meta is shipped and its sole phase is checked. Its non-goals still exclude capability gating and later permission work. Workstream 003 s01 remains **in-progress**, unchanged (`docs/project/workstreams/003-seat-permissions.dd.json:22-30`), and `Delivers: none` is appropriate. Shipping plan 221 completes the inventory/workshop phase, not req-10 or the whole workstream.\n\n**Verification:** `harness plan validate --complete docs/plans/221-seat-provenance` returned **status ok, 0 errors, 0 warnings, 0 open items, 0 contradictions and 0 orphans**. `node harness/scripts/pr-freeze.ts 166` reported FINAL at the requested full SHA: matching heads, CLEAN, ready and successful latest checks. Exact-head CI run `42416288074` passed the Node 22/24 checks and Rust lint/test jobs; Delivers run `42416288240` passed. `git diff --check origin/main...HEAD` passed.\n\nNo local builds or tests. Only the requested read-only plan validation, finality check and source/evidence review were run. The detached product worktree remains clean at the requested SHA; no product edits, merge or push.\n"
+		}
+	]
+}
