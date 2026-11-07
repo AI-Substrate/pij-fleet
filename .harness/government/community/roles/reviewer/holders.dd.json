@@ -584,6 +584,16 @@
 					"seat": "pij-double-bobcat",
 					"to": "2026-11-07T18:32:58.864Z",
 					"why": "AC4 docs PR #162 (guan)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T18:33:15.056Z",
+					"harness": "copilot",
+					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
+					"instance_key": "161",
+					"machine": "ops.osk.lan",
+					"seat": "pij-double-bobcat",
+					"why": "plan 210 closing states PR #161"
 				}
 			]
 		}
