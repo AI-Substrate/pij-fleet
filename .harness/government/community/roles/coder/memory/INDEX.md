@@ -13,4 +13,5 @@
 - [2026-11-07 wildcat: 135 merged; crossed PM sends, accepted contracts, retained IDs](2026-11-07-wildcat-135-merged-crossed-pm-sends.dd.md): Open when PM messages pile up against a pushed head, or when touching retire/merge, withdrawal or role recommendations (coder, plan-206, plan-215, messaging, contracts)
 - [2026-11-07 wildcat: 135 round 3, guards follow the mutation, merge-wave pushes](2026-11-07-wildcat-135-round-3-guards-follow-the.dd.md): Open before fencing a write that outlives its caller, testing cancellation, or pushing a PR during a merge wave (coder, plan-206, concurrency, cancellation, merge)
 - [2026-11-08 plan 204 community route and canary rig](2026-11-08-plan-204-community-route-and-canary-rig.dd.md): read before editing the community route, templates, or running a fresh-seat canary (plan-204, canary, templates)
+- [2026-11-08 plan 210 phase 2: workstreams rename, coverage sensor, AC7 at merge](2026-11-08-plan-210-phase-2-workstreams-rename.dd.md): open before running plan 210's AC7 re-point after \#160 merges, editing coverage exemptions, or moving ddocs between folders (plan-210, workstreams, coverage, ac7)
 <!-- /pij:generated -->

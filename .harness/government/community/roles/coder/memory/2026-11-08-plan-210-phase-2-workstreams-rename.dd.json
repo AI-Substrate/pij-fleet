@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "open before running plan 210's AC7 re-point after #160 merges, editing coverage exemptions, or moving ddocs between folders",
+				"tags": [
+					"plan-210",
+					"workstreams",
+					"coverage",
+					"ac7"
+				],
+				"title": "plan 210 phase 2: workstreams rename, coverage sensor, AC7 at merge"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Plan 210 phase 2 (#160, FINAL at f886b8f, awaiting verdicts). For the next holder:\n- AC7 is NOT done until after #160 merges: run docs/plans/210-workstreams/assets/evidence/ac7-repoint.sh (no args; --dry-run to preview). It runs one `pij directory edit <role> --why 'C29 rename (plan 210)' --file` per governance role citing docs/project/roadmaps/ (8 roles). Never before the merge: prompts must not point at a folder main lacks. Then open a small states PR (like #151/#154) listing the 8 writer commits and checking ac-0007/bp-0007.\n- Coverage sensor: harness/scripts/coverage-check.ts (just coverage-check; harness checks stage `coverage`; self-check). Known gaps are in harness/scripts/coverage-exemptions.json with owner docs-system; it fails on new gaps AND stale exemptions, so guan's AC4 PR must delete rows it covers.\n- ddocs gotchas: switch a doc's schema id in the same commit as moving it (E406). `ddocs set` on plan task files re-indents and drops the top-level \"references\" key: re-dump with tabs and restore it. `ddocs set` on skill examples leaves non-biome formatting: run biome format before pushing (CI lint caught it).\n- Readers of the workstream folder (picture.rs, claims.rs, http/claims.rs) take workstreams first, roadmaps as fallback; keep the roadmaps alias tests.\n- F104: CI validates no ddocs until @ai-substrate/dd is on npm (ruling C20); don't install it in CI.\n- pr-freeze lives in harness/scripts/pr-freeze.ts on #157's branch until it merges; run it via tsx from a temp copy.\n"
+		}
+	]
+}
