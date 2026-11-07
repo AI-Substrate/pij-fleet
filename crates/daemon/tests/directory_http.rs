@@ -4316,8 +4316,20 @@ async fn limit_rig(name: &str, pa: bool) -> (Rig, Repo, u64) {
 
 /// [`limit_rig`], with `pij-holder` assigned `target` (`pm-001[/<instance>]`).
 async fn limit_rig_as(name: &str, pa: bool, target: &str) -> (Rig, Repo, u64) {
+    limit_rig_held_by(name, pa, target, "pij-holder").await
+}
+
+/// [`limit_rig_as`], with `holder` (registered here when it is not one of
+/// the rig's seats) assigned `target`.
+async fn limit_rig_held_by(name: &str, pa: bool, target: &str, holder: &str) -> (Rig, Repo, u64) {
     let repo = repo(name);
     let rig = rig(Arc::new(NoHook)).await;
+    if holder != "pij-holder" {
+        let mut seat = SeatDescriptor::new(holder, Harness::Omp, "/tmp");
+        seat.pane = Some("%81".to_string());
+        seat.parent = Some(SeatId::from(SEAT));
+        rig.services.registry.put(seat).await.unwrap();
+    }
     with_roles(rig.addr, &repo).await;
     let mut steps = vec![vec![
         "directory",
@@ -4348,14 +4360,7 @@ async fn limit_rig_as(name: &str, pa: bool, target: &str) -> (Rig, Repo, u64) {
             "watch",
         ]);
     }
-    steps.push(vec![
-        "directory",
-        "assign",
-        target,
-        "pij-holder",
-        "--why",
-        "lead",
-    ]);
+    steps.push(vec!["directory", "assign", target, holder, "--why", "lead"]);
     for argv in steps {
         let done = call(rig.addr, "/v1/directory", &argv, &repo.main).await;
         assert_eq!(done["ok"], true, "{done}");
@@ -4590,6 +4595,47 @@ async fn the_time_limit_release_quotes_a_hostile_stored_instance() {
             "release",
             &target,
             "pij-holder",
+            "--why",
+            "w",
+            "--project",
+            "fleet",
+        ],
+        "{notice}"
+    );
+}
+
+/// #149 (security S005, ruling C32): the holder's seat id is stored text too.
+/// With a hostile holder, the notice's look and release still split into
+/// exact words under `/bin/sh` and run nothing.
+#[tokio::test]
+async fn the_time_limit_notice_quotes_a_hostile_holder() {
+    use pij_daemon::delivery::role_send::time_limits;
+    let holder = "pij-h$(id>dollar)`id>tick`;id>semi";
+    let (rig, _repo, delivered) =
+        limit_rig_held_by("pij-limit-hostile-holder", true, "pm-001", holder).await;
+    time_limits(&rig.services, delivered + LIMIT_MS).await;
+    time_limits(&rig.services, delivered + 2 * LIMIT_MS).await;
+    let notices = inbox_bodies(&rig, "pij-second").await;
+    let notice = notices.first().expect("the PA was told");
+    let look = notice
+        .split_once("look at it (")
+        .and_then(|(_, rest)| rest.split_once("), or give"))
+        .map(|(look, _)| look)
+        .unwrap_or_else(|| panic!("the notice names a look: {notice}"));
+    assert_eq!(sh_words(look), ["pij", "state", holder], "{notice}");
+    let release = notice
+        .split_once("another holder (")
+        .and_then(|(_, rest)| rest.lines().next()?.strip_suffix(")."))
+        .unwrap_or_else(|| panic!("the notice ends with a release: {notices:?}"))
+        .replace("<why>", "w");
+    assert_eq!(
+        sh_words(&release),
+        [
+            "pij",
+            "directory",
+            "release",
+            "pm-001",
+            holder,
             "--why",
             "w",
             "--project",
