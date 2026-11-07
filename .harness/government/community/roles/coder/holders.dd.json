@@ -279,6 +279,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-back-tapir",
 					"why": "plan 220 PR freeze check (F92)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T15:42:40.022Z",
+					"harness": "copilot",
+					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
+					"instance_key": "210",
+					"machine": "ops.osk.lan",
+					"seat": "pij-following-marsupial",
+					"why": "plan 210 phase 2 (rename, code paths, coverage sensor)"
 				}
 			]
 		}

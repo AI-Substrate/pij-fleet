@@ -40,3 +40,4 @@
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | 218 | 2026-11-07T13:01:51.991Z | 2026-11-07T14:53:50.245Z | pij-steady-otter | pij-steady-otter | plan 218 Claude UDS delivery without ps (F82) | #155 merged 8dbd551e |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | 219 | 2026-11-07T13:27:11.935Z | — | pij-steady-otter | — | plan 219 F47 modal-stall detector | — |
 | — | pij-back-tapir | copilot | 704a3532-54a7-47c7-a716-3f26f0b19e16 | ops.osk.lan | 220 | 2026-11-07T14:30:09.341Z | — | pij-steady-otter | — | plan 220 PR freeze check (F92) | — |
+| — | pij-following-marsupial | copilot | 3c35282f-7df0-4170-98dd-65f3255dded2 | ops.osk.lan | 210 | 2026-11-07T15:42:40.022Z | — | pij-steady-otter | — | plan 210 phase 2 (rename, code paths, coverage sensor) | — |
