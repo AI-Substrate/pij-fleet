@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b765-ef73-7780-bdb2-8c3add0f0bf6",
+				"date": "2026-11-08",
+				"head": "8e282c72d84fc000896e312c668a7a0367ea717a",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/164#issuecomment-6712129052",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:164",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #164 correctness verdict\n\n**PASS-WITH-NOTES** at `8e282c72d84fc000896e312c668a7a0367ea717a`.\n\nF108's candidate-gating cause is established. Removing `delivery.inbox-ack` from the shared own-activity vocabulary fixes both delayed detection and disappearance of an already-standing dialog after a reader ack. No additional periodic/passive producer of a remaining counted kind was found.\n\n## Cause, from two origins\n\nI read only the relevant store metadata, not message bodies or credentials:\n\n| seq | UTC time | fact |\n| --- | --- | --- |\n| 4233998 | 18:11:22.606 | herring seat.activity working |\n| 4234132 | 18:14:09.138 | delivery.outcome delivered, origin reader-read |\n| 4234133 | 18:14:09.138 | delivery.inbox-ack, evidence_grade machine, outcome reader-read |\n| 4234391 | 18:33:11.618 | herring seat.activity idle |\n\nThe interval's query over all three remaining kinds contains only the opening working and closing idle facts, with no report.now/report.state in between.\n\nIndependently filtered Copilot session metadata shows ask_user start at 18:11:34.285Z, native reconnection at 18:14:09.136Z, and that same tool's completion at 18:33:11.612Z. No prompt, tool arguments, response or private finding was copied.\n\nWith the old constant, the ack is the latest counted event. At the regression's last pre-decline round, T+1280 seconds, quiet age is only 1113 seconds; the 1200-second candidate gate never reads the pane. Without the ack, age is 1280 seconds and the message correctly says silent for 21m, not that the dialog itself has been visible for exactly 21m.\n\n## Remaining-kind producer audit\n\n| kind | producer and passive-path checks |\n| --- | --- |\n| seat.activity | Store registry set_activity publishes only a mechanical-state change (`registry.rs:454-510`). `/v1/activity` and context-report apply use it (`http/fyi.rs:225-332`; `reported_context.rs:161-179`). Copilot observes foreground turn/fusion/idle/abort boundaries; usage_info only saves size for the next activity post (`.copilot/extensions/pij/store.mjs:1929-1997`). OMP/Pi publish at turn start/end, agent-end idle repair and shutdown, not their claim-heartbeat tick (`rust-runtime.ts:730-746,804-819`). Same-state activity/context reports therefore do not continually reset the stretch. |\n| report.now | ReportService::now appends it for the first-person explicit reporting route (`core/report.rs:124-140`; `http/mod.rs:3920-4035`). No receiver/heartbeat/FYI-claim producer was found. |\n| report.state | ReportService::declare appends the seat's explicit declaration/clear, including its own report-question publication (`core/report.rs:267-300`; `http/mod.rs:4036-4080`; `http/decisions.rs:119-145`). Parent verification appends a separate receipt, not this event. No passive reader/renewal/context producer was found. |\n\nNative receiver renewal changes the receiver lease, not registry activity (`delivery/mod.rs:358-396`). Body-claim heartbeat updates delivery state (`:1932-1957`). FYI claim calls claim_fyis without set_activity (`http/fyi.rs:51-105`).\n\n## Repair and CI proof\n\nCandidate selection and standing-modal-stall filtering both consume OWN_ACTIVITY_KINDS (`daemon/modal_stall.rs:55-58`; `store/stalls.rs:183-198`). No divergent list remains. The change does not alter the stored sequence-based stretch identity, owned claim/tell reservation or real-own-event rearming.\n\nExact-head CI run **42404003385** passed. Its JUnit contains **2144 cases, zero failures/errors**, including all 11 daemon modal tests, the new ack-mid-dialog regression, real-own-event view clearing/rearming, earlier-clock sequence rearming, refusal recovery, pre-send reservation and no-control-client recording. The captured-F108 matcher and fixture manifest/corpus controls executed too. Node 22 ran 2246 tests with six skips; the native lane ran 326 tests with zero failures.\n\nThe new regression claims before decline, tells parent and PA once, preserves since_ms across a later reader ack and does not retell. The old-constant mutation is author-reported, not locally rerun; its expected failure also follows directly from the quiet-age calculation above.\n\nNo local product build/test, mutation, live capture, deployment or interactive action was performed. The checkout and remote pin were clean/unchanged at publication.\n\n## Notes\n\n- **N001, live proof owed:** the FakeTmux replay proves the gating/notice/view behavior, not deployed macOS delivery. Ocelot owns the after-deploy canary with a real dialog and mid-dialog reader ack. Record a positive capture/claim/tell against the actual deployed head before closing that owed evidence.\n- **N002, negative counter qualification:** zero modal-stall-skipped rounds alone does not rule out a missing control client. This very bug prevents candidate capture, so it can also prevent the skip audit. Cause (b) is sufficient and proven; absence of cause (d) needs positive control-path evidence, supplied by the canary rather than inferred from zero.\n- **N003, vocabulary qualification:** seat.activity is not literally exclusive to model actions. The cold-wake guard can emit a reasoned idle correction after positive idle-pane evidence (`http/cold_wake.rs:135-146`). Its vetted idle reader is Claude-only and rejects dialog/unvetted frames (`harnesses/adapter.rs:236-264`); it is not a heartbeat/reader event that repeatedly restarts a working dialog's quiet stretch.\n\nThe existing serialized production-round/attempt-reservation proof boundary is unchanged. Security/privacy acceptance and the deployed canary remain independently owned.\n"
+		}
+	]
+}
