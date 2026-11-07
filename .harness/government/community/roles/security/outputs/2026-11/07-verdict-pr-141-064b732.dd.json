@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "064b732a8c27a83efa34fcede0a70189363c3a2e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/141#issuecomment-6704669323",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:141",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\n\nPR: #141\nHead: 064b732a8c27a83efa34fcede0a70189363c3a2e\nScope: only the first-parent delta bfc5c54..064b732: the instance-specific F006 fix, two main merges, and the latest_outputs test-subject correction. The earlier security pass stands otherwise.\n\nNo security vulnerabilities found in the reviewed changes. The reviewed printed assign/revive commands retain the picture::command / shell_word boundary, including complete dynamic role/instance arguments and the instance's last holder. The new instance field is data, not permission to treat an instance as shell syntax. Suggestions do not authorize or execute directory mutations; the merge does not introduce an unquoted path or bypass the existing mutation authority.\n\nThe public-content delta introduces no reported secrets, private identities/content or machine-local path disclosure under C19/C21.\n\nProof and limits:\n- Exact-head CI run 42356211047 has all four jobs successful. Both reported Delivers checks succeeded, including the latest run 42356621710. GitHub reports this head CLEAN.\n- CI: https://github.com/AI-Substrate/pij-fleet/actions/runs/42356211047\n- Delivers: https://github.com/AI-Substrate/pij-fleet/actions/runs/42356621710\n- No local builds/tests, command replay, runtime probes, credential-file reads or worktree mutations were performed. This is a bounded delta review, not a fresh review of main's imported implementation or live execution proof.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | First-parent PR delta | - | No vulnerabilities found | - |\n"
+		}
+	]
+}
