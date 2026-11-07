@@ -1,6 +1,6 @@
 # Plan 223 phase A: design note
 
-For pm-001's scope check before the bulk of the code. Phase A is one PR, and nothing is refused except issuance. Facts are at main 3ba582c.
+For pm-001's scope check before the bulk of the code (accepted 08 Nov). Phase A ships as two count-only PRs (c8c592bf): **A1, the daemon** (AC1 to AC5, AC7, cost and docs), and **A2, the clients** (AC6). Nothing is refused except issuance. Facts are at main ed9a3d7c.
 
 ## Store (one migration, main's highest + 1 at push time, likely 0045)
 
@@ -40,7 +40,15 @@ For pm-001's scope check before the bulk of the code. Phase A is one PR, and not
 | `pij-rs` (`crates/cli/src/client.rs`) | A Unix transport using `hyper::client::conn::http1` over a tokio `UnixStream` (hyper is already in the lockfile with its client features; no new crate), with TCP as the fallback. No token: peer credentials. |
 | Claude, Codex and Copilot hooks and status lines | They run `pij-rs`, so they get the socket through it. Before relying on it, a private-daemon check confirms a Claude hook process descends from the Claude process (they are `type: command` hooks run by claude itself). If not, I stop and tell pm-001. |
 
-## Order of commits in the one PR
+## pm-001's points (08 Nov)
+
+1. **After a bounce**, the in-memory digest map and the boundary index are rebuilt from one store read of live rows. A test shows a live seat's token still works after a restart.
+2. **The stale socket at boot.** It is unlinked only after a connect to it fails. A live daemon's socket answers the connect, so it is never removed (the existing single-instance guard runs first as well).
+3. **Observed-dead tombstones revoke too**, not only owner-close and supersede: every tombstone write deletes the capability row in its transaction.
+4. **Short socket paths in tests**, since macOS caps `sun_path` at 104 bytes; test state dirs use a short `/tmp/pij-*` root.
+5. **Plan 221's evidence** says "pass-with-notes", not "pass" (squirrel's LOW on #166).
+
+## Order of commits (A1 then A2)
 
 1. AC1: inventory notes and an operation class per entry.
 2. AC2: the migration, store methods and issuer.
@@ -50,10 +58,12 @@ For pm-001's scope check before the bulk of the code. Phase A is one PR, and not
 6. AC6: clients.
 7. Docs and states.
 
+Commits 1 to 5 and 7 are A1; commit 6 is A2.
+
 macOS clippy and tests run locally before every push.
 
 ## Scope risks to flag now
 
 - **Size.** About 15 handler modules gain a class argument, and three clients change. I'll keep each client change to a transport plus a header.
-- **Reviewer load.** If you'd rather split the clients (AC6) into a second PR before phase B, it is a clean seam: the daemon ships count-only and clients follow. The plan says one PR, so I'm keeping it one unless you say otherwise.
+- **Reviewer load:** settled by the A1 and A2 split.
 - **q-02 to q-04.** Nothing here touches them.
