@@ -73,6 +73,14 @@ const SENSORS: Sensor[] = [
 		proves: "native Copilot extension node:test contracts pass",
 	},
 	{
+		name: "route-inventory",
+		cmd: "just",
+		args: ["route-inventory-check"],
+		heavy: true,
+		proves:
+			"every (method, path) pair the daemon serves is classified in harness/scripts/route-inventory.json (machine-public with a reason, seat-authority with class, grants and guard, or job-token), and no entry is stale",
+	},
+	{
 		name: "rust",
 		cmd: "just",
 		args: ["rust-check"],
@@ -115,12 +123,12 @@ const checks: HarnessVerb = {
 		"Run pij's full deterministic gate (the signal inventory) and report a ship/done verdict.",
 	description:
 		'The single "are we done?" gate. Runs every sensor in the engineering-harness signal inventory ' +
-		"(mirrors `just self-check`: local-paths, ddocs, coverage, pij-skill, typecheck, lockfile, lint, test, copilot-native, rust, smoke, pij-commit-trailers) as individual " +
+		"(mirrors `just self-check`: local-paths, ddocs, coverage, pij-skill, typecheck, lockfile, lint, test, copilot-native, route-inventory, rust, smoke, pij-commit-trailers) as individual " +
 		"stages, reports a per-sensor verdict, and — unlike self-check — runs ALL of them so you see every " +
 		"failure in one pass. Run it before ship and before declaring any non-trivial task done. " +
-		"`--quick` skips heavy sensors (rust, smoke) for a fast static+unit gate.",
+		"`--quick` skips heavy sensors (route-inventory, rust, smoke) for a fast static+unit gate.",
 	options: [
-		{ flags: "--quick", description: "skip heavy sensors (rust, smoke) — fast static + unit gate" },
+		{ flags: "--quick", description: "skip heavy sensors (route-inventory, rust, smoke) — fast static + unit gate" },
 	],
 	async run(ctx: VerbContext): Promise<VerbResult> {
 		const quick = ctx.options.quick === true;

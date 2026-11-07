@@ -1,0 +1,634 @@
+{
+	"why": "Every daemon HTTP method and route pair, classified for seat identity provenance (plan 221 AC1, PRD 003 req-10, F88). Refreshed from the F88 note (63 pairs at a0ec952) to main, plus POST /v1/requests (#149), POST /v1/steer (#152) and the implicit HEAD pair axum serves for every GET route. `just route-inventory-check` probes the routes the daemon really serves (Endpoint::ALL through the router) and fails on a served pair missing here, an entry the daemon does not serve, a duplicate, or an entry without a valid classification.",
+	"authorities": {
+		"machine-public": "Any holder of the daemon key, by explicit policy (the reason says why); no seat's authority is granted.",
+		"seat-authority": "The route acts with a seat's authority, resolved from caller claims; phase 2 gates these on the per-incarnation capability.",
+		"job-token": "Authenticated by its own per-job secret, never the daemon key."
+	},
+	"classes": {
+		"send-as": "Sends, FYIs and role requests attributed to a seat.",
+		"inbox-claim": "Claims, acknowledges or renews a recipient's deliveries.",
+		"role-and-holder": "Role, parent, holder, owner and prime actions.",
+		"outputs": "Role outputs and request answers.",
+		"activity": "A seat's own status, activity and reports.",
+		"registration": "Registers or re-registers an incarnation.",
+		"controls": "Lifecycle and control actions on a seat or its jobs.",
+		"adoption": "Adopts a pane or reclaims a seat.",
+		"attribution": "Any-seat writes where impersonation forges only the author."
+	},
+	"grants_by": ["seat", "parent", "prime", "holder", "owner", "recipient"],
+	"guards": {
+		"R": "Registered-seat resolver: existence, tombstone, and with a pane, ownership and claim consistency. Does not identify the requesting process.",
+		"B": "Hook binding: seat, pane and session claims agree with a live descriptor.",
+		"N": "Native tuple: session, pid and start match the registered incarnation.",
+		"S": "Shim caller: R plus optional Codex-session contradiction and paneless tuple and liveness checks.",
+		"C": "Control admission: a caller pane, its harness subtree re-observed, target and control policy.",
+		"P": "Provenance exception: connection address, lsof and ancestry prove descent from the harness (paned non-Claude adopt with an explicit harness session only).",
+		"A": "Asserted: the claimed identity is taken as given."
+	},
+	"routes": [
+		{
+			"method": "GET",
+			"path": "/health",
+			"authority": "machine-public",
+			"reason": "Health, build and process counters for any holder of the daemon key."
+		},
+		{
+			"method": "HEAD",
+			"path": "/health",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Health, build and process counters for any holder of the daemon key."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/register",
+			"authority": "seat-authority",
+			"class": "registration",
+			"grants_by": ["seat"],
+			"guard": ["N"],
+			"note": "Repeat-registering a victim's incarnation changes permitted descriptor and role fields and returns its native context grant."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/spawn",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["parent"],
+			"guard": ["R"],
+			"note": "With a role, the resolved caller becomes the child's parent and author; without one, spawning is machine-grade."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/revive",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["parent", "prime"],
+			"guard": ["R"],
+			"note": "The assume-dead override for a recycled or unknown seat needs its parent, or the role prime if parentless; ordinary revival is machine-grade."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/send",
+			"authority": "seat-authority",
+			"class": "send-as",
+			"grants_by": ["seat", "parent"],
+			"guard": ["A", "C"],
+			"note": "Ordinary and FYI `from` is asserted, not resolved from the caller; new and reload controls add control admission and self or parent."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/bg",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["owner"],
+			"guard": ["R"],
+			"note": "Create, list, tail and kill background jobs as their owner or direct parent."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/bg",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["owner", "parent"],
+			"guard": ["R"],
+			"note": "Lists an owner's jobs, or a parent's direct children's."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/bg",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["owner", "parent"],
+			"guard": ["R"],
+			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Lists an owner's jobs, or a parent's direct children's."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/bg/{job}/tail",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["owner", "parent"],
+			"guard": ["R"],
+			"note": "Reads a job's protected output as its owner or direct parent."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/bg/{job}/tail",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["owner", "parent"],
+			"guard": ["R"],
+			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Reads a job's protected output as its owner or direct parent."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/bg/{job}/kill",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["owner", "parent"],
+			"guard": ["R"],
+			"note": "Signals a job as its owner or direct parent; runner pid, start and group are checked separately."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/inbox",
+			"authority": "seat-authority",
+			"class": "inbox-claim",
+			"grants_by": ["recipient"],
+			"guard": ["N"],
+			"note": "Claims a queued body and attests the native receiver from the seat's public tuple."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/inbox",
+			"authority": "seat-authority",
+			"class": "inbox-claim",
+			"grants_by": ["recipient"],
+			"guard": ["N"],
+			"note": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Claims a queued body and attests the native receiver from the seat's public tuple."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/inbox/typing",
+			"authority": "machine-public",
+			"reason": "Typing sensor only: no claim or acknowledgement."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/inbox/typing",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Typing sensor only: no claim or acknowledgement."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/inbox/ack",
+			"authority": "seat-authority",
+			"class": "inbox-claim",
+			"grants_by": ["recipient"],
+			"guard": ["N"],
+			"note": "Commits the recipient's reader or control outcome; the job names the recipient."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/inbox/heartbeat",
+			"authority": "seat-authority",
+			"class": "inbox-claim",
+			"grants_by": ["recipient"],
+			"guard": ["N"],
+			"note": "Renews the receiver lease and precedence, or an extension's running body claim."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/inbox/release",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["parent", "prime"],
+			"guard": ["R"],
+			"note": "Operator recovery of a running body by the target's parent or role prime."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/hold",
+			"authority": "machine-public",
+			"reason": "Machine-grade queue operation by job id; the queue derives recipient and message."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/release",
+			"authority": "machine-public",
+			"reason": "Machine-grade queue release by job id; no registered caller is resolved."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/seats",
+			"authority": "machine-public",
+			"reason": "The roster, intentionally readable by any key holder."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/seats",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. The roster, intentionally readable by any key holder."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/seats",
+			"authority": "machine-public",
+			"reason": "The roster filtered by the caller's folder; the folder is a filter, not an identity."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/events",
+			"authority": "machine-public",
+			"reason": "The local or federated event stream for any key holder."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/events",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. The local or federated event stream for any key holder."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/sidecar",
+			"authority": "machine-public",
+			"reason": "Machine-grade outbound, background and chore requests; sender and owner are supplied, with no seat-exclusive gate."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/report",
+			"authority": "seat-authority",
+			"class": "activity",
+			"grants_by": ["seat", "owner", "parent"],
+			"guard": ["R"],
+			"note": "Status, done, question and clear as the subject; verify needs its current parent."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/adopt",
+			"authority": "seat-authority",
+			"class": "adoption",
+			"grants_by": ["seat", "parent", "prime"],
+			"guard": ["R", "P"],
+			"note": "Re-adopts a pane or reclaims a dead seat as its parent or prime; the provenance exception covers only paned non-Claude adopt with an explicit harness session."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/whoami",
+			"authority": "machine-public",
+			"reason": "Identity projection for a named seat or pane; grants nothing."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/whoami",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Identity projection for a named seat or pane; grants nothing."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/whoami",
+			"authority": "machine-public",
+			"reason": "Identity projection with caller context; grants nothing."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/phonehome",
+			"authority": "machine-public",
+			"reason": "Diagnostic: re-observes a seat's pid and start and confirms its binding."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/state",
+			"authority": "machine-public",
+			"reason": "One seat's card, by explicit target."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/cards",
+			"authority": "machine-public",
+			"reason": "Every local live card in one read."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/cards",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Every local live card in one read."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/fyi/claim",
+			"authority": "seat-authority",
+			"class": "inbox-claim",
+			"grants_by": ["recipient"],
+			"guard": ["B"],
+			"note": "Consumes a seat's held FYIs and attributes delivery to its hook."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/fyi/read",
+			"authority": "machine-public",
+			"reason": "Reads an already delivered FYI batch in full; consumes nothing."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/activity",
+			"authority": "seat-authority",
+			"class": "activity",
+			"grants_by": ["seat"],
+			"guard": ["B"],
+			"note": "Busy and idle as the seat; a context size also needs the incarnation's context grant."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/shim/send",
+			"authority": "seat-authority",
+			"class": "send-as",
+			"grants_by": ["seat", "parent"],
+			"guard": ["S", "C"],
+			"note": "Send, FYI, role request and attachments as the derived caller; controls add control admission."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/shim/compact-self",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["seat"],
+			"guard": ["S", "C"],
+			"note": "Same handler as shim send; argv is not confined to compact-self by the URI."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/shim/inbox",
+			"authority": "seat-authority",
+			"class": "inbox-claim",
+			"grants_by": ["recipient"],
+			"guard": ["S", "N"],
+			"note": "Claims as the seat, or recovers parked work after its live lease lapses."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/shim/inbox/ack",
+			"authority": "seat-authority",
+			"class": "inbox-claim",
+			"grants_by": ["recipient"],
+			"guard": ["S", "N"],
+			"note": "Retires the seat's claim with matching caller evidence."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/shim/sessions",
+			"authority": "machine-public",
+			"reason": "Live session rows in the legacy shape; no caller resolver."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/shim/sessions",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Live session rows in the legacy shape; no caller resolver."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/role",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat", "parent"],
+			"guard": ["R"],
+			"note": "Asserts or unsets a role as the seat itself, or a child's as its parent."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/link",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["parent"],
+			"guard": ["R"],
+			"note": "Restamps children or takes eligible unparented or dead-parent seats under the actor."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/watchdog",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any seat may switch a non-PA seat's watchdog; impersonation forges set_by only."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/steer",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any seat may switch any seat's steering, as with the watchdog (plan 214, C31); the change is audited and the target told, so impersonation forges the actor only."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/close",
+			"authority": "seat-authority",
+			"class": "controls",
+			"grants_by": ["seat", "parent"],
+			"guard": ["R"],
+			"note": "Closes a seat as itself or its parent and ends its holdings."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/reap",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Stale seats are observed independently; impersonation forges the actor only."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/anomalies",
+			"authority": "machine-public",
+			"reason": "Machine-wide filtered read."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/anomalies",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Machine-wide filtered read."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/anomalies",
+			"authority": "machine-public",
+			"reason": "Same read, here-scoped by the caller's folder."
+		},
+		{
+			"method": "GET",
+			"path": "/v1/decisions",
+			"authority": "machine-public",
+			"reason": "Machine-wide decisions read."
+		},
+		{
+			"method": "HEAD",
+			"path": "/v1/decisions",
+			"authority": "machine-public",
+			"reason": "Implicit HEAD: axum runs the GET handler, effects included, and drops the body. Machine-wide decisions read."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/decisions",
+			"authority": "machine-public",
+			"reason": "Same unrestricted listing with caller admission."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/answer",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat", "parent"],
+			"guard": ["R"],
+			"note": "Answers or self-rules a decision as its asker, or supersedes as the current parent."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/project",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any-seat project changes; impersonation forges creator or editor."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/stream",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any-seat stream allocation and close; impersonation forges the author."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/fence",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any-seat fences; impersonation forges declared_by."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/dispatch",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any-seat dispatch; impersonation forges the sender."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/ack",
+			"authority": "seat-authority",
+			"class": "inbox-claim",
+			"grants_by": ["recipient"],
+			"guard": ["R"],
+			"note": "Acknowledges a dispatch as its recipient using visible digest facts."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/canary",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Forges the evaluator; process and model evidence are observed independently."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/attest",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any-seat attestation; impersonation forges attested_by."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/task",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any-seat task set and close; impersonation forges opener or closer."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/node",
+			"authority": "machine-public",
+			"reason": "A target's roles, tasks and dispatches projection."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/orchestration",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat", "parent", "holder"],
+			"guard": ["R"],
+			"note": "Role set as self or parent, and baton return by its current holder with the lease; other branches are any-seat."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/spine",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Appends evidence attributed to the actor; reads are machine-wide."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/directory",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat", "prime"],
+			"guard": ["R"],
+			"note": "Lineage add and batch need the project or role prime; other directory writes are any-seat and forge only authorship."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/output",
+			"authority": "seat-authority",
+			"class": "outputs",
+			"grants_by": ["seat", "holder", "prime"],
+			"guard": ["R"],
+			"note": "Publishes as the seat; --answers needs the request's holder, a live role holder or the project prime."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/outputs",
+			"authority": "seat-authority",
+			"class": "outputs",
+			"grants_by": ["seat", "holder", "prime"],
+			"guard": ["R"],
+			"note": "Same handler as output: the canonical read is machine-wide, but output argv reaches the write path."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/claim",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat", "owner", "prime"],
+			"guard": ["R"],
+			"note": "Allocation stamps the actor; release needs the owner or a prime."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/claims",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat", "owner", "prime"],
+			"guard": ["R"],
+			"note": "Same handler as claim: listing is machine-wide, but claim and release argv remain reachable."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/delivered",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat", "owner", "prime"],
+			"guard": ["R"],
+			"note": "Records a merged delivery as the actor; claim-release argv reaches owner or prime release."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/requests",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat", "holder", "prime"],
+			"guard": ["R"],
+			"note": "Withdraw and close need the requester, the project's PA or the prime (plan 212, #149); listing is project-scoped."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/bg/{job}/emit",
+			"authority": "job-token",
+			"reason": "Its own per-job secret, outside the bearer ring (plan 163); the daemon key plus a seat's identifiers is not enough."
+		}
+	]
+}
