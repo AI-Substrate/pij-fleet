@@ -67,7 +67,7 @@ Plan 221 decided the design (workshop 001, option C). This plan builds it in two
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-00df | Phase A: secured issuer, socket, ownership, clients and counting (count-only) | AC1 to AC7, plus cost and docs for this phase. One PR. Nothing refused except issuance. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-00df | Phase A: secured issuer, socket, ownership, clients and counting (count-only) | Two PRs, both count-only (nothing refused except issuance). A1, the daemon: AC1 to AC5 and AC7, plus cost and docs. A2, the clients: AC6 (the Copilot, OMP and Pi extensions present the token; the shim, pij-rs and hooks use the socket), plus cost and docs. A2 merges before phase B's evidence window starts. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 | ph-01df | Phase B: enforce send-as | AC8, plus cost and docs. A second PR, opened only after phase A is deployed and the evidence window (every client proven, a working day of zero 'neither' on traffic-bearing send routes) holds. | [ ] unchecked | — | — | ph-00df | [tasks](assets/tasks/phase-2/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>

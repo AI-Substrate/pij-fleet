@@ -108,7 +108,7 @@
           "id": "ph-00df",
           "title": "Phase A: secured issuer, socket, ownership, clients and counting (count-only)",
           "state": "unchecked",
-          "brief": "AC1 to AC7, plus cost and docs for this phase. One PR. Nothing refused except issuance.",
+          "brief": "Two PRs, both count-only (nothing refused except issuance). A1, the daemon: AC1 to AC5 and AC7, plus cost and docs. A2, the clients: AC6 (the Copilot, OMP and Pi extensions present the token; the shim, pij-rs and hooks use the socket), plus cost and docs. A2 merges before phase B's evidence window starts.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         },
         {
