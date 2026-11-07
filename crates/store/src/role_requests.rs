@@ -728,6 +728,45 @@ impl SqliteOrchestration {
     }
 
     /// Set `column` once: a second call changes nothing and returns `false`.
+    /// [`Self::mark_role_request_answered`] with its audit: the stamp and the
+    /// `audit` event commit in one transaction, the event only when the stamp
+    /// changed a row (ruling C32 (3); review of #152, F006). A failed append
+    /// leaves the request unanswered, so the next reply answers it. Returns
+    /// the appended event, for the caller to publish, and whether it stamped.
+    pub async fn mark_role_request_answered_audited(
+        &self,
+        id: &str,
+        at: u64,
+        audit: Event,
+    ) -> Result<(Vec<Event>, bool)> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let at = sql_i64(at, "answered_at")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let changed = sqlx::query(
+                "UPDATE role_requests SET answered_at = ?2 WHERE id = ?1 AND answered_at IS NULL",
+            )
+            .bind(&id)
+            .bind(at)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            let mut events = Vec::new();
+            if changed {
+                let mut audit = audit;
+                audit.seq = Some(append_in_transaction(&mut tx, &audit).await?);
+                events.push(audit);
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok((events, changed))
+        })
+        .await
+    }
+
     async fn stamp_once(&self, id: &str, column: &'static str, at: u64) -> Result<bool> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();

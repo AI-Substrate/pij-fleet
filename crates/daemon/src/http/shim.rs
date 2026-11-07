@@ -747,8 +747,9 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
     )
     .await
     {
-        // A holder's reply addressed to a role answers too (review of #152, F002).
-        if response.status().is_success() {
+        // A holder's reply addressed to a role answers too, when the role send
+        // was accepted; a refused receipt is HTTP 200 too (review of #152, F002).
+        if super::role_send::accepted(&response) {
             super::answered_by(&state, &from, call.in_reply_to.as_deref(), reply).await;
         }
         return response;

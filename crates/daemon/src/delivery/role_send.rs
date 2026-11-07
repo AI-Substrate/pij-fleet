@@ -896,33 +896,51 @@ async fn deliver_drained(
 /// other seat (the requester, a third party) answers nothing. The stamp is
 /// set once, the same field s06's `pij output --answers` sets, so neither
 /// path counts twice. One primary-key read per reply; a failure is logged and
-/// never fails the send.
+/// never fails the send. With `audit`, the stamp and the event commit in one
+/// transaction, run as their own task and then published (ruling C32 (3);
+/// review of #152, F006): no answer without its audit, and a failed append
+/// answers nothing, so a later reply can. True when this reply answered it.
 pub async fn answer_by_reply(
     services: &Services,
     from: &SeatId,
     in_reply_to: Option<&str>,
     now_ms: u64,
+    audit: Option<pij_core::model::Event>,
 ) -> bool {
     let Some(id) = in_reply_to else {
         return false;
     };
     let store = services.governance.store();
-    match store.role_request(id).await {
-        Ok(Some(request))
-            if request.state == RequestState::Delivered
-                && request.holder.as_deref() == Some(from.as_str()) =>
-        {
-            match store.mark_role_request_answered(id, now_ms).await {
-                Ok(stamped) => stamped,
-                Err(cause) => {
-                    eprintln!("pij-rs: reply to request {id} not recorded as its answer: {cause}");
-                    false
-                }
-            }
-        }
-        Ok(_) => false,
+    let request = match store.role_request(id).await {
+        Ok(Some(request)) => request,
+        Ok(None) => return false,
         Err(cause) => {
             eprintln!("pij-rs: reply to request {id}: {cause}");
+            return false;
+        }
+    };
+    if request.state != RequestState::Delivered || request.holder.as_deref() != Some(from.as_str())
+    {
+        return false;
+    }
+    let stamped = match audit {
+        Some(audit) => {
+            let (store, id) = (store.clone(), id.to_string());
+            services
+                .event_bus
+                .publish_committed_batch(async move {
+                    store
+                        .mark_role_request_answered_audited(&id, now_ms, audit)
+                        .await
+                })
+                .await
+        }
+        None => store.mark_role_request_answered(id, now_ms).await,
+    };
+    match stamped {
+        Ok(stamped) => stamped,
+        Err(cause) => {
+            eprintln!("pij-rs: reply to request {id} not recorded as its answer: {cause}");
             false
         }
     }

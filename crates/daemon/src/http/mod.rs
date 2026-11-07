@@ -1894,8 +1894,9 @@ async fn send(
     )
     .await
     {
-        // A holder's reply addressed to a role answers too (review of #152, F002).
-        if response.status().is_success() {
+        // A holder's reply addressed to a role answers too, when the role send
+        // was accepted; a refused receipt is HTTP 200 too (review of #152, F002).
+        if role_send::accepted(&response) {
             answered_by(
                 &state,
                 &request.message.from,
@@ -2060,8 +2061,9 @@ pub(crate) type ReplyEvidence = serde_json::Value;
 /// Check a reply's sender before anything is sent (S152-001, F88). Only a
 /// send whose `in_reply_to` names a role request is checked. When the caller's
 /// context resolves to a seat, that seat is the sender: a different `from`
-/// is refused `E-RS-REPLY-SENDER`. When it does not resolve (a local caller
-/// with no context), `from` stands, `answered_by` stamps only the stored
+/// is refused `E-RS-REPLY-SENDER`, and context that cannot be resolved is
+/// refused as the identity ladder refuses it. Only a caller with no context
+/// at all is unbound: `from` stands, `answered_by` stamps only the stored
 /// holder, and the event records that nothing bound it.
 pub(crate) async fn reply_sender(
     state: &AppState,
@@ -2100,17 +2102,17 @@ pub(crate) async fn reply_sender(
             "pid": seat.proc.map(|proc| proc.pid),
             "proc_start": seat.proc.map(|proc| proc.proc_start),
         }))),
-        identity::Resolved::Refusal(_) => Ok(Some(serde_json::json!({
-            "route": route,
-            "bound": "none",
-            "pane": pane,
-            "session": session,
-        }))),
+        // Known evidence that does not resolve (a pane that contradicts the
+        // asserted id, an unregistered pane, a failed read) is refused, never
+        // downgraded to an unbound reply: only a caller with no context at all
+        // is unbound (ruling C32 (2); security review of #152, S152-001).
+        identity::Resolved::Refusal(response) => Err(Box::new(response)),
     }
 }
 
 /// A reply from a role request's holder answers it (plan 214, F68): the
-/// stored holder only, once, with one audit event when it did (S152-001).
+/// stored holder only, once, with its audit event in the same transaction
+/// (S152-001; ruling C32 (3)).
 pub(crate) async fn answered_by(
     state: &AppState,
     from: &SeatId,
@@ -2123,30 +2125,28 @@ pub(crate) async fn answered_by(
     let Ok(now_ms) = system_time_ms() else {
         return;
     };
-    if !crate::delivery::role_send::answer_by_reply(&state.services, from, Some(id), now_ms).await {
-        return;
-    }
     let mut payload = serde_json::json!({"request": id, "from": from});
     if let (Some(payload), serde_json::Value::Object(evidence)) =
         (payload.as_object_mut(), evidence)
     {
         payload.extend(evidence);
     }
-    if let Err(cause) = state
-        .services
-        .event_bus
-        .publish(Event {
-            seq: None,
-            v: 1,
-            at: now_ms,
-            kind: REPLY_ANSWER_EVENT_KIND.into(),
-            seat: Some(from.clone()),
-            payload: payload.to_string(),
-        })
-        .await
-    {
-        eprintln!("pij-rs: audit of reply {id} from {from} failed: {cause}");
-    }
+    let audit = Event {
+        seq: None,
+        v: 1,
+        at: now_ms,
+        kind: REPLY_ANSWER_EVENT_KIND.into(),
+        seat: Some(from.clone()),
+        payload: payload.to_string(),
+    };
+    crate::delivery::role_send::answer_by_reply(
+        &state.services,
+        from,
+        Some(id),
+        now_ms,
+        Some(audit),
+    )
+    .await;
 }
 
 /// `@` is the address separator, so NO msg_id carries it, local or forwarded:

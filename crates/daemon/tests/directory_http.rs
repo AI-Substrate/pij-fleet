@@ -4310,6 +4310,169 @@ async fn a_role_addressed_reply_answers_and_a_forged_sender_never_does() {
     rig.server.abort();
 }
 
+/// Review of #152, F002 and security S152-001 under ruling C32. A role send
+/// whose holder refuses the delivery is still HTTP 200, and answers nothing,
+/// on `/v1/send` and on the shim. A caller whose pane contradicts the id it
+/// asserts is refused before anything is delivered, answered or audited; the
+/// matching holder still answers.
+#[tokio::test]
+async fn a_refused_role_reply_and_a_contradicted_caller_answer_nothing() {
+    let (rig, repo, _) = limit_rig("pij-reply-refused", false).await;
+    // The PA is a native Copilot seat with no receiver: it refuses delivery.
+    let mut native = SeatDescriptor::new("pij-native-pa", Harness::Copilot, "/tmp");
+    native.proc = Some(pij_core::model::ProcIdentity {
+        pid: 191,
+        proc_start: 1910,
+    });
+    native.pane = Some("%91".into());
+    native.native_extension_delivery = true;
+    native.harness_session = Some("native-91".into());
+    rig.services.registry.put(native).await.unwrap();
+    let assigned = call(
+        rig.addr,
+        "/v1/directory",
+        &[
+            "directory",
+            "assign",
+            "pa",
+            "pij-native-pa",
+            "--why",
+            "watch",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    // Its receiver was attested for one session, and the seat has since moved
+    // to another: the receiver no longer matches, so delivery is refused.
+    rig.delivery
+        .attest_native_receiver(
+            &SeatId::from("pij-native-pa"),
+            &pij_daemon::delivery::NativeInboxIdentity {
+                native_session: Some("native-91".into()),
+                pid: Some(191),
+                proc_start: Some(1910),
+            },
+        )
+        .await
+        .expect("attested");
+    let mut moved = rig
+        .services
+        .registry
+        .get(&SeatId::from("pij-native-pa"))
+        .await
+        .unwrap()
+        .unwrap();
+    moved.harness_session = Some("native-92".into());
+    rig.services.registry.put(moved).await.unwrap();
+    let answered = || {
+        let store = rig.store.clone();
+        async move {
+            store
+                .role_request("req-limit")
+                .await
+                .unwrap()
+                .and_then(|request| request.answered_at)
+        }
+    };
+    let audits = || {
+        let (addr, cwd) = (rig.addr, repo.main.clone());
+        async move {
+            let events = call(
+                addr,
+                "/v1/spine",
+                &["spine", "events", "--peer", "pij-holder"],
+                &cwd,
+            )
+            .await;
+            events["data"]["events"]
+                .as_array()
+                .expect("events")
+                .iter()
+                .filter(|event| event["kind"] == "request.answered_by_reply")
+                .count()
+        }
+    };
+
+    let refused = send_to(
+        rig.addr,
+        &repo.main,
+        "role:pa",
+        "reply-refused",
+        json!({
+            "from": "pij-holder",
+            "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(refused["ok"], true, "HTTP 200: {refused}");
+    assert!(
+        refused["data"]["request_warning"]
+            .as_str()
+            .is_some_and(|warning| warning.contains("refused")),
+        "{refused}"
+    );
+    let shim: Value = reqwest::Client::new()
+        .post(format!("http://{}/v1/shim/send", rig.addr))
+        .bearer_auth(KEY)
+        .json(&json!({
+            "argv": ["send", "role:pa", "hi", "--in-reply-to", "req-limit"],
+            "caller": {"TMUX_PANE": "%51", "cwd": repo.main},
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        shim["data"]["request_warning"]
+            .as_str()
+            .is_some_and(|warning| warning.contains("refused")),
+        "{shim}"
+    );
+    assert_eq!(answered().await, None, "a refused reply answers nothing");
+
+    let contradicted = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-second",
+        "reply-contradicted",
+        json!({
+            "from": "pij-holder",
+            "fyi": true,
+            "caller": {"TMUX_PANE": PANE, "PIJ_SESSION_ID": "pij-holder", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(contradicted["ok"], false, "{contradicted}");
+    assert!(
+        inbox_bodies(&rig, "pij-second").await.is_empty(),
+        "nothing delivered"
+    );
+    assert_eq!((answered().await, audits().await), (None, 0));
+
+    let matching = send_to(
+        rig.addr,
+        &repo.main,
+        "pij-second",
+        "reply-matching",
+        json!({
+            "from": "pij-holder",
+            "fyi": true,
+            "caller": {"TMUX_PANE": "%51", "PIJ_SESSION_ID": "pij-holder", "cwd": repo.main},
+            "in_reply_to": "req-limit",
+        }),
+    )
+    .await;
+    assert_eq!(matching["ok"], true, "{matching}");
+    assert!(answered().await.is_some(), "the holder answers");
+    assert_eq!(audits().await, 1);
+    rig.server.abort();
+}
+
 fn role_of<'a>(view: &'a Value, id: &str) -> &'a Value {
     view["data"]["roles"]
         .as_array()
