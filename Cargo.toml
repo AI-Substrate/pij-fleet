@@ -90,7 +90,7 @@ clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 # OS randomness for the per-boot bearer key: no PRNG state, no seed, no extra
 # dependency tree — each boot asks the operating system for 256 bits.
-getrandom = "0.3"
+getrandom = "0.4"
 # Portable hostname lookup for the federation machine alias default. Reading
 # environment variables is not equivalent on Windows and can be unset on Unix.
 hostname = "0.4"
