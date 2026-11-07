@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"head": "560e260953eb581d2b414c2dcaf24a90363b9aee",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/136#issuecomment-6707417947",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:136",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass** at `560e260953eb581d2b414c2dcaf24a90363b9aee`.\n\nFirst full cost review of this PR's own changes against merged main `bb753b8fa3786eb7ec4cc90603de095fa242bd5d`. No new production executable launch site, resident loop, poll, timer or automatic role/seat creation. The new runtime behavior is explicit template display; route/template instructions execute only when a human or agent follows them.\n\n| Surface | Cost and scaling |\n|---|---|\n| Embedded catalog | Six shipped templates become sixteen. `include_bytes!` keeps bodies in the binary's static data; catalog construction allocates/sorts metadata and borrows those bodies, rather than reading files or parsing every body at startup (`templates.rs:46-108`). This increases binary/catalog footprint, not per-seat background work. |\n| `templates --show` | Explicit request only. Specification parsing and version/name lookup scan the fixed sixteen-entry catalog; then one selected body is converted into the JSON response, serialized, decoded and rendered. CPU/temporary bytes scale with catalog lookup and selected body size. The path is a repository-relative formatted string, not an extra disk lookup. No catalog-body disk read, validator, Git command, state mutation or per-role process launch. Common API caller/auth reads remain. |\n| Template listing/add | Listing now handles sixteen names and parses each latest embedded JSON body to return title/kind/summary, with repeated small catalog scans (`templates.rs:213-233`). Add-from-template still parses only the selected template and uses the existing explicit directory writer. It does not instantiate every optional role; actual adds retain their normal validation/Git commit budget. |\n| Route and canary | The route's 89 lines and ten new optional template documents are inert until invoked. The canary deliberately stood up seven roles with seven existing writer commits on a private rig; it therefore exercised normal CLI/validation/model/setup costs, not a zero-process workflow. It supports route usability, not an inference or steady-state CPU benchmark. The route was edited afterward and the fresh canary was not repeated. |\n| Command sensor | The new Rust test reads the route and sixteen template sources, extracts/dedupes the reported 29 command strings, and starts one or two `pij-rs --help` subprocesses per known command plus fixed discovery/control helpers. These are bounded test/gate launches, not a live daemon producer. Per-command help pins scratch state and an unreachable daemon address; top-level discovery is local CLI help. No executed role mutation or model wake. |\n\n**Proof scope:** the command test checks native top-level verb membership and flag strings appearing in help. Its negative controls catch an unknown verb and unknown flag. It is help-surface coverage, not full parsing of every positional/required argument or validation of every optional leaf. Bobcat has this qualification; the cost verdict does not certify complete command correctness or the canary's security isolation.\n\n**CI:** this exact head is CLEAN. [CI 42374959821](https://github.com/AI-Substrate/pij-fleet/actions/runs/42374959821) has all four jobs successful. JUnit records **2,081 executed cases, zero failures/errors**, including catalog show body/path, HTTP exact embedded-body display, the new route/template command sensor with its controls and all six spawn guards. Five Rust tests were skipped separately. Older delivers **42374959888** failed; newer **42375005413** and **42375352339** succeeded. The old failure is not omitted or relabeled as green.\n\nNo local builds, tests, live probes, canary rerun, source edits or review-tree changes. This pass covers AC5's production cost shape and explicit `--show` work; it is not a proxy for reviewer/security/wording/state verdicts.\n"
+		}
+	]
+}
