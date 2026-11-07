@@ -592,7 +592,7 @@ async fn failed_tells_are_bounded_per_recipient() {
     let stall = &services.watchdogs().modal_stalls().await.unwrap()[0];
     assert!(stall.told.is_empty());
     assert_eq!(
-        stall.failed.values().copied().collect::<Vec<_>>(),
+        stall.attempts.values().copied().collect::<Vec<_>>(),
         vec![bound; 2]
     );
 }
@@ -733,7 +733,7 @@ async fn a_refused_tell_is_retried_until_the_native_receiver_recovers() {
     );
     let stall = services.watchdogs().modal_stalls().await.unwrap().remove(0);
     assert_eq!(stall.told, vec![SeatId::from(format!("{p}-pa"))]);
-    assert_eq!(stall.failed.get(&parent), Some(&1));
+    assert_eq!(stall.attempts.get(&parent), Some(&1));
     let msg_id = format!("modal-stall:{p}-asking:{}:{p}-pm", stall.quiet_seq);
     let outcomes = |events: Vec<pij_core::model::Event>| -> Vec<serde_json::Value> {
         events
@@ -786,4 +786,78 @@ async fn a_refused_tell_is_retried_until_the_native_receiver_recovers() {
         "the retry keeps the stable id"
     );
     assert_eq!(told(&services, &format!("{p}-pa")).await.len(), 1);
+}
+
+/// Performance P156-F002: each attempt is saved BEFORE it is sent. While the
+/// counter can't be saved (a store trigger aborts every write to it), nothing
+/// is sent, round after round, so the attempts can't pass the bound; once it
+/// can, the next round tells as usual.
+#[tokio::test]
+async fn a_failed_attempt_save_sends_nothing() {
+    let p = "pij-counter";
+    let (services, _tmux, store, folder, _) = services_with_config(
+        FakeTmux::new().with_standing_capture(fixture("copilot-follow-up-dialog-herring.txt")),
+    )
+    .await;
+    retry_fleet(&services, &folder, p, true).await;
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query(
+        "CREATE TRIGGER pij_test_attempts BEFORE UPDATE OF attempts ON modal_stalls \
+         BEGIN SELECT RAISE(ABORT, 'injected counter failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let start = crate::http::system_time_ms().unwrap();
+    own_event(&services, &format!("{p}-asking"), start).await;
+    let at = |minutes: u64| start + STALL_AFTER_MS + minutes * MINUTE;
+    let watchdog = PaWatchdog::default();
+    let rounds = pij_core::modal_stall::MAX_TELL_TRIES + 2;
+    for minute in 1..=u64::from(rounds) {
+        let tried = told_now(
+            watchdog
+                .round(&services, INTERVAL, at(minute))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(tried.len(), 2, "both owed, round {minute}");
+        assert!(
+            tried
+                .iter()
+                .all(|(_, delivery)| delivery.starts_with("error: attempt not saved, so not sent")),
+            "{tried:?}"
+        );
+    }
+    assert!(
+        told(&services, &format!("{p}-pm")).await.is_empty(),
+        "nothing sent"
+    );
+    assert!(
+        told(&services, &format!("{p}-pa")).await.is_empty(),
+        "nothing sent"
+    );
+    let stall = services.watchdogs().modal_stalls().await.unwrap().remove(0);
+    assert!(stall.attempts.is_empty() && stall.told.is_empty());
+
+    sqlx::query("DROP TRIGGER pij_test_attempts")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        told_now(
+            watchdog
+                .round(&services, INTERVAL, at(u64::from(rounds) + 1))
+                .await
+                .unwrap()
+        ),
+        vec![
+            (format!("{p}-pa"), "queued".to_string()),
+            (format!("{p}-pm"), "queued".to_string()),
+        ]
+    );
+    let stall = services.watchdogs().modal_stalls().await.unwrap().remove(0);
+    assert_eq!(
+        stall.attempts.values().copied().collect::<Vec<_>>(),
+        vec![1, 1]
+    );
 }

@@ -144,7 +144,7 @@ pub(crate) async fn round(
                     clears: found.clears.to_string(),
                     open: true,
                     told: Vec::new(),
-                    failed: std::collections::BTreeMap::new(),
+                    attempts: std::collections::BTreeMap::new(),
                 };
                 match services.watchdogs().claim_modal_stall(&stall).await {
                     Ok(true) => stall,
@@ -204,6 +204,10 @@ async fn set_open(services: &Services, seat: &SeatId, quiet_seq: u64, open: bool
 /// is counted, and that recipient is tried again next round with the same
 /// message id until it has failed `MAX_TELL_TRIES` times. Returns who was
 /// tried this round and delivery's answer.
+///
+/// Each attempt is counted in the store BEFORE it is sent (performance
+/// P156-F002): when that save fails nothing is sent, so a broken counter can
+/// never let the attempts pass the bound.
 async fn tell(
     watchdog: &PaWatchdog,
     services: &Services,
@@ -235,6 +239,22 @@ async fn tell(
         }
         let msg_id = format!("modal-stall:{}:{}:{}", seat.id, stall.quiet_seq, target.id);
         let body = stall_body(&seat.id, seat.harness, stall, now_ms);
+        match services
+            .watchdogs()
+            .record_modal_stall_attempt(&seat.id, stall.quiet_seq, &target.id)
+            .await
+        {
+            Ok(Some(_)) => {}
+            // Another stretch replaced this one: its own round tells.
+            Ok(None) => continue,
+            Err(cause) => {
+                tried.push((
+                    target.id.clone(),
+                    format!("error: attempt not saved, so not sent: {cause}"),
+                ));
+                continue;
+            }
+        }
         let outcome = if failed_for_test(&target.id) {
             Err("injected by the test".to_string())
         } else {
@@ -243,20 +263,12 @@ async fn tell(
                 .0
         };
         let delivery = outcome_text(&outcome);
-        let recorded = if accepted(&outcome) {
-            services
+        if accepted(&outcome)
+            && let Err(cause) = services
                 .watchdogs()
                 .mark_modal_stall_told(&seat.id, stall.quiet_seq, &target.id)
                 .await
-                .map(drop)
-        } else {
-            services
-                .watchdogs()
-                .record_modal_stall_failure(&seat.id, stall.quiet_seq, &target.id)
-                .await
-                .map(drop)
-        };
-        if let Err(cause) = recorded {
+        {
             eprintln!(
                 "pa watchdog: modal stall: record the tell to {} about {}: {cause}",
                 target.id, seat.id

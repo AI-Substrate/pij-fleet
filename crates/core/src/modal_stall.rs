@@ -40,8 +40,8 @@ pub const MODAL_STALL_REASON: &str = "pa-watchdog: modal dialog";
 /// The audit event kind for a stall the round told someone about.
 pub const MODAL_STALL_KIND: &str = "watchdog.modal-stall";
 
-/// How many failed tells a recipient gets per stretch before the round stops
-/// trying it (one per 60 s round).
+/// How many tells a recipient gets per stretch before the round stops trying
+/// it (at most one per 60 s round), counted before each is sent.
 pub const MAX_TELL_TRIES: u32 = 5;
 
 /// One stretch's stall, as stored before anyone is told.
@@ -68,9 +68,9 @@ pub struct ModalStall {
     /// Who accepted this stretch's message. Anyone else is told on a later
     /// round.
     pub told: Vec<SeatId>,
-    /// Failed tells per recipient this stretch; one at [`MAX_TELL_TRIES`] is
-    /// not tried again.
-    pub failed: std::collections::BTreeMap<SeatId, u32>,
+    /// Tells per recipient this stretch, each counted before it is sent; one
+    /// not yet told at [`MAX_TELL_TRIES`] is not tried again.
+    pub attempts: std::collections::BTreeMap<SeatId, u32>,
 }
 
 impl ModalStall {
@@ -78,7 +78,7 @@ impl ModalStall {
     #[must_use]
     pub fn owes(&self, target: &SeatId) -> bool {
         !self.told.contains(target)
-            && self.failed.get(target).copied().unwrap_or(0) < MAX_TELL_TRIES
+            && self.attempts.get(target).copied().unwrap_or(0) < MAX_TELL_TRIES
     }
 }
 

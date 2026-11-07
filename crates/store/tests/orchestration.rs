@@ -685,7 +685,7 @@ async fn a_modal_stall_is_claimed_once_per_stretch_and_stands_until_an_own_event
         clears: "ctrl+d declines".to_string(),
         open: true,
         told: Vec::new(),
-        failed: std::collections::BTreeMap::new(),
+        attempts: std::collections::BTreeMap::new(),
     };
     assert!(store.claim_modal_stall(&stall).await.expect("claim"));
     let later_round = ModalStall {
@@ -729,12 +729,12 @@ async fn a_modal_stall_is_claimed_once_per_stretch_and_stands_until_an_own_event
         store.modal_stalls().await.expect("all")[0].told,
         vec![pm.clone()]
     );
-    // Failed tells are counted per recipient, for this stretch only.
+    // Tells are counted per recipient, for this stretch only.
     let pa = SeatId::from("pij-pa");
     for want in 1..=2 {
         assert_eq!(
             store
-                .record_modal_stall_failure(&seat, first, &pa)
+                .record_modal_stall_attempt(&seat, first, &pa)
                 .await
                 .expect("fail"),
             Some(want)
@@ -742,13 +742,15 @@ async fn a_modal_stall_is_claimed_once_per_stretch_and_stands_until_an_own_event
     }
     assert_eq!(
         store
-            .record_modal_stall_failure(&seat, first + 1, &pa)
+            .record_modal_stall_attempt(&seat, first + 1, &pa)
             .await
             .expect("other"),
         None
     );
     assert_eq!(
-        store.modal_stalls().await.expect("all")[0].failed.get(&pa),
+        store.modal_stalls().await.expect("all")[0]
+            .attempts
+            .get(&pa),
         Some(&2)
     );
 
