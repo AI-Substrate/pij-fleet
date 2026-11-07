@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:144",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## PR #144: after-deploy cost reading\n\nDeployment: **PID 50992**, source build **e6958e71a1b3ffe2b3dfa38d49ae16be04a1401c**, per pm-001's merge/bounce record. Main was independently at that revision and the installed executable pointed to its release target. Both ping snapshots reported PID 50992, healthy, build label `pij-rs 0.1.0`; that label does not embed a Git SHA. Independent process snapshots confirmed the same PID, executable and start time, **2026-11-07 17:37:05 +10:00**, throughout.\n\nThe requested reading is complete. It was an active-fleet observation, not a controlled idle baseline.\n\n| Metric | BEFORE | AFTER |\n|---|---|---|\n| Daemon launches | 920 to 962: +42/60 s, **0.70/s**, PID 27104 | 235 to 278: +43/**60.007030 s**, **0.716583/s**, PID 50992 |\n| Machine-wide launches | **50.7/s**, separate 20 s sample | **146.8/s**, niced 20.0 s sample |\n| Daemon CPU | Not supplied | **10.02 CPU seconds / 60.007 s = 16.70%** of one CPU over this interval |\n| Daemon RSS | Not supplied | **146,160 to 147,360 KiB**, **142.73 to 143.91 MiB** |\n| Load averages | Load 16 reported | Start **20.48 / 18.91 / 22.00**, end **18.78 / 18.79 / 21.75** |\n\nAFTER ping window: **2026-11-07 17:43:54.456788 to 17:44:54.464055 +10:00** (07:43:54.456788 to 07:44:54.464055 UTC). Elapsed time comes from a monotonic clock between snapshot starts. Endpoint `ps` CPU percentages were **12.6% and 20.1%**; those rolling readings are distinct from the cumulative-CPU interval calculation above.\n\n### Every daemon counter delta\n\n| Operation | Delta |\n|---|---:|\n| `ddocs.community` | 4 |\n| `git.community` | 14 |\n| `git.pa-watchdog-common-dir` | 1 |\n| `ps.registration-native-process` | 0 |\n| `ps.sidecar-process-group` | 0 |\n| `ps.tmux-harness-process-tree` | 2 |\n| `ps.uds-peer-start` | 18 |\n| `tmux.control-client` | 0 |\n| `tmux.new-window` | 1 |\n| `tmux.pipe-pane attach` | 1 |\n| `tmux.rename-window` | 1 |\n| `tmux.set-options tap owner` | 1 |\n| **Total** | **43** |\n\nAll deltas sum to the total; no counter decreased and no PID/start-time change occurred. Counters were never subtracted across the BEFORE and AFTER daemon incarnations. The similar aggregate rate is descriptive, not a causal regression test: this AFTER includes community writes, peer authentication and a window/seat launch.\n\n### Machine-wide qualifications\n\nRan `nice -n 19 just spawn-rate --seconds 20 --json` from deployed main, in parallel with the daemon window. The independent listening-port discovery also identified PID 50992. The probe made **274,679 in-process libproc polls** over its 20 s window; it is itself a niced busy-polling observer, so machine CPU/load is not unperturbed.\n\nThe PID-counter launch rate is **146.8/s**, roughly 2.90 times the historical 50.7/s. Parent attribution is incomplete: **108.3/s** disappeared before inspection and **35.7/s** were classified as other. Direct daemon-child attribution printed **0.0/s**, a rounded lower bound, not evidence of zero. That 20 s lower-bound sample and the daemon's 60 s counters have different coverage and windows; their values cannot be equated.\n\nObserved command lower bounds included bash **15.7/s**, node **10.2/s**, copilot **3.6/s**, and cargo **0.1/s**. Reboot recovery and concurrent work were active, with load still around 19-22 versus the historical load 16. **Do not attribute the machine-wide increase to #144.** No matched CPU/RSS BEFORE exists, so those measurements establish an AFTER level only.\n\nThe historical BEFORE is recorded in `docs/plans/209-fleet-followups/assets/evidence/phase-1.md`. Raw AFTER counter/process/load readings and the machine probe report are retained as session evidence (`pr144-after-window.json`, `pr144-after-machine.json`). No builds, tests, stress traffic, source edits or daemon restart were performed. These observations do not measure individual digest SQL work, late-admission joins or lineage-batch active cost.\n"
+		}
+	]
+}
