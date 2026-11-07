@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "1396154725e43fc142c529825408084558b269e3",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/136#issuecomment-6709106117",
+				"result": "pass",
+				"role": "performance",
+				"subject": "pr:136",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass** at `1396154725e43fc142c529825408084558b269e3`.\n\nReviewed only `560e260..1396154`. The delta is tests, route/docs, template content and the compiled catalog's six added version entries. **No new recurring daemon launch, poll, timer, SQL query or process site.** The earlier cost verdict stands.\n\nThe catalog now has **22 embedded versions for the same 16 template names**. Six core v1s remain; each gains v2. Construction adds fixed metadata/name allocations and sorting of 22 entries, borrowing the embedded bytes through Cow rather than reading template files or cloning their bodies. Lookup/version scans increase from 16 to 22 entries.\n\nListing still parses **16 latest bodies**, not all 22 versions; --show selects and renders one embedded body. The new bytes and slightly larger fixed scans are command-local/static footprint, not literally zero cost, but no new runtime producer or input-dependent expansion was introduced. SHA-256 immutability checking is entirely cfg(test), not startup/render hashing.\n\nThe help proof's added work is test-only: each recognized printed command obtains its verb help and, when applicable, its leaf help, at most two child CLI invocations for that check. Commands come from the route/latest templates and are deduplicated; eight one-fault controls and four good controls are finite additions. No automatic retry/watcher. The test now checks exact flag tokens, leaf help, applicable Usage requirements and single-quoted placeholders; it is still a targeted help/usage contract check, not arbitrary shell or complete argv execution proof. Reviewer/security own those conclusions.\n\nThe canary rig's environment clearing adds fixed one-off setup commands when manually run. Its host, daemon, role writes and model work are not a zero-cost workflow, nor an installed producer. The recorded second Copilot canary was not rerun here.\n\n**CI:** this exact head is CLEAN. [CI 42384881901](https://github.com/AI-Substrate/pij-fleet/actions/runs/42384881901) succeeds in all four jobs; delivers **42384881500** succeeds. JUnit records **2,088 executed cases, zero failures/errors**, five Rust cases skipped separately. Executed cases include the route/latest-template command contract, the eight one-fault controls, all 22 version hash pins, latest-version template HTTP behavior and all six spawn guards.\n\nNo local build, test, canary, runtime probe or worktree edit. No migration or new after-deploy measurement obligation for this fixed-catalog/doc/test delta.\n"
+		}
+	]
+}
