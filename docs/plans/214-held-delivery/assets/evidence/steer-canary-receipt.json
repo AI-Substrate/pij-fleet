@@ -1,0 +1,442 @@
+{
+  "started": "2026-11-07T11:26:43.714Z",
+  "run": "<run>",
+  "rounds": 8,
+  "reply_delay_ms": 10000,
+  "steps": [
+    {
+      "at": "2026-11-07T11:26:46.948Z",
+      "kind": "registered",
+      "seat": "pij-specified-locust",
+      "pid": 5553,
+      "session": "ba3746ad-08b5-46b0-b416-ae5d22e5cde8"
+    },
+    {
+      "at": "2026-11-07T11:26:46.953Z",
+      "kind": "send",
+      "msg_id": "canary-start-1-b2989593-e08f-4ec7-a006-21b5af4fc2db",
+      "receipt": {
+        "msg_id": "canary-start-1-b2989593-e08f-4ec7-a006-21b5af4fc2db",
+        "outcome": {
+          "outcome": "queued",
+          "reason": "extension-stream",
+          "next_retry_at": 0
+        },
+        "at": 1794050806951,
+        "cold_check": "unknown: no transcript found"
+      }
+    },
+    {
+      "at": "2026-11-07T11:26:53.467Z",
+      "kind": "send",
+      "msg_id": "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d",
+      "receipt": {
+        "msg_id": "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d",
+        "outcome": {
+          "outcome": "queued",
+          "reason": "extension-stream",
+          "next_retry_at": 0
+        },
+        "at": 1794050813464,
+        "cold_check": "busy"
+      }
+    },
+    {
+      "at": "2026-11-07T11:26:59.488Z",
+      "kind": "send",
+      "msg_id": "canary-steer-2-001c3f0f-314c-4fdb-b60c-4a2281d35005",
+      "receipt": {
+        "msg_id": "canary-steer-2-001c3f0f-314c-4fdb-b60c-4a2281d35005",
+        "outcome": {
+          "outcome": "queued",
+          "reason": "extension-stream",
+          "next_retry_at": 0
+        },
+        "at": 1794050819486,
+        "cold_check": "busy"
+      }
+    },
+    {
+      "at": "2026-11-07T11:27:05.494Z",
+      "kind": "send",
+      "msg_id": "canary-steer-3-3e054288-7e1d-45be-9b3a-43fb57f4c7ed",
+      "receipt": {
+        "msg_id": "canary-steer-3-3e054288-7e1d-45be-9b3a-43fb57f4c7ed",
+        "outcome": {
+          "outcome": "queued",
+          "reason": "extension-stream",
+          "next_retry_at": 0
+        },
+        "at": 1794050825492,
+        "cold_check": "busy"
+      }
+    },
+    {
+      "at": "2026-11-07T11:27:11.505Z",
+      "kind": "send",
+      "msg_id": "canary-steer-4-3df32f83-098c-4560-8a29-197eb015c095",
+      "receipt": {
+        "msg_id": "canary-steer-4-3df32f83-098c-4560-8a29-197eb015c095",
+        "outcome": {
+          "outcome": "queued",
+          "reason": "extension-stream",
+          "next_retry_at": 0
+        },
+        "at": 1794050831503,
+        "cold_check": "busy"
+      }
+    },
+    {
+      "at": "2026-11-07T11:27:17.514Z",
+      "kind": "send",
+      "msg_id": "canary-steer-5-27045465-ff50-4227-a966-f746b86b4807",
+      "receipt": {
+        "msg_id": "canary-steer-5-27045465-ff50-4227-a966-f746b86b4807",
+        "outcome": {
+          "outcome": "queued",
+          "reason": "extension-stream",
+          "next_retry_at": 0
+        },
+        "at": 1794050837509,
+        "cold_check": "busy"
+      }
+    },
+    {
+      "at": "2026-11-07T11:27:47.610Z",
+      "kind": "run1",
+      "rows": [
+        {
+          "msg_id": "canary-start-1-b2989593-e08f-4ec7-a006-21b5af4fc2db",
+          "state": "done",
+          "enqueued_at": 1794050806,
+          "claimed_at": 1794050806,
+          "acked_at": 1794050807
+        },
+        {
+          "msg_id": "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d",
+          "state": "done",
+          "enqueued_at": 1794050813,
+          "claimed_at": 1794050813,
+          "acked_at": 1794050817
+        },
+        {
+          "msg_id": "canary-steer-2-001c3f0f-314c-4fdb-b60c-4a2281d35005",
+          "state": "done",
+          "enqueued_at": 1794050819,
+          "claimed_at": 1794050819,
+          "acked_at": 1794050827
+        },
+        {
+          "msg_id": "canary-steer-3-3e054288-7e1d-45be-9b3a-43fb57f4c7ed",
+          "state": "done",
+          "enqueued_at": 1794050825,
+          "claimed_at": 1794050827,
+          "acked_at": 1794050837
+        },
+        {
+          "msg_id": "canary-steer-4-3df32f83-098c-4560-8a29-197eb015c095",
+          "state": "done",
+          "enqueued_at": 1794050831,
+          "claimed_at": 1794050837,
+          "acked_at": 1794050847
+        },
+        {
+          "msg_id": "canary-steer-5-27045465-ff50-4227-a966-f746b86b4807",
+          "state": "done",
+          "enqueued_at": 1794050837,
+          "claimed_at": 1794050847,
+          "acked_at": 1794050857
+        }
+      ],
+      "turn_end_observed_at_s": 1794050867,
+      "steered_seen_by_model_inside_turn": [
+        "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d",
+        "canary-steer-2-001c3f0f-314c-4fdb-b60c-4a2281d35005",
+        "canary-steer-3-3e054288-7e1d-45be-9b3a-43fb57f4c7ed",
+        "canary-steer-4-3df32f83-098c-4560-8a29-197eb015c095",
+        "canary-steer-5-27045465-ff50-4227-a966-f746b86b4807"
+      ],
+      "idle_state": "idle",
+      "provider_log": [
+        {
+          "at": "2026-11-07T11:26:47.014Z",
+          "turn_start_index": 2,
+          "tools": 0,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:26:57.117Z",
+          "turn_start_index": 2,
+          "tools": 2,
+          "finished": false,
+          "steered": [
+            "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d"
+          ]
+        },
+        {
+          "at": "2026-11-07T11:27:07.162Z",
+          "turn_start_index": 2,
+          "tools": 3,
+          "finished": false,
+          "steered": [
+            "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d",
+            "canary-steer-2-001c3f0f-314c-4fdb-b60c-4a2281d35005"
+          ]
+        },
+        {
+          "at": "2026-11-07T11:27:17.201Z",
+          "turn_start_index": 2,
+          "tools": 5,
+          "finished": false,
+          "steered": [
+            "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d",
+            "canary-steer-2-001c3f0f-314c-4fdb-b60c-4a2281d35005",
+            "canary-steer-3-3e054288-7e1d-45be-9b3a-43fb57f4c7ed"
+          ]
+        },
+        {
+          "at": "2026-11-07T11:27:27.237Z",
+          "turn_start_index": 2,
+          "tools": 7,
+          "finished": false,
+          "steered": [
+            "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d",
+            "canary-steer-2-001c3f0f-314c-4fdb-b60c-4a2281d35005",
+            "canary-steer-3-3e054288-7e1d-45be-9b3a-43fb57f4c7ed",
+            "canary-steer-4-3df32f83-098c-4560-8a29-197eb015c095"
+          ]
+        },
+        {
+          "at": "2026-11-07T11:27:37.289Z",
+          "turn_start_index": 2,
+          "tools": 9,
+          "finished": false,
+          "steered": [
+            "canary-steer-1-106435b0-a452-4d32-ba34-71271202415d",
+            "canary-steer-2-001c3f0f-314c-4fdb-b60c-4a2281d35005",
+            "canary-steer-3-3e054288-7e1d-45be-9b3a-43fb57f4c7ed",
+            "canary-steer-4-3df32f83-098c-4560-8a29-197eb015c095",
+            "canary-steer-5-27045465-ff50-4227-a966-f746b86b4807"
+          ]
+        },
+        {
+          "at": "2026-11-07T11:27:37.289Z",
+          "final": true
+        }
+      ]
+    },
+    {
+      "at": "2026-11-07T11:27:47.613Z",
+      "kind": "steer off",
+      "receipt": {
+        "changed": true,
+        "harness": "copilot",
+        "seat": "pij-specified-locust",
+        "set_by": "pij-specified-locust",
+        "steer": false
+      }
+    },
+    {
+      "at": "2026-11-07T11:27:47.625Z",
+      "kind": "send",
+      "msg_id": "canary-start-2-8a48abca-61a0-4707-a07c-3900df34465a",
+      "receipt": {
+        "msg_id": "canary-start-2-8a48abca-61a0-4707-a07c-3900df34465a",
+        "outcome": {
+          "outcome": "queued",
+          "reason": "extension-stream",
+          "next_retry_at": 0
+        },
+        "at": 1794050867623,
+        "cold_check": "unknown: context size unknown"
+      }
+    },
+    {
+      "at": "2026-11-07T11:27:54.130Z",
+      "kind": "send",
+      "msg_id": "canary-wait-9d2cf39a-23d5-45e7-8994-80a78a08dcb6",
+      "receipt": {
+        "msg_id": "canary-wait-9d2cf39a-23d5-45e7-8994-80a78a08dcb6",
+        "outcome": {
+          "outcome": "queued",
+          "reason": "extension-stream",
+          "next_retry_at": 0
+        },
+        "at": 1794050874128,
+        "cold_check": "busy",
+        "warning": "pij-specified-locust is mid-turn and its mid-turn steering is off (`pij steer on` turns it back on): this message may wait for that turn to end."
+      }
+    },
+    {
+      "at": "2026-11-07T11:29:08.383Z",
+      "kind": "run2",
+      "row": {
+        "msg_id": "canary-wait-9d2cf39a-23d5-45e7-8994-80a78a08dcb6",
+        "state": "done",
+        "enqueued_at": 1794050874,
+        "claimed_at": 1794050947,
+        "acked_at": 1794050947
+      },
+      "turn_end_observed_at_s": 1794050947,
+      "steered_inside_turn": [],
+      "provider_log": [
+        {
+          "at": "2026-11-07T11:27:47.660Z",
+          "turn_start_index": 31,
+          "tools": 0,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:27:57.681Z",
+          "turn_start_index": 31,
+          "tools": 1,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:28:07.706Z",
+          "turn_start_index": 31,
+          "tools": 2,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:28:17.726Z",
+          "turn_start_index": 31,
+          "tools": 3,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:28:27.745Z",
+          "turn_start_index": 31,
+          "tools": 4,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:28:37.776Z",
+          "turn_start_index": 31,
+          "tools": 6,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:28:47.800Z",
+          "turn_start_index": 31,
+          "tools": 7,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:28:57.821Z",
+          "turn_start_index": 31,
+          "tools": 8,
+          "finished": false,
+          "steered": []
+        },
+        {
+          "at": "2026-11-07T11:28:57.821Z",
+          "final": true
+        },
+        {
+          "at": "2026-11-07T11:29:07.876Z",
+          "turn_start_index": 31,
+          "tools": 8,
+          "finished": true,
+          "steered": [
+            "canary-wait-9d2cf39a-23d5-45e7-8994-80a78a08dcb6"
+          ]
+        }
+      ]
+    }
+  ],
+  "identity": {
+    "source_commit": "61082215f57d3c4e5414df99bc59d18b5ed15205",
+    "pij_bin": "<pij-rs debug build of source_commit>",
+    "copilot": "GitHub Copilot CLI 1.0.108-1.\nRun 'copilot update' to check for updates.",
+    "node": "v24.7.0",
+    "addr": "127.0.0.1:54826",
+    "pane": "%1",
+    "provider": "deterministic-local-canary-not-real-inference"
+  },
+  "pass": {
+    "run1_steered_inside_turn_and_idle": true,
+    "run2_waited_for_turn_end": true
+  },
+  "provider_log": [
+    {
+      "at": "2026-11-07T11:27:47.660Z",
+      "turn_start_index": 31,
+      "tools": 0,
+      "finished": false,
+      "steered": []
+    },
+    {
+      "at": "2026-11-07T11:27:57.681Z",
+      "turn_start_index": 31,
+      "tools": 1,
+      "finished": false,
+      "steered": []
+    },
+    {
+      "at": "2026-11-07T11:28:07.706Z",
+      "turn_start_index": 31,
+      "tools": 2,
+      "finished": false,
+      "steered": []
+    },
+    {
+      "at": "2026-11-07T11:28:17.726Z",
+      "turn_start_index": 31,
+      "tools": 3,
+      "finished": false,
+      "steered": []
+    },
+    {
+      "at": "2026-11-07T11:28:27.745Z",
+      "turn_start_index": 31,
+      "tools": 4,
+      "finished": false,
+      "steered": []
+    },
+    {
+      "at": "2026-11-07T11:28:37.776Z",
+      "turn_start_index": 31,
+      "tools": 6,
+      "finished": false,
+      "steered": []
+    },
+    {
+      "at": "2026-11-07T11:28:47.800Z",
+      "turn_start_index": 31,
+      "tools": 7,
+      "finished": false,
+      "steered": []
+    },
+    {
+      "at": "2026-11-07T11:28:57.821Z",
+      "turn_start_index": 31,
+      "tools": 8,
+      "finished": false,
+      "steered": []
+    },
+    {
+      "at": "2026-11-07T11:28:57.821Z",
+      "final": true
+    },
+    {
+      "at": "2026-11-07T11:29:07.876Z",
+      "turn_start_index": 31,
+      "tools": 8,
+      "finished": true,
+      "steered": [
+        "canary-wait-9d2cf39a-23d5-45e7-8994-80a78a08dcb6"
+      ]
+    }
+  ],
+  "finished": "2026-11-07T11:29:08.395Z",
+  "code": 0
+}

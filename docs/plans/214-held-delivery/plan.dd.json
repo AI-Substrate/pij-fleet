@@ -42,49 +42,57 @@
           "id": "ac-0001",
           "claim": "Measure held time. For delivery jobs, jobs.enqueued_at is queued, claimed_at is the recipient's claim and acked_at is reached-the-session, on every rung (kestrel, verified: Copilot acks after the host consumes the steered prompt; OMP/Pi after the steer; PTY/UDS after injection). No migration. Held time is enqueued_at to acked_at; a still-queued row has a live age. The PR quotes before and after numbers from the live store.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "Before: assets/evidence/cost.md (claim-wait query on the live store, 2026-11-07T11:11Z; no migration, the existing jobs columns). After: the same query once this is deployed."
         },
         {
           "id": "ac-0002",
           "claim": "PA flags long holds (C31 keeps it as the detector). The PA digest lists every message held more than 15 minutes behind a busy turn: recipient, sender, msg id, held minutes, and whether it is still queued. Each message is flagged once, not on every digest. The threshold is a named constant.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "crates/store/tests/queue.rs: long_holds_are_listed_for_the_pa_once; crates/core/tests/pa_digest.rs: the_digest_lists_messages_held_behind_a_busy_turn; crates/store/src/held.rs: HELD_FLAG_SECS, the_held_read_never_scans_job_history"
         },
         {
           "id": "ac-0003",
           "claim": "C31: normal sends steer mid-turn on Copilot. The Copilot extension keeps claiming pij messages while a turn it started is still running, and steers each normal send into that turn (native.send immediate), as OMP and Pi already do. FYIs stay held until the turn ends, unchanged. A per-seat switch, default on, turns mid-turn steering off for one seat without a release (a daemon-side seat setting, changed by a verb and read by the extension without a restart); with it off, the seat behaves as today. A normal send to a busy seat whose harness can't steer gets a receipt note saying it waits for the turn to end, and why. No --urgent flag: with normal sends steering, it has nothing left to do (see research).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "crates/daemon/tests/directory_http.rs: steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts; crates/store/src/steering.rs: steering_is_on_until_set_off_and_reports_a_change_once; crates/daemon/src/http/steer.rs: grammar_accepts_on_off_status_with_an_optional_seat; .copilot/extensions/pij/store.test.mjs: the two C31 tests"
         },
         {
           "id": "ac-0004",
           "claim": "C31 wedge canary (live, required before ready). On a real Copilot seat running one long turn, send 5 normal messages during that turn: each is claimed and steered (claimed_at and acked_at inside the turn), the turn finishes normally, the seat registers idle afterwards, and nothing wedges (an older Copilot build wedged on mid-turn immediate injects: the bg-send wedge history). Then flip the seat's switch off, send once more, and show it waits for turn end. Receipts (msg ids, the store rows, the pane's turn end) go in the evidence.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "receipt": "assets/evidence/steer-canary.md and steer-canary-receipt.json: a real Copilot CLI 1.0.108-1 seat, 5 sends steered inside one long turn, the turn ended and the seat went idle; after pij steer off, one send waited for turn end (local fixture model, no real inference)"
         },
         {
           "id": "ac-0005",
           "claim": "F73: limits count from delivery. A role request's `--limit` clock starts when the request reaches the holder's session (acked_at), not when it was created; until then the request has no check-in. If a check-in fires, it says how long the request was held in delivery.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005",
+          "receipt": "crates/daemon/tests/directory_http.rs: a_limit_counts_from_arrival_and_the_check_in_names_the_held_time; crates/store/src/role_requests.rs: REACHED_SQL, limit_probe_is_indexed"
         },
         {
           "id": "ac-0006",
           "claim": "F68: a reply answers. A send from the request's holder with `--in-reply-to <request id>` sets the request's answered_at and stops its check-in and escalation; a send without it, or from another seat, does not. `pij output --answers` (s06, live since #137) and this path set the same field, and neither double-counts.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006",
+          "receipt": "crates/daemon/tests/directory_http.rs: a_reply_from_the_holder_answers_the_request_and_stops_its_clock"
         },
         {
           "id": "ac-0007",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). No new timer, poll or launch. No new store write for held time (existing columns). The PA flag is one indexed query inside the existing PA digest round, constant per digest, not per seat per tick. Claiming during a running turn uses the extension's existing claim call, once per message, not per tick; the per-seat switch is read with that claim, not polled. Measure the live fleet before and after.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007",
+          "receipt": "Per-site costs and the before readings: assets/evidence/cost.md (no new timer, poll or launch; the switch is read with the claim). After readings follow the deploy."
         },
         {
           "id": "ac-0008",
           "claim": "Docs and states. docs/how/pij-rs-api.md: mid-turn steering, the per-seat switch verb, the non-steering receipt note, the held-time fields and the limit clock. Per C31 the pij skill and the pij_send tool description gain one line: choose fyi unless their current work depends on it, since a normal send now interrupts a running turn. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008",
+          "receipt": "docs/how/pij-rs-api.md: Mid-turn steering (plan 214, ruling C31) and the /v1/steer row; skills/pij/SKILL.md: the steer row and the send-row fyi line; the pij_send descriptions in .copilot/extensions/pij/extension.mjs and .omp/extensions/pij/index.ts; crates/cli/tests/skill_verb_coverage.rs passes"
         }
       ]
     },
@@ -129,7 +137,8 @@
       "value": [
         {
           "question": "Does the Claude socket path reach a running turn? If yes, steer there too; if not, Claude gets the receipt note.",
-          "state": "unchecked"
+          "state": "checked",
+          "answer": "Yes, already. Busy is the transport's judgement, and Claude's socket transport delivers between tool calls while the seat is Working (crates/daemon/src/delivery/mod.rs, the receipt-honesty test's comment, found by u-uds in wave 3). So Claude needs no change here. The receipt note goes to a busy seat whose harness can't take it mid-turn: a pty-only seat, or a Copilot seat with its switch off."
         }
       ]
     },

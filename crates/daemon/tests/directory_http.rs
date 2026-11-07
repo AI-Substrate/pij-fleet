@@ -4708,14 +4708,23 @@ async fn steering_is_switched_per_seat_read_with_the_claim_and_noted_on_receipts
 
     let sent = send_to(rig.addr, &repo.main, "pij-native", "s-1", json!({})).await;
     assert_eq!(sent["ok"], true, "{sent}");
-    assert!(sent["data"].get("warning").is_none(), "steering on: no note: {sent}");
+    assert!(
+        sent["data"].get("warning").is_none(),
+        "steering on: no note: {sent}"
+    );
     let page = claim(true).await;
     assert_eq!(page["details"]["mid_turn_steer"], true, "{page}");
-    assert_eq!(page["data"][0]["message"]["msg_id"], "s-1", "claimed into the turn: {page}");
+    assert_eq!(
+        page["data"][0]["message"]["msg_id"], "s-1",
+        "claimed into the turn: {page}"
+    );
 
     let off = steer(&["steer", "off", "pij-native"]).await;
     assert_eq!(
-        (off["data"]["steer"].as_bool(), off["data"]["changed"].as_bool()),
+        (
+            off["data"]["steer"].as_bool(),
+            off["data"]["changed"].as_bool()
+        ),
         (Some(false), Some(true)),
         "{off}"
     );
