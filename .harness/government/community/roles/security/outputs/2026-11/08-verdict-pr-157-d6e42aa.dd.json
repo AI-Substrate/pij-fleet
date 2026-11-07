@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "d6e42aa2f53643e0b360cbca50bc5f9ae8a51253",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/157#issuecomment-6710772594",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:157",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `d6e42aa2f53643e0b360cbca50bc5f9ae8a51253`.\n\nNo new reportable vulnerability in the `eb37f6a..d6e42aa` error/guard repair. Merged-main implementations were excluded; earlier security qualifications stand.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 0 | None | N/A | N/A | No new reportable vulnerability | N/A |\n\nThe missing-parser fallback requires latest named delivers conclusion exactly SUCCESS (`harness/scripts/pr-freeze.ts:424-434`). Printed conclusion values come from GitHub's constrained fields and do not enter shell commands or Git argv.\n\nReadiness requires `isDraft === false`; missing/invalid state emits a fixed diagnostic rather than PR text (`pr-freeze.ts:328-334`). Entry lookup separates proven run/import/error, with lookup failure printed and exit 2 (`547-586`). Its inputs are the module URL and authorized local invocation path, not PR fields, check names, details URLs or worktree metadata. Subprocesses remain argv-based, without a shell (`491`).\n\n**Output qualification:** lookup diagnostics print local `Error.message` verbatim without terminal-control escaping. Unusual authorized local paths could affect terminal presentation, but no PR-controlled route into the new diagnostic was established. No remote injection finding is claimed. Prior URL-provenance and normal-configuration fetch/refmap limits remain unchanged.\n\nNo scoped C19/C21 exposure found; generic temporary fixtures and own pij layout remain permitted.\n\n**Proof:** exact-head CI [42396081957](https://github.com/AI-Substrate/pij-fleet/actions/runs/42396081957), attempt 1, passed all four jobs. Node 22 and Node 24 logs each record 24 pr-freeze tests passing. Source/CI review only; no local tests, builds, mutations, script/fetch execution, credentials or live probes. All-FINAL predicate correctness and runtime cost remain separately reviewed.\n"
+		}
+	]
+}
