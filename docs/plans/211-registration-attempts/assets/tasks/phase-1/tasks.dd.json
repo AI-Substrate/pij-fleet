@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "Counters: in-process registration attempts by path, mode and outcome, with ancestry ps reads, per seat (bounded), in ping beside spawns",
           "phase": "ph-00d3",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
@@ -33,7 +33,7 @@
           "id": "tk-0002",
           "title": "Clients label attempts: the Copilot extension (explicit, receive, heartbeat, lease-retry) and the shim's paneless preflight (shim)",
           "phase": "ph-00d3",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
@@ -57,7 +57,7 @@
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
-          "notes": "Keyed on bound identity plus the caller's verified pid and start, never a blanket positive cache (exec keeps pid and start)."
+          "notes": "Cheap refusal done: a native claim naming an address recorded for another session is refused (retired or different-session) before host observation; test with a no-observation count and a negative control. The no-op repeat skip (keyed on bound identity plus verified pid/start) waits for AC2 to show it is needed."
         },
         {
           "id": "tk-0005",
@@ -66,7 +66,8 @@
           "state": "unchecked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
-          ]
+          ],
+          "notes": "Copilot extension: E-RS-SEAT-RETIRED on /v1/register is final; receive and heartbeat loops stop and report receive-held once. Shim per-call registration unchanged until AC2 measures it."
         },
         {
           "id": "tk-0006",

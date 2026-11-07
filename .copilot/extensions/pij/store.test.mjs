@@ -2465,6 +2465,64 @@ test("only typed HTTP 409 registration refusals permit retry", async () => {
 	}
 });
 
+test("plan 211: only a typed E-RS-SEAT-RETIRED registration refusal marks the seat retired", async () => {
+	const retired = {
+		ok: false,
+		v: 2,
+		command: "pij register",
+		error: "refused",
+		details: { code: "E-RS-SEAT-RETIRED", seat: "pij-old" },
+		meta: "seat pij-old is retired (superseded, 1); a different session may not take it",
+	};
+	for (const [label, path, status, envelope, expected] of [
+		["typed retired refusal", "/v1/register", 400, retired, true],
+		["other code", "/v1/register", 400, { ...retired, details: { code: "E-RS-OTHER" } }, false],
+		["wrong status", "/v1/register", 409, retired, false],
+		["different endpoint", "/v1/send", 400, retired, false],
+	]) {
+		const client = new DaemonClient({
+			addr: "127.0.0.1:13700",
+			stateDir: "/isolated",
+			readKey: async () => "fixture-key",
+			fetch: async () => new Response(JSON.stringify(envelope), { status }),
+		});
+		await assert.rejects(client.request(path, registration), (error) => {
+			assert.equal(error.retired === true, expected, label);
+			assert.equal(error.retryable, false, label);
+			return true;
+		});
+	}
+});
+
+test("plan 211: a retired address stops the heartbeat instead of re-registering every few seconds", async (t) => {
+	let registers = 0;
+	const waits = [];
+	const f = fixture({
+		async heartbeatDelay(ms, signal) {
+			waits.push(ms);
+			await flush();
+			if (waits.length > 5) f.bridge.stop();
+			signal.throwIfAborted();
+		},
+	});
+	t.after(() => f.bridge.stop());
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/inbox/heartbeat") return { state: "unavailable" };
+		if (path === "/v1/register") {
+			registers++;
+			const error = new NativeError("Pij HTTP 400", false, "seat retired");
+			error.retired = true;
+			throw error;
+		}
+		return request(path, body, signal);
+	};
+	await f.bridge.keepReceiverAlive();
+	assert.equal(registers, 1, "one re-registration, then it stops");
+	assert.deepEqual(waits, [250]);
+	assert.equal(f.reports.filter(({ kind }) => kind === "receive-held").length, 1, "said once");
+});
+
 async function deadlineHttpFixture(t, handler) {
 	const requests = [];
 	const server = createServer(async (request, response) => {

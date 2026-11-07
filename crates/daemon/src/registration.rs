@@ -433,6 +433,23 @@ impl RegistrationService {
                 ));
             }
         };
+        // Plan 211 (AC3), a brake: a claim on an address recorded for another
+        // native session is refused under the lock whatever the host proves, so
+        // refuse it before paying for the proof. Removing this check refuses the
+        // same claims later, after the ancestry reads; it never admits one.
+        if !claim.id.is_empty() {
+            let named = self
+                .registry
+                .get(&SeatId::from(claim.id.clone()))
+                .await
+                .map_err(RegistrationError::Runtime)?;
+            let session = harness_session
+                .as_deref()
+                .expect("validated native session");
+            if let Some(refused) = explicit_session_conflict(&claim, session, named.as_slice()) {
+                return Err(refused);
+            }
+        }
         tokio::time::timeout(
             HOST_OBSERVATION_TIMEOUT,
             self.verify_native_host(identity, claim.pane.as_deref(), tmux, &mut observe),
@@ -701,21 +718,8 @@ impl RegistrationService {
             let session = harness_session
                 .as_deref()
                 .expect("validated native session");
-            // An explicit address may not relabel a different conversation, even
-            // when another row happens to match the claimed session.
-            if let Some(seat) = seats.iter().find(|seat| {
-                seat.id.as_str() == claim.id
-                    && seat
-                        .harness_session
-                        .as_deref()
-                        .is_some_and(|old| old != session)
-            }) {
-                if seat.tombstoned_at.is_some() {
-                    return Err(retired_refusal(seat, &claim.harness));
-                }
-                return Err(native_refusal(
-                    "seat id belongs to a different native session",
-                ));
+            if let Some(refused) = explicit_session_conflict(&claim, session, &seats) {
+                return Err(refused);
             }
             if seats
                 .iter()
@@ -1243,6 +1247,31 @@ impl RegistrationService {
         }
         Ok((descriptor, binding))
     }
+}
+
+/// An explicit address may not relabel a different conversation, even when
+/// another row happens to match the claimed session: a native claim naming a
+/// seat recorded for another native session is refused, as retired when that
+/// seat is retired. Pure, so it runs once before any host observation (plan
+/// 211, AC3: a retired context that keeps retrying pays no `ps`) and again
+/// under the registration lock, where it decides.
+fn explicit_session_conflict(
+    claim: &Registration,
+    session: &str,
+    seats: &[SeatDescriptor],
+) -> Option<RegistrationError> {
+    let seat = seats.iter().find(|seat| {
+        seat.id.as_str() == claim.id
+            && seat
+                .harness_session
+                .as_deref()
+                .is_some_and(|old| old != session)
+    })?;
+    Some(if seat.tombstoned_at.is_some() {
+        retired_refusal(seat, &claim.harness)
+    } else {
+        native_refusal("seat id belongs to a different native session")
+    })
 }
 
 fn retired_refusal(seat: &SeatDescriptor, claimed_harness: &str) -> RegistrationError {
@@ -2463,6 +2492,58 @@ mod tests {
             assert_eq!(resumed.tombstoned_at, None, "{proof}");
             assert_eq!(resumed.harness_session.as_deref(), Some("new-session"));
         }
+    }
+
+    /// Plan 211 (AC3): a native claim on a retired address recorded for
+    /// another session is refused as retired before any host observation, so
+    /// a retired context that keeps retrying launches no `ps`. The same claim
+    /// from the recorded session still pays for its proof.
+    #[tokio::test]
+    async fn a_retired_address_from_another_session_is_refused_before_any_observation() {
+        let mut old = native_seat("pij-retired-cheap");
+        old.tombstoned_at = Some(211);
+        old.tombstone_reason = Some("superseded".into());
+        let (service, registry) = native_service(vec![old.clone()], native_liveness()).await;
+        let tmux = native_tmux();
+        let observed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counting = |observed: std::sync::Arc<std::sync::atomic::AtomicUsize>| {
+            move |pid| {
+                observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                fixture_process(pid)
+            }
+        };
+        let error = service
+            .register_native_with_observer(
+                native_claim(old.id.as_str()),
+                Some("another-session".to_string()),
+                &tmux,
+                counting(std::sync::Arc::clone(&observed)),
+            )
+            .await
+            .expect_err("a retired address from another session");
+        assert!(
+            matches!(error, RegistrationError::Retired { ref seat, .. } if *seat == old.id),
+            "{error}"
+        );
+        assert_eq!(
+            observed.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "refused before any host observation"
+        );
+        assert_eq!(registry.get(&old.id).await.unwrap(), Some(old.clone()));
+        // Control: the recorded session's claim goes on to be observed.
+        let _ = service
+            .register_native_with_observer(
+                native_claim(old.id.as_str()),
+                Some(SESSION.to_string()),
+                &tmux,
+                counting(std::sync::Arc::clone(&observed)),
+            )
+            .await;
+        assert!(
+            observed.load(std::sync::atomic::Ordering::SeqCst) > 0,
+            "the instrument counts an observation when one happens"
+        );
     }
 
     #[tokio::test]

@@ -552,6 +552,14 @@ export class DaemonClient {
 				/^native Copilot registration refused: claimed pid is not an actual Copilot host executable; observed basename="[^"\\/\r\n]{1,255}", replaced=(?:true|false)$/.test(
 					envelope.meta,
 				);
+			// Plan 211 (AC4): this address is retired and this session may not take
+			// it; no retry can succeed, so the loops stop instead of re-registering.
+			const retired =
+				path === "/v1/register" &&
+				response.status === 400 &&
+				envelope?.v === 2 &&
+				envelope.ok === false &&
+				envelope.details?.code === "E-RS-SEAT-RETIRED";
 			const registrationRetry =
 				path === "/v1/register" &&
 				response.status === 409 &&
@@ -578,7 +586,11 @@ export class DaemonClient {
 					response.status === 401 ||
 					response.status === 429 ||
 					response.status >= 500,
-				hostRefusal || coldWake ? projected : `Pij HTTP ${response.status}`,
+				hostRefusal || coldWake
+					? projected
+					: retired
+						? "this seat address is retired (E-RS-SEAT-RETIRED); stopped re-registering"
+						: `Pij HTTP ${response.status}`,
 				registrationRetry && ["native-session", "native-holder"].includes(envelope.details.hold)
 					? envelope.details.hold
 					: undefined,
@@ -587,6 +599,7 @@ export class DaemonClient {
 			// The daemon withdrew this incarnation's registration; re-attest before an outage.
 			if (nativeUnavailable) error.revoked = true;
 			if (coldWake) error.coldWake = true;
+			if (retired) error.retired = true;
 			throw error;
 		}
 		return envelope;
@@ -1260,6 +1273,12 @@ export class NativeBridge {
 				await this.heartbeatDelay(lease.renew_after_ms, signal);
 			} catch (error) {
 				if (signal.aborted) return;
+				if (error instanceof NativeError && error.retired) {
+					// Plan 211 (AC4): a retired address never comes back to this session;
+					// stop both loops and say so once, instead of retrying every 5 s.
+					this.holdReceiving(error);
+					return;
+				}
 				if (error instanceof NativeError && error.holdKind === "native-holder") {
 					// A newer same-process session holds the seat (plan 168): stand by
 					// quietly, re-attesting on this session's own next prompt.
