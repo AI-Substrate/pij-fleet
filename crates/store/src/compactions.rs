@@ -1,8 +1,9 @@
 //! Compaction wakes (plan 222, F111, migration 0044).
 //!
-//! The compact control's admission records a pending row; the PA watchdog's
-//! round reads only the pending rows and settles each one, marking a wake
-//! BEFORE it sends, so a restart never sends twice.
+//! The compact control's admission records a pending row BEFORE it admits
+//! the compact; the PA watchdog's round reads only the pending rows and
+//! settles each one, marking a wake BEFORE it sends, so a restart never sends
+//! twice.
 
 use pij_core::compaction_wake::{PendingCompaction, STARTED_KINDS, Settled};
 use pij_core::error::Result;
@@ -13,9 +14,11 @@ use crate::migrate::{begin_write, owned_write, require_current_schema};
 use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64};
 
 impl SqliteOrchestration {
-    /// Record that `seat`'s compact control `msg_id` was admitted at `at`.
-    /// A replay records nothing new (`false`). Any older pending compaction of
-    /// the same seat is superseded in the same write.
+    /// Record that `seat`'s compact control `msg_id` is about to be
+    /// admitted, at `at`. A replay records nothing new (`false`). Committed
+    /// by an owned write, so it completes even if the caller is dropped.
+    /// Older pending rows of the same seat stay: the round supersedes them
+    /// only once this compact is delivered.
     ///
     /// # Errors
     /// Store failures, or an out-of-range time.
@@ -38,19 +41,6 @@ impl SqliteOrchestration {
             .map_err(adapter_error)?
             .rows_affected()
                 > 0;
-            if inserted {
-                sqlx::query(
-                    "UPDATE compaction_wakes SET settled = ?3, settled_at = ?4 \
-                     WHERE seat = ?1 AND msg_id != ?2 AND settled IS NULL",
-                )
-                .bind(&seat)
-                .bind(&msg_id)
-                .bind(Settled::Superseded.as_str())
-                .bind(at)
-                .execute(&mut *tx)
-                .await
-                .map_err(adapter_error)?;
-            }
             tx.commit().await.map_err(adapter_error)?;
             Ok(inserted)
         })

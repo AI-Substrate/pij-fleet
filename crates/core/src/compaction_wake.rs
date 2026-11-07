@@ -5,7 +5,7 @@
 //! it: a coder held its role for 17 hours that way. Every compaction pij
 //! drives goes through one place, the compact control's admission (a direct
 //! `pij send --command compact`, or the compact a memory turn held), and that
-//! records a pending row. The PA watchdog's round reads only the pending rows,
+//! records a pending row before it admits the compact. The PA watchdog's round reads only the pending rows,
 //! and once the compact has been delivered for [`COMPACT_SETTLE_MS`], the seat
 //! is idle, it has done nothing of its own since ([`STARTED_KINDS`]) and
 //! nothing is queued for it, it is sent ONE normal message from `pij-bg`
@@ -47,7 +47,8 @@ pub const COMPACTION_WAKE_REASON: &str = "pa-watchdog: compaction left a holder 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Settled {
-    /// The seat was sent the resume message.
+    /// The one attempt to send the resume message was made (marked before
+    /// it is sent; its delivery is in the audit, and it is not retried).
     Woken,
     /// The seat did something of its own, or was sent a message, after it.
     Resumed,
@@ -57,7 +58,7 @@ pub enum Settled {
     Gone,
     /// The compact was never delivered within [`COMPACT_DELIVERY_BOUND_MS`].
     Undelivered,
-    /// A newer compact of the same seat replaced it.
+    /// A newer compact of the same seat was delivered after it.
     Superseded,
 }
 

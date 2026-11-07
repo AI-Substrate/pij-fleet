@@ -361,17 +361,26 @@ async fn record(state: &AppState, seat: &SeatId, report: &Report) {
 /// The seat's open holdings: one indexed query. Empty for a non-holder, or
 /// when the store cannot say (the action then runs as it always did).
 pub(crate) async fn holdings(state: &AppState, seat: &SeatId) -> Vec<Holding> {
-    holdings_of(&state.services, seat).await
+    try_holdings_of(&state.services, seat)
+        .await
+        .unwrap_or_default()
 }
 
-/// [`holdings`], from the services alone (the watchdog round's form).
-pub(crate) async fn holdings_of(services: &crate::Services, seat: &SeatId) -> Vec<Holding> {
+/// The seat's open holdings, or the store's error: for a caller whose
+/// decision must not take "could not read" for "holds nothing" (the
+/// compaction wake, plan 222).
+///
+/// # Errors
+/// Store failures.
+pub(crate) async fn try_holdings_of(
+    services: &crate::Services,
+    seat: &SeatId,
+) -> pij_core::error::Result<Vec<Holding>> {
     let mut holdings: Vec<Holding> = services
         .directory
         .store()
         .open_assignments(seat.as_str())
-        .await
-        .unwrap_or_default()
+        .await?
         .into_iter()
         .map(|row| Holding {
             project: row.project,
@@ -383,7 +392,7 @@ pub(crate) async fn holdings_of(services: &crate::Services, seat: &SeatId) -> Ve
         (&a.project, &a.role, &a.instance).cmp(&(&b.project, &b.role, &b.instance))
     });
     holdings.dedup();
-    holdings
+    Ok(holdings)
 }
 
 /// The prompt a holder gets before `action`.

@@ -2,8 +2,13 @@
 //! F111).
 //!
 //! Rides the PA watchdog's 60 s round: no timer, poll or launch of its own.
-//! The round reads only the pending compactions (one read of a partial index,
-//! usually empty). For each, in order, cheapest first:
+//! `admit_control` records a pending row BEFORE it admits a compact, by a
+//! write that survives its caller being dropped, and refuses the compact if
+//! that write fails, so no compact is admitted untracked. The round reads
+//! only the pending compactions (one read of a partial index, usually empty),
+//! newest first within a seat: an older one is superseded once a newer one is
+//! delivered, and waits while a newer one is in flight. For the newest, in
+//! order, cheapest first:
 //!
 //! 1. the seat is gone: settled `gone`;
 //! 2. its compact is not delivered yet: wait, up to
@@ -15,7 +20,11 @@
 //! 5. it holds nothing (no open role holding, no open claim): settled
 //!    `holds-nothing`;
 //! 6. otherwise it is settled `woken` FIRST, then sent one normal message from
-//!    `pij-bg` naming what it holds, and its live parent an FYI.
+//!    `pij-bg` naming what it holds, and its live parent an FYI. `woken` means
+//!    the one attempt was made, not that it was delivered: there is no retry.
+//!
+//! A read that fails (delivery, events, queue, holdings, claims) leaves the
+//! row pending for the next round; it never settles one.
 //!
 //! Each pending row costs two indexed reads per round (its delivery outcome,
 //! and the seat's events since it); only a settled-age, idle row with nothing
@@ -31,7 +40,7 @@ use serde_json::json;
 
 use crate::Services;
 use crate::delivery::OUTCOME_EVENT_KIND;
-use crate::http::memory_turn::holdings_of;
+use crate::http::memory_turn::try_holdings_of;
 use crate::pa_watchdog::{RoundOutcome, audit, bg_msg, outcome_text, wake_pa_receipt};
 
 /// What the round does with one pending compaction now.
@@ -39,6 +48,12 @@ enum Step {
     Wait,
     Settle(Settled),
     Wake(Vec<String>),
+}
+
+/// One pending compaction's step, and whether its compact was delivered.
+struct Read {
+    step: Step,
+    delivered: bool,
 }
 
 /// Settle this round's pending compactions, waking each idle holder once.
@@ -55,27 +70,45 @@ pub(crate) async fn round(
         }
     };
     let mut outcomes = Vec::new();
-    for compaction in pending {
+    // Newest first within each seat. An older compaction is superseded only
+    // once a newer one of the same seat has been delivered, and waits while a
+    // newer one is still in flight; a newer compact that never lands (its
+    // caller dropped, or it was refused) is given up as undelivered and holds
+    // nothing back.
+    let mut newer: Option<(SeatId, bool)> = None;
+    for compaction in pending.iter().rev() {
         let seat = seats
             .iter()
             .find(|seat| seat.id == compaction.seat && seat.tombstoned_at.is_none());
-        let step = match seat {
-            None => Step::Settle(Settled::Gone),
-            Some(seat) => step(services, seat, &compaction, now_ms).await,
+        let newer_delivered = newer
+            .as_ref()
+            .filter(|(id, _)| *id == compaction.seat)
+            .map(|(_, delivered)| *delivered);
+        let step = match (seat, newer_delivered) {
+            (None, _) => Step::Settle(Settled::Gone),
+            (Some(_), Some(true)) => Step::Settle(Settled::Superseded),
+            (Some(_), Some(false)) => Step::Wait,
+            (Some(seat), None) => {
+                let read = step(services, seat, compaction, now_ms).await;
+                if !matches!(read.step, Step::Settle(Settled::Undelivered)) {
+                    newer = Some((compaction.seat.clone(), read.delivered));
+                }
+                read.step
+            }
         };
         match step {
             Step::Wait => {}
             Step::Settle(settled) => {
-                settle(services, &compaction, settled, now_ms).await;
+                settle(services, compaction, settled, now_ms).await;
             }
             Step::Wake(held) => {
                 let Some(seat) = seat else { continue };
                 // Persist before the send (P9): a restart or an overlapping
                 // round finds it settled and sends nothing.
-                if !settle(services, &compaction, Settled::Woken, now_ms).await {
+                if !settle(services, compaction, Settled::Woken, now_ms).await {
                     continue;
                 }
-                outcomes.push(wake(services, seats, seat, &compaction, &held, now_ms).await);
+                outcomes.push(wake(services, seats, seat, compaction, &held, now_ms).await);
             }
         }
     }
@@ -87,8 +120,12 @@ async fn step(
     seat: &SeatDescriptor,
     compaction: &PendingCompaction,
     now_ms: u64,
-) -> Step {
-    let delivered = match services
+) -> Read {
+    let wait = |delivered| Read {
+        step: Step::Wait,
+        delivered,
+    };
+    let found = match services
         .spine
         .latest_matching_message(&seat.id, OUTCOME_EVENT_KIND, &compaction.msg_id)
         .await
@@ -102,16 +139,22 @@ async fn step(
                 "pa watchdog: compaction wake: delivery of {}: {cause}",
                 seat.id
             );
-            return Step::Wait;
+            // Unknown: treat it as in flight, so an older one waits too.
+            return wait(false);
         }
     };
     let Some((delivered_seq, delivered_at)) =
-        delivered.and_then(|event| event.seq.map(|seq| (seq.0, event.at)))
+        found.and_then(|event| event.seq.map(|seq| (seq.0, event.at)))
     else {
-        return if now_ms.saturating_sub(compaction.admitted_at_ms) >= COMPACT_DELIVERY_BOUND_MS {
-            Step::Settle(Settled::Undelivered)
-        } else {
-            Step::Wait
+        let given_up =
+            now_ms.saturating_sub(compaction.admitted_at_ms) >= COMPACT_DELIVERY_BOUND_MS;
+        return Read {
+            step: if given_up {
+                Step::Settle(Settled::Undelivered)
+            } else {
+                Step::Wait
+            },
+            delivered: false,
         };
     };
     match services
@@ -119,18 +162,23 @@ async fn step(
         .started_since(&seat.id, delivered_seq)
         .await
     {
-        Ok(true) => return Step::Settle(Settled::Resumed),
+        Ok(true) => {
+            return Read {
+                step: Step::Settle(Settled::Resumed),
+                delivered: true,
+            };
+        }
         Ok(false) => {}
         Err(cause) => {
             eprintln!(
                 "pa watchdog: compaction wake: events of {}: {cause}",
                 seat.id
             );
-            return Step::Wait;
+            return wait(true);
         }
     }
     if now_ms.saturating_sub(delivered_at) < COMPACT_SETTLE_MS || seat.state != SystemState::Idle {
-        return Step::Wait;
+        return wait(true);
     }
     match services
         .queue
@@ -138,20 +186,30 @@ async fn step(
         .await
     {
         Ok(None) => {}
-        Ok(Some(_)) => return Step::Wait,
+        Ok(Some(_)) => return wait(true),
         Err(cause) => {
             eprintln!(
                 "pa watchdog: compaction wake: queue of {}: {cause}",
                 seat.id
             );
-            return Step::Wait;
+            return wait(true);
         }
     }
-    let mut held: Vec<String> = holdings_of(services, &seat.id)
-        .await
-        .iter()
-        .map(crate::http::memory_turn::Holding::label)
-        .collect();
+    // A failed read is never "holds nothing" (review of #167, F001): the row
+    // waits for the next round.
+    let mut held: Vec<String> = match try_holdings_of(services, &seat.id).await {
+        Ok(holdings) => holdings
+            .iter()
+            .map(crate::http::memory_turn::Holding::label)
+            .collect(),
+        Err(cause) => {
+            eprintln!(
+                "pa watchdog: compaction wake: holdings of {}: {cause}",
+                seat.id
+            );
+            return wait(true);
+        }
+    };
     match services.watchdogs().open_claims(&seat.id).await {
         Ok(claims) => held.extend(claims.iter().map(|claim| {
             format!(
@@ -166,13 +224,16 @@ async fn step(
                 "pa watchdog: compaction wake: claims of {}: {cause}",
                 seat.id
             );
-            return Step::Wait;
+            return wait(true);
         }
     }
-    if held.is_empty() {
-        Step::Settle(Settled::HoldsNothing)
-    } else {
-        Step::Wake(held)
+    Read {
+        step: if held.is_empty() {
+            Step::Settle(Settled::HoldsNothing)
+        } else {
+            Step::Wake(held)
+        },
+        delivered: true,
     }
 }
 
@@ -264,15 +325,23 @@ async fn wake(
     }
 }
 
-/// Record a compact control just admitted, for the round to settle.
-pub(crate) async fn record(services: &Services, seat: &SeatId, msg_id: &str, at: u64) {
-    if let Err(cause) = services
+/// Record a compact control about to be admitted, for the round to settle.
+/// Committed by a write that completes even if its caller is dropped; the
+/// caller admits the compact only after this returns `Ok`.
+///
+/// # Errors
+/// Store failures: the compact must then not be admitted.
+pub(crate) async fn record(
+    services: &Services,
+    seat: &SeatId,
+    msg_id: &str,
+    at: u64,
+) -> pij_core::error::Result<()> {
+    services
         .watchdogs()
         .record_compaction(seat, msg_id, at)
         .await
-    {
-        eprintln!("pij-rs could not record the compaction of {seat}: {cause}");
-    }
+        .map(|_| ())
 }
 
 #[cfg(test)]

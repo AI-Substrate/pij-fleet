@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -104,7 +105,9 @@ async fn append(services: &crate::Services, kind: &str, at: u64, payload: serde_
 /// A compact control admitted at `at` (recorded as `admit_control` records
 /// it), pushed, then delivered a second later: wildcat's 23:02:35 to 23:03:01.
 async fn compact(services: &crate::Services, msg_id: &str, at: u64) {
-    crate::compaction_wake::record(services, &SeatId::from(SEAT), msg_id, at).await;
+    crate::compaction_wake::record(services, &SeatId::from(SEAT), msg_id, at)
+        .await
+        .unwrap();
     append(
         services,
         "message.pushed",
@@ -360,8 +363,9 @@ async fn only_a_turn_report_or_message_after_the_compact_cancels_the_wake() {
     }
 }
 
-/// bp-0001: a new compaction re-arms the wake; a newer compact supersedes an
-/// older one still pending; a compact never delivered is given up on.
+/// bp-0001: a new compaction re-arms the wake; an older compaction still
+/// pending is superseded once a newer one is delivered; a compact never
+/// delivered is given up on.
 #[tokio::test]
 async fn a_new_compaction_rearms_the_wake() {
     let (services, _store, _config, folder) = services().await;
@@ -378,12 +382,15 @@ async fn a_new_compaction_rearms_the_wake() {
     assert_eq!(resumes(&services).await.len(), 1);
 
     let seat = SeatId::from(SEAT);
-    crate::compaction_wake::record(&services, &seat, "m-stuck", first + MINUTE).await;
+    crate::compaction_wake::record(&services, &seat, "m-stuck", first + MINUTE)
+        .await
+        .unwrap();
     let second = first + 2 * MINUTE;
     compact(&services, "m-second", second).await;
     assert_eq!(
-        settled(&services, "m-stuck").await.as_deref(),
-        Some("superseded")
+        settled(&services, "m-stuck").await,
+        None,
+        "recording a newer compact supersedes nothing"
     );
     assert_eq!(
         wakes(
@@ -395,10 +402,16 @@ async fn a_new_compaction_rearms_the_wake() {
         .len(),
         1
     );
+    assert_eq!(
+        settled(&services, "m-stuck").await.as_deref(),
+        Some("superseded")
+    );
     assert_eq!(resumes(&services).await.len(), 1);
 
     let lost = second + 10 * MINUTE;
-    crate::compaction_wake::record(&services, &seat, "m-lost", lost).await;
+    crate::compaction_wake::record(&services, &seat, "m-lost", lost)
+        .await
+        .unwrap();
     let _ = watchdog
         .round(&services, INTERVAL, lost + COMPACT_DELIVERY_BOUND_MS)
         .await
@@ -408,4 +421,223 @@ async fn a_new_compaction_rearms_the_wake() {
         Some("undelivered")
     );
     assert!(resumes(&services).await.is_empty());
+}
+
+/// Review of #167, F002: a newer compact recorded but never admitted (its
+/// caller dropped) holds an older compaction back only while it could still
+/// land; once it is given up, the older one wakes the seat.
+#[tokio::test]
+async fn an_older_compaction_waits_for_a_newer_one_and_goes_on_if_it_never_lands() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold_role(&services).await;
+    let watchdog = PaWatchdog::default();
+    let start = crate::http::system_time_ms().unwrap();
+    compact(&services, "m-old", start).await;
+    crate::compaction_wake::record(&services, &SeatId::from(SEAT), "m-new", start + MINUTE)
+        .await
+        .unwrap();
+
+    assert!(
+        wakes(
+            watchdog
+                .round(&services, INTERVAL, start + COMPACT_SETTLE_MS + MINUTE)
+                .await
+                .unwrap()
+        )
+        .is_empty(),
+        "a newer compact is in flight"
+    );
+    assert_eq!(settled(&services, "m-old").await, None);
+
+    let given_up = start + MINUTE + COMPACT_DELIVERY_BOUND_MS;
+    assert_eq!(
+        wakes(watchdog.round(&services, INTERVAL, given_up).await.unwrap()).len(),
+        1
+    );
+    assert_eq!(
+        settled(&services, "m-new").await.as_deref(),
+        Some("undelivered")
+    );
+    assert_eq!(settled(&services, "m-old").await.as_deref(), Some("woken"));
+    assert_eq!(resumes(&services).await.len(), 1);
+}
+
+/// Review of #167, F001: a holdings read that fails is never "holds nothing".
+/// A seat holding only a role stays pending while the read fails, then is
+/// woken once when it recovers.
+#[tokio::test]
+async fn a_failed_holdings_read_leaves_the_compaction_pending() {
+    let (services, store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    hold_role(&services).await;
+    let start = crate::http::system_time_ms().unwrap();
+    compact(&services, "m-compact", start).await;
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query("ALTER TABLE community_assignments RENAME TO pij_test_assignments_away")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let due = start + COMPACT_SETTLE_MS + MINUTE;
+    for minute in 0..3 {
+        assert!(
+            wakes(
+                watchdog
+                    .round(&services, INTERVAL, due + minute * MINUTE)
+                    .await
+                    .unwrap()
+            )
+            .is_empty()
+        );
+    }
+    assert_eq!(settled(&services, "m-compact").await, None, "still owed");
+
+    sqlx::query("ALTER TABLE pij_test_assignments_away RENAME TO community_assignments")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        wakes(
+            watchdog
+                .round(&services, INTERVAL, due + 3 * MINUTE)
+                .await
+                .unwrap()
+        )
+        .len(),
+        1
+    );
+    let sent = resumes(&services).await;
+    assert_eq!(sent.len(), 1);
+    assert!(
+        sent[0]
+            .body
+            .starts_with("resume: you hold coder/222 (project pij-fleet);")
+    );
+}
+
+fn compact_msg(msg_id: &str) -> Msg {
+    Msg {
+        from: SeatId::from(PARENT),
+        to: SeatId::from(SEAT),
+        body: String::new(),
+        msg_id: msg_id.into(),
+        from_machine: None,
+        in_reply_to: None,
+        command: Some("compact".into()),
+    }
+}
+
+/// Live jobs queued for the seat (deliveries and controls).
+async fn queued(services: &crate::Services) -> usize {
+    let seat = SeatId::from(SEAT);
+    services
+        .queue
+        .live_payloads(&[
+            pij_core::delivery::delivery_kind(&seat),
+            pij_core::delivery::control_kind(&seat),
+        ])
+        .await
+        .unwrap()
+        .len()
+}
+
+async fn pending(services: &crate::Services) -> Vec<String> {
+    services
+        .watchdogs()
+        .pending_compactions()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.msg_id)
+        .collect()
+}
+
+/// Review of #167, F002: the row is written before the compact is admitted,
+/// and a failed write refuses the compact, so none is admitted untracked.
+/// After the store recovers the same compact is admitted and recorded, and a
+/// replay of it adds neither a row nor a second control.
+#[tokio::test]
+async fn a_failed_tracking_write_refuses_the_compact_until_it_recovers() {
+    let (services, store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    let state = crate::http::test_state(services.clone());
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query(
+        "CREATE TRIGGER pij_test_track BEFORE INSERT ON compaction_wakes \
+         BEGIN SELECT RAISE(ABORT, 'injected tracking failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        crate::http::admit_control(&state, compact_msg("m-compact"))
+            .await
+            .is_err(),
+        "refused, not admitted untracked"
+    );
+    assert_eq!(queued(&services).await, 0);
+    assert!(pending(&services).await.is_empty());
+
+    sqlx::query("DROP TRIGGER pij_test_track")
+        .execute(&pool)
+        .await
+        .unwrap();
+    crate::http::admit_control(&state, compact_msg("m-compact"))
+        .await
+        .expect("admitted once the store recovers");
+    assert_eq!(pending(&services).await, ["m-compact"]);
+    assert_eq!(queued(&services).await, 1);
+    crate::http::admit_control(&state, compact_msg("m-compact"))
+        .await
+        .expect("a replay");
+    assert_eq!(pending(&services).await, ["m-compact"]);
+    assert_eq!(queued(&services).await, 1, "replay dedup unchanged");
+}
+
+/// Review of #167, F002: a caller dropped at any point of `admit_control`
+/// never leaves a compact admitted without its row. Each case polls the
+/// admission a few more times before dropping it; the owned work it started
+/// is then let finish.
+#[tokio::test]
+async fn a_dropped_caller_never_leaves_a_compact_admitted_untracked() {
+    let mut admitted_after_drop = 0;
+    for polls in 1..=64 {
+        let (services, _store, _config, folder) = services().await;
+        fleet(&services, &folder).await;
+        let state = crate::http::test_state(services.clone());
+        let mut admission = Box::pin(crate::http::admit_control(&state, compact_msg("m-cancel")));
+        let mut finished = false;
+        for _ in 0..polls {
+            let ready = std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(admission.as_mut().poll(cx).is_ready())
+            })
+            .await;
+            if ready {
+                finished = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        drop(admission);
+        // Let any owned write or admission the dropped caller started finish.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let admitted = queued(&services).await;
+        let recorded = pending(&services).await;
+        assert!(
+            admitted == 0 || recorded == ["m-cancel"],
+            "dropped after {polls} polls: {admitted} admitted, rows {recorded:?}"
+        );
+        if admitted > 0 && !finished {
+            admitted_after_drop += 1;
+        }
+        if finished {
+            assert_eq!((admitted, recorded.len()), (1, 1));
+            break;
+        }
+    }
+    assert!(
+        admitted_after_drop > 0,
+        "some case dropped the caller with the admission in flight"
+    );
 }
