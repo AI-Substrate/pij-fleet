@@ -14,5 +14,6 @@
 - [2026-11-06 Output publication and answer authority](2026-11-06-output-publication-and-answer-authority.dd.md): Read before changing output answer finalization or forced requester notification. (outputs, authorization, notifications)
 - [2026-11-06 Role queue claims and recovery admission](2026-11-06-role-queue-claims-and-recovery-admission.dd.md): Read before changing role-send claiming, boot recovery or cold-drain audits. (role-queue, recovery, audit)
 - [2026-11-06 Role withdrawal authority and body privacy](2026-11-06-role-withdrawal-authority-and-body-privacy.dd.md): Read before changing role lifecycle withdrawal, refusal projections or body-echo FYIs. (role-lifecycle, privacy, withdrawal)
+- [2026-11-07 Counter cardinality and byte bounds](2026-11-07-counter-cardinality-and-byte-bounds.dd.md): Read before adding client-labelled diagnostics, retaining seat identifiers, or claiming counters are bounded and private. (counters, privacy, availability, proof)
 - [2026-11-07 Scoped digest reads fail closed](2026-11-07-scoped-digest-reads-fail-closed.dd.md): Read before changing digest scope resolution or reviewing queued role-request metadata exposure. (digest, scope, privacy, proof)
 <!-- /pij:generated -->
