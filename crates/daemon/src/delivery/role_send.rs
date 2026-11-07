@@ -31,6 +31,7 @@ use crate::Services;
 use crate::community::directory::{AfterAssign, E_ROLE_MISSING};
 use crate::community::holders::seat_role_for;
 use crate::community::layout::RolePaths;
+use crate::community::picture::command;
 use crate::community::{Refusal, root};
 
 /// Every role address starts with this.
@@ -348,23 +349,31 @@ fn several_holders(send: &RoleSend, several: &[(&Assignment, SeatDescriptor)]) -
             E_ROLE_HOLDERS,
             format!("{head}; address one by its instance, or send to the seat"),
         )
-        .with_next(format!(
-            "pij send {ROLE_PREFIX}{role}/{} \"<text>\"",
-            row.instance
-        )),
+        .with_next(command(&[
+            "pij",
+            "send",
+            &format!("{ROLE_PREFIX}{role}/{}", row.instance),
+            "<text>",
+        ])),
         None => Refusal::new(
             E_ROLE_HOLDERS,
             format!(
                 "{head}; none has an instance, so an instance cannot pick one. Send to a seat \
-                 (pij send {} \"<text>\"), or give each holding an instance, as per-PR verdict \
-                 roles do",
-                several[0].1.id
+                 ({}), or give each holding an instance, as per-PR verdict roles do",
+                command(&["pij", "send", several[0].1.id.as_str(), "<text>"])
             ),
         )
-        .with_next(format!(
-            "pij directory assign {role}/<instance> {} --why \"<why>\" --project {}",
-            several[0].1.id, send.project
-        )),
+        .with_next(command(&[
+            "pij",
+            "directory",
+            "assign",
+            &format!("{role}/<instance>"),
+            several[0].1.id.as_str(),
+            "--why",
+            "<why>",
+            "--project",
+            &send.project,
+        ])),
     }
 }
 
@@ -379,7 +388,7 @@ fn no_such_instance(send: &RoleSend, live: &[SeatId]) -> Refusal {
             "role {role} has one holder and no holding has instance {}; address it as {ROLE_PREFIX}{role}",
             send.address.instance
         ))
-        .with_next(format!("pij send {ROLE_PREFIX}{role} \"<text>\"")),
+        .with_next(command(&["pij", "send", &format!("{ROLE_PREFIX}{role}"), "<text>"])),
         several => refusal(format!(
             "role {role} has one holder, but {} seats hold it ({}) and none has instance {}; send to a seat",
             several.len(),
@@ -390,7 +399,7 @@ fn no_such_instance(send: &RoleSend, live: &[SeatId]) -> Refusal {
                 .join(", "),
             send.address.instance
         ))
-        .with_next(format!("pij send {} \"<text>\"", several[0])),
+        .with_next(command(&["pij", "send", several[0].as_str(), "<text>"])),
     }
 }
 
@@ -512,7 +521,7 @@ fn role_document(repo: &Path, project: &str, role: &str) -> Result<Value, Refusa
             E_ROLE_MISSING,
             format!("project {project} has no role {role} in its directory"),
         )
-        .with_next(format!("pij directory view --project {project}"))
+        .with_next(command(&["pij", "directory", "view", "--project", project]))
     };
     let text = std::fs::read_to_string(&path).map_err(|_| missing())?;
     serde_json::from_str(&text).map_err(|error| {
@@ -563,7 +572,7 @@ async fn check_seat_role(
                 "{seat} holds {role} in the directory, which makes it a {expected}, but seat_roles records it as {actual}"
             ),
         )
-        .with_next(format!("pij role {seat} {expected}"))),
+        .with_next(command(&["pij", "role", seat.as_str(), expected]))),
         _ => Ok(()),
     }
 }
@@ -672,12 +681,23 @@ async fn wake_body(
             |tokens| format!("context {}", human_tokens(tokens)),
         );
         text.push_str(&format!(
-            "\n  revive the last holder {last} ({context}): pij-rs revive {last}"
+            "\n  revive the last holder {last} ({context}): {}",
+            command(&["pij-rs", "revive", last.as_str()])
         ));
     }
     text.push_str(&format!(
-        "\n  assign a fresh seat: pij directory assign {assign_target} <seat> --why \"<why>\" --project {}",
-        request.project
+        "\n  assign a fresh seat: {}",
+        command(&[
+            "pij",
+            "directory",
+            "assign",
+            &assign_target,
+            "<seat>",
+            "--why",
+            "<why>",
+            "--project",
+            &request.project,
+        ])
     ));
     text.push_str(
         "\nAssigning delivers the queue to the new holder. pij never starts a seat itself.",
@@ -1324,11 +1344,17 @@ async fn notice(
         instance: request.instance.clone(),
     }
     .display();
-    let release = format!(
-        "pij directory release {} {holder} --why \"<why>\" --project {}",
+    let release = command(&[
+        "pij",
+        "directory",
+        "release",
         address.trim_start_matches(ROLE_PREFIX),
-        request.project,
-    );
+        holder.as_str(),
+        "--why",
+        "<why>",
+        "--project",
+        &request.project,
+    ]);
     let body = match silence {
         Silence::Unanswered => format!(
             "[pij time limit] {holder} has not answered the check-in for request {} ({address} in {}, from {}): \

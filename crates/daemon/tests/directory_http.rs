@@ -2628,6 +2628,47 @@ async fn a_role_send_reaches_its_one_holder_and_records_the_request() {
     rig.server.abort();
 }
 
+/// #149 S002: a holding's instance is stored text. The refusal's printed
+/// command quotes it as one word, so running the line never runs it.
+#[tokio::test]
+async fn a_hostile_instance_is_one_quoted_word_in_the_printed_command() {
+    let repo = repo("pij-role-send-hostile");
+    let rig = rig(Arc::new(NoHook)).await;
+    with_roles(rig.addr, &repo).await;
+    for (target, seat) in [
+        ("reviewer/1$(id)", "pij-holder"),
+        ("reviewer/2;id", "pij-second"),
+    ] {
+        let assigned = call(
+            rig.addr,
+            "/v1/directory",
+            &["directory", "assign", target, seat, "--why", "review"],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(assigned["ok"], true, "{assigned}");
+    }
+    let both = send_to(
+        rig.addr,
+        &repo.main,
+        "role:reviewer",
+        "req-hostile",
+        json!({}),
+    )
+    .await;
+    assert_eq!(refusal_code(&both), "E-RS-ROLE-HOLDERS", "{both}");
+    let next = both["details"]["next"].as_str().unwrap_or_default();
+    assert!(
+        [
+            "pij send 'role:reviewer/1$(id)' '<text>'",
+            "pij send 'role:reviewer/2;id' '<text>'",
+        ]
+        .contains(&next),
+        "{both}"
+    );
+    rig.server.abort();
+}
+
 /// Plan 199, AC1 and AC4: two live holders of a many-holder role refuse with
 /// both named; an instance address reaches only that instance's holder.
 #[tokio::test]
@@ -2657,7 +2698,7 @@ async fn several_holders_refuse_by_name_and_an_instance_reaches_only_its_holder(
         "{both}"
     );
     assert_eq!(
-        both["details"]["next"], "pij send role:reviewer/196 \"<text>\"",
+        both["details"]["next"], "pij send role:reviewer/196 '<text>'",
         "{both}"
     );
     let one = send_to(
@@ -2771,7 +2812,7 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
         .unwrap_or_else(|| panic!("the PA was woken: {wakes:?}"));
     assert!(wake.contains("revive the last holder pij-holder"), "{wake}");
     assert!(
-        wake.contains("pij directory assign pm-001 <seat> --why \"<why>\" --project fleet"),
+        wake.contains("pij directory assign pm-001 '<seat>' --why '<why>' --project fleet"),
         "{wake}"
     );
     assert!(wake.contains("pij never starts a seat itself"), "{wake}");
@@ -3730,7 +3771,7 @@ async fn role_send_refusals_never_advise_each_other_in_a_loop() {
     );
     assert_eq!(
         both["details"]["next"],
-        "pij directory assign pm-001/<instance> pij-holder --why \"<why>\" --project fleet"
+        "pij directory assign 'pm-001/<instance>' pij-holder --why '<why>' --project fleet"
     );
     let instance = send_to(
         rig.addr,
@@ -3742,7 +3783,7 @@ async fn role_send_refusals_never_advise_each_other_in_a_loop() {
     .await;
     assert_eq!(refusal_code(&instance), "E-RS-ROLE-ADDRESS", "{instance}");
     assert_eq!(
-        instance["details"]["next"], "pij send pij-holder \"<text>\"",
+        instance["details"]["next"], "pij send pij-holder '<text>'",
         "never back to role:pm-001, which refuses: {instance}"
     );
 
