@@ -17,7 +17,10 @@
 //! issues a random per-incarnation grant ([`ReportedContext::grant`]),
 //! returned only in that registration's own response; a report must present
 //! it ([`ReportedContext::authorized`]). A new process incarnation gets a new
-//! grant and the old one stops working.
+//! grant and the old one stops working. Registration itself does not prove
+//! the caller is the seat's host (F88, PRD 003), so a caller with a live
+//! seat's roster identifiers can re-register and get its grant; every reissue
+//! of a standing grant is therefore audited as `context.grant.reissued`.
 //!
 //! **Generations** (review F002). Every activity post bumps the seat's
 //! generation ([`ReportedContext::touch`]), so the PA watchdog re-reads an idle
@@ -68,15 +71,17 @@ impl ReportedContext {
     }
 
     /// The report grant for `seat`'s incarnation `proc`: the standing one when
-    /// the incarnation is unchanged (a heartbeat re-registration), else a new
-    /// random token that replaces it.
+    /// the incarnation is unchanged (a re-registration), else a new random
+    /// token that replaces it. The flag is `true` when the standing grant was
+    /// handed out again: registration does not prove the caller is the seat's
+    /// host (F88), so the caller audits every reissue.
     ///
     /// # Errors
     /// The system random source failed.
-    pub fn grant(&self, seat: &SeatId, proc: Option<ProcIdentity>) -> Result<String> {
+    pub fn grant(&self, seat: &SeatId, proc: Option<ProcIdentity>) -> Result<(String, bool)> {
         let mut state = self.lock();
         if let Some(grant) = state.grants.get(seat).filter(|grant| grant.proc == proc) {
-            return Ok(grant.token.clone());
+            return Ok((grant.token.clone(), true));
         }
         let mut secret = [0_u8; 32];
         getrandom::fill(&mut secret).map_err(|error| PijError::Adapter {
@@ -94,7 +99,7 @@ impl ReportedContext {
                 proc,
             },
         );
-        Ok(token)
+        Ok((token, false))
     }
 
     /// Does `presented` match `seat`'s grant for its current incarnation
@@ -244,11 +249,12 @@ mod tests {
             pid: 10,
             proc_start: 1,
         });
-        let token = reports.grant(&seat, first).unwrap();
+        let (token, reissued) = reports.grant(&seat, first).unwrap();
+        assert!(!reissued);
         assert_eq!(
             reports.grant(&seat, first).unwrap(),
-            token,
-            "a heartbeat keeps it"
+            (token.clone(), true),
+            "a re-registration gets it again, flagged"
         );
         assert!(reports.authorized(&seat, first, &token));
         assert!(!reports.authorized(&seat, first, "forged"));
@@ -261,7 +267,8 @@ mod tests {
             !reports.authorized(&seat, next, &token),
             "the seat was relaunched"
         );
-        let renewed = reports.grant(&seat, next).unwrap();
+        let (renewed, reissued) = reports.grant(&seat, next).unwrap();
+        assert!(!reissued);
         assert_ne!(renewed, token);
         assert!(
             !reports.authorized(&seat, first, &token),

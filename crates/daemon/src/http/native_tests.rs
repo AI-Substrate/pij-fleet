@@ -4142,3 +4142,89 @@ async fn native_typing_http_unavailable_observation_preserves_reported_status_an
         server.abort();
     }
 }
+
+/// Plan 217, review S153-001, KNOWN LIMIT (F88, PRD 003): registration does
+/// not prove the caller is the seat's host, so a second caller presenting a
+/// live seat's roster identifiers re-registers and is handed its standing
+/// context grant, and with it can report that seat's size. This test pins the
+/// limit and its mitigation: the reissue is audited exactly once, with the
+/// caller's evidence and never the token; a first registration audits
+/// nothing.
+#[tokio::test]
+async fn reissued_grant_is_audited_known_limit_f88() {
+    let host = HostFixture::spawn();
+    let (mut victim, _) = contract_identity();
+    victim.id = "pij-victim".into();
+    victim.proc = Some(host.identity().await);
+    victim.pane = Some("%151-victim".into());
+    let store = FreshStore::new();
+    let services = native_host_services(&store, &victim.folder, &["%151-victim"]).await;
+    let spine = services.spine.clone();
+    services.registry.put(victim.clone()).await.unwrap();
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    let register = || {
+        native_http_response(
+            client
+                .post(format!("http://{addr}/v1/register"))
+                .json(&native_registration(&victim)),
+            reqwest::StatusCode::OK,
+        )
+    };
+    let reissues = || {
+        let spine = spine.clone();
+        async move {
+            spine
+                .tail(None, pij_core::model::Seq(0))
+                .await
+                .unwrap()
+                .into_iter()
+                .filter(|event| event.kind == super::GRANT_REISSUED_KIND)
+                .collect::<Vec<_>>()
+        }
+    };
+
+    let own = register().await;
+    let own_grant = own["data"]["context_token"].as_str().unwrap().to_string();
+    assert!(
+        reissues().await.is_empty(),
+        "a first registration audits nothing"
+    );
+
+    // Another caller with the victim's roster identifiers.
+    let stolen = register().await;
+    let stolen_grant = stolen["data"]["context_token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(stolen_grant, own_grant, "the known limit: the same grant");
+    let audited = reissues().await;
+    assert_eq!(audited.len(), 1, "{audited:?}");
+    assert_eq!(audited[0].seat.as_ref(), Some(&victim.id));
+    assert!(!audited[0].payload.contains(&own_grant), "never the token");
+    let evidence: Value = serde_json::from_str(&audited[0].payload).unwrap();
+    assert_eq!(evidence["pane"], "%151-victim");
+    assert_eq!(evidence["pid"], victim.proc.unwrap().pid);
+    assert!(
+        evidence["origin"]
+            .as_str()
+            .is_some_and(|origin| origin.starts_with("127.0.0.1:"))
+    );
+
+    // At registration's strength the stolen grant reports a size.
+    let reported = native_http_response(
+        client
+            .post(format!("http://{addr}/v1/activity"))
+            .json(&json!({
+                "seat": victim.id,
+                "native_session": victim.harness_session,
+                "state": "idle",
+                "context_tokens": 650_000,
+                "context_token": stolen_grant,
+            })),
+        reqwest::StatusCode::OK,
+    )
+    .await;
+    assert_eq!(reported["ok"], true, "{reported}");
+    server.abort();
+}

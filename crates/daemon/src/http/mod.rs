@@ -948,11 +948,69 @@ struct RegistrationResponse {
     context_token: Option<String>,
 }
 
+/// The spine kind of a re-issued context grant (plan 217, F88).
+pub const GRANT_REISSUED_KIND: &str = "context.grant.reissued";
+
+/// Record that a registration was handed a seat's standing context grant,
+/// with everything the caller claimed and the connection it came from. A
+/// failed write is logged; it never fails the registration.
+#[allow(clippy::too_many_arguments)]
+async fn audit_grant_reissue(
+    state: &AppState,
+    seat: &SeatDescriptor,
+    claimed: &Registration,
+    session: Option<&str>,
+    attempt: Option<&str>,
+    binding: RegistrationBinding,
+    proc_source: Option<ProcSource>,
+    origin: Option<std::net::SocketAddr>,
+) {
+    let at = match system_time_ms() {
+        Ok(at) => at,
+        Err(error) => {
+            eprintln!(
+                "pij register: {GRANT_REISSUED_KIND} for {}: {error}",
+                seat.id
+            );
+            return;
+        }
+    };
+    let payload = serde_json::json!({
+        "seat": seat.id,
+        "claimed_id": claimed.id,
+        "harness": claimed.harness,
+        "folder": claimed.folder,
+        "pane": claimed.pane,
+        "pid": claimed.pid,
+        "proc_start": claimed.proc_start,
+        "session": session,
+        "attempt": attempt,
+        "binding": binding,
+        "proc_source": proc_source,
+        "origin": origin.map(|peer| peer.to_string()),
+    });
+    let event = pij_core::model::Event {
+        seq: None,
+        v: pij_core::wire::EVENT_VERSION,
+        at,
+        kind: GRANT_REISSUED_KIND.to_string(),
+        seat: Some(seat.id.clone()),
+        payload: payload.to_string(),
+    };
+    if let Err(error) = state.services.event_bus.publish(event).await {
+        eprintln!(
+            "pij register: {GRANT_REISSUED_KIND} for {}: {error}",
+            seat.id
+        );
+    }
+}
+
 /// Composition: the service returns `(descriptor, report)` from its committed
 /// `put_reporting`; derive `created` on insert, `rebound` on a changed process,
 /// otherwise `same`, and flatten the descriptor into this response only.
 async fn register(
     State(state): State<AppState>,
+    connection: Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     Json(mut request): Json<RegistrationRequest>,
 ) -> Response {
     use crate::registration::attempts::{Outcome, Path};
@@ -1031,6 +1089,10 @@ async fn register(
         }
     }
     let native = request.native_extension_delivery;
+    // What the caller claimed, kept for the grant-reissue audit (plan 217).
+    let claimed = request.claim.clone();
+    let claimed_session = request.harness_session.clone();
+    let attempt = request.attempt.clone();
     let registered = state
         .registration
         .register_via(
@@ -1063,7 +1125,7 @@ async fn register(
             // response is how two answers to one question start drifting.
             // A failed grant leaves the seat without size reports, never
             // unregistered.
-            let context_token = native
+            let grant = native
                 .then(|| {
                     state
                         .services
@@ -1073,6 +1135,23 @@ async fn register(
                         .ok()
                 })
                 .flatten();
+            // Registration does not prove the caller is this seat's host (F88,
+            // PRD 003): a standing grant handed out again is audited with the
+            // caller's evidence, and never the token, so a theft is visible.
+            if let Some((_, true)) = &grant {
+                audit_grant_reissue(
+                    &state,
+                    &descriptor,
+                    &claimed,
+                    claimed_session.as_deref(),
+                    attempt.as_deref(),
+                    binding,
+                    proc_source,
+                    connection.map(|Extension(axum::extract::ConnectInfo(peer))| peer),
+                )
+                .await;
+            }
+            let context_token = grant.map(|(token, _)| token);
             let mut answer = Envelope::ok(
                 "pij register",
                 RegistrationResponse {

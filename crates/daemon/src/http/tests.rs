@@ -8240,7 +8240,7 @@ async fn a_size_posted_at_a_turn_boundary_reaches_the_state_card() {
         Arc::clone(&services.reported_context),
     ));
     let victim = cold_seat(pij_core::model::SystemState::Idle);
-    let grant = services
+    let (grant, _) = services
         .reported_context
         .grant(&victim.id, victim.proc)
         .expect("grant");
