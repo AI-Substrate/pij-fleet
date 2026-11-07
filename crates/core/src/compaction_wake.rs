@@ -84,7 +84,8 @@ pub struct PendingCompaction {
     pub seat: SeatId,
     /// The compact control's message id.
     pub msg_id: String,
-    /// When the compact was admitted, epoch ms.
+    /// When the compact was admitted, epoch ms: only for how long it has
+    /// waited for delivery, never for order (the store orders by sequence).
     pub admitted_at_ms: u64,
 }
 

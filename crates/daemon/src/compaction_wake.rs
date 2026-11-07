@@ -6,7 +6,8 @@
 //! write that survives its caller being dropped, and refuses the compact if
 //! that write fails, so no compact is admitted untracked. The round reads
 //! only the pending compactions (one read of a partial index, usually empty),
-//! newest first within a seat: an older one is superseded once a newer one is
+//! newest first within a seat by admission order (the row's `seq`, never the
+//! wall clock): an older one is superseded once a newer one is
 //! delivered, and waits while a newer one is in flight. For the newest, in
 //! order, cheapest first:
 //!
@@ -70,7 +71,9 @@ pub(crate) async fn round(
         }
     };
     let mut outcomes = Vec::new();
-    // Newest first within each seat. An older compaction is superseded only
+    // Newest first within each seat, by admission order (`seq`; the store
+    // returns them so, and a clock step never reorders them). An older
+    // compaction is superseded only
     // once a newer one of the same seat has been delivered, and waits while a
     // newer one is still in flight; a newer compact that never lands (its
     // caller dropped, or it was refused) is given up as undelivered and holds

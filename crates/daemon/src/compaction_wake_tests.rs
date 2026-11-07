@@ -463,6 +463,46 @@ async fn an_older_compaction_waits_for_a_newer_one_and_goes_on_if_it_never_lands
     assert_eq!(resumes(&services).await.len(), 1);
 }
 
+/// Review of #167, F003: the newest compact is the one admitted last, not
+/// the one with the latest clock. After a clock step backwards the later
+/// compact carries the earlier time, and it still gets its one wake while the
+/// earlier one is superseded; equal times order the same way.
+#[tokio::test]
+async fn the_last_admitted_compact_wins_whatever_the_clock_says() {
+    for (earlier, later) in [(10 * MINUTE, 0), (0, 0)] {
+        let (services, _store, _config, folder) = services().await;
+        fleet(&services, &folder).await;
+        hold_role(&services).await;
+        let start = crate::http::system_time_ms().unwrap();
+        compact(&services, "m-earlier", start + earlier).await;
+        compact(&services, "m-later", start + later).await;
+
+        let due = start + earlier.max(later) + COMPACT_SETTLE_MS + MINUTE;
+        assert_eq!(
+            wakes(
+                PaWatchdog::default()
+                    .round(&services, INTERVAL, due)
+                    .await
+                    .unwrap()
+            )
+            .len(),
+            1,
+            "clock {earlier} then {later}"
+        );
+        assert_eq!(
+            settled(&services, "m-later").await.as_deref(),
+            Some("woken"),
+            "clock {earlier} then {later}"
+        );
+        assert_eq!(
+            settled(&services, "m-earlier").await.as_deref(),
+            Some("superseded"),
+            "clock {earlier} then {later}"
+        );
+        assert_eq!(resumes(&services).await.len(), 1);
+    }
+}
+
 /// Review of #167, F001: a holdings read that fails is never "holds nothing".
 /// A seat holding only a role stays pending while the read fails, then is
 /// woken once when it recovers.

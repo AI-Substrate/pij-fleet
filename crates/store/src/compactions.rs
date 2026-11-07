@@ -47,7 +47,8 @@ impl SqliteOrchestration {
         .await
     }
 
-    /// Every compaction not yet settled: the round's one read, off the
+    /// Every compaction not yet settled, by seat and then admission order
+    /// (`seq`, never the wall clock): the round's one read, off the
     /// `compaction_wakes_pending` partial index.
     ///
     /// # Errors
@@ -56,7 +57,7 @@ impl SqliteOrchestration {
         require_current_schema(&self.pool).await?;
         sqlx::query(
             "SELECT seat, msg_id, admitted_at FROM compaction_wakes \
-             WHERE settled IS NULL ORDER BY seat, admitted_at",
+             WHERE settled IS NULL ORDER BY seat, seq",
         )
         .fetch_all(&self.pool)
         .await

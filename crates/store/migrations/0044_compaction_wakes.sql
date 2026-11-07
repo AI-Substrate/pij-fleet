@@ -11,17 +11,24 @@
 -- that the one wake was attempted, not that it was delivered: there is no
 -- retry. The round supersedes an older pending row once a newer compact of
 -- the same seat is delivered. Settled rows stay as history.
+--
+-- `seq` is the admission order: rows are written before their compact is
+-- admitted, and AUTOINCREMENT never reuses or lowers a value, so a later
+-- compact always has a higher `seq`. The round orders by it, never by
+-- `admitted_at` (a wall clock that can step backwards or repeat); that is
+-- used only for how long a compact has waited for delivery.
 CREATE TABLE compaction_wakes (
+    seq         INTEGER PRIMARY KEY AUTOINCREMENT,
     seat        TEXT NOT NULL,
     msg_id      TEXT NOT NULL,
     admitted_at INTEGER NOT NULL,
     settled     TEXT CHECK (settled IN
         ('woken', 'resumed', 'holds-nothing', 'gone', 'undelivered', 'superseded')),
     settled_at  INTEGER,
-    PRIMARY KEY (seat, msg_id)
+    UNIQUE (seat, msg_id)
 ) STRICT;
 
-CREATE INDEX compaction_wakes_pending ON compaction_wakes (seat, admitted_at)
+CREATE INDEX compaction_wakes_pending ON compaction_wakes (seat, seq)
     WHERE settled IS NULL;
 
 PRAGMA user_version = 44;
