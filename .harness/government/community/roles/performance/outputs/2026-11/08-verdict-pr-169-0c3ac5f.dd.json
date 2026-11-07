@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "0c3ac5fec442d9e9bc02faf7064c0faeacd1ebab",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/169#issuecomment-6714037853",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:169",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After deploy: same-incarnation 60s spawn/CPU/RSS window plus20s machine reading; distinguish manual marker repair from loaded new binary; verify retired census while other counters/traffic remain positive."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `0c3ac5fec442d9e9bc02faf7064c0faeacd1ebab`. **F112's census path is removed.**\n\nThe legacy root/composition lookup, constructors and has_live_legacy_tap_writer are deleted. Tap ownership no longer executes `/bin/ps -axo command=` or reads the retired signature files; the spawn-site guard now keeps `ps.tmux-legacy-tap-writer` retired. Failed replacement during adoption preserves the marker that already existed, preventing the original own-pipe/no-marker retry condition. Unknown foreign pipes remain refused.\n\n**Retry budget:** the existing observer tick remains; no new timer task. A failed attach increments an in-memory failure count and doubles the next eligible wait from the observer interval, capped at 60 s. With the normal 600 ms interval the waits are 1.2, 2.4, 4.8, 9.6, 19.2, 38.4, then 60 s. This is a ramp, not an immediate one-minute retry. At the cap there is at most one attempted retry per nominal minute, subject to observer/action delays.\n\nKeys are pane IDs for their tmux-server lifetime, not a generic process-PID cache. Success clears the entry; a pane leaving the successfully observed set drops it. A repair within the same pane ID can wait until its current retry becomes eligible. Each tick still costs map retention/checking, and the pane stays unknown while waiting.\n\nTwo ownership control reads/no fork describes the **early foreign-pipe refusal with a healthy control client**. Existing generic stdout can fall back to a tmux process when control is unavailable; genuine attach/adoption mutations retain their existing launch work. This is not a universal zero-launch guarantee for every adapter failure, but the census is gone on all paths.\n\nThe PA digest takes one in-memory refusal snapshot, clones current details and searches it for fleet rows, O(fleet-rows × refusals) comparisons when nonempty. One current refusal record per observed pane replaces the old accumulating distinct-signature set; changes can log again. No extra DB query, launch or separate periodic loop.\n\n**Proof qualification:** the paused test's 100 ticks use a **10 ms interval (one second)** and verify six early retry attempts, not a live 60-second rate. It advances 60 s afterward but has not accumulated enough failures to exercise the actual 60 s cap; the min-cap is source-proven, not fully covered by that assertion. A focused cap-cadence assertion would strengthen it (nonblocking).\n\nExact-head [CI 42421180718](https://github.com/AI-Substrate/pij-fleet/actions/runs/42421180718) succeeds: **2,171 executed Rust cases, zero failures/errors**. Verified the real isolated-tmux rollback and foreign-refusal cases, backoff/departure test, PA digest case and retired-site guard. Latest Delivers **42421180503** succeeds.\n\nThe reported pre-deploy 6844→6844/60 s follows the prime's **manual marker restamp** on the old live path. It is useful causal evidence but not proof this new binary is deployed. After merge, take the owed same-incarnation two-ping/machine/CPU/RSS window and confirm the retired site stays absent while unrelated counters/traffic still work.\n\nNo local build, test, mutation, live repair, census or canary was run in this review. No migration.\n"
+		}
+	]
+}
