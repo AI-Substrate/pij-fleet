@@ -175,7 +175,10 @@
 					"harness_session": "704a3532-54a7-47c7-a716-3f26f0b19e16",
 					"instance_key": "211",
 					"machine": "ops.osk.lan",
+					"release_why": "plan 211 shipped (#148, #154)",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-back-tapir",
+					"to": "2026-11-07T13:01:22.779Z",
 					"why": "plan 211 registration attempts (#145)"
 				},
 				{
