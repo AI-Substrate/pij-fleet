@@ -7,7 +7,7 @@ A PEC exists to build lasting knowledge of its problem space (ruling C30). Speci
 | Template | Kind | Holders | What it's for |
 |---|---|---|---|
 | [prime](prime/v3/role.dd.json) | general | one | Leads the community: the directory, rulings, routing, merges. |
-| [pm](pm/v3/role.dd.json) | general | one per top-level workstream | Runs one workstream: packets, assignments, numbers, true states. |
+| [pm](pm/v4/role.dd.json) | general | one per top-level workstream | Runs one workstream: packets, assignments, numbers, true states. |
 | [pa](pa/v3/role.dd.json) | general | one | Keeps seats healthy: memory before compaction, no silent stalls. |
 | [coder](coder/v3/role.dd.json) | general, per task | many | Builds one step from its packet and opens a PR. |
 | [reviewer](reviewer/v3/role.dd.json) | general, per task | many | Reviews one PR for correctness at its exact head. |

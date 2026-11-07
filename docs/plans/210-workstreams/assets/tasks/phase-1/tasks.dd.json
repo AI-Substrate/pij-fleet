@@ -26,7 +26,7 @@
 					"state": "checked",
 					"success": "`.dd/schemas/pij/workstream` validates steps with id, state, plan, delivers, builds, needs and depends_on (cross-file), plus part_of (cross-file) and lanes (branch required; worktree and stream optional). pij/roadmap stays, its description marked superseded.",
 					"done": "tasks.dd.json#done_when/tk-0001",
-					"receipt": "assets/evidence/phase-1.md#tk-0001-schema",
+					"receipt": "../../evidence/phase-1.md#tk-0001-schema",
 					"satisfies_toward": [
 						"../../../plan.dd.json#acceptance_criteria/ac-0001"
 					]
@@ -41,7 +41,7 @@
 						"../../../plan.dd.json#acceptance_criteria/ac-0003"
 					],
 					"done": "tasks.dd.json#done_when/tk-0002",
-					"receipt": "assets/evidence/phase-1.md#tk-0002-skill"
+					"receipt": "../../evidence/phase-1.md#tk-0002-skill"
 				},
 				{
 					"id": "tk-0003",
@@ -53,7 +53,7 @@
 						"../../../plan.dd.json#acceptance_criteria/ac-0004"
 					],
 					"done": "tasks.dd.json#done_when/tk-0003",
-					"receipt": "assets/evidence/phase-1.md#tk-0003-prd"
+					"receipt": "../../evidence/phase-1.md#tk-0003-prd"
 				},
 				{
 					"id": "tk-0004",
@@ -65,7 +65,7 @@
 						"../../../plan.dd.json#acceptance_criteria/ac-0005"
 					],
 					"done": "tasks.dd.json#done_when/tk-0004",
-					"receipt": "assets/evidence/phase-1.md#tk-0004-templates"
+					"receipt": "../../evidence/phase-1.md#tk-0004-templates"
 				},
 				{
 					"id": "tk-0005",

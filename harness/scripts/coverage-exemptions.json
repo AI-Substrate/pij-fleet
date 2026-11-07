@@ -1,0 +1,80 @@
+{
+	"why": "Known coverage gaps, each with its owner (plan 210, req-31). harness/scripts/coverage-check.ts skips these rows and fails on an exemption that is now covered or names no row, so this list only shrinks. Never add a row to hide new work: deliver it or set it dropped.",
+	"rows": [
+		{
+			"address": "docs/project/prds/001-pij-community.dd.json#requirements/req-26",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: req-26 gets a delivering step in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-01",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-02",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-03",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-04",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-05",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-06",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-07",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-08",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-09",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-10",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-11",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-12",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-13",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		},
+		{
+			"address": "docs/project/prds/002-pij-base.dd.json#requirements/req-14",
+			"owner": "docs-system",
+			"why": "plan 210 AC4: PRD 002's rows get a blueprint and a workstream in docs-system's follow-up docs PR"
+		}
+	]
+}

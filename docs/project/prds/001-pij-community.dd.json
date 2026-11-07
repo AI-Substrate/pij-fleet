@@ -338,7 +338,7 @@
 					"state": "shipped",
 					"done_when": "A step needing a missing role shows a prompt in `pij directory`; creating the role clears it.",
 					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md",
-					"delivered_by": "#141"
+					"delivered_by": "#141, #159"
 				},
 				{
 					"id": "req-25",
@@ -382,7 +382,7 @@
 					"done_when": "The `/pij community` route and the prime's prompts state that templates are examples; with a workstream need that no role or template covers, the prime is prompted to create a role for it, and the new role validates without coming from a template.",
 					"note": "Delivered across s03 (templates), s09 (prime prompts) and s10 (the route).",
 					"source": "ruling C18",
-					"delivered_by": "#136"
+					"delivered_by": "#136, #159"
 				},
 				{
 					"id": "req-28",
@@ -414,7 +414,7 @@
 					"statement": "A workstream step may be `part_of` an umbrella step in the same workstream or another, and `depends_on` may cross files; an umbrella step is complete only when every child step is. A step lists 0..n lanes where it is built: a branch, optionally a worktree and a pij stream id. PRs are not stored on the step; they come from the deliveries `pij delivered` records. A pij stream is one lane of a workstream, and in a PEC project the workstream docs govern ordering over prime-flow items. Workstreams are shaped, split, merged and nested as the work demands.",
 					"actor": "pm",
 					"priority": "should",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "`ddocs validate` passes on a workstream whose step is `part_of` a step in another workstream file and lists a lane with a stream id, and fails on a lane with no branch; the skill's workstream procedure teaches shaping, splitting, merging, nesting and lanes and defines workstream and pij stream so they never overlap; the coverage check (req-31) fails on a complete umbrella step with an unfinished child.",
 					"note": "Plan 210 phase 1 ships the `pij/workstream` schema and the skill; ddocs can't express the umbrella rule, so phase 2's coverage check holds it.",
 					"source": "ruling C29"
@@ -425,7 +425,7 @@
 					"statement": "`harness checks` fails, naming the row, when a PRD requirement is delivered by no workstream step or a blueprint component is built by no step. It runs once per check, with no loop or poll.",
 					"actor": "pm",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`harness checks` passes on pij's project docs and fails naming the row on a fixture with a requirement no step delivers, a component no step builds, or a complete umbrella step with an unfinished child.",
 					"note": "Plan 210 phase 2 (the coverage sensor).",
 					"source": "ruling C29"
@@ -589,6 +589,11 @@
 					"date": "2026-11-08",
 					"by": "docs-system",
 					"change": "Ruling C29, plan 210 phase 1: req-04, req-18, req-20, req-21, req-23, req-24 and req-27 say workstream where they said roadmap (req-18 notes the folder and schema move in phase 2); req-30 (workstreams nest and map to lanes, in progress) and req-31 (coverage is a harness check, planned) added."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 phase 2: req-30 and req-31 shipped (workstream 001 s16); req-24 delivered_by #141, #159 and req-27 delivered_by #136, #159, from pij delivered 159."
 				}
 			]
 		}
