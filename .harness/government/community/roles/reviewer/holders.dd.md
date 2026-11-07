@@ -52,3 +52,4 @@
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 141 | 2026-11-07T08:42:32.622Z | 2026-11-07T08:49:45.623Z | pij-steady-otter | pij-steady-otter | #141 F006 fix + main merges | #141 merged acf3646 |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 135 | 2026-11-07T10:50:48.374Z | — | pij-steady-otter | — | #135 round af50381 | — |
 | — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 153 | 2026-11-07T10:53:35.716Z | — | pij-steady-otter | — | first verdict on #153 (plan 217) | — |
+| — | pij-double-bobcat | copilot | dfabf751-2a49-4352-82b9-99c549c0fab8 | ops.osk.lan | 152 | 2026-11-07T11:36:50.769Z | — | pij-steady-otter | — | first verdict on #152 (plan 214, C31) | — |
