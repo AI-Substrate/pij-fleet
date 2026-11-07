@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b52c-78b7-7da1-a1a2-0741a2836a31",
+				"date": "2026-11-07",
+				"head": "064b732a8c27a83efa34fcede0a70189363c3a2e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/141#issuecomment-6704666712",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:141",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #141 final-delta correctness review\n\n## A. Verdict\n\n**pass-with-notes** at `064b732a8c27a83efa34fcede0a70189363c3a2e`.\n\n**F006 closed.** No correctness repair remains in this scope. A source-cost qualifier is handed to the independently assigned performance reviewer below.\n\n## B. Scope\n\nFirst-parent `bfc5c54fb41e9a922e30b0863c2829ee13fd4eb2..064b732`: F006 repair `3270c50`, main merges `33fcb88`/`b411aa6`, and test-only subject isolation `064b732`. The prior F001-F005 dispositions stand. Main's imported implementations were not re-reviewed.\n\nThe supplied detached checkout remained clean and pinned before and after review. No local builds/tests, mutation runs, runtime probes, product edits or checkout movement.\n\n## C. F006 coverage\n\n`picture::actions` now receives queued instance keys, emits one no-live-holder action per unserved instance, and retains `instance` in the action. Assignment uses the complete role/instance address. Last-holder revival is selected from that instance's lineage; a blank instance can use any holder. Registered live holdings of reviewer/140 no longer suppress an unserved reviewer/141, while blank-instance requests produce no missing-holder action when any holder is live.\n\nThe new unit case covers repeated requests, another instance being live, the exact assign/revive commands, per-instance counts and blank-instance behavior. The HTTP regression fills the generated assignment's placeholders, submits it through the actual directory handler with requester and assignee distinct, and observes the request bound to `pij-holder` and absent from the queued selector for instance 141. This proves the formerly missing instance selection, not completed model work.\n\n## D. Main merge preservation\n\nCompared the final tree directly with merged main `e6958e71a1b3ffe2b3dfa38d49ae16be04a1401c`: **1,481 of 1,502 main paths are byte-identical, none deleted**. All 32 differing/added paths belong to the pre-merge branch or F006 repair; no outside-path differences.\n\n- Store output/request implementations retain main unchanged and add `latest_outputs`/`queued_role_request_heads`.\n- Directory HTTP retains `--write` while adding `--suggest`; existing main tests remain alongside picture helpers and cases.\n- CLI changes replace the directory renderer with 203's zone-at-instant renderer; they do not remove main's other renderers or #144 tests. The local-time picture, drift hint and delivered-edit regressions pass.\n- API diff only replaces the existing prompt/quoting paragraph with its expanded equivalent and adds 203's sections. Main's #144 text, lineage-batch support, output/outputs API and other sections remain.\n- SKILL changes extend only the directory row, preserving main's lineage batch, routes, memory and output/outputs coverage.\n- Project-document diffs append 203's changelog rows alongside main's rows and retain the expected s09 requirement/component changes.\n\nThe last commit adds `pm.subject = \"pr:203\"` only to 203's latest-output fixture. Main's #137 F001 same-path/cross-project assertions remain intact and pass.\n\n## E. Exact-head CI evidence\n\n[CI run 42356211047](https://github.com/AI-Substrate/pij-fleet/actions/runs/42356211047) names this full head; all four jobs passed. Downloaded JUnit has **2,053 executed cases, zero failures/errors**; the Rust log separately reports five skipped cases.\n\nNamed passing cases include both F006 regressions, real-parser command replay, native revive parsing, local-time picture rendering, output identity/latest-output integration, #144 failed-scope/prime guards, lineage batch atomicity and delivered-edit rendering. Both Node jobs report **2,204 passed, six skipped**, with shared-build 18/18 retained.\n\nThe latest ready/body [Delivers run 42356621710](https://github.com/AI-Substrate/pij-fleet/actions/runs/42356621710) also passed at this head. PR is CLEAN. CI explicitly reports ddocs UNAVAILABLE; that is not relabelled as DD validation.\n\n## F. Cost qualifier and limits\n\nThe repair adds no SQL read, executable launch, timer or independent poll. Existing queued heads supply the new instance data.\n\nHowever, grouping is not a single linear CPU pass: `picture.rs:388-399` uses `Vec::contains` while collecting distinct instances, then filters queued heads again per instance. Work is O(Q * I), Q queued requests and I distinct instances. This source qualifier was sent to the assigned performance reviewer; it does not change the correctness closure or substitute for that role's cost verdict.\n\nSecurity's independent command/quoting assessment remains separately owned.\n\n## G. Commands\n\nRead-only git head/status/log/diff/tree-object comparisons; prior verdict, source and test reads; exact-head PR/CI metadata and logs; downloaded JUnit inspection.\n\n## H. Handover and harness feedback\n\nCorrectness is ready at this exact head, with independent security/performance verdicts still required by the merger. **magicWand:** the added consumer-postcondition test closes the precise gap that parser acceptance could not detect: a legal assignment must select the queued instance it advertises.\n"
+		}
+	]
+}
