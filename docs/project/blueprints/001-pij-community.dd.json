@@ -25,7 +25,7 @@
 					"name": "Project docs schemas",
 					"kind": "schema",
 					"where": ".dd/schemas/pij/{prd,blueprint,workstream}",
-					"responsibility": "The schemas behind docs/project, joined by typed link cells: pij/prd, pij/blueprint and pij/workstream (C29; pij/roadmap stays, superseded, until plan 210 moves the roadmap docs).",
+					"responsibility": "The schemas behind docs/project, joined by typed link cells: pij/prd, pij/blueprint and pij/workstream (C29). pij/roadmap is superseded and kept only so history still validates; plan 210 moved the roadmap docs to pij/workstream.",
 					"realises": [
 						"../prds/001-pij-community.dd.json#requirements/req-18",
 						"../prds/001-pij-community.dd.json#requirements/req-30"
@@ -355,6 +355,11 @@
 					"date": "2026-11-08",
 					"by": "docs-system",
 					"change": "Ruling C29, plan 210 phase 1: c-doc-schemas adds pij/workstream (nesting and lanes) and marks pij/roadmap superseded, and realises req-30; the overview says workstreams."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 phase 2 round 1: c-doc-schemas says the roadmap docs have moved to pij/workstream; pij/roadmap stays only for history."
 				}
 			]
 		}

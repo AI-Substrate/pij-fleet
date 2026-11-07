@@ -203,6 +203,16 @@ _copilot-native-install-check:
 spawn-rate *ARGS:
     @python3 harness/scripts/spawn-rate.py {{ARGS}}
 
+# Plan 220 (F92). Run by hand before each verdict request and before READY.
+# FINAL (exit 0) only when ls-remote and gh agree on the head, base is main,
+# CLEAN, every check's latest run passed, not draft, migrations above main's
+# highest, and the Delivers line parses; else each failing condition and its
+# next step (exit 1). --worktree makes the detached review worktree at that
+# head. Read-only towards the PR; gh and git only.
+# Is a PR head final for verdicts? `just pr-freeze <pr> [--worktree]`
+pr-freeze *ARGS:
+    node_modules/.bin/tsx harness/scripts/pr-freeze.ts "$@"
+
 # Reject user-specific absolute home paths in executable/configuration surfaces.
 local-path-check:
     node_modules/.bin/tsx harness/scripts/local-path-check.ts
@@ -212,6 +222,13 @@ local-path-check:
 # without it this fails UNAVAILABLE (pass --unavailable=warn to only warn).
 ddocs-check *ARGS:
     node_modules/.bin/tsx harness/scripts/ddocs-check.ts {{ARGS}}
+
+# Workstream coverage (plan 210, req-31): every PRD requirement is delivered by
+# a workstream step (or dropped), every blueprint component is built by one,
+# and an umbrella step is complete only when its children are. Known gaps live,
+# each with an owner, in harness/scripts/coverage-exemptions.json.
+coverage-check:
+    node_modules/.bin/tsx harness/scripts/coverage-check.ts
 
 # Report-only attribution scan, scoped after merge-base with main.
 pij-commit-trailers *ARGS:
@@ -270,6 +287,7 @@ copilot-models *ARGS:
 self-check:
     just local-path-check
     just ddocs-check
+    just coverage-check
     just pij-skill-check
     just lockfile-allowlist
     just typecheck

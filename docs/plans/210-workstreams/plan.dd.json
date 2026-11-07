@@ -39,14 +39,16 @@
         {
           "id": "ac-0001",
           "claim": "Schema. `.dd/schemas/pij/workstream` validates a workstream doc: steps keep id, state, plan, delivers, needs (roles) and depends_on (may cross files); a step may be `part_of` another workstream's step (cross-file link), and an umbrella step can't be complete while a child isn't; `lanes` lists 0..n lanes (branch, worktree, optional pij stream id; PRs come from deliveries, not stored). pij/roadmap stays for history, marked superseded.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001",
+          "receipt": "assets/evidence/phase-1.md (schema); assets/evidence/phase-2.md#ac6-the-coverage-sensor (the umbrella roll-up, which ddocs can't express)"
         },
         {
           "id": "ac-0002",
           "claim": "Rename. docs/project/roadmaps/001-pij-community moves to docs/project/workstreams/001-pij-community (git mv, schema id pij/workstream, a changelog line citing C29); docs/project/README.md and every live reference follow; s16 'workstreams' is added to it and goes complete in this PR. pij claim's roadmap alias keeps scanning both folders; `pij delivered` resolves workstream addresses (both from #131).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "assets/evidence/phase-2.md#ac2-the-rename"
         },
         {
           "id": "ac-0003",
@@ -71,20 +73,23 @@
         {
           "id": "ac-0006",
           "claim": "Coverage sensor. `harness checks` gains a coverage stage (in .harness/extensions/checks/ and `just self-check`): every PRD requirement is delivered by some workstream step and every blueprint component is built by some step; failures name the row. It runs once per check, with no loop or poll.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006",
+          "receipt": "assets/evidence/phase-2.md#ac6-the-coverage-sensor; coverage-check.test.ts in CI"
         },
         {
           "id": "ac-0007",
           "claim": "Governance re-point (#135 merged: pij directory edit is live). The 8 live governance role prompts that cite the roadmap path are re-pointed with `pij directory edit` (docs-system runs it; the writer commits).",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007",
+          "note": "runs at merge: ac7-repoint.sh runs right after this PR merges (dry run for the 8 roles in assets/evidence/phase-2.md); a states PR records the writer commits and checks AC7"
         },
         {
           "id": "ac-0008",
           "claim": "Cost (AGENTS.md, resource cost is a correctness property). Docs and a sensor that runs once per `harness checks`; no daemon change beyond what #131 already carries. No loop, poll, timer or launch site.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008",
+          "receipt": "assets/evidence/phase-2.md#ac6-the-coverage-sensor (cost): one read per run, no loop, poll or launch"
         },
         {
           "id": "ac-0009",

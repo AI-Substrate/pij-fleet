@@ -1,14 +1,14 @@
 {
 	"dd": {
-		"schema": "pij/roadmap"
+		"schema": "pij/workstream"
 	},
 	"sections": [
 		{
 			"name": "meta",
 			"value": {
-				"title": "Roadmap 001: Pij Emergent Communities (PEC)",
+				"title": "Workstream 001: Pij Emergent Communities (PEC)",
 				"status": "draft",
-				"updated": "2026-11-06",
+				"updated": "2026-11-08",
 				"owner": "pij-far-jackal"
 			}
 		},
@@ -231,6 +231,20 @@
 					"done_when": "A retired or merged role keeps its memory, outputs and lineage readable; a send to it refuses by name, naming the target after a merge.",
 					"plan": "docs/plans/206-directory-followups",
 					"needs": ["role:docs-system", "role:reviewer", "role:security"]
+				},
+				{
+					"id": "s16",
+					"title": "Workstreams: rename, nesting, lanes and coverage",
+					"state": "complete",
+					"delivers": [
+						"../prds/001-pij-community.dd.json#requirements/req-30",
+						"../prds/001-pij-community.dd.json#requirements/req-31"
+					],
+					"builds": ["../blueprints/001-pij-community.dd.json#components/c-doc-schemas"],
+					"depends_on": ["#steps/s13"],
+					"done_when": "Roadmap 001 lives in docs/project/workstreams/ as pij/workstream, every reader follows the folder, and harness checks fails naming the row when a requirement is delivered by no step, a component is built by no step, or an umbrella step is complete before its children.",
+					"plan": "docs/plans/210-workstreams",
+					"needs": ["role:docs-system", "role:coder", "role:reviewer"]
 				}
 			]
 		},
@@ -316,6 +330,16 @@
 					"date": "2026-11-07",
 					"by": "pij-following-marsupial",
 					"change": "Plan 204: s10 complete (the /pij community route, ten optional templates, templates --show; a fresh-prime canary stood up a community from the route). s10 also delivers req-27 and req-29, the route half of C26 and C28."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 phase 2 (ruling C29): moved from docs/project/roadmaps/ to docs/project/workstreams/ and switched to the pij/workstream schema in the same commit."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "Plan 210 phase 2: s16 added and complete (the move to workstreams, nesting and lanes, and the coverage sensor in harness checks)."
 				}
 			]
 		}

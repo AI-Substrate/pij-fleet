@@ -57,9 +57,9 @@ recording approval.
 | `ASK_USER` | Requirement ambiguous / needs a human decision | Ask inline (dispatch invariants 9–10); block only dependent work |
 | `RUN_LOCAL` | Safe, cheap, read-only | Do it yourself |
 | `DELEGATE` | A tasked phase is ready | Write the coder packet → dispatch the pointer. **One whole phase per packet**, and say so |
-| `REVIEW` | Coder reports done | Compact the coder → acquire/canary the reviewer if not live → dispatch the review packet at the exact head SHA |
+| `REVIEW` | Coder reports done | Compact the coder → `just pr-freeze <pr>` must say FINAL (else send the coder the failing conditions) → acquire/canary the reviewer if not live → dispatch the review packet at that exact head SHA (`--worktree` makes its detached worktree) |
 | `FIX` | Verdict needs changes | Compact the reviewer → send the coder the review record's findings only |
-| `APPROVE` | Verdict approves | Compact the reviewer → sanity pass → run the repo's gates → record approval and the stop report → merge or hand to the prime |
+| `APPROVE` | Verdict approves | Compact the reviewer → sanity pass → run the repo's gates → `just pr-freeze <pr>` still FINAL at the reviewed head → record approval and the stop report → merge or hand to the prime (READY) |
 
 ### Sanity pass — the last gate before APPROVE
 
@@ -106,7 +106,8 @@ Builtin subagents are not peers here: a coder or reviewer is a real pij seat.
 fence; forbidden paths; git and machine rules (§ C11, § C12); what *done* means (ACs with
 receipts, gates, PR); reply only with `pij send <you> --body-file <file>`.
 
-**Reviewer packet**: the plan path, the exact head SHA, `/builder 7 review --plan "<path>"`,
+**Reviewer packet**: the plan path, the exact head SHA (the one `just pr-freeze <pr>` called
+FINAL; a verdict on any other head is void), `/builder 7 review --plan "<path>"`,
 Dim-0 mandatory for code (break the guard, rerun the targeted test, confirm RED, restore), the
 review record under `assets/reviews/`, and the same reply rule.
 
@@ -122,7 +123,9 @@ or message a seat that merely looks idle.
 2. **Write the coder packet**; `pij report now` (start); spawn/canary the coder if needed;
    dispatch.
 3. **On done**: compact the coder; check its receipts (commit SHA, gate output, AC
-   `proven_by`); write the reviewer packet at that SHA; dispatch.
+   `proven_by`); run `just pr-freeze <pr>` and dispatch only on FINAL (plan 220: the two heads
+   agree, base main, CLEAN, every check's latest run green, ready, migrations above main's
+   highest, a parseable Delivers line); write the reviewer packet at that SHA; dispatch.
 4. **On the verdict**: compact the reviewer; sanity pass; `FIX` loops to step 3.
 5. **Gate before approval** — on an APPROVE, run the repo's own gates (in pij, `harness checks`),
    all of them, not first-fail. A red gate is a `FIX`, not an approval.
