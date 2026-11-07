@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b631-1127-7240-bea6-a9b1de58c940",
+				"date": "2026-11-07",
+				"head": "08f74822302742c63614f87479f1158918718161",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/155#issuecomment-6707667727",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:155",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #155 correctness review\n\n## A. Verdict\n\n**PASS-WITH-NOTES** at `08f74822302742c63614f87479f1158918718161`.\n\nNo new correctness repair requested. The endpoint handoff retains fresh process-start validation and existing discovery/consent behavior. Live deployment evidence remains owed.\n\n## B. Scope\n\nFull plan-218 review against merged main `cee0113`: process observation, transport handoff, daemon injection/call sites, regressions, retired launch guard and docs. The detached worktree is clean and pinned. GitHub and `git ls-remote` agree on this head; PR is CLEAN with all six visible checks successful.\n\nNo local builds/tests, mutation checks, live socket probes or fleet measurements were run.\n\n## C. AC1: one observed instant, no UDS ps fallback\n\nThe daemon injects `pij_harnesses::proc::observed_start` at the existing composition root. It samples `kernel_start(pid)` once and packs that same epoch-second value as local and UTC. The transport takes only the core `ObservedStart` type and observer closure; no dependency/architecture edge is added.\n\nExact-PID discovery compares the descriptor's local identity and Claude's UTC record against that one observation. Pane discovery retains the existing record/token rules. `None` or a mismatching start cannot authorize an endpoint; there is no UDS fallback to ps.\n\nCI executed `one_in_process_reading_answers_both_comparisons_and_launches_nothing`, including the positive single-observation count, changed UTC and changed local controls, and unchanged launch counter. Real Linux reader parity against ps in local/UTC, other timezones and a reaped PID also executed. The daemon review regression uses the real observer with a ps-written UTC record.\n\n## D. AC2: one-shot, scoped and bounded handoff\n\n`Resolved::is_for` requires the same seat id, msg_id, process identity and pane. `remember` holds one mutex while pruning expired/matching entries, evicting at the 64-entry cap and adding the result. Clones share that bounded store. A failed discovery clears the matching prior probe; no timer or sweep is added.\n\n`resolve` removes the matching entry before use, checks the five-second age and freshly rereads its PID's UTC start. A changed or unreadable start rejects the cached endpoint and falls through to existing discovery. A miss, expiry, eviction or spent entry likewise discovers afresh. It is not a lifetime PID cache.\n\nBoth can-deliver and deliver retain the Claude/command/inbound-consent gates. No endpoint from another message, process binding or pane matches the handoff.\n\nCI executed:\n\n- `deliver_uses_the_endpoint_its_probe_resolved`: removes record/key files after probing, still sends once with two observer calls, then refuses cache reuse.\n- `a_peer_that_died_after_its_probe_is_not_written_to`: disables the observer while the witness listener remains open and verifies no connection. This distinguishes the re-read brake from socket-connect failure.\n- `a_probe_serves_only_its_own_message` and retained recycled/stale-binding discovery regressions.\n- `a_socket_drain_probes_once_then_delivers` and the extended FYI-carrier admission/direct-send call-count case.\n\nThe cap, expiry and full key comparisons were source-reviewed rather than separately mutation-tested here. Tapir's reported dropped-re-read and forced-rediscovery mutations align with the two distinguishing tests; they were not rerun by this reviewer.\n\n## E. AC3: retired launch and cost boundaries\n\n`spawn_sites::retired_launches_stay_retired` executed. It bans the retired site across production sources and `Command::new(` in production uds.rs, with a discovery-line positive/vacuity guard. The transport contains no production command runner.\n\nFor healthy exact-PID delivery, one discovery plus one handoff re-read means two observer calls; a carrier adds its admission discovery for three. Fallback discovery can inspect additional candidate records as before. These are observer counts: macOS samples one kernel record per call; Linux reads status/stat/boot procfs inputs.\n\nThe former 4/6 ps launches are removed from this production path. This does not claim the old live daemon already stopped launching them. Ocelot owns the matching-PID, comparable-traffic before/after measurement after deployment.\n\n## F. AC4 and states\n\nAPI documentation, ADR 0001's follow-up note and D-218-1 describe the shipped source change. `Delivers: none` and no migration are correct. Plan/pressure/phase remain unchecked/draft, rather than falsely closing the deployment reading.\n\n## G. Exact-head CI and notes\n\n[Run 42376556663](https://github.com/AI-Substrate/pij-fleet/actions/runs/42376556663) succeeded at this full head. Downloaded `junit-linux` contains 2,083 cases, zero failures/errors/skips, including the named handoff, brake, real-reader and retired-site cases.\n\n**N001: platform proof ceiling.** CI exercises Linux and injected observers, not the macOS `proc_pidinfo` branch. Tapir reports merged-head macOS all-targets clippy clean; that is author evidence, not reviewer execution or macOS runtime parity proof.\n\n**N002: identity precision and deployment scope.** The change preserves the existing whole-second, packed wall-time process-identity contract; it does not strengthen it to subsecond incarnation proof. The live AC3 reading remains owed, and the existing opt-in live-wire witness still uses its own ps observer rather than proving production launch removal.\n\n## H. Handover\n\nSource correctness is ready at this head. Retain independent security/performance verdicts and collect the after-deploy matched-process/traffic reading before whole-plan completion. No additional local test run is requested from this review seat.\n"
+		}
+	]
+}
