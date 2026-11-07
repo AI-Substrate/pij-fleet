@@ -186,6 +186,11 @@ citation disputes, all of which resolved as neither party being wrong.)
   cleared for you (plans 198, 208).
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
+- **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
+  request and before READY. FINAL (exit 0) only when `git ls-remote` and `gh` agree on the head,
+  the base is main, it is CLEAN, every check's latest run passed, it is not draft, its migrations
+  sit above main's highest, and its `Delivers:` line parses; otherwise each failing condition with
+  its next step. `--worktree` creates the detached review worktree at that head (plan 220, F92).
 - **`just doctor`** — read-only audit: CLI shim shape, `pij-rs` on PATH, skill
   link, OMP policy and daemon health. The first diagnostic when anything drifts.
 - **npm supply chain** — `.npmrc` enforces a seven-day `min-release-age`

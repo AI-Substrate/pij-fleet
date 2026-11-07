@@ -203,6 +203,16 @@ _copilot-native-install-check:
 spawn-rate *ARGS:
     @python3 harness/scripts/spawn-rate.py {{ARGS}}
 
+# Plan 220 (F92). Run by hand before each verdict request and before READY.
+# FINAL (exit 0) only when ls-remote and gh agree on the head, base is main,
+# CLEAN, every check's latest run passed, not draft, migrations above main's
+# highest, and the Delivers line parses; else each failing condition and its
+# next step (exit 1). --worktree makes the detached review worktree at that
+# head. Read-only towards the PR; gh and git only.
+# Is a PR head final for verdicts? `just pr-freeze <pr> [--worktree]`
+pr-freeze *ARGS:
+    node_modules/.bin/tsx harness/scripts/pr-freeze.ts "$@"
+
 # Reject user-specific absolute home paths in executable/configuration surfaces.
 local-path-check:
     node_modules/.bin/tsx harness/scripts/local-path-check.ts
