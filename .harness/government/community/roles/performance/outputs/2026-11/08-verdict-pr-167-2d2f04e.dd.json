@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "2d2f04e592bc405fa958f8954fa86f0a94748cad",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/167#issuecomment-6713944770",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:167",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"After deploy: same-incarnation two pings60s apart plus20s machine spawn sample and CPU/RSS; record legitimate compaction-wake outcome/latency/failures. F112 legacy-census issue remains separate."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `2d2f04e592bc405fa958f8954fa86f0a94748cad`.\n\nFull compaction-wake cost review, including round-2 tracking, holdings-error and in-flight supersession repairs. No new loop, timer or direct executable site: the work rides the existing nominal 60-second PA watchdog round.\n\n**Per round:** one pending-compactions query matching the partial index, plus its schema check. It is empty when no decisions remain, not a per-seat fleet query. The round holds the pending vector and searches the already-read seat vector per row: O(P*N) comparisons in the worst case, with no new registry read.\n\nNewest rows within each seat drive delivery/event reads. Live delivered rows pay up to two query calls: delivery outcome by msg_id, then started_since; an undelivered row only the former, and gone/superseded/blocked older rows can skip them. Supersession reuses the newer row's delivery result in memory and adds **no query**. A settled-age idle candidate adds one two-kind queue peek and open-role/open-claim reads, including sorting/formatting held labels.\n\n**\"Indexed\" is not constant work:** delivery lookup narrows by seat/kind but filters JSON msg_id while scanning retained outcomes, not a dedicated msg-id index. started_since is bounded by delivery sequence/four kinds. Queue peek can materialize a queued payload; holdings/claims and wake/audit bytes scale with returned data. Schema checks are additional to those quoted query counts.\n\n**Per compact request:** an owned schema-checked INSERT OR IGNORE transaction commits before control admission; failure refuses the compact. Replays can still pay a no-change transaction. Unlike round 1, insert no longer supersedes older pending rows. One successful conditional settlement UPDATE happens later; failed attempts can retry per round. A row left without admission is normally retired as undelivered once it is examined after one hour.\n\nMultiple pending rows may now coexist for a seat. The one-hour check is not a universal age/memory bound: older rows wait behind newer in-flight rows, and read failures remain pending. No pending-row cap/pruning was added. Settled history retains one row per unique tracked compaction, O(total compactions), outside the pending index.\n\n**Wake:** settlement is persisted before sending. This bounds each compaction to at most one wake attempt, not guaranteed delivery: refused/failed/cancelled-after-settlement sends do not retry. Existing delivery does one normal resume message, one parent FYI when applicable, and an audit; its existing persistence/liveness/process work is not made process-free. The five-minute settle interval is not a measured completion or end-to-end latency guarantee.\n\nThe new try_holdings_of propagates assignment-read failure to Wait rather than permanently deciding holds-nothing. Before-admission owned tracking prevents an admitted compact lacking its row. These repairs add no periodic task; successful admission/settlement writes are per event, not steady-state writes.\n\n**CI:** exact-head [42420467930](https://github.com/AI-Substrate/pij-fleet/actions/runs/42420467930) succeeds. JUnit confirms **nine daemon compaction cases**, the core message case and all six spawn guards; **2,180 executed cases, zero failures/errors**. Verified failed tracking admission, dropped callers, failed holdings recovery, in-flight/new-compaction behavior, queue/no-holder conditions and restart dedup. Tests use simulated event times, not live compaction timing. Latest Delivers **42420469571** succeeds.\n\nMigration 0044 is above main's 43. No local build, test, mutation, runtime probe or worktree edit. **After-deploy readings remain owed:** same-incarnation 60-second launch/CPU/RSS window and 20-second machine sample; legitimate wake latency/failure/retention evidence is still unmeasured.\n\n**F112 is separate, not this PR's blocker:** the supplied before +119 launches/60s contains +100 legacy tap-writer ps. Its source/cost violation is recorded in governance note `4029f72`; compare rates and per-site deltas without subtracting counters across a daemon bounce.\n"
+		}
+	]
+}
