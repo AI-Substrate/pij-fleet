@@ -789,13 +789,25 @@ mod tests {
 
     impl Drop for LiveTmuxSession {
         fn drop(&mut self) {
-            let output = Command::new("tmux")
+            let killed = Command::new("tmux")
                 .args(["-L", &self.server, "kill-server"])
                 .output();
+            // kill-server exits non-zero when the server is already gone (it can
+            // exit on its own, or between its reply and our read): the teardown's
+            // postcondition is "no server", not kill-server's status (F27).
+            let gone = || {
+                Command::new("tmux")
+                    .args(["-L", &self.server, "list-sessions"])
+                    .output()
+                    .is_ok_and(|output| !output.status.success())
+            };
             assert!(
-                output.is_ok_and(|output| output.status.success()) || std::thread::panicking(),
-                "failed to tear down isolated tmux server {}",
-                self.server
+                killed.as_ref().is_ok_and(|output| output.status.success())
+                    || gone()
+                    || std::thread::panicking(),
+                "failed to tear down isolated tmux server {}: {:?}",
+                self.server,
+                killed.map(|output| String::from_utf8_lossy(&output.stderr).into_owned())
             );
         }
     }

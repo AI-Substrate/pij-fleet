@@ -12,7 +12,7 @@ pij directory: ok — {"commit":"417078a9cf7ea15732d9078190a8adee7903e1d8","id":
 exit=0
 
 $ /tmp/pij-201-bin/pij-rs directory assign reviewer/114 pij-scratch-holder --why review #114
-pij directory: ok — {"commit":"684bd3eb0a755e6667017aeae4307cdcf3de1bf0","flushed":0,"path":".harness/government/community/roles/reviewer/holders.dd.json","project":"fleet","role":"reviewer","row":{"assigned_by":"pij-scratch-marten","from":"2026-11-06T00:40:51.108Z","harness":"omp","instance_key":"114","machine":"ops.osk.lan","seat":"pij-scratch-holder","why":"review #114"},"seat":"pij-scratch-holder","seat_role":"worker","window":{"name":"fleet:reviewer-114","renamed":true}}
+pij directory: ok — {"commit":"684bd3eb0a755e6667017aeae4307cdcf3de1bf0","flushed":0,"path":".harness/government/community/roles/reviewer/holders.dd.json","project":"fleet","role":"reviewer","row":{"assigned_by":"pij-scratch-marten","from":"2026-11-06T00:40:51.108Z","harness":"omp","instance_key":"114","machine":"<machine>","seat":"pij-scratch-holder","why":"review #114"},"seat":"pij-scratch-holder","seat_role":"worker","window":{"name":"fleet:reviewer-114","renamed":true}}
 exit=0
 reading rest-1: pid=69023 total=33 by_op={"ddocs.community": 4, "git.community": 14, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
 reading rest-2: pid=69023 total=33 by_op={"ddocs.community": 4, "git.community": 14, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 1, "tmux.set-options tap owner": 3}
