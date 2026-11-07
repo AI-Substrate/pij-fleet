@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"hook": "Open before touching #148/plan 211 registration counters, AC2, tk-0004/5, or merging main into a PR that carried other PRs' unmerged commits",
+				"tags": [
+					"plan-211",
+					"registration",
+					"merge",
+					"handover"
+				],
+				"title": "Plan 211 counters state, and merging main over stale sibling copies"
+			}
+		},
+		{
+			"name": "body",
+			"value": "## Plan 211 (#148, issue #145): state at 03ba185\nFrozen, CLEAN on main, out for re-check (bobcat, herring, ocelot: `git diff 5de084c 03ba185`). After merge the prime deploys main and ocelot reads AC2 from the live counters. pm then adds the evidence file in plan 211's states docs PR. tk-0004 (skip the no-op repeat ps) and tk-0005 (the shim's per-call registration) wait for that reading. Don't start them before.\n\nHow the counters work, so you don't re-derive it:\n- `registration/attempts.rs` holds one mutex-guarded pair of maps (not atomics). Keys are `<path>.<mode>.<outcome>` plus by_seat. by_seat keeps at most 64 keys of at most 64 bytes, and anything else goes under `(other)`.\n- A refused claim keeps its name only if the error names the seat (retired or held), or the name already registered successfully this run. Don't add a registry read to check: tests pin that invalid evidence touches no registry statement.\n- Every parsed `/v1/register` counts once. The HTTP route counts its own early refusals (`count_early`); the service counts the rest (`register_via`).\n- Each attempt's ps tally is `attempts::Reads`. `close()` when counted; a timed-out observer's `begin()` then refuses, so it never launches.\n- AC3, `explicit_session_conflict`, runs before host observation and again under the lock. It's a brake.\n- AC4: the Copilot store.mjs sets `error.retired` on E-RS-SEAT-RETIRED, and both loops stop.\n- Client `attempt` labels: explicit, receive, heartbeat, shim, lease-retry. Standby wins over \"first registration\" when a held first attempt retries.\n\n## Merging main into a PR that carries sibling PRs' pre-merge copies\nI hit this on #141 at about 30 files.\n1. List the PR's own commits: `git log --no-merges HEAD ^origin/main ^origin/plan/<sibling>...`.\n2. Every conflicted file the PR's own commits didn't touch takes main (`checkout --theirs`).\n3. For owned files with messy hunks, take main's file and re-add only your own functions or sections.\n4. Then CHECK: `git diff --cached --name-only origin/main` must list only your own files. Diff each owned doc semantically against main.\n\nGit's clean auto-merge silently dropped main's newer text and duplicated sections in pij-rs-api.md, and duplicated a test in governance.rs. Only that check caught it.\n\nWorktrees share refs: another seat's fetch can move origin/main mid-merge. Compare against MERGE_HEAD, not origin/main, or merge again straight after.\n"
+		}
+	]
+}
