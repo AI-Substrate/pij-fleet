@@ -8,8 +8,9 @@
  *   complete or abandoned (req-30; ddocs can't express this one).
  * Known gaps are listed in `coverage-exemptions.json`, each with an owner. The
  * file may only shrink: every row must be one of `APPROVED_EXEMPTIONS` below,
- * so adding or swapping an address needs a reviewed change to this file, and an
- * exemption for a row that is now covered, or that names no row, fails.
+ * so adding or swapping an address needs a reviewed change to this file. An
+ * exemption or a baseline address for a row that is now covered fails, as
+ * does an exemption that names no row, so a closed gap can't be reopened.
  * Inputs fail closed: a required folder, document, section or the exemptions
  * file that can't be read or has the wrong shape is a finding, never an empty
  * list. Only the old `roadmaps` folder may be absent. Reads files once; no
@@ -58,7 +59,8 @@ export const EXEMPTIONS = "harness/scripts/coverage-exemptions.json";
 /**
  * The approved gaps (pm-001, plan 210 AC6; owner docs-system, plan 210 AC4).
  * `coverage-exemptions.json` may list only these. When a gap is closed, delete
- * its row here and in the JSON; never add one to hide new work.
+ * its row here and in the JSON (a covered address left here fails); never add
+ * one to hide new work.
  */
 export const APPROVED_EXEMPTIONS: readonly string[] = [
 	"docs/project/prds/001-pij-community.dd.json#requirements/req-26",
@@ -218,6 +220,11 @@ export function coverageFindings(
 				`${entry.address}: exempted, but now covered; remove the exemption here and in APPROVED_EXEMPTIONS (owner ${entry.owner})`,
 			);
 	}
+	for (const address of approved)
+		if (known.has(address) && !gaps.has(address) && !exempt.has(address))
+			findings.push(
+				`${address}: covered; remove it from the baseline (APPROVED_EXEMPTIONS in coverage-check.ts)`,
+			);
 	for (const [parent, kids] of children) {
 		const umbrella = steps.get(parent);
 		if (umbrella === undefined) {

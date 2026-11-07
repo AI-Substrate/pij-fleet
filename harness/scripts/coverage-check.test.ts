@@ -111,9 +111,14 @@ describe("coverage-check (plan 210, req-31)", () => {
 			).toEqual([]);
 		});
 
-		it("a removed row that is now covered passes", () => {
+		it("a covered address left in the baseline fails; removed from both it passes", () => {
+			const requirements = ["req-01", "req-02", "req-03"];
+			const delivered = ["req-01", "req-02"];
+			expect(check(requirements, delivered, [exempt("req-03")])).toEqual([
+				`${PRD}#requirements/req-02: covered; remove it from the baseline (APPROVED_EXEMPTIONS in coverage-check.ts)`,
+			]);
 			expect(
-				check(["req-01", "req-02", "req-03"], ["req-01", "req-02"], [exempt("req-03")]),
+				check(requirements, delivered, [exempt("req-03")], [`${PRD}#requirements/req-03`]),
 			).toEqual([]);
 		});
 
