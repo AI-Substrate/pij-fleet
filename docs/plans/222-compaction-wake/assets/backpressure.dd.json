@@ -1,0 +1,84 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 222 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00de",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon tests: a compacted seat holding coder/<n> that goes idle with an empty queue gets exactly one resume message naming the holding, and its parent an FYI; a second round sends nothing; a seat with no holdings or claims gets nothing; a seat with a queued message gets nothing; a new compaction later re-arms it once. A restart doesn't resend for an already-woken compaction (persisted).",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00de",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Spawn-site guard unchanged (crates/testkit/tests/spawn_sites.rs); the cost row in the backpressure states reads per round, per compacted seat only.",
+          "state": "unchecked",
+          "probe": "crates/"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3: cost",
+          "phase": "ph-00de",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "Inside the existing watchdog round: a few indexed reads per seat compacted since its last own event (not per seat per tick), one persisted mark per compaction, one message per qualifying compaction. No new launch, loop or timer. Measure before and after with ping .data.spawns and just spawn-rate."
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4: docs and states",
+          "phase": "ph-00de",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}
