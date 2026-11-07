@@ -2,7 +2,12 @@
 
 ## AC1: route inventory
 
-- `harness/scripts/route-inventory.json` lists the 76 (method, path) pairs main serves: 46 seat-authority, 29 machine-public and 1 job-token (`POST /v1/bg/{job}/emit`). Of those, 12 are implicit HEAD pairs: axum serves HEAD through each GET handler, effects included, and each takes its GET's classification. Round 2, spoonbill F002, found them; the first probe skipped HEAD. It starts from the F88 note (63 pairs at a0ec952) and adds `POST /v1/requests` (#149, its actor resolved by R; withdraw and close need the requester, the PA or the prime). #153 and #156 changed handlers but added no route. #152 (steering) is not merged; when it adds a route, the sensor will make that PR classify it.
+- `harness/scripts/route-inventory.json` lists the 77 (method, path) pairs main serves: 47 seat-authority, 29 machine-public and 1 job-token (`POST /v1/bg/{job}/emit`). Of those, 12 are implicit HEAD pairs: axum serves HEAD through each GET handler, effects included, and each takes its GET's classification. Round 2, spoonbill F002, found them; the first probe skipped HEAD. It starts from the F88 note (63 pairs at a0ec952) and adds:
+  - `POST /v1/requests` (#149; its actor is resolved by R, and withdraw and close need the requester, the PA or the prime);
+  - `POST /v1/steer` (#152; any seat may switch any seat's steering, audited, so it is `attribution`). The sensor flagged it when main was merged in.
+
+  #153 and #156 changed handlers but added no route.
+- Workstream 003 (PRD 003, merged as #112): s01 (req-10) is `in-progress` with plan `docs/plans/221-seat-provenance`. Phase 1 is part of it, so this PR delivers no row.
 - Guards use the note's codes (R, B, N, S, C, the provenance exception as P), plus A for "asserted": `/v1/send` takes `from` as given.
 - The F88 note's "4 other" pairs: hold, release and sidecar are machine-public with their reasons, and the emit hook is `job-token`. That is a third authority beside the AC's two, because the hook takes neither the daemon key nor a seat's authority. The checker requires `job-token` exactly where the router mounts a route outside the bearer layer (`RouteAuth::JobToken`).
 - **The sensor:** `crates/daemon/src/http/route_inventory_tests.rs`, run by `just route-inventory-check`.
@@ -16,7 +21,7 @@
   - `job-token` on the wrong route, or missing from the right one;
   - a malformed file.
 - **Mutation check on the real probe:** removing `/v1/requests` from the JSON, adding a `GET /v1/ghost` entry and deleting `/v1/send`'s class gave exactly three findings, one per change, and the test failed.
-- Local: `just route-inventory-check` passed 6 of 6, with the probe test finding exactly the 76 pairs.
+- Local: `just route-inventory-check` passed 6 of 6, with the probe test finding exactly the 77 pairs.
 
 ## AC2: the workshop
 

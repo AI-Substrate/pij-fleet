@@ -1,5 +1,5 @@
 {
-	"why": "Every daemon HTTP method and route pair, classified for seat identity provenance (plan 221 AC1, PRD 003 req-10, F88). Refreshed from the F88 note (63 pairs at a0ec952) to main, plus POST /v1/requests (#149) and the implicit HEAD pair axum serves for every GET route. `just route-inventory-check` probes the routes the daemon really serves (Endpoint::ALL through the router) and fails on a served pair missing here, an entry the daemon does not serve, a duplicate, or an entry without a valid classification.",
+	"why": "Every daemon HTTP method and route pair, classified for seat identity provenance (plan 221 AC1, PRD 003 req-10, F88). Refreshed from the F88 note (63 pairs at a0ec952) to main, plus POST /v1/requests (#149), POST /v1/steer (#152) and the implicit HEAD pair axum serves for every GET route. `just route-inventory-check` probes the routes the daemon really serves (Endpoint::ALL through the router) and fails on a served pair missing here, an entry the daemon does not serve, a duplicate, or an entry without a valid classification.",
 	"authorities": {
 		"machine-public": "Any holder of the daemon key, by explicit policy (the reason says why); no seat's authority is granted.",
 		"seat-authority": "The route acts with a seat's authority, resolved from caller claims; phase 2 gates these on the per-incarnation capability.",
@@ -392,6 +392,15 @@
 			"grants_by": ["seat"],
 			"guard": ["R"],
 			"note": "Any seat may switch a non-PA seat's watchdog; impersonation forges set_by only."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/steer",
+			"authority": "seat-authority",
+			"class": "attribution",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any seat may switch any seat's steering, as with the watchdog (plan 214, C31); the change is audited and the target told, so impersonation forges the actor only."
 		},
 		{
 			"method": "POST",

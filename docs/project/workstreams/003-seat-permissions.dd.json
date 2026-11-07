@@ -22,10 +22,11 @@
 				{
 					"id": "s01",
 					"title": "Seat identity provenance: route inventory, capability bootstrap, then gated routes",
-					"state": "planned",
+					"state": "in-progress",
 					"delivers": ["../prds/003-seat-permissions.dd.json#requirements/req-10"],
 					"needs": ["role:coder", "role:reviewer", "role:security", "role:performance"],
-					"done_when": "Every route the checked route inventory lists as seat-authority refuses a caller that holds the daemon key but not the target seat's incarnation capability, with a regression per route class; the inventory sensor passes at the shipping head. Plan 221 is phase 1 (the inventory sensor and the capability-bootstrap workshop); later phases are planned from the workshop."
+					"done_when": "Every route the checked route inventory lists as seat-authority refuses a caller that holds the daemon key but not the target seat's incarnation capability, with a regression per route class; the inventory sensor passes at the shipping head. Plan 221 is phase 1 (the inventory sensor and the capability-bootstrap workshop); later phases are planned from the workshop.",
+					"plan": "docs/plans/221-seat-provenance"
 				},
 				{
 					"id": "s02",
@@ -81,6 +82,11 @@
 					"date": "2026-11-08",
 					"by": "pij-steady-otter (pm-001)",
 					"change": "Created with PRD 003 (#112) so the coverage sensor sees every requirement delivered by a planned step. req-10 first (plan 221); the permission steps wait on Jordan's q-02 to q-04. Owner pm-001 until the prime gives it a PM of its own."
+				},
+				{
+					"date": "2026-11-08",
+					"by": "pij-following-marsupial",
+					"change": "s01 in progress under plan 221 (docs/plans/221-seat-provenance): phase 1 ships the route inventory and its sensor and the capability bootstrap workshop; the gated routes follow in phase 2."
 				}
 			]
 		}
