@@ -8,3 +8,7 @@
 - 2026-11-04 · Plan 197 AFTER · spine, deployment, cpu, memory, io · fix confirmed: anomalies/node CPU down 13.4x/185.6x, footprints near 29 MiB, zero spawn deltas
 - 2026-11-06 · Plan 195 at rest · deployment, launches, baseline · feature keys flat after both write batches; wider rates higher than the older unmatched Nov 4 control
 - 2026-11-06 · Daemon spawn attribution · attribution, registration, utc-offset, cargo · date predates s04; conditional pending-seat tick path exists; original cargo share is unmeasured
+
+<!-- pij:generated -->
+- [2026-11-08 F112 after-reading and post-compact queue](2026-11-08-f112-after-reading-and-post-compact.dd.md): After compaction, use latest handover and await PM frozen heads (handover, cost)
+<!-- /pij:generated -->
