@@ -181,7 +181,7 @@
 					"statement": "`--reply wake|fyi|none` on a send to a role, default `wake`, is stored on the request. The output that answers it notifies the requester with that mode. A `block` verdict or a `failed` result always wakes. An output nobody requested goes as an FYI to the nearest seat above (its PM, else the prime). One seat is notified; everyone else reads the record (req-10).",
 					"actor": "requester",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "An idle requester that sent with the default is woken by the output; one that sent `--reply fyi` is not woken; a block verdict wakes a `fyi` requester.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -202,7 +202,7 @@
 					"statement": "`pij output verdict|deliverable|note|handover --subject <address> ...` writes one ddoc per output under `community/roles/<id>/outputs/<yyyy-mm>/` and records a store fact. A verdict carries the exact head commit, the result, notes owed, the evidence of what ran (command, exit code, log path) and an optional external link (the PR comment). Every output records its writer and flags one who does not hold the role. `pij outputs --subject pr:N --head <sha>` answers for that exact head, and answers none when the head has moved. A handover output holds what is in flight right now. The daemon writes outputs one at a time.",
 					"actor": "worker seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A pass on head A answers none for head B; a verdict by a non-holder is flagged; two seats writing at once produce two files with no conflict.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -212,7 +212,7 @@
 					"statement": "pij builds a routing table from every role's scope (paths and rules), warns on overlapping scopes, writes it to `community/ROUTES.md`, and sends it to a seat when it is assigned to a role, after a compact, when a revived seat returns, and on demand (`pij directory routes`). When routes change, the changed rows go as an FYI to the prime only. A change of holder sends nothing.",
 					"actor": "worker seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Adding a role regenerates ROUTES.md and sends one FYI to the prime; two roles claiming one path give an overlap warning; reassigning a holder sends nothing.",
 					"source": "workshops/001-pij-community/001-community-directory.md"
 				},
@@ -313,7 +313,7 @@
 					"statement": "A send can carry `--limit <duration>`; without one, the role's default limit applies. When the limit passes with no output and no card update since the request (each card update restarts it), pij sends the seat one check-in, delivered as to any busy seat: write what you have, update your card, and say why it needs longer. Nothing is stopped. If the seat does not answer, pij tells the PA (else the prime). The check runs in the watchdog round the daemon already has; the opt-in quiet-seat watchdog is unchanged.",
 					"actor": "requester",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A seat busy past its limit with no card update gets one check-in; a seat that updates its card is never checked in; a seat that ignores the check-in raises a PA notice.",
 					"source": "workshops/001-pij-community/002-limits-and-doc-prompting.md"
 				},
@@ -515,6 +515,11 @@
 					"date": "2026-11-06",
 					"by": "docs-system",
 					"change": "delivered_by recorded: req-20 and req-21 by #131 (s11, from the prime's `pij delivered 131`); req-09 by #132 (s07), set by hand because #132's Delivers line names the step in prose, not as ddocs addresses."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-local-warbler",
+					"change": "Plan 202: req-11 shipped (routing table, overlap warning, FYIs to seats on assign, compact and revive, changed rows to the prime only, `pij directory routes`)."
 				}
 			]
 		}
