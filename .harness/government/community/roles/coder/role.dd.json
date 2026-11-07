@@ -18,7 +18,7 @@
 			"name": "scope",
 			"value": {
 				"rules": [
-					"One roadmap step in its own worktree and branch, from a pm/001 packet. Runs `/builder` implement, the repo's `just` gates and `harness checks`. Opens a PR."
+					"One workstream step in its own worktree and branch, from a pm/001 packet. Runs `/builder` implement, the repo's `just` gates and `harness checks`. Opens a PR."
 				]
 			}
 		},
@@ -61,6 +61,11 @@
 					"by": "pij-following-marsupial",
 					"date": "2026-11-08",
 					"why": "C29 rename (plan 210)"
+				},
+				{
+					"by": "pij-following-marsupial",
+					"date": "2026-11-08",
+					"why": "C29 rename (plan 210): workstream wording"
 				}
 			]
 		}

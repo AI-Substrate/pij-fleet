@@ -29,7 +29,7 @@
 | Field | Value |
 | --- | --- |
 | paths | — |
-| rules | One roadmap step in its own worktree and branch, from a pm/001 packet. Runs `/builder` implement, the repo's `just` gates and `harness checks`. Opens a PR. |
+| rules | One workstream step in its own worktree and branch, from a pm/001 packet. Runs `/builder` implement, the repo's `just` gates and `harness checks`. Opens a PR. |
 
 <a id="out-of-scope"></a>
 
@@ -71,3 +71,4 @@
 | --- | --- | --- |
 | 2026-11-05 | pij-wooden-lungfish | import the hand-written roles (wave B dogfood, re-run) |
 | 2026-11-08 | pij-following-marsupial | C29 rename (plan 210) |
+| 2026-11-08 | pij-following-marsupial | C29 rename (plan 210): workstream wording |
