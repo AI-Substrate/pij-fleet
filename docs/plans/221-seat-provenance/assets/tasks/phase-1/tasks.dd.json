@@ -35,7 +35,7 @@
           "id": "tk-0002",
           "title": "Workshop 001: capability bootstrap",
           "phase": "ph-00dd",
-          "state": "unchecked",
+          "state": "checked",
           "success": "workshops/001-capability-bootstrap.md compares options A, B and C against every question in AC2 and recommends C, with the route classes ordered for phase 2, send-as first.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
@@ -59,7 +59,7 @@
           "id": "tk-0004",
           "title": "Docs and states",
           "phase": "ph-00dd",
-          "state": "unchecked",
+          "state": "checked",
           "success": "docs/how/pij-rs-api.md gains a Seat authority section pointing at the inventory; docs/difficulties.md records F88 (D-221-1); the plan states phases 2 and later as follow-up waves.",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
@@ -84,7 +84,7 @@
           {
             "id": "dw-0002",
             "assertion": "Security and reviewer verdicts, pass or pass-with-notes, pinned to the workshop's commit.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -100,7 +100,7 @@
           {
             "id": "dw-0004",
             "assertion": "just ddocs-check passes; CI on the exact head; reviewer, security and performance verdicts.",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0004"
           }
         ]
