@@ -704,18 +704,20 @@ pub(crate) async fn shim_send(State(state): State<AppState>, body: axum::body::B
         )
         .await;
     }
-    let from = match subject(&state, SEND, request.caller.as_ref()).await {
-        Ok(seat) => seat.id,
+    let (from, verified) = match subject_verified(&state, SEND, request.caller.as_ref()).await {
+        Ok((seat, verified)) => (seat.id, verified),
         Err(response) => return *response,
     };
     let msg_id = state.services.delivery.next_message_id();
-    // The shim derives its sender from the caller, so the reply check binds.
+    // The shim derives its sender from the caller, so the reply check binds;
+    // a verified paneless pull seat is carried forward, not re-resolved.
     let reply = match super::reply_sender(
         &state,
         "shim",
         &from,
         call.in_reply_to.as_deref(),
         request.caller.as_ref(),
+        verified.as_ref(),
     )
     .await
     {
@@ -1129,6 +1131,19 @@ async fn subject(
     command: &'static str,
     caller: Option<&CallerContext>,
 ) -> std::result::Result<SeatDescriptor, Box<Response>> {
+    subject_verified(state, command, caller)
+        .await
+        .map(|(seat, _)| seat)
+}
+
+/// [`subject`], with the paneless pull verification it made, if any: the
+/// registered native session and host tuple matched, with the host live at its
+/// recorded start.
+async fn subject_verified(
+    state: &AppState,
+    command: &'static str,
+    caller: Option<&CallerContext>,
+) -> std::result::Result<(SeatDescriptor, Option<super::VerifiedPull>), Box<Response>> {
     let asserted = caller.and_then(|caller| caller.session_id.clone());
     let pane = caller.and_then(|caller| caller.pane.clone());
     let resolved = identity::resolve_seat(state, command, asserted, pane).await;
@@ -1165,8 +1180,13 @@ async fn subject(
                     }
                     Err(error) => return Err(Box::new(internal(command, error))),
                 }
+                let verified = super::VerifiedPull {
+                    seat: descriptor.id.clone(),
+                    identity: native,
+                };
+                return Ok((descriptor, Some(verified)));
             }
-            Ok(descriptor)
+            Ok((descriptor, None))
         }
         Resolved::Refusal(response) => Err(Box::new(response)),
     }

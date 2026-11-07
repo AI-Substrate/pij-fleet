@@ -1,0 +1,15 @@
+{
+  "_comment": "The OMP/Pi pij_send body for a reply (rust-runtime.ts send: in_reply_to set from the last inbound message). The TS half (rust-runtime.test.ts) asserts the adapter sends exactly these keys, populated; the Rust half (directory_http.rs) posts this body to /v1/send, where the reply gate accepts it pane-bound and refuses it without caller (review of #152, S152-001). Values fit the Rust rig: %51 is pij-holder's pane and req-limit its request.",
+  "from": "pij-holder",
+  "to": { "seat": "pij-test-coder" },
+  "body": "reply",
+  "msg_id": "omp-correlated-reply",
+  "in_reply_to": "req-limit",
+  "caller": {
+    "pijSessionId": "pij-holder",
+    "tmuxPane": "%51",
+    "cwd": "/abs/tree",
+    "pid": 4242,
+    "procStart": 20260829103052
+  }
+}

@@ -468,6 +468,50 @@ describe("RustRuntimeSession", () => {
 			runtime.shutdown("quit");
 		}
 	});
+	it("a reply carries caller context in the shape the daemon's reply gate binds", async () => {
+		// Review of #152, S152-001: the daemon refuses a reply to a role request
+		// with no caller context. The Rust half replays this fixture.
+		const contract = JSON.parse(
+			readFileSync(
+				new URL(
+					"../../../../crates/daemon/tests/fixtures/omp-correlated-send.wire.json",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		) as Record<string, unknown>;
+		delete contract._comment;
+		const wanted = contract.caller as Record<string, unknown>;
+		for (const name of [
+			"PIJ_PARENT_ID",
+			"CLAUDE_CODE_SESSION_ID",
+			"COPILOT_AGENT_SESSION_ID",
+			"CODEX_THREAD_ID",
+		])
+			vi.stubEnv(name, undefined);
+		vi.stubEnv("TMUX_PANE", "%51");
+		const { acknowledgements, runtime, sends } = await bootPushedEvent(
+			PUSHED_EVENT_WIRE,
+			new FakePiRuntime(),
+		);
+		try {
+			await vi.waitFor(() => expect(acknowledgements).toHaveLength(1));
+			await runtime.send("pij-from", "reply");
+			const sent = sends.at(-1) ?? {};
+			expect(sent.in_reply_to).toBe("000000000000feed-0000000000000000");
+			expect(Object.keys(sent).sort()).toEqual(Object.keys(contract).sort());
+			const caller = sent.caller as Record<string, unknown>;
+			expect(Object.keys(caller).sort()).toEqual(Object.keys(wanted).sort());
+			for (const key of Object.keys(wanted)) expect(typeof caller[key]).toBe(typeof wanted[key]);
+			expect(caller.tmuxPane).toBe("%51");
+			// The reply consumed the correlation: the next send is uncorrelated and carries none.
+			await runtime.send("pij-from", "again");
+			expect(sends.at(-1)).not.toHaveProperty("in_reply_to");
+			expect(sends.at(-1)).not.toHaveProperty("caller");
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
 	it("maps a held fyi receipt's question warning and cold_check into the send result", async () => {
 		const warning = "this looks like a question; if you need an answer, resend without --fyi";
 		const { runtime } = await bootPushedEvent(

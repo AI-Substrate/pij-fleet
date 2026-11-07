@@ -1988,6 +1988,7 @@ async fn send(
             &request.message.from,
             request.message.in_reply_to.as_deref(),
             request.caller.as_ref(),
+            None,
         )
         .await
         {
@@ -2182,57 +2183,97 @@ pub(crate) async fn note_turn_wait(state: &AppState, to: &SeatId, receipt: &mut 
 pub const REPLY_ANSWER_EVENT_KIND: &str = "request.answered_by_reply";
 
 /// How a reply's sender was established, for the audit: the route, and what
-/// bound the caller to a seat (`pane (derived)` or an asserted session id)
+/// bound the caller to a seat (`pane (derived)` or `paneless pull (verified)`)
 /// with the evidence it gave. A reply is never unbound (C32 (1)).
 pub(crate) type ReplyEvidence = serde_json::Value;
 
+/// A shim caller already verified as a paneless pull seat (shim `subject`): a
+/// Claude, Copilot or Codex seat outside tmux whose registered native session
+/// and host tuple matched, with the host live at its recorded start. Carried
+/// forward to [`reply_sender`] rather than re-resolved, which would see only
+/// the asserted id.
+pub(crate) struct VerifiedPull {
+    pub seat: SeatId,
+    pub identity: crate::delivery::NativeInboxIdentity,
+}
+
 /// Check a reply's sender before anything is sent (S152-001, F88; ruling C32).
-/// Only a send whose `in_reply_to` names a role request is checked. When the
-/// caller's context resolves to a seat, that seat is the sender: a different
-/// `from` is refused `E-RS-REPLY-SENDER`, and context that cannot be resolved
-/// is refused as the identity ladder refuses it. A caller with no context at
-/// all is refused `E-RS-REPLY-IDENTITY`, normal or FYI: its `from` is only a
-/// claim, and delivering it would show the recipient a message from a seat
-/// that never sent it (C32 (1); security review of #152, S152-001).
+/// Only a send whose `in_reply_to` names a role request, open or closed, is
+/// checked; any other id keeps today's uncorrelated behaviour. The sender must
+/// be bound: by the caller's pane, or as the shim's verified paneless pull
+/// seat. A `from` that differs from the bound seat is refused
+/// `E-RS-REPLY-SENDER`; context that cannot be resolved is refused as the
+/// identity ladder refuses it; and a caller with no context, or only an
+/// asserted session id (existence checked only), is refused
+/// `E-RS-REPLY-IDENTITY`, normal or FYI. A claimed `from` is never delivered
+/// as that seat (C32 (1); security review of #152, S152-001).
 pub(crate) async fn reply_sender(
     state: &AppState,
     route: &'static str,
     from: &SeatId,
     in_reply_to: Option<&str>,
     caller: Option<&CallerContext>,
+    verified: Option<&VerifiedPull>,
 ) -> std::result::Result<Option<ReplyEvidence>, Box<Response>> {
     let Some(id) = in_reply_to else {
         return Ok(None);
     };
-    match state.services.governance.store().role_request(id).await {
+    // Unknown whether it is a request, so unknown whether it must bind.
+    let store = state.services.governance.store();
+    match store.role_request(id).await {
         Ok(Some(_)) => {}
-        Ok(None) => return Ok(None),
-        // Unknown whether it is a request, so unknown whether it must bind.
+        Ok(None) => match store.closed_role_request(id).await {
+            Ok(Some(_)) => {}
+            Ok(None) => return Ok(None),
+            Err(error) => return Err(Box::new(internal("pij send", error))),
+        },
         Err(error) => return Err(Box::new(internal("pij send", error))),
+    }
+    let sender = |seat: &SeatId, by: &str| {
+        Box::new(refused(
+            "pij send",
+            format!(
+                "E-RS-REPLY-SENDER: this reply to request {id} says it is from {from}, but its caller \
+                 is {seat} (by {by}); a reply answers a request only as the seat that sends it"
+            ),
+        ))
+    };
+    let unbound = |what: &str| {
+        Box::new(refused(
+            "pij send",
+            format!(
+                "E-RS-REPLY-IDENTITY: this reply to request {id} carries {what}, so pij cannot \
+                 tell which seat sends it, and it never delivers a reply as {from} on that seat's \
+                 word; send it from {from}'s own session, inside its tmux pane"
+            ),
+        ))
+    };
+    if let Some(pull) = verified {
+        if pull.seat != *from {
+            return Err(sender(&pull.seat, "verified paneless pull"));
+        }
+        return Ok(Some(serde_json::json!({
+            "route": route,
+            "bound": "paneless pull (verified)",
+            "session": pull.identity.native_session,
+            "pid": pull.identity.pid,
+            "proc_start": pull.identity.proc_start,
+        })));
     }
     let pane = caller.and_then(|caller| caller.pane.clone());
     let session = caller.and_then(|caller| caller.session_id.clone());
     if pane.is_none() && session.is_none() {
-        return Err(Box::new(refused(
-            "pij send",
-            format!(
-                "E-RS-REPLY-IDENTITY: this reply to request {id} carries no caller identity \
-                 context (no TMUX_PANE or PIJ_SESSION_ID), so pij cannot tell which seat sends \
-                 it, and it never delivers a reply as {from} on that seat's word; send it from \
-                 {from}'s own session"
-            ),
-        )));
+        return Err(unbound(
+            "no caller identity context (no TMUX_PANE or PIJ_SESSION_ID)",
+        ));
     }
     match identity::resolve_seat(state, "pij send", session.clone(), pane.clone()).await {
-        identity::Resolved::Seat(seat, by) if seat.id != *from => Err(Box::new(refused(
-            "pij send",
-            format!(
-                "E-RS-REPLY-SENDER: this reply to request {id} says it is from {from}, but its caller \
-                 is {} (by {}); a reply answers a request only as the seat that sends it",
-                seat.id,
-                by.as_str()
-            ),
-        ))),
+        identity::Resolved::Seat(seat, by) if seat.id != *from => {
+            Err(sender(&seat.id, by.as_str()))
+        }
+        identity::Resolved::Seat(_, identity::ResolvedBy::AssertedId) => Err(unbound(
+            "only an asserted session id (PIJ_SESSION_ID, no pane), which pij checks for existence only",
+        )),
         identity::Resolved::Seat(seat, by) => Ok(Some(serde_json::json!({
             "route": route,
             "bound": by.as_str(),

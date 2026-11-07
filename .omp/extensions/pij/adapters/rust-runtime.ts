@@ -516,21 +516,24 @@ export class RustRuntimeSession {
 		// Keyed like `senderLabel`, so a reply to the shown sender threads onto its message.
 		const replyKey = renderDestination(destination.value);
 		const inReplyTo = this.lastInbound.get(replyKey);
+		// A control and a reply carry caller proof: the daemon binds a reply to
+		// a role request to its caller and refuses one with no context
+		// (ruling C32; review of #152, S152-001).
+		const caller =
+			command === undefined && inReplyTo === undefined
+				? undefined
+				: buildCallerContext(process.env, {
+						cwd: process.cwd(),
+						pid: process.pid,
+						procStart: this.client.processStart(process.pid),
+					});
 		const receipt = await this.client.send({
 			from: this.self,
 			to: destination.value,
 			body,
 			msg_id: msgId,
-			...(command === undefined
-				? {}
-				: {
-						command,
-						caller: buildCallerContext(process.env, {
-							cwd: process.cwd(),
-							pid: process.pid,
-							procStart: this.client.processStart(process.pid),
-						}),
-					}),
+			...(command === undefined ? {} : { command }),
+			...(caller === undefined ? {} : { caller }),
 			...(fyi ? { fyi: true } : {}),
 			...(force === undefined ? {} : { force: true, reason: force.reason }),
 			...(inReplyTo === undefined ? {} : { in_reply_to: inReplyTo }),
