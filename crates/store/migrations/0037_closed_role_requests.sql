@@ -24,6 +24,11 @@ CREATE TABLE closed_role_requests (
     created_at  INTEGER NOT NULL,
     holder      TEXT,
     delivered_at INTEGER,
+    -- What a delivered request's close owes its requester: nothing asked
+    -- (`quiet`), an FYI not yet admitted (`owed`), or sent (`told`). NULL for a
+    -- withdraw or drain close. A close that ends with `owed` is retried by the
+    -- next `pij requests close <id>` (review of #149, F005).
+    notice      TEXT CHECK (notice IN ('quiet', 'owed', 'told')),
     closed_at   INTEGER NOT NULL,
     closed_by   TEXT NOT NULL,
     close_why   TEXT NOT NULL

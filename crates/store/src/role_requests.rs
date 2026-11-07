@@ -114,6 +114,9 @@ pub struct ClosedRoleRequest {
     pub closed_by: String,
     /// Why.
     pub why: String,
+    /// What the close owes the requester: `quiet`, `owed` or `told`; `None`
+    /// for a withdraw or drain close (review of #149, F005).
+    pub notice: Option<String>,
 }
 
 /// What [`SqliteOrchestration::close_role_request`] did.
@@ -228,7 +231,8 @@ const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to
 /// A closed row read through [`role_request`], plus who closed it.
 const CLOSED_COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, \
      reply, limit_ms, 'closed' AS state, holder, created_at, delivered_at, \
-     NULL AS checkin_at, NULL AS escalated_at, NULL AS answered_at, closed_at, closed_by, close_why";
+     NULL AS checkin_at, NULL AS escalated_at, NULL AS answered_at, closed_at, closed_by, close_why, \
+     notice";
 
 /// How many rows one `pij requests` read returns at most, newest first.
 pub const REQUESTS_LIST_LIMIT: u32 = 100;
@@ -908,7 +912,8 @@ impl SqliteOrchestration {
     /// in one transaction. A queued one (withdraw, F59) can then never be
     /// drained and leaves the PA digest; a delivered one (F83) leaves the time
     /// limit's rounds. Only a request in `from` closes; the outcome says what
-    /// stood in the way otherwise.
+    /// stood in the way otherwise. `notice` is what the close owes the
+    /// requester, recorded in the same transaction.
     pub async fn close_role_request(
         &self,
         id: &str,
@@ -916,10 +921,12 @@ impl SqliteOrchestration {
         by: &str,
         why: &str,
         at: u64,
+        notice: Option<&str>,
     ) -> Result<CloseOutcome> {
         require_current_schema(&self.pool).await?;
         let pool = self.pool.clone();
         let (owned_id, by, why) = (id.to_string(), by.to_string(), why.to_string());
+        let notice = notice.map(str::to_string);
         let from = from.as_str();
         let at = sql_i64(at, "closed_at")?;
         let moved = owned_write(async move {
@@ -928,9 +935,9 @@ impl SqliteOrchestration {
             let moved = sqlx::query(
                 "INSERT INTO closed_role_requests (id, project, role, instance, requester, body, \
                  in_reply_to, fyi, reply, limit_ms, created_at, holder, delivered_at, closed_at, \
-                 closed_by, close_why) \
+                 closed_by, close_why, notice) \
                  SELECT id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
-                 limit_ms, created_at, holder, delivered_at, ?2, ?3, ?4 FROM role_requests \
+                 limit_ms, created_at, holder, delivered_at, ?2, ?3, ?4, ?6 FROM role_requests \
                  WHERE id = ?1 AND state = ?5",
             )
             .bind(&id)
@@ -938,6 +945,7 @@ impl SqliteOrchestration {
             .bind(&by)
             .bind(&why)
             .bind(from)
+            .bind(&notice)
             .execute(&mut *tx)
             .await
             .map_err(adapter_error)?
@@ -964,6 +972,29 @@ impl SqliteOrchestration {
                 None => CloseOutcome::Unknown,
             },
         })
+    }
+
+    /// The close's FYI to the requester was admitted: `owed` becomes `told`,
+    /// once. False when nothing was owed.
+    pub async fn close_notice_told(&self, id: &str) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let changed = sqlx::query(
+                "UPDATE closed_role_requests SET notice = 'told' WHERE id = ?1 AND notice = 'owed'",
+            )
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
     }
 
     /// One closed request by id.
@@ -1053,6 +1084,7 @@ fn closed_role_request(row: &sqlx::sqlite::SqliteRow) -> Result<ClosedRoleReques
         closed_at: sql_u64(closed_at, "closed_at")?,
         closed_by: row.try_get("closed_by").map_err(adapter_error)?,
         why: row.try_get("close_why").map_err(adapter_error)?,
+        notice: row.try_get("notice").map_err(adapter_error)?,
     })
 }
 

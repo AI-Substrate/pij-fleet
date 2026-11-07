@@ -13,7 +13,6 @@ use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use pij_core::model::{Envelope, ErrorKind, Msg, SeatId};
-use pij_core::orchestration::PrimeState;
 use pij_store::{
     CloseOutcome, ClosedOrOpen, ClosedRoleRequest, REQUESTS_LIST_LIMIT, RequestState, RoleRequest,
 };
@@ -191,7 +190,7 @@ async fn withdraw(state: &AppState, actor: &SeatId, args: &[String]) -> Result<V
     }
     let at = system_time_ms().map_err(store_refusal)?;
     match store
-        .close_role_request(id, RequestState::Queued, actor.as_str(), &why, at)
+        .close_role_request(id, RequestState::Queued, actor.as_str(), &why, at, None)
         .await
         .map_err(store_refusal)?
     {
@@ -208,8 +207,13 @@ async fn withdraw(state: &AppState, actor: &SeatId, args: &[String]) -> Result<V
 
 /// `pij requests close <id> [--why] [--quiet]` (F83): close a delivered
 /// request that was answered or abandoned, so its time limit stops. Withdraw's
-/// authority plus the request's holder. One store write; then, unless the
-/// requester closed it or `--quiet`, one FYI telling the requester.
+/// authority plus the request's holder. The close records what it owes the
+/// requester (`quiet`, or an `owed` FYI) in the same write; the FYI is then
+/// sent by an owned task and marked `told` once admitted, so cancelling the
+/// caller never abandons it, and a failure is in the printed line. Closing an
+/// already-closed request whose FYI is still owed sends it then; the FYI's
+/// msg id is the request's, so a retry is never a second message (review of
+/// #149, F005).
 async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Value, Refusal> {
     let quiet = args.iter().any(|arg| arg == "--quiet");
     let args: Vec<String> = args
@@ -226,25 +230,44 @@ async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Valu
     let request = match store.role_request(id).await.map_err(store_refusal)? {
         Some(request) => request,
         None => match store.closed_role_request(id).await.map_err(store_refusal)? {
+            Some(closed) if closed.notice.as_deref() == Some("owed") => {
+                may_close(state, actor, &closed.request).await?;
+                let told = notify_owned(state, actor, &closed).await;
+                let mut data = closed_entry(&closed);
+                data["line"] = json!(match &told {
+                    Ok(_) => format!(
+                        "request {id} was already closed by {}; its notice to {} is sent now",
+                        closed.closed_by, closed.request.requester
+                    ),
+                    Err(cause) => not_told_line(
+                        &format!("request {id} was already closed by {}", closed.closed_by),
+                        &closed,
+                        cause,
+                    ),
+                });
+                data["told"] = told_value(&closed, told);
+                return Ok(data);
+            }
             Some(closed) => return Err(already_closed(&closed)),
             None => return Err(unknown(id)),
         },
     };
-    let holder = request.holder.as_deref() == Some(actor.as_str());
-    if !holder && !may_withdraw(state, actor, &request).await? {
-        return Err(Refusal::new(
-            "E-RS-OWNERSHIP",
-            format!(
-                "request {id} was sent by {} to {}; only its requester, its holder, the PA of {} or the prime closes it",
-                request.requester,
-                request.holder.as_deref().unwrap_or("no holder yet"),
-                request.project
-            ),
-        ));
-    }
+    may_close(state, actor, &request).await?;
+    let notice = if quiet || request.requester == actor.as_str() {
+        "quiet"
+    } else {
+        "owed"
+    };
     let at = system_time_ms().map_err(store_refusal)?;
     let closed = match store
-        .close_role_request(id, RequestState::Delivered, actor.as_str(), &why, at)
+        .close_role_request(
+            id,
+            RequestState::Delivered,
+            actor.as_str(),
+            &why,
+            at,
+            Some(notice),
+        )
         .await
         .map_err(store_refusal)?
     {
@@ -254,13 +277,82 @@ async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Valu
         CloseOutcome::Unknown => return Err(unknown(id)),
     };
     let mut data = closed_entry(&closed);
-    data["line"] = json!(format!("request {id} closed by {actor}: {why}"));
-    data["told"] = if quiet || closed.request.requester == actor.as_str() {
-        Value::Null
-    } else {
-        tell_requester(state, actor, &closed, &why).await
-    };
+    let line = format!("request {id} closed by {actor}: {why}");
+    if notice == "quiet" {
+        data["line"] = json!(line);
+        data["told"] = Value::Null;
+        return Ok(data);
+    }
+    let told = notify_owned(state, actor, &closed).await;
+    data["line"] = json!(match &told {
+        Ok(_) => line,
+        Err(cause) => not_told_line(&line, &closed, cause),
+    });
+    data["told"] = told_value(&closed, told);
     Ok(data)
+}
+
+/// Withdraw's authority plus the request's holder.
+async fn may_close(state: &AppState, actor: &SeatId, request: &RoleRequest) -> Result<(), Refusal> {
+    if request.holder.as_deref() == Some(actor.as_str())
+        || may_withdraw(state, actor, request).await?
+    {
+        return Ok(());
+    }
+    Err(Refusal::new(
+        "E-RS-OWNERSHIP",
+        format!(
+            "request {} was sent by {} to {}; only its requester, its holder, the PA of {} or the prime closes it",
+            request.id,
+            request.requester,
+            request.holder.as_deref().unwrap_or("no holder yet"),
+            request.project
+        ),
+    ))
+}
+
+/// Send the close's owed FYI from a task of its own, and mark it `told` once
+/// admitted. The caller awaits the task, but cancelling the caller does not
+/// cancel it.
+async fn notify_owned(
+    state: &AppState,
+    actor: &SeatId,
+    closed: &ClosedRoleRequest,
+) -> Result<pij_core::model::DeliveryOutcome, String> {
+    let (state, actor, closed) = (state.clone(), actor.clone(), closed.clone());
+    tokio::spawn(async move {
+        let outcome = tell_requester(&state, &actor, &closed).await?;
+        state
+            .services
+            .governance
+            .store()
+            .close_notice_told(&closed.request.id)
+            .await
+            .map_err(|cause| format!("the FYI was held, but marking it told failed: {cause}"))?;
+        Ok(outcome)
+    })
+    .await
+    .unwrap_or_else(|cause| Err(format!("the notice task failed: {cause}")))
+}
+
+fn told_value(
+    closed: &ClosedRoleRequest,
+    told: Result<pij_core::model::DeliveryOutcome, String>,
+) -> Value {
+    match told {
+        Ok(outcome) => json!({"seat": closed.request.requester, "outcome": outcome}),
+        Err(cause) => {
+            json!({"seat": closed.request.requester, "outcome": format!("not told: {cause}")})
+        }
+    }
+}
+
+fn not_told_line(head: &str, closed: &ClosedRoleRequest, cause: &str) -> String {
+    format!(
+        "{head}; but {} was NOT told ({cause}). Run {} again to send the notice",
+        closed.request.requester,
+        crate::community::picture::command(&["pij", "requests", "close", &closed.request.id])
+    )
 }
 
 /// One FYI to the requester that its request was closed. Its msg id is the
@@ -269,8 +361,7 @@ async fn tell_requester(
     state: &AppState,
     actor: &SeatId,
     closed: &ClosedRoleRequest,
-    why: &str,
-) -> Value {
+) -> Result<pij_core::model::DeliveryOutcome, String> {
     let request = &closed.request;
     let address = if request.instance.is_empty() {
         format!("role:{}", request.role)
@@ -282,21 +373,24 @@ async fn tell_requester(
         from_machine: None,
         to: SeatId::from(request.requester.as_str()),
         body: format!(
-            "[pij request closed] your request {} to {address} in {} was closed by {actor}: {why}",
-            request.id, request.project
+            "[pij request closed] your request {} to {address} in {} was closed by {}: {}",
+            request.id, request.project, closed.closed_by, closed.why
         ),
         msg_id: format!("request-closed-{}", request.id),
         in_reply_to: Some(request.id.clone()),
         command: None,
     };
-    match state.services.delivery.hold_fyi(msg).await {
-        Ok(receipt) => json!({"seat": request.requester, "outcome": receipt.outcome}),
-        Err(error) => json!({"seat": request.requester, "outcome": format!("not told: {error}")}),
-    }
+    state
+        .services
+        .delivery
+        .hold_fyi(msg)
+        .await
+        .map(|receipt| receipt.outcome)
+        .map_err(|error| error.to_string())
 }
 
 /// The requester; a seat holding the request's project's `pa` role; or the
-/// prime: the project's prime, the current designation, or a `prime` seat.
+/// project's recorded prime (`projects.prime_id`).
 async fn may_withdraw(
     state: &AppState,
     actor: &SeatId,
@@ -322,23 +416,10 @@ async fn may_withdraw(
         .into_iter()
         .find(|project| project.slug == request.project)
         .and_then(|project| project.prime_id);
-    if project_prime.as_ref() == Some(actor) {
-        return Ok(true);
-    }
-    let designated = store
-        .prime()
-        .await
-        .map_err(store_refusal)?
-        .is_some_and(|prime| prime.state == PrimeState::Current && prime.seat == *actor);
-    if designated {
-        return Ok(true);
-    }
-    Ok(store
-        .list_roles()
-        .await
-        .map_err(store_refusal)?
-        .iter()
-        .any(|row| row.role == "prime" && row.seat == *actor))
+    // Prime authority is the project's recorded prime, as `pij output
+    // --answers` reads it; never a role or label a caller can give itself
+    // (review of #149, F001; security: HIGH).
+    Ok(project_prime.as_ref() == Some(actor))
 }
 
 /// A request as listed: no body.
@@ -364,6 +445,7 @@ fn closed_entry(closed: &ClosedRoleRequest) -> Value {
     entry["closed_at"] = json!(closed.closed_at);
     entry["closed_by"] = json!(closed.closed_by);
     entry["why"] = json!(closed.why);
+    entry["notice"] = json!(closed.notice);
     entry
 }
 

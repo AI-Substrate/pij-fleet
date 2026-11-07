@@ -360,7 +360,21 @@ fn several_holders(send: &RoleSend, several: &[(&Assignment, SeatDescriptor)]) -
         several.len(),
         send.project,
     );
-    match several.iter().find(|(row, _)| !row.instance.is_empty()) {
+    // Only an instance exactly one live holder has picks one seat; a shared
+    // one (two seats on `reviewer/149`) would refuse again (review of #149,
+    // F002), so then the advice is a seat.
+    let unique = several.iter().find(|(row, _)| {
+        !row.instance.is_empty()
+            && several
+                .iter()
+                .filter(|(other, _)| other.instance == row.instance)
+                .count()
+                == 1
+    });
+    let shared = several.iter().any(|(row, _)| !row.instance.is_empty());
+    match unique {
+        // The role address keeps its project, wherever the line is run
+        // (review of #149, F003).
         Some((row, _)) => Refusal::new(
             E_ROLE_HOLDERS,
             format!("{head}; address one by its instance, or send to the seat"),
@@ -369,6 +383,21 @@ fn several_holders(send: &RoleSend, several: &[(&Assignment, SeatDescriptor)]) -
             "pij",
             "send",
             &format!("{ROLE_PREFIX}{role}/{}", row.instance),
+            "<text>",
+            "--project",
+            &send.project,
+        ])),
+        None if shared => Refusal::new(
+            E_ROLE_HOLDERS,
+            format!(
+                "{head}; no instance has a single holder, so no instance address picks one. \
+                 Send to a seat, or release one of the shared holdings"
+            ),
+        )
+        .with_next(command(&[
+            "pij",
+            "send",
+            several[0].1.id.as_str(),
             "<text>",
         ])),
         None => Refusal::new(
@@ -404,7 +433,14 @@ fn no_such_instance(send: &RoleSend, live: &[SeatId]) -> Refusal {
             "role {role} has one holder and no holding has instance {}; address it as {ROLE_PREFIX}{role}",
             send.address.instance
         ))
-        .with_next(command(&["pij", "send", &format!("{ROLE_PREFIX}{role}"), "<text>"])),
+        .with_next(command(&[
+            "pij",
+            "send",
+            &format!("{ROLE_PREFIX}{role}"),
+            "<text>",
+            "--project",
+            &send.project,
+        ])),
         several => refusal(format!(
             "role {role} has one holder, but {} seats hold it ({}) and none has instance {}; send to a seat",
             several.len(),
@@ -572,7 +608,13 @@ fn refuse_retired(send: &RoleSend, standing: &role::Standing) -> Result<(), Refu
                 send.project
             ),
         )
-        .with_next(format!("pij directory view --project {}", send.project)),
+        .with_next(command(&[
+            "pij",
+            "directory",
+            "view",
+            "--project",
+            &send.project,
+        ])),
     })
 }
 
@@ -835,7 +877,24 @@ impl AfterAssign for RoleQueueDrain {
             eprintln!("pij-rs: role queue for {role} not drained: services not bound");
             return Vec::new();
         };
-        match drain(services, project, role, instance, seat).await {
+        // The drain runs in its own task, so a cancelled assign waiter never
+        // drops a request between its claim and its settlement (review of
+        // #149, F004): the claim, the delivery and the settlement (or the
+        // release back to the queue) finish whatever happens to the waiter.
+        let owned = {
+            let (services, project, role, instance, seat) = (
+                services.clone(),
+                project.to_string(),
+                role.to_string(),
+                instance.to_string(),
+                seat.clone(),
+            );
+            tokio::spawn(async move { drain(&services, &project, &role, &instance, &seat).await })
+        };
+        let result = owned
+            .await
+            .unwrap_or_else(|cause| Err(format!("the drain task failed: {cause}")));
+        match result {
             Ok(drained) => drained
                 .iter()
                 .inspect(|one| {
@@ -951,6 +1010,7 @@ pub async fn drain(
                     seat.as_str(),
                     REQUESTER_TOOK_ROLE,
                     at,
+                    None,
                 )
                 .await
             {
@@ -1419,11 +1479,14 @@ async fn notice(
         "--project",
         &request.project,
     ]);
+    // Every printed command quotes its words: `holder` and the instance are
+    // stored text (#149, herring).
+    let look = command(&["pij", "state", holder.as_str()]);
     let body = match silence {
         Silence::Unanswered => format!(
             "[pij time limit] {holder} has not answered the check-in for request {} ({address} in {}, from {}): \
              no output and no card update for {} since. Nothing has been stopped. Next: look at it \
-             (pij state {holder}), or give the role another holder ({release}).",
+             ({look}), or give the role another holder ({release}).",
             request.id,
             request.project,
             request.requester,

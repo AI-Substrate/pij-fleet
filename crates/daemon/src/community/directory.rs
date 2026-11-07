@@ -1492,7 +1492,11 @@ impl DirectoryService {
     /// stays reads only (S2).
     async fn rename(&self, seat: &SeatDescriptor, row: &Assignment) -> Value {
         let name = window_name(row);
-        if let Some(first) = self.first_open(seat).await.filter(|first| {
+        let first = match self.first_open(seat).await {
+            Ok(first) => first,
+            Err(unread) => return unread,
+        };
+        if let Some(first) = first.filter(|first| {
             (&first.project, &first.role, &first.instance, &first.from)
                 != (&row.project, &row.role, &row.instance, &row.from)
         }) {
@@ -1511,7 +1515,10 @@ impl DirectoryService {
     /// window) when it holds nothing else. Otherwise the window keeps its
     /// name, with no launch. At most one tmux launch, at the assign's site.
     pub async fn window_after_release(&self, seat: &SeatDescriptor, released: &Value) -> Value {
-        let first = self.first_open(seat).await;
+        let first = match self.first_open(seat).await {
+            Ok(first) => first,
+            Err(unread) => return unread,
+        };
         let released_from = released["from"].as_str().and_then(holders::parse_time);
         if let Some(first) = first
             .as_ref()
@@ -1529,14 +1536,21 @@ impl DirectoryService {
         self.rename_to(seat, name).await
     }
 
-    /// The seat's earliest open holding, in any project.
-    async fn first_open(&self, seat: &SeatDescriptor) -> Option<Assignment> {
-        self.store
-            .open_assignments(seat.id.as_str())
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .min_by_key(|held| (holders::parse_time(&held.from), held.from.clone()))
+    /// The seat's earliest open holding, in any project. A failed read is
+    /// not "no holdings" (review of #149, N001): the window keeps its name,
+    /// and the error is the window receipt.
+    async fn first_open(&self, seat: &SeatDescriptor) -> Result<Option<Assignment>, Value> {
+        match self.store.open_assignments(seat.id.as_str()).await {
+            Ok(held) => Ok(held
+                .into_iter()
+                .min_by_key(|held| (holders::parse_time(&held.from), held.from.clone()))),
+            Err(cause) => Err(serde_json::json!({
+                "name": null, "renamed": false,
+                "reason": format!(
+                    "the seat's open holdings could not be read ({cause}), so the window keeps its name"
+                ),
+            })),
+        }
     }
 
     async fn rename_to(&self, seat: &SeatDescriptor, name: String) -> Value {
