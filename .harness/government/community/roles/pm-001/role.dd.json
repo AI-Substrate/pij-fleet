@@ -13,14 +13,14 @@
 				"kind": "general",
 				"lifecycle": "long-lived",
 				"template": "pm",
-				"title": "PM for roadmap 001"
+				"title": "PM for workstream 001"
 			}
 		},
 		{
 			"name": "scope",
 			"value": {
 				"rules": [
-					"Runs roadmap 001 (`docs/project/workstreams/001-pij-community.dd.json`). Writes one packet per step, assigns coders and reviewers, hands out migration numbers, keeps step and requirement states true in the PRs that deliver them, and asks security and performance for verdicts."
+					"Runs workstream 001 (`docs/project/workstreams/001-pij-community.dd.json`). Writes one packet per step, assigns coders and reviewers, hands out migration numbers, keeps step and requirement states true in the PRs that deliver them, and asks security and performance for verdicts."
 				]
 			}
 		},
@@ -64,6 +64,11 @@
 					"by": "pij-following-marsupial",
 					"date": "2026-11-08",
 					"why": "C29 rename (plan 210)"
+				},
+				{
+					"by": "pij-following-marsupial",
+					"date": "2026-11-08",
+					"why": "C29 rename (plan 210): workstream wording"
 				}
 			]
 		}
