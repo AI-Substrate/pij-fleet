@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b829-8a3e-7f32-8b3a-8a79fbfd53a8",
+				"date": "2026-11-08",
+				"head": "0c3ac5fec442d9e9bc02faf7064c0faeacd1ebab",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/169#issuecomment-6714024007",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:169",
+				"writer": "pij-whole-spoonbill",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N001: document the observed-disappearance boundary or invalidate tap-refusal state on tmux server-generation changes when pane IDs are reused."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "Exact-head CI run 42421180718, junit-linux",
+					"exit_code": 0,
+					"log": "2171 Rust cases, zero failures/errors; rollback, unknown foreign pipe, backoff, PA digest and retired-launch tests passed; https://github.com/AI-Substrate/pij-fleet/actions/runs/42421180718"
+				},
+				{
+					"command": "node harness/scripts/pr-freeze.ts 169",
+					"exit_code": 0,
+					"log": "FINAL at 0c3ac5fec442d9e9bc02faf7064c0faeacd1ebab; matching heads, CLEAN, successful latest checks, ready, no migration added"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR #169 correctness verdict\n\n**PASS-WITH-NOTES** at `0c3ac5fec442d9e9bc02faf7064c0faeacd1ebab`. F112's marker rollback and recurring census are addressed without permitting blind replacement of an unknown pipe.\n\n## Ownership and rollback\n\n`crates/tmux/src/lib.rs:1114-1136,1183-1206`\n\nAn active pipe is accepted only when its durable marker matches this adapter's exact sink. An unmarked or mismarked active pipe still refuses before marker writes or pipe replacement. The refusal names a manual re-stamp, explicitly conditional on the human establishing that the pipe is this daemon's own. No automatic foreign detach was added.\n\nThe failed pipe-pane branch now clears the marker only when the attempt did not inherit a matching marker. Adoption of a previous daemon's pipe therefore preserves the pre-existing ownership evidence when replacement fails. The real-tmux regression checks that the old pipe remains active, the marker remains correct, and a fresh adapter can adopt it and receive subsequent bytes (`crates/tmux/tests/adapter.rs:1822-1868`). The foreign-pipe regression checks refusal, the repair text, an active surviving pipe and unchanged foreign-file contents (`:1874-1908`).\n\n## Census, backoff and PA visibility\n\nThe legacy-root field, constructors, composition wiring and whole-machine process-table helper are removed. `ps.tmux-legacy-tap-writer` is guarded as retired in `crates/testkit/tests/spawn_sites.rs:290-343`; stale legacy files are not deleted.\n\n`TapRefusals` stores one record per refused observed pane. Failure counts saturate, delay doubles from twice the observer interval and caps at 60 seconds, and identical failures do not log on every retry (`crates/daemon/src/pane_observer.rs:39-111`). Waiting panes explicitly remain unknown to the interaction gate. Successful attachment clears the record; successful observation removes records for panes that left the live/wanted set (`:340-375`). Storage is bounded by that observed pane set, not an ever-growing lifetime dedupe set.\n\nThe same refusal map is injected into the production observer and Services. The PA digest reads it in-process and includes matching fleet seats as `tap-refused`, with their actionable detail (`crates/daemon/src/lib.rs:953-966`; `crates/daemon/src/pa_watchdog.rs:985-989,1327-1347`). The digest's scope text and operator documentation were updated.\n\nThe paused-clock test verifies six attach attempts across 100 ticks, a later retry, a visible refusal record and removal after the pane leaves. Source establishes the 60-second cap; the test's single long advance is not a sustained steady-state benchmark.\n\n## Mutation evidence\n\nThe coder reported both temporary mutants built together through `just shared-build`, then restored:\n\n1. `if !marker_matches` changed to `if true` in rollback: **killed** by `a_failed_replace_during_adoption_keeps_the_marker_and_the_next_attempt_adopts`, with 0 passed / 1 failed / 38 filtered out.\n2. The refusal waiting guard changed to `waiting(...) && false`: **killed** by `a_refused_attach_backs_off_and_is_listed_for_the_pa`, with 0 passed / 1 failed / 837 filtered out.\n\nExact panic lines were not captured. The marker-preservation and six-attempt assertions are the source-level explanations, not claimed observed panic text. No further mutation runs were requested.\n\n## N001: incarnation reset depends on observed disappearance\n\nThe refusal key is the pane ID, not a tmux-server generation. IDs are unique within one server life, and the implemented reset correctly handles an observed pane departure. If a server is replaced and reuses the same ID without the observer seeing its disappearance, the old backoff can briefly carry into that new pane. This remains conservative: the gate stays unknown and the delay is capped, with the record cleared on attachment. Document this boundary or add server-generation invalidation as a follow-up; this is not a reason to weaken the ownership interlock.\n\n## Validation and cost boundary\n\nExact-head CI run `42421180718` passed. JUnit records **2,171 Rust cases, zero failures/errors**, including the rollback, unknown-foreign-pipe, backoff, PA-digest and retired-launch tests. The author separately reports the restored baseline passing 39 adapter and 839 daemon-library tests.\n\nNo local reviewer builds, tests or live-fleet probes. The removed census contributes zero launches at that site; backoff reduces refused attach attempts, while the existing observation loop still runs at its configured interval. Healthy control-mode retry reads launch nothing; existing control-client failure/fallback behavior was not changed or independently benchmarked here. Live before/after cost verification remains the performance role's work.\n\n`pr-freeze` reported FINAL at the requested exact SHA, with CLEAN and successful latest checks. `git diff --check origin/main...HEAD` passed. The detached worktree remains unchanged; no product edits, credentials, merge or push.\n"
+		}
+	]
+}
