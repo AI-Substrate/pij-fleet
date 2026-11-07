@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b6af-12d3-77e2-b5ad-9b7e5035f3c5",
+				"date": "2026-11-08",
+				"head": "0c01b1b8cfac84d9e83704bb955e9180365a9a4e",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6709324752",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:152",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #152 round-2 correctness review\n\n## A. Verdict\n\n**PASS-WITH-NOTES** at `0c01b1b8cfac84d9e83704bb955e9180365a9a4e`.\n\n**F002 and F006 closed.** Earlier F001/F003/F004/F005 closures stand. This is correctness closure, not a substitute for herring's complete C32 security grade.\n\n## B. Scope\n\nOnly `5aee7a1032123a10e49dd007ac88681fcba94fa8..0c01b1b`: reply fix `b7d212db` and clean #155 main import. The #155 reader/handoff review and its platform/deployment notes stand; no repeat full review.\n\nClean pinned detached worktree; GitHub and ls-remote agree, PR CLEAN. CI run `42387589437` succeeded at this full head. JUnit has 2,101 cases, zero failures/errors. No local builds/tests, mutations or live probes were run.\n\n## C. F002 closed: semantic acceptance, not HTTP status\n\nThe internal RoleSendAccepted extension marks queued, accepted-holder and replay results only. The HTTP-200 Refused receipt branch remains unmarked. Both send and shim consult accepted(response) before accounting; callers cannot supply that server response extension.\n\n`a_refused_role_reply_and_a_contradicted_caller_answer_nothing` executed. It attests a native PA then changes its session, producing the actual refused-holder receipt on both entry paths. Despite HTTP 200, the original request remains unanswered. Retained successful role/replay controls also executed.\n\n## D. F006 closed: answer and audit share owned commit\n\nProduction answered_by constructs the audit before accounting. answer_by_reply checks the stored delivered holder and uses publish_committed_batch with mark_role_request_answered_audited. The null-only answer UPDATE and event append are in the same independently owned transaction; append failure rolls back the stamp, and cancellation after admission cannot split them.\n\nThe executed store case injects a trigger failing only request.answered_by_reply. It proves no stamp/event, then successful retry with one event, then no second stamp/event from repeat or output --answers. No production caller of the reply helper bypasses this audit path.\n\n## E. Caller-binding change\n\nSupplied context that fails the identity ladder now returns its refusal instead of being downgraded to bound:none. Only absent pane/session context is unbound. The executed contradicted-context case shows no delivery, answer or audit; the matched-holder positive still answers once.\n\nThat satisfies the checked C32(2)/(3) mechanics for this repair. Herring owns the complete identity/authority judgment.\n\n## F. C32 and Known-limit qualification\n\nThe Known limit names PRD 003 req-10 and the asserted/no-context accounting residual. The audit records request/from/route/binding evidence, not the body. No code/holding/role mutation is added by accounting.\n\n**N001:** herring was given the explicit C32(1) boundary: a no-context native send still dispatches its supplied message.from before accounting, while the Known limit says nothing is delivered. Whether this is pre-existing send authority or a forbidden asserted-identity reply effect must be graded in the independent security verdict; this pass does not silently endorse that claim.\n\n## G. Retained evidence and notes\n\nEarlier scoped-held, arrival-clock and during-turn handoff cases executed in this CI artifact. The fix does not change the extension's abort recovery/shared watcher or its recorded d8634d6 canary.\n\nThe latest Delivers check succeeded, superseding an older cancelled run. Migration 0038 remains above main's 36 at this freeze; merge-order renumbering and AC1/AC7 deployment readings remain owed as before.\n\nNo new timer, loop or process launch comes from this reply fix. Ocelot owns transaction/task cost; Linux CI does not upgrade the imported #155 macOS proof ceiling.\n\n## H. Handover\n\nCorrectness closure is ready at this head. Retain herring's complete C32 security verdict and the prior deployment/proof notes before merge or whole-plan closeout. The reviewer made no product changes.\n"
+		}
+	]
+}
