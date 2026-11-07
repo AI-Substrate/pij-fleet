@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "e0004f856f665cdeec03a62b0f48e769f342bea2",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/149#issuecomment-6709222937",
+				"result": "block",
+				"role": "security",
+				"subject": "pr:149",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C32(1): generated nonquiet notice uses asserted actor as sender; use daemon sender with explicit asserted-actor provenance.",
+				"C32(3): different retry actor controls sender/notice effect without fresh atomic assertion audit; replay immutable audited intent or audit the new assertion."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: BLOCK\n\nPR: #149\nHead: e0004f856f665cdeec03a62b0f48e769f342bea2\nScope: 697b6aa..e0004f8, combined with retained fb87062..697b6aa review. Graded against clarified C32.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/http/requests.rs | 477-492 | Asserted holder can send a close FYI as another seat | 9/10 |\n\nS003 remains OPEN under C32(1), not because stronger cryptographic caller authentication is required.\n\nAn actual caller A asserts stored holder B and performs a nonquiet close of requester C's request. tell_requester assigns Msg.from=B, delivery preserves HeldFyi.sender, and core/fyi.rs:174-186 visibly renders \"[from B, ...]\" rather than a daemon sender or asserted-actor attribution. The notice has a structured prefix but contains caller-controlled --why text. C32's explicit no-send-as exclusion has no structured-notice exception.\n\nNew requester/self closes skip notification; they do not protect this holder-to-different-requester path.\n\nOwed retry also fails the clarified C32(3) assertion boundary. requests.rs:331-347 freshly authorizes its retry actor, passes that actor to notify_owned, and does not call close_audited. If original closer D left an owed notice, a later asserted-holder B retry sends as B, preserves D's stored body/reason, and marks the notice told without atomically auditing B's fresh assertion. The original D audit does not cover a different assertion affecting sender identity. Retry --why is ignored; the initial stored reason remains.\n\nRequired repair: use a daemon sender with explicit asserted-actor attribution and preserve original closer provenance. Either replay immutable audited daemon intent without fresh identity-dependent effects, or atomically audit the fresh retry assertion/effect. Then update the Known limit to the exact residual.\n\nClosed/preserved boundaries:\n- C32(2)'s narrow restrictions hold: contradictory pane/asserted IDs refuse; asserted-only authority is requester/holder, not PA/prime.\n- Initial close/withdraw atomicity is repaired: role_requests.rs:952-987 writes request.closed_by_actor in the same owned transaction before commit. Append failure rolls back; non-moves/replays add no duplicate. Later broadcast failure is not missing durable audit.\n- S004 remains CLOSED: scoped projects.prime_id, no self-role/current-designation fallback.\n- S005 is CLOSED, including the new hostile-holder generated-notice test at directory_http.rs:4611-4646. Both state/release commands specify /bin/sh exact-word/no-file checks. The fixture seeds registry data and lacks an unescaped positive control; no test was executed here.\n- Original S001/S002, project routing, role gates, owned drain, notification failure surfacing and request-body omission remain preserved. Prior tmux proof limits remain.\n\nEvidence: exact-head CI42384775056 and Delivers42384775073 independently verified SUCCESS; remote and PR heads agree, CLEAN. Green cases do not establish these notice sender/retry audit boundaries.\nhttps://github.com/AI-Substrate/pij-fleet/actions/runs/42384775056\n\nNo local builds/tests, close calls, fault injection, role assertions, credential reads or product edits. F103 remains its separate recorded handoff.\n"
+		}
+	]
+}
