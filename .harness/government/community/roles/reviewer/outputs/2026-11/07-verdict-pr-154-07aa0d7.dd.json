@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b5f8-7d4b-7321-8222-96927c0b432c",
+				"date": "2026-11-07",
+				"head": "07aa0d791ec33ac762210520af5d1edf0435ffac",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/154#issuecomment-6707247162",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:154",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #154 correctness review\n\n**PASS** at `07aa0d791ec33ac762210520af5d1edf0435ffac`.\n\nThe shipped plan-211 states accurately distinguish what #148 delivered from the explicitly deferred work. AC1/AC2/AC5/AC6 and their tasks/backpressure are checked; AC3/AC4 and tk-0004/tk-0005 are `na`, with honest notes that the retired/session refusal and Copilot retry brakes shipped, while the healthy no-op skip and shim change did not. The phase is checked. #148's merged body and the earlier reviewer verdict support those boundaries.\n\nThe two original performance outputs confirm the new evidence table: the same daemon PID 28490 and source `c3895da518aad2047749b87dc9c6663592e357e2`, six then nine reloaded seats, and zero registration attempts, registration ps and total daemon launches in each approximately 60-second window. The exact windows were 20:16:32-20:17:32 and 22:18:34-22:19:34 (+10:00); the table uses approximate reporting times. Intervening counters increased by three explicit attempts/four ps and two adopts/zero ps, with no unspecified or shim growth. Issue #145 records the historical approximately 0.64 registration ps/s baseline.\n\n**Proof scope:** these are two observed quiet native-fleet windows, not proof that every workload is free of registration cost. The original receipts explicitly defer shim work until representative shim traffic shows a measurable benefit; the PR does not claim the shim was exercised or optimized. The NA dispositions and reopen condition preserve that distinction.\n\nComplete validation at the pinned checkout returned zero errors, warnings, open items, contradictions and orphans (233 in-scope items, 20 completable). GitHub reports CLEAN with all five visible checks successful. The seven changed files are confined to `docs/plans/211-registration-attempts`; the PR correctly states `Delivers: none` and `Fixes #145`. The review worktree remains clean. No local builds, product tests or new live measurements were run.\n"
+		}
+	]
+}
