@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b731-79ba-7732-90e0-0a4ba811cbe7",
+				"date": "2026-11-08",
+				"head": "ef8cdd5f22b268a28aaabb2db6b9d587f4806566",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/162#issuecomment-6711295574",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:162",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #162 AC4 correctness review\n\n**PASS-WITH-NOTES** at `ef8cdd5f22b268a28aaabb2db6b9d587f4806566`.\n\n## Coverage and intent\n\nWorkstream 001 s17 is planned and covers req-26's remaining explicit-id refusal, not its already-shipped memorable names/windows. The referenced registration path still accepts an explicit id based on registry existence, without the role/project-name check.\n\nBlueprint 002 has 14 planned components whose responsibilities match the public PRD rows. Workstream 002 gives them substantive planned work and outcomes, not just orphan-removal links:\n\n| Step | PRD 002 rows | Planned work |\n|---|---|---|\n| s01 | req-08 | Ill-typed test fails typecheck |\n| s02 | req-09 | Known/unverified sender and replyability |\n| s03 | req-11,12 | Read-only queue view and terminal sender notice |\n| s04 | req-02,03 | Non-mutating revive preview and once-only first task |\n| s05 | req-05,07 | Daemon affinity and discovery |\n| s06 | req-04 | Worktree lifecycle and loss-preventing refusal |\n| s07 | req-06 | Port/retire verbs and separate transcript name |\n| s08 | req-10 | N-1 compatibility and coordinated restart notice |\n| s09 | req-01,14 | Real-session socket/pane evidence, not CI stand-ins |\n| s10 | req-13 | Conditional unproven admission without unearned binding |\n\nAll 14 rows and all 14 component IDs are covered; the sender step precedes queue visibility. All needs IDs exist in the current project's directory. pm-001 is the explicitly temporary owner.\n\n## Validation and guard preservation\n\nThe two new docs, amended workstream 001 and plan validate with zero errors/warnings in an isolated archive. All four regenerated faces are byte-identical to the committed faces.\n\nThe coverage algorithm is unchanged except for retiring the approved list. Both constant and JSON are empty. The repo test still asserts no findings before checking the exact approved count. An empty constant/nonempty JSON fails the unchanged allowed-address guard; a nonempty constant/empty JSON fails missing/covered/unequal-baseline checks. The count assertion alone is not the proof.\n\nCI `42399336669`, attempt 1, matches the pinned head. Both Node jobs executed all 18 coverage tests and report 2,246 passed/six skipped overall. Existing gap/component, baseline mismatch, missing-row, malformed/duplicate and umbrella controls remain. The s17/stray-component mutation in the evidence is author-reported, not a reviewer run.\n\nClean pinned checkout; GitHub and ls-remote agree, CLEAN, all five checks succeeded. No local product builds/tests, sensor execution, live mutation or credential/private-register read.\n\n## States and notes\n\nPRD 002 is byte-unchanged and all 14 requirements remain planned. New components/steps and s17 are planned; no feature is newly declared shipped/delivered. Delivers:none is appropriate. AC4's planning coverage is checked, not implementation completion.\n\nBefore dispatch, derive full criteria from the PRD statements, not only the abbreviated step done_when: req-04 includes plan-folder/seat binding and unpushed-work refusal; req-05 includes the reused-pane/no-main-adopt case. Some needs lists omit security; the standing per-PR security-verdict rule still applies and is not waived here.\n\nF104's CI ddocs limitation remains; direct documentation validation above is separate proof. No recurring behavior is added. Privacy and future cost assessments remain independently owned. No blocking repair requested for this documentation delta.\n"
+		}
+	]
+}
