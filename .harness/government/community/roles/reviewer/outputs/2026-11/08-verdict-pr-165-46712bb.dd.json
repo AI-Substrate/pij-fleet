@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b7be-6c1e-78e1-8adf-fc4766085a9e",
+				"date": "2026-11-08",
+				"head": "46712bbe95cadc6b10d38cae6e8871e4c70fedc6",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/165#issuecomment-6712822790",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:165",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #165 correctness verdict\n\n**PASS-WITH-NOTES** at `46712bbe95cadc6b10d38cae6e8871e4c70fedc6`.\n\nEvery live daemon-driven Copilot/Claude seat launch receives the intended tool filter. Spawn, resumed launch and revive share the builder; the diff adds only the relevant argv tokens and preserves other launch controls.\n\n## Launch-path trace\n\n- `launch_seat` enters `launch_seat_locked` (`daemon/src/http/mod.rs:1327-1344`). The latter always builds SpawnPlanInput, including executable override and resume, through build_spawn_plan (`:1471-1483`).\n- Revive reconstructs SpawnRequest from prior launch facts and passes resume to that same locked path (`http/revive.rs:411-439`). It does not reuse a separate unfiltered argv.\n- The builder unconditionally adds `--no-ask-user` beside Copilot's `--yolo`, and `--disallowedTools AskUserQuestion` beside Claude's existing permission flag, after the harness-native resume spelling (`harnesses/src/spawn.rs:145-215`).\n- observed_launch_command preserves the complete plan.args after its wrapper separator; the wrapper command reaches tmux.new_window (`spawn.rs:255-292`; `http/mod.rs:1530-1545`).\n\nI traced the alternate TS builders. buildControlSpawnCommand has no non-test consumer beyond its declaration/documentation. The live buildSpawnCommand accepts only pi/omp and does not provide another Copilot/Claude launch path. Adoption binds an already-running process; it does not call the argv builder or create a window.\n\n## Preserved argv and flag meaning\n\nThe production diff contains only one new Copilot token and two Claude tokens. PIJ identity/correlator environment, binary selection, resume spelling, model/effort, Copilot fusion/default context handling and refusal, Claude --settings/crossSessionInbound stamping, and existing permission flags are unchanged. Pi/OMP/Codex argv are unchanged.\n\nThis build's Copilot documentation explicitly defines --no-ask-user as disabling ask_user while still allowing questions in replies. It does not change tool/path/URL approval policy. Claude's filter names only AskUserQuestion; it does not replace the existing --settings or --dangerously-skip-permissions arguments.\n\n## Proof\n\nExact-head CI **42411875834** passed. Its JUnit has **2164 cases, zero failures/errors**, including:\n\n- the new spawn/resume tool-filter test for both harnesses;\n- exact all-harness argv vectors;\n- each harness's resume spelling;\n- Claude settings/acceptance stamping;\n- executable override and absent-option preservation;\n- fusion context/effort cases and wrapper argv transparency;\n- the HTTP revive/resume integration control.\n\nThe source/header pin remained detached, clean and equal to the remote head; GitHub reports CLEAN/ready. No migration or recurring launch/poll/timer was added.\n\nThe author reports installed-CLI flag acceptance and three closed canaries: flagged Copilot, flagged Claude and unflagged Claude control. I did not launch/re-run them or inspect private logs. The comparative Claude replies and Copilot registration/tool-availability report are author evidence, not a fresh machine tool-manifest observation by this reviewer.\n\nNo local product builds/tests, mutations, canaries or interactive questions were performed.\n\n## Notes\n\n- **N001:** adoption, hand-started sessions and already-running seats do not acquire startup flags retroactively. An affected existing seat needs an appropriately flagged relaunch/resume; extension reload alone is not this tool filter.\n- **N002:** this removes the named model-question tool, not every possible CLI dialog such as trust/startup UI. The existing permission settings and F47 detector remain separate controls. Zero ask_user calls alone would not prove tool absence; retain the documented flag semantics and explicit availability/control evidence.\n\nNo blocking correctness finding. Security/performance acceptance remains independently owned.\n"
+		}
+	]
+}
