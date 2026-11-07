@@ -52,7 +52,8 @@ const OVERVIEW: &str = "\
 pij directory: the project's community directory, on the governance branch.
 
 Usage:
-  pij directory [--project <slug>] [--json]           this project's roles and holders
+  pij directory [--project <slug>] [--json]           this project's roles, holders and next actions
+  pij directory --suggest [--project <slug>]          also every role suggestion in full (core roles, security)
   pij directory add <id> --why <text> [role flags | --file <json>] [--project <slug>]
   pij directory add <id> --from template:<name>[@v<n>] --why <text> [role flags]
   pij directory add --batch <dir> --why <text> [--project <slug>]

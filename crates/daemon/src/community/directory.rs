@@ -19,6 +19,7 @@ use serde_json::Value;
 
 use super::holders::{self, seat_role_for};
 use super::layout::RolePaths;
+use super::picture;
 use super::root::GovernanceRoot;
 use super::routes::{self, Regenerated};
 use super::templates::{self, Catalog};
@@ -249,15 +250,53 @@ impl DirectoryService {
     /// Plan 194: each role's template drift, and prompts for the missing core
     /// roles and security (ruling C22), which create nothing.
     ///
+    /// Plan 203 (s09): the project's designated prime; per role its waiting
+    /// requests, latest output and memory freshness, and whether each holder's
+    /// seat is live (`live` is the registered, untombstoned seats); `actions`
+    /// for the conditions that need the prime, workstream needs and recurring
+    /// unowned paths folded into the prompts, the boundary `reviews`, each
+    /// recommendation naming its C28 signal, and the standing PEC `notice`.
+    /// F39: a suggestion nothing points at (a core or security role with no
+    /// step need) is listed by name in `suggestions` and shown in full only
+    /// with `suggest`; `prime_document` says whether the prime role's
+    /// document exists, so a project without one reads as that document
+    /// missing (F21). Reads per call: assignments, the project, the project's
+    /// queued requests (without bodies) and the newest outputs, one store
+    /// query each; each role's document and memory folder, the repo's
+    /// workstreams (`picture::read_step_docs`, parsed once) and their
+    /// blueprints, in-process.
+    ///
     /// # Errors
     /// [`super::E_GOV_ABSENT`] without a governance worktree; `E-RS-STORE`.
-    pub async fn view(&self, project: &str, repo: &std::path::Path) -> Result<Value, Refusal> {
+    pub async fn view(
+        &self,
+        project: &str,
+        repo: &std::path::Path,
+        live_seats: &std::collections::HashSet<String>,
+        suggest: bool,
+    ) -> Result<Value, Refusal> {
         let root = super::root::find(repo)?;
-        let rows = self
+        let store_error =
+            |error: pij_core::error::PijError| Refusal::new("E-RS-STORE", error.to_string());
+        let rows = self.store.assignments(project).await.map_err(store_error)?;
+        let prime = self
             .store
-            .assignments(project)
+            .project(project)
             .await
-            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+            .map_err(store_error)?
+            .and_then(|record| record.prime_id)
+            .map(|seat| seat.to_string());
+        let queued: Vec<pij_store::RoleRequest> = self
+            .store
+            .queued_role_request_heads(project)
+            .await
+            .map_err(store_error)?;
+        let outputs = self
+            .store
+            .latest_outputs(project)
+            .await
+            .map_err(store_error)?;
+        let mut actions = Vec::new();
         let roles_dir = root.worktree.join(super::layout::COMMUNITY).join("roles");
         let mut ids: Vec<String> = std::fs::read_dir(&roles_dir)
             .into_iter()
@@ -279,7 +318,16 @@ impl DirectoryService {
         let standings: Vec<role::Standing> = documents.iter().map(role::standing).collect();
         let mut roles = Vec::new();
         let mut made_from = Vec::new();
+        let mut scopes: Vec<(String, Vec<String>)> = Vec::new();
+        let mut reviews = picture::two_domains(project, &rows, live_seats);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+            });
+        let cutoff = picture::idle_cutoff(now_ms);
         for (index, (id, document)) in ids.iter().zip(&documents).enumerate() {
+            let retired = standings[index].retired();
             let meta = document["sections"]
                 .as_array()
                 .and_then(|sections| sections.iter().find(|section| section["name"] == "meta"))
@@ -292,12 +340,91 @@ impl DirectoryService {
                     serde_json::json!({
                         "seat": row.seat, "instance": row.instance, "since": row.from,
                         "machine": row.machine, "end_pending": row.end_pending,
+                        "seat_live": live_seats.contains(&row.seat),
                     })
                 })
                 .collect();
+            let waiting = picture::waiting(id, &queued);
+            let memory = super::memory::freshness(&root.worktree, id).unwrap_or(Value::Null);
+            // A retired role routes, owns and needs nothing (plan 206).
+            if !retired {
+                actions.extend(picture::actions(
+                    project,
+                    id,
+                    meta["holders"].as_str().unwrap_or("one"),
+                    &mine,
+                    live_seats,
+                    &queued
+                        .iter()
+                        .filter(|request| request.role == *id)
+                        .map(|request| request.instance.as_str())
+                        .collect::<Vec<_>>(),
+                    memory["latest"].as_str(),
+                ));
+            }
+            let section = |name: &str| {
+                document["sections"]
+                    .as_array()
+                    .and_then(|sections| sections.iter().find(|section| section["name"] == name))
+                    .map_or(Value::Null, |section| section["value"].clone())
+            };
+            if !retired {
+                scopes.push((
+                    id.clone(),
+                    section("scope")["paths"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|path| path.as_str().map(str::to_string))
+                        .collect(),
+                ));
+            }
+            let changelog = section("changelog");
+            let created = changelog
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|row| row["date"].as_str())
+                .filter_map(|date| date.get(..10))
+                .min();
+            if !retired {
+                reviews.extend(picture::idle(
+                    project,
+                    &picture::RoleActivity {
+                        role: id,
+                        created,
+                        rows: &mine,
+                        live_holder: mine
+                            .iter()
+                            .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                        waiting: waiting["count"]
+                            .as_u64()
+                            .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                        has_output: outputs.iter().any(|output| &output.role == id),
+                        notes: memory["notes"]
+                            .as_u64()
+                            .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                    },
+                    &cutoff,
+                ));
+            }
+            // A retired role refuses sends, so it has nothing to call on.
+            let call_on = if retired {
+                None
+            } else {
+                picture::call_on(
+                    project,
+                    id,
+                    mine.iter()
+                        .any(|row| row.to.is_none() && live_seats.contains(&row.seat)),
+                    memory["notes"]
+                        .as_u64()
+                        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)),
+                )
+            };
             let owned: Vec<Assignment> = mine.into_iter().cloned().collect();
             // A retired role no longer covers a core role's prompt (C22).
-            if !standings[index].retired() {
+            if !retired {
                 made_from.push((id.clone(), meta["template"].as_str().map(str::to_string)));
             }
             roles.push(serde_json::json!({
@@ -317,18 +444,73 @@ impl DirectoryService {
                     .map(|(from, _)| from.clone())
                     .collect::<Vec<_>>(),
                 "live": live,
+                "requests": waiting,
+                "latest_output": picture::latest_output(id, &outputs),
+                "memory": memory,
+                "call_on": call_on,
                 "lineage": holders::to_document(id, &owned)["sections"][1]["value"],
             }));
         }
-        let prompts = templates::prompts(project, &made_from);
+        let step_docs = picture::read_step_docs(repo);
+        let mut prompts = templates::recommendations(project, &made_from);
+        picture::fold_needs(
+            project,
+            &mut prompts,
+            &picture::step_needs(&step_docs),
+            &made_from,
+            &self.templates,
+        );
+        // F21: a missing prime role document is not a missing prime.
+        for prompt in prompts.iter_mut().filter(|prompt| prompt.role == "prime") {
+            prompt.note = Some(match &prime {
+                Some(seat) => format!("the project's prime is {seat}; this adds the prime role's document"),
+                None => "this adds the prime role's document; the project records no designated prime either".to_string(),
+            });
+        }
+        prompts.extend(picture::unowned(
+            project,
+            &picture::recurring_paths(repo, &step_docs),
+            &scopes,
+        ));
         let pending: Vec<Value> = rows
             .iter()
             .filter(|row| row.end_pending)
             .map(|row| serde_json::json!({"role": row.role, "seat": row.seat, "instance": row.instance, "to": row.to}))
             .collect();
-        let mut view = serde_json::json!({"project": project, "roles": roles, "pending": pending});
+        let prime_document = made_from
+            .iter()
+            .any(|(id, template)| id == "prime" || template.as_deref() == Some("prime"));
+        // F39: only what a need or a C28 signal points at shows unasked.
+        let (shown, held): (Vec<_>, Vec<_>) = prompts.into_iter().partition(|prompt| {
+            suggest
+                || !prompt.needed_by.is_empty()
+                || !matches!(
+                    prompt.signal,
+                    picture::Signal::Core | picture::Signal::Independent
+                )
+        });
+        let prompts = shown;
+        let mut view = serde_json::json!({
+            "project": project, "prime": prime, "prime_document": prime_document,
+            "roles": roles, "pending": pending,
+            "actions": actions, "notice": picture::notice(),
+            "reviews": reviews.iter().map(picture::Recommendation::json).collect::<Vec<_>>(),
+        });
+        if !held.is_empty() {
+            view["suggestions"] = serde_json::json!({
+                "roles": held.iter().map(|prompt| prompt.role.clone()).collect::<Vec<_>>(),
+                "command": format!(
+                    "pij directory --suggest --project {}",
+                    pij_core::directory::shell_word(project)
+                ),
+            });
+        }
         if !prompts.is_empty() {
-            view["prompts"] = serde_json::json!(prompts);
+            view["prompts"] = prompts
+                .iter()
+                .map(picture::Recommendation::json)
+                .collect::<Vec<_>>()
+                .into();
             view["guidance"] = serde_json::json!(templates::GUIDANCE);
         }
         Ok(view)

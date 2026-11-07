@@ -1,0 +1,73 @@
+private daemon pid=62425 port=7491 state=/tmp/pij-203-d9wmVQ/state tmux=-L pij-203-62330
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-marten","harness":"omp","session
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-holder","harness":"omp","session
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-asker","harness":"omp","session"
+
+$ /tmp/pij-rs-203 project create fleet --repo /tmp/pij-203-d9wmVQ/main --prime pij-scratch-marten
+pij project: ok — {"project":{"created_at":1793946678600,"created_by":"pij-scratch-marten","description":"fleet","plan_path":null,"prime_id":"pij-scratch-marten","repo":"/tmp/pij-203-d9wmVQ/main","slug":"fleet"},"seq":10}
+exit=0
+
+$ /tmp/pij-rs-203 directory add reviewer --title reviewer --kind general --lifecycle long-lived --holders many --rule r --packet p --why setup
+pij directory: ok — {"commit":"52259afe3f35078095fb5c8b5a5465f82cded193","id":"reviewer","path":".harness/government/community/roles/reviewer/role.dd.json","paths":[".dd/schemas/pij/external/schema.json",".dd/schemas/pij/holders/schema.json",".dd/schemas/pij/memory/schema.json",".dd/schemas/pij/output/schema.json",".dd/schemas/pij/role/schema.json",".harness/government/community/roles/reviewer/memory/INDEX.md",".harness/government/community/roles/reviewer/outputs/.gitkeep",".harness/government/community/roles/reviewer/role.dd.json",".harness/government/community/roles/reviewer/role.dd.md"],"project":"fleet","roles":[{"id":"reviewer","path":".harness/government/community/roles/reviewer/role.dd.json"}],"worktree":"/private/tmp/pij-203-d9wmVQ/gov"}
+exit=0
+
+$ /tmp/pij-rs-203 directory add qa --title qa --kind general --lifecycle long-lived --holders one --rule r --packet p --why setup
+pij directory: ok — {"commit":"54fc8d2b9292438ff5aa45bdceddebbaea05e4cc","id":"qa","path":".harness/government/community/roles/qa/role.dd.json","paths":[".harness/government/community/roles/qa/memory/INDEX.md",".harness/government/community/roles/qa/outputs/.gitkeep",".harness/government/community/roles/qa/role.dd.json",".harness/government/community/roles/qa/role.dd.md"],"project":"fleet","roles":[{"id":"qa","path":".harness/government/community/roles/qa/role.dd.json"}],"worktree":"/private/tmp/pij-203-d9wmVQ/gov"}
+exit=0
+
+$ /tmp/pij-rs-203 directory assign reviewer pij-scratch-holder --why reviews
+pij directory: ok — {"commit":"70db55077e0766eff42a0e5bf56c338f4f221aa1","flushed":0,"path":".harness/government/community/roles/reviewer/holders.dd.json","project":"fleet","role":"reviewer","row":{"assigned_by":"pij-scratch-marten","from":"2026-11-06T06:31:26.193Z","harness":"omp","machine":"<host>","seat":"pij-scratch-holder","why":"reviews"},"seat":"pij-scratch-holder","seat_role":"worker","window":{"name":"fleet:reviewer","renamed":true}}
+exit=0
+
+$ /tmp/pij-rs-203 directory assign qa pij-scratch-holder --why a second domain
+pij directory: ok — {"commit":"0248a1348814cfe472b699e9532aada88bb9d6e6","flushed":0,"path":".harness/government/community/roles/qa/holders.dd.json","project":"fleet","role":"qa","row":{"assigned_by":"pij-scratch-marten","from":"2026-11-06T06:31:29.451Z","harness":"omp","machine":"<host>","seat":"pij-scratch-holder","why":"a second domain"},"seat":"pij-scratch-holder","seat_role":"worker","window":{"name":"fleet:qa","renamed":true}}
+exit=0
+
+$ /tmp/pij-rs-203 directory memory add reviewer --title What broke --hook h --body b
+pij directory: ok — {"commit":"b32ee1bb1a598b7ffc175846b20a0b53acf1e851","path":".harness/government/community/roles/reviewer/memory/2026-11-06-what-broke.dd.json","paths":[".harness/government/community/roles/reviewer/memory/2026-11-06-what-broke.dd.json",".harness/government/community/roles/reviewer/memory/2026-11-06-what-broke.dd.md",".harness/government/community/roles/reviewer/memory/INDEX.md"],"project":"fleet","role":"reviewer"}
+exit=0
+ok=True notified={"mode": "fyi", "outcome": {"outcome": "held", "reason": "fyi"}, "seat": "pij-scratch-marten"} path=.harness/government/community/roles/reviewer/outputs/2026-11/06-verdict-pr-200-0123456.dd.json
+reading rest-1: pid=62425 total=70 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 2, "tmux.set-options tap owner": 3}
+reading rest-2: pid=62425 total=70 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 2, "tmux.set-options tap owner": 3}
+
+$ ten views (--json)
+reading after-ten-views: pid=62425 total=70 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 2, "tmux.set-options tap owner": 3}
+
+$ /tmp/pij-rs-203 directory --project fleet
+fleet: 2 role(s); prime: pij-scratch-marten
+  qa (general, one): pij-scratch-holder since 2026-11-06 16:31 +10:00 on <host>
+    memory: no notes
+  reviewer (general, many): pij-scratch-holder since 2026-11-06 16:31 +10:00 on <host>
+    latest output: verdict on pr:200 at 0123456 (pass) by pij-scratch-holder, 2026-11-06 16:31 +10:00
+    memory: 1 note(s), newest 2026-11-06
+
+Pij Emergent Communities (PEC): the prime and the humans build whatever community the work needs now, and reshape it as the work changes. The templates are examples, not a checklist: start from one when it fits and edit it freely, or write a role no template describes. Nothing here is created for you.
+Roles to consider adding:
+  prime (core): pij directory add prime --from template:prime --why "core role from the prime template" --project fleet
+    the project's prime is pij-scratch-marten; this adds the prime role's document
+    signal: a core role a PEC starts from (C22); its template is an example
+  pm (core): pij directory add pm --from template:pm --why "core role from the pm template" --project fleet
+    signal: a core role a PEC starts from (C22); its template is an example
+  pa (core): pij directory add pa --from template:pa --why "core role from the pa template" --project fleet
+    signal: a core role a PEC starts from (C22); its template is an example
+  coder (core): pij directory add coder --from template:coder --why "core role from the coder template" --project fleet
+    signal: a core role a PEC starts from (C22); its template is an example
+  security (recommended): pij directory add security --from template:security --why "recommended role from the security template" --project fleet
+    signal: a judgment must be independent of the author
+  docs-system (needed): pij directory add docs-system --title "<title>" --kind general --lifecycle long-lived --holders one --rule "<what it always does>" --why "001-x s03 needs role:docs-system" --project fleet
+    needed by 001-x s03
+    signal: a workstream step names this role in its needs
+  engine (recurring): pij directory add engine --title "<title>" --kind specialist --lifecycle long-lived --holders one --scope-path 'crates/engine/**' --rule "<what it always does>" --why "crates/engine recurs across 3 steps and no role owns it" --project fleet
+    crates/engine is built by 3 steps (001-x s01, 001-x s02, 001-x s03) and no role's scope covers it; it needs one owner
+    signal: the same system or paths keep coming up across tasks
+
+Boundary review (at a wave end, a compact or a PR merge):
+  qa (two-domains): pij directory release qa pij-scratch-holder --why "pij-scratch-holder carries 2 roles; qa gets its own seat" --project fleet
+    or: pij directory assign qa <seat> --why "its own seat, split from pij-scratch-holder" --project fleet
+    pij-scratch-holder holds reviewer and qa at once
+    signal: a seat is bloating because it carries two domains
+
+Growing this community (PEC): is the work asking for something no role here covers? Recommend a role from need, and keep the fleet small but expert. Signals for a new role: the same system or paths keep coming up across tasks; knowledge is re-derived (the same finding twice); a judgment must be independent of the author; a seat is bloating because it carries two domains; a path or system needs one owner. Signals against: one-off work; overlap with an existing role (extend it instead); nothing worth remembering; it would mostly sit idle. A role is not a seat: roles can be many and cold (memory, lineage and queue, revived on demand), while live seats stay few. At each boundary (a wave end, a compact, a PR merge), review: split an overloaded role, merge or retire an idle one. Templates are examples, not a checklist. Each recommendation here names the signal it rests on. The community is whatever the work needs now.
+exit=0
+reading after-human-view: pid=62425 total=70 by_op={"ddocs.community": 12, "git.community": 42, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 6, "tmux.control-client": 1, "tmux.pipe-pane attach": 3, "tmux.rename-window": 2, "tmux.set-options tap owner": 3}
+~/pi-hacking/fleet-203-prime-prompts/docs/plans/203-prime-prompts/assets/evidence/private-run.sh: line 104: 62425 Terminated: 15          "$BIN" daemon --bind "127.0.0.1:$PORT" --state-dir "$PIJ_RS_STATE_DIR" >> "$S/daemon.log" 2>&1  (wd: /tmp)

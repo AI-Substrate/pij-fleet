@@ -147,7 +147,7 @@
 						"../prds/001-pij-community.dd.json#requirements/req-12",
 						"../prds/001-pij-community.dd.json#requirements/req-14"
 					],
-					"state": "in-progress"
+					"state": "shipped"
 				},
 				{
 					"id": "c-templates",
@@ -332,6 +332,11 @@
 					"date": "2026-11-06",
 					"by": "pij-local-warbler",
 					"change": "Plan 202: c-routes shipped; k-2 now says the prime only (q-03)."
+				},
+				{
+					"date": "2026-11-06",
+					"by": "pij-back-tapir",
+					"change": "c-orient shipped (plan 203): the directory view and its prompts."
 				},
 				{
 					"date": "2026-11-06",
