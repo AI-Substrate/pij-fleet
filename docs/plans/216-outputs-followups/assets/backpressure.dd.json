@@ -92,8 +92,9 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Daemon test: a delivered, limited request closed with --quiet gets no check-in and no FYI; without --quiet the requester gets one FYI; a non-allowed seat is refused before any write; a queued request is refused (use withdraw).",
-          "state": "unchecked",
-          "probe": "crates/"
+          "state": "na",
+          "probe": "crates/",
+          "note": "F83 delivered by #149 (fb87062)."
         },
         {
           "id": "bp-0009",

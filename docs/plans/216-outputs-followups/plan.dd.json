@@ -6,7 +6,7 @@
     {
       "name": "meta",
       "value": {
-        "title": "Outputs and answers follow-ups (F75-F79, F83, F85)",
+        "title": "Outputs and answers follow-ups (F75-F79, F85)",
         "slug": "outputs-followups",
         "ordinal": 216,
         "complexity": "CS-1",
@@ -82,8 +82,9 @@
         {
           "id": "ac-0008",
           "claim": "F83 (crane's fleet, via the prime, 07 Nov): `pij requests close <id> [--why <text>] [--quiet]` closes a DELIVERED role request that was answered or abandoned (withdraw only takes queued ones). Allowed for the request's requester, its holder, a PA of the project, or the prime, checked from the stored row before any write. It stops the s12 limit clock, moves the row to closed_role_requests in one transaction (as withdraw does), notifies nobody with --quiet, and otherwise tells the requester once by FYI. (The other half of F83, a holder's --in-reply-to reply marking the request answered, is F68 in plan 214.)",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+          "state": "na",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008",
+          "note": "Delivered by #149 (plan 212, fb87062): pij requests close <id> [--why] [--quiet] for delivered requests, with withdraw's authority plus the holder. Nothing left here."
         },
         {
           "id": "ac-0009",
