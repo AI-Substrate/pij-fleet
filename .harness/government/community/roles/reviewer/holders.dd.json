@@ -482,7 +482,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "136",
 					"machine": "ops.osk.lan",
+					"release_why": "#136 merged 8e19abc",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-07T15:41:42.225Z",
 					"why": "#136 final 560e260"
 				},
 				{
