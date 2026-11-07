@@ -698,6 +698,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-whole-spoonbill",
 					"why": "plan 215 #168"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T22:38:12.253Z",
+					"harness": "copilot",
+					"harness_session": "8fa7cf33-9797-46f9-886b-ac232f14af2e",
+					"instance_key": "169",
+					"machine": "ops.osk.lan",
+					"seat": "pij-whole-spoonbill",
+					"why": "F112 fix #169"
 				}
 			]
 		}
