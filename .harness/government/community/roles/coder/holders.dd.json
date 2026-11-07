@@ -204,6 +204,16 @@
 					"machine": "ops.osk.lan",
 					"seat": "pij-swift-kestrel",
 					"why": "plan 214 held delivery and urgent sends (prime: before 212 follow-ups)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T07:41:54.014Z",
+					"harness": "copilot",
+					"harness_session": "24bcbe7f-020f-4f4f-ac9d-48b0d12247ec",
+					"instance_key": "217",
+					"machine": "ops.osk.lan",
+					"seat": "pij-yielding-bison",
+					"why": "plan 217 PA presence (prime, Jordan's go)"
 				}
 			]
 		}
