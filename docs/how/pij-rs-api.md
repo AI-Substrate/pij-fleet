@@ -1725,7 +1725,11 @@ ended, so a key reassigned after the merge (new work under the same
 and a retry after a refused first run still ends what predates the merge.
 `mergedAt` is GitHub's clock and `from` is the daemon's, so skew matters only
 for a holding assigned within seconds of the merge. With no merge time from gh
-nothing ends, and a note says to release by hand. They end in one directory
+nothing ends, and a note says to release by hand. The holdings are chosen from
+the store before the writer lock, so each is pinned to its exact holding (its
+`from`): under the lock it ends only if that holding is still the open one, and
+a release and post-merge reassignment of the same seat and key landing in
+between leave the new holding open, named in the notes. They end in one directory
 writer commit, `release_why` `PR #<n> merged (<sha>)`, never one commit per
 holding and none when nothing is open, so a re-run ends nothing more. `data.holdings[]` has one release receipt each (the
 shim prints `released <role>/<instance> from <seat> (commit <sha>)` per line),

@@ -133,6 +133,9 @@ pub struct HoldingReceipt {
     pub drained: Vec<Value>,
 }
 
+/// The roles whose holdings are keyed by the PR they verdict (plan 215, F70).
+pub const PR_ROLES: [&str; 3] = ["reviewer", "security", "performance"];
+
 /// One holding to end: `<role>[/<instance>] <seat>`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReleaseTarget {
@@ -142,6 +145,9 @@ pub struct ReleaseTarget {
     pub instance: String,
     /// The holding seat.
     pub seat: String,
+    /// The holding's `from`, when the target names one exact holding: it
+    /// then ends only if that holding is still the open one.
+    pub from: Option<String>,
 }
 
 impl std::fmt::Display for ReleaseTarget {
@@ -1826,6 +1832,7 @@ impl DirectoryService {
             role: role.to_string(),
             instance: instance.to_string(),
             seat: seat.to_string(),
+            from: None,
         };
         let released = self
             .release_many(project, repo, vec![target], actor, why, Unmatched::Refuse)
@@ -1909,19 +1916,30 @@ impl DirectoryService {
                         problems.push((E_NOT_HELD, format!("{target} is named twice")));
                         continue;
                     }
-                    let Some(row) = rows
-                        .iter_mut()
-                        .rev()
-                        .find(|held| open_for(held, &target.seat, &target.instance))
-                    else {
+                    // A pinned target ends only that exact holding, read here
+                    // under the writer lock: a release and reassignment that
+                    // landed since it was chosen leave the new holding alone
+                    // (review of #168).
+                    let Some(row) = rows.iter_mut().rev().find(|held| {
+                        open_for(held, &target.seat, &target.instance)
+                            && target.from.as_ref().is_none_or(|from| &held.from == from)
+                    }) else {
                         problems.push((
                             E_NOT_HELD,
-                            format!(
-                                "{} does not hold {}{}",
-                                target.seat,
-                                target.role,
-                                instance_suffix(&target.instance)
-                            ),
+                            match &target.from {
+                                Some(from) => format!(
+                                    "{}'s {}{} holding from {from} is not open",
+                                    target.seat,
+                                    target.role,
+                                    instance_suffix(&target.instance)
+                                ),
+                                None => format!(
+                                    "{} does not hold {}{}",
+                                    target.seat,
+                                    target.role,
+                                    instance_suffix(&target.instance)
+                                ),
+                            },
                         ));
                         continue;
                     };
@@ -1996,6 +2014,61 @@ impl DirectoryService {
             receipts,
             skipped: built.skipped,
         })
+    }
+
+    /// The open holdings PR `pr` finished (plan 215, F70), each pinned to
+    /// its exact holding (its `from`) for [`Self::release_many`]: the
+    /// [`PR_ROLES`] keyed by the PR, and `coder` keyed by each of `plans`.
+    /// Only a holding that began before `merged` is one (review of #168): the
+    /// merge time binds the release to the work the PR ended, so a key
+    /// reassigned after the merge is new work and comes back as a note
+    /// instead. The pin carries that choice through to the writer, which ends
+    /// a target only if it is still that holding.
+    ///
+    /// # Errors
+    /// `E-RS-STORE` when the holdings cannot be read.
+    pub async fn finished_by(
+        &self,
+        project: &str,
+        pr: u64,
+        plans: &std::collections::BTreeSet<u64>,
+        merged: time::OffsetDateTime,
+    ) -> Result<(Vec<ReleaseTarget>, Vec<String>), Refusal> {
+        let pr = pr.to_string();
+        let mut targets = Vec::new();
+        let mut later = Vec::new();
+        for held in self
+            .store
+            .assignments(project)
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        {
+            let finished = (PR_ROLES.contains(&held.role.as_str()) && held.instance == pr)
+                || (held.role == "coder"
+                    && held
+                        .instance
+                        .parse::<u64>()
+                        .is_ok_and(|plan| plans.contains(&plan)));
+            if !finished || held.to.is_some() || held.end_pending {
+                continue;
+            }
+            let before = holders::parse_time(&held.from).is_some_and(|from| from < merged);
+            let target = ReleaseTarget {
+                role: held.role,
+                instance: held.instance,
+                seat: held.seat,
+                from: Some(held.from.clone()),
+            };
+            if before {
+                targets.push(target);
+            } else {
+                later.push(format!(
+                    "holding left open: {target} began at {}, after the merge",
+                    held.from
+                ));
+            }
+        }
+        Ok((targets, later))
     }
 
     /// End every open holding of a closed seat (reason `close`). Never fails:

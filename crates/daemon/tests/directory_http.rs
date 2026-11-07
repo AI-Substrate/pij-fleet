@@ -6641,7 +6641,7 @@ async fn delivered_ends_the_holdings_its_pr_finished_in_one_commit_once() {
     assert!(
         data["notes"]
             .to_string()
-            .contains("holding left open: pij-dormant does not hold security/215"),
+            .contains("holding left open: pij-dormant's security/215 holding from 2026-11-06T00:00:00Z is not open"),
         "{data}"
     );
     // pij-holder holds nothing else, so its window gets the seat's name back.
@@ -6679,7 +6679,7 @@ async fn delivered_ends_the_holdings_its_pr_finished_in_one_commit_once() {
     assert!(
         again["data"]["notes"]
             .to_string()
-            .contains("no holding released: pij-dormant does not hold security/215"),
+            .contains("no holding released: pij-dormant's security/215 holding from 2026-11-06T00:00:00Z is not open"),
         "{again}"
     );
     assert_eq!(head(&repo), after, "a re-run writes nothing");
@@ -6978,5 +6978,83 @@ async fn without_a_merge_time_delivered_ends_nothing_and_says_so() {
     );
     assert_eq!(head(&repo), start);
     assert_eq!(open_holdings(&rig).await, ["reviewer/219 pij-holder"]);
+    rig.server.abort();
+}
+
+/// Review of #168 (spoonbill, squirrel): `delivered` chooses its holdings from
+/// the store before the writer lock. A release and a post-merge reassignment
+/// of the same seat and key landing in between must not end the new holding:
+/// each target is pinned to the holding it chose. The two phases are driven
+/// here in order, with the interleaving injected between them.
+#[tokio::test]
+async fn a_reassignment_between_the_choice_and_the_commit_survives() {
+    use pij_daemon::community::directory::Unmatched;
+    let (repo, rig) = delivered_rig("pij-delivered-pinned").await;
+    let lines = "coder/215 pij-holder\nreviewer/231 pij-second\n";
+    assert_eq!(batch(&rig, &repo, "assign", lines).await["ok"], true);
+    merge_now(231);
+    let merged = MERGED_AT
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(pr, _)| *pr == 231)
+        .map(|(_, at)| pij_daemon::community::holders::parse_time(at).unwrap())
+        .unwrap();
+    let directory = &rig.services.directory;
+    let (targets, later) = directory
+        .finished_by("fleet", 231, &[215].into(), merged)
+        .await
+        .unwrap();
+    assert_eq!(targets.len(), 2, "{targets:?}");
+    assert!(later.is_empty(), "{later:?}");
+
+    // The interleaving: coder/215 released, then reassigned to the same seat.
+    for leaf in ["release", "assign"] {
+        let done = call(
+            rig.addr,
+            "/v1/directory",
+            &[
+                "directory",
+                leaf,
+                "coder/215",
+                "pij-holder",
+                "--why",
+                "next",
+            ],
+            &repo.main,
+        )
+        .await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    let new = rig.store.open_assignments("pij-holder").await.unwrap();
+    assert_eq!(new.len(), 1);
+
+    let released = directory
+        .release_many(
+            "fleet",
+            repo.main.clone(),
+            targets,
+            &SeatId::from(SEAT),
+            "PR #231 merged",
+            Unmatched::Skip,
+        )
+        .await
+        .unwrap();
+    assert_eq!(released.receipts.len(), 1, "only reviewer/231 ended");
+    assert_eq!(released.receipts[0].row["seat"], "pij-second");
+    assert_eq!(released.skipped.len(), 1, "{:?}", released.skipped);
+    assert!(
+        released.skipped[0].starts_with("pij-holder's coder/215 holding from ")
+            && released.skipped[0].ends_with(" is not open"),
+        "{:?}",
+        released.skipped
+    );
+    assert_eq!(
+        rig.store.open_assignments("pij-holder").await.unwrap(),
+        new,
+        "the new holding survives"
+    );
+    let coder = holders_at_head(&repo, "coder");
+    assert!(coder.last().unwrap()["to"].is_null(), "{coder:?}");
     rig.server.abort();
 }

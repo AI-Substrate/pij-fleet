@@ -23,7 +23,7 @@ use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::{AppState, envelope, system_time_ms};
 use crate::community::Refusal;
-use crate::community::directory::{E_NOT_HELD, HoldingReceipt, ReleaseTarget, Unmatched};
+use crate::community::directory::{E_NOT_HELD, HoldingReceipt, Unmatched};
 use crate::community::gh::{E_GH, E_GH_AUTH, E_GH_MISSING, PullRequest};
 
 /// The PR is not merged.
@@ -460,9 +460,6 @@ async fn delivered(
     }))
 }
 
-/// The roles whose holdings are keyed by the PR they verdict (plan 215, F70).
-const PR_ROLES: [&str; 3] = ["reviewer", "security", "performance"];
-
 /// End the holdings PR `number` finished (plan 215, F70): `reviewer`,
 /// `security` and `performance` keyed by the PR, and `coder` keyed by each
 /// plan the PR's files deliver. The plan paths select which coder holdings
@@ -487,7 +484,6 @@ async fn end_holdings(
     notes: &mut Vec<String>,
 ) -> Result<Vec<HoldingReceipt>, Refusal> {
     let number = pull.number;
-    let pr = number.to_string();
     // Releases are bound to the work the PR ended: only a holding that began
     // before the merge ends (review of #168). A holding assigned later is new
     // work under the same key and stays, so a re-run never ends it, while a
@@ -495,6 +491,9 @@ async fn end_holdings(
     // mergedAt is GitHub's clock and `from` is this machine's: skew only
     // matters for a holding assigned within seconds of the merge, which is
     // accepted.
+    // The store read here is outside the writer lock, so each target is
+    // pinned to its exact holding: a release and post-merge reassignment that
+    // land before the writer runs leave the new holding open, named.
     let Some(merged) = pull
         .merged_at
         .as_deref()
@@ -505,38 +504,12 @@ async fn end_holdings(
         ));
         return Ok(Vec::new());
     };
-    let mut targets = Vec::new();
-    for held in state
+    let (targets, later) = state
         .services
-        .governance
-        .store()
-        .assignments(project)
-        .await
-        .map_err(store_refusal)?
-    {
-        let finished = (PR_ROLES.contains(&held.role.as_str()) && held.instance == pr)
-            || (held.role == "coder"
-                && held
-                    .instance
-                    .parse::<u64>()
-                    .is_ok_and(|plan| plans.contains(&plan)));
-        if !finished || held.to.is_some() || held.end_pending {
-            continue;
-        }
-        let target = ReleaseTarget {
-            role: held.role,
-            instance: held.instance,
-            seat: held.seat,
-        };
-        if crate::community::holders::parse_time(&held.from).is_some_and(|from| from < merged) {
-            targets.push(target);
-        } else {
-            notes.push(format!(
-                "holding left open: {target} began at {}, after the merge",
-                held.from
-            ));
-        }
-    }
+        .directory
+        .finished_by(project, number, plans, merged)
+        .await?;
+    notes.extend(later);
     if targets.is_empty() {
         return Ok(Vec::new());
     }

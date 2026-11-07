@@ -1591,6 +1591,7 @@ async fn release_batch(
                 role: role.to_string(),
                 instance: instance.to_string(),
                 seat: (*seat).to_string(),
+                from: None,
             }),
             Err(refusal) => problems.push(format!("line {number}: {}", refusal.message)),
         }
