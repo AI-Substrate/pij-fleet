@@ -1158,67 +1158,11 @@ fn request(id: &str, role: &str, state: pij_store::RequestState) -> pij_store::R
     }
 }
 
-/// POSIX shell words of `line`, as `sh` would split them, without running
-/// anything: unquoted, single-quoted and backslash-escaped text only. `None`
-/// when an expansion or operator character is left unquoted, so the line
-/// would do more than pass words.
-fn shell_words(line: &str) -> Option<Vec<String>> {
-    let (mut words, mut word, mut started) = (Vec::new(), String::new(), false);
-    let mut chars = line.chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            ' ' | '\t' => {
-                if started {
-                    words.push(std::mem::take(&mut word));
-                    started = false;
-                }
-            }
-            '\'' => {
-                started = true;
-                loop {
-                    match chars.next()? {
-                        '\'' => break,
-                        quoted => word.push(quoted),
-                    }
-                }
-            }
-            '\\' => {
-                started = true;
-                word.push(chars.next()?);
-            }
-            '$' | '`' | '(' | ')' | ';' | '&' | '|' | '<' | '>' | '"' | '*' | '?' => {
-                // `<text>` and `<seat>` placeholders are the only angle
-                // brackets a printed command carries.
-                if ch == '<' {
-                    let rest: String = chars.clone().take_while(|c| *c != '>').collect();
-                    if rest.chars().all(|c| c.is_ascii_lowercase()) && !rest.is_empty() {
-                        word.push('<');
-                        word.push_str(&rest);
-                        word.push('>');
-                        for _ in 0..=rest.len() {
-                            chars.next();
-                        }
-                        started = true;
-                        continue;
-                    }
-                }
-                return None;
-            }
-            other => {
-                started = true;
-                word.push(other);
-            }
-        }
-    }
-    if started {
-        words.push(word);
-    }
-    Some(words)
-}
-
 /// Security review of #135, S001: a holding instance is data, so the release a
-/// held-role refusal prints quotes it as one shell word. Nothing printed is
-/// run; the line is split as `sh` would split it.
+/// held-role refusal prints quotes it as one shell word. `/bin/sh` splits the
+/// printed line (placeholders filled) through `printf` in an empty directory:
+/// the words come back exactly, and the payload, which would write a file if
+/// it ran, writes nothing.
 #[tokio::test]
 async fn printed_commands_quote_a_hostile_holding_instance() {
     let repo = repo("pij-directory-reshape-quote");
@@ -1226,7 +1170,7 @@ async fn printed_commands_quote_a_hostile_holding_instance() {
     let addr = rig.addr;
     fleet(addr, &repo).await;
     many_holders(addr, &repo, "qa").await;
-    let hostile = "x$(id)";
+    let hostile = "x$(id>dollar)`id>tick`;id>semi";
     let file = repo.root.join("holders.txt");
     std::fs::write(&file, format!("qa/{hostile} pij-holder\n")).unwrap();
     let assigned = directory(
@@ -1245,19 +1189,39 @@ async fn printed_commands_quote_a_hostile_holding_instance() {
     let held = directory(addr, &repo, &["retire", "qa", "--why", "w"]).await;
     assert_eq!(refusal_code(&held), "E-RS-DIRECTORY-ROLE-HELD", "{held}");
     let [release] = commands(&held).try_into().expect("one printed release");
+    let line = release.replace("<text>", "w");
+    let dir = fresh_dir("pij-directory-reshape-quote-sh");
+    let shell = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(format!("printf '%s\\037' {line}"))
+        .current_dir(&dir)
+        .output()
+        .expect("run /bin/sh");
+    assert!(shell.status.success(), "{shell:?}");
     assert_eq!(
-        shell_words(&release).expect("no unquoted expansion"),
+        std::fs::read_dir(&dir).unwrap().count(),
+        0,
+        "nothing in the printed command ran: {line}"
+    );
+    let words: Vec<String> = String::from_utf8(shell.stdout)
+        .unwrap()
+        .split('\x1f')
+        .filter(|word| !word.is_empty())
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        words,
         [
             "directory",
             "release",
             &format!("qa/{hostile}"),
             "pij-holder",
             "--why",
-            "<text>",
+            "w",
             "--project",
             "fleet",
         ],
-        "{release}"
+        "{line}"
     );
 }
 
@@ -1577,4 +1541,97 @@ async fn edit_and_retire_keep_the_routing_table_current() {
     assert_eq!(retired["ok"], true, "{retired}");
     assert_eq!(retired["data"]["routes"]["regenerated"], true, "{retired}");
     assert!(!routes().contains("role:qa"), "{}", routes());
+}
+
+/// Security review of #135, F002: `--drop-queued` withdraws only once every
+/// requester was told. With the FYI store unavailable, the retirement lands
+/// and nothing is withdrawn; the same command then tells and withdraws. A
+/// requester that is no longer a seat has nobody to tell and does not hold it
+/// back.
+#[tokio::test]
+async fn a_requester_not_told_holds_the_withdrawal_back() {
+    let repo = repo("pij-directory-reshape-untold");
+    let rig = draining_rig().await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    many_holders(addr, &repo, "qa").await;
+    let mut ghost = request("req-ghost", "qa", pij_store::RequestState::Queued);
+    ghost.requester = "pij-ghost".into();
+    let mut told = request("req-told", "qa", pij_store::RequestState::Queued);
+    told.requester = "pij-holder".into();
+    for queued in [&ghost, &told] {
+        rig.store.record_role_request(queued).await.unwrap();
+    }
+    use sqlx::Connection;
+    let mut store = sqlx::SqliteConnection::connect_with(
+        &sqlx::sqlite::SqliteConnectOptions::new().filename(rig._fresh.path()),
+    )
+    .await
+    .unwrap();
+    sqlx::query("ALTER TABLE fyis RENAME TO fyis_away")
+        .execute(&mut store)
+        .await
+        .unwrap();
+    let refused = directory(
+        addr,
+        &repo,
+        &["retire", "qa", "--why", "done", "--drop-queued"],
+    )
+    .await;
+    sqlx::query("ALTER TABLE fyis_away RENAME TO fyis")
+        .execute(&mut store)
+        .await
+        .unwrap();
+    assert_eq!(
+        refusal_code(&refused),
+        "E-RS-DIRECTORY-NOT-TOLD",
+        "{refused}"
+    );
+    assert!(
+        refused.to_string().contains("pij-holder (not told"),
+        "{refused}"
+    );
+    assert_eq!(section(&committed(&repo, "qa"), "meta")["state"], "retired");
+    for id in ["req-ghost", "req-told"] {
+        assert!(
+            rig.store.role_request(id).await.unwrap().is_some(),
+            "{id} is not withdrawn"
+        );
+    }
+
+    let [again] = commands(&refused).try_into().expect("the same command");
+    let finished = replay(addr, &repo.main, &again, &[("<text>", "done")]).await;
+    assert_eq!(finished["ok"], true, "{finished}");
+    assert_eq!(finished["data"]["resumed"], true, "{finished}");
+    let outcomes: Vec<(String, String)> = finished["data"]["withdrawn"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["id"].as_str().unwrap().to_string(),
+                row["told"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(outcomes.len(), 2, "{finished}");
+    assert!(
+        outcomes
+            .iter()
+            .any(|(id, told)| id == "req-ghost" && told.starts_with("gone")),
+        "{finished}"
+    );
+    assert!(
+        outcomes
+            .iter()
+            .any(|(id, told)| id == "req-told" && told == "held"),
+        "{finished}"
+    );
+    assert!(
+        rig.store
+            .queued_for_role("fleet", "qa")
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

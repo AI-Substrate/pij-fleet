@@ -1205,7 +1205,11 @@ row is deleted and a `role.request.withdrawn` spine event, with the requester
 as its seat, records `{id, project, role, instance, requester, created_at,
 withdrawn_by, why}`. The retiring seat's own requests are not echoed back to
 it. `data.withdrawn` lists `{id, requester, instance, created_at, told}`, where
-`told` is `held`, `self`, or why the FYI could not be held. If the withdrawal
+`told` is `held`, `self`, or `gone: <why>` for a requester that is no longer a
+seat (nobody to tell). Nothing is withdrawn unless every other requester's FYI
+was held: one that could not be (`not told: <why>`) refuses
+`E-RS-DIRECTORY-NOT-TOLD` after the retirement landed, with the requests still
+queued, and the same command tells and withdraws them. If the withdrawal
 fails after the retirement committed (`E-RS-STORE`, naming the command), the
 same `retire` or `merge ... --drop-queued` finishes it: on an already retired
 role with requests still queued it makes no commit and adds no changelog row
@@ -1228,6 +1232,7 @@ them.
 |---|---|
 | `E-RS-DIRECTORY-ROLE-HELD` | a seat still holds the role; the next step names the release |
 | `E-RS-DIRECTORY-ROLE-QUEUED` | requests sent to the role wait queued for a holder ([Send to a role](#send-to-a-role-plan-199)) and `--drop-queued` was not given. Each is listed as `<id> from <requester> for <role>[/<instance>] (<age> old)`; the next step prints an assign per queued instance (which drains them; release it and retry after) and the same verb with `--drop-queued`. Also while a request for the role is being delivered, listed as `<id> from <requester> to <holder> (<age> old)`; the next step is the same verb once it settles (`--drop-queued` cannot withdraw a claimed request) |
+| `E-RS-DIRECTORY-NOT-TOLD` | `--drop-queued`: a requester's FYI could not be held, so nothing was withdrawn; the retirement has landed and the next step is the same command |
 | `E-RS-DIRECTORY-RETIRED` | the role is already retired, or is the merge target; assign and edit of a retired role refuse too, naming the merge target when there is one |
 | `E-RS-DIRECTORY-ROLE-MISSING` | either role has no `role.dd.json` |
 | `E-RS-ARG` | no `--why`, `merge` without `--into`, a role merged into itself, `--into` on any verb but merge, or extra flags |

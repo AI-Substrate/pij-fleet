@@ -1054,6 +1054,42 @@ async fn reshape(
         }));
     }
     let resumed = reshaped.written.is_none();
+    // Withdraw only once every requester was told (security review of #135,
+    // F002): an FYI that could not be held leaves the requests queued behind
+    // the retired role, and the same command tells and withdraws them.
+    let untold: Vec<String> = told
+        .iter()
+        .filter(|row| {
+            row["told"]
+                .as_str()
+                .is_some_and(|told| told.starts_with("not told"))
+        })
+        .map(|row| {
+            format!(
+                "{} ({})",
+                row["requester"].as_str().unwrap_or("?"),
+                row["told"].as_str().unwrap_or("?")
+            )
+        })
+        .collect();
+    if !untold.is_empty() {
+        return Err(Refusal::new(
+            crate::community::directory::E_NOT_TOLD,
+            format!(
+                "role {id:?} is retired{} but {} requester(s) could not be told, so nothing was withdrawn: {}",
+                match &commit {
+                    Value::String(commit) => format!(" ({commit})"),
+                    _ => String::new(),
+                },
+                untold.len(),
+                untold.join(", ")
+            ),
+        )
+        .with_next(format!(
+            "Run the same command again to tell them and withdraw: {}",
+            reshaped.finish()
+        )));
+    }
     directory
         .withdraw(reshaped, &project, id, actor, &why)
         .await?;
@@ -1071,8 +1107,10 @@ async fn reshape(
 }
 
 /// Tell a withdrawn request's requester once, as an FYI held for its next
-/// real turn (plan 206). Returns the outcome: `held`, `self` when the
-/// requester is the seat that withdrew it, or why it could not be told.
+/// real turn (plan 206). Returns the outcome: `held`; `self` when the
+/// requester is the seat that withdrew it; `gone: <why>` when the requester is
+/// no longer a seat (unknown or tombstoned), so there is nobody to tell; or
+/// `not told: <why>`, which holds the withdrawal back.
 async fn tell_withdrawn(
     state: &AppState,
     actor: &SeatId,
@@ -1102,6 +1140,10 @@ async fn tell_withdrawn(
     };
     match state.services.delivery.hold_fyi(msg).await {
         Ok(_) => "held".to_string(),
+        Err(
+            error @ (pij_core::error::PijError::NoRegistryEntry { .. }
+            | pij_core::error::PijError::SeatIsGone { .. }),
+        ) => format!("gone: {error}"),
         Err(error) => format!("not told: {error}"),
     }
 }

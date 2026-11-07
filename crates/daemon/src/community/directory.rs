@@ -40,6 +40,9 @@ pub const E_ROLE_HELD: &str = "E-RS-DIRECTORY-ROLE-HELD";
 /// The role has requests queued for a holder (plan 206: retiring would strand
 /// them).
 pub const E_ROLE_QUEUED: &str = "E-RS-DIRECTORY-ROLE-QUEUED";
+/// A `--drop-queued` requester could not be told, so nothing was withdrawn
+/// (security review of #135, F002); the same command retries.
+pub const E_NOT_TOLD: &str = "E-RS-DIRECTORY-NOT-TOLD";
 /// A role made from a template records no template version (plan 206, F19).
 pub const E_NO_TEMPLATE_VERSION: &str = "E-RS-DIRECTORY-NO-TEMPLATE-VERSION";
 
@@ -150,6 +153,14 @@ pub struct Reshaped {
     /// The command that finishes the withdrawal if it fails.
     finish: String,
     gate: tokio::sync::OwnedMutexGuard<()>,
+}
+
+impl Reshaped {
+    /// The command that finishes the withdrawal: the same verb with
+    /// `--drop-queued`, its words quoted.
+    pub fn finish(&self) -> &str {
+        &self.finish
+    }
 }
 
 /// The daemon's role-holding service.
