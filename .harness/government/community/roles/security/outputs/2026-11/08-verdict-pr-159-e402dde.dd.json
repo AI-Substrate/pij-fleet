@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "e402ddef80ea44dd2e2fa08c58eec157cdfe7eff",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/159#issuecomment-6709751366",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:159",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Security verdict: PASS\n\nPR: #159\nHead: e402ddef80ea44dd2e2fa08c58eec157cdfe7eff\nScope: PR-owned phase1 workstream schemas, fixtures, documentation and core-template changes.\n\nNo security vulnerabilities found in the reviewed changes. The public-content scan found no reportable secrets, private repository identities/content or prohibited machine-local paths under C19/C21. No template or skill safety-rule weakening was identified.\n\nThis is phase1 only: no product-code move, migration or recurring runtime behavior is introduced. The stated phase2/later deferrals are not certified complete by this security verdict. Schema/fixture correctness, shipped-template pin accuracy and rendered-document freshness remain the correctness reviewer's proof.\n\nExact-head CI42390049084 and latest Delivers42390094187 independently verified SUCCESS; PR reports CLEAN.\nhttps://github.com/AI-Substrate/pij-fleet/actions/runs/42390049084\n\nNo local builds/tests, ddocs validation/rendering, runtime probes, credential-file reads or product edits.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | Phase1 PR-owned delta | - | No security vulnerabilities found | - |\n"
+		}
+	]
+}
