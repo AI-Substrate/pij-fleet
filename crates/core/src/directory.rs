@@ -7,9 +7,10 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
     match verb {
         None => Some(OVERVIEW),
         Some("add") => Some(ADD),
-        Some("assign" | "release") => Some(HOLD),
+        Some("assign" | "release" | "lineage") => Some(HOLD),
         Some("external") => Some(EXTERNAL),
         Some("rebuild") => Some(REBUILD),
+        Some("routes") => Some(ROUTES),
         Some("templates" | "template-diff") => Some(TEMPLATES),
         Some("memory") => Some(MEMORY),
         _ => None,
@@ -57,9 +58,12 @@ Usage:
   pij directory templates                             the role templates and versions
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
+  pij directory assign --batch <file> --why <text>      many holdings, one commit
   pij directory release <role>[/<instance>] <seat> --why <text>
+  pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
   pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]
   pij directory rebuild                               the store from the branch head
+  pij directory routes [--write --why <text>]         the routing table, with live holders
   pij directory memory add <role> --title <t> --hook <h> [--tags <a,b>] --body <text>|--body-file <path|->
   pij directory memory <role> [--note <slug>]         a role's memory INDEX, or one note
 
@@ -109,16 +113,26 @@ Flags:
   --batch <dir>             every *.dd.json in <dir>, one commit, all or nothing";
 
 const HOLD: &str = "\
-pij directory assign|release: a seat takes or leaves a role.
+pij directory assign|release|lineage: a seat takes or leaves a role, or the
+prime records a past holding.
 
 Usage:
   pij directory assign <role>[/<instance>] <seat> --why <text> [--project <slug>]
+  pij directory assign --batch <file> --why <text> [--project <slug>]
   pij directory release <role>[/<instance>] <seat> --why <text> [--project <slug>]
+  pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text>
 
 assign appends a row to roles/<id>/holders.dd.json, sets the seat's role (pa,
-pm for pm-<n>, else worker; a prime keeps prime) and renames its tmux window
-<project>:<role>. A second live holder of a one-holder role is allowed with a
-warning. release closes the row. `pij close <seat>` ends every holding.";
+pm for pm-<n>, else worker; a prime keeps prime) and names its tmux window
+<project>:<role> when this is the seat's first open holding (a second role
+keeps the window's name). A second live holder of a one-holder role is allowed
+with a warning. --batch takes one `<role>[/<instance>] <seat>` per line (blank
+and # lines skipped) and writes them all in one commit, or none. release closes
+the row. `pij close <seat>` ends every holding.
+
+lineage add (the prime only) records a closed seat's past holding: no live seat
+needed, no seat role set. Times are RFC 3339 with Z or an offset, or a date
+(UTC midnight); a holding that overlaps the seat's others is refused.";
 
 const EXTERNAL: &str = "\
 pij directory external add: note a seat borrowed from another project.
@@ -148,6 +162,20 @@ what the governance branch head says. The branch is the truth.
 Usage:
   pij directory rebuild [--project <slug>]";
 
+const ROUTES: &str = "\
+pij directory routes: the routing table, \"send it, don't do it\".
+
+Usage:
+  pij directory routes [--project <slug>]
+  pij directory routes --write --why <text> [--project <slug>]
+
+pij builds the table from every role's scope (paths and rules) and keeps it in
+community/ROUTES.md, rewritten in the same commit as any role change. Two roles
+claiming one path give a W-ROUTES-OVERLAP warning. The table reaches a seat as
+an FYI when it is assigned a role, after a compact and when a revive brings it
+back; the prime gets the changed rows as one FYI. A change of holder sends
+nothing. This verb prints it with the live holders and says whether ROUTES.md
+is stale; --write regenerates a stale one in one commit.";
 const MEMORY: &str = "\
 pij directory memory: a role's memory, one note per file (pij/memory).
 
@@ -185,6 +213,7 @@ mod tests {
         assert!(help(Some("add")).unwrap().contains("--batch <dir>"));
         assert!(help(None).unwrap().contains("pij directory <verb> --help"));
         assert!(help(Some("nope")).is_none());
+        assert!(help(Some("routes")).unwrap().contains("--write --why"));
         assert!(help(Some("memory")).unwrap().contains("no delete verb"));
         assert!(help(None).unwrap().contains("pij directory memory <role>"));
         assert!(

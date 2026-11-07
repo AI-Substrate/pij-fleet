@@ -209,10 +209,15 @@ async fn rig(name: &str) -> Rig {
 }
 
 async fn call(rig: &Rig, path: &str, argv: &[&str]) -> Value {
+    call_from(rig, PANE, path, argv).await
+}
+
+/// `call`, from the seat in `pane`.
+async fn call_from(rig: &Rig, pane: &str, path: &str, argv: &[&str]) -> Value {
     reqwest::Client::new()
         .post(format!("http://{}{path}", rig.addr))
         .bearer_auth(KEY)
-        .json(&json!({"argv": argv, "caller": {"TMUX_PANE": PANE, "cwd": rig.main}}))
+        .json(&json!({"argv": argv, "caller": {"TMUX_PANE": pane, "cwd": rig.main}}))
         .send()
         .await
         .unwrap()
@@ -222,6 +227,11 @@ async fn call(rig: &Rig, path: &str, argv: &[&str]) -> Value {
 }
 
 async fn request(rig: &Rig, id: &str, reply: ReplyMode) {
+    request_held_by(rig, id, reply, WRITER).await;
+}
+
+/// A delivered reviewer request from pij-asker, recorded as held by `holder`.
+async fn request_held_by(rig: &Rig, id: &str, reply: ReplyMode, holder: &str) {
     rig.store
         .record_role_request(&RoleRequest {
             id: id.into(),
@@ -235,7 +245,7 @@ async fn request(rig: &Rig, id: &str, reply: ReplyMode) {
             reply,
             limit_ms: None,
             state: RequestState::Delivered,
-            holder: Some("pij-holder".into()),
+            holder: Some(holder.into()),
             created_at: 1,
             delivered_at: Some(1),
             checkin_at: None,
@@ -500,4 +510,135 @@ async fn an_unrequested_output_goes_as_an_fyi_to_the_seat_above() {
     assert_eq!(note["data"]["notified"]["mode"], "fyi");
     assert_eq!(fyis(&rig, "pij-pm").await, 1);
     assert_eq!(fyis(&rig, "pij-asker").await, 0, "one seat is told");
+}
+
+/// pm-001's ruling (security S001 on #137): publishing is open, answering is
+/// not. A writer that is not the request's recorded holder, a live holder of
+/// its role or its project's prime is refused before anything is written,
+/// stamped or sent; each of the three may answer.
+#[tokio::test]
+async fn only_the_holder_a_live_holder_or_the_prime_may_answer_a_request() {
+    let rig = rig("pij-output-authority").await;
+    request_held_by(&rig, "req-other", ReplyMode::Wake, "pij-holder").await;
+    let before = git(&rig.gov, &["rev-parse", "HEAD"]);
+    let refused = call(
+        &rig,
+        "/v1/output",
+        &verdict("2222222b", "pass", Some("req-other")),
+    )
+    .await;
+    assert_eq!(
+        refused["details"]["code"], "E-RS-OUTPUT-NOT-HOLDER",
+        "{refused}"
+    );
+    assert!(
+        refused["details"]["next"]
+            .as_str()
+            .is_some_and(|next| next.contains("drop --answers")),
+        "{refused}"
+    );
+    assert_eq!(
+        git(&rig.gov, &["rev-parse", "HEAD"]),
+        before,
+        "nothing written"
+    );
+    assert!(
+        rig.store
+            .outputs_for_subject("fleet", "pr:200", Some("2222222b"))
+            .await
+            .unwrap()
+            .is_empty(),
+        "nothing indexed"
+    );
+    assert!(
+        rig.store
+            .role_request("req-other")
+            .await
+            .unwrap()
+            .unwrap()
+            .answered_at
+            .is_none(),
+        "not stamped"
+    );
+    assert!(!told(&rig, "pij-asker").await, "nobody told");
+    assert_eq!(fyis(&rig, "pij-asker").await, 0);
+    let published = call(&rig, "/v1/output", &verdict("2222222b", "pass", None)).await;
+    assert_eq!(published["ok"], true, "publishing stays open: {published}");
+
+    // A live holder of the role, not the recorded holder.
+    request_held_by(&rig, "req-moved", ReplyMode::None, "pij-gone").await;
+    let holder = call_from(
+        &rig,
+        "%64",
+        "/v1/output",
+        &verdict("3333333c", "pass", Some("req-moved")),
+    )
+    .await;
+    assert_eq!(holder["ok"], true, "{holder}");
+
+    // The request project's prime.
+    let set = call(
+        &rig,
+        "/v1/project",
+        &["project", "set", "fleet", "--prime", "pij-pm"],
+    )
+    .await;
+    assert_eq!(set["ok"], true, "{set}");
+    request_held_by(&rig, "req-prime", ReplyMode::None, "pij-holder").await;
+    let prime = call_from(
+        &rig,
+        "%63",
+        "/v1/output",
+        &verdict("4444444d", "pass", Some("req-prime")),
+    )
+    .await;
+    assert_eq!(prime["ok"], true, "{prime}");
+    for id in ["req-moved", "req-prime"] {
+        assert!(
+            rig.store
+                .role_request(id)
+                .await
+                .unwrap()
+                .unwrap()
+                .answered_at
+                .is_some(),
+            "{id} answered"
+        );
+    }
+}
+
+/// Review of #137 (F002): a notice's id is its output's commit, never the
+/// clock, so two outputs written at once both reach the seat above.
+#[tokio::test]
+async fn two_outputs_at_once_both_notify_under_their_own_commits() {
+    let rig = rig("pij-output-two-notices").await;
+    let argv = [
+        "output",
+        "note",
+        "--role",
+        "reviewer",
+        "--subject",
+        "pr:200",
+        "--body",
+        "fyi",
+    ];
+    let (a, b) = tokio::join!(
+        call(&rig, "/v1/output", &argv),
+        call(&rig, "/v1/output", &argv),
+    );
+    for written in [&a, &b] {
+        assert_eq!(
+            written["data"]["notified"]["msg_id"],
+            format!(
+                "output-fleet-{}",
+                written["data"]["commit"].as_str().unwrap()
+            ),
+            "{written}"
+        );
+    }
+    assert_ne!(
+        a["data"]["notified"]["msg_id"],
+        b["data"]["notified"]["msg_id"]
+    );
+    assert_eq!(fyis(&rig, "pij-pm").await, 2, "both notices survive");
 }

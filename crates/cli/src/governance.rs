@@ -109,6 +109,21 @@ pub fn body_file_to_body(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn an_output_body_file_is_read_here_and_sent_as_body() {
+        let argv = |tokens: &[&str]| tokens.iter().map(|t| (*t).to_string()).collect::<Vec<_>>();
+        let read = |source: &str| Ok(format!("from {source}"));
+        assert_eq!(
+            super::body_file_to_body(&argv(&["note", "--body-file", "-"]), read).unwrap(),
+            argv(&["note", "--body", "from -"])
+        );
+        assert_eq!(
+            super::body_file_to_body(&argv(&["note", "--body-file=n.md"]), read).unwrap(),
+            argv(&["note", "--body", "from n.md"])
+        );
+        assert!(super::body_file_to_body(&argv(&["note", "--body-file"]), read).is_err());
+    }
+
+    #[test]
     fn a_memory_body_file_is_read_here_and_sent_as_body() {
         let argv = |tokens: &[&str]| tokens.iter().map(|t| (*t).to_string()).collect::<Vec<_>>();
         let read = |source: &str| Ok(format!("from {source}"));
@@ -127,21 +142,6 @@ mod tests {
         assert!(
             super::inline_body_file(&argv(&["memory", "add", "qa", "--body-file"]), read).is_err()
         );
-    }
-
-    #[test]
-    fn an_output_body_file_is_read_here_and_sent_as_body() {
-        let argv = |tokens: &[&str]| tokens.iter().map(|t| (*t).to_string()).collect::<Vec<_>>();
-        let read = |source: &str| Ok(format!("from {source}"));
-        assert_eq!(
-            super::body_file_to_body(&argv(&["note", "--body-file", "-"]), read).unwrap(),
-            argv(&["note", "--body", "from -"])
-        );
-        assert_eq!(
-            super::body_file_to_body(&argv(&["note", "--body-file=n.md"]), read).unwrap(),
-            argv(&["note", "--body", "from n.md"])
-        );
-        assert!(super::body_file_to_body(&argv(&["note", "--body-file"]), read).is_err());
     }
 
     use axum::extract::{Json, State};

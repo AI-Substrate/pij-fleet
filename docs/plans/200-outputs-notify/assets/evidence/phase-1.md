@@ -34,3 +34,23 @@ to the deploy.
 
 `crates/daemon/tests/output_http.rs` and the store's outputs tests (AC1-AC4),
 green in CI on #137.
+
+## Verdict round on 4ab6460
+
+Main merged at 2c6fa1e (#129, #133 and the rest), and the PR retargeted to main.
+
+- F001: `community_outputs` is keyed by `(project, path)` (migration 0036
+  amended, unmerged) and `record_output` conflicts on both;
+  `store_integration::outputs_answer_for_their_exact_head_and_list_by_role`
+  indexes the same relative path in two projects and reads both back.
+- F002: the notice's `msg_id` is `output-<project>-<commit>`, never the clock;
+  `output_http::two_outputs_at_once_both_notify_under_their_own_commits`
+  writes two at once and finds both FYIs held, each under its own commit.
+- N001: a failed lookup of the seat above, or a refused forced-wake audit,
+  reaches `notified.outcome` with its cause.
+- S001 (pm-001's ruling): `--answers` only from the request's recorded holder,
+  a live holder of its role or its project's prime; anyone else gets
+  `E-RS-OUTPUT-NOT-HOLDER` before any write, stamp or send.
+  `output_http::only_the_holder_a_live_holder_or_the_prime_may_answer_a_request`
+  covers the refusal (no commit, index, stamp or notice) and the live-holder
+  and prime cases; the reply-mode test covers the recorded holder.

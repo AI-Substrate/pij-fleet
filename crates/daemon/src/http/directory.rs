@@ -18,17 +18,20 @@ use serde_json::{Value, json};
 
 use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
+use super::routes::Trigger;
 use super::{AppState, envelope};
 use crate::community::layout::{RolePaths, exists};
-use crate::community::memory;
 use crate::community::role::{self, RoleFields};
+use crate::community::routes::{self, Overlap, Regenerated};
 use crate::community::writer::{Existing, NewFile, Written};
-use crate::community::{Refusal, pointer};
+use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
+use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 26] = [
+const SINGLE: [&str; 27] = [
     "why",
     "from",
+    "to",
     "from-project",
     "role",
     "project",
@@ -75,7 +78,8 @@ const MEMORY: [&str; 8] = [
     "actor",
 ];
 /// Flags that steer the write rather than describe a role.
-const CONTROL: [&str; 8] = [
+const CONTROL: [&str; 9] = [
+    "write",
     "why",
     "from",
     "project",
@@ -112,6 +116,8 @@ impl Arguments {
                             | "release"
                             | "rebuild"
                             | "external"
+                            | "routes"
+                            | "lineage"
                             | "templates"
                             | "template-diff"
                             | "memory"
@@ -154,6 +160,16 @@ impl Arguments {
                     ));
                 }
                 call.suggest = true;
+                continue;
+            }
+            if flag == "write" {
+                if call
+                    .single
+                    .insert("write".to_string(), String::new())
+                    .is_some()
+                {
+                    return Err(Refusal::new("E-RS-ARG", "duplicate --write"));
+                }
                 continue;
             }
             let (name, value) = match flag.split_once('=') {
@@ -208,6 +224,25 @@ impl Arguments {
                 "usage: pij directory external add <seat> --from-project <slug> --why <note> [--role <id>]",
             ));
         }
+        if call.leaf != "routes" && call.single.contains_key("write") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --write belongs to `routes`", call.leaf),
+            ));
+        }
+        if call.leaf == "routes"
+            && (!call.positions.is_empty()
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "project" | "actor" | "write" | "why"))
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory routes [--project <slug>] [--write --why <text>]",
+            ));
+        }
         if matches!(call.leaf.as_str(), "templates" | "template-diff")
             && (call.positions.len() != usize::from(call.leaf == "template-diff")
                 || call
@@ -221,7 +256,26 @@ impl Arguments {
                 "usage: pij directory templates | pij directory template-diff <id> [--project <slug>]",
             ));
         }
-        if call.leaf != "add" && call.single.contains_key("from") {
+        if call.leaf == "lineage"
+            && (call.positions.len() != 3
+                || call.positions[0] != "add"
+                || call.single.keys().any(|flag| {
+                    !matches!(flag.as_str(), "why" | "project" | "actor" | "from" | "to")
+                })
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory lineage add <role>[/<instance>] <seat> --from <time> --to <time> --why <text> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "lineage" && call.single.contains_key("to") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("directory {}: --to belongs to `lineage add`", call.leaf),
+            ));
+        }
+        if !matches!(call.leaf.as_str(), "add" | "lineage") && call.single.contains_key("from") {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 format!("directory {}: --from belongs to `add`", call.leaf),
@@ -246,13 +300,19 @@ impl Arguments {
         if matches!(call.leaf.as_str(), "assign" | "release")
             && (call.describes_a_role()
                 || call.get("file").is_some()
-                || call.get("batch").is_some())
+                || (call.get("batch").is_some()
+                    && (call.leaf == "release" || !call.positions.is_empty())))
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 format!(
-                    "directory {}: takes <role>[/<instance>] <seat> --why <text> [--project <slug>]",
-                    call.leaf
+                    "directory {}: takes <role>[/<instance>] <seat> --why <text> [--project <slug>]{}",
+                    call.leaf,
+                    if call.leaf == "assign" {
+                        ", or --batch <file> --why <text>"
+                    } else {
+                        ""
+                    }
                 ),
             ));
         }
@@ -404,6 +464,8 @@ pub(crate) async fn handle(
     let result = match call.leaf.as_str() {
         "assign" | "release" => hold(&state, &actor.id, &request.caller, &call).await,
         "external" => external(&state, &actor.id, &request.caller, &call).await,
+        "routes" => routes_leaf(&state, &actor.id, &request.caller, &call).await,
+        "lineage" => lineage(&state, &actor.id, &request.caller, &call).await,
         "templates" => Ok(json!({"templates": state.services.directory.templates().listing()})),
         "template-diff" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
@@ -472,7 +534,8 @@ async fn add(
                 "--why <text> is required: it becomes the changelog row",
             )
         })?;
-    let date = role::today();
+    // UTC to the millisecond with its zone, like holders rows (F13).
+    let date = crate::community::holders::now();
     let batch = call.get("batch");
     let mut fields = call.fields();
     let from = call
@@ -588,13 +651,52 @@ async fn add(
         ),
     };
     let message = format!("{subject}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}");
-    let written: Written = state
+    let (written, regenerated): (Written, Regenerated) = state
         .services
         .directory
         .write(&project, repo, files, message)
         .await?;
+    record_pointers(state, &project, &written).await?;
+    let routes = routes_receipt(state, &project, &written, &regenerated).await;
+    let roles: Vec<Value> = ids
+        .iter()
+        .map(|id| {
+            let path = RolePaths::new(id).expect("checked above").document;
+            json!({"id": id, "path": path.display().to_string()})
+        })
+        .collect();
+    let mut data = json!({
+        "project": project,
+        "commit": written.commit,
+        "worktree": written.root.worktree.display().to_string(),
+        "paths": written.paths,
+        "roles": roles,
+        "routes": routes,
+    });
+    if !regenerated.table.overlaps.is_empty() {
+        data["warnings"] = json!(
+            regenerated
+                .table
+                .overlaps
+                .iter()
+                .map(Overlap::warning)
+                .collect::<Vec<_>>()
+        );
+    }
+    if let [only] = roles.as_slice() {
+        data["id"] = only["id"].clone();
+        data["path"] = only["path"].clone();
+    }
+    Ok(data)
+}
 
-    let pointers = pointer::for_write(&project, &written.paths, &written.commit);
+/// Record the store pointers for the documents a write committed.
+async fn record_pointers(
+    state: &AppState,
+    project: &str,
+    written: &Written,
+) -> Result<(), Refusal> {
+    let pointers = pointer::for_write(project, &written.paths, &written.commit);
     state
         .services
         .governance
@@ -609,25 +711,87 @@ async fn add(
                     written.commit
                 ),
             )
-        })?;
-    let roles: Vec<Value> = ids
-        .iter()
-        .map(|id| {
-            let path = RolePaths::new(id).expect("checked above").document;
-            json!({"id": id, "path": path.display().to_string()})
         })
-        .collect();
-    let mut data = json!({
-        "project": project,
-        "commit": written.commit,
-        "worktree": written.root.worktree.display().to_string(),
-        "paths": written.paths,
-        "roles": roles,
-    });
-    if let [only] = roles.as_slice() {
-        data["id"] = only["id"].clone();
-        data["path"] = only["path"].clone();
+}
+
+/// What a write did to the routing table, after telling the prime of any
+/// changed rows (plan 202).
+async fn routes_receipt(
+    state: &AppState,
+    project: &str,
+    written: &Written,
+    regenerated: &Regenerated,
+) -> Value {
+    let prime = super::routes::notify_prime(
+        &state.services,
+        project,
+        &written.commit,
+        &regenerated.change,
+    )
+    .await;
+    json!({
+        "path": crate::community::layout::ROUTES,
+        "regenerated": regenerated.file.is_some(),
+        "added": regenerated.change.added,
+        "removed": regenerated.change.removed,
+        "overlaps": regenerated.table.overlaps,
+        "prime": prime,
+    })
+}
+
+/// `directory routes [--write --why <text>]` (plan 202): the table as a seat
+/// sees it, on demand; `--write` regenerates a stale `ROUTES.md` in one commit.
+async fn routes_leaf(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let why = call.get("why").filter(|why| !why.trim().is_empty());
+    let write = call.get("write").is_some();
+    if write && why.is_none() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "--write needs --why <text>: it becomes the commit message",
+        ));
     }
+    if !write && why.is_some() {
+        return Err(Refusal::new("E-RS-ARG", "--why goes with --write"));
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let root = root::find(&repo)?;
+    let mut data = json!({"project": project, "path": crate::community::layout::ROUTES});
+    let current = routes::regenerate(&root.worktree, &[]).file.is_none();
+    // Checked in-process first, so a current file costs no launch.
+    if let Some(why) = why.filter(|_| !current) {
+        let message =
+            format!("community: routes\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}");
+        match state
+            .services
+            .directory
+            .write(&project, repo.clone(), Vec::new(), message)
+            .await
+        {
+            Ok((written, regenerated)) => {
+                record_pointers(state, &project, &written).await?;
+                data["commit"] = json!(written.commit);
+                data["written"] = routes_receipt(state, &project, &written, &regenerated).await;
+            }
+            Err(refusal) if refusal.code == E_NOTHING_TO_WRITE => {
+                data["written"] = json!({"regenerated": false, "reason": "ROUTES.md is current"});
+            }
+            Err(refusal) => return Err(refusal),
+        }
+    } else if write {
+        data["written"] = json!({"regenerated": false, "reason": "ROUTES.md is current"});
+    }
+    let table = routes::build(&routes::read_roles(&root.worktree));
+    let holders = super::routes::live_holders(&state.services, &project).await?;
+    data["stale"] = json!(routes::regenerate(&root.worktree, &[]).file.is_some());
+    data["text"] = json!(routes::for_seat(&project, &table, &holders));
+    data["routes"] = json!(table.routes);
+    data["overlaps"] = json!(table.overlaps);
+    data["holders"] = json!(holders);
     Ok(data)
 }
 
@@ -663,6 +827,11 @@ async fn hold(
     caller: &CallerContext,
     call: &Arguments,
 ) -> Result<Value, Refusal> {
+    if call.leaf == "assign"
+        && let Some(file) = call.get("batch")
+    {
+        return assign_batch(state, actor, caller, call, &file).await;
+    }
     let [target, seat] = call.positions.as_slice() else {
         return Err(Refusal::new(
             "E-RS-ARG",
@@ -673,14 +842,7 @@ async fn hold(
         .get("why")
         .filter(|why| !why.trim().is_empty())
         .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
-    let (role, instance) = target.split_once('/').unwrap_or((target.as_str(), ""));
-    RolePaths::new(role)?;
-    if instance.contains('/') || instance.trim() != instance {
-        return Err(Refusal::new(
-            "E-RS-ARG",
-            format!("bad instance key {instance:?}"),
-        ));
-    }
+    let (role, instance) = role_and_instance(target)?;
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let seat_id = SeatId::from(seat.as_str());
     let directory = &state.services.directory;
@@ -710,10 +872,240 @@ async fn hold(
             .await?
     };
     let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+    if call.leaf == "assign" {
+        // A change of holder changes no route; the new holder gets the table.
+        data["routes"] = super::routes::deliver(
+            &state.services,
+            &seat_id,
+            Some(&project),
+            Trigger::Assign,
+            None,
+        )
+        .await;
+    }
     data["project"] = json!(project);
     data["role"] = json!(role);
     data["seat"] = json!(seat);
     Ok(data)
+}
+
+/// `directory lineage add <role>[/<instance>] <seat> --from <time> --to <time>
+/// --why <text>` (plan 208, F15): the prime records a closed seat's past
+/// holding. No live seat is needed.
+async fn lineage(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    use crate::community::holders::{parse_time, stamp};
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let (role, instance) = role_and_instance(&call.positions[1])?;
+    let seat = call.positions[2].clone();
+    let when = |flag: &str| -> Result<time::OffsetDateTime, Refusal> {
+        let given = call
+            .get(flag)
+            .ok_or_else(|| Refusal::new("E-RS-ARG", format!("--{flag} <time> is required")))?;
+        parse_time(&given).ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "--{flag} {given:?}: give RFC 3339 with Z or an offset (2026-11-04T09:00:00+10:00), or a date (UTC midnight)"
+                ),
+            )
+        })
+    };
+    let (from, to) = (when("from")?, when("to")?);
+    if from >= to {
+        return Err(Refusal::new("E-RS-ARG", "--from must be before --to"));
+    }
+    if to > time::OffsetDateTime::now_utc() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "--to is in the future; lineage add records holdings that have ended (use assign for a live seat)",
+        ));
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let project_prime = state
+        .services
+        .governance
+        .store()
+        .list_projects()
+        .await
+        .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+        .into_iter()
+        .find(|known| known.slug == project)
+        .and_then(|known| known.prime_id);
+    // The project's own prime; a project that names none falls back to a
+    // seat whose role is prime.
+    let is_prime = match &project_prime {
+        Some(prime) => prime == actor,
+        None => {
+            state
+                .services
+                .roles
+                .read_role(actor)
+                .await
+                .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+                .as_deref()
+                == Some("prime")
+        }
+    };
+    if !is_prime {
+        return Err(Refusal::new(
+            "E-RS-OWNERSHIP",
+            format!("only the prime records past holdings; {actor} is not the prime of {project}"),
+        ));
+    }
+    let row = pij_store::Assignment {
+        project: project.clone(),
+        role: role.to_string(),
+        instance: instance.to_string(),
+        seat: seat.clone(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: stamp(from),
+        to: Some(stamp(to)),
+        assigned_by: actor.to_string(),
+        released_by: Some(actor.to_string()),
+        why: why.clone(),
+        release_why: Some("lineage add".to_string()),
+        end_pending: false,
+    };
+    let receipt = state
+        .services
+        .directory
+        .lineage_add(repo, row, actor)
+        .await?;
+    let mut data = serde_json::to_value(&receipt).expect("a receipt serialises");
+    data["project"] = json!(project);
+    data["role"] = json!(role);
+    data["seat"] = json!(seat);
+    Ok(data)
+}
+
+/// `<role>[/<instance>]`, checked.
+fn role_and_instance(target: &str) -> Result<(&str, &str), Refusal> {
+    let (role, instance) = target.split_once('/').unwrap_or((target, ""));
+    RolePaths::new(role)?;
+    if instance.contains('/') || instance.trim() != instance {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("bad instance key {instance:?}"),
+        ));
+    }
+    Ok((role, instance))
+}
+
+/// `directory assign --batch <file> --why <text>` (plan 208, F16): one
+/// `<role>[/<instance>] <seat>` per line, blank and `#` lines skipped; every
+/// holding in one writer commit, all or nothing. Every bad line is named.
+async fn assign_batch(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+    file: &str,
+) -> Result<Value, Refusal> {
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| Refusal::new("E-RS-ARG", "--why <text> is required"))?;
+    let path = caller_path(caller, file)?;
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("cannot read {}: {error}", path.display()),
+        )
+    })?;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let mut requests = Vec::new();
+    let mut problems = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let [target, seat] = fields.as_slice() else {
+            problems.push(format!("line {number}: want `<role>[/<instance>] <seat>`"));
+            continue;
+        };
+        let (role, instance) = match role_and_instance(target) {
+            Ok(parsed) => parsed,
+            Err(refusal) => {
+                problems.push(format!("line {number}: {}", refusal.message));
+                continue;
+            }
+        };
+        let descriptor = state
+            .services
+            .registry
+            .get(&SeatId::from(*seat))
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+        match descriptor {
+            None => problems.push(format!("line {number}: seat {seat} does not exist")),
+            Some(descriptor) if descriptor.tombstoned_at.is_some() => {
+                problems.push(format!("line {number}: seat {seat} is closed"));
+            }
+            Some(descriptor) => requests.push(crate::community::directory::AssignRequest {
+                project: project.clone(),
+                repo: repo.clone(),
+                role: role.to_string(),
+                instance: instance.to_string(),
+                seat: descriptor,
+                actor: actor.clone(),
+                why: why.clone(),
+                machine: state.machine_alias.clone(),
+            }),
+        }
+    }
+    if !problems.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("the batch wrote nothing: {}", problems.join("; ")),
+        ));
+    }
+    if requests.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{} names no holdings", path.display()),
+        ));
+    }
+    let mut seats: Vec<SeatId> = requests
+        .iter()
+        .map(|request| request.seat.id.clone())
+        .collect();
+    seats.dedup();
+    let receipts = state.services.directory.assign_many(requests).await?;
+    // Each new holder gets the table once, as a single assign gives it (plan 202).
+    let mut routes = serde_json::Map::new();
+    for seat in seats {
+        if routes.contains_key(seat.as_str()) {
+            continue;
+        }
+        let sent = super::routes::deliver(
+            &state.services,
+            &seat,
+            Some(&project),
+            Trigger::Assign,
+            None,
+        )
+        .await;
+        routes.insert(seat.to_string(), sent);
+    }
+    Ok(json!({
+        "project": project,
+        "commit": receipts[0].commit,
+        "holdings": receipts,
+        "routes": routes,
+    }))
 }
 
 /// `directory external add <seat> --from-project <slug> --why <note>`.
@@ -811,7 +1203,7 @@ async fn memory(
         body,
     };
     // Refuse a bad note before taking the writer lock.
-    memory::note(&role::today(), &fields)?;
+    memory::note(&holders::today(), &fields)?;
     let (written, note) = state
         .services
         .directory
@@ -893,7 +1285,7 @@ pub(crate) async fn project_and_repo(
 /// The project for a caller in `cwd`: the one whose repo holds it (the deepest),
 /// else the one whose repo shares its common git dir, so a linked worktree
 /// finds its project (plan 195, AC15). Read in-process, no launch.
-fn match_project(
+pub(super) fn match_project(
     projects: Vec<pij_core::orchestration::Project>,
     cwd: &Path,
 ) -> Result<pij_core::orchestration::Project, Refusal> {
@@ -1016,7 +1408,7 @@ fn read_batch(dir: &Path) -> Result<Vec<(String, Value)>, Refusal> {
 pub(super) fn refused(refusal: &Refusal) -> Response {
     let status = match refusal.code {
         "E-RS-ARG" | "E-RS-UNPORTED" => StatusCode::BAD_REQUEST,
-        "E-RS-OWNERSHIP" => StatusCode::FORBIDDEN,
+        "E-RS-OWNERSHIP" | "E-RS-OUTPUT-NOT-HOLDER" => StatusCode::FORBIDDEN,
         "E-RS-NOT-FOUND" | memory::E_NOTE_MISSING => StatusCode::NOT_FOUND,
         "E-RS-STORE" | crate::community::E_GOV_GIT => StatusCode::INTERNAL_SERVER_ERROR,
         _ => StatusCode::CONFLICT,

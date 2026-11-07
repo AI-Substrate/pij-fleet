@@ -47,7 +47,8 @@ const COLUMNS: &str = "path, project, role, kind, subject, head, result, writer,
      answers, commit_sha, created_at";
 
 impl SqliteOrchestration {
-    /// Index one committed output. A path already indexed is left as it is.
+    /// Index one committed output. One already indexed for its project and
+    /// path is left as it is; another project may hold the same relative path.
     ///
     /// # Errors
     /// Store failures, or an out-of-range timestamp.
@@ -60,7 +61,7 @@ impl SqliteOrchestration {
             sqlx::query(&format!(
                 "INSERT INTO community_outputs ({COLUMNS}) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
-                 ON CONFLICT (path) DO NOTHING"
+                 ON CONFLICT (project, path) DO NOTHING"
             ))
             .bind(&output.path)
             .bind(&output.project)

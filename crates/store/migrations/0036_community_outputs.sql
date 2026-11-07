@@ -4,8 +4,10 @@
 -- writer committed on the governance branch, which stays the truth. `subject`
 -- and `head` answer `pij outputs --subject pr:N --head <sha>` for that exact
 -- head; `answers` is the request it answers (ruling C3), when there is one.
+-- `path` is relative to its project's governance worktree, so the identity is
+-- (project, path): two projects may hold the same relative path.
 CREATE TABLE community_outputs (
-    path        TEXT PRIMARY KEY,
+    path        TEXT NOT NULL,
     project     TEXT NOT NULL,
     role        TEXT NOT NULL,
     kind        TEXT NOT NULL CHECK (kind IN ('verdict', 'deliverable', 'note', 'handover')),
@@ -16,7 +18,8 @@ CREATE TABLE community_outputs (
     holds_role  INTEGER NOT NULL CHECK (holds_role IN (0, 1)),
     answers     TEXT,
     commit_sha  TEXT NOT NULL,
-    created_at  INTEGER NOT NULL
+    created_at  INTEGER NOT NULL,
+    PRIMARY KEY (project, path)
 ) STRICT;
 
 CREATE INDEX community_outputs_subject ON community_outputs (project, subject, head);

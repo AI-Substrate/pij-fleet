@@ -1067,6 +1067,10 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         }
     };
 
+    // After the bind is won and before anything is served: no claim can be in
+    // flight, and a boot that lost the bind never touches a live daemon's rows.
+    delivery::role_send::recover_requests(&services).await;
+
     let (governance_shutdown, governance_shutdown_rx) = tokio::sync::oneshot::channel();
     let governance_observer =
         tokio::spawn(Arc::clone(&services.governance).observe_deliveries(async {
