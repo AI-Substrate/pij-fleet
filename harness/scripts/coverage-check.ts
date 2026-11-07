@@ -13,7 +13,7 @@
  * (covered, or its row deleted) must leave both, so it can't be reopened.
  * Inputs fail closed: a required folder, document, section or the exemptions
  * file that can't be read or has the wrong shape is a finding, never an empty
- * list. Only the old `roadmaps` folder may be absent. Reads files once; no
+ * list, and so is a repeated section or row id. Only the old `roadmaps` folder may be absent. Reads files once; no
  * loop, poll or launch.
  */
 
@@ -94,14 +94,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The rows of a required section; a missing or malformed one is a finding. */
+/**
+ * The rows of a required section. A missing, repeated or malformed section, a
+ * row with no id and a repeated row id are findings, so a second copy can't
+ * hide an obligation or stand in for an unfinished step.
+ */
 function rows(doc: Doc, section: string, findings: string[]): readonly Row[] {
 	const sections = isRecord(doc.body) ? doc.body.sections : undefined;
 	if (!Array.isArray(sections)) {
 		findings.push(`${doc.path}: has no sections array`);
 		return [];
 	}
-	const entry: unknown = sections.find((item) => isRecord(item) && item.name === section);
+	const entries = sections.filter((item) => isRecord(item) && item.name === section);
+	if (entries.length > 1) {
+		findings.push(`${doc.path}: required section ${section} appears ${entries.length} times`);
+		return [];
+	}
+	const entry: unknown = entries[0];
 	const value = isRecord(entry) ? entry.value : undefined;
 	if (!Array.isArray(value)) {
 		findings.push(
@@ -109,10 +118,18 @@ function rows(doc: Doc, section: string, findings: string[]): readonly Row[] {
 		);
 		return [];
 	}
+	const seen = new Set<string>();
 	return value.filter((row, index): row is Row => {
-		if (isRecord(row) && typeof row.id === "string" && row.id !== "") return true;
-		findings.push(`${doc.path}#${section}[${index}]: row has no id`);
-		return false;
+		if (!isRecord(row) || typeof row.id !== "string" || row.id === "") {
+			findings.push(`${doc.path}#${section}[${index}]: row has no id`);
+			return false;
+		}
+		if (seen.has(row.id)) {
+			findings.push(`${doc.path}#${section}/${row.id}: duplicate row id`);
+			return false;
+		}
+		seen.add(row.id);
+		return true;
 	});
 }
 

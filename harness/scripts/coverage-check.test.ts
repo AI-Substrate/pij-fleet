@@ -229,6 +229,61 @@ describe("coverage-check (plan 210, req-31)", () => {
 			]);
 		});
 
+		it("a repeated section or row id fails rather than hiding a row", () => {
+			const raw = (path: string, ...sections: [string, unknown][]): Doc => ({
+				path,
+				body: { sections: sections.map(([name, value]) => ({ name, value })) },
+			});
+			const planned = (id: string) => ({ id, state: "planned" });
+			expect(
+				coverageFindings(
+					[raw(PRD, ["requirements", [planned("req-01")]], ["requirements", [planned("req-02")]])],
+					[],
+					[],
+					NONE,
+					[],
+				),
+			).toEqual([`${PRD}: required section requirements appears 2 times`]);
+			expect(
+				coverageFindings(
+					[raw(PRD, ["requirements", [planned("req-01"), planned("req-01")]])],
+					[],
+					[
+						raw(W1, [
+							"steps",
+							[
+								{
+									id: "s01",
+									state: "planned",
+									delivers: ["../prds/001-x.dd.json#requirements/req-01"],
+								},
+							],
+						]),
+					],
+					NONE,
+					[],
+				),
+			).toEqual([`${PRD}#requirements/req-01: duplicate row id`]);
+			const child = (state: string) => ({ id: "s02", state, part_of: "#steps/s01" });
+			expect(
+				coverageFindings(
+					[],
+					[],
+					[
+						raw(W1, [
+							"steps",
+							[{ id: "s01", state: "complete" }, child("in-progress"), child("complete")],
+						]),
+					],
+					NONE,
+					[],
+				),
+			).toEqual([
+				`${W1}#steps/s02: duplicate row id`,
+				`${W1}#steps/s01: complete while its child ${W1}#steps/s02 is in-progress`,
+			]);
+		});
+
 		const healthy: Record<string, Record<string, unknown>> = {
 			"docs/project/prds": {
 				"001-x.dd.json": { requirements: [{ id: "req-01", state: "planned" }] },
