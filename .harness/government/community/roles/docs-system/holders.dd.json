@@ -35,6 +35,15 @@
 					"seat": "pij-wooden-lungfish",
 					"to": "2026-11-07T07:29:16.777Z",
 					"why": "record the live holder (directory replaces HOLDERS.md; prime's instruction 2026-11-06)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-07T13:06:26.306Z",
+					"harness": "copilot",
+					"harness_session": "b6ef39e5-e920-4bd3-a1b9-ec37b766e537",
+					"machine": "ops.osk.lan",
+					"seat": "pij-leading-guan",
+					"why": "fresh docs-system holder: #136 route wording (ac-0007), then plan 210"
 				}
 			]
 		}
