@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "95bbd70a139feafedb16fbca2544383b410d636d",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/163#issuecomment-6712661782",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:163",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Nonblocking P163-N001: current probe loop is 60 Endpoint entries x 7 methods = 420 calls, not 413; label older measured timings/call count by their scope and correct current budget/comment."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Performance: pass-with-notes** at `95bbd70a139feafedb16fbca2544383b410d636d`. **P163-F002 is closed; P163-F001's corrected no-launch cost contract stands.**\n\nThe new recipe now compiles the daemon library tests under `/usr/bin/nice -n 19` plus `/usr/sbin/taskpolicy -b` where available, then runs the selected tests nice-only. `--lib` avoids a doctest compile in that run. This addresses the recorded priority/split blocker without forcing shared-target source refresh into a private-target run. Continue following fleet CARGO_INCREMENTAL=0/build-job caps; the recipe sets priority, not every ambient resource option. A shared-target invocation still needs the shared-build controls.\n\n**One probe per full gate:** `rust-check` now skips `route_inventory_tests::every_served_route_is_in_the_inventory_and_classified`; that substring matches the actual test name. The standalone stage runs the probe once; the later workspace suite can repeat only the cheap in-memory controls. --quick still skips the heavy stage and Rust. CI nextest includes the actual probe.\n\n**P163-N001, nonblocking budget correction:** the current Endpoint::ALL contains **60 entries**, and served_pairs iterates each under seven methods without deduplicating calls: **420 sequential local HTTP request calls plus one JSON read/setup**, not 413. The 413/59-path wording predates the merged `/v1/steer` entry. Update the current source/AC3 budget, or label 413 as the earlier measurement; do not silently relabel an old measurement. The 77-row inventory is 47 seat-authority, 29 machine-public and one job-token, including 12 HEAD pairs; OPTIONS has no entry.\n\nThe reported approximately three-minute background library compile and two-second warm command are author-observed prices, not universal bounds or a fresh benchmark at this head. Their 0.14-second test observation is not the whole Cargo command. The **5-second request and 60-second enumeration timeouts** are now explicit; the latter includes served_pairs setup/walk, not Cargo compilation or the preceding JSON read/parse.\n\n**Workshop revision 2:** every tokenless request now walks fresh, at most D=16, using strict in-process parent/start reads and one O(1) boundary-index lookup per hop. There is no ancestry authorization cache or \"free\" hit claim. Removing that shortcut can increase warm tokenless work, but it stays bounded and launch-free, including timer-driven hooks/status lines.\n\nThe boundary index is lookup metadata, capped at 4,096 entries with named admission refusal rather than live eviction, maintained by registration/lifecycle events and lazy stale-start removal; no new sweep. Token requests retain the fixed-size SHA-256/constant-time comparison/warm-map authentication budget, not a claim of constant total route cost. Bootstrap/rotation and digest loading remain separately priced lifecycle work. These are phase-2 contracts, not implemented or measured authentication.\n\nExact-head [CI 42410293125](https://github.com/AI-Substrate/pij-fleet/actions/runs/42410293125) succeeds. JUnit records **2,169 executed Rust cases, zero failures/errors**, including all six inventory tests and the HEAD omission control. The probe case reports **0.558 s in Linux CI**, not local warm command or compile time. Latest Delivers **42410292911** succeeds at this SHA.\n\nNo local build, test, probe or worktree edit. No new production daemon runtime cost in phase 1 or migration. Reviewer/security own route classification, F88 closure and the reparenting/issuer contracts; q-02–q-04 remain untouched. No new live deployment reading is required for the test-only sensor.\n"
+		}
+	]
+}
