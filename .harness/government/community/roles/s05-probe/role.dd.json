@@ -11,6 +11,7 @@
 				"id": "s05-probe",
 				"kind": "specialist",
 				"lifecycle": "per-task",
+				"state": "retired",
 				"title": "s05 probe (scratch)"
 			}
 		},
@@ -37,6 +38,11 @@
 					"by": "pij-wooden-lungfish",
 					"date": "2026-11-06",
 					"why": "s05 dogfood: a role with no live holder, to probe the role queue; retire after #135 lands"
+				},
+				{
+					"by": "pij-steady-otter",
+					"date": "2026-11-07",
+					"why": "scratch role for the s05 dogfood (F80): its one stale request is from the s05 dogfood"
 				}
 			]
 		}

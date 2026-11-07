@@ -14,6 +14,8 @@
 | kind | specialist |
 | lifecycle | per-task |
 | holders | one |
+| state | retired |
+| merged_into | — |
 | instance_key | — |
 | template | — |
 | template_version | — |
@@ -46,3 +48,4 @@
 | date | by | why |
 | --- | --- | --- |
 | 2026-11-06 | pij-wooden-lungfish | s05 dogfood: a role with no live holder, to probe the role queue; retire after #135 lands |
+| 2026-11-07 | pij-steady-otter | scratch role for the s05 dogfood (F80): its one stale request is from the s05 dogfood |
