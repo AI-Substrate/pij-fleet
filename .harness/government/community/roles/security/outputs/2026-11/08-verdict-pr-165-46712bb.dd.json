@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "46712bbe95cadc6b10d38cae6e8871e4c70fedc6",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/165#issuecomment-6712782956",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:165",
+				"writer": "pij-bumpy-herring",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## Security verdict: PASS WITH NOTES\n\nPR #165, exact head `46712bbe95cadc6b10d38cae6e8871e4c70fedc6`.\n\nAll four changed files were reviewed. No high-confidence new security vulnerability was identified. The added arguments remove the modal question tools without replacing the launcher's existing settings or permission arguments.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No new vulnerability identified | - |\n\n### Launch-control evidence\n\n- `crates/harnesses/src/spawn.rs:190-209` adds Copilot `--no-ask-user` alongside the existing `--yolo`. Model, context, effort handling and configuration inputs are unchanged. This build's CLI documentation defines the flag as disabling the question-form tool, not changing other permission settings; asking in ordinary replies remains possible.\n- `spawn.rs:178-188` adds the discrete pair `--disallowedTools AskUserQuestion` for Claude. Existing `--dangerously-skip-permissions` and conditional `--settings {\"crossSessionInbound\":\"accept\"}` remain separate, unchanged arguments. No earlier generated `--disallowedTools` option is replaced. The official Claude CLI reference describes a bare tool name as removing that matching tool from context.\n- `crates/daemon/src/http/mod.rs:1471-1548` uses the shared builder/wrapper path. Revive preserves the previous inbound setting and uses that same launcher (`crates/daemon/src/http/revive.rs:423-441`). The executor passes discrete arguments through `ProcessCommand`, without shell interpretation (`crates/cli/src/main.rs:3813-3830`).\n- Test source `crates/harnesses/src/spawn.rs:408-544` covers both harnesses with and without resume, pins fresh-launch argv, and retains the exact settings assertion.\n\nThe inherited broad permission arguments are not introduced or broadened by this PR. This is tool-surface suppression, not a new permission boundary. The unchanged TS control builder is not used by the inspected runtime launch path; full launch-path correctness is separately reviewer-owned.\n\n### Privacy and proof\n\nThe changed spawn API paragraph (`docs/how/pij-rs-api.md:137`), quoted Copilot argv (`docs/how/copilot-native-extension.md:86`) and D-F110-1 (`docs/difficulties.md:123`) add no identified secret or private machine path under C19/C21.\n\nGitHub metadata and the independent remote pull ref agree on the full reviewed SHA; GitHub reports CLEAN. CI run `42411875834` and Delivers run `42411875819` both identify that SHA and success.\n\nThe reported installed-CLI and matching-wrapper canaries are supporting operator evidence, not independently repeated here. Source and pinned argv establish preservation of the generated arguments; merge precedence with arbitrary inherited external Claude deny-rule configuration was not independently exercised. No local builds, tests, probes, credential reads or launch/canary execution were performed.\n\nReferences for flag semantics: this Copilot CLI build's `--no-ask-user` / `--yolo` documentation, and https://code.claude.com/docs/en/cli-reference (`--disallowedTools`).\n"
+		}
+	]
+}
