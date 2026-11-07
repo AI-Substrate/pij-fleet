@@ -1,0 +1,36 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1b78a-df78-7982-984b-e7cbf21ef606",
+				"date": "2026-11-08",
+				"head": "02f27aabf2a58f94d1383846fc1ad40b4d72ddf5",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/152#issuecomment-6712368045",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:152",
+				"writer": "pij-double-bobcat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# PR #152 round 6 correctness verdict\n\n**PASS-WITH-NOTES** at `02f27aabf2a58f94d1383846fc1ad40b4d72ddf5`.\n\nReviewed only `65fc109ffc83dd4244aa6dd9f04a8ba1840d3ec5..02f27aa`, as instructed. The delta changes one integration-test file and one API-doc paragraph, with no production gate change. I did not separately grade the superseded round-5 implementation.\n\n## Documenting regression\n\n`a_client_replaying_a_live_seats_pane_still_replies_as_it_until_req_10` uses the real HTTP router/store with fake pane/process observations:\n\n- The fixture registers pij-holder at %51. Its setup does not seed holder-to-pij-second delivery jobs.\n- A fresh native HTTP client overrides the normal test caller with %51 and names pij-holder as from. A separate shim HTTP client supplies the same victim pane; the shim derives its sender.\n- Both responses succeed. The real jobs table contains two live ordinary deliveries to pij-second from pij-holder. The assertion therefore demonstrates the claimed visible send-as effect on both paths, not merely two success envelopes.\n- The comment explicitly calls this a documenting residual, names PRD 003 req-10/plan 221 phase 2 and requires refusal assertions when send-as is gated. It does not claim caller-process provenance or model completion.\n\nThe comment, PR body's Known limit and API paragraph match governance commit **0d4a40be**, C32: pane resolution is registration strength, not proof the requesting process runs there. The accepted residual is explicitly linked to existing uncorrelated raw-from send-as. This is not a finding waived by pretending the metadata is private.\n\n## Queue assertion repair\n\nThe old peek_inbox helper could observe only the head job. The new query reads all pending/running jobs of exactly `delivery:<seat>`, oldest first, then filters the expected sender. Those are the queue's actual live states and ordinary-delivery kind.\n\nThe current production DeliveryPayload flattens Msg fields at the root; the helper handles that shape, plus wrapped message objects. I checked the relevant refusal/positive callers: queued jobs from the asserted holder are now counted beyond the head; held FYIs, answered_at and request.answered_by_reply remain separate assertions. The new two-delivery regression is also a positive witness that the helper sees more than one queued message.\n\nNo existing valid-payload assertion was weakened to compensate for the broader read. All **82 directory_http cases executed and passed** at this exact head, including the unbound/asserted refusal matrix, paneless metadata replay, closed-request gate, role-reply positive and OMP wire-fixture positive.\n\n## Proof and scope\n\nCI **42407240181** is success at the exact full SHA. Its JUnit has **2162 cases, zero failures/errors**; all 82 directory cases are unskipped, including the new pane-replay test. Latest Delivers is success. The detached checkout is clean, matches the remote pin, and GitHub reports CLEAN/ready.\n\nNo local product tests/builds, mutations, dependency changes or live probes. This is HTTP replay with fake pane facts, not a live TS-to-daemon or macOS caller-origin proof. No new recurring production cost exists in this delta.\n\n## Notes\n\n- **N001:** queued_from still uses unwrap_or_default for missing/non-string from and msg_id. A malformed from becomes empty and is silently filtered out. Tighten those fields to expect/typed decoding before relying on this helper for payload-shape failures. Existing Queue::live_payloads supplies the same live selection if the direct SQL is later simplified. Current valid producer/fixture shapes are covered and pass.\n- **N002:** the PR body's round-6 heading still says “verdict at 65fc109.” This verdict and its CI evidence are at 02f27aa.\n- The helper's scope is live ordinary-delivery jobs from the requested sender, not all recipients, control jobs, terminal deliveries or held FYIs. Do not broaden “nothing queued” beyond those selectors and the separate checks.\n\nSecurity's C32 acceptance is independently owned. The intentionally documented pane/raw-from impersonation residual remains req-10's job; this verdict is not origin-authentication hardening.\n"
+		}
+	]
+}
