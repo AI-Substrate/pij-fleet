@@ -1,0 +1,34 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"head": "fcfca246416d1afe02fae88cd72f866522d3d58b",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/153#issuecomment-6708704375",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:153",
+				"writer": "pij-annual-squirrel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "**Security: pass-with-notes** at `fcfca246416d1afe02fae88cd72f866522d3d58b`.\n\nThis policy-only regrade supersedes the security block at this same head. C32's clarification at `cbd6538c` audits the asserted-identity exchange for a capability; subsequent capability-authorized actions need no per-action audit. S153-003 is therefore satisfied by the durable reissue audit. No code change was required.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| 1 | 🟡 MEDIUM | crates/daemon/src/http/mod.rs | 1104-1171 | Accepted registration-strength grant reissue residual, tracked by PRD 003 req-10 | 9/10 |\n\nAll four clarified C32 conditions hold within the plan-217 scope:\n\n| Condition | Evidence |\n|---|---|\n| Signal-only impact | The grant permits context size/window reporting, not reading messages, sending as the seat, or changing code, holdings or roles. Listed downstream signal effects remain in Known limit. |\n| Bind where known | Pane/session/native incarnation checks remain. Size application re-reads the live row and current process/grant inside the exclusion shared with registration. Full caller-process authentication remains the explicitly accepted req-10 residual. |\n| Audit at identity exchange, or withhold | An existing grant is returned only after its durable `context.grant.reissued` audit. Audit failure retains registration but withholds the grant. The selected evidence excludes the token. Under clarified C32, later grant-authorized reports need no separate audit. |\n| Exact Known limit | Independently read live PR metadata names `(F88, PRD 003 req-10)`, covers unknown-window and signal effects, and states that reissue is an audit trail, not proof of theft or innocence. |\n\nF003 and S153-002's stale **size-report** race remain closed. Trigger failure/retry proves grant withholding; replacement-incarnation rejection preserves activity/context/generation; the no-rotation control and registration-waiting case support the in-lock re-read. The F88 regression reads forged 650k back from the card.\n\n**Proof:** the code head is unchanged and CLEAN. Exact-head CI [42383494027](https://github.com/AI-Substrate/pij-fleet/actions/runs/42383494027), attempt 2, passed all four jobs; JUnit lists 2,099 passing cases, including all four named repair/limit regressions. Newer body-edit delivers completed successfully. Source and CI evidence from the round-3 review remains applicable; this regrade changes policy disposition only. No local builds/tests, credential reads, exploitation or product edits.\n\nThe accepted local-key identity residual remains open for PRD 003 req-10. This verdict does not certify cryptographic caller identity, universal stale-activity rejection or deployment behavior; global-mutex contention remains performance-owned.\n"
+		}
+	]
+}
