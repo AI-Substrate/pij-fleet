@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"hook": "read when the fleet comes back from a reboot or many seats die",
+				"tags": [
+					"pa",
+					"reboot",
+					"holdings",
+					"directory"
+				],
+				"title": "After a reboot: map holdings to live seats"
+			}
+		},
+		{
+			"name": "body",
+			"value": "pij directory now prints text by default; use pij directory --json (data.roles[].lineage, live holders have no 'to'). Join with pij-rs --json list (data.seats[]); a dead seat is NOT LISTED. Check each holding's PR with gh pr view N --json state,mergeStateStatus. Release only holdings whose work is finished. A dead holder's role sends already queue and wake the PA, and a same-name revive keeps the holding. Reassigning is pm-001's call. Revived seats keep their old context unless revived --fresh, so check footers for anything over 400k. 07 Nov: 11 holdings on dead seats, all open PRs, none released."
+		}
+	]
+}
