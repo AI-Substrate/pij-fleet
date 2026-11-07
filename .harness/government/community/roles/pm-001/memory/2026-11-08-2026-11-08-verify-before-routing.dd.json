@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-08",
+				"hook": "Read before routing a coder's reported head, judging a security block on caller identity, or handling a stalled seat",
+				"tags": [
+					"verdicts",
+					"heads",
+					"c32",
+					"seats"
+				],
+				"title": "2026-11-08 Verify before routing; identity findings under C32"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- A coder's report lists what it did, not what you asked. When a round item was added after the coder started (F25 lag), check the head's diff for it before routing (git diff <old>..<new> -- <path>). Twice on 8 Nov (#156 P156-F002, #152 P152-F004) the report silently omitted a late item; routing would have cost a full extra round.\n- Run pr-freeze before routing and again before READY; main moves between them (several PRs went DIRTY after other merges). Check the latest Delivers run is SUCCESS by hand if pr-freeze can't parse it.\n- Identity findings (F88 class): C32, as clarified at 0d4a40be, judges only what a PR ADDS. Pane-bound means registration strength. Send-as through any uncorrelated from is req-10's root (plan 221), accepted with a Known limit plus a documenting regression. Ask the coder for a caller survey from code (which real callers send what evidence) before ruling; on #152 that survey found a regression the PR itself introduced.\n- Answer a post-merge block with store or spine evidence when its precondition can't occur (#164: one stall row ever, post-fix), rather than ordering a repair.\n- A seat holding work can sit idle for hours after a compaction (F111, plan 222). Wake it, pointing at its handover. A verdict seat stuck on Copilot's follow-up dialog was F110: the security-review subagent tells the parent to use ask_user. Seats now launch with --no-ask-user; a running seat needs a revive (stop the process, then pij-rs revive, which resumes) to pick up new launch flags.\n- When verdicts queue on one seat (bobcat compacting with 3 or more), add a second reviewer seat: the new one (spoonbill) found two real defects on its first PR.\n"
+		}
+	]
+}
