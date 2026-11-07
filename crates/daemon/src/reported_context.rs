@@ -77,7 +77,7 @@ pub struct ReportedContext {
     /// One critical section for a native registration (which may replace a
     /// seat's process and rotate its grant) and for applying a size report
     /// (review S153-002). Both are rare, short and per turn boundary at most.
-    gate: tokio::sync::Mutex<()>,
+    gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl ReportedContext {
@@ -126,10 +126,28 @@ impl ReportedContext {
         })
     }
 
-    /// Hold the critical section a native registration runs in, so no size
-    /// report applies while it replaces a process or rotates a grant.
-    pub async fn exclusive(&self) -> tokio::sync::MutexGuard<'_, ()> {
-        self.gate.lock().await
+    /// Run `work` (a native registration: its registry write and its grant
+    /// rotation) inside the critical section, as an owned task. Once admitted
+    /// it holds the section until `work` has finished, even if the caller
+    /// stops waiting (review F004): a registry write that outlives a cancelled
+    /// request can never let a size report in before it commits.
+    ///
+    /// # Errors
+    /// The owned task failed (panicked or was aborted at shutdown).
+    pub async fn exclusively<T: Send + 'static>(
+        &self,
+        work: impl std::future::Future<Output = T> + Send + 'static,
+    ) -> Result<T> {
+        let held = Arc::clone(&self.gate).lock_owned().await;
+        tokio::spawn(async move {
+            let _held = held;
+            work.await
+        })
+        .await
+        .map_err(|error| PijError::Adapter {
+            adapter: "daemon/reported-context".into(),
+            message: format!("registration task failed: {error}"),
+        })
     }
 
     /// Apply an authorized report: `seat`'s activity and size, only if, at
@@ -304,7 +322,7 @@ mod tests {
             Arc::new(pij_testkit::fakes::FakeRegistry::new().with_seat(seat.clone()));
         let reports = Arc::new(ReportedContext::default());
         let (token, _) = reports.grant(&seat.id, proc).unwrap();
-        let registration = reports.exclusive().await;
+        let registration = Arc::clone(&reports.gate).lock_owned().await;
         let report = tokio::spawn({
             let (reports, registry, id) = (Arc::clone(&reports), Arc::clone(&registry), seat.id);
             async move {

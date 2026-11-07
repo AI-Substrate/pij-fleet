@@ -1098,25 +1098,42 @@ async fn register(
     let claimed = request.claim.clone();
     let claimed_session = request.harness_session.clone();
     let attempt = request.attempt.clone();
-    // Review S153-002: a native registration may replace the seat's process
-    // and rotate its grant; no size report applies in between.
+    // Review S153-002 / F004: a native registration may replace the seat's
+    // process and rotate its grant; it runs, with the rotation, as one owned
+    // task inside the context critical section, so no size report applies in
+    // between, even if this request is cancelled once the write is admitted.
     let reports = Arc::clone(&state.services.reported_context);
-    let _gate = if native {
-        Some(reports.exclusive().await)
-    } else {
-        None
+    let work = {
+        let (registration, tmux, reports) = (
+            state.registration.clone(),
+            Arc::clone(&state.services.tmux),
+            Arc::clone(&reports),
+        );
+        let (claim, session) = (request.claim, request.harness_session);
+        async move {
+            let registered = registration
+                .register_via(path, claim, session, native.then_some(tmux.as_ref()))
+                .await;
+            // A failed grant leaves the seat without size reports, never
+            // unregistered.
+            let grant = match &registered {
+                Ok((descriptor, _)) if native => reports
+                    .grant(&descriptor.id, descriptor.proc)
+                    .map_err(|error| eprintln!("pij register: {error}"))
+                    .ok(),
+                _ => None,
+            };
+            (registered, grant)
+        }
     };
-    let registered = state
-        .registration
-        .register_via(
-            path,
-            request.claim,
-            request.harness_session,
-            request
-                .native_extension_delivery
-                .then_some(state.services.tmux.as_ref()),
-        )
-        .await;
+    let (registered, grant) = if native {
+        match reports.exclusively(work).await {
+            Ok(done) => done,
+            Err(error) => return internal("pij register", error),
+        }
+    } else {
+        work.await
+    };
     match registered {
         Ok((descriptor, report)) => {
             let meta = descriptor.pane.is_none().then(|| {
@@ -1136,18 +1153,6 @@ async fn register(
             // field. 135 added binding/proc_source here and 136 added
             // typing_grace_ms in `wire`; two structs serializing the same
             // response is how two answers to one question start drifting.
-            // A failed grant leaves the seat without size reports, never
-            // unregistered.
-            let grant = native
-                .then(|| {
-                    state
-                        .services
-                        .reported_context
-                        .grant(&descriptor.id, descriptor.proc)
-                        .map_err(|error| eprintln!("pij register: {error}"))
-                        .ok()
-                })
-                .flatten();
             // Registration does not prove the caller is this seat's host (F88,
             // PRD 003): a standing grant handed out again is audited with the
             // caller's evidence, and never the token, so a theft is visible.

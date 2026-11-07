@@ -4387,3 +4387,104 @@ async fn a_report_from_a_replaced_incarnation_changes_nothing() {
     assert_eq!(rig.reports.generation(&rig.victim.id), generation);
     rig.server.abort();
 }
+
+/// Review F004: a registration's exclusion covers its registry write for the
+/// write's whole owned lifetime. The replacement's put is admitted but held
+/// before commit (another connection holds SQLite's write lock); the
+/// registration waiter is then cancelled, and a report already checked
+/// against the old incarnation runs. It must wait for the write and then
+/// change nothing. The same schedule without the cancel is the control.
+#[tokio::test]
+async fn a_cancelled_registration_keeps_reports_out_until_its_write_commits() {
+    use pij_core::model::SystemState;
+    for cancel in [true, false] {
+        let mut rig = GrantRig::new().await;
+        let old_proc = rig.victim.proc;
+        let old_grant = grant_of(&rig.register(&rig.victim).await).unwrap();
+        assert!(rig.reports.authorized(&rig.victim.id, old_proc, &old_grant));
+        let generation = rig.reports.generation(&rig.victim.id);
+        rig.host.kill_and_reap(old_proc.unwrap()).await;
+        let replacement_host = HostFixture::spawn();
+        let mut replacement = rig.victim.clone();
+        replacement.proc = Some(replacement_host.identity().await);
+
+        let pool = pij_store::open(&rig.store.path()).await.unwrap();
+        let mut blocker = pool.acquire().await.unwrap();
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        // The registration's owned work, as the handler composes it.
+        let waiter = tokio::spawn({
+            let (reports, registry, replacement) = (
+                Arc::clone(&rig.reports),
+                Arc::clone(&rig.registry),
+                replacement.clone(),
+            );
+            async move {
+                let work = {
+                    let reports = Arc::clone(&reports);
+                    async move {
+                        registry
+                            .put_reporting_keeping_parent(replacement.clone())
+                            .await
+                            .unwrap();
+                        reports.grant(&replacement.id, replacement.proc).unwrap()
+                    }
+                };
+                reports.exclusively(work).await.unwrap()
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        if cancel {
+            waiter.abort();
+        }
+        let old = tokio::spawn({
+            let (reports, registry, id, session) = (
+                Arc::clone(&rig.reports),
+                Arc::clone(&rig.registry),
+                rig.victim.id.clone(),
+                rig.victim.harness_session.clone(),
+            );
+            async move {
+                reports
+                    .apply(
+                        registry.as_ref(),
+                        &id,
+                        old_proc,
+                        &old_grant,
+                        SystemState::Working,
+                        crate::reported_context::ContextReport {
+                            session,
+                            tokens: 1_000,
+                            window: None,
+                        },
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(
+            !old.is_finished(),
+            "cancel={cancel}: the report waits for the write"
+        );
+        sqlx::query("ROLLBACK")
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        assert_eq!(old.await.unwrap(), None, "cancel={cancel}");
+        if !cancel {
+            waiter.await.unwrap();
+        }
+        let row = rig.registry.get(&rig.victim.id).await.unwrap().unwrap();
+        assert_eq!(
+            row.proc, replacement.proc,
+            "cancel={cancel}: the write committed"
+        );
+        assert_eq!(row.state, SystemState::Idle, "cancel={cancel}");
+        assert_eq!(rig.reports.generation(&rig.victim.id), generation);
+        assert_eq!(rig.card().await["data"]["contextUsed"], Value::Null);
+        rig.server.abort();
+    }
+}
