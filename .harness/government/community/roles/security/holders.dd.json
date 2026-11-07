@@ -31,7 +31,10 @@
 					"harness": "copilot",
 					"harness_session": "f5ecc23f-34ac-4ecd-a42f-b129c66db7e7",
 					"machine": "ops.osk.lan",
+					"release_why": "seat died in the 07 Nov reboot; prime: fresh holders",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-alert-ibex",
+					"to": "2026-11-07T07:29:15.744Z",
 					"why": "second security holder for parallel verdicts (prime 13:20)"
 				},
 				{
