@@ -18,4 +18,5 @@
 - [2026-11-08 Re-granted: PA may ctrl+d Copilot's follow-up dialog \(until F109\)](2026-11-08-ctrl-d-follow-up-dialog-f109.dd.md): read when pij-bg sends a modal-stall tell or a seat is stuck on Copilot's 'Follow-up action:' dialog (pa, f47, f108, f109, dialog, exception)
 - [2026-11-08 Seats stuck on a modal dialog look working \(F47\)](2026-11-08-modal-dialog-stall-f47.dd.md): read when a seat shows working but has had no model call for 30+ min (pa, watchdog, f47, stall)
 - [2026-11-08 Recheck size before sending compact: Copilot may have auto-compacted](2026-11-08-recheck-size-before-compact.dd.md): read after 'handover ready' arrives, before pij send --command compact (pa, compact, copilot)
+- [2026-11-08 After compacting a seat with a live holding, wake it \(F111\)](2026-11-08-wake-after-compaction-f111.dd.md): read right after any compaction completes, and in each round's holdings check (pa, compact, f111, holdings, wake)
 <!-- /pij:generated -->
