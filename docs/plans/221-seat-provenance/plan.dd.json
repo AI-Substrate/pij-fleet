@@ -11,7 +11,7 @@
         "ordinal": 221,
         "complexity": "CS-3",
         "summary": "Every seat-authority route is listed and classified in a checked inventory, and a reviewed workshop chooses how each seat incarnation gets a private capability, so phase 2 can gate routes on it.",
-        "status": "draft",
+        "status": "shipped",
         "mode": "Full",
         "created": "2026-11-04",
         "backpressure": "assets/backpressure.dd.json#rows"
@@ -48,8 +48,9 @@
         {
           "id": "ac-0002",
           "claim": "A workshop decides the capability bootstrap, before any code. docs/plans/221-seat-provenance/workshops/001-capability-bootstrap.md compares at least these options and recommends one: (a) a per-incarnation secret minted by the daemon at spawn and delivered privately to that process only (an inherited fd, a 0600 file under the seat's private dir, or the spawn environment), stored only as a hash; (b) OS peer credentials on a Unix socket (pid and uid of the connecting process), checked against the registered incarnation; (c) both, peer credentials as bootstrap evidence and the secret as the control (req-10 says peer credentials are bootstrap evidence, not the whole control). For each it answers: how spawned, adopted, revived and hand-started seats get one; how the native Copilot extension, the OMP and Pi extensions, the shim (pij-cli) and the Claude, Codex and Copilot hooks present it; how it rotates on re-registration and dies with the incarnation; how a seat's subprocesses (bash tools) can or cannot use it; what an attacker holding the daemon key but not the capability can still do; the per-request cost; and the migration path (old clients during rollout). It never reissues a capability from identifiers a victim exposes in the roster.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "receipt": "assets/evidence/phase-1.md#ac2-the-workshop (verdicts at 95bbd70: reviewer spoonbill 889d432, security squirrel 7e537dc, performance ocelot 6ac90d5)"
         },
         {
           "id": "ac-0003",
@@ -61,8 +62,9 @@
         {
           "id": "ac-0004",
           "claim": "Docs and states. docs/how/pij-rs-api.md gains a short 'Seat authority' section pointing at the inventory; docs/difficulties.md records F88's status; the plan states phases 2 and later as follow-up waves to be planned from the workshop. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "receipt": "assets/evidence/phase-1.md#ac4-docs-and-states (#163 merged at ed9a3d7c)"
         }
       ]
     },
@@ -72,7 +74,7 @@
         {
           "id": "ph-00dd",
           "title": "Seat identity provenance, phase 1: route inventory and capability bootstrap (PRD 003 req-10, F88)",
-          "state": "unchecked",
+          "state": "checked",
           "brief": "All ACs. One coder. CS-3.",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
