@@ -51,8 +51,9 @@
         {
           "id": "ac-0003",
           "claim": "Skill. skills/pij references roadmap.md becomes workstream.md: shape, split, merge, nest, lanes, coverage; it defines workstream and pij stream so they never overlap ('a pij stream is one lane of a workstream'), says that in a PEC project workstream docs govern ordering over prime-flow items, and notes sNN step ids versus sNNN stream branches. The protocol gets the lane line. The prompting follows C18, C26 and C28 (shaped, split, merged and nested as the work demands).",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003",
+          "receipt": "assets/evidence/phase-1.md (phase 1, docs-system)"
         },
         {
           "id": "ac-0004",
@@ -63,8 +64,9 @@
         {
           "id": "ac-0005",
           "claim": "Templates v3. pm, coder, pa, prime, reviewer and security templates ship v3 with workstream wording (v1 and v2 unchanged, never edited; #136 shipped v2 of these six for shell quoting, so the rename is v3). `pij directory templates --show <name>@v2` shows them; the 10 optional templates from #136 already use workstream.",
-          "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005",
+          "receipt": "assets/evidence/phase-1.md (phase 1, docs-system)"
         },
         {
           "id": "ac-0006",

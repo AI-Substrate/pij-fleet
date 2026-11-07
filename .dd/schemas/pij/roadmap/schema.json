@@ -1,6 +1,6 @@
 {
   "dd_schema": 1,
-  "description": "A pij project roadmap: the order of work across one or more PRDs. Each step names the requirement rows it delivers, the blueprint components it builds, what it depends on, and the builder plan that does the work.",
+  "description": "Superseded by pij/workstream (ruling C29); kept so existing roadmap docs and history still validate. Write new docs with pij/workstream. A pij project roadmap: the order of work across one or more PRDs. Each step names the requirement rows it delivers, the blueprint components it builds, what it depends on, and the builder plan that does the work.",
   "enums": {
     "doc_status": {
       "values": [

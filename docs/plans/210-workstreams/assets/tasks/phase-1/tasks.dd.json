@@ -1,101 +1,205 @@
 {
-  "dd": {
-    "schema": "builder/plan"
-  },
-  "sections": [
-    {
-      "name": "meta",
-      "value": {
-        "title": "Roadmaps become workstreams",
-        "slug": "phase-1",
-        "status": "draft",
-        "summary": ""
-      }
-    },
-    {
-      "name": "summary",
-      "value": ""
-    },
-    {
-      "name": "tasks",
-      "value": []
-    },
-    {
-      "name": "done_when",
-      "value": {}
-    },
-    {
-      "name": "goals",
-      "value": []
-    },
-    {
-      "name": "non_goals",
-      "value": []
-    },
-    {
-      "name": "acceptance_criteria",
-      "value": []
-    },
-    {
-      "name": "phases",
-      "value": []
-    },
-    {
-      "name": "research_context",
-      "value": ""
-    },
-    {
-      "name": "testing_strategy",
-      "value": {}
-    },
-    {
-      "name": "documentation_strategy",
-      "value": {}
-    },
-    {
-      "name": "risks_assumptions",
-      "value": ""
-    },
-    {
-      "name": "open_questions",
-      "value": []
-    },
-    {
-      "name": "workshop_opportunities",
-      "value": []
-    },
-    {
-      "name": "clarifications",
-      "value": []
-    },
-    {
-      "name": "planning_seam",
-      "value": []
-    },
-    {
-      "name": "gate_matrix",
-      "value": []
-    },
-    {
-      "name": "implementation_summary",
-      "value": ""
-    },
-    {
-      "name": "key_findings",
-      "value": []
-    },
-    {
-      "name": "acceptance_coverage",
-      "value": []
-    },
-    {
-      "name": "risks",
-      "value": []
-    },
-    {
-      "name": "execution_guardrails",
-      "value": []
-    }
-  ],
-  "references": []
+	"dd": {
+		"schema": "builder/plan"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Phase 1: workstream docs (docs-system)",
+				"slug": "phase-1",
+				"status": "draft",
+				"summary": "The pij/workstream schema, the skill's workstream procedure, PRD 001 and blueprint 001 wording and rows, and v3 of the six core templates. No folder moves."
+			}
+		},
+		{
+			"name": "summary",
+			"value": ""
+		},
+		{
+			"name": "tasks",
+			"value": [
+				{
+					"id": "tk-0001",
+					"title": "The pij/workstream schema and its fixtures",
+					"phase": "ph-00d2",
+					"state": "checked",
+					"success": "`.dd/schemas/pij/workstream` validates steps with id, state, plan, delivers, builds, needs and depends_on (cross-file), plus part_of (cross-file) and lanes (branch required; worktree and stream optional). pij/roadmap stays, its description marked superseded.",
+					"done": "tasks.dd.json#done_when/tk-0001",
+					"receipt": "assets/evidence/phase-1.md#tk-0001-schema",
+					"satisfies_toward": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0001"
+					]
+				},
+				{
+					"id": "tk-0002",
+					"title": "workstream.md, the roadmap.md pointer and the lane line",
+					"phase": "ph-00d2",
+					"state": "checked",
+					"success": "skills/pij/references/community/workstream.md teaches shape, split, merge, nest, lanes and coverage and defines workstream and pij stream so they never overlap; roadmap.md points at it; the community README, prd.md, fold-a-ruling.md, the route, protocol.md and orient-oprime.md follow.",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0003"
+					],
+					"done": "tasks.dd.json#done_when/tk-0002",
+					"receipt": "assets/evidence/phase-1.md#tk-0002-skill"
+				},
+				{
+					"id": "tk-0003",
+					"title": "PRD 001 and blueprint 001 wording and rows",
+					"phase": "ph-00d2",
+					"state": "checked",
+					"success": "req-04, 18, 20, 21, 23, 24 and 27 say workstream; req-30 (nesting and lanes) and req-31 (coverage check) are added; c-doc-schemas names pij/workstream and realises req-30; each doc gets a changelog row.",
+					"satisfies_toward": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0004"
+					],
+					"done": "tasks.dd.json#done_when/tk-0003",
+					"receipt": "assets/evidence/phase-1.md#tk-0003-prd"
+				},
+				{
+					"id": "tk-0004",
+					"title": "v3 of the six core templates",
+					"phase": "ph-00d2",
+					"state": "checked",
+					"success": "pm, coder, pa, prime, reviewer and security ship v3 with workstream wording; v1 and v2 bytes unchanged; SHIPPED and the sha256 pins carry v3; the templates README links v3.",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0005"
+					],
+					"done": "tasks.dd.json#done_when/tk-0004",
+					"receipt": "assets/evidence/phase-1.md#tk-0004-templates"
+				},
+				{
+					"id": "tk-0005",
+					"title": "Umbrella roll-up check (phase 2, coder)",
+					"phase": "ph-00d3",
+					"state": "unchecked",
+					"success": "A check fails when an umbrella step is complete while a step that is part_of it is not. ddocs has no cross-row rule, so the phase 2 coverage sensor (req-31, AC6) holds it.",
+					"satisfies": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0001"
+					],
+					"satisfies_toward": [
+						"../../../plan.dd.json#acceptance_criteria/ac-0006"
+					],
+					"done": "tasks.dd.json#done_when/tk-0005"
+				}
+			]
+		},
+		{
+			"name": "done_when",
+			"value": {
+				"tk-0001": [
+					{
+						"id": "dw-0001",
+						"assertion": "ddocs validate passes the umbrella and child fixtures (cross-file part_of and depends_on, lanes with a stream) and fails workstream-lane-no-branch (missing branch) and workstream-part-of-missing (no s09) by name; ddocs links lists the child's part_of on the umbrella step.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0001"
+					}
+				],
+				"tk-0002": [
+					{
+						"id": "dw-0003",
+						"assertion": "bash harness/scripts/pij-skill-check.sh is all green; roadmap.md is a one-line pointer to workstream.md; the route stays within 100 lines.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0003"
+					}
+				],
+				"tk-0003": [
+					{
+						"id": "dw-0004",
+						"assertion": "ddocs validate is 0/0 and ddocs build regenerates the .dd.md for PRD 001 and blueprint 001; just ddocs-check passes. Zero undelivered rows waits on the phase 2 sensor (req-30 and req-31 need s16).",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0004"
+					}
+				],
+				"tk-0004": [
+					{
+						"id": "dw-0005",
+						"assertion": "cargo test -p pij-daemon --lib community::templates (pins and embedding), the directory_http templates tests and skill_verb_coverage pass; ddocs validate is 0/0 on each v3; a structural diff of v2 to v3 shows only wording, the version, the changelog row and, for pm, one shaping rule and its summary.",
+						"state": "checked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0005"
+					}
+				],
+				"tk-0005": [
+					{
+						"id": "dw-0002",
+						"assertion": "An umbrella step marked complete with an open child fails a check. ddocs has no cross-row rule, so this moves to the phase 2 coverage sensor (req-31, AC6).",
+						"state": "unchecked",
+						"pressure": "../../backpressure.dd.json#rows/bp-0001"
+					}
+				]
+			}
+		},
+		{
+			"name": "goals",
+			"value": []
+		},
+		{
+			"name": "non_goals",
+			"value": []
+		},
+		{
+			"name": "acceptance_criteria",
+			"value": []
+		},
+		{
+			"name": "phases",
+			"value": []
+		},
+		{
+			"name": "research_context",
+			"value": ""
+		},
+		{
+			"name": "testing_strategy",
+			"value": {}
+		},
+		{
+			"name": "documentation_strategy",
+			"value": {}
+		},
+		{
+			"name": "risks_assumptions",
+			"value": ""
+		},
+		{
+			"name": "open_questions",
+			"value": []
+		},
+		{
+			"name": "workshop_opportunities",
+			"value": []
+		},
+		{
+			"name": "clarifications",
+			"value": []
+		},
+		{
+			"name": "planning_seam",
+			"value": []
+		},
+		{
+			"name": "gate_matrix",
+			"value": []
+		},
+		{
+			"name": "implementation_summary",
+			"value": ""
+		},
+		{
+			"name": "key_findings",
+			"value": []
+		},
+		{
+			"name": "acceptance_coverage",
+			"value": []
+		},
+		{
+			"name": "risks",
+			"value": []
+		},
+		{
+			"name": "execution_guardrails",
+			"value": []
+		}
+	],
+	"references": []
 }
