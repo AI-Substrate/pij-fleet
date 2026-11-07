@@ -218,6 +218,31 @@ fn every_community_verb_and_flag_reaches_pij_rs_unchanged() {
     }
 }
 
+/// Plan 209, F30: the memory add the s07 notice documents, with its body on
+/// stdin, reaches pij-rs unchanged; pij-rs reads `-` and sends it as `--body`
+/// (`governance::inline_body_file`).
+#[test]
+fn a_memory_add_with_its_body_on_stdin_reaches_pij_rs() {
+    let recorder = Recorder::new("memory-stdin");
+    reaches(
+        &recorder,
+        &[
+            "directory",
+            "memory",
+            "add",
+            "coder",
+            "--title",
+            "t",
+            "--hook",
+            "h",
+            "--body-file",
+            "-",
+        ],
+        &[],
+    )
+    .unwrap();
+}
+
 #[test]
 fn role_sends_and_the_native_send_form_reach_pij_rs_unchanged() {
     let recorder = Recorder::new("send");

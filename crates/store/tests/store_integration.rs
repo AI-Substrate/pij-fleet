@@ -2388,6 +2388,39 @@ async fn role_requests_left_delivering_are_recovered_at_boot() {
         "the digest sees stuck claims as well as queued requests, without bodies"
     );
 
+    // Plan 209 (#129's digest scope): a project list reads only its rows;
+    // `waiting`'s project is pij, so another project sees nothing.
+    let mut other = request("elsewhere", RequestState::Queued);
+    other.project = "osk".into();
+    store.record_role_request(&other).await.expect("record");
+    let ids = |rows: Vec<RoleRequest>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(store
+            .unsettled_role_requests_in(Some(&["osk".to_string()]))
+            .await
+            .unwrap()),
+        ["elsewhere"]
+    );
+    assert_eq!(
+        ids(store
+            .unsettled_role_requests_in(Some(&["pij".to_string()]))
+            .await
+            .unwrap()),
+        ["crashed", "held-fyi", "in-ledger", "waiting"]
+    );
+    assert!(
+        store
+            .unsettled_role_requests_in(Some(&[]))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(store.unsettled_role_requests().await.unwrap().len(), 5);
+    sqlx::query("DELETE FROM role_requests WHERE id = 'elsewhere'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
     assert_eq!(
         store.recover_delivering_role_requests(50).await.unwrap(),
         (2, 1)

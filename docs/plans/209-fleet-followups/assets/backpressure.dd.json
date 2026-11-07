@@ -1,0 +1,219 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 209 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: each named test passes 50 runs in a row locally under load (niced), and CI is green twice on the head; each fix's cause is one line in the PR body.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: the real-ps and other wall-clock tests pass under taskpolicy -b with the scale set; production constants unchanged (grep); docs updated.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: the script exits 0 on the head; harness checks shows the new stage; a deliberately broken skill link makes it fail.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: two recorders on one PR; the card names the later one with the later time.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: two projects with queued requests; the PA of one sees only its own; the prime sees both; no body column is read (query test).",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a slow admission past the bound records delivered-late; a refused one records refused; the held action still runs at the bound.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7: cost",
+          "phase": "ph-00d1",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site; private-daemon spawn deltas per verb with data.pid; live at-rest before and after deploy (`pij-rs --json ping | jq .data.spawns` twice 60 s apart, `just spawn-rate --seconds 20`).",
+          "state": "unchecked",
+          "probe": "pij-rs --json ping",
+          "note": "AC1 to AC3 change tests and the gate only; no production launch. AC4 and AC5 are single indexed reads replacing existing ones. AC6 adds one awaited future per bound-ended turn; no timer, poll or launch.",
+          "receipt": "assets/evidence/phase-1.md: cost table; live before reading 0.70/s; the after-deploy reading is owed at merge"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8: docs and states",
+          "phase": "ph-00d1",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "`just ddocs-check`; skill verb coverage tests; CI on the exact head; reviewer, security and performance verdicts.",
+          "state": "unchecked",
+          "probe": "docs/project/"
+        },
+        {
+          "id": "bp-0009",
+          "criterion": "AC9",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: shim_forward a_memory_add_with_its_body_on_stdin_reaches_pij_rs (F30: through pij, a memory add with --body-file - reaches pij-rs with its body on stdin, which pij-rs sends as --body); unit tests for the memory add line, the slug cap, the add help, the role refusal flags and the Delivers line; the shared-build test covers HUP; CI runs pij-skill-check.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0010",
+          "criterion": "AC10",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: memory tests: a given slug names the file and a bad one refuses; a long title is cut on a word; the CLI unit test for the memory add line; F32 a note stamped at 23:30 UTC on a +10:00 machine is filed under the next local day (injected clock).",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0011",
+          "criterion": "AC11",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: one test each: pij-core add_help_names_the_required_flags (F35) and add_help_says_each_add_is_its_own_commit (F38); pij-daemon community::ddocs a_role_refusal_names_the_flag_for_each_gap_not_a_hand_edit (F36) and a_role_refusal_lists_every_gap_at_once (F37), through the refusal text.",
+          "state": "checked",
+          "probe": "crates/",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0012",
+          "criterion": "AC12",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: pij-testkit tests/delivers_check.rs runs the bin: addresses and none pass; #138's and #132's lines, a body with no line, and the template placeholder fail. The delivers workflow runs on this PR.",
+          "state": "checked",
+          "probe": "crates/testkit",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0013",
+          "criterion": "AC13",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: directory_http a_lineage_batch_is_one_commit_all_or_nothing: three past holdings in one commit across two roles; an in-batch overlap plus a missing role, and a reversed span, write nothing and name the lines.",
+          "state": "checked",
+          "probe": "crates/daemon",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0014",
+          "criterion": "AC14",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: pij-cli unit test delivered_prints_the_edits_for_the_docs_pr renders two edits as their commands.",
+          "state": "checked",
+          "probe": "crates/cli",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0015",
+          "criterion": "AC15",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: writer_tests: a hand-edited memory INDEX refuses with the path named and a next step naming the prime.",
+          "state": "checked",
+          "probe": "crates/daemon",
+          "receipt": "assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0016",
+          "criterion": "AC16",
+          "phase": "ph-00d1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: shared-build.test.ts: a --then batch with a test logs build and test --no-run under taskpolicy -b and test -- name with no taskpolicy, all at niceness 19; the --then batch test counts three cargo calls. Cost: a cargo test adds one cargo and one nice launch (its run step, which compiles nothing); nothing at rest or per poll.",
+          "state": "checked",
+          "probe": "harness/scripts/shared-build.sh",
+          "receipt": "assets/evidence/phase-1.md"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

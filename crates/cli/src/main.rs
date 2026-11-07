@@ -1843,6 +1843,18 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_memory_note(memory));
                     ExitCode::SUCCESS
                 }
+                // `directory memory add`: one line, the JSON is for --json (F31).
+                Some(added)
+                    if args.first().map(String::as_str) == Some("memory")
+                        && args.get(1).map(String::as_str) == Some("add")
+                        && added.get("commit").is_some_and(Value::is_string) =>
+                {
+                    println!(
+                        "{}",
+                        render_memory_added(args.get(2).map_or("-", String::as_str), added)
+                    );
+                    ExitCode::SUCCESS
+                }
                 _ => emit(&response, as_json),
             }
         }
@@ -2746,6 +2758,11 @@ async fn run_daemon(
             if let Err(error) = statusline_script {
                 eprintln!("pij-rs claude statusline: {error}");
             }
+            // Installed before the readiness line, not on the first poll of
+            // ctrl_c(): a SIGINT sent as soon as "listening on" appears must
+            // shut down cleanly rather than take the default action (F27).
+            let interrupt =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
             println!(
                 "pij-rs daemon: listening on {} · key {} (0600) · offline={} · paired with {}",
                 daemon.addr,
@@ -2783,7 +2800,12 @@ async fn run_daemon(
                     daemon.addr
                 ),
             }
-            let _ = tokio::signal::ctrl_c().await;
+            match interrupt {
+                Ok(mut interrupt) => {
+                    interrupt.recv().await;
+                }
+                Err(error) => eprintln!("pij-rs: could not install the interrupt handler: {error}"),
+            }
             println!("pij-rs daemon: shutting down");
             match daemon.shutdown().await {
                 Ok(()) => ExitCode::SUCCESS,
@@ -3025,6 +3047,21 @@ fn render_template_diff(data: &Value) -> String {
 }
 
 /// One memory note for a human: its title line, then the body as written.
+/// `pij directory memory add` in human mode (plan 209, F31).
+fn render_memory_added(role: &str, added: &Value) -> String {
+    let path = added["path"].as_str().unwrap_or_default();
+    let note = path
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(".dd.json");
+    let commit = added["commit"].as_str().unwrap_or_default();
+    format!(
+        "pij directory memory: wrote {role} memory {note} (commit {})",
+        &commit[..commit.len().min(7)]
+    )
+}
+
 fn render_memory_note(note: &Value) -> String {
     if let Some(text) = note["text"].as_str() {
         return text.trim_end().to_string();
@@ -3670,6 +3707,46 @@ mod tests {
         assert!(
             text.contains("pij directory template-diff qa --project 'my remote'"),
             "{text}"
+        );
+    }
+
+    /// Plan 209, F41: `pij delivered` in human mode prints each edit's command.
+    #[test]
+    fn delivered_prints_the_edits_for_the_docs_pr() {
+        let data = serde_json::json!({
+            "line": "PR #131 delivered 2 addresses; told pij-steady-otter",
+            "edits": [
+                {"address": "a", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-20/delivered_by' '#131'"},
+                {"address": "b", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-21/delivered_by' '#131'"},
+            ],
+            "notes": [],
+        });
+        let text = super::render_claims("delivered", &data);
+        assert!(
+            text.contains("ddocs edits for the PM's next docs PR"),
+            "{text}"
+        );
+        assert!(
+            text.contains("requirements/req-20/delivered_by' '#131'"),
+            "{text}"
+        );
+        assert!(
+            text.contains("requirements/req-21/delivered_by' '#131'"),
+            "{text}"
+        );
+    }
+
+    /// Plan 209, F31: a memory add says what it wrote, not its envelope.
+    #[test]
+    fn a_memory_add_prints_one_line() {
+        let added = serde_json::json!({
+            "path": "community/roles/coder/memory/2026-11-06-shim-stdin.dd.json",
+            "commit": "0123456789abcdef",
+            "paths": [],
+        });
+        assert_eq!(
+            super::render_memory_added("coder", &added),
+            "pij directory memory: wrote coder memory 2026-11-06-shim-stdin (commit 0123456)"
         );
     }
 
