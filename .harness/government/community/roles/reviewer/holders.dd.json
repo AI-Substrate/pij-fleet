@@ -410,7 +410,10 @@
 					"harness_session": "dfabf751-2a49-4352-82b9-99c549c0fab8",
 					"instance_key": "141",
 					"machine": "ops.osk.lan",
+					"release_why": "#141 merged acf3646",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-double-bobcat",
+					"to": "2026-11-07T08:49:45.623Z",
 					"why": "#141 F006 fix + main merges"
 				}
 			]
