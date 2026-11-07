@@ -12,7 +12,7 @@
 use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use pij_core::model::{Envelope, ErrorKind, Msg, SeatId};
+use pij_core::model::{Envelope, ErrorKind, Event, Msg, SeatId};
 use pij_store::{
     CloseOutcome, ClosedOrOpen, ClosedRoleRequest, REQUESTS_LIST_LIMIT, RequestState, RoleRequest,
 };
@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 
 use super::directory::project_and_repo;
 use super::governance::GovernanceRequest;
-use super::identity::{CallerContext, Resolved, resolve_seat};
+use super::identity::{CallerContext, Resolved, ResolvedBy, resolve_seat};
 use super::{AppState, envelope, system_time_ms};
 use crate::community::Refusal;
 
@@ -56,7 +56,10 @@ pub(crate) async fn handle(
             &Envelope::ok(command, json!({"help": pij_core::requests::HELP})),
         );
     }
-    let actor = match resolve_seat(
+    // A pane is checked by the daemon (and an asserted id that disagrees with
+    // it is refused by the ladder); an asserted id alone is only known to
+    // exist (security review of #149, S003, F88).
+    let (actor, caller) = match resolve_seat(
         &state,
         command,
         request.caller.session_id.clone(),
@@ -64,17 +67,82 @@ pub(crate) async fn handle(
     )
     .await
     {
-        Resolved::Seat(seat, _) => seat.id,
+        Resolved::Seat(seat, by) => (
+            seat.id,
+            Caller {
+                by,
+                pane: request.caller.pane.clone(),
+                session: request.caller.session_id.clone(),
+            },
+        ),
         Resolved::Refusal(response) => return response,
     };
     let result = match leaf {
-        Some("withdraw") => withdraw(&state, &actor, &args[1..]).await,
-        Some("close") => close(&state, &actor, &args[1..]).await,
+        Some("withdraw") => withdraw(&state, &actor, &caller, &args[1..]).await,
+        Some("close") => close(&state, &actor, &caller, &args[1..]).await,
         _ => list(&state, &request.caller, args).await,
     };
     match result {
         Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
         Err(refusal) => refused(command, &refusal),
+    }
+}
+
+/// The audit event for a withdraw or close by a caller (S003).
+pub const REQUEST_CLOSED_EVENT: &str = "request.closed";
+
+/// How the caller of a mutating verb was identified (S003, F88).
+struct Caller {
+    by: ResolvedBy,
+    pane: Option<String>,
+    session: Option<String>,
+}
+
+impl Caller {
+    /// Bound by a pane the daemon checked, not only an id that exists.
+    fn bound(&self) -> bool {
+        matches!(self.by, ResolvedBy::Pane)
+    }
+}
+
+/// One `request.closed` event: the request, the verb, who, and how the caller
+/// was identified. No body.
+async fn audit_close(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &Caller,
+    request: &RoleRequest,
+    verb: &str,
+    quiet: bool,
+    at: u64,
+) {
+    let payload = json!({
+        "request": request.id,
+        "project": request.project,
+        "verb": verb,
+        "by": actor,
+        "bound": caller.by.as_str(),
+        "pane": caller.pane,
+        "session": caller.session,
+        "quiet": quiet,
+    });
+    if let Err(cause) = state
+        .services
+        .event_bus
+        .publish(Event {
+            seq: None,
+            v: 1,
+            at,
+            kind: REQUEST_CLOSED_EVENT.into(),
+            seat: Some(actor.clone()),
+            payload: payload.to_string(),
+        })
+        .await
+    {
+        eprintln!(
+            "pij-rs: audit of {verb} {} by {actor} failed: {cause}",
+            request.id
+        );
     }
 }
 
@@ -164,7 +232,12 @@ async fn list(state: &AppState, caller: &CallerContext, args: &[String]) -> Resu
     }))
 }
 
-async fn withdraw(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Value, Refusal> {
+async fn withdraw(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &Caller,
+    args: &[String],
+) -> Result<Value, Refusal> {
     let (positions, flags) = parse(args, &["why"], WITHDRAW_USAGE)?;
     let [id] = positions.as_slice() else {
         return Err(Refusal::new("E-RS-ARG", format!("usage: {WITHDRAW_USAGE}")));
@@ -179,7 +252,12 @@ async fn withdraw(state: &AppState, actor: &SeatId, args: &[String]) -> Result<V
             None => return Err(unknown(id)),
         },
     };
-    if !may_withdraw(state, actor, &request).await? {
+    let authorised = if caller.bound() {
+        may_withdraw(state, actor, &request).await?
+    } else {
+        request.requester == actor.as_str()
+    };
+    if !authorised {
         return Err(Refusal::new(
             "E-RS-OWNERSHIP",
             format!(
@@ -195,6 +273,7 @@ async fn withdraw(state: &AppState, actor: &SeatId, args: &[String]) -> Result<V
         .map_err(store_refusal)?
     {
         CloseOutcome::Closed(closed) => {
+            audit_close(state, actor, caller, &closed.request, "withdraw", false, at).await;
             let mut data = closed_entry(&closed);
             data["line"] = json!(format!("request {id} withdrawn by {actor}: {why}"));
             Ok(data)
@@ -214,7 +293,12 @@ async fn withdraw(state: &AppState, actor: &SeatId, args: &[String]) -> Result<V
 /// already-closed request whose FYI is still owed sends it then; the FYI's
 /// msg id is the request's, so a retry is never a second message (review of
 /// #149, F005).
-async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Value, Refusal> {
+async fn close(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &Caller,
+    args: &[String],
+) -> Result<Value, Refusal> {
     let quiet = args.iter().any(|arg| arg == "--quiet");
     let args: Vec<String> = args
         .iter()
@@ -231,7 +315,7 @@ async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Valu
         Some(request) => request,
         None => match store.closed_role_request(id).await.map_err(store_refusal)? {
             Some(closed) if closed.notice.as_deref() == Some("owed") => {
-                may_close(state, actor, &closed.request).await?;
+                may_close(state, actor, caller, &closed.request).await?;
                 let told = notify_owned(state, actor, &closed).await;
                 let mut data = closed_entry(&closed);
                 data["line"] = json!(match &told {
@@ -252,7 +336,7 @@ async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Valu
             None => return Err(unknown(id)),
         },
     };
-    may_close(state, actor, &request).await?;
+    may_close(state, actor, caller, &request).await?;
     let notice = if quiet || request.requester == actor.as_str() {
         "quiet"
     } else {
@@ -271,7 +355,10 @@ async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Valu
         .await
         .map_err(store_refusal)?
     {
-        CloseOutcome::Closed(closed) => closed,
+        CloseOutcome::Closed(closed) => {
+            audit_close(state, actor, caller, &closed.request, "close", quiet, at).await;
+            closed
+        }
         CloseOutcome::OtherState(request) => return Err(not_delivered(&request)),
         CloseOutcome::AlreadyClosed(closed) => return Err(already_closed(&closed)),
         CloseOutcome::Unknown => return Err(unknown(id)),
@@ -292,11 +379,18 @@ async fn close(state: &AppState, actor: &SeatId, args: &[String]) -> Result<Valu
     Ok(data)
 }
 
-/// Withdraw's authority plus the request's holder.
-async fn may_close(state: &AppState, actor: &SeatId, request: &RoleRequest) -> Result<(), Refusal> {
-    if request.holder.as_deref() == Some(actor.as_str())
-        || may_withdraw(state, actor, request).await?
-    {
+/// Withdraw's authority plus the request's holder. A caller known only by
+/// an asserted id acts only as the request's requester or holder; PA and
+/// prime authority need a caller the daemon bound (S003).
+async fn may_close(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &Caller,
+    request: &RoleRequest,
+) -> Result<(), Refusal> {
+    let own =
+        request.holder.as_deref() == Some(actor.as_str()) || request.requester == actor.as_str();
+    if own || (caller.bound() && may_withdraw(state, actor, request).await?) {
         return Ok(());
     }
     Err(Refusal::new(

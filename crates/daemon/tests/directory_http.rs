@@ -2807,6 +2807,15 @@ async fn a_self_labelled_prime_is_refused_and_the_recorded_prime_is_not() {
             "nothing written"
         );
     }
+    // S003: prime authority needs a caller the daemon bound; naming the
+    // prime's seat id is not enough.
+    let named = requests_as(
+        rig.addr,
+        &["requests", "withdraw", "req-x", "--why", "named"],
+        json!({"PIJ_SESSION_ID": "pij-holder", "cwd": repo.main}),
+    )
+    .await;
+    assert_eq!(refusal_code(&named), "E-RS-OWNERSHIP", "{named}");
     let by_prime = requests(
         vec!["requests", "withdraw", "req-x", "--why", "the prime"],
         "%51",
@@ -3952,6 +3961,38 @@ async fn call_as(addr: SocketAddr, path: &str, argv: &[&str], cwd: &Path, pane: 
         .unwrap()
 }
 
+/// `POST /v1/requests` with an explicit caller context (S003 tests).
+async fn requests_as(addr: SocketAddr, argv: &[&str], caller: Value) -> Value {
+    reqwest::Client::new()
+        .post(format!("http://{addr}/v1/requests"))
+        .bearer_auth(KEY)
+        .json(&json!({"argv": argv, "caller": caller}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+/// The `request.closed` audit events a seat's verbs wrote (S003).
+async fn closed_events(rig: &Rig, repo: &Repo, seat: &str) -> Vec<Value> {
+    let events = call(
+        rig.addr,
+        "/v1/spine",
+        &["spine", "events", "--peer", seat],
+        &repo.main,
+    )
+    .await;
+    events["data"]["events"]
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|event| event["kind"] == "request.closed")
+        .map(|event| serde_json::from_str(event["payload"].as_str().unwrap()).unwrap())
+        .collect()
+}
+
 /// Plan 212, F52: a one-holder role with two live holders and no instances
 /// never sends E-RS-ROLE-HOLDERS and E-RS-ROLE-ADDRESS round in a loop. Each
 /// refusal's `next` runs, and following the holders refusal's advice (give a
@@ -4380,8 +4421,24 @@ async fn closing_a_delivered_request_stops_its_limit_and_quiet_tells_nobody() {
         .expect("a seat may label itself");
     let labelled = requests(vec!["requests", "close", "req-limit", "--quiet"], "%71").await;
     assert_eq!(refusal_code(&labelled), "E-RS-OWNERSHIP", "{labelled}");
-    let quiet = requests(
-        vec![
+    // Security review of #149, S003: a pane caller naming another seat is
+    // refused by the identity ladder, and nothing is written.
+    let spoof = requests_as(
+        rig.addr,
+        &["requests", "close", "req-limit", "--quiet"],
+        json!({"TMUX_PANE": "%71", "PIJ_SESSION_ID": "pij-holder", "cwd": repo.main}),
+    )
+    .await;
+    assert_eq!(spoof["ok"], false, "{spoof}");
+    assert!(
+        rig.store.role_request("req-limit").await.unwrap().is_some(),
+        "still open"
+    );
+    // A caller known only by an asserted id acts as the holder it names
+    // (the Known limit), and the close is audited with that binding.
+    let quiet = requests_as(
+        rig.addr,
+        &[
             "requests",
             "close",
             "req-limit",
@@ -4389,7 +4446,7 @@ async fn closing_a_delivered_request_stops_its_limit_and_quiet_tells_nobody() {
             "--why",
             "answered",
         ],
-        "%51",
+        json!({"PIJ_SESSION_ID": "pij-holder", "cwd": repo.main}),
     )
     .await;
     assert_eq!(
@@ -4398,6 +4455,23 @@ async fn closing_a_delivered_request_stops_its_limit_and_quiet_tells_nobody() {
     );
     assert_eq!(quiet["data"]["holder"], "pij-holder", "{quiet}");
     assert!(quiet["data"]["told"].is_null(), "{quiet}");
+    let audited = closed_events(&rig, &repo, "pij-holder").await;
+    assert_eq!(audited.len(), 1, "{audited:?}");
+    assert_eq!(
+        (
+            audited[0]["request"].as_str(),
+            audited[0]["verb"].as_str(),
+            audited[0]["quiet"].as_bool(),
+            audited[0]["bound"].as_str(),
+        ),
+        (
+            Some("req-limit"),
+            Some("close"),
+            Some(true),
+            Some("asserted seat id (existence checked only)")
+        ),
+        "{audited:?}"
+    );
     assert!(
         limit_acts(time_limits(&rig.services, delivered + 3 * LIMIT_MS).await).is_empty(),
         "a closed request gets no check-in"
