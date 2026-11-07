@@ -15,15 +15,19 @@ failure), so one invocation surfaces every problem:
    `skills/pij/references/community/` validates with 0 errors and 0 warnings,
    and its `.dd.md` is current). ddocs comes from `PIJ_DDOCS`, else PATH; when
    it is missing the stage fails as UNAVAILABLE, never passes.
-3. `typecheck` — `just typecheck` (the TS surface compiles)
-4. `lockfile` — `just lockfile-allowlist` (every lockfile source is an allowed host)
-5. `lint` — `just lint` (Biome errors + warnings clean)
-6. `test` — `just test` (vitest suite passes)
-7. `copilot-native` — `just copilot-native-test` (see below)
-8. `rust` — `just rust-check` (Cargo.lock current, fmt, clippy `-D warnings`,
+3. `coverage` — `just coverage-check` (every PRD requirement is delivered by a
+   workstream step or is `dropped`, every blueprint component is built by one,
+   and no umbrella step is `complete` before its children; known gaps are listed
+   with an owner in `harness/scripts/coverage-exemptions.json`, which only shrinks)
+4. `typecheck` — `just typecheck` (the TS surface compiles)
+5. `lockfile` — `just lockfile-allowlist` (every lockfile source is an allowed host)
+6. `lint` — `just lint` (Biome errors + warnings clean)
+7. `test` — `just test` (vitest suite passes)
+8. `copilot-native` — `just copilot-native-test` (see below)
+9. `rust` — `just rust-check` (Cargo.lock current, fmt, clippy `-D warnings`,
    workspace tests) — **heavy**
-9. `smoke` — `just smoke` (tmux-driven driver scenarios) — **heavy**
-10. `pij-commit-trailers` — `just pij-commit-trailers --json` (advisory attribution
+10. `smoke` — `just smoke` (tmux-driven driver scenarios) — **heavy**
+11. `pij-commit-trailers` — `just pij-commit-trailers --json` (advisory attribution
    scan of harness-authored/co-authored commits after merge-base with `main`;
    old history is excluded, missing identity is reported rather than guessed).
 

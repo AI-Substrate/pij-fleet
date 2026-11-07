@@ -1,0 +1,15 @@
+{
+	"dd": { "schema": "pij/workstream" },
+	"sections": [
+		{ "name": "meta", "value": { "title": "Workstream 001: Daily digest", "status": "draft", "updated": "2026-11-08", "owner": "pm-001" } },
+		{ "name": "goal", "value": "Ship the daily digest." },
+		{
+			"name": "steps",
+			"value": [
+				{ "id": "s01", "title": "Digest store", "state": "complete", "done_when": "The store holds a day of items.", "plan": "docs/plans/001-digest-store", "lanes": [{ "branch": "coder/001-digest-store", "worktree": "digest-001" }] },
+				{ "id": "s02", "title": "Digest delivery (umbrella)", "state": "in-progress", "depends_on": ["#steps/s01"], "needs": ["role:pm"], "done_when": "Every child step of s02 is complete.", "note": "Children live in workstream-child.dd.json." }
+			]
+		},
+		{ "name": "changelog", "value": [{ "date": "2026-11-08", "by": "pm-001", "change": "Created." }] }
+	]
+}

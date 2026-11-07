@@ -86,6 +86,14 @@ pub fn from_branch_head(
         .collect())
 }
 
+/// A file's content at the governance branch head (one git launch).
+///
+/// # Errors
+/// [`E_GOV_GIT`] when git cannot read it.
+pub fn read_at_head(root: &GovernanceRoot, path: &str) -> Result<String, Refusal> {
+    read(root, &["show", &format!("HEAD:{path}")])
+}
+
 fn read(root: &GovernanceRoot, args: &[&str]) -> Result<String, Refusal> {
     let output = git(&root.worktree, args, Locks::Read)
         .map_err(|error| Refusal::new(E_GOV_GIT, format!("could not run git: {error}")))?;

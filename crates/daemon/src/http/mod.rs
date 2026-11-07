@@ -4,8 +4,9 @@
 //! the completed router, so adding an endpoint cannot accidentally bypass it.
 
 pub mod anomalies;
-mod auth;
-mod background;
+pub(crate) mod auth;
+pub(crate) mod background;
+mod claims;
 mod client;
 mod codex_caller;
 pub(crate) mod cold_wake;
@@ -17,9 +18,14 @@ mod fyi;
 pub mod governance;
 mod identity;
 mod lifecycle;
+pub mod memory_turn;
+mod output;
 mod report;
+mod requests;
 mod revive;
 pub mod role;
+mod role_send;
+mod routes;
 mod shim;
 mod types;
 mod watchdog;
@@ -195,13 +201,25 @@ enum Endpoint {
     Spine,
     /// `pij directory add` (plan 190): the community directory's writer.
     Directory,
+    /// `pij output` (plan 200): a role's output, through the writer.
+    Output,
+    /// `pij outputs` (plan 200): a project's outputs by subject or role.
+    Outputs,
+    /// `pij claim` and `pij claim release` (plan 196).
+    Claim,
+    /// `pij claims` (plan 196).
+    Claims,
+    /// `pij delivered <pr>`, run once by the merger (plan 196, ruling C23).
+    Delivered,
+    /// `pij requests` and `pij requests withdraw` (plan 212, F59).
+    Requests,
     /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
     /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
     BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 53] = [
+    const ALL: [Self; 59] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -254,6 +272,12 @@ impl Endpoint {
         Self::Orchestration,
         Self::Spine,
         Self::Directory,
+        Self::Output,
+        Self::Outputs,
+        Self::Claim,
+        Self::Claims,
+        Self::Delivered,
+        Self::Requests,
         Self::BackgroundEmit,
     ];
 
@@ -306,6 +330,12 @@ impl Endpoint {
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
             Self::Directory => "/v1/directory",
+            Self::Output => "/v1/output",
+            Self::Outputs => "/v1/outputs",
+            Self::Claim => "/v1/claim",
+            Self::Claims => "/v1/claims",
+            Self::Delivered => "/v1/delivered",
+            Self::Requests => "/v1/requests",
             Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
@@ -357,6 +387,12 @@ impl Endpoint {
             | Self::Orchestration
             | Self::Spine
             | Self::Directory
+            | Self::Output
+            | Self::Outputs
+            | Self::Claim
+            | Self::Claims
+            | Self::Delivered
+            | Self::Requests
             | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
@@ -592,6 +628,12 @@ fn router_with_optional_federation(
                     | Endpoint::Orchestration
                     | Endpoint::Spine
                     | Endpoint::Directory
+                    | Endpoint::Output
+                    | Endpoint::Outputs
+                    | Endpoint::Claim
+                    | Endpoint::Claims
+                    | Endpoint::Delivered
+                    | Endpoint::Requests
                     | Endpoint::BackgroundEmit
             ) {
                 Method::POST
@@ -664,6 +706,13 @@ fn router_with_optional_federation(
             Endpoint::Orchestration => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Spine => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Directory => router.route(endpoint.path(), post(directory::handle)),
+            Endpoint::Output | Endpoint::Outputs => {
+                router.route(endpoint.path(), post(output::handle))
+            }
+            Endpoint::Claim | Endpoint::Claims | Endpoint::Delivered => {
+                router.route(endpoint.path(), post(claims::handle))
+            }
+            Endpoint::Requests => router.route(endpoint.path(), post(requests::handle)),
             Endpoint::ShimSend => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimCompactSelf => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),
@@ -735,8 +784,13 @@ struct Health<'a> {
     pid: u32,
     /// The ddocs this daemon resolved at start, or null (plan 190, C10).
     ddocs: Option<String>,
+    /// The gh `pij delivered` launches, resolved at start, or null (plan 196).
+    gh: Option<String>,
     /// The processes this daemon has launched, by call site (plan 180).
     spawns: pij_core::spawns::SpawnCounts,
+    /// Registration attempts by path, mode and outcome, with the ancestry
+    /// `ps` reads they paid (plan 211).
+    registrations: crate::registration::attempts::AttemptCounts,
 }
 
 #[derive(serde::Serialize)]
@@ -764,7 +818,13 @@ async fn health(State(state): State<AppState>) -> Response {
             .ddocs
             .path()
             .map(|path| path.display().to_string()),
+        gh: state
+            .services
+            .gh
+            .path()
+            .map(|path| path.display().to_string()),
         spawns: pij_core::spawns::snapshot(),
+        registrations: state.registration.attempts().snapshot(),
     };
     match checked {
         Ok(()) => envelope(StatusCode::OK, &Envelope::ok("pij ping", data)),
@@ -789,6 +849,11 @@ struct RegistrationRequest {
     harness_session: Option<String>,
     #[serde(default)]
     native_extension_delivery: bool,
+    /// Why the client is registering (plan 211): `explicit`, `receive`,
+    /// `heartbeat`, `shim` or `lease-retry`. Advisory: it labels the attempt
+    /// counters and decides nothing.
+    #[serde(default)]
+    attempt: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -884,6 +949,73 @@ struct RegistrationResponse {
     /// hold". Absent stays absent, and the extension's own fallback applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     typing_grace_ms: Option<u64>,
+    /// The per-incarnation grant a native extension presents with its context
+    /// reports on `/v1/activity` (plan 217, review S153-001). Only in this
+    /// response; never in a roster or on the spine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context_token: Option<String>,
+}
+
+/// The spine kind of a re-issued context grant (plan 217, F88).
+pub const GRANT_REISSUED_KIND: &str = "context.grant.reissued";
+
+/// Record that a registration is about to be handed a seat's standing
+/// context grant, with everything the caller claimed and the connection it
+/// came from. `true` only once the event is durable on the spine; on `false`
+/// the caller withholds the grant (the registration itself stands).
+#[allow(clippy::too_many_arguments)]
+async fn audit_grant_reissue(
+    state: &AppState,
+    seat: &SeatDescriptor,
+    claimed: &Registration,
+    session: Option<&str>,
+    attempt: Option<&str>,
+    binding: RegistrationBinding,
+    proc_source: Option<ProcSource>,
+    origin: Option<std::net::SocketAddr>,
+) -> bool {
+    let at = match system_time_ms() {
+        Ok(at) => at,
+        Err(error) => {
+            eprintln!(
+                "pij register: {GRANT_REISSUED_KIND} for {}: {error}; grant withheld",
+                seat.id
+            );
+            return false;
+        }
+    };
+    let payload = serde_json::json!({
+        "seat": seat.id,
+        "claimed_id": claimed.id,
+        "harness": claimed.harness,
+        "folder": claimed.folder,
+        "pane": claimed.pane,
+        "pid": claimed.pid,
+        "proc_start": claimed.proc_start,
+        "session": session,
+        "attempt": attempt,
+        "binding": binding,
+        "proc_source": proc_source,
+        "origin": origin.map(|peer| peer.to_string()),
+    });
+    let event = pij_core::model::Event {
+        seq: None,
+        v: pij_core::wire::EVENT_VERSION,
+        at,
+        kind: GRANT_REISSUED_KIND.to_string(),
+        seat: Some(seat.id.clone()),
+        payload: payload.to_string(),
+    };
+    match state.services.event_bus.publish(event).await {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!(
+                "pij register: {GRANT_REISSUED_KIND} for {}: {error}; grant withheld",
+                seat.id
+            );
+            false
+        }
+    }
 }
 
 /// Composition: the service returns `(descriptor, report)` from its committed
@@ -891,8 +1023,18 @@ struct RegistrationResponse {
 /// otherwise `same`, and flatten the descriptor into this response only.
 async fn register(
     State(state): State<AppState>,
+    connection: Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     Json(mut request): Json<RegistrationRequest>,
 ) -> Response {
+    use crate::registration::attempts::{Outcome, Path};
+    let path = Path::from_client(request.attempt.as_deref());
+    // Every parsed attempt counts once (plan 211; review of #148, F001): a
+    // refusal here before the service is counted here, the rest by the service.
+    let early = |claim: &Registration, outcome: Outcome| {
+        let registration = state.registration.clone();
+        let claim = claim.clone();
+        async move { registration.count_early(path, &claim, outcome).await }
+    };
     // Vocabulary is a refusal, never a serde rejection (plan 166).
     if let Some(Err(reason)) = request
         .claim
@@ -900,6 +1042,7 @@ async fn register(
         .as_deref()
         .map(pij_core::orchestration::check_seat_role)
     {
+        early(&request.claim, Outcome::Refused).await;
         return role::RoleError::Invalid(reason).into_response("pij register");
     }
     // Native claims carry their own verified host tuple. Do not replace it with
@@ -915,7 +1058,10 @@ async fn register(
     {
         let observed = match state.services.tmux.pane_process(pane).await {
             Ok(observed) => observed,
-            Err(error) => return internal("pij register", error),
+            Err(error) => {
+                early(&request.claim, Outcome::Error).await;
+                return internal("pij register", error);
+            }
         };
         if let Some(observed) = observed {
             match pane_harness_identity(&state, observed.pid, harness).await {
@@ -929,6 +1075,7 @@ async fn register(
                             .zip(request.claim.proc_start)
                             .map(|(pid, proc_start)| ProcIdentity { pid, proc_start });
                         if !claim.is_some_and(|claim| observed.subtree.contains(&claim)) {
+                            early(&request.claim, Outcome::Refused).await;
                             return refused(
                                 "pij register",
                                 "claimed pid/proc_start is not in the daemon-observed pane process subtree; nothing was written",
@@ -941,28 +1088,59 @@ async fn register(
                     proc_source = Some(observed.source);
                 }
                 Ok(None) => {
+                    early(&request.claim, Outcome::Refused).await;
                     return refused(
                         "pij register",
                         "pane process disappeared before registration; nothing was written",
                     );
                 }
-                Err(error) => return internal("pij register", error),
+                Err(error) => {
+                    early(&request.claim, Outcome::Error).await;
+                    return internal("pij register", error);
+                }
             }
         }
     }
-    let registration = &state.registration;
-    let registered = if request.native_extension_delivery {
-        registration
-            .register_native(
-                request.claim,
-                request.harness_session,
-                state.services.tmux.as_ref(),
-            )
-            .await
+    let native = request.native_extension_delivery;
+    // What the caller claimed, kept for the grant-reissue audit (plan 217).
+    let claimed = request.claim.clone();
+    let claimed_session = request.harness_session.clone();
+    let attempt = request.attempt.clone();
+    // Review S153-002 / F004: a native registration may replace the seat's
+    // process and rotate its grant; it runs, with the rotation, as one owned
+    // task inside the context critical section, so no size report applies in
+    // between, even if this request is cancelled once the write is admitted.
+    let reports = Arc::clone(&state.services.reported_context);
+    let work = {
+        let (registration, tmux, reports) = (
+            state.registration.clone(),
+            Arc::clone(&state.services.tmux),
+            Arc::clone(&reports),
+        );
+        let (claim, session) = (request.claim, request.harness_session);
+        async move {
+            let registered = registration
+                .register_via(path, claim, session, native.then_some(tmux.as_ref()))
+                .await;
+            // A failed grant leaves the seat without size reports, never
+            // unregistered.
+            let grant = match &registered {
+                Ok((descriptor, _)) if native => reports
+                    .grant(&descriptor.id, descriptor.proc)
+                    .map_err(|error| eprintln!("pij register: {error}"))
+                    .ok(),
+                _ => None,
+            };
+            (registered, grant)
+        }
+    };
+    let (registered, grant) = if native {
+        match reports.exclusively(work).await {
+            Ok(done) => done,
+            Err(error) => return internal("pij register", error),
+        }
     } else {
-        registration
-            .register_with_harness_session(request.claim, request.harness_session)
-            .await
+        work.await
     };
     match registered {
         Ok((descriptor, report)) => {
@@ -983,6 +1161,27 @@ async fn register(
             // field. 135 added binding/proc_source here and 136 added
             // typing_grace_ms in `wire`; two structs serializing the same
             // response is how two answers to one question start drifting.
+            // Registration does not prove the caller is this seat's host (F88,
+            // PRD 003): a standing grant handed out again is audited with the
+            // caller's evidence, and never the token, so a theft is visible.
+            // An audit that did not persist withholds the reissued grant: the
+            // registration stands, and the seat gets one on a later attempt.
+            let context_token = match grant {
+                Some((token, true)) => audit_grant_reissue(
+                    &state,
+                    &descriptor,
+                    &claimed,
+                    claimed_session.as_deref(),
+                    attempt.as_deref(),
+                    binding,
+                    proc_source,
+                    connection.map(|Extension(axum::extract::ConnectInfo(peer))| peer),
+                )
+                .await
+                .then_some(token),
+                Some((token, false)) => Some(token),
+                None => None,
+            };
             let mut answer = Envelope::ok(
                 "pij register",
                 RegistrationResponse {
@@ -990,6 +1189,7 @@ async fn register(
                     binding: Some(binding),
                     proc_source,
                     typing_grace_ms: Some(state.typing_grace_ms),
+                    context_token,
                 },
             );
             answer.meta = meta;
@@ -1703,6 +1903,15 @@ struct SendBodyRequest {
     command: Option<String>,
     #[serde(default)]
     caller: Option<CallerContext>,
+    /// `--reply wake|fyi|none` on a send to `role:<id>` (plan 199).
+    #[serde(default)]
+    reply: Option<String>,
+    /// `--limit <duration>` on a send to `role:<id>` (plan 199).
+    #[serde(default)]
+    limit: Option<String>,
+    /// `--project <slug>`: whose directory resolves `role:<id>` (plan 199).
+    #[serde(default)]
+    project: Option<String>,
 }
 
 async fn send(
@@ -1763,6 +1972,33 @@ async fn send(
                 return refusal;
             }
         }
+    }
+    // A send to `role:<id>` resolves through the directory first (plan 199).
+    if let Some(response) = role_send::route(
+        &state,
+        role_send::RoleSendCall {
+            command: "pij send",
+            from: &request.message.from,
+            to: &request.message.to,
+            body: &request.message.body,
+            msg_id: &request.message.msg_id,
+            in_reply_to: request.message.in_reply_to.as_deref(),
+            fyi: request.message.fyi,
+            control: request.command.is_some(),
+            force: request.message.force,
+            reason: request.message.reason.as_deref(),
+            forwarded: request.message.from_machine.is_some(),
+            project: request.project.clone(),
+            options: crate::delivery::role_send::RoleOptions {
+                reply: request.reply.clone(),
+                limit: request.limit.clone(),
+            },
+            caller: request.caller.as_ref(),
+        },
+    )
+    .await
+    {
+        return response;
     }
     if request.message.fyi {
         return hold_fyi(&state, request).await;
@@ -2051,10 +2287,50 @@ pub(crate) async fn send_control(
         msg_id: request.msg_id,
         in_reply_to: request.in_reply_to,
     };
-    match state.services.delivery.accept_control(msg).await {
+    // Plan 201: a role holder writes its memory before it is compacted.
+    if msg.command.as_deref() == Some("compact") {
+        let holdings = memory_turn::holdings(state, &target.id).await;
+        if !holdings.is_empty() {
+            return match memory_turn::hold(
+                state,
+                name,
+                target.clone(),
+                holdings,
+                memory_turn::Then::Compact(msg),
+            ) {
+                Ok(held) => envelope(StatusCode::OK, &Envelope::ok(name, held)),
+                Err(refusal) => *refusal,
+            };
+        }
+    }
+    match admit_control(state, msg).await {
         Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(name, receipt)),
         Err(error) => send_failure(name, error),
     }
+}
+
+/// Admit one authorized control: the single place a control enters delivery,
+/// so a compact held for a memory turn takes the same path when it runs.
+async fn admit_control(state: &AppState, msg: Msg) -> Result<pij_core::model::Receipt, PijError> {
+    let compact = msg.command.as_deref() == Some("compact");
+    let target = msg.to.clone();
+    let receipt = state.services.delivery.accept_control(msg).await?;
+    if compact {
+        // Held for the first turn after the compact (plan 202), here so a compact
+        // the memory turn held gets it too. Keyed to the compact's recipient and
+        // id: a replay holds nothing new, and another seat's compact with the same
+        // id still gets its own.
+        let id = format!("routes-after-compact:{target}:{}", receipt.msg_id);
+        routes::deliver(
+            &state.services,
+            &target,
+            None,
+            routes::Trigger::Compact,
+            Some(id),
+        )
+        .await;
+    }
+    Ok(receipt)
 }
 
 /// Map a delivery failure onto the wire, once.
@@ -2717,10 +2993,26 @@ async fn seat_state(State(state): State<AppState>, Json(request): Json<StateRequ
         Ok(seat) => seat,
         Err(error) => return internal("pij state", error),
     };
-    match seat_card(&state, seat, None).await {
-        Ok(projection) => envelope(StatusCode::OK, &Envelope::ok("pij state", projection)),
-        Err(error) => internal("pij state", error),
+    let mut projection = match seat_card(&state, seat, None).await {
+        Ok(projection) => projection,
+        Err(error) => return internal("pij state", error),
+    };
+    // One seat only (plan 196, performance review of #131): `/v1/cards` is read
+    // often, by status lines and the PA, and never pays for the deliveries.
+    match state
+        .services
+        .governance
+        .store()
+        .deliveries_for_pm(
+            projection.card.id.as_str(),
+            pij_store::claims::CARD_DELIVERIES,
+        )
+        .await
+    {
+        Ok(deliveries) => projection.card.deliveries = deliveries,
+        Err(error) => return internal("pij state", error),
     }
+    envelope(StatusCode::OK, &Envelope::ok("pij state", projection))
 }
 
 /// `GET /v1/cards` — every local, untombstoned seat's `pij state` card in one
@@ -2819,7 +3111,8 @@ struct UnavailableCard {
 /// Shared by `/v1/state` and `/v1/cards`. Every store read here is bounded by
 /// the seat's own rows (plan 188): the card and the state note are each one
 /// newest-of-a-kind lookup on `(seat, kind)`, and the held deliveries read only
-/// the seat's delivery events. None of them reads the spine end to end.
+/// the seat's delivery events. None of them reads the spine end to end. The PR
+/// deliveries naming the seat as PM (plan 196) are read by `/v1/state` alone.
 ///
 /// `session_wait` bounds the seat's session-status read: `None` waits as
 /// `/v1/state` always has; the bulk read passes [`LIST_STATUS_WAIT`] so one
@@ -2890,6 +3183,13 @@ async fn seat_card(
     projection.card.held = active_holds(state, &id).await?;
     projection.card.delivery_deferrals = state.services.queue.delivery_deferrals(&id).await?;
     projection.card.pending_fyis = state.services.delivery.pending_fyi_count(&id).await?;
+    projection.card.dialog = state
+        .services
+        .watchdogs()
+        .standing_modal_stalls(Some(&id))
+        .await?
+        .first()
+        .map(pij_core::modal_stall::ModalStall::view);
     projection.card.native_receiver_reason = state
         .services
         .delivery
@@ -3082,6 +3382,8 @@ fn state_card(
             held: Vec::new(),
             delivery_deferrals: Vec::new(),
             pending_fyis: 0,
+            dialog: None,
+            deliveries: Vec::new(),
             session_status: None,
             size: pij_core::cold_wake::SeatSize::default(),
             size_lines: Vec::new(),
@@ -3152,6 +3454,10 @@ struct SeatProjection<'a> {
     /// prints the same columns.
     #[serde(rename = "sizeColumns", skip_serializing_if = "Option::is_none")]
     size_columns: Option<[String; 4]>,
+    /// A standing stall on the harness's own dialog (plan 219): `pij list`
+    /// shows `blocked on a dialog (<key>)` in place of `working`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dialog: Option<pij_core::modal_stall::DialogView>,
 }
 
 /// How long `pij list` waits for one seat's session facts (plan 160). The
@@ -3297,6 +3603,14 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
     } else {
         vec![None; roster.seats.len()]
     };
+    // One read for every local seat; a failed read shows none (plan 219).
+    let dialogs = match state.services.watchdogs().standing_modal_stalls(None).await {
+        Ok(stalls) => stalls,
+        Err(error) => {
+            eprintln!("pij seats: standing modal stalls: {error}");
+            Vec::new()
+        }
+    };
     let projection = FederatedRosterProjection {
         seats: roster
             .seats
@@ -3304,6 +3618,10 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
             .zip(sizes.iter_mut())
             .map(|(seat, sized)| {
                 let (session_status, size) = sized.take().unzip();
+                let dialog = (seat.machine.as_deref() == Some(state.machine_alias.as_str()))
+                    .then(|| dialogs.iter().find(|stall| stall.seat == seat.id))
+                    .flatten()
+                    .map(pij_core::modal_stall::ModalStall::view);
                 SeatProjection {
                     seat,
                     generation: "rs",
@@ -3312,6 +3630,7 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
                     size_columns: size.as_ref().map(pij_core::cold_wake::size_columns),
                     session_status,
                     size,
+                    dialog,
                 }
             })
             .collect(),

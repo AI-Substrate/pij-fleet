@@ -30,7 +30,7 @@ pub fn schema_copies() -> Vec<(PathBuf, &'static [u8])> {
 }
 
 /// pij's own schemas, compiled in so the copies always match this build.
-const SCHEMAS: [(&str, &[u8]); 3] = [
+const SCHEMAS: [(&str, &[u8]); 5] = [
     (
         "role",
         include_bytes!("../../../../.dd/schemas/pij/role/schema.json"),
@@ -43,13 +43,29 @@ const SCHEMAS: [(&str, &[u8]); 3] = [
         "memory",
         include_bytes!("../../../../.dd/schemas/pij/memory/schema.json"),
     ),
+    (
+        "holders",
+        include_bytes!("../../../../.dd/schemas/pij/holders/schema.json"),
+    ),
+    (
+        "external",
+        include_bytes!("../../../../.dd/schemas/pij/external/schema.json"),
+    ),
 ];
+
+/// `community/external.dd.json`: seats borrowed from other projects (req-16).
+pub const EXTERNAL: &str = ".harness/government/community/external.dd.json";
+
+/// `community/ROUTES.md`: the routing table pij generates (plan 202).
+pub const ROUTES: &str = ".harness/government/community/ROUTES.md";
 
 /// One role's files under `community/roles/<id>/`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RolePaths {
     /// `roles/<id>/role.dd.json`.
     pub document: PathBuf,
+    /// `roles/<id>/holders.dd.json`: who has held the role (plan 195).
+    pub holders: PathBuf,
     /// `roles/<id>/memory/INDEX.md`: memory notes go beside it, one per file.
     pub memory_index: PathBuf,
     /// `roles/<id>/outputs/.gitkeep`: outputs go under `outputs/<yyyy-mm>/`.
@@ -80,6 +96,7 @@ impl RolePaths {
         let dir = PathBuf::from(COMMUNITY).join("roles").join(id);
         Ok(Self {
             document: dir.join("role.dd.json"),
+            holders: dir.join("holders.dd.json"),
             memory_index: dir.join("memory/INDEX.md"),
             outputs_keep: dir.join("outputs/.gitkeep"),
         })
@@ -95,7 +112,10 @@ impl RolePaths {
 pub fn exists(id: &str, path: &std::path::Path) -> Refusal {
     Refusal::new(
         E_DIRECTORY_EXISTS,
-        format!("role {id:?} already exists at {}", path.display()),
+        format!("role {id:?} already has {}", path.display()),
+    )
+    .with_next(
+        "Choose another id. A role folder without role.dd.json is adopted, so only an existing role.dd.json refuses.",
     )
 }
 

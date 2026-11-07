@@ -1,5 +1,7 @@
 //! Runtime message delivery over the frozen registry, queue, transport, and spine ports.
 
+pub mod role_send;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -4828,6 +4830,12 @@ mod tests {
             other => panic!("expected a queued carrier, got {other:?}"),
         }
         assert!(fixture.transport.delivered().is_empty(), "not sent direct");
+        // Plan 218 AC2: the admission probe is the carrier's only resolution
+        // before the drain worker's own (one probe, one delivery).
+        assert_eq!(
+            fixture.transport.calls(),
+            ["can_deliver:pij-fyi-paned:m-carrier"]
+        );
         let bodies = queued_bodies(&fixture, "pij-fyi-paned").await;
         assert_eq!(bodies.len(), 1);
         assert!(
@@ -4844,6 +4852,14 @@ mod tests {
             "{plain:?}"
         );
         assert_eq!(fixture.transport.delivered().len(), 1);
+        assert_eq!(
+            fixture.transport.calls()[1..],
+            [
+                "can_deliver:pij-fyi-paned:m-plain",
+                "deliver:pij-fyi-paned:m-plain"
+            ],
+            "a direct send probes once, then delivers"
+        );
     }
 
     /// Plan 158 review HIGH-2: a carrier whose delivery fails must not lose the

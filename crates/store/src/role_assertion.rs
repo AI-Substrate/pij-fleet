@@ -43,7 +43,7 @@ fn refused(code: &str, record: impl ToString) -> PijError {
     }
 }
 
-async fn live_seat(
+pub(crate) async fn live_seat(
     connection: &mut SqliteConnection,
     seat: &SeatId,
 ) -> Result<Option<SeatDescriptor>> {
@@ -59,7 +59,10 @@ async fn live_seat(
         .filter(|seat| seat.tombstoned_at.is_none()))
 }
 
-async fn current_role(connection: &mut SqliteConnection, seat: &SeatId) -> Result<Option<String>> {
+pub(crate) async fn current_role(
+    connection: &mut SqliteConnection,
+    seat: &SeatId,
+) -> Result<Option<String>> {
     sqlx::query("SELECT role FROM seat_roles WHERE seat = ?1")
         .bind(seat.as_str())
         .fetch_optional(&mut *connection)
@@ -69,7 +72,7 @@ async fn current_role(connection: &mut SqliteConnection, seat: &SeatId) -> Resul
         .transpose()
 }
 
-async fn is_prime(connection: &mut SqliteConnection, seat: &SeatId) -> Result<bool> {
+pub(crate) async fn is_prime(connection: &mut SqliteConnection, seat: &SeatId) -> Result<bool> {
     let designated: Option<i64> =
         sqlx::query_scalar("SELECT 1 FROM prime_designation WHERE seat = ?1 AND state = 'current'")
             .bind(seat.as_str())
@@ -105,7 +108,12 @@ async fn is_ancestor(
     Ok(false)
 }
 
-fn role_event(actor: &SeatId, target: &SeatId, role: Option<&str>, assigned_at: u64) -> Event {
+pub(crate) fn role_event(
+    actor: &SeatId,
+    target: &SeatId,
+    role: Option<&str>,
+    assigned_at: u64,
+) -> Event {
     Event {
         seq: None,
         v: wire::EVENT_VERSION,

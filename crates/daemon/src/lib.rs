@@ -19,6 +19,7 @@ pub mod delivery;
 pub mod events;
 pub mod federation;
 pub mod lifecycle;
+mod modal_stall;
 pub mod pa_watchdog;
 pub mod pairing;
 pub mod pane_observer;
@@ -26,6 +27,7 @@ pub mod park_notice;
 pub mod pointer;
 pub mod reaper;
 mod registration;
+pub mod reported_context;
 mod serve;
 pub mod session_warmup;
 mod supervise;
@@ -118,6 +120,9 @@ pub struct Services {
     pub liveness: Arc<dyn LivenessPort>,
     /// Session facts from harness transcripts, for `pij state`'s `sessionStatus`.
     pub session_status: Arc<dyn SessionStatusPort>,
+    /// Context sizes native extensions report at turn boundaries (plan 217):
+    /// they fill `session_status`'s unknown context facts.
+    pub reported_context: Arc<reported_context::ReportedContext>,
     /// Usage-limit rejections from harness transcripts (plan 172 R3): the PA
     /// watchdog's limit-reset wake. Blocking; called off the reactor.
     pub usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource>,
@@ -171,6 +176,15 @@ pub struct Services {
     pub ddocs: Arc<community::ddocs::Ddocs>,
     /// The community directory's single writer (plan 190).
     pub community: Arc<community::writer::CommunityWriter>,
+    /// Role holding: assign, release and close-ends (plan 195).
+    pub directory: Arc<community::directory::DirectoryService>,
+    /// gh as resolved once at daemon start, for `pij delivered` (plan 196).
+    pub gh: Arc<dyn community::gh::PullRequests>,
+    /// How long a compact or close of a role holder waits for its memory turn
+    /// (plan 201).
+    pub memory_turn_bound: std::time::Duration,
+    /// Seats with a memory turn pending: one at a time per seat (plan 201).
+    pub memory_turns: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
     /// Whether this daemon is running entirely on fakes.
     pub offline: bool,
 }
@@ -419,7 +433,10 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     // only when Claude's inbound-accept setting was emitted in its argv.
     let transport: Arc<dyn Transport> = match config.adapters.transport {
         AdapterChoice::Fake => Arc::new(FakeTransport::reachable()),
-        AdapterChoice::Real => Arc::new(UdsTransport::new()?),
+        // Plan 218: the peer's start is read in-process (no `ps`).
+        AdapterChoice::Real => Arc::new(UdsTransport::new(Arc::new(
+            pij_harnesses::proc::observed_start,
+        ))?),
     };
     // Legacy and Rust daemons intentionally coexist during migration. Resolve the
     // legacy signature at the composition root and inject it; the tmux adapter
@@ -479,12 +496,16 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     };
     // Stateful: the real source keeps one transcript read position per seat, so
     // it is composed once here and shared by every request.
-    let session_status: Arc<dyn SessionStatusPort> = match config.adapters.session_status {
+    let transcripts: Arc<dyn SessionStatusPort> = match config.adapters.session_status {
         AdapterChoice::Fake => Arc::new(FakeSessionStatus::new()),
         AdapterChoice::Real => Arc::new(pij_unisphere::UnisphereSessionStatus::with_roots(
             session_roots(),
         )),
     };
+    let reported_context = Arc::new(reported_context::ReportedContext::default());
+    let session_status: Arc<dyn SessionStatusPort> = Arc::new(
+        reported_context::WithReportedContext::new(transcripts, Arc::clone(&reported_context)),
+    );
     // Follows the session-status choice: a daemon that reads no transcripts
     // reads no quota records either.
     let usage_limits: Arc<dyn pij_core::usage_limit::UsageLimitSource> =
@@ -538,6 +559,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         pij_store::SqliteOrchestration::new(spine_pool.clone()),
         Arc::clone(&queue),
     ));
+    let directory_store = pij_store::SqliteOrchestration::new(spine_pool.clone());
     let governance = Arc::new(http::governance::GovernanceService::new(
         pij_store::SqliteOrchestration::new(spine_pool),
         Arc::clone(&event_bus),
@@ -565,7 +587,17 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         community::layout::schema_copies(),
         &community::writer::LOCK_RETRY,
     ));
-    Ok(Services {
+    // Ruling C6: an assign drains the role's queued requests (plan 199).
+    // It drains through the built services, so it is bound to them below.
+    let role_queue = Arc::new(delivery::role_send::RoleQueueDrain::new());
+    let directory = Arc::new(community::directory::DirectoryService::new(
+        Arc::clone(&community_writer),
+        directory_store,
+        Arc::clone(&event_bus),
+        Arc::clone(&role_queue) as Arc<dyn community::directory::AfterAssign>,
+        Arc::clone(&tmux),
+    ));
+    let services = Services {
         registry,
         spine,
         event_bus,
@@ -577,6 +609,7 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         harnesses,
         liveness,
         session_status,
+        reported_context,
         usage_limits,
         delivery,
         roles,
@@ -597,8 +630,22 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         codex_threads,
         ddocs,
         community: community_writer,
+        directory,
+        gh: Arc::new(community::gh::Gh::from_env()),
+        memory_turn_bound: {
+            let (bound, warning) = http::memory_turn::bound_from(
+                std::env::var(http::memory_turn::BOUND_ENV).ok().as_deref(),
+            );
+            if let Some(warning) = warning {
+                eprintln!("pij-rs: {warning}");
+            }
+            bound
+        },
+        memory_turns: Arc::default(),
         offline: config.is_fully_offline(),
-    })
+    };
+    role_queue.bind(services.clone());
+    Ok(services)
 }
 
 /// Does this config select any adapter that needs the store open?
@@ -1032,6 +1079,10 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             return Err(error);
         }
     };
+
+    // After the bind is won and before anything is served: no claim can be in
+    // flight, and a boot that lost the bind never touches a live daemon's rows.
+    delivery::role_send::recover_requests(&services).await;
 
     let (governance_shutdown, governance_shutdown_rx) = tokio::sync::oneshot::channel();
     let governance_observer =

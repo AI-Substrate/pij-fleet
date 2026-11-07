@@ -1483,9 +1483,19 @@ test("activity: foreground turns publish working then idle in order; failures ne
 	await run;
 });
 
-/** A running bridge whose /v1/activity requests are recorded; stopped after the test. */
-async function activityBridge(t, answer = () => ({ changed: true })) {
+/**
+ * A running bridge whose /v1/activity requests are recorded; stopped after the test.
+ * `grant` is the context-report grant its registration answers with (plan 217).
+ */
+async function activityBridge(t, answer = () => ({ changed: true }), { grant } = {}) {
 	const f = fixture();
+	if (grant !== undefined) {
+		const register = f.client.request;
+		f.client.request = async (path, body, signal) => {
+			const answered = await register.call(f.client, path, body, signal);
+			return path === "/v1/register" ? { ...answered, context_token: grant } : answered;
+		};
+	}
 	const run = f.bridge.run();
 	t.after(() => {
 		f.bridge.stop();
@@ -1556,6 +1566,78 @@ test("activity: session.idle settles a working seat to idle", async (t) => {
 	f.event({ type: "session.idle", id: "idle-1", data: {} });
 	await flush();
 	assert.deepEqual(states(), ["working", "idle"]);
+});
+
+// Plan 217 AC6: the size the daemon cannot read from events.jsonl, sent only
+// with this registration's grant (review S153-001).
+test("activity: the latest session.usage_info size rides the next post with the registration's grant", async (t) => {
+	let refuseContext = false;
+	const bodies = [];
+	const { f } = await activityBridge(
+		t,
+		(body) => {
+			bodies.push(body);
+			return refuseContext && "context_tokens" in body
+				? Object.assign(new Error("Pij HTTP 400"), { status: 400 })
+				: { changed: true };
+		},
+		{ grant: "grant-1" },
+	);
+	const usage = (id, currentTokens, extra = {}) =>
+		f.event({
+			type: "session.usage_info",
+			id,
+			ephemeral: true,
+			...extra,
+			data: { currentTokens, tokenLimit: 952000, messagesLength: 40 },
+		});
+	const sent = () =>
+		bodies.map((body) => [
+			body.state,
+			body.context_tokens,
+			body.context_window_tokens,
+			body.context_token,
+		]);
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	usage("u-sub", 9, { agentId: "sub-agent-9" });
+	usage("u-1", 640000);
+	f.event({ type: "assistant.turn_end", id: "turn-1-end", data: {} });
+	await flush();
+	assert.deepEqual(sent(), [
+		["working", undefined, undefined, undefined],
+		["idle", 640000, 952000, "grant-1"],
+	]);
+	// A refused report (a stale grant) still publishes the state, then stops
+	// reporting until a registration answers with a new grant.
+	refuseContext = true;
+	f.event({ type: "assistant.turn_start", id: "turn-2", data: {} });
+	await flush();
+	f.event({ type: "assistant.turn_end", id: "turn-2-end", data: {} });
+	await flush();
+	assert.deepEqual(sent().slice(2), [
+		["working", 640000, 952000, "grant-1"],
+		["working", undefined, undefined, undefined],
+		["idle", undefined, undefined, undefined],
+	]);
+	assert.equal(f.reports.filter(({ kind }) => kind === "activity-unpublished").length, 0);
+});
+
+test("activity: a registration without a grant never reports a size", async (t) => {
+	const bodies = [];
+	const { f } = await activityBridge(t, (body) => {
+		bodies.push(body);
+		return { changed: true };
+	});
+	f.event({
+		type: "session.usage_info",
+		id: "u-1",
+		ephemeral: true,
+		data: { currentTokens: 640000, tokenLimit: 952000, messagesLength: 40 },
+	});
+	f.event({ type: "assistant.turn_start", id: "turn-1", data: {} });
+	await flush();
+	assert.deepEqual(Object.keys(bodies[0]).sort(), ["native_session", "seat", "state"]);
 });
 
 test("activity: working and idle still publish while receiving is held", async (t) => {
@@ -1874,6 +1956,42 @@ test("foreign harness cannot nominate a native session or yield its occupied pan
 	assert.throws(
 		() => chooseRegistration({ ...input, host: { ...input.host, pane: descriptor.pane } }),
 		/Pane belongs/,
+	);
+});
+
+test("plan 211: a fresh native address is allocated as explicit, or as a lease retry after a standby", async () => {
+	const bodies = [];
+	const client = {
+		request: async (_path, body) => {
+			bodies.push(body);
+			return {
+				...descriptor,
+				id: "pij-bright-otter",
+				session: body.harness_session,
+				proc: { pid: body.pid, proc_start: body.proc_start },
+				pane: body.pane,
+			};
+		},
+	};
+	const request = chooseRegistration({
+		sessionId: "native-A",
+		host: { ...descriptor.proc, pane: descriptor.pane },
+		folder: "/work",
+		env: {},
+		seats: [],
+	});
+	assert.equal(request.id, "");
+	await resolveRegistration(client, request, new AbortController().signal);
+	await resolveRegistration(
+		client,
+		request,
+		new AbortController().signal,
+		undefined,
+		"lease-retry",
+	);
+	assert.deepEqual(
+		bodies.map((body) => body.attempt),
+		["explicit", "lease-retry"],
 	);
 });
 
@@ -2288,7 +2406,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 	};
 	first.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
-			assert.deepEqual(body, selected);
+			assert.deepEqual(body, { ...selected, attempt: "explicit" });
 			return registered;
 		}
 		if (path === "/v1/inbox/ack") {
@@ -2334,7 +2452,7 @@ test("real chooseRegistration and filesystem preserve accepted-before-ack across
 	const resumedRequest = second.client.request;
 	second.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
-			assert.deepEqual(body, resumed);
+			assert.deepEqual(body, { ...resumed, attempt: "explicit" });
 			return { ...registered, proc: { pid: resumed.pid, proc_start: resumed.proc_start } };
 		}
 		if (path === "/v1/inbox/ack") {
@@ -2463,6 +2581,64 @@ test("only typed HTTP 409 registration refusals permit retry", async () => {
 			return true;
 		});
 	}
+});
+
+test("plan 211: only a typed E-RS-SEAT-RETIRED registration refusal marks the seat retired", async () => {
+	const retired = {
+		ok: false,
+		v: 2,
+		command: "pij register",
+		error: "refused",
+		details: { code: "E-RS-SEAT-RETIRED", seat: "pij-old" },
+		meta: "seat pij-old is retired (superseded, 1); a different session may not take it",
+	};
+	for (const [label, path, status, envelope, expected] of [
+		["typed retired refusal", "/v1/register", 400, retired, true],
+		["other code", "/v1/register", 400, { ...retired, details: { code: "E-RS-OTHER" } }, false],
+		["wrong status", "/v1/register", 409, retired, false],
+		["different endpoint", "/v1/send", 400, retired, false],
+	]) {
+		const client = new DaemonClient({
+			addr: "127.0.0.1:13700",
+			stateDir: "/isolated",
+			readKey: async () => "fixture-key",
+			fetch: async () => new Response(JSON.stringify(envelope), { status }),
+		});
+		await assert.rejects(client.request(path, registration), (error) => {
+			assert.equal(error.retired === true, expected, label);
+			assert.equal(error.retryable, false, label);
+			return true;
+		});
+	}
+});
+
+test("plan 211: a retired address stops the heartbeat instead of re-registering every few seconds", async (t) => {
+	let registers = 0;
+	const waits = [];
+	const f = fixture({
+		async heartbeatDelay(ms, signal) {
+			waits.push(ms);
+			await flush();
+			if (waits.length > 5) f.bridge.stop();
+			signal.throwIfAborted();
+		},
+	});
+	t.after(() => f.bridge.stop());
+	const request = f.client.request;
+	f.client.request = async (path, body, signal) => {
+		if (path === "/v1/inbox/heartbeat") return { state: "unavailable" };
+		if (path === "/v1/register") {
+			registers++;
+			const error = new NativeError("Pij HTTP 400", false, "seat retired");
+			error.retired = true;
+			throw error;
+		}
+		return request(path, body, signal);
+	};
+	await f.bridge.keepReceiverAlive();
+	assert.equal(registers, 1, "one re-registration, then it stops");
+	assert.deepEqual(waits, [250]);
+	assert.equal(f.reports.filter(({ kind }) => kind === "receive-held").length, 1, "said once");
 });
 
 async function deadlineHttpFixture(t, handler) {
@@ -5141,9 +5317,11 @@ test("standby: a newer same-process holder is a quiet wait that this session's o
 	});
 	const request = f.client.request.bind(f.client);
 	const registers = [];
+	const attempts = [];
 	f.client.request = async (path, body, signal) => {
 		if (path === "/v1/register") {
 			registers.push(body.native_precedence);
+			attempts.push(body.attempt);
 			if (held) throw new NativeError("held", true, "Pij HTTP 409", "native-holder");
 		}
 		return request(path, body, signal);
@@ -5164,6 +5342,9 @@ test("standby: a newer same-process holder is a quiet wait that this session's o
 	await acknowledged.promise;
 	f.bridge.stop();
 	assert.deepEqual(registers.at(-1), { last_user_message_at: 90_000, loaded_at: 1_000 });
+	// Plan 211 (review of #148, F002): the first registration is explicit and
+	// the one after the standby is a lease retry, though none succeeded before.
+	assert.deepEqual([attempts[0], attempts.at(-1)], ["explicit", "lease-retry"]);
 	assert.deepEqual(logs, []);
 	assert.ok(captured.some((event) => event.kind === "standby-ended"));
 });

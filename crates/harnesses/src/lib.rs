@@ -10,6 +10,7 @@ mod models;
 mod spawn;
 mod usage_limit;
 
+pub mod modal;
 pub mod proc;
 
 pub use adapter::{

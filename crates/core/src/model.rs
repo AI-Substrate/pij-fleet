@@ -249,6 +249,19 @@ pub struct ProcIdentity {
     pub proc_start: u64,
 }
 
+/// One reading of a process's start instant, packed in both timebases pij
+/// compares (plan 218): `local` is the host wall time `ps -o lstart=` prints,
+/// the unit of [`ProcIdentity::proc_start`]; `utc` is the same instant in UTC,
+/// the timebase of Claude's `procStart` records. Both come from ONE kernel
+/// read, so the two comparisons can never see two different processes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObservedStart {
+    /// `YYYYMMDDhhmmss` in the host's local time at the start instant.
+    pub local: u64,
+    /// `YYYYMMDDhhmmss` in UTC.
+    pub utc: u64,
+}
+
 /// Parse C-locale process-start fields into a `YYYYMMDDhhmmss` identity.
 ///
 /// This encodes the supplied wall-time fields without timezone conversion or

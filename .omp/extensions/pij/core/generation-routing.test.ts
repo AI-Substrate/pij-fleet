@@ -257,6 +257,35 @@ describe("explicit generation forcing", () => {
 			row: { nativeCommand: "fleet-report" },
 		});
 	});
+
+	it("plan 213: the community verbs run natively, the same list the pij-cli.cjs fast path reads", () => {
+		const listed: { verbs: string[] } = JSON.parse(
+			readFileSync(
+				fileURLToPath(
+					new URL("../../../../harness/scripts/pij-native-verbs.json", import.meta.url),
+				),
+				"utf8",
+			),
+		);
+		const community = [
+			"directory",
+			"claim",
+			"claims",
+			"delivered",
+			"output",
+			"outputs",
+			"requests",
+		];
+		const native = RS_ROUTE_TABLE.filter(
+			(row) => "nativeCommand" in row && community.includes(row.verb),
+		).map((row) => row.verb);
+		expect([...native].sort()).toEqual([...listed.verbs].sort());
+		for (const verb of listed.verbs)
+			expect(pre({ verb, rsLive: false })).toMatchObject({
+				kind: "try-rs",
+				row: { nativeCommand: verb },
+			});
+	});
 });
 
 describe("local refusals use named v2 envelopes", () => {

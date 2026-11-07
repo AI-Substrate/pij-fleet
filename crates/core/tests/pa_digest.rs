@@ -2,7 +2,7 @@
 
 use pij_core::cold_wake::{ColdWakeView, SeatSize};
 use pij_core::model::{Harness, SeatDescriptor, SeatId, SemanticState, SystemState};
-use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
+use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, QueuedRequest};
 use pij_core::session_status::CacheState;
 
 const MIN: u64 = 60_000;
@@ -41,6 +41,7 @@ fn view(rows: Vec<FleetRow>) -> FleetView {
         scope: "/repo/.git".into(),
         rows,
         anomalies: Vec::new(),
+        queued: Vec::new(),
         interval_ms: INTERVAL_MS,
     }
 }
@@ -164,4 +165,51 @@ fn digest_lists_every_seat_largest_first_and_marks_the_pa_and_cold_wakes() {
     assert!(text.ends_with(
         "Set no timers or background loops; pij nudges you again the next time the fleet goes idle."
     ));
+}
+
+/// Plan 199: requests waiting on a role with no live holder ride the digest
+/// until an assign drains them, and say nothing when there are none.
+#[test]
+fn digest_lists_queued_role_requests_only_when_there_are_some() {
+    let quiet = view(fleet()).digest();
+    assert!(!quiet.contains("Queued role requests"), "{quiet}");
+
+    let mut waiting = view(fleet());
+    waiting.queued = vec![QueuedRequest {
+        address: "role:pm-001".into(),
+        project: "fleet".into(),
+        id: "req-a".into(),
+        requester: SeatId::from("pij-asker".to_string()),
+        waiting_ms: 5 * 60_000,
+        delivering_to: None,
+    }];
+    let digest = waiting.digest();
+    assert!(
+        digest.contains(
+            "\nQueued role requests (no live holder; assigning one delivers them):\n  role:pm-001 in fleet: request req-a from pij-asker, waiting 5m"
+        ),
+        "{digest}"
+    );
+    assert!(!digest.contains("stuck delivering"), "{digest}");
+
+    // Review of #129, F003: a claim never settled is shown with its holder.
+    waiting.queued.push(QueuedRequest {
+        address: "role:reviewer".into(),
+        project: "fleet".into(),
+        id: "req-b".into(),
+        requester: SeatId::from("pij-asker".to_string()),
+        waiting_ms: 20 * 60_000,
+        delivering_to: Some(SeatId::from("pij-holder".to_string())),
+    });
+    let digest = waiting.digest();
+    assert!(
+        digest.contains(
+            "\nRole requests stuck delivering (claimed, never confirmed; a daemon restart re-queues them):\n  role:reviewer in fleet: request req-b from pij-asker to pij-holder, waiting 20m"
+        ),
+        "{digest}"
+    );
+    assert!(
+        !digest.contains("request req-b from pij-asker, waiting"),
+        "a stuck request is not listed as queued: {digest}"
+    );
 }

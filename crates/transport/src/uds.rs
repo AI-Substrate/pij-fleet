@@ -1,16 +1,17 @@
 use std::env;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use pij_core::error::{PijError, Result};
 use pij_core::framing::frame_message;
 use pij_core::model::{
-    DeliveryOrigin, DeliveryOutcome, Harness, Msg, SeatDescriptor, parse_process_start,
+    DeliveryOrigin, DeliveryOutcome, Harness, Msg, ObservedStart, ProcIdentity, SeatDescriptor,
+    SeatId, parse_process_start,
 };
 use pij_core::ports::Transport;
 use serde::{Deserialize, Serialize};
@@ -34,6 +35,20 @@ const HOLD_GRACE: Duration = Duration::from_secs(5);
 /// private reply address instead of the whole transport serialising on one.
 const REPLY_PREFIX: &str = "pij-uds";
 static REPLY_COUNTER: AtomicU64 = AtomicU64::new(0);
+/// How long an endpoint `can_deliver` resolved stays usable by the `deliver`
+/// of the SAME message to the SAME seat (plan 218). Callers deliver within
+/// milliseconds of the probe; past this, `deliver` discovers afresh.
+const RESOLVED_FOR: Duration = Duration::from_secs(5);
+/// At most this many probed-but-undelivered endpoints are kept. A probe whose
+/// delivery takes another rung (typed body, queue) leaves one behind until it
+/// expires or is pushed out.
+const RESOLVED_CAP: usize = 64;
+
+/// Reads a process's start in-process (plan 218): the daemon injects
+/// `pij_harnesses::proc::observed_start`, so this crate launches nothing and
+/// depends on no process-table crate. A fresh read per call; `None` is a peer
+/// that is not deliverable (fail closed).
+pub type StartObserver = Arc<dyn Fn(u32) -> Option<ObservedStart> + Send + Sync>;
 
 /// Claude Code's Unix-domain-socket message transport.
 ///
@@ -56,26 +71,61 @@ static REPLY_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// # Composition recipe
 ///
 /// In `crates/daemon/src/lib.rs`, import `pij_transport::UdsTransport`; construct
-/// `AdapterChoice::Real` with `Arc::new(UdsTransport::new()?)`; pass that shared
+/// `AdapterChoice::Real` with
+/// `Arc::new(UdsTransport::new(Arc::new(pij_harnesses::proc::observed_start))?)`
+/// (plan 218: the peer's start is read in-process, so delivery launches
+/// nothing); pass that shared
 /// `Arc<dyn Transport>` to both `DeliveryService` and `DrainWorker`. Construct one
 /// shared `InteractionGate` before `DeliveryService`, pass it to both consumers,
 /// and feed it from `PaneObserver`. No task starts in this adapter; shutdown is
 /// unchanged.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UdsTransport {
     sessions_dir: PathBuf,
     ack_wait: Duration,
     hold_grace: Duration,
     connect_timeout: Duration,
-    observe_start: fn(u32, bool) -> Option<u64>,
+    observe_start: StartObserver,
+    resolved: Arc<Mutex<Vec<Resolved>>>,
+}
+
+impl fmt::Debug for UdsTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Resolved endpoints carry peer tokens; never print them.
+        f.debug_struct("UdsTransport")
+            .field("sessions_dir", &self.sessions_dir)
+            .finish_non_exhaustive()
+    }
+}
+
+/// An endpoint `can_deliver` resolved, waiting for that message's `deliver`.
+struct Resolved {
+    seat: SeatId,
+    msg_id: String,
+    proc: Option<ProcIdentity>,
+    pane: Option<String>,
+    at: Instant,
+    endpoint: Endpoint,
+}
+
+impl Resolved {
+    fn is_for(&self, seat: &SeatDescriptor, msg: &Msg) -> bool {
+        self.seat == seat.id
+            && self.msg_id == msg.msg_id
+            && self.proc == seat.proc
+            && self.pane == seat.pane
+    }
 }
 
 impl UdsTransport {
     /// Use the current user's Claude session registry.
     ///
+    /// `observe_start` reads a peer's start in-process; the daemon passes
+    /// `pij_harnesses::proc::observed_start`.
+    ///
     /// # Errors
     /// [`PijError::Adapter`] when the home directory is unavailable.
-    pub fn new() -> Result<Self> {
+    pub fn new(observe_start: StartObserver) -> Result<Self> {
         let home = env::var_os("HOME").ok_or_else(|| PijError::Adapter {
             adapter: NAME.to_string(),
             message: "HOME is unset — set HOME to the account that owns ~/.claude/sessions"
@@ -83,6 +133,7 @@ impl UdsTransport {
         })?;
         Ok(Self::from_sessions_dir(
             PathBuf::from(home).join(".claude/sessions"),
+            observe_start,
         ))
     }
 
@@ -91,13 +142,14 @@ impl UdsTransport {
     /// The daemon uses [`Self::new`]; composition tests use this constructor to
     /// exercise the real adapter without reading or mutating the user's registry.
     #[must_use]
-    pub fn from_sessions_dir(sessions_dir: PathBuf) -> Self {
+    pub fn from_sessions_dir(sessions_dir: PathBuf, observe_start: StartObserver) -> Self {
         Self {
             sessions_dir,
             ack_wait: ACK_WAIT,
             hold_grace: HOLD_GRACE,
             connect_timeout: CONNECT_TIMEOUT,
-            observe_start: process_start,
+            observe_start,
+            resolved: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -125,16 +177,69 @@ impl UdsTransport {
     fn discover(&self, seat: &SeatDescriptor) -> Option<Endpoint> {
         if let Some(proc) = seat.proc {
             let direct = self.sessions_dir.join(format!("{}.json", proc.pid));
+            // One read answers both comparisons: the descriptor's local start
+            // and Claude's UTC record (plan 218).
             if let Some(record) = read_json::<SessionRecord>(&direct)
                 && record.pid == proc.pid
-                && (self.observe_start)(proc.pid, false) == Some(proc.proc_start)
-                && let Some(endpoint) = self.live_endpoint(record)
+                && let Some(observed) = (self.observe_start)(proc.pid)
+                && observed.local == proc.proc_start
+                && let Some(endpoint) = self.live_endpoint(record, Some(observed))
             {
                 return Some(endpoint);
             }
         }
         let suffix = format!(".{}", seat.pane.as_deref()?);
         self.discover_pane(&suffix, fs::read_dir(&self.sessions_dir).ok()?)
+    }
+
+    /// Remember what `can_deliver` resolved for this message's `deliver`, or
+    /// (with `None`) forget an earlier probe's answer that this probe replaced.
+    fn remember(&self, seat: &SeatDescriptor, msg: &Msg, endpoint: Option<Endpoint>) {
+        let now = Instant::now();
+        let mut resolved = self.resolved.lock().unwrap_or_else(PoisonError::into_inner);
+        resolved.retain(|entry| {
+            now.duration_since(entry.at) < RESOLVED_FOR && !entry.is_for(seat, msg)
+        });
+        let Some(endpoint) = endpoint else {
+            return;
+        };
+        if resolved.len() >= RESOLVED_CAP {
+            resolved.remove(0);
+        }
+        resolved.push(Resolved {
+            seat: seat.id.clone(),
+            msg_id: msg.msg_id.clone(),
+            proc: seat.proc,
+            pane: seat.pane.clone(),
+            at: now,
+            endpoint,
+        });
+    }
+
+    /// The endpoint for this delivery: the one its probe resolved, once, if its
+    /// peer is still the process that probe saw; otherwise a fresh discovery.
+    ///
+    /// The start re-read is a BRAKE, not a policy: removing it would write to
+    /// the remembered socket even after its peer died, so it can only stop a
+    /// delivery, never make one. A dead or recycled peer falls through to
+    /// discovery, which finds nothing for it and fails closed as before.
+    fn resolve(&self, seat: &SeatDescriptor, msg: &Msg) -> Option<Endpoint> {
+        let now = Instant::now();
+        let remembered = {
+            let mut resolved = self.resolved.lock().unwrap_or_else(PoisonError::into_inner);
+            resolved
+                .iter()
+                .position(|entry| entry.is_for(seat, msg))
+                .map(|index| resolved.swap_remove(index))
+        };
+        remembered
+            .filter(|entry| now.duration_since(entry.at) < RESOLVED_FOR)
+            .map(|entry| entry.endpoint)
+            .filter(|endpoint| {
+                (self.observe_start)(endpoint.pid)
+                    .is_some_and(|seen| seen.utc == endpoint.start_utc)
+            })
+            .or_else(|| self.discover(seat))
     }
 
     fn discover_pane(
@@ -161,7 +266,7 @@ impl UdsTransport {
             {
                 continue;
             }
-            let Some(endpoint) = self.live_endpoint(record) else {
+            let Some(endpoint) = self.live_endpoint(record, None) else {
                 continue;
             };
             // Multiple live owners are ambiguous, never decided by directory or
@@ -174,42 +279,36 @@ impl UdsTransport {
         candidate
     }
 
-    fn live_endpoint(&self, record: SessionRecord) -> Option<Endpoint> {
-        // Claude records UTC. Observe this process in UTC too; a current UTC
-        // offset is NOT necessarily the offset when a long-lived process began.
+    /// `observed` is the reading the caller already made for this pid, if any.
+    fn live_endpoint(
+        &self,
+        record: SessionRecord,
+        observed: Option<ObservedStart>,
+    ) -> Option<Endpoint> {
+        // Claude records UTC. Compare the UTC packing of the observed instant; a
+        // current UTC offset is NOT necessarily the offset when a long-lived
+        // process began.
         let recorded = parse_process_start(&record.proc_start).ok()?;
-        if (self.observe_start)(record.pid, true)? != recorded {
+        let observed = observed.or_else(|| (self.observe_start)(record.pid))?;
+        if observed.utc != recorded {
             return None;
         }
-        self.endpoint_from_record(record)
+        self.endpoint_from_record(record, recorded)
     }
 
-    fn endpoint_from_record(&self, record: SessionRecord) -> Option<Endpoint> {
+    fn endpoint_from_record(&self, record: SessionRecord, start_utc: u64) -> Option<Endpoint> {
         let token = matching_peer_token(&self.sessions_dir, &record)?;
+        let pid = record.pid;
         let socket_path = record
             .messaging_socket_path
             .filter(|path| !path.is_empty())?;
         Some(Endpoint {
             socket_path: PathBuf::from(socket_path),
             token,
+            pid,
+            start_utc,
         })
     }
-}
-
-fn process_start(pid: u32, utc: bool) -> Option<u64> {
-    pij_core::spawns::record("ps.uds-peer-start");
-    let mut command = Command::new("/bin/ps");
-    command
-        .args(["-p", &pid.to_string(), "-o", "lstart="])
-        .env("LC_ALL", "C");
-    if utc {
-        command.env("TZ", "UTC");
-    }
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    parse_process_start(std::str::from_utf8(&output.stdout).ok()?).ok()
 }
 
 #[async_trait]
@@ -225,7 +324,12 @@ impl Transport for UdsTransport {
         {
             return Ok(false);
         }
-        Ok(self.discover(seat).is_some())
+        // Plan 218: resolve once per delivery. The endpoint found here is the
+        // one this message's `deliver` uses, after a fresh start check.
+        let endpoint = self.discover(seat);
+        let found = endpoint.is_some();
+        self.remember(seat, msg, endpoint);
+        Ok(found)
     }
 
     async fn deliver(&self, seat: &SeatDescriptor, msg: &Msg) -> Result<DeliveryOutcome> {
@@ -239,7 +343,7 @@ impl Transport for UdsTransport {
                 draft_sha: None,
             });
         }
-        let Some(endpoint) = self.discover(seat) else {
+        let Some(endpoint) = self.resolve(seat, msg) else {
             return Ok(DeliveryOutcome::Queued {
                 reason: None,
                 next_retry_at: None,
@@ -299,6 +403,10 @@ struct PeerKey {
 struct Endpoint {
     socket_path: PathBuf,
     token: String,
+    /// The peer process and its recorded UTC start, re-checked before a
+    /// remembered endpoint is used.
+    pid: u32,
+    start_utc: u64,
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<T> {
@@ -728,8 +836,13 @@ mod tests {
 
     use serde_json::Value;
 
+    use std::sync::Arc;
+
+    use pij_core::model::ObservedStart;
+
     use super::{
-        REPLY_PREFIX, ReplyInbox, Status, UdsTransport, build_peer_frame, classify_status,
+        REPLY_PREFIX, ReplyInbox, StartObserver, Status, UdsTransport, build_peer_frame,
+        classify_status,
     };
 
     static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
@@ -806,13 +919,23 @@ mod tests {
         .expect("write peer key");
     }
 
+    /// An observer that reports one start (`local`, `utc`) for `only` (or any
+    /// pid when `None`), and no process for every other pid.
+    fn starts(only: Option<u32>, local: u64, utc: u64) -> StartObserver {
+        Arc::new(move |pid| {
+            only.is_none_or(|only| only == pid)
+                .then_some(ObservedStart { local, utc })
+        })
+    }
+
     fn transport(dir: &Path) -> UdsTransport {
-        let mut transport = UdsTransport::from_sessions_dir(dir.to_path_buf());
+        let mut transport = UdsTransport::from_sessions_dir(
+            dir.to_path_buf(),
+            starts(Some(4242), 1, 20260829235605),
+        );
         transport.ack_wait = Duration::from_millis(30);
         transport.hold_grace = Duration::from_millis(120);
         transport.connect_timeout = Duration::from_millis(200);
-        transport.observe_start =
-            |pid, utc| (pid == 4242).then_some(if utc { 20260829235605 } else { 1 });
         transport
     }
 
@@ -924,7 +1047,8 @@ mod tests {
         write_key(&dir.0, live, start, "darwin");
         let mut target = seat(dead, Some("%99"), Harness::Claude);
         target.proc = None;
-        let endpoint = UdsTransport::from_sessions_dir(dir.0.clone())
+        let utc = pij_core::model::parse_process_start(start).expect("parse fixture start");
+        let endpoint = UdsTransport::from_sessions_dir(dir.0.clone(), starts(Some(live), 1, utc))
             .discover(&target)
             .expect("live candidate");
         assert_eq!(endpoint.socket_path, live_socket);
@@ -935,19 +1059,19 @@ mod tests {
         let dir = TestDir::new();
         write_record(&dir.0, 4242, "%99", &dir.0.join("stale.sock"));
         let mut transport = transport(&dir.0);
-        transport.observe_start = |_, utc| Some(if utc { 20260830000000 } else { 1 });
+        transport.observe_start = starts(None, 1, 20260830000000);
         assert!(
             transport
                 .discover(&seat(4242, Some("%99"), Harness::Claude))
                 .is_none()
         );
-        transport.observe_start = |_, utc| Some(if utc { 20260829235605 } else { 2 });
+        transport.observe_start = starts(None, 2, 20260829235605);
         assert!(
             transport
                 .discover(&seat(4242, None, Harness::Claude))
                 .is_none()
         );
-        transport.observe_start = |_, _| None;
+        transport.observe_start = Arc::new(|_| None);
         assert!(
             transport
                 .discover(&seat(4242, Some("%99"), Harness::Claude))
@@ -961,7 +1085,7 @@ mod tests {
         write_record(&dir.0, 4242, "%99", &dir.0.join("first.sock"));
         write_record(&dir.0, 4343, "%99", &dir.0.join("second.sock"));
         let mut transport = transport(&dir.0);
-        transport.observe_start = |_, utc| Some(if utc { 20260829235605 } else { 1 });
+        transport.observe_start = starts(None, 1, 20260829235605);
         let mut target = seat(4343, Some("%99"), Harness::Claude);
         assert_eq!(
             transport
@@ -1033,8 +1157,7 @@ mod tests {
         .expect("copy recorded key");
 
         let mut transport = transport(&dir.0);
-        transport.observe_start =
-            |pid, utc| (pid == 4242).then_some(if utc { 20260830001157 } else { 1 });
+        transport.observe_start = starts(Some(4242), 1, 20260830001157);
         let endpoint = transport
             .discover(&seat(9000, Some("%99"), Harness::Claude))
             .expect("pane fallback resolves recorded pair");
@@ -1090,8 +1213,7 @@ mod tests {
                 .expect("write captured key case");
             let mut transport = transport(&dir.0);
             // Keep the captured human-date procStart unchanged in BOTH records.
-            transport.observe_start =
-                |pid, utc| (pid == 75005).then_some(if utc { 20260824002719 } else { 1 });
+            transport.observe_start = starts(Some(75005), 1, 20260824002719);
             let mut target = seat(75005, Some("%8"), Harness::Claude);
             target.proc = None;
             let endpoint = transport.discover(&target);
@@ -1233,6 +1355,191 @@ mod tests {
                 draft_sha: None,
             },
             "an unauthenticated write must never become delivered on a silent timer"
+        );
+    }
+
+    /// An observer that counts its reads and answers only while `alive`.
+    fn counted(
+        pid: u32,
+        utc: u64,
+    ) -> (
+        StartObserver,
+        Arc<std::sync::atomic::AtomicUsize>,
+        Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let alive = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let (counter, flag) = (reads.clone(), alive.clone());
+        let observer: StartObserver = Arc::new(move |seen| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            (seen == pid && flag.load(Ordering::SeqCst)).then_some(ObservedStart { local: 1, utc })
+        });
+        (observer, reads, alive)
+    }
+
+    /// Accept one delivery and return the auth and message lines it carried.
+    fn accept_one(listener: UnixListener) -> tokio::task::JoinHandle<String> {
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept transport");
+            let mut reader = BufReader::new(stream);
+            let mut received = String::new();
+            reader.read_line(&mut received).await.expect("read auth");
+            reader.read_line(&mut received).await.expect("read frame");
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            received
+        })
+    }
+
+    /// Plan 218 AC1: an exact-pid discovery reads the start once, in-process,
+    /// and that one reading answers both the descriptor's local comparison and
+    /// the record's UTC one. Nothing is launched.
+    #[tokio::test]
+    async fn one_in_process_reading_answers_both_comparisons_and_launches_nothing() {
+        let dir = TestDir::new();
+        write_record(&dir.0, 4242, "%99", &dir.0.join("recorded.sock"));
+        let (observer, reads, _) = counted(4242, 20260829235605);
+        let transport = UdsTransport::from_sessions_dir(dir.0.clone(), observer);
+        let before = pij_core::spawns::snapshot().total;
+
+        assert!(
+            transport
+                .discover(&seat(4242, None, Harness::Claude))
+                .is_some()
+        );
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            1,
+            "one reading per exact-pid discovery"
+        );
+        // A recycled pid: the same local start, a different UTC record.
+        let mut stale = transport.clone();
+        stale.observe_start = starts(Some(4242), 1, 20260829235606);
+        assert!(stale.discover(&seat(4242, None, Harness::Claude)).is_none());
+        // The descriptor's local start disagrees: refused before the record.
+        let mut moved = seat(4242, None, Harness::Claude);
+        moved.proc = Some(ProcIdentity {
+            pid: 4242,
+            proc_start: 2,
+        });
+        assert!(transport.discover(&moved).is_none());
+        assert_eq!(
+            pij_core::spawns::snapshot().total,
+            before,
+            "the Claude peer check launches no process"
+        );
+    }
+
+    /// Plan 218 AC2: `deliver` uses the endpoint its own probe resolved. With
+    /// the session records gone after the probe, only a reused resolution can
+    /// still deliver, and it costs one start re-read, not a second discovery.
+    #[tokio::test]
+    async fn deliver_uses_the_endpoint_its_probe_resolved() {
+        let dir = TestDir::new();
+        let socket = dir.0.join("listener.sock");
+        let listener = UnixListener::bind(&socket).expect("bind fixture socket");
+        write_record(&dir.0, 4242, "%99", &socket);
+        let (observer, reads, _) = counted(4242, 20260829235605);
+        let mut transport = transport(&dir.0);
+        transport.observe_start = observer;
+        let target = seat(4242, Some("%99"), Harness::Claude);
+        let server = accept_one(listener);
+
+        assert!(
+            transport
+                .can_deliver(&target, &message(None))
+                .await
+                .unwrap()
+        );
+        fs::remove_file(dir.0.join("4242.json")).unwrap();
+        fs::remove_file(dir.0.join(format!("4242.{HASH}.key"))).unwrap();
+        assert_eq!(
+            transport.deliver(&target, &message(None)).await.unwrap(),
+            DeliveryOutcome::Delivered {
+                origin: DeliveryOrigin::InjectedToTransport
+            }
+        );
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            2,
+            "probe reading plus one re-check"
+        );
+        let received = tokio::time::timeout(Duration::from_millis(800), server)
+            .await
+            .expect("socket reached")
+            .expect("fixture server");
+        assert!(received.contains("\"msg_id\":\"msg-uds-001\""));
+
+        // The resolution is spent: a second delivery discovers afresh.
+        assert_eq!(
+            transport.deliver(&target, &message(None)).await.unwrap(),
+            DeliveryOutcome::Queued {
+                reason: None,
+                next_retry_at: None,
+                draft_sha: None,
+            },
+            "a spent resolution is not reused"
+        );
+    }
+
+    /// Plan 218 AC2: a peer that died between the probe and the delivery is
+    /// refused, never written to.
+    #[tokio::test]
+    async fn a_peer_that_died_after_its_probe_is_not_written_to() {
+        let dir = TestDir::new();
+        let socket = dir.0.join("listener.sock");
+        let listener = UnixListener::bind(&socket).expect("bind fixture socket");
+        write_record(&dir.0, 4242, "%99", &socket);
+        let (observer, _, alive) = counted(4242, 20260829235605);
+        let mut transport = transport(&dir.0);
+        transport.observe_start = observer;
+        let target = seat(4242, Some("%99"), Harness::Claude);
+
+        assert!(
+            transport
+                .can_deliver(&target, &message(None))
+                .await
+                .unwrap()
+        );
+        alive.store(false, Ordering::SeqCst);
+        assert_eq!(
+            transport.deliver(&target, &message(None)).await.unwrap(),
+            DeliveryOutcome::Queued {
+                reason: None,
+                next_retry_at: None,
+                draft_sha: None,
+            }
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), listener.accept())
+                .await
+                .is_err(),
+            "a dead peer's socket must not be written"
+        );
+    }
+
+    /// A probe for one message never lends its endpoint to another message.
+    #[tokio::test]
+    async fn a_probe_serves_only_its_own_message() {
+        let dir = TestDir::new();
+        write_record(&dir.0, 4242, "%99", &dir.0.join("recorded.sock"));
+        let transport = transport(&dir.0);
+        let target = seat(4242, Some("%99"), Harness::Claude);
+        assert!(
+            transport
+                .can_deliver(&target, &message(None))
+                .await
+                .unwrap()
+        );
+        fs::remove_file(dir.0.join("4242.json")).unwrap();
+        let mut other = message(None);
+        other.msg_id = "msg-uds-002".to_string();
+        assert_eq!(
+            transport.deliver(&target, &other).await.unwrap(),
+            DeliveryOutcome::Queued {
+                reason: None,
+                next_retry_at: None,
+                draft_sha: None,
+            }
         );
     }
 

@@ -1,0 +1,62 @@
+private daemon pid=51859 port=17996 tmux=-L pij-196-51736
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-wildcat","harness":"omp","sessio
+{"ok":true,"command":"pij register","v":2,"data":{"id":"pij-scratch-pm","harness":"omp","session":nu
+
+$ pij-rs project create demo --repo $S/main --prime pij-scratch-wildcat
+pij project: ok — {"project":{"created_at":1793922924675,"created_by":"pij-scratch-wildcat","description":"demo","plan_path":null,"prime_id":"pij-scratch-wildcat","repo":"$S/main","slug":"demo"},"seq":9}
+exit=0
+reading rest-1: pid=51859 gh=$S/bin/gh total=10 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+reading rest-2: pid=51859 gh=$S/bin/gh total=10 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+
+$ pij-rs claim plan --for demo plan
+plan 191 claimed by pij-scratch-wildcat for "demo plan" in demo
+exit=0
+reading after-claim: pid=51859 gh=$S/bin/gh total=10 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+
+$ pij-rs claims
+demo: 1 open, 1 listed
+  plan 191  pij-scratch-wildcat  open  demo plan
+exit=0
+reading after-claims: pid=51859 gh=$S/bin/gh total=10 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+
+$ pij-rs claim migration --for demo migration
+migration 0034 claimed by pij-scratch-wildcat for "demo migration" in demo
+exit=0
+
+$ pij-rs claim prd --for held by the closing seat
+prd 002 claimed by pij-scratch-wildcat for "held by the closing seat" in demo
+exit=0
+reading before-delivered: pid=51859 gh=$S/bin/gh total=10 by_op={"ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+
+$ pij-rs delivered 7 --pm pij-scratch-pm
+PR #7 (111111111111) delivered 2 address(es) in demo: 2 new, 0 already recorded; 2 claim(s) released; posted on pij-scratch-pm's card
+ddocs edits for the PM's next docs PR (not applied):
+  ddocs set 'docs/project/prds/001-demo.dd.json#requirements/req-01/delivered_by' '#3, #7'
+  ddocs set 'docs/project/roadmaps/001-demo.dd.json#steps/s01/plan' 'docs/plans/191-demo'
+exit=0
+reading after-delivered: pid=51859 gh=$S/bin/gh total=11 by_op={"gh.delivered": 1, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+
+$ pij-rs delivered 7 --pm pij-scratch-pm
+PR #7 (111111111111) delivered 2 address(es) in demo: 0 new, 2 already recorded; 0 claim(s) released; already recorded; pij-scratch-pm's card was told the first time
+ddocs edits for the PM's next docs PR (not applied):
+  ddocs set 'docs/project/prds/001-demo.dd.json#requirements/req-01/delivered_by' '#3, #7'
+  ddocs set 'docs/project/roadmaps/001-demo.dd.json#steps/s01/plan' 'docs/plans/191-demo'
+exit=0
+reading after-rerun: pid=51859 gh=$S/bin/gh total=12 by_op={"gh.delivered": 2, "ps.sidecar-process-group": 1, "ps.tmux-harness-process-tree": 4, "tmux.control-client": 1, "tmux.pipe-pane attach": 2, "tmux.set-options tap owner": 2}
+
+$ PM card
+[{"project": "demo", "pr": 7, "merge_commit": "1111111111111111111111111111111111111111", "addresses": ["docs/project/prds/001-demo.dd.json#requirements/req-01", "docs/project/roadmaps/001-demo.dd.json#steps/s01"], "recorded_by": "pij-scratch-wildcat", "recorded_at": 1793922995575}]
+
+$ pij-rs close pij-scratch-wildcat --reason done
+pij close: ok — {"reason":"done","seat":"pij-scratch-wildcat","seq":11,"tombstoned_at":1793922995794}
+exit=0
+
+$ pij-rs claims
+demo: 0 open, 3 listed
+  migration 0034  pij-scratch-wildcat  released (delivered #7)  demo migration
+  plan 191  pij-scratch-wildcat  released (delivered #7)  demo plan
+  prd 002  pij-scratch-wildcat  released (seat-closed)  held by the closing seat
+exit=0
+
+$ git -C main status --porcelain (empty: no project file changed)
+(end)

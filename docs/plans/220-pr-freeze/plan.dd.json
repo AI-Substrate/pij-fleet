@@ -1,0 +1,156 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "PR freeze check before verdicts (F92)",
+        "slug": "pr-freeze",
+        "ordinal": 220,
+        "complexity": "CS-1",
+        "summary": "`just pr-freeze <pr>` verifies a PR head is final (remote and gh agree, main base, CLEAN, CI passed, ready, migration numbered above main, Delivers parses) before verdicts are requested or READY is sent.",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Verdicts are only worth something at a final head. Tonight the PM checked finality by hand, and got it wrong once. This plan encodes the check as one read-only command. One coder (tapir)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "`just pr-freeze <pr>` verifies a PR head is final (remote and gh agree, main base, CLEAN, CI passed, ready, migration numbered above main, Delivers parses) before verdicts are requested or READY is sent."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Any daemon or CI-gate change; this is a hand-run harness tool.",
+        "Merging or pushing anything."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "One command says whether a PR head is final for verdicts. `just pr-freeze <pr>` (a script under harness/scripts with a just recipe; read-only; gh and git only) prints, for the PR: the head from `git ls-remote origin refs/pull/<n>/head` and from `gh pr view`, and whether they agree; the base branch and whether it is main; mergeStateStatus (CLEAN, DIRTY, BEHIND, UNSTABLE) with the reason; each CI check's latest run by name (an older failed run superseded by a newer pass counts as pass, an in-progress one as not final); draft or ready; and whether a review worktree exists at exactly that head (`git worktree list` for a path ending in -<pr>-<head7>, at that commit). It exits 0 and says FINAL only when the two heads agree, the base is main, the state is CLEAN, every check's latest run passed, and the PR is not draft; otherwise it exits non-zero naming each failing condition and the next step (merge main, wait for CI, mark ready).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Tonight's other freeze lessons are checked too. It reports each migration the PR adds (crates/store/migrations) against main's highest and SCHEMA_VERSION on both sides, and flags a number not above main's highest (the merge-order rule, 07 Nov). It parses the PR body's Delivers: line with the same parser CI uses and flags prose or a missing line. With --worktree it creates the detached review worktree at the verified head if none exists and prints its path.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). No daemon change. Run by hand, once per verdict request: one ls-remote, two or three gh calls, a few local git reads. No loop, timer or poll.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Docs and states. The pij skill's PM and verdict sections say to run `just pr-freeze <pr>` before requesting verdicts and before sending READY; AGENTS.md's harness tooling list names it; docs/difficulties.md marks F92 resolved. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00dc",
+          "title": "PR freeze check before verdicts (F92)",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-1.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "F92 (offered by reviewer pij-double-bobcat, 07 Nov): on 07 Nov, #149's head moved four times under review (642e64b, a63edce, fb87062, a force-push that landed for a minute) and pm-001 repointed seats on a coder's report of a push that hadn't stuck; #136, #148 and #150 went DIRTY after merges and #152's migration order was mis-stated. Each was caught by hand with ls-remote, gh pr view and CI reads. The merge-order migration rule and the Delivers check (plan 209) already exist; this puts them in front of the verdict request."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}

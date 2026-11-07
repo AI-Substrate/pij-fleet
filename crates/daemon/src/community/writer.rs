@@ -50,6 +50,10 @@ pub enum Existing {
     Refuse(Refusal),
     /// Overwrite it.
     Replace,
+    /// Skip this file, writing and checking nothing, when the given
+    /// worktree-relative path (a folder, usually) already exists: adopting a
+    /// hand-written role keeps its own memory and outputs (plan 195, AC13).
+    Skip(PathBuf),
 }
 
 /// A landed write.
@@ -101,6 +105,22 @@ impl CommunityWriter {
         files: Vec<NewFile>,
         message: &str,
     ) -> Result<Written, Refusal> {
+        self.write_with(repo, |_| Ok(files), message)
+    }
+
+    /// [`Self::write`], with the files built from the resolved governance root
+    /// while this worktree's lock is held, so a read-modify-write (a holders
+    /// document gaining a row) cannot interleave with another write. No extra
+    /// launch: the root is resolved once, here.
+    ///
+    /// # Errors
+    /// Whatever `build` refuses with, or any [`Self::write`] refusal.
+    pub fn write_with(
+        &self,
+        repo: &Path,
+        build: impl FnOnce(&GovernanceRoot) -> Result<Vec<NewFile>, Refusal>,
+        message: &str,
+    ) -> Result<Written, Refusal> {
         let root = root::resolve(repo)?;
         let lock = {
             let mut worktrees = self
@@ -110,6 +130,7 @@ impl CommunityWriter {
             Arc::clone(worktrees.entry(root.worktree.clone()).or_default())
         };
         let _serial = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let files = build(&root)?;
         self.write_serialised(root, files, message)
     }
 
@@ -130,6 +151,11 @@ impl CommunityWriter {
                 });
             }
         }
+        // Only paths this write will actually write are checked (AC14).
+        files.retain(|file| match &file.existing {
+            Existing::Skip(guard) => std::fs::symlink_metadata(top.join(guard)).is_err(),
+            _ => true,
+        });
         let mut paths: Vec<PathBuf> = Vec::new();
         for file in &files {
             paths.push(file.path.clone());
@@ -153,15 +179,34 @@ impl CommunityWriter {
                 ),
             )
             .with_next(format!(
-                "Commit or remove those edits in {}, then retry.",
+                "The prime commits or removes hand edits in the governance worktree ({}): \
+                 send it these paths, then retry once they are committed.",
                 top.display()
             )));
         }
+        // Every refusal at once, so a batch names each existing role (F11).
+        let mut taken: Vec<&Refusal> = Vec::new();
         for file in &files {
             if let Existing::Refuse(refusal) = &file.existing
                 && std::fs::symlink_metadata(top.join(&file.path)).is_ok()
+                && !taken.contains(&refusal)
             {
-                return Err(refusal.clone());
+                taken.push(refusal);
+            }
+        }
+        match taken.as_slice() {
+            [] => {}
+            [one] => return Err((*one).clone()),
+            many => {
+                return Err(Refusal {
+                    code: many[0].code,
+                    message: many
+                        .iter()
+                        .map(|refusal| refusal.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                    next: many[0].next.clone(),
+                });
             }
         }
 
@@ -192,6 +237,9 @@ impl CommunityWriter {
             .iter()
             .map(|path| path.display().to_string())
             .collect();
+        // Held from staging to the commit, so a human whose commit fails on
+        // index.lock can see who holds the index (F18).
+        let _marker = Marker::new(&top, message);
         let mut add = vec!["add".to_string(), "--".to_string()];
         add.extend(names.iter().cloned());
         self.git_write(&top, &add)?;
@@ -227,7 +275,7 @@ impl CommunityWriter {
                         return Err(Refusal::new(
                             E_GOV_LOCKED,
                             format!(
-                                "the governance worktree's index stayed locked; pij wrote nothing: {}",
+                                "the governance worktree's index stayed locked by another process; pij wrote nothing: {}",
                                 refusal.message
                             ),
                         )
@@ -340,6 +388,57 @@ fn io_refusal(path: &Path, error: &std::io::Error) -> Refusal {
         E_GOV_GIT,
         format!("could not write {}: {error}", path.display()),
     )
+}
+
+/// `<git dir>/pij-writer.owner`: names the writer while it stages and
+/// commits, removed when the write ends however it ends. Best effort: a
+/// marker that cannot be written never stops the write.
+pub const MARKER: &str = "pij-writer.owner";
+
+struct Marker(Option<PathBuf>);
+
+impl Marker {
+    fn new(top: &Path, message: &str) -> Self {
+        let path = git_dir(top).map(|dir| dir.join(MARKER));
+        if let Some(path) = &path {
+            let subject = message.lines().next().unwrap_or_default();
+            let line = format!(
+                "pij-rs daemon pid={} at={} writing {subject:?}; retry your git command in a moment\n",
+                std::process::id(),
+                super::holders::now()
+            );
+            if std::fs::write(path, line).is_err() {
+                return Self(None);
+            }
+        }
+        Self(path)
+    }
+}
+
+impl Drop for Marker {
+    fn drop(&mut self) {
+        if let Some(path) = &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// The worktree's own git dir, where its `index.lock` lives, read in-process:
+/// `<top>/.git` is the directory itself in a main checkout, or a file naming
+/// it (`gitdir: <path>`) in a linked worktree.
+pub fn git_dir(top: &Path) -> Option<PathBuf> {
+    let dot = top.join(".git");
+    let meta = std::fs::symlink_metadata(&dot).ok()?;
+    if meta.is_dir() {
+        return Some(dot);
+    }
+    let text = std::fs::read_to_string(&dot).ok()?;
+    let named = Path::new(text.lines().next()?.strip_prefix("gitdir:")?.trim());
+    Some(if named.is_absolute() {
+        named.to_path_buf()
+    } else {
+        top.join(named)
+    })
 }
 
 /// Puts the worktree back the way the write found it, unless the commit landed.

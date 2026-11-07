@@ -2027,6 +2027,51 @@ fn kill_refuses_an_id_not_freshly_resolved_in_the_owned_session() {
     );
 }
 
+/// Plan 195 (AC6, bp-0004): the assign-time rename is exactly one recorded
+/// tmux launch, and a pane target names the window that holds it. Only this
+/// test renames, so the per-operation delta is exact even with parallel tests.
+/// A hostile name stays literal: no format read, no job.
+#[test]
+fn rename_window_names_the_panes_window_with_one_recorded_launch() {
+    let Some(session) = TestSession::start_or_skip("rename") else {
+        return;
+    };
+    let tmux = TmuxAdapter::for_server(&session.server, &session.tap_root);
+    let pane = block_on(tmux.list_panes())
+        .expect("list isolated panes")
+        .into_iter()
+        .next()
+        .expect("isolated session pane");
+    let count = || {
+        pij_core::spawns::snapshot()
+            .by_op
+            .get("tmux.rename-window")
+            .copied()
+            .unwrap_or(0)
+    };
+    let before = count();
+    block_on(tmux.rename_window(&pane.id, "fleet:reviewer-114")).expect("rename");
+    assert_eq!(count() - before, 1, "one recorded launch per rename");
+    let name = session.run(["display-message", "-p", "-t", &pane.id, "#{window_name}"]);
+    assert_eq!(
+        String::from_utf8_lossy(&name.stdout).trim(),
+        "fleet:reviewer-114"
+    );
+
+    // A stored instance is text, never a tmux format: no `#{}` read, no
+    // `#()` job (#149 S001).
+    let marker = session.tap_root.join("rename-job-ran");
+    let hostile = format!(
+        "fleet:reviewer-#{{session_name}}-#(touch {})",
+        marker.display()
+    );
+    block_on(tmux.rename_window(&pane.id, &hostile)).expect("hostile rename");
+    let name = session.run(["display-message", "-p", "-t", &pane.id, "#{window_name}"]);
+    assert_eq!(String::from_utf8_lossy(&name.stdout).trim(), hostile);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(!marker.exists(), "the name ran a tmux job");
+}
+
 struct TestSession {
     name: String,
     server: String,

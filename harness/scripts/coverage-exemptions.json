@@ -1,0 +1,4 @@
+{
+	"why": "Known coverage gaps, each with its owner (plan 210, req-31). harness/scripts/coverage-check.ts skips these rows. This list and APPROVED_EXEMPTIONS in that file must hold the same addresses, each an existing row that is still uncovered, so the list can only shrink: an added, swapped or duplicate row fails, and so does an address in one but not the other, or whose row is covered or deleted. When a gap is closed, delete its row here and its address in APPROVED_EXEMPTIONS. Never add a row to hide new work: deliver it or set it dropped.",
+	"rows": []
+}

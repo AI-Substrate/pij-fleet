@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::identity::{CallerContext, Resolved, resolve_seat};
-use super::{AppState, envelope, internal};
+use super::{AppState, envelope, internal, memory_turn};
 use crate::reaper;
 
 #[derive(Clone, Copy)]
@@ -206,6 +206,31 @@ pub(super) struct CloseReceipt {
     pub(super) seq: Seq,
 }
 
+/// End the closed seat's role holdings (plan 195, AC4). Never fails the close:
+/// a refused write leaves the ends pending, named in the receipt, for the
+/// project's next directory write. A seat with no holdings costs one query.
+async fn end_holdings(
+    state: &AppState,
+    seat: &SeatId,
+    actor: &SeatId,
+) -> crate::community::directory::CloseEnds {
+    let repos: std::collections::BTreeMap<String, std::path::PathBuf> = state
+        .services
+        .governance
+        .store()
+        .list_projects()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|project| Some((project.slug, project.repo?.into())))
+        .collect();
+    state
+        .services
+        .directory
+        .end_for_close(seat, actor, |project| repos.get(project).cloned())
+        .await
+}
+
 pub(super) async fn tombstone_receipt(
     spine: &dyn Spine,
     seat: &SeatId,
@@ -310,39 +335,108 @@ async fn handle(
             if actor.id != expected.id && expected.parent.as_ref() != Some(&actor.id) {
                 return ownership_failure(command, &actor.id, &target, expected.parent.as_ref());
             }
-            let receipt = if expected.tombstoned_at.is_some() {
-                tombstone_receipt(
-                    state.services.spine.as_ref(),
-                    &target,
-                    None,
-                    Some(&expected),
+            // Plan 201: a role holder writes its memory before it is closed.
+            let holdings = if expected.tombstoned_at.is_none() {
+                memory_turn::holdings(&state, &target).await
+            } else {
+                Vec::new()
+            };
+            if holdings.is_empty() {
+                return match close_seat(
+                    &state,
+                    command,
+                    &actor.id,
+                    target,
+                    call.reason,
+                    Some(expected),
                 )
                 .await
-            } else {
-                match state
-                    .services
-                    .registry
-                    .tombstone_if_unchanged(expected, call.reason)
-                    .await
                 {
-                    Ok(seq) => {
-                        tombstone_receipt(state.services.spine.as_ref(), &target, Some(seq), None)
-                            .await
-                    }
-                    Err(error) => Err(error),
-                }
-            };
-            match receipt {
-                Ok(Some(receipt)) => envelope(StatusCode::OK, &Envelope::ok(command, receipt)),
-                Ok(None) => runtime_failure(
-                    command,
-                    PijError::Adapter {
-                        adapter: "lifecycle/tombstone-receipt".to_string(),
-                        message: format!("no matching durable tombstone event for {target}"),
-                    },
-                ),
-                Err(error) => runtime_failure(command, error),
+                    Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
+                    Err(response) => *response,
+                };
+            }
+            match memory_turn::hold(
+                &state,
+                command,
+                expected,
+                holdings,
+                memory_turn::Then::Close {
+                    actor: actor.id,
+                    reason: call.reason,
+                },
+            ) {
+                Ok(held) => envelope(StatusCode::OK, &Envelope::ok(command, held)),
+                Err(refusal) => *refusal,
             }
         }
+    }
+}
+
+/// Tombstone `target` and end its holdings, returning the receipt data or the
+/// refusal. `expected` is the row the caller checked ownership against; `None`
+/// reads it again (after a memory turn).
+pub(super) async fn close_seat(
+    state: &AppState,
+    command: &str,
+    actor: &SeatId,
+    target: SeatId,
+    reason: String,
+    expected: Option<SeatDescriptor>,
+) -> std::result::Result<Value, Box<Response>> {
+    let expected = match expected {
+        Some(expected) => expected,
+        None => match state.services.registry.get(&target).await {
+            Ok(Some(expected)) => expected,
+            Ok(None) => {
+                return Err(Box::new(runtime_failure(
+                    command,
+                    PijError::NoRegistryEntry {
+                        seat: target,
+                        store: "the daemon's configured registry".to_string(),
+                    },
+                )));
+            }
+            Err(error) => return Err(Box::new(runtime_failure(command, error))),
+        },
+    };
+    let receipt = if expected.tombstoned_at.is_some() {
+        tombstone_receipt(
+            state.services.spine.as_ref(),
+            &target,
+            None,
+            Some(&expected),
+        )
+        .await
+    } else {
+        match state
+            .services
+            .registry
+            .tombstone_if_unchanged(expected, reason)
+            .await
+        {
+            Ok(seq) => {
+                tombstone_receipt(state.services.spine.as_ref(), &target, Some(seq), None).await
+            }
+            Err(error) => Err(error),
+        }
+    };
+    match receipt {
+        Ok(Some(receipt)) => {
+            let ends = end_holdings(state, &target, actor).await;
+            let mut data = serde_json::to_value(&receipt).unwrap_or(Value::Null);
+            if !ends.committed.is_empty() || !ends.pending.is_empty() {
+                data["directory"] = serde_json::to_value(&ends).unwrap_or(Value::Null);
+            }
+            Ok(data)
+        }
+        Ok(None) => Err(Box::new(runtime_failure(
+            command,
+            PijError::Adapter {
+                adapter: "lifecycle/tombstone-receipt".to_string(),
+                message: format!("no matching durable tombstone event for {target}"),
+            },
+        ))),
+        Err(error) => Err(Box::new(runtime_failure(command, error))),
     }
 }

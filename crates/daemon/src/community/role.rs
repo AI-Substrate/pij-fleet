@@ -1,5 +1,6 @@
 //! Build and stamp `pij/role` documents. Pure: no IO, no launches.
 
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use std::path::{Component, Path};
@@ -125,6 +126,158 @@ pub fn from_fields(id: &str, fields: &RoleFields) -> Result<Value, Refusal> {
     Ok(json!({"dd": {"schema": "pij/role"}, "sections": sections, "references": []}))
 }
 
+/// `document` with every field `fields` gives replacing its own (plan 194:
+/// `add --from template:<name>` then flags). A repeated flag replaces the
+/// whole list; a packet or brief replaces the standing packet.
+///
+/// # Errors
+/// `E-RS-ARG` when both `--packet` and `--brief` are given, or the document
+/// has no sections array.
+pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, Refusal> {
+    let overrides = from_fields("override", fields)?;
+    let Some(sections) = document["sections"].as_array_mut() else {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "the role document has no sections array",
+        ));
+    };
+    if let Some(given) = section(&overrides, "meta").and_then(Value::as_object) {
+        let meta = slot(sections, "meta", json!({}));
+        for (key, value) in given.iter().filter(|(key, _)| *key != "id") {
+            meta[key] = value.clone();
+        }
+    }
+    if !fields.rules.is_empty() {
+        slot(sections, "scope", json!({}))["rules"] = json!(fields.rules);
+    }
+    if !fields.scope_paths.is_empty() {
+        slot(sections, "scope", json!({}))["paths"] = json!(fields.scope_paths);
+    }
+    for (name, values) in [
+        ("out_of_scope", &fields.out_of_scope),
+        ("forbidden_paths", &fields.forbidden),
+        ("inputs", &fields.inputs),
+        ("output_kinds", &fields.output_kinds),
+    ] {
+        if !values.is_empty() {
+            *slot(sections, name, json!([])) = json!(values);
+        }
+    }
+    for (key, value) in [
+        ("harness", &fields.harness),
+        ("model", &fields.model),
+        ("effort", &fields.effort),
+    ] {
+        if let Some(value) = value {
+            slot(sections, "default_seat", json!({}))[key] = json!(value);
+        }
+    }
+    if let Some(packet) = section(&overrides, "standing_packet") {
+        *slot(sections, "standing_packet", json!({})) = packet.clone();
+    }
+    Ok(document)
+}
+
+/// `meta.state` for a role that is no longer in use (plan 206, req-28).
+pub const RETIRED: &str = "retired";
+
+/// Where a role stands (plan 206): active unless retired, and the role it was
+/// merged into, if any. What the view shows and the send path refuses on.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Standing {
+    /// `active` or `retired`; a role that records no state is active.
+    pub state: String,
+    /// The role a merged role now lives under.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merged_into: Option<String>,
+}
+
+impl Standing {
+    /// Whether the role is retired (a merged role is retired too).
+    pub fn retired(&self) -> bool {
+        self.state == RETIRED
+    }
+}
+
+/// The standing `document`'s meta records.
+pub fn standing(document: &Value) -> Standing {
+    let meta = section(document, "meta");
+    let text = |field: &str| {
+        meta.and_then(|meta| meta[field].as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    Standing {
+        state: text("state").unwrap_or_else(|| "active".to_string()),
+        merged_into: text("merged_into"),
+    }
+}
+
+/// `document` marked retired, and merged into `into` when given.
+///
+/// # Errors
+/// `E-RS-ARG` when the document has no sections array.
+pub fn retire(mut document: Value, into: Option<&str>) -> Result<Value, Refusal> {
+    let Some(sections) = document["sections"].as_array_mut() else {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "the role document has no sections array",
+        ));
+    };
+    let meta = slot(sections, "meta", json!({}));
+    meta["state"] = json!(RETIRED);
+    if let Some(into) = into {
+        meta["merged_into"] = json!(into);
+    }
+    Ok(document)
+}
+
+/// `document` with `committed`'s `meta.state` and `meta.merged_into` where it
+/// leaves them out, so a whole-document edit never silently un-retires a role
+/// (docs-system verdict on #135, note 3).
+pub fn carry_standing(mut document: Value, committed: &Value) -> Value {
+    let Some(from) = section(committed, "meta").cloned() else {
+        return document;
+    };
+    if let Some(sections) = document["sections"].as_array_mut() {
+        let meta = slot(sections, "meta", json!({}));
+        for field in ["state", "merged_into"] {
+            if meta.get(field).is_none()
+                && let Some(value) = from.get(field)
+            {
+                meta[field] = value.clone();
+            }
+        }
+    }
+    document
+}
+
+/// `document` carrying `committed`'s changelog in place of its own, so a
+/// whole-document edit never rewrites history (plan 206, F20).
+pub fn keep_changelog(mut document: Value, committed: &Value) -> Value {
+    let history = section(committed, "changelog").cloned();
+    if let Some(sections) = document["sections"].as_array_mut() {
+        sections.retain(|section| section["name"] != "changelog");
+        if let Some(history) = history {
+            sections.push(json!({"name": "changelog", "value": history}));
+        }
+    }
+    document
+}
+
+/// The value of section `name`, added with `empty` when the document lacks it.
+fn slot<'a>(sections: &'a mut Vec<Value>, name: &str, empty: Value) -> &'a mut Value {
+    let at = match sections.iter().position(|section| section["name"] == name) {
+        Some(at) => at,
+        None => {
+            sections.push(json!({"name": name, "value": empty}));
+            sections.len() - 1
+        }
+    };
+    &mut sections[at]["value"]
+}
+
 /// The role id a document names in `meta.id`.
 pub fn id_of(document: &Value) -> Option<&str> {
     section(document, "meta")?.get("id")?.as_str()
@@ -158,6 +311,15 @@ pub fn stamp(
         }
     }
     check_packet(&document, id)?;
+    let standing = standing(&document);
+    if standing.merged_into.is_some() && !standing.retired() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!(
+                "role {id:?} records meta.merged_into without meta.state retired; a merge writes both (pij directory merge)"
+            ),
+        ));
+    }
     let row = json!({"date": date, "by": by, "why": why});
     let Some(sections) = document["sections"].as_array_mut() else {
         return Err(Refusal::new(
@@ -268,17 +430,6 @@ pub fn to_bytes(document: &Value) -> Vec<u8> {
     bytes
 }
 
-/// Today's date in UTC, `YYYY-MM-DD`, for a changelog row.
-pub fn today() -> String {
-    let now = time::OffsetDateTime::now_utc();
-    format!(
-        "{:04}-{:02}-{:02}",
-        now.year(),
-        u8::from(now.month()),
-        now.day()
-    )
-}
-
 fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
     document["sections"]
         .as_array()?
@@ -290,6 +441,47 @@ fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standing_reads_active_retired_and_merged_and_retire_sets_them() {
+        let active = json!({"sections": [{"name": "meta", "value": {"id": "qa"}}]});
+        assert_eq!(
+            standing(&active),
+            Standing {
+                state: "active".into(),
+                merged_into: None
+            }
+        );
+        assert!(!standing(&active).retired());
+        let retired = retire(active.clone(), None).unwrap();
+        assert!(standing(&retired).retired());
+        assert_eq!(standing(&retired).merged_into, None);
+        let merged = retire(active, Some("security")).unwrap();
+        assert_eq!(
+            standing(&merged),
+            Standing {
+                state: "retired".into(),
+                merged_into: Some("security".into())
+            }
+        );
+        assert!(standing(&json!({})).state == "active", "no meta is active");
+        let committed = retire(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa"}}]}),
+            Some("sec"),
+        )
+        .unwrap();
+        let carried = carry_standing(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa", "title": "Q"}}]}),
+            &committed,
+        );
+        assert_eq!(standing(&carried), standing(&committed));
+        let explicit = carry_standing(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa", "state": "active"}}]}),
+            &committed,
+        );
+        assert_eq!(standing(&explicit).state, "active", "a given state is kept");
+        assert!(retire(json!({}), None).is_err());
+    }
 
     fn fields() -> RoleFields {
         RoleFields {
@@ -406,6 +598,49 @@ mod tests {
         ] {
             assert_eq!(with(bad.clone()).unwrap_err().code, "E-RS-ARG", "{bad}");
         }
+    }
+
+    #[test]
+    fn flags_override_a_template_document_field_by_field() {
+        let base = json!({"dd": {"schema": "pij/role"}, "sections": [
+            {"name": "meta", "value": {"id": "pm", "title": "PM", "holders": "one"}},
+            {"name": "scope", "value": {"rules": ["old"], "paths": ["a/**"]}},
+            {"name": "default_seat", "value": {"harness": "omp"}},
+            {"name": "standing_packet", "value": {"source": "inline", "text": "t"}},
+        ], "references": []});
+        let fields = RoleFields {
+            title: Some("PM for roadmap 001".into()),
+            rules: vec!["new".into()],
+            model: Some("m".into()),
+            output_kinds: vec!["note".into()],
+            brief: Some("briefs/pm.md".into()),
+            ..RoleFields::default()
+        };
+        let document = apply_fields(base.clone(), &fields).unwrap();
+        let meta = section(&document, "meta").unwrap();
+        assert_eq!(meta["id"], "pm", "the id is not a field");
+        assert_eq!(meta["title"], "PM for roadmap 001");
+        assert_eq!(meta["holders"], "one");
+        assert_eq!(
+            section(&document, "scope").unwrap(),
+            &json!({"rules": ["new"], "paths": ["a/**"]})
+        );
+        assert_eq!(
+            section(&document, "default_seat").unwrap(),
+            &json!({"harness": "omp", "model": "m"})
+        );
+        assert_eq!(
+            section(&document, "output_kinds").unwrap(),
+            &json!(["note"])
+        );
+        assert_eq!(
+            section(&document, "standing_packet").unwrap(),
+            &json!({"source": "brief", "brief": "briefs/pm.md"})
+        );
+        assert_eq!(
+            apply_fields(base.clone(), &RoleFields::default()).unwrap(),
+            base
+        );
     }
 
     #[test]

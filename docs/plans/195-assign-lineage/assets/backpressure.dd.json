@@ -1,0 +1,142 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 195 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Partial"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1: pij/holders and pij/external validate the right documents",
+          "phase": "ph-95a1",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: fixtures (a holders doc with an open and a closed row, one missing `from`, an external entry) with `ddocs validate --depth 0` pass and fail as expected, recorded in assets/evidence/phase-1.md.",
+          "state": "checked",
+          "probe": ".dd/schemas/pij/",
+          "receipt": "docs/plans/195-assign-lineage/assets/evidence/phase-1.md"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2, AC3, AC5, AC9: assign, seat roles, hook and external entries",
+          "phase": "ph-95b2",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: cargo tests in pij-daemon against a scratch governance repo with a fake validator (P3) plus one real-ddocs test that names its skip; seat_roles agreement; hook call counts; `cargo test -p pij-daemon community`.",
+          "state": "checked",
+          "probe": "crates/daemon/src/community/",
+          "receipt": "directory_http (11 passed incl. real ddocs) and community unit tests (38)"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4: release and the close hook",
+          "phase": "ph-95b2",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: close of an assigned seat ends its rows; close with the governance worktree missing still tombstones and reports a pending end; the next directory write flushes it.",
+          "state": "checked",
+          "probe": "crates/daemon/src/http/lifecycle.rs",
+          "receipt": "directory_http close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_write"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC6: window rename through the control client",
+          "phase": "ph-95b2",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: a private tmux server test renames the window through the adapter and the spawn counter moves by exactly one (tmux.rename-window); the daemon test sees the rename on assign; a paneless seat assigns with a receipt note.",
+          "state": "checked",
+          "probe": "crates/tmux/src/lib.rs",
+          "receipt": "pij-tmux rename_window_names_the_panes_window_with_one_recorded_launch (real tmux, +1); private run renamed fleet:reviewer-114"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC7, AC8: the view and the rebuild",
+          "phase": "ph-95b2",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: two projects in one store, each sees only its roles; drop the directory rows, rebuild from the branch head, compare `pij directory --json` byte for byte.",
+          "state": "checked",
+          "probe": "crates/daemon/src/community/pointer.rs",
+          "receipt": "directory_http the_view_is_per_project_and_a_rebuild_gives_byte_identical_json"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC10, AC12: help, docs and states",
+          "phase": "ph-95b2",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: crates/cli/tests/skill_verb_coverage.rs and the TS coverage test for the new verbs; `ddocs validate` on PRD 001, roadmap 001, blueprint 001; `just ddocs-check`; CI on the exact head; reviewer and security verdicts.",
+          "state": "unchecked",
+          "probe": "crates/cli/tests/skill_verb_coverage.rs"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC11: cost (AGENTS.md, resource cost is a correctness property)",
+          "phase": "ph-95b2",
+          "mode": "EXTEND",
+          "tier": "computational",
+          "proof": "EXTEND: spawn_sites.rs covers any new launch site. Private daemon: spawn counter delta around one assign, one release, one close of an assigned seat and one `pij directory` (expected about 10, 9, 9, 0), with data.pid on each reading. Live fleet before and after deploy: `pij-rs --json ping | jq .data.spawns` twice 60 s apart and `just spawn-rate --seconds 20`; expected no change at rest.",
+          "state": "checked",
+          "probe": "pij-rs --json ping",
+          "note": "Expected cost. Loop, poll, timer, sweep: none. Assign: one writer commit plus one tmux rename, about 10 launches. Release, external add or close-with-assignment: one writer commit, about 9. View: 0 (in-process reads). Scales with verb calls, never with seats or ticks.",
+          "receipt": "evidence/phase-2.md (private daemon pid 6787): rest 0/60 s; assign 10 (git 7, ddocs 2, tmux.rename-window 1); release 9; view 0; close with a holding 9 for the directory (plus close's existing 2 tap-teardown launches); spawn_sites.rs passes"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC13, AC14: adopt a hand-written role folder; foreign-edit check only on written paths",
+          "phase": "ph-95b2",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: writer and HTTP tests on a scratch governance repo whose role folder holds memory/INDEX.md (with an unstaged edit), outputs/ and role.md but no role.dd.json: add writes only role.dd.json and its .dd.md and leaves the rest byte-identical; with role.dd.json present it refuses E-RS-DIRECTORY-EXISTS naming that file and the next step; a batch names every existing role.",
+          "state": "unchecked",
+          "note": "Cost: unchanged, one writer commit.",
+          "probe": "crates/daemon/src/community/"
+        },
+        {
+          "id": "bp-0009",
+          "criterion": "AC15: a linked worktree finds its project",
+          "phase": "ph-95b2",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "BUILD: an HTTP test whose caller cwd is a linked worktree of a project's repo resolves the project without --project; with no project for the repo the refusal names the register step.",
+          "state": "unchecked",
+          "note": "Cost: none. The common git dir is read from files in-process, no launch.",
+          "probe": "crates/daemon/src/community/"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0003",
+          "name": "launch rate",
+          "command": "just spawn-rate --seconds 20",
+          "dimension": "cost"
+        }
+      ]
+    }
+  ]
+}

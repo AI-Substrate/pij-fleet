@@ -76,6 +76,7 @@ doctor:
     just omp-doctor
     @printf 'daemon:     '; pij-rs ping 2>/dev/null || echo '(not running — run: just bounce-rs)'
     @printf 'ddocs:      '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.ddocs === undefined ? "(unknown: this daemon predates the ddocs field)" : (d.ddocs ?? "(missing: install ddocs or set PIJ_DDOCS, then run: just bounce-rs)")); })'
+    @printf 'gh:         '; pij-rs --json ping 2>/dev/null | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { let d; try { d = JSON.parse(s).data; } catch { return console.log("(unknown: daemon not running)"); } console.log(d.gh === undefined ? "(unknown: this daemon predates the gh field)" : (d.gh ?? "(missing: install gh or set PIJ_GH, then run: just bounce-rs)")); })'
 
 # Link this worktree's packages from the canonical checkout without npm resolution.
 # --check is read-only; missing JS tooling never prevents Rust-only work.
@@ -202,6 +203,16 @@ _copilot-native-install-check:
 spawn-rate *ARGS:
     @python3 harness/scripts/spawn-rate.py {{ARGS}}
 
+# Plan 220 (F92). Run by hand before each verdict request and before READY.
+# FINAL (exit 0) only when ls-remote and gh agree on the head, base is main,
+# CLEAN, every check's latest run passed, not draft, migrations above main's
+# highest, and the Delivers line parses; else each failing condition and its
+# next step (exit 1). --worktree makes the detached review worktree at that
+# head. Read-only towards the PR; gh and git only.
+# Is a PR head final for verdicts? `just pr-freeze <pr> [--worktree]`
+pr-freeze *ARGS:
+    node_modules/.bin/tsx harness/scripts/pr-freeze.ts "$@"
+
 # Reject user-specific absolute home paths in executable/configuration surfaces.
 local-path-check:
     node_modules/.bin/tsx harness/scripts/local-path-check.ts
@@ -211,6 +222,13 @@ local-path-check:
 # without it this fails UNAVAILABLE (pass --unavailable=warn to only warn).
 ddocs-check *ARGS:
     node_modules/.bin/tsx harness/scripts/ddocs-check.ts {{ARGS}}
+
+# Workstream coverage (plan 210, req-31): every PRD requirement is delivered by
+# a workstream step (or dropped), every blueprint component is built by one,
+# and an umbrella step is complete only when its children are. Known gaps live,
+# each with an owner, in harness/scripts/coverage-exemptions.json.
+coverage-check:
+    node_modules/.bin/tsx harness/scripts/coverage-check.ts
 
 # Report-only attribution scan, scoped after merge-base with main.
 pij-commit-trailers *ARGS:
@@ -269,6 +287,8 @@ copilot-models *ARGS:
 self-check:
     just local-path-check
     just ddocs-check
+    just coverage-check
+    just pij-skill-check
     just lockfile-allowlist
     just typecheck
     just lint
@@ -284,6 +304,13 @@ rust-check:
     cargo fmt --all --check
     cargo clippy --locked --workspace --all-targets -- -D warnings
     cargo test --locked --workspace
+
+# Cargo into a target several worktrees share, one worktree at a time (plan 198):
+# lock, disk floor, fresh sources, CARGO_INCREMENTAL=0, nice -n 19 and (macOS)
+# taskpolicy -b on every cargo command, always released.
+# `PIJ_SHARED_TARGET=<abs dir> just shared-build [--timeout <min>] -- test -p pij-store --then clippy -p pij-store`
+shared-build *ARGS:
+    @bash harness/scripts/shared-build.sh "$@"
 
 # --- ergonomics ---
 

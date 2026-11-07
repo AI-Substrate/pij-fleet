@@ -1,0 +1,220 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "The /pij community route and optional templates",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "The /pij community route, its registry row and PEC in bootstrap.md",
+          "phase": "ph-00cc",
+          "state": "checked",
+          "success": "skills/pij/references/routes/community.md teaches the prime, the PM and the PA in the PEC wording (C26, C18), linking the doc procedures; SKILL.md registers it; pij-skill-check knows it and states its line budget; bootstrap.md names PEC.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Optional role templates, written fresh and embedded",
+          "phase": "ph-00cc",
+          "state": "checked",
+          "success": "v1 templates for the optional roles under templates/roles/<name>/v1/, each validating, public-safe and marked as an example in the README; compiled into the daemon through SHIPPED.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "pij directory templates --show <name>[@vN] (F23)",
+          "phase": "ph-00cc",
+          "state": "checked",
+          "success": "--show prints the embedded body with its repo path; unknown names and versions refuse by name and list what exists; nothing launches.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Fresh-prime canary (after s09 merges)",
+          "phase": "ph-00cc",
+          "state": "checked",
+          "success": "An OMP seat with no prior context, in a plain scratch clone, follows only the route and stands up a directory with core roles and security; hesitations fixed or recorded in assets/evidence/.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Docs, states and cost",
+          "phase": "ph-00cc",
+          "state": "checked",
+          "success": "pij-rs-api.md documents --show; the skill verb table carries it; s10 complete, req-13, req-15, req-27 shipped, c-skill and c-templates shipped; no launch, loop or timer added; ddocs-check clean; PR has a Delivers line.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005",
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "C28 in the community route: recommend roles from need",
+          "phase": "ph-00cc",
+          "state": "unchecked",
+          "success": "The route's prime section teaches C28: signals for and against a new role, a role is not a seat, boundary reviews (split, merge, retire), every recommendation names its signal, templates stay examples; within the route's 100-line budget.",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "bash harness/scripts/pij-skill-check.sh passes with the community route registered, sibling-blind and within its stated line budget.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "ddocs validate is 0/0 on each new template; a scan for machine paths, private repos and seat ids finds nothing; the embedding test passes in CI.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "An HTTP test shows --show returns the exact embedded bytes and path, and an unknown name or version refuses listing what exists (CI).",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "A canary transcript summary is in assets/evidence/ and the scratch directory validates.",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0005",
+            "assertion": "just ddocs-check passes; the skill verb coverage tests pass in CI; no new launch site (spawn_sites green in CI).",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "The route carries each C28 point and stays within 100 lines (wc -l and pij-skill-check's budget); lungfish's docs-system verdict on the wording is recorded before the PR is marked ready.",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007"
+          }
+        ]
+      }
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}

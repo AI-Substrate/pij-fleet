@@ -142,6 +142,18 @@ fn audits(events: &[pij_core::model::Event], kind: &str) -> Vec<serde_json::Valu
         .collect()
 }
 
+/// `watchdog.round` audits other than plan 217's presence checks.
+fn edge_rounds(events: &[pij_core::model::Event]) -> Vec<serde_json::Value> {
+    audits(events, "watchdog.round")
+        .into_iter()
+        .filter(|audit| {
+            !pij_core::watchdog::PresenceKind::ALL
+                .iter()
+                .any(|kind| audit["outcome"] == kind.as_str())
+        })
+        .collect()
+}
+
 async fn events(services: &crate::Services) -> Vec<pij_core::model::Event> {
     services
         .spine
@@ -253,7 +265,7 @@ async fn a_pa_is_nudged_once_each_time_its_whole_repository_goes_idle() {
             "{not_pa} is not a PA and gets no watchdog"
         );
     }
-    let rounds = audits(&events(&services).await, "watchdog.round");
+    let rounds = edge_rounds(&events(&services).await);
     assert_eq!(
         rounds
             .iter()
@@ -865,7 +877,7 @@ async fn with_no_prime_in_scope_nothing_is_armed_and_the_audit_says_why() {
     let fleet = PrimeFleet::new(PrimeBy::Nobody).await;
     let watchdog = PaWatchdog::default();
     fleet.overnight(&watchdog, 1).await;
-    let rounds = audits(&events(&fleet.services).await, "watchdog.round");
+    let rounds = edge_rounds(&events(&fleet.services).await);
     assert_eq!(rounds.len(), 1, "{rounds:?}");
     assert_eq!(rounds[0]["outcome"], "nudged");
     assert_eq!(rounds[0]["prime_active"], "no-prime", "{}", rounds[0]);
@@ -2079,4 +2091,704 @@ async fn status_lists_only_live_pas_and_opt_ins() {
         .map(|optin| optin["seat"].as_str().unwrap())
         .collect();
     assert_eq!(optins, ["pij-worker"], "{listing}");
+}
+
+/// Plan 209 (#129's digest scope): the PA's own projects, else its prime's,
+/// else every project only under the designated prime, else none.
+#[test]
+fn the_digest_reads_the_pas_projects_then_its_primes_then_all_only_for_the_designated_prime() {
+    let names = |list: &[&str]| {
+        list.iter()
+            .map(|name| (*name).to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        super::digest_scope(names(&["pij"]), names(&["osk"]), true),
+        Some(names(&["pij"]))
+    );
+    assert_eq!(
+        super::digest_scope(Vec::new(), names(&["osk"]), true),
+        Some(names(&["osk"]))
+    );
+    assert_eq!(super::digest_scope(Vec::new(), Vec::new(), true), None);
+    assert_eq!(
+        super::digest_scope(Vec::new(), Vec::new(), false),
+        Some(Vec::new())
+    );
+}
+
+/// #144 F002: a PA whose holdings cannot be read shows no queue, never every
+/// project. It holds `pa` in alpha only, and its parent is the designated
+/// prime with no holdings: before the fix the failed read counted as "holds
+/// nothing", and the prime fallback widened the digest to beta as well.
+#[tokio::test]
+async fn a_failed_scope_read_shows_no_queue_rather_than_every_project() {
+    let (services, store) = services().await;
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query(
+        "INSERT INTO community_assignments (project, role, instance, seat, from_at, assigned_by, why) \
+         VALUES ('alpha', 'pa', '', 'pij-pa', '2026-11-06T00:00:00Z', 'pij-prime', 'fixture')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    services
+        .watchdogs()
+        .designate_prime(&pij_core::orchestration::PrimeDesignation {
+            seat: "pij-prime".into(),
+            designated_by: "pij-human".into(),
+            designated_at: 1,
+            state: pij_core::orchestration::PrimeState::Current,
+        })
+        .await
+        .unwrap();
+    for (id, project) in [("req-alpha", "alpha"), ("req-beta", "beta")] {
+        services
+            .governance
+            .store()
+            .record_role_request(&pij_store::RoleRequest {
+                id: id.into(),
+                project: project.into(),
+                role: "reviewer".into(),
+                instance: String::new(),
+                requester: "pij-pm".into(),
+                body: "review".into(),
+                in_reply_to: None,
+                fyi: false,
+                reply: pij_store::ReplyMode::Wake,
+                limit_ms: None,
+                state: pij_store::RequestState::Queued,
+                holder: None,
+                created_at: 1,
+                delivered_at: None,
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .unwrap();
+    }
+    let pa = seat("pij-pa", "/tmp", Some("pij-prime"));
+    let ids = |queued: Vec<pij_core::pa_digest::QueuedRequest>| {
+        queued.into_iter().map(|row| row.id).collect::<Vec<_>>()
+    };
+    // The instrument: with its holdings readable, the PA sees alpha only.
+    assert_eq!(
+        ids(super::queued_requests(&services, &pa, 10).await),
+        ["req-alpha"]
+    );
+
+    // The PA's holdings read now fails; the prime and request reads still work.
+    sqlx::query("ALTER TABLE community_assignments RENAME TO community_assignments_gone")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(services.watchdogs().prime().await.unwrap().is_some());
+    assert_eq!(
+        services
+            .governance
+            .store()
+            .unsettled_role_requests_in(None)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        ids(super::queued_requests(&services, &pa, 10).await),
+        Vec::<String>::new(),
+        "a failed scope read must not widen the digest"
+    );
+}
+
+/// #144 F002 (ibex S001), a guard: when the prime lookup fails, the digest
+/// shows no queue. The PA and its parent hold nothing, and the parent is the
+/// designated prime, so a working lookup widens the scope to every project.
+/// The parent's holdings read on its own cannot be failed here: it is the PA's
+/// query on the same table, keyed only by seat.
+#[tokio::test]
+async fn a_failed_prime_lookup_shows_no_queue_rather_than_every_project() {
+    let (services, store) = services().await;
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    services
+        .watchdogs()
+        .designate_prime(&pij_core::orchestration::PrimeDesignation {
+            seat: "pij-prime".into(),
+            designated_by: "pij-human".into(),
+            designated_at: 1,
+            state: pij_core::orchestration::PrimeState::Current,
+        })
+        .await
+        .unwrap();
+    for (id, project) in [("req-alpha", "alpha"), ("req-beta", "beta")] {
+        services
+            .governance
+            .store()
+            .record_role_request(&pij_store::RoleRequest {
+                id: id.into(),
+                project: project.into(),
+                role: "reviewer".into(),
+                instance: String::new(),
+                requester: "pij-pm".into(),
+                body: "review".into(),
+                in_reply_to: None,
+                fyi: false,
+                reply: pij_store::ReplyMode::Wake,
+                limit_ms: None,
+                state: pij_store::RequestState::Queued,
+                holder: None,
+                created_at: 1,
+                delivered_at: None,
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .unwrap();
+    }
+    let pa = seat("pij-pa", "/tmp", Some("pij-prime"));
+    let ids = |queued: Vec<pij_core::pa_digest::QueuedRequest>| {
+        queued.into_iter().map(|row| row.id).collect::<Vec<_>>()
+    };
+    // The instrument: under the designated prime, with no holdings, every project.
+    assert_eq!(
+        ids(super::queued_requests(&services, &pa, 10).await),
+        ["req-alpha", "req-beta"]
+    );
+
+    sqlx::query("ALTER TABLE prime_designation RENAME TO prime_designation_gone")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(services.watchdogs().prime().await.is_err());
+    assert_eq!(
+        ids(super::queued_requests(&services, &pa, 10).await),
+        Vec::<String>::new(),
+        "a failed prime lookup must not widen the digest"
+    );
+}
+
+// ---- Plan 217: PA presence and large seats ----
+
+const MINUTE: u64 = 60_000;
+
+/// Session sizes a test can change between rounds.
+#[derive(Default)]
+struct Sizes(
+    std::sync::Mutex<std::collections::HashMap<String, u64>>,
+    std::sync::Mutex<Vec<String>>,
+);
+
+impl Sizes {
+    fn set(&self, seat: &str, tokens: u64) {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(format!("session-{seat}"), tokens);
+    }
+
+    /// How many times `seat`'s session was read, then forget them.
+    fn reads(&self, seat: &str) -> usize {
+        let mut reads = self.1.lock().unwrap();
+        let count = reads
+            .iter()
+            .filter(|session| **session == format!("session-{seat}"))
+            .count();
+        reads.clear();
+        count
+    }
+}
+
+#[async_trait::async_trait]
+impl pij_core::ports::SessionStatusPort for Sizes {
+    async fn status(
+        &self,
+        target: &pij_core::session_status::SessionTarget,
+    ) -> pij_core::error::Result<SessionStatusReply> {
+        self.1.lock().unwrap().push(target.session.clone());
+        Ok(match self.0.lock().unwrap().get(&target.session) {
+            Some(tokens) => sized(*tokens, 0),
+            None => SessionStatusReply::Status(SeatStatus::unknown()),
+        })
+    }
+}
+
+async fn designate(services: &crate::Services, prime: &str) {
+    services
+        .watchdogs()
+        .designate_prime(&pij_core::orchestration::PrimeDesignation {
+            seat: prime.into(),
+            designated_by: "pij-human".into(),
+            designated_at: 1,
+            state: pij_core::orchestration::PrimeState::Current,
+        })
+        .await
+        .unwrap();
+}
+
+async fn make_pa(services: &crate::Services, pa: &SeatDescriptor) {
+    services.registry.put(pa.clone()).await.unwrap();
+    services
+        .roles
+        .assert_role(
+            pa.parent.as_ref().unwrap(),
+            &pa.id,
+            Some(pij_core::watchdog::PA_ROLE.into()),
+        )
+        .await
+        .unwrap();
+}
+
+/// A designated prime with two workers, one working, in a repository.
+async fn active_fleet(services: &crate::Services, repos: &Repos) -> [SeatDescriptor; 3] {
+    let prime = seat("pij-prime", &repos.path("main"), None);
+    let mut busy = seat("pij-busy", &repos.path("feature"), Some("pij-prime"));
+    busy.state = SystemState::Working;
+    let idle = seat("pij-idle", &repos.path("main"), Some("pij-prime"));
+    for descriptor in [&prime, &busy, &idle] {
+        services.registry.put(descriptor.clone()).await.unwrap();
+    }
+    designate(services, "pij-prime").await;
+    [prime, busy, idle]
+}
+
+fn presence(outcomes: &[RoundOutcome]) -> Vec<(String, String, Vec<String>)> {
+    outcomes
+        .iter()
+        .filter_map(|outcome| match outcome {
+            RoundOutcome::Presence {
+                kind, to, subjects, ..
+            } => Some((kind.as_str().to_string(), to.to_string(), subjects.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+async fn claims(services: &crate::Services) -> Vec<String> {
+    services
+        .watchdogs()
+        .presence_claims()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|claim| format!("{}:{}", claim.kind.as_str(), claim.subject))
+        .collect()
+}
+
+/// Plan 217 AC2, AC7: an active fleet with no live PA tells its prime once,
+/// at 20 minutes, naming the last PA and its revive command; a restart does
+/// not repeat it; a live PA re-arms it.
+#[tokio::test]
+async fn an_active_fleet_with_no_pa_tells_its_prime_once_across_a_restart() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let old = seat("pij-old-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &old).await;
+    services
+        .registry
+        .tombstone(&old.id, "observed-dead")
+        .await
+        .unwrap();
+    let start = now_ms();
+    let at = |minutes: u64| start + minutes * MINUTE;
+
+    let watchdog = PaWatchdog::default();
+    let mut sent = Vec::new();
+    for minute in 0..=30 {
+        let outcomes = watchdog
+            .round(&services, INTERVAL, at(minute))
+            .await
+            .unwrap();
+        for row in presence(&outcomes) {
+            sent.push((minute, row));
+        }
+    }
+    let scope = claims(&services).await;
+    assert_eq!(
+        sent,
+        vec![(
+            20,
+            (
+                "pa-missing".into(),
+                "pij-prime".into(),
+                vec![scope[0].trim_start_matches("pa-missing:").to_string()]
+            )
+        )]
+    );
+    let told = drain(&services, "pij-prime").await;
+    assert_eq!(told.len(), 1);
+    assert!(
+        told[0].body.contains("no live PA") && told[0].body.contains("`pij-rs revive pij-old-pa`"),
+        "{}",
+        told[0].body
+    );
+
+    // A restarted daemon starts its trackers afresh; the stored claim holds.
+    let restarted = PaWatchdog::default();
+    for minute in 31..=60 {
+        let outcomes = restarted
+            .round(&services, INTERVAL, at(minute))
+            .await
+            .unwrap();
+        assert!(
+            presence(&outcomes).is_empty(),
+            "minute {minute}: {outcomes:?}"
+        );
+    }
+    assert!(drain(&services, "pij-prime").await.is_empty());
+
+    // A live PA re-arms the check and sends nothing.
+    make_pa(
+        &services,
+        &seat("pij-pa", &repos.path("main"), Some("pij-prime")),
+    )
+    .await;
+    let outcomes = restarted.round(&services, INTERVAL, at(61)).await.unwrap();
+    assert!(presence(&outcomes).is_empty(), "{outcomes:?}");
+    assert!(claims(&services).await.is_empty());
+    let verdicts: Vec<String> = audits(&events(&services).await, "watchdog.round")
+        .into_iter()
+        .filter(|audit| audit["outcome"] == "pa-missing")
+        .map(|audit| audit["verdict"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(verdicts, ["waiting", "sent", "capped", "capped", "armed"]);
+}
+
+/// Plan 217 AC1: one worker never fires the PA alerts, however long it works.
+#[tokio::test]
+async fn a_lone_worker_never_raises_the_pa_alerts() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let [_, _, idle] = active_fleet(&services, &repos).await;
+    services
+        .registry
+        .tombstone(&idle.id, "owner-close")
+        .await
+        .unwrap();
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    for minute in 0..=60 {
+        let outcomes = watchdog
+            .round(&services, INTERVAL, start + minute * MINUTE)
+            .await
+            .unwrap();
+        assert!(presence(&outcomes).is_empty(), "{outcomes:?}");
+    }
+}
+
+/// Plan 217 AC3, AC4, AC7: a turn-less PA in an active fleet is woken once at
+/// 30 minutes with the digest; 10 minutes later its prime hears, once, with
+/// the wake's receipt; a restart repeats neither; a PA turn re-arms both, and
+/// a turn inside the 10 minutes tells the prime nothing.
+#[tokio::test]
+async fn a_dormant_pa_is_woken_and_then_reported_once_each() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &pa).await;
+    let start = now_ms();
+    let at = |minutes: u64| start + minutes * MINUTE;
+    let watchdog = PaWatchdog::default();
+    let mut sent = Vec::new();
+    for minute in 0..=45 {
+        let outcomes = watchdog
+            .round(&services, INTERVAL, at(minute))
+            .await
+            .unwrap();
+        for (kind, to, _) in presence(&outcomes) {
+            sent.push((minute, kind, to));
+        }
+    }
+    assert_eq!(
+        sent,
+        vec![
+            (30, "pa-dormant".to_string(), "pij-pa".to_string()),
+            (40, "pa-unresponsive".to_string(), "pij-prime".to_string()),
+        ]
+    );
+    let woken = drain(&services, "pij-pa").await;
+    assert_eq!(woken.len(), 1);
+    assert!(
+        woken[0].body.starts_with(
+            "[pij watchdog] pij-pa: your fleet is working but you have taken no turn for 30m"
+        ) && woken[0].body.contains("pij-busy"),
+        "{}",
+        woken[0].body
+    );
+    let told = drain(&services, "pij-prime").await;
+    assert_eq!(told.len(), 1);
+    assert!(
+        told[0]
+            .body
+            .contains(&format!("msg {}, delivery queued", woken[0].msg_id)),
+        "{}",
+        told[0].body
+    );
+
+    let restarted = PaWatchdog::default();
+    for minute in 46..=60 {
+        let outcomes = restarted
+            .round(&services, INTERVAL, at(minute))
+            .await
+            .unwrap();
+        assert!(
+            presence(&outcomes).is_empty(),
+            "minute {minute}: {outcomes:?}"
+        );
+    }
+
+    // A turn re-arms both; the next stretch counts from it.
+    set_state(&services, &pa, SystemState::Working).await;
+    restarted.round(&services, INTERVAL, at(61)).await.unwrap();
+    assert!(claims(&services).await.is_empty());
+    set_state(&services, &pa, SystemState::Idle).await;
+    let mut again = Vec::new();
+    for minute in 62..=91 {
+        let outcomes = restarted
+            .round(&services, INTERVAL, at(minute))
+            .await
+            .unwrap();
+        again.extend(presence(&outcomes).into_iter().map(|row| (minute, row.0)));
+    }
+    assert_eq!(again, vec![(91, "pa-dormant".to_string())]);
+    // A turn inside the 10 minutes: no alert to the prime.
+    set_state(&services, &pa, SystemState::Working).await;
+    restarted.round(&services, INTERVAL, at(95)).await.unwrap();
+    set_state(&services, &pa, SystemState::Idle).await;
+    for minute in 96..=110 {
+        let outcomes = restarted
+            .round(&services, INTERVAL, at(minute))
+            .await
+            .unwrap();
+        assert!(
+            presence(&outcomes).is_empty(),
+            "minute {minute}: {outcomes:?}"
+        );
+    }
+    assert_eq!(drain(&services, "pij-pa").await.len(), 1);
+    assert!(drain(&services, "pij-prime").await.is_empty());
+    let dormant: Vec<String> = audits(&events(&services).await, "watchdog.round")
+        .into_iter()
+        .filter(|audit| audit["outcome"] == "pa-dormant")
+        .map(|audit| audit["verdict"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        dormant,
+        [
+            "waiting", "sent", "capped", "capped", "armed", "waiting", "sent", "armed", "waiting"
+        ]
+    );
+}
+
+/// Plan 217 AC3: a PA observed working is never dormant.
+#[tokio::test]
+async fn a_working_pa_is_never_dormant() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let mut pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    pa.state = SystemState::Working;
+    make_pa(&services, &pa).await;
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    for minute in 0..=60 {
+        let outcomes = watchdog
+            .round(&services, INTERVAL, start + minute * MINUTE)
+            .await
+            .unwrap();
+        assert!(presence(&outcomes).is_empty(), "{outcomes:?}");
+    }
+}
+
+/// Plan 217 AC5: crossings are one FYI to the prime, never a wake; a seat in
+/// another repository counts only when spawned by the fleet; a claimed seat
+/// re-arms under the line and crosses again.
+#[tokio::test]
+async fn large_seats_reach_the_prime_as_one_fyi_per_crossing() {
+    let repos = Repos::new();
+    let (mut services, _store) = services().await;
+    let sizes = Arc::new(Sizes::default());
+    services.session_status = sizes.clone();
+    let _fleet = active_fleet(&services, &repos).await;
+    let elsewhere = repos.path("elsewhere");
+    let child = seat("pij-child", &elsewhere, Some("pij-busy"));
+    let outsider = seat("pij-outsider", &elsewhere, None);
+    for descriptor in [&child, &outsider] {
+        services.registry.put(descriptor.clone()).await.unwrap();
+    }
+    for (seat, tokens) in [
+        ("pij-prime", 900_000),
+        ("pij-busy", 650_000),
+        ("pij-idle", 700_000),
+        ("pij-child", 610_000),
+        ("pij-outsider", 900_000),
+    ] {
+        sizes.set(seat, tokens);
+    }
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    let fyis = |services: &crate::Services| {
+        let delivery = Arc::clone(&services.delivery);
+        async move {
+            delivery
+                .pending_fyi_count(&"pij-prime".into())
+                .await
+                .unwrap()
+        }
+    };
+
+    let first = watchdog.round(&services, INTERVAL, start).await.unwrap();
+    assert_eq!(
+        presence(&first),
+        vec![(
+            "large-seat".into(),
+            "pij-prime".into(),
+            vec!["pij-busy".into(), "pij-child".into(), "pij-idle".into()]
+        )]
+    );
+    assert_eq!(fyis(&services).await, 1);
+    assert!(
+        drain(&services, "pij-prime").await.is_empty(),
+        "an FYI never wakes"
+    );
+    assert!(
+        presence(
+            &watchdog
+                .round(&services, INTERVAL, start + MINUTE)
+                .await
+                .unwrap()
+        )
+        .is_empty()
+    );
+
+    // The working seat compacts, then grows again; the idle one is not re-read.
+    sizes.set("pij-busy", 100_000);
+    sizes.set("pij-idle", 100_000);
+    assert!(
+        presence(
+            &watchdog
+                .round(&services, INTERVAL, start + 2 * MINUTE)
+                .await
+                .unwrap()
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        claims(&services).await,
+        ["large-seat:pij-child", "large-seat:pij-idle"]
+    );
+    sizes.set("pij-busy", 640_000);
+    let again = watchdog
+        .round(&services, INTERVAL, start + 3 * MINUTE)
+        .await
+        .unwrap();
+    assert_eq!(
+        presence(&again),
+        vec![(
+            "large-seat".into(),
+            "pij-prime".into(),
+            vec!["pij-busy".into()]
+        )]
+    );
+    assert_eq!(fyis(&services).await, 2);
+}
+
+/// Review F001: after the dormant wake, the scope's brakes still hold when the
+/// unresponsive alert falls due: a fleet that shrank below two workers, or
+/// stopped on a usage limit, never wakes the prime. The wake's cap stands.
+#[tokio::test]
+async fn the_unresponsive_alert_obeys_the_scope_brakes_after_the_wake() {
+    for brake in ["worker-closed", "usage-limit"] {
+        let repos = Repos::new();
+        let (mut services, _store) = services().await;
+        let limits = Arc::new(FakeLimits::default());
+        services.usage_limits = limits.clone();
+        let [_, _, idle] = active_fleet(&services, &repos).await;
+        let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+        make_pa(&services, &pa).await;
+        let start = now_ms();
+        let at = |minutes: u64| start + minutes * MINUTE;
+        let watchdog = PaWatchdog::default();
+        let mut sent = Vec::new();
+        for minute in 0..=50 {
+            if minute == 32 {
+                match brake {
+                    "worker-closed" => {
+                        services
+                            .registry
+                            .tombstone(&idle.id, "owner-close")
+                            .await
+                            .unwrap();
+                    }
+                    _ => limits.stop("pij-busy", "five_hour", at(240) / 1_000),
+                }
+            }
+            let outcomes = watchdog
+                .round(&services, INTERVAL, at(minute))
+                .await
+                .unwrap();
+            sent.extend(presence(&outcomes).into_iter().map(|row| (minute, row.0)));
+        }
+        assert_eq!(sent, vec![(30, "pa-dormant".to_string())], "{brake}");
+        assert!(drain(&services, "pij-prime").await.is_empty(), "{brake}");
+        assert_eq!(
+            claims(&services).await,
+            ["pa-dormant:pij-pa"],
+            "{brake}: the wake's cap stands"
+        );
+    }
+}
+
+/// Review F002: the size cache follows the seat. An idle seat with no size
+/// that later reports one, and an idle seat whose whole turn fell between two
+/// rounds, are re-read; an unchanged idle seat is not.
+#[tokio::test]
+async fn an_idle_seats_size_is_reread_when_its_activity_changes() {
+    let repos = Repos::new();
+    let (mut services, _store) = services().await;
+    let sizes = Arc::new(Sizes::default());
+    services.session_status = Arc::new(crate::reported_context::WithReportedContext::new(
+        sizes.clone(),
+        Arc::clone(&services.reported_context),
+    ));
+    let _fleet = active_fleet(&services, &repos).await;
+    let quiet = seat("pij-quiet", &repos.path("main"), Some("pij-prime"));
+    services.registry.put(quiet.clone()).await.unwrap();
+    sizes.set("pij-idle", 500_000);
+    let reports = Arc::clone(&services.reported_context);
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+    let round = |minute: u64| watchdog.round(&services, INTERVAL, start + minute * MINUTE);
+    let large = |outcomes: Vec<RoundOutcome>| -> Vec<String> {
+        presence(&outcomes)
+            .into_iter()
+            .flat_map(|(_, _, subjects)| subjects)
+            .collect()
+    };
+
+    assert!(large(round(0).await.unwrap()).is_empty());
+    sizes.reads("pij-idle");
+    assert!(large(round(1).await.unwrap()).is_empty());
+    assert_eq!(
+        sizes.reads("pij-idle"),
+        0,
+        "an unchanged idle seat is not re-read"
+    );
+
+    // An unknown idle seat reports its size (a Copilot turn boundary).
+    reports.record(&quiet.id, quiet.harness_session.clone(), 650_000, None);
+    assert_eq!(large(round(2).await.unwrap()), ["pij-quiet"]);
+
+    // A whole turn between two rounds: never seen working, but it posted.
+    sizes.set("pij-idle", 640_000);
+    reports.touch(&"pij-idle".into());
+    assert_eq!(large(round(3).await.unwrap()), ["pij-idle"]);
+
+    // It compacts the same way: the claim re-arms.
+    sizes.set("pij-idle", 100_000);
+    reports.touch(&"pij-idle".into());
+    assert!(large(round(4).await.unwrap()).is_empty());
+    assert_eq!(claims(&services).await, ["large-seat:pij-quiet"]);
 }

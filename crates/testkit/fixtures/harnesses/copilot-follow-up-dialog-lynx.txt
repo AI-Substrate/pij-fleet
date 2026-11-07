@@ -1,0 +1,12 @@
+|---|----------|------|-------|---------------|------------|
+ | 1 | 🟡 MEDIUM | crates/daemon/src/registration.rs | 1793-1808 | Injected process rows overwrite another PID's harness/session evidence | 9/10 |
+ Choose a follow-up, or decline to leave the repair with PM/coder. The frozen review worktree will remain unchanged.
+ Follow-up action:
+ Direct fixes require a separate writable checkout and coordination with the existing PM/coder.
+ ❯ Fix highest severity issues
+   Fix all issues
+   Commit a summary of findings
+   Other (type your answer)
+ ↑/↓ select · enter accept · ctrl+d decline · esc cancel
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+13% pij-governance ⎇ prime-governance ⛓ pij-wary-lynx • gpt-6.1-sol · high · 922K context • xhigh • 123k/922k • 5845.32 AIU • 57.00 prem • 51h3m

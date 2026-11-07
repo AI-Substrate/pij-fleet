@@ -1,0 +1,1259 @@
+//! Requests sent to a role (plan 199, migration 0034; limits: plan 205, 0035).
+//!
+//! Every `pij send role:<id>` is one row, keyed by the send's msg_id. A request
+//! no live holder could take waits as `queued` until an assign drains it; the
+//! rest are recorded `delivered` with their holder, so s06 can find who asked
+//! and how they want to hear back.
+
+use pij_core::error::{PijError, Result};
+use pij_core::model::{Event, SeatId};
+use pij_core::wire;
+use serde_json::json;
+use sqlx::Row;
+
+use crate::migrate::{begin_write, owned_write, require_current_schema};
+use crate::orchestration::{SqliteOrchestration, adapter_error, sql_i64, sql_u64};
+use crate::spine::append_in_transaction;
+
+/// The spine event a withdrawn request leaves (plan 206): its row is gone, so
+/// this is the record of who asked, what role, who withdrew it and why.
+pub const WITHDRAWN_EVENT: &str = "role.request.withdrawn";
+
+/// Who withdraws queued requests, and why (plan 206, `--drop-queued`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Withdrawal {
+    /// The seat that withdrew them.
+    pub by: String,
+    /// The retirement's reason.
+    pub why: String,
+    /// When, in ms.
+    pub at: u64,
+    /// Requests whose requester is no longer a seat, so nobody was told
+    /// (security review of #135, F002); their events say `requester_gone`.
+    pub gone: Vec<String>,
+}
+
+/// How the requester wants to hear that its request was answered (req-08).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplyMode {
+    /// Wake the requester (the default).
+    Wake,
+    /// Hold the answer for the requester's next real turn.
+    Fyi,
+    /// Do not tell the requester.
+    None,
+}
+
+impl ReplyMode {
+    /// The stored and printed spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Wake => "wake",
+            Self::Fyi => "fyi",
+            Self::None => "none",
+        }
+    }
+
+    /// Parse `wake`, `fyi` or `none`.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "wake" => Some(Self::Wake),
+            "fyi" => Some(Self::Fyi),
+            "none" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
+/// Where a request is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequestState {
+    /// No live holder took it yet.
+    Queued,
+    /// Claimed for `holder` and being dispatched: no other drain or send may
+    /// dispatch it.
+    Delivering,
+    /// Delivered to `holder`.
+    Delivered,
+    /// Closed before any holder took it: withdrawn, or the requester took the
+    /// role itself (plan 212). Kept in `closed_role_requests`, never queued.
+    Closed,
+}
+
+impl RequestState {
+    /// The stored and printed spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Delivering => "delivering",
+            Self::Delivered => "delivered",
+            Self::Closed => "closed",
+        }
+    }
+
+    /// Parse a stored or typed state.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "queued" => Some(Self::Queued),
+            "delivering" => Some(Self::Delivering),
+            "delivered" => Some(Self::Delivered),
+            "closed" => Some(Self::Closed),
+            _ => None,
+        }
+    }
+}
+
+/// A request closed before any holder took it (plan 212, F59 and F61).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosedRoleRequest {
+    /// The request as sent, in state [`RequestState::Closed`].
+    pub request: RoleRequest,
+    /// When it was closed.
+    pub closed_at: u64,
+    /// The seat that closed it.
+    pub closed_by: String,
+    /// Why.
+    pub why: String,
+    /// What the close owes the requester: `quiet`, `owed` or `told`; `None`
+    /// for a withdraw or drain close (review of #149, F005).
+    pub notice: Option<String>,
+    /// How the closer was bound at the close (`pane (derived)` or an
+    /// asserted id); `None` for a withdraw or drain close without one.
+    pub bound: Option<String>,
+}
+
+/// What [`SqliteOrchestration::close_role_request`] did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CloseOutcome {
+    /// It was in the state asked for and is now closed.
+    Closed(ClosedRoleRequest),
+    /// No request has that id.
+    Unknown,
+    /// It is open in another state than the one asked for.
+    OtherState(RoleRequest),
+    /// It was closed before.
+    AlreadyClosed(ClosedRoleRequest),
+}
+
+/// Which time-limit notification a claim is for (plan 205, s12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LimitStage {
+    /// The holder's one check-in; stamps `checkin_at`.
+    CheckIn,
+    /// The PA's (else the prime's) one notice; stamps `escalated_at`.
+    Notice,
+}
+
+/// How long a time-limit claim blocks another attempt. Admission takes
+/// seconds and a failed one drops its claim at once, so only a daemon that
+/// stopped mid-attempt leaves one this old; the next round then retries.
+pub const LIMIT_CLAIM_LEASE_MS: u64 = 2 * 60_000;
+
+/// A time-limit claim just taken (plan 205, s12).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LimitClaim {
+    /// The seat a stopped attempt resolved and pinned before sending, when
+    /// the claim was taken over after its lease. `None` for a fresh claim.
+    pub pinned: Option<String>,
+}
+
+/// One request sent to a role.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleRequest {
+    /// The send's msg_id: the request id (ruling C3).
+    pub id: String,
+    /// The project whose directory the role belongs to.
+    pub project: String,
+    /// The role id.
+    pub role: String,
+    /// The instance addressed, or empty for any holder of the role.
+    pub instance: String,
+    /// The sending seat.
+    pub requester: String,
+    /// The message body.
+    pub body: String,
+    /// The message this one answers, when it is a reply.
+    pub in_reply_to: Option<String>,
+    /// Sent with `--fyi`: held for the holder's next real turn.
+    pub fyi: bool,
+    /// How the requester wants to hear back.
+    pub reply: ReplyMode,
+    /// The time limit in milliseconds, when one applies (s12).
+    pub limit_ms: Option<u64>,
+    /// Queued or delivered.
+    pub state: RequestState,
+    /// The seat it was delivered to.
+    pub holder: Option<String>,
+    /// When it was sent, ms since the epoch.
+    pub created_at: u64,
+    /// When it reached its holder.
+    pub delivered_at: Option<u64>,
+    /// When its holder was sent the one time-limit check-in (s12). Set once,
+    /// by the watchdog round, before the check-in is sent.
+    pub checkin_at: Option<u64>,
+    /// When the PA (else the prime) was told the check-in went unanswered
+    /// (s12). Set once, before the notice is sent; the request then leaves the
+    /// round's open set.
+    pub escalated_at: Option<u64>,
+    /// When an output first answered it (s06, `pij output --answers <id>`),
+    /// through [`SqliteOrchestration::mark_role_request_answered`]. The first
+    /// answer's time is kept. An answered request leaves the round's open set,
+    /// so s12 never checks it in or escalates it.
+    pub answered_at: Option<u64>,
+}
+
+/// Boot recovery's evidence that delivery already took a stranded claim:
+/// a ledger row, a `delivery:<holder>` job in any state, or a held FYI under
+/// its msg_id. Every probe is an indexed SEARCH (performance P001 on #129):
+/// the ledger's unique key, `jobs_by_dedupe` and the FYI primary key.
+const RECOVER_TAKEN_SQL: &str = "UPDATE role_requests SET state = 'delivered', delivered_at = ?1 \
+     WHERE state = 'delivering' AND holder IS NOT NULL AND ( \
+       EXISTS (SELECT 1 FROM delivered_messages AS ledger \
+         WHERE ledger.recipient = role_requests.holder AND ledger.sender_machine = '' \
+         AND ledger.msg_id = role_requests.id) \
+       OR EXISTS (SELECT 1 FROM jobs \
+         WHERE jobs.kind = 'delivery:' || role_requests.holder \
+         AND jobs.dedupe_origin = '' AND jobs.dedupe_key = role_requests.id) \
+       OR EXISTS (SELECT 1 FROM fyis \
+         WHERE fyis.origin = '' AND fyis.id = role_requests.id \
+         AND fyis.recipient = role_requests.holder))";
+
+/// Has delivery taken local message `?2` for recipient `?1`? The evidence of
+/// [`RECOVER_TAKEN_SQL`], for one recipient and msg_id (review of #133).
+const ADMITTED_SQL: &str = "SELECT \
+       EXISTS (SELECT 1 FROM delivered_messages AS ledger \
+         WHERE ledger.recipient = ?1 AND ledger.sender_machine = '' AND ledger.msg_id = ?2) \
+       OR EXISTS (SELECT 1 FROM jobs \
+         WHERE jobs.kind = 'delivery:' || ?1 AND jobs.dedupe_origin = '' AND jobs.dedupe_key = ?2) \
+       OR EXISTS (SELECT 1 FROM fyis \
+         WHERE fyis.origin = '' AND fyis.id = ?2 AND fyis.recipient = ?1)";
+
+const COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
+     limit_ms, state, holder, created_at, delivered_at, checkin_at, escalated_at, answered_at";
+
+/// A closed row read through [`role_request`], plus who closed it.
+const CLOSED_COLUMNS: &str = "id, project, role, instance, requester, body, in_reply_to, fyi, \
+     reply, limit_ms, 'closed' AS state, holder, created_at, delivered_at, \
+     NULL AS checkin_at, NULL AS escalated_at, NULL AS answered_at, closed_at, closed_by, close_why, \
+     notice, close_bound";
+
+/// How many rows one `pij requests` read returns at most, newest first.
+pub const REQUESTS_LIST_LIMIT: u32 = 100;
+
+impl SqliteOrchestration {
+    /// Record a request, queued or already delivered.
+    ///
+    /// # Errors
+    /// `E-RS-ROLE-REQUEST-EXISTS` when a request with this id is recorded.
+    pub async fn record_role_request(&self, request: &RoleRequest) -> Result<()> {
+        self.record_role_request_keeping(request, ()).await
+    }
+
+    /// [`Self::record_role_request`], with `keep` moved into the write task and
+    /// dropped only when the transaction has ended. A caller's admission guard
+    /// passed here outlives a cancelled waiter for as long as the insert can
+    /// still land (review of #135, F001).
+    ///
+    /// # Errors
+    /// As [`Self::record_role_request`].
+    pub async fn record_role_request_keeping<K: Send + 'static>(
+        &self,
+        request: &RoleRequest,
+        keep: K,
+    ) -> Result<()> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let request = request.clone();
+        owned_write(async move {
+            let _keep = keep;
+            let mut tx = begin_write(&pool).await?;
+            let inserted = sqlx::query(&format!(
+                "INSERT INTO role_requests ({COLUMNS}) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL, NULL, NULL) \
+                 ON CONFLICT (id) DO NOTHING"
+            ))
+            .bind(&request.id)
+            .bind(&request.project)
+            .bind(&request.role)
+            .bind(&request.instance)
+            .bind(&request.requester)
+            .bind(&request.body)
+            .bind(&request.in_reply_to)
+            .bind(i64::from(request.fyi))
+            .bind(request.reply.as_str())
+            .bind(
+                request
+                    .limit_ms
+                    .map(|limit| sql_i64(limit, "limit_ms"))
+                    .transpose()?,
+            )
+            .bind(request.state.as_str())
+            .bind(&request.holder)
+            .bind(sql_i64(request.created_at, "created_at")?)
+            .bind(
+                request
+                    .delivered_at
+                    .map(|at| sql_i64(at, "delivered_at"))
+                    .transpose()?,
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            if !inserted {
+                tx.rollback().await.map_err(adapter_error)?;
+                return Err(PijError::GovernanceRefused {
+                    code: "E-RS-ROLE-REQUEST-EXISTS".to_string(),
+                    record: request.id,
+                });
+            }
+            tx.commit().await.map_err(adapter_error)
+        })
+        .await
+    }
+
+    /// One request by id.
+    pub async fn role_request(&self, id: &str) -> Result<Option<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests WHERE id = ?1"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .as_ref()
+        .map(role_request)
+        .transpose()
+    }
+
+    /// `role`'s queued requests in `project` that a holder of `instance` can
+    /// take, oldest first: those for that instance and those for any holder.
+    pub async fn queued_role_requests(
+        &self,
+        project: &str,
+        role: &str,
+        instance: &str,
+    ) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_queued \
+             WHERE project = ?1 AND role = ?2 AND state = 'queued' \
+             AND (instance = ?3 OR instance = '') ORDER BY created_at, id"
+        ))
+        .bind(project)
+        .bind(role)
+        .bind(instance)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
+    /// Every request for `role` in `project`, any instance, still queued for
+    /// a holder, oldest first: what retiring the role would strand (plan 206).
+    /// One read on the partial `role_requests_queued` index.
+    pub async fn queued_for_role(&self, project: &str, role: &str) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_queued \
+             WHERE project = ?1 AND role = ?2 AND state = 'queued' ORDER BY created_at, id"
+        ))
+        .bind(project)
+        .bind(role)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
+    /// Every request for `role` in `project` a holder has claimed but not yet
+    /// settled (`delivering`), oldest first. One that fails goes back on the
+    /// queue, as does one a stopped daemon left, so retiring the role waits
+    /// for these (review of #135, F001). One read on the partial
+    /// `role_requests_delivering` index, normally empty.
+    pub async fn delivering_for_role(&self, project: &str, role: &str) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_delivering \
+             WHERE state = 'delivering' AND project = ?1 AND role = ?2 ORDER BY created_at, id"
+        ))
+        .bind(project)
+        .bind(role)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
+    /// Withdraw every request still queued for `role` in `project` (plan
+    /// 206, `retire --drop-queued`): each row is deleted and one
+    /// [`WITHDRAWN_EVENT`] naming its requester, `by`, `why` and whether the
+    /// requester was gone ([`Withdrawal::gone`]) is appended,
+    /// in one write transaction. Only `queued` rows are touched, so a request
+    /// a drain has already claimed is never withdrawn. `keep` (the caller's
+    /// admission guard) is held by the write task until the transaction ends.
+    /// Returns the withdrawn requests and their events, for the caller to
+    /// publish.
+    pub async fn withdraw_queued_role_requests<K: Send + 'static>(
+        &self,
+        project: &str,
+        role: &str,
+        withdrawal: &Withdrawal,
+        keep: K,
+    ) -> Result<(Vec<Event>, Vec<RoleRequest>)> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (project, role, withdrawal) =
+            (project.to_string(), role.to_string(), withdrawal.clone());
+        owned_write(async move {
+            let _keep = keep;
+            let mut tx = begin_write(&pool).await?;
+            let rows = sqlx::query(&format!(
+                "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_queued \
+                 WHERE project = ?1 AND role = ?2 AND state = 'queued' ORDER BY created_at, id"
+            ))
+            .bind(&project)
+            .bind(&role)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+            let requests: Vec<RoleRequest> =
+                rows.iter().map(role_request).collect::<Result<_>>()?;
+            let mut events = Vec::with_capacity(requests.len());
+            for request in &requests {
+                sqlx::query("DELETE FROM role_requests WHERE id = ?1 AND state = 'queued'")
+                    .bind(&request.id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(adapter_error)?;
+                let mut event = Event {
+                    seq: None,
+                    v: wire::EVENT_VERSION,
+                    at: withdrawal.at,
+                    kind: WITHDRAWN_EVENT.to_string(),
+                    seat: Some(SeatId::from(request.requester.as_str())),
+                    payload: json!({
+                        "id": request.id,
+                        "project": request.project,
+                        "role": request.role,
+                        "instance": request.instance,
+                        "requester": request.requester,
+                        "created_at": request.created_at,
+                        "withdrawn_by": withdrawal.by,
+                        "why": withdrawal.why,
+                        "requester_gone": withdrawal.gone.contains(&request.id),
+                    })
+                    .to_string(),
+                };
+                event.seq = Some(append_in_transaction(&mut tx, &event).await?);
+                events.push(event);
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok((events, requests))
+        })
+        .await
+    }
+
+    /// Every request not yet settled, queued or stuck `delivering`, oldest
+    /// first: the PA digest's list (review of #129, F003). Bodies are not
+    /// read (blank here); the digest never shows them. Two partial-index reads.
+    pub async fn unsettled_role_requests(&self) -> Result<Vec<RoleRequest>> {
+        self.unsettled_role_requests_in(None).await
+    }
+
+    /// [`Self::unsettled_role_requests`] for `projects` only (plan 209, #129's
+    /// digest scope); `None` reads every project. Queued rows are one seek of
+    /// `role_requests_queued` per project, never a scan of the others;
+    /// `delivering` rows (normally none) are read from their own index and
+    /// kept by project. An empty list reads nothing. Bodies are not read.
+    pub async fn unsettled_role_requests_in(
+        &self,
+        projects: Option<&[String]>,
+    ) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        // No projects reads nothing, not the global delivering rows (#144).
+        if projects.is_some_and(<[String]>::is_empty) {
+            return Ok(Vec::new());
+        }
+        let columns = COLUMNS.replace("body", "'' AS body");
+        let mut rows = Vec::new();
+        let queued = match projects {
+            None => vec![None],
+            Some(projects) => projects.iter().map(Some).collect(),
+        };
+        for project in queued {
+            let read = match project {
+                None => {
+                    sqlx::query(&format!(
+                        "SELECT {columns} FROM role_requests INDEXED BY role_requests_queued \
+                     WHERE state = 'queued'"
+                    ))
+                    .fetch_all(&self.pool)
+                    .await
+                }
+                Some(project) => {
+                    sqlx::query(&format!(
+                        "SELECT {columns} FROM role_requests INDEXED BY role_requests_queued \
+                     WHERE state = 'queued' AND project = ?1"
+                    ))
+                    .bind(project)
+                    .fetch_all(&self.pool)
+                    .await
+                }
+            }
+            .map_err(adapter_error)?;
+            for row in &read {
+                rows.push(role_request(row)?);
+            }
+        }
+        let delivering = sqlx::query(&format!(
+            "SELECT {columns} FROM role_requests INDEXED BY role_requests_delivering \
+             WHERE state = 'delivering'"
+        ))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        for row in &delivering {
+            let request = role_request(row)?;
+            if projects.is_none_or(|projects| projects.contains(&request.project)) {
+                rows.push(request);
+            }
+        }
+        rows.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+        Ok(rows)
+    }
+
+    /// Every queued request, oldest first.
+    pub async fn all_queued_role_requests(&self) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_queued \
+             WHERE state = 'queued' ORDER BY created_at, id"
+        ))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
+    /// Delivered requests with a limit that are not yet escalated or answered,
+    /// `project`'s queued requests, oldest first, with empty bodies: the
+    /// directory view counts them and dates the oldest, and never reads a
+    /// body (plan 203).
+    pub async fn queued_role_request_heads(&self, project: &str) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {} FROM role_requests INDEXED BY role_requests_queued \
+             WHERE project = ?1 AND state = 'queued' ORDER BY created_at, id",
+            COLUMNS.replacen(" body,", " '' AS body,", 1)
+        ))
+        .bind(project)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
+    /// oldest delivery first: the watchdog round's one read (s12).
+    pub async fn open_limited_role_requests(&self) -> Result<Vec<RoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_limited \
+             WHERE state = 'delivered' AND limit_ms IS NOT NULL \
+             AND escalated_at IS NULL AND answered_at IS NULL ORDER BY delivered_at, id"
+        ))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .iter()
+        .map(role_request)
+        .collect()
+    }
+
+    /// Claim request `id` for one time-limit notification at `now`, before
+    /// it is sent (review of #133, F001 and F002). In one statement the
+    /// request must still be delivered, unanswered, not yet told at `stage`
+    /// and not escalated, and hold no live claim; so an answer that lands
+    /// after the round's read wins, and two rounds never send at once. A
+    /// claim older than [`LIMIT_CLAIM_LEASE_MS`] was left by a stopped daemon
+    /// and may be taken again. `None` when the request is not claimable;
+    /// otherwise the seat a stopped attempt had pinned, if any (see
+    /// [`Self::pin_role_request_limit`]).
+    pub async fn claim_role_request_limit(
+        &self,
+        id: &str,
+        stage: LimitStage,
+        now: u64,
+    ) -> Result<Option<LimitClaim>> {
+        require_current_schema(&self.pool).await?;
+        let stage_open = match stage {
+            LimitStage::CheckIn => "checkin_at IS NULL AND ",
+            LimitStage::Notice => "",
+        };
+        let sql = format!(
+            "UPDATE role_requests SET limit_claim_at = ?2 WHERE id = ?1 \
+             AND state = 'delivered' AND answered_at IS NULL AND {stage_open}escalated_at IS NULL \
+             AND (limit_claim_at IS NULL OR limit_claim_at <= ?3) RETURNING limit_claim_target"
+        );
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let stale_before = sql_i64(now.saturating_sub(LIMIT_CLAIM_LEASE_MS), "limit claim")?;
+        let now = sql_i64(now, "limit claim")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let row = sqlx::query(&sql)
+                .bind(&id)
+                .bind(now)
+                .bind(stale_before)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(adapter_error)?;
+            let claim = row
+                .map(|row| {
+                    row.try_get::<Option<String>, _>("limit_claim_target")
+                        .map(|pinned| LimitClaim { pinned })
+                        .map_err(adapter_error)
+                })
+                .transpose()?;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(claim)
+        })
+        .await
+    }
+
+    /// Pin the seat the claim taken at `claimed_at` resolved to, before the
+    /// notification is sent to it (review of #133). A retry after the claim
+    /// expires asks delivery whether that same seat already has the message
+    /// ([`Self::limit_notification_admitted`]) instead of resolving again, so
+    /// a PA that rotated meanwhile is not told twice. `false` when that claim
+    /// is gone, and then nothing may be sent.
+    pub async fn pin_role_request_limit(
+        &self,
+        id: &str,
+        claimed_at: u64,
+        target: &str,
+    ) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let target = target.to_string();
+        let claimed_at = sql_i64(claimed_at, "limit claim")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let changed = sqlx::query(
+                "UPDATE role_requests SET limit_claim_target = ?3 \
+                 WHERE id = ?1 AND limit_claim_at = ?2",
+            )
+            .bind(&id)
+            .bind(claimed_at)
+            .bind(&target)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
+    }
+
+    /// Did delivery already take local message `msg_id` for `recipient`? The
+    /// same evidence boot recovery uses: a ledger row, a `delivery:<recipient>`
+    /// job in any state, or a held FYI, each an indexed SEARCH.
+    pub async fn limit_notification_admitted(&self, recipient: &str, msg_id: &str) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query_scalar::<_, bool>(ADMITTED_SQL)
+            .bind(recipient)
+            .bind(msg_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(adapter_error)
+    }
+
+    /// The claimed notification was admitted: stamp `stage` at `at` and
+    /// clear the claim taken at `claimed_at`. `false` when that claim is gone.
+    pub async fn finish_role_request_limit(
+        &self,
+        id: &str,
+        stage: LimitStage,
+        claimed_at: u64,
+        at: u64,
+    ) -> Result<bool> {
+        let column = match stage {
+            LimitStage::CheckIn => "checkin_at",
+            LimitStage::Notice => "escalated_at",
+        };
+        self.limit_write(
+            format!(
+                "UPDATE role_requests SET {column} = ?2, limit_claim_at = NULL, \
+                 limit_claim_target = NULL WHERE id = ?1 AND limit_claim_at = ?3"
+            ),
+            id,
+            &[at, claimed_at],
+        )
+        .await
+    }
+
+    /// The claimed notification was not admitted: drop the claim taken at
+    /// `claimed_at` and its pin, so the next round resolves and tries again.
+    /// `false` when it is gone.
+    pub async fn release_role_request_limit(&self, id: &str, claimed_at: u64) -> Result<bool> {
+        self.limit_write(
+            "UPDATE role_requests SET limit_claim_at = NULL, limit_claim_target = NULL \
+             WHERE id = ?1 AND limit_claim_at = ?2"
+                .to_string(),
+            id,
+            &[claimed_at],
+        )
+        .await
+    }
+
+    async fn limit_write(&self, sql: String, id: &str, times: &[u64]) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        let times = times
+            .iter()
+            .map(|at| sql_i64(*at, "limit stamp"))
+            .collect::<Result<Vec<_>>>()?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let mut query = sqlx::query(&sql).bind(&id);
+            for at in times {
+                query = query.bind(at);
+            }
+            let changed = query
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
+    }
+
+    /// Record that an output answered request `id` at `at` (s06: lane B's
+    /// `pij output --answers <id>` calls this). Idempotent: a second answer
+    /// keeps the first time and returns `false`, as does an unknown id. From
+    /// then on the s12 round skips the request.
+    pub async fn mark_role_request_answered(&self, id: &str, at: u64) -> Result<bool> {
+        self.stamp_once(id, "answered_at", at).await
+    }
+
+    /// Set `column` once: a second call changes nothing and returns `false`.
+    async fn stamp_once(&self, id: &str, column: &'static str, at: u64) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let changed = sqlx::query(&format!(
+                "UPDATE role_requests SET {column} = ?2 WHERE id = ?1 AND {column} IS NULL"
+            ))
+            .bind(&id)
+            .bind(sql_i64(at, column)?)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
+    }
+
+    /// Claim a queued request for `holder` before dispatching it: the one
+    /// atomic step that decides which drain delivers it. In the same
+    /// statement, `holder` must be live and hold the request's role now (the
+    /// instance it names, or any for an instance-less request), so a drain
+    /// scheduled before a release can never deliver to the old holder
+    /// (security review of #129, S1). `false` when it is no longer queued,
+    /// another drain won, or `holder` does not hold the role now; the request
+    /// then stays queued.
+    pub async fn claim_role_request(&self, id: &str, holder: &str) -> Result<bool> {
+        self.transition(
+            id,
+            holder,
+            "UPDATE role_requests SET state = 'delivering', holder = ?2 \
+             WHERE id = ?1 AND state = 'queued' \
+             AND EXISTS (SELECT 1 FROM seats WHERE seats.id = ?2 AND seats.tombstoned_at IS NULL) \
+             AND EXISTS (SELECT 1 FROM community_assignments AS held \
+                 WHERE held.project = role_requests.project AND held.role = role_requests.role \
+                 AND held.seat = ?2 AND held.to_at IS NULL \
+                 AND (role_requests.instance = '' OR held.instance = role_requests.instance))",
+            None,
+        )
+        .await
+    }
+
+    /// Mark a request claimed for `holder` delivered at `at`. `false` when it
+    /// is not claimed for that holder, so a request is delivered at most once.
+    pub async fn mark_role_request_delivered(
+        &self,
+        id: &str,
+        holder: &str,
+        at: u64,
+    ) -> Result<bool> {
+        self.transition(
+            id,
+            holder,
+            "UPDATE role_requests SET state = 'delivered', delivered_at = ?3 \
+             WHERE id = ?1 AND state = 'delivering' AND holder = ?2",
+            Some(at),
+        )
+        .await
+    }
+
+    /// Give a claimed request back to the queue after its dispatch failed, so
+    /// the next assign can take it.
+    pub async fn release_role_request_claim(&self, id: &str, holder: &str) -> Result<bool> {
+        self.transition(
+            id,
+            holder,
+            "UPDATE role_requests SET state = 'queued', holder = NULL \
+             WHERE id = ?1 AND state = 'delivering' AND holder = ?2",
+            None,
+        )
+        .await
+    }
+
+    /// Forget a request a send claimed for `holder` but could not dispatch
+    /// (refused, or the cold-wake guard said no), so the sender's retry
+    /// resolves afresh. Never touches a queued or delivered request.
+    pub async fn abandon_role_request(&self, id: &str, holder: &str) -> Result<bool> {
+        self.transition(
+            id,
+            holder,
+            "DELETE FROM role_requests WHERE id = ?1 AND state = 'delivering' AND holder = ?2",
+            None,
+        )
+        .await
+    }
+
+    /// Settle every request a stopped daemon left `delivering`: claimed, but
+    /// neither marked delivered nor released (review of #129). Run once at
+    /// boot, before anything claims. One the delivery path already took for
+    /// its holder (a ledger row, a delivery job, or a held FYI under its
+    /// msg_id) is marked delivered at `now_ms`, so it is never sent twice. Any
+    /// other goes back to `queued` with no holder: the next assign drains it
+    /// and the PA digest lists it. One write transaction. Returns how many
+    /// were marked delivered and how many re-queued.
+    pub async fn recover_delivering_role_requests(&self, now_ms: u64) -> Result<(u64, u64)> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let now = sql_i64(now_ms, "delivered_at")?;
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let delivered = sqlx::query(RECOVER_TAKEN_SQL)
+                .bind(now)
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected();
+            let requeued = sqlx::query(
+                "UPDATE role_requests SET state = 'queued', holder = NULL \
+                 WHERE state = 'delivering'",
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected();
+            tx.commit().await.map_err(adapter_error)?;
+            Ok((delivered, requeued))
+        })
+        .await
+    }
+
+    async fn transition(
+        &self,
+        id: &str,
+        holder: &str,
+        sql: &'static str,
+        at: Option<u64>,
+    ) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (id, holder) = (id.to_string(), holder.to_string());
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let mut query = sqlx::query(sql).bind(&id).bind(&holder);
+            if let Some(at) = at {
+                query = query.bind(sql_i64(at, "delivered_at")?);
+            }
+            let changed = query
+                .execute(&mut *tx)
+                .await
+                .map_err(adapter_error)?
+                .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
+    }
+}
+
+impl SqliteOrchestration {
+    /// Close request `id`, in state `from`, as `by`, at `at`, for `why`
+    /// (plan 212): move it to `closed_role_requests` and out of `role_requests`
+    /// in one transaction. A queued one (withdraw, F59) can then never be
+    /// drained and leaves the PA digest; a delivered one (F83) leaves the time
+    /// limit's rounds. Only a request in `from` closes; the outcome says what
+    /// stood in the way otherwise. `notice` is what the close owes the
+    /// requester, recorded in the same transaction.
+    pub async fn close_role_request(
+        &self,
+        id: &str,
+        from: RequestState,
+        by: &str,
+        why: &str,
+        at: u64,
+        notice: Option<&str>,
+    ) -> Result<CloseOutcome> {
+        self.close_role_request_audited(id, from, by, why, at, notice, None, None)
+            .await
+            .map(|(_, outcome)| outcome)
+    }
+
+    /// [`Self::close_role_request`], appending `audit` to the spine in the
+    /// same transaction when, and only when, the request closes (security
+    /// review of #149, S003: no close without its audit). Returns the
+    /// appended event, with its sequence, for the caller to publish.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn close_role_request_audited(
+        &self,
+        id: &str,
+        from: RequestState,
+        by: &str,
+        why: &str,
+        at: u64,
+        notice: Option<&str>,
+        bound: Option<&str>,
+        audit: Option<Event>,
+    ) -> Result<(Vec<Event>, CloseOutcome)> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let (owned_id, by, why) = (id.to_string(), by.to_string(), why.to_string());
+        let notice = notice.map(str::to_string);
+        let bound = bound.map(str::to_string);
+        let from = from.as_str();
+        let at = sql_i64(at, "closed_at")?;
+        let (moved, events) = owned_write(async move {
+            let id = owned_id;
+            let mut tx = begin_write(&pool).await?;
+            let moved = sqlx::query(
+                "INSERT INTO closed_role_requests (id, project, role, instance, requester, body, \
+                 in_reply_to, fyi, reply, limit_ms, created_at, holder, delivered_at, closed_at, \
+                 closed_by, close_why, notice, close_bound) \
+                 SELECT id, project, role, instance, requester, body, in_reply_to, fyi, reply, \
+                 limit_ms, created_at, holder, delivered_at, ?2, ?3, ?4, ?6, ?7 FROM role_requests \
+                 WHERE id = ?1 AND state = ?5",
+            )
+            .bind(&id)
+            .bind(at)
+            .bind(&by)
+            .bind(&why)
+            .bind(from)
+            .bind(&notice)
+            .bind(&bound)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            let mut events = Vec::new();
+            if moved {
+                sqlx::query("DELETE FROM role_requests WHERE id = ?1 AND state = ?2")
+                    .bind(&id)
+                    .bind(from)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(adapter_error)?;
+                if let Some(mut event) = audit {
+                    event.seq = Some(append_in_transaction(&mut tx, &event).await?);
+                    events.push(event);
+                }
+            }
+            tx.commit().await.map_err(adapter_error)?;
+            Ok((moved, events))
+        })
+        .await?;
+        let closed = self.closed_role_request(id).await?;
+        Ok((
+            events,
+            match (moved, closed) {
+                (true, Some(closed)) => CloseOutcome::Closed(closed),
+                (false, Some(closed)) => CloseOutcome::AlreadyClosed(closed),
+                (_, None) => match self.role_request(id).await? {
+                    Some(open) => CloseOutcome::OtherState(open),
+                    None => CloseOutcome::Unknown,
+                },
+            },
+        ))
+    }
+
+    /// The close's FYI to the requester was admitted: `owed` becomes `told`,
+    /// once. False when nothing was owed.
+    pub async fn close_notice_told(&self, id: &str) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let id = id.to_string();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let changed = sqlx::query(
+                "UPDATE closed_role_requests SET notice = 'told' WHERE id = ?1 AND notice = 'owed'",
+            )
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(adapter_error)?
+            .rows_affected()
+                == 1;
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(changed)
+        })
+        .await
+    }
+
+    /// One closed request by id.
+    pub async fn closed_role_request(&self, id: &str) -> Result<Option<ClosedRoleRequest>> {
+        require_current_schema(&self.pool).await?;
+        sqlx::query(&format!(
+            "SELECT {CLOSED_COLUMNS} FROM closed_role_requests WHERE id = ?1"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(adapter_error)?
+        .as_ref()
+        .map(closed_role_request)
+        .transpose()
+    }
+
+    /// `project`'s requests in `state` (for `role` when given), newest first,
+    /// at most [`REQUESTS_LIST_LIMIT`]; with no state, the open ones (queued
+    /// and delivering). Each state is one indexed read.
+    pub async fn list_role_requests(
+        &self,
+        project: &str,
+        role: Option<&str>,
+        state: Option<RequestState>,
+    ) -> Result<Vec<ClosedOrOpen>> {
+        require_current_schema(&self.pool).await?;
+        let states = match state {
+            Some(state) => vec![state],
+            None => vec![RequestState::Queued, RequestState::Delivering],
+        };
+        let mut rows = Vec::new();
+        for state in states {
+            let sql = if state == RequestState::Closed {
+                format!(
+                    "SELECT {CLOSED_COLUMNS} FROM closed_role_requests \
+                     WHERE project = ?1 AND (?2 IS NULL OR role = ?2) \
+                     ORDER BY closed_at DESC, id DESC LIMIT ?3"
+                )
+            } else {
+                format!(
+                    "SELECT {COLUMNS} FROM role_requests INDEXED BY role_requests_by_project \
+                     WHERE project = ?1 AND state = '{}' AND (?2 IS NULL OR role = ?2) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?3",
+                    state.as_str()
+                )
+            };
+            let read = sqlx::query(&sql)
+                .bind(project)
+                .bind(role)
+                .bind(i64::from(REQUESTS_LIST_LIMIT))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(adapter_error)?;
+            for row in &read {
+                rows.push(if state == RequestState::Closed {
+                    ClosedOrOpen::Closed(closed_role_request(row)?)
+                } else {
+                    ClosedOrOpen::Open(role_request(row)?)
+                });
+            }
+        }
+        if state.is_none() {
+            rows.sort_by_key(|row| match row {
+                ClosedOrOpen::Open(request) => std::cmp::Reverse(request.created_at),
+                ClosedOrOpen::Closed(closed) => std::cmp::Reverse(closed.closed_at),
+            });
+            rows.truncate(REQUESTS_LIST_LIMIT as usize);
+        }
+        Ok(rows)
+    }
+}
+
+/// One row of [`SqliteOrchestration::list_role_requests`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClosedOrOpen {
+    /// Queued, delivering or delivered.
+    Open(RoleRequest),
+    /// Closed before any holder took it.
+    Closed(ClosedRoleRequest),
+}
+
+fn closed_role_request(row: &sqlx::sqlite::SqliteRow) -> Result<ClosedRoleRequest> {
+    let closed_at: i64 = row.try_get("closed_at").map_err(adapter_error)?;
+    Ok(ClosedRoleRequest {
+        request: role_request(row)?,
+        closed_at: sql_u64(closed_at, "closed_at")?,
+        closed_by: row.try_get("closed_by").map_err(adapter_error)?,
+        why: row.try_get("close_why").map_err(adapter_error)?,
+        notice: row.try_get("notice").map_err(adapter_error)?,
+        bound: row.try_get("close_bound").map_err(adapter_error)?,
+    })
+}
+
+fn role_request(row: &sqlx::sqlite::SqliteRow) -> Result<RoleRequest> {
+    let text = |name: &str| -> Result<String> { row.try_get(name).map_err(adapter_error) };
+    let reply: String = text("reply")?;
+    let state: String = text("state")?;
+    let fyi: i64 = row.try_get("fyi").map_err(adapter_error)?;
+    let limit_ms: Option<i64> = row.try_get("limit_ms").map_err(adapter_error)?;
+    let created_at: i64 = row.try_get("created_at").map_err(adapter_error)?;
+    let delivered_at: Option<i64> = row.try_get("delivered_at").map_err(adapter_error)?;
+    let stamp = |name: &str| -> Result<Option<u64>> {
+        let value: Option<i64> = row.try_get(name).map_err(adapter_error)?;
+        value.map(|at| sql_u64(at, "timestamp")).transpose()
+    };
+    let corrupt = |field: &str, value: &str| PijError::Adapter {
+        adapter: "store/role_requests".to_string(),
+        message: format!("role request {field} {value:?} is not a known value"),
+    };
+    Ok(RoleRequest {
+        id: text("id")?,
+        project: text("project")?,
+        role: text("role")?,
+        instance: text("instance")?,
+        requester: text("requester")?,
+        body: text("body")?,
+        in_reply_to: row.try_get("in_reply_to").map_err(adapter_error)?,
+        fyi: fyi != 0,
+        reply: ReplyMode::parse(&reply).ok_or_else(|| corrupt("reply", &reply))?,
+        limit_ms: limit_ms
+            .map(|limit| sql_u64(limit, "limit_ms"))
+            .transpose()?,
+        state: match state.as_str() {
+            "queued" => RequestState::Queued,
+            "delivering" => RequestState::Delivering,
+            "delivered" => RequestState::Delivered,
+            "closed" => RequestState::Closed,
+            other => return Err(corrupt("state", other)),
+        },
+        holder: row.try_get("holder").map_err(adapter_error)?,
+        created_at: sql_u64(created_at, "created_at")?,
+        delivered_at: delivered_at
+            .map(|at| sql_u64(at, "delivered_at"))
+            .transpose()?,
+        checkin_at: stamp("checkin_at")?,
+        escalated_at: stamp("escalated_at")?,
+        answered_at: stamp("answered_at")?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::Row;
+
+    /// Performance P001 on #129: every evidence probe in boot recovery is an
+    /// indexed SEARCH, never a SCAN that grows with retained job history. The
+    /// outer read is the `role_requests_delivering` partial index.
+    #[tokio::test]
+    async fn boot_recovery_probes_are_indexed_searches() {
+        let pool = crate::open("").await.expect("memory");
+        let plan: Vec<String> =
+            sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::RECOVER_TAKEN_SQL))
+                .bind(0_i64)
+                .fetch_all(&pool)
+                .await
+                .expect("plan")
+                .iter()
+                .map(|row| row.get::<String, _>("detail"))
+                .collect();
+        let text = plan.join("\n");
+        // The outer read walks the partial index of stranded claims, which is
+        // normally empty; every probe inside it must be a SEARCH.
+        for (table, index) in [
+            ("role_requests", "role_requests_delivering"),
+            ("ledger", "sqlite_autoindex_delivered_messages_1"),
+            ("jobs", "jobs_by_dedupe"),
+            ("fyis", "sqlite_autoindex_fyis_1"),
+        ] {
+            assert!(
+                plan.iter()
+                    .any(|line| line.contains(&format!("{table} USING"))
+                        && line.contains(&format!("INDEX {index}"))),
+                "{table} does not use {index}:\n{text}"
+            );
+        }
+        for table in ["ledger", "jobs", "fyis"] {
+            assert!(
+                plan.iter()
+                    .any(|line| line.starts_with(&format!("SEARCH {table} "))),
+                "{table} is not a SEARCH:\n{text}"
+            );
+        }
+        assert!(
+            !plan
+                .iter()
+                .any(|line| line.starts_with("SCAN")
+                    && !line.contains("INDEX role_requests_delivering")),
+            "a probe scans:\n{text}"
+        );
+    }
+
+    /// Review of #133: the time-limit retry's admission probe is the same
+    /// three indexed SEARCHes, with no SCAN at all.
+    #[tokio::test]
+    async fn limit_admission_probes_are_indexed_searches() {
+        let pool = crate::open("").await.expect("memory");
+        let plan: Vec<String> = sqlx::query(&format!("EXPLAIN QUERY PLAN {}", super::ADMITTED_SQL))
+            .bind("pij-pa")
+            .bind("role-limit-notice-r")
+            .fetch_all(&pool)
+            .await
+            .expect("plan")
+            .iter()
+            .map(|row| row.get::<String, _>("detail"))
+            .collect();
+        let text = plan.join("\n");
+        for (table, index) in [
+            ("ledger", "sqlite_autoindex_delivered_messages_1"),
+            ("jobs", "jobs_by_dedupe"),
+            ("fyis", "sqlite_autoindex_fyis_1"),
+        ] {
+            assert!(
+                plan.iter()
+                    .any(|line| line.starts_with(&format!("SEARCH {table} "))
+                        && line.contains(&format!("INDEX {index}"))),
+                "{table} is not a SEARCH on {index}:\n{text}"
+            );
+        }
+        // The FROM-less outer SELECT is SQLite's `SCAN CONSTANT ROW`.
+        assert!(
+            !plan
+                .iter()
+                .any(|line| line.starts_with("SCAN") && line != "SCAN CONSTANT ROW"),
+            "a probe scans:\n{text}"
+        );
+    }
+}
