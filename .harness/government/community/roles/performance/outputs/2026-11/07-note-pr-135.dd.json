@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:135",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Contended gate/writer latency, large-backlog withdrawal and retarget/routes CPU/memory remain unmeasured; quiet-window zero launches does not discharge them."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## PR #135: after-deploy cost reading\n\nDeployment: **PID 21832**, source build **bb753b8fa3786eb7ec4cc90603de095fa242bd5d**, per pm-001's merge/bounce record. Main independently matched that revision. Both ping snapshots were healthy, reporting PID 21832 and `pij-rs 0.1.0` (not an embedded Git SHA). Process observations confirmed the same executable and start time, **2026-11-07 22:33:25 +10:00**, throughout.\n\n| Metric | AFTER |\n|---|---|\n| Daemon launches | **178 to 178: +0 / 60.001418 s = 0.000/s** |\n| Machine-wide launches | **83.0/s**, niced 20.0 s sample |\n| Daemon CPU | **7.58 CPU seconds / 60.001418 s = 12.63%** of one CPU over the interval |\n| Daemon RSS | **136,384 to 136,800 KiB = 133.19 to 133.59 MiB** |\n| Load averages | Start **13.06 / 10.99 / 10.10**, end **12.63 / 11.16 / 10.21** |\n\nWindow: **2026-11-07 22:36:44.696996 to 22:37:44.698680 +10:00**, elapsed measured monotonically between snapshot starts. Endpoint `ps` CPU percentages were **7.6% and 5.0%**, distinct from the cumulative-CPU interval result.\n\n### Every recorded daemon site was flat\n\n| Operation | Delta |\n|---|---:|\n| `ddocs.community` | 0 |\n| `gh.delivered` | 0 |\n| `git.community` | 0 |\n| `git.pa-watchdog-common-dir` | 0 |\n| `ps.registration-native-process` | 0 |\n| `ps.sidecar-process-group` | 0 |\n| `tmux.control-client` | 0 |\n| `tmux.new-window` | 0 |\n| `tmux.pipe-pane attach` | 0 |\n| `tmux.rename-window` | 0 |\n| `tmux.set-options tap owner` | 0 |\n| **Total** | **0** |\n\nPer-site deltas sum to the total; no counter decrease or PID/start-time change occurred. Positive baseline counters verify the launch instrument was populated, not unavailable. The earlier all-reloaded #145 window on PID 28490/build c3895da also had zero daemon launches; that is a separate historical quiet window, not a matched #135 CPU/RSS BEFORE.\n\n### Machine coverage and interpretation\n\nRan `nice -n 19 just spawn-rate --seconds 20 --json` from deployed main in parallel with the daemon window. Independent listening-port discovery also identified PID 21832. It reported **83.0 new PIDs/s** and **82.9 sampled/s**, with attribution lower bounds **56.0/s other** and **26.9/s gone before inspection**. No direct-daemon-child category was observed. Lower bounds and this shorter window must not be equated to the daemon's 60-second counters.\n\nVisible command lower bounds included bash **31.2/s**, git-ai **12.6/s**, copilot **6.2/s** and node **2.1/s**. The probe itself made **256,739 in-process libproc polls** and runs niced but busy-polling; machine CPU/load is not unperturbed.\n\n**Requested AFTER reading complete.** No recorded daemon launch producer advanced in this window, but daemon CPU was not zero. It includes existing background duties; this reading does not attribute that CPU to a particular loop or prove a regression improvement. No matched CPU/RSS BEFORE was supplied for #135.\n\nThe scratch-role retirement dogfood preceded this window; no edit/retire/merge operation was manufactured during it. Flat Git/ddocs counters and a quiet window are not benchmarks of role-gate contention, large-backlog notices/withdrawal, retarget generation or routes rebuild. Those qualifications in the verdict remain.\n\nRaw receipts are retained as session evidence (`pr135-after-window.json`, `pr135-after-machine.json`). The reusable `daemon-cost-window.py` records same-incarnation counter and cumulative-CPU deltas. No builds, tests, stress traffic, source edits or daemon restart were performed.\n"
+		}
+	]
+}
