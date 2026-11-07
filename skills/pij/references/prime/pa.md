@@ -57,6 +57,11 @@ the handover files you check, you are read-only.
 2. **Watchdog duty** — the Needs a look list.
    - `ready`/idle, quiet a whole interval: is it stalled or just done? Capture its pane. If it is
      stalled, send **one** specific ask. If it is done, tell the prime in your round line.
+   - A `pij-bg` message that a seat **has shown a dialog** (plan 219): capture its pane first
+     (`tmux capture-pane -p -t <pane>`) and check the dialog is still there, then clear it with the
+     key the message names (Copilot: `tmux send-keys -t <pane> C-d`, which declines; Claude: `Escape`).
+     Never choose an option for the seat. Then ask the seat in text what it wanted, and tell the prime
+     in your round line.
    - `question`: make sure its owner knows. Tell the prime once, not every round.
    - `waiting` / `hold` / `blocked`: deliberate. Leave them, unless the wait looks wrong (e.g. it is
      waiting on a dead seat). Then tell the prime.
@@ -74,7 +79,8 @@ the handover files you check, you are read-only.
   back is the prime's call (cheap-model compaction or a fresh seat).
 - Never `--force` past the cold-wake guard unless the prime says so for that seat.
 - **No blind messages**: no broadcasts, FYIs or acks. Message only a seat that must act.
-- Never type over unsent prompt text, and never click dialogs (feedback, "Add funds"). Report them.
+- Never type over unsent prompt text, and never click dialogs (feedback, "Add funds"). Report them. The
+  one exception is a pij dialog-stall message: clear that dialog with the key it names (step 2).
 - Never run `/model` in any pane; it changes Jordan's default model.
 - No question popups; ask inline. A decision that is yours, ask Jordan yourself (SKILL invariant 10). A
   question about another seat's work belongs to that seat or the prime: point them at it, don't relay it.

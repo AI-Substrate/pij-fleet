@@ -33,12 +33,14 @@ export function renderRosterTable(payload: unknown): string {
 		const id = str(seat.id) ?? "-";
 		const machine = str(seat.machine);
 		const column = (index: number): string => str(columns?.[index]) ?? "-";
+		// Plan 219: a seat on its harness's own dialog reads working; say so.
+		const key = str(record(seat.dialog).key);
 		return {
 			cold: columns?.[3] === "❄",
 			cells: [
 				machine !== undefined && columns === undefined ? `${id}@${machine}` : id,
 				str(seat.harness) ?? "-",
-				str(seat.state) ?? "-",
+				key !== undefined ? `blocked on a dialog (${key})` : (str(seat.state) ?? "-"),
 				column(0),
 				column(1),
 				column(2),

@@ -227,6 +227,27 @@ answer = "Not idle evidence: the footer carries none of Claude's ready anchors, 
 
 
 [[fixture]]
+path = "harnesses/copilot-follow-up-dialog-herring.txt"
+sha256 = "d29a94cb53049e6c4209785b80a77d1c064d51cd7cfc90e7b4b02c71782b15bd"
+bytes = 4935
+note = "Live Copilot CLI, pij-bumpy-herring's pane %17 on 2026-11-07 (pm-001: tmux capture-pane -p -S -40, blank rows dropped, cut at 220 columns), stalled from 21:01 to 22:55 on the 'Choose an optional follow-up' dialog while pij read it working. Plan 219 (F47)."
+answer = "A Copilot modal dialog: the footer '↑/↓ select · enter accept · ctrl+d decline · esc cancel' sits above the bottom rule and the status line. pij_harnesses::modal::modal_dialog matches it, first line 'Copilot needs information.', cleared by ctrl+d."
+
+[[fixture]]
+path = "harnesses/copilot-follow-up-dialog-lynx.txt"
+sha256 = "a3d7883c5cc1bdd97883313a9f248492b2726dee5618c0822ca835f4bdb88f9b"
+bytes = 1381
+note = "Live Copilot CLI, pij-wary-lynx's pane %413 on 2026-11-06 (pm-001: tmux capture-pane -p, blank rows dropped, last 12 rows, cut at 200 columns), stalled about 13:30-15:16 on the same follow-up dialog. Plan 219 (F47)."
+answer = "A Copilot modal dialog (the same footer above the bottom rule and status line); modal_dialog matches it, cleared by ctrl+d."
+
+[[fixture]]
+path = "harnesses/copilot-working.txt"
+sha256 = "f3fac1dd517dae4bce2ac423bb0ff7f941f06eeef9cd487d37e8c7def4d8e6c0"
+bytes = 1608
+note = "Live Copilot CLI mid-turn, pij-back-tapir's own pane on 2026-11-07 (blank rows dropped, last 6 rows, cut at 200 columns, the folder shown as ~/src/pij). The composer box is drawn with half blocks and there is no horizontal rule. Plan 219."
+answer = "Not a dialog: modal_dialog finds nothing, alone or with a whole dialog screen quoted above it."
+
+[[fixture]]
 path = "harnesses/copilot-ready.txt"
 sha256 = "d15a4c76b79ded5fe8557143acd1abeab2e7471b434e01679447ed5519b105d2"
 bytes = 482
@@ -530,17 +551,17 @@ answer = "Header `❄ <seat> is cold (<ctx>, idle <dur>). Options:`, then one al
 
 [[fixture]]
 path = "golden/cli/list-sized.json"
-sha256 = "954e25c03e6d92bf7d178ef314977e27d1c43e94f7d1c927379b7fc62f82165b"
-bytes = 782
-note = "Plan 160: a /v1/seats?sizes=true payload. A cold Claude seat, a warm working OMP seat, a Copilot seat with unknown context, a remote seat without size columns, and an unavailable peer."
+sha256 = "78445cdcabfd33924d3b7edf8d2725fbe55f4d65fc5ba54249f8346ea1aa5596"
+bytes = 1177
+note = "Plan 160: a /v1/seats?sizes=true payload. A cold Claude seat, a warm working OMP seat, a Copilot seat with unknown context, a working Copilot seat with a standing dialog stall (plan 219), a remote seat without size columns, and an unavailable peer."
 answer = "Input for pij list's human table: both the Rust CLI (pij_cli::roster::render_table) and the TS shim (renderRosterTable) must render list-sized.txt from it."
 
 [[fixture]]
 path = "golden/cli/list-sized.txt"
-sha256 = "359b3b78e2eef53919518e737bee61cdde158cc1922cf9d9f933e8cef5c81420"
-bytes = 310
+sha256 = "600a04804a241aa3db7a274aebda37619b9f32e82996439e96dce289cd319e2d"
+bytes = 496
 note = "Plan 160: pij list's human table rendered from list-sized.json."
-answer = "Columns SEAT, HARNESS, STATE, CTX, IDLE, CACHE padded two spaces apart. ❄ marks a row the guard would refuse. A remote seat shows `id@machine` and `-` sizes. Unavailable peers are listed after the rows. No trailing newline."
+answer = "Columns SEAT, HARNESS, STATE, CTX, IDLE, CACHE padded two spaces apart. ❄ marks a row the guard would refuse. A seat with a `dialog` shows `blocked on a dialog (<key>)` as its STATE (plan 219). A remote seat shows `id@machine` and `-` sizes. Unavailable peers are listed after the rows. No trailing newline."
 
 [[fixture]]
 path = "golden/address/cases.json"

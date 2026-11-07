@@ -19,6 +19,7 @@ pub mod delivery;
 pub mod events;
 pub mod federation;
 pub mod lifecycle;
+mod modal_stall;
 pub mod pa_watchdog;
 pub mod pairing;
 pub mod pane_observer;
