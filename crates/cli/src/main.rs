@@ -341,15 +341,27 @@ enum Command {
     },
     /// Durably enqueue one message as the acting seat.
     #[command(
-        after_long_help = "Examples:\n  pij-rs send --to <id> --body 'hello'\n  pij-rs send --to <id> --body-file -\n  pij-rs send --to <id> --fyi --body 'merged #452, nothing needed from you' (their next action doesn't depend on it: held, opens no turn)\n  pij-rs send --to <id> --force --reason 'prod is down' --body '...' (wake a cold seat anyway; audited)"
+        after_long_help = "Examples:\n  pij send <id> 'hello'   (the pij shim forwards this form unchanged)\n  pij send role:<id>[/<instance>] 'hello' [--reply wake|fyi|none] [--limit 45m]   (to whoever holds the role)\n  pij-rs send --to <id> --body 'hello'\n  pij-rs send --to <id> --body-file -\n  pij-rs send --to <id> --fyi --body 'merged #452, nothing needed from you' (their next action doesn't depend on it: held, opens no turn)\n  pij-rs send --to <id> --force --reason 'prod is down' --body '...' (wake a cold seat anyway; audited)"
     )]
     Send {
         /// Assert the derived sending seat. Omit to use PIJ_SESSION_ID or TMUX_PANE.
         #[arg(long)]
         from: Option<String>,
-        /// `<seat>` or `<seat>@<machine>`; use `@@` for a literal seat `@`.
+        /// The recipient, as the pij shim writes it: `send <recipient> [<text>]`.
+        /// Same as --to.
+        #[arg(
+            value_parser = pij_core::address::parse_destination,
+            conflicts_with = "to",
+            required_unless_present = "to"
+        )]
+        recipient: Option<pij_core::model::Destination>,
+        /// The body, as the pij shim writes it. Same as --body.
+        #[arg(conflicts_with_all = ["body", "body_file"])]
+        text: Option<String>,
+        /// `<seat>`, `<seat>@<machine>` or `role:<id>[/<instance>]`; use `@@` for a
+        /// literal seat `@`.
         #[arg(long, value_parser = pij_core::address::parse_destination)]
-        to: pij_core::model::Destination,
+        to: Option<pij_core::model::Destination>,
         /// Literal message body, including values beginning with `-`.
         #[arg(long, allow_hyphen_values = true, conflicts_with = "body_file")]
         body: Option<String>,
@@ -383,6 +395,15 @@ enum Command {
         /// Why a forced cold wake is worth its price.
         #[arg(long, requires = "force")]
         reason: Option<String>,
+        /// For `--to role:<id>`: how you hear back, `wake` (default), `fyi` or `none`.
+        #[arg(long)]
+        reply: Option<String>,
+        /// For `--to role:<id>`: the time limit, like `45m` (default: the role's default_limit).
+        #[arg(long)]
+        limit: Option<String>,
+        /// For `--to role:<id>`: the project whose directory resolves it (default: your repo).
+        #[arg(long)]
+        project: Option<String>,
     },
     /// Publish this seat's busy/idle state, for a turn-boundary hook (Claude's
     /// UserPromptSubmit and Stop). Prints nothing on success; `--json` prints the envelope.
@@ -579,6 +600,18 @@ enum Command {
     /// The community directory: `directory add` (plan 190), `--help` (plan 195).
     #[command(disable_help_flag = true)]
     Directory {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Write a role's output and tell whoever asked (plan 200).
+    #[command(disable_help_flag = true)]
+    Output {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// A project's role outputs, by subject and exact head or by role (plan 200).
+    #[command(disable_help_flag = true)]
+    Outputs {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -1001,6 +1034,7 @@ async fn run(cli: Cli) -> ExitCode {
     if let Command::Send {
         command: Some(command),
         body,
+        text,
         body_file,
         ..
     } = &cli.command
@@ -1008,7 +1042,8 @@ async fn run(cli: Cli) -> ExitCode {
         let result = if body_file.is_some() {
             Err("E-RS-CONTROL-BODY: --command and --body-file are mutually exclusive".to_string())
         } else {
-            pij_core::control::validate_command(command, body.as_deref().unwrap_or_default())
+            let argument = body.as_deref().or(text.as_deref()).unwrap_or_default();
+            pij_core::control::validate_command(command, argument)
         };
         if let Err(reason) = result {
             return emit(
@@ -1201,6 +1236,17 @@ async fn run(cli: Cli) -> ExitCode {
     {
         return directory_help(args);
     }
+    if let Command::Output { args } | Command::Outputs { args } = &cli.command
+        && pij_core::directory::wants_help(args)
+    {
+        let family = if matches!(cli.command, Command::Outputs { .. }) {
+            "outputs"
+        } else {
+            "output"
+        };
+        println!("{}", pij_core::outputs::help(family));
+        return ExitCode::SUCCESS;
+    }
     // Claim help needs no daemon either (plan 196).
     if let Command::Claim { args } | Command::Claims { args } | Command::Delivered { args } =
         &cli.command
@@ -1357,6 +1403,8 @@ async fn run(cli: Cli) -> ExitCode {
         ),
         Command::Send {
             from,
+            recipient,
+            text,
             to,
             body,
             body_file,
@@ -1366,7 +1414,22 @@ async fn run(cli: Cli) -> ExitCode {
             fyi,
             force,
             reason,
+            reply,
+            limit,
+            project,
         } => {
+            // clap requires exactly one of the two recipient forms.
+            let Some(to) = to.or(recipient) else {
+                return emit(
+                    &Envelope::<Value>::refused(
+                        "pij send",
+                        ErrorKind::Refused,
+                        "pij send needs a recipient: pij send <id> <text>, or --to <id>",
+                    ),
+                    cli.json,
+                );
+            };
+            let body = body.or(text);
             let acting = match resolve_command_seat(&client, "pij send", from.as_deref()).await {
                 Ok(seat) => seat,
                 Err(error) => return emit(&setup_refusal::<Value>("pij send", error), cli.json),
@@ -1381,6 +1444,8 @@ async fn run(cli: Cli) -> ExitCode {
                     }
                 }
             };
+            // A control keeps its own caller field; only a role message carries one here.
+            let to_role = to.seat.as_str().starts_with("role:") && command.is_none();
             let request = SendRequest {
                 from: acting,
                 to,
@@ -1391,7 +1456,33 @@ async fn run(cli: Cli) -> ExitCode {
                 fyi,
                 force,
                 reason,
+                reply,
+                limit,
+                project,
+                caller: to_role.then(caller_context),
             };
+            if to_role {
+                let mut response = client.send_role(&request).await;
+                if response.ok {
+                    let data = response.data.as_ref();
+                    let field = |key: &str| {
+                        data.and_then(|data| data["request"][key].as_str())
+                            .unwrap_or("?")
+                            .to_string()
+                    };
+                    let holder = data
+                        .and_then(|data| data["request"]["holder"].as_str())
+                        .map_or_else(String::new, |holder| format!(" to {holder}"));
+                    response.meta = Some(format!(
+                        "from {}; request {} {}{holder} (reply {})",
+                        request.from,
+                        request.msg_id,
+                        field("state"),
+                        field("reply")
+                    ));
+                }
+                return emit(&response, cli.json);
+            }
             let mut response = if request.command.is_some() {
                 client.send_control(&request, &caller_context()).await
             } else {
@@ -1496,6 +1587,10 @@ async fn run(cli: Cli) -> ExitCode {
                 fyi: false,
                 force: false,
                 reason: None,
+                reply: None,
+                limit: None,
+                project: None,
+                caller: None,
             };
             let mut response = client.send_control(&request, &caller_context()).await;
             let raw = response.raw_json.take();
@@ -1719,6 +1814,18 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_directory(view));
                     ExitCode::SUCCESS
                 }
+                // `directory routes`: the table as a seat is sent it.
+                Some(routes) if routes.get("overlaps").is_some() => {
+                    if let Some(text) = routes["text"].as_str() {
+                        println!("{text}");
+                    }
+                    if routes["stale"] == true {
+                        println!(
+                            "\nROUTES.md is stale; `pij directory routes --write --why <text>` rewrites it."
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
                 Some(data) if data.get("templates").is_some_and(Value::is_array) => {
                     println!("{}", render_templates(&data["templates"]));
                     ExitCode::SUCCESS
@@ -1738,6 +1845,50 @@ async fn run(cli: Cli) -> ExitCode {
                 }
                 Some(memory) if memory.get("note").is_some() && memory.get("commit").is_none() => {
                     println!("{}", render_memory_note(memory));
+                    ExitCode::SUCCESS
+                }
+                // `directory memory add`: one line, the JSON is for --json (F31).
+                Some(added)
+                    if args.first().map(String::as_str) == Some("memory")
+                        && args.get(1).map(String::as_str) == Some("add")
+                        && added.get("commit").is_some_and(Value::is_string) =>
+                {
+                    println!(
+                        "{}",
+                        render_memory_added(args.get(2).map_or("-", String::as_str), added)
+                    );
+                    ExitCode::SUCCESS
+                }
+                _ => emit(&response, as_json),
+            }
+        }
+        Command::Output { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let args = match pij_cli::governance::body_file_to_body(&args, |source| {
+                if source == "-" {
+                    std::io::read_to_string(std::io::stdin())
+                } else {
+                    std::fs::read_to_string(source)
+                }
+            }) {
+                Ok(args) => args,
+                Err(reason) => {
+                    eprintln!("pij output: {reason}");
+                    return ExitCode::from(2);
+                }
+            };
+            emit(
+                &pij_cli::governance::governance(&client, "output", &args, &caller_context()).await,
+                as_json,
+            )
+        }
+        Command::Outputs { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let response =
+                pij_cli::governance::governance(&client, "outputs", &args, &caller_context()).await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                Some(data) if data.get("outputs").is_some_and(Value::is_array) => {
+                    println!("{}", render_outputs(data));
                     ExitCode::SUCCESS
                 }
                 _ => emit(&response, as_json),
@@ -2234,6 +2385,7 @@ async fn resolve_command_seat(
     let derived = identity::resolve_acting_seat(
         std::env::var_os("PIJ_SESSION_ID"),
         std::env::var_os("TMUX_PANE"),
+        caller_context(),
         client,
     )
     .await
@@ -2610,6 +2762,11 @@ async fn run_daemon(
             if let Err(error) = statusline_script {
                 eprintln!("pij-rs claude statusline: {error}");
             }
+            // Installed before the readiness line, not on the first poll of
+            // ctrl_c(): a SIGINT sent as soon as "listening on" appears must
+            // shut down cleanly rather than take the default action (F27).
+            let interrupt =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
             println!(
                 "pij-rs daemon: listening on {} · key {} (0600) · offline={} · paired with {}",
                 daemon.addr,
@@ -2647,7 +2804,12 @@ async fn run_daemon(
                     daemon.addr
                 ),
             }
-            let _ = tokio::signal::ctrl_c().await;
+            match interrupt {
+                Ok(mut interrupt) => {
+                    interrupt.recv().await;
+                }
+                Err(error) => eprintln!("pij-rs: could not install the interrupt handler: {error}"),
+            }
             println!("pij-rs daemon: shutting down");
             match daemon.shutdown().await {
                 Ok(()) => ExitCode::SUCCESS,
@@ -2730,29 +2892,113 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
     ExitCode::from(exit_code(envelope))
 }
 
-/// `pij directory` for a human: each role, its mode and its live holders.
-fn render_directory(view: &Value) -> String {
+/// `pij outputs` for a human: one line per output, newest first.
+fn render_outputs(data: &Value) -> String {
     let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
-    let roles = view["roles"]
+    let rows = data["outputs"]
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default();
+    let mut out = format!("{}: {} output(s)", text(&data["project"]), rows.len());
+    for row in rows {
+        let _ = write!(
+            out,
+            "\n  {} {} on {}{}{} by {}{}: {}",
+            text(&row["role"]),
+            text(&row["kind"]),
+            text(&row["subject"]),
+            row["head"]
+                .as_str()
+                .map_or_else(String::new, |head| format!(" at {head}")),
+            row["result"]
+                .as_str()
+                .map_or_else(String::new, |result| format!(" ({result})")),
+            text(&row["writer"]),
+            if row["writer_holds_role"] == false {
+                " (not a holder)"
+            } else {
+                ""
+            },
+            text(&row["path"]),
+        );
+    }
+    out
+}
+
+/// `pij directory` for a human: the prime, each role with its holders, waiting
+/// requests, latest output and memory, then the next actions and prompts.
+fn render_directory(view: &Value) -> String {
+    render_directory_at(view, |at| {
+        time::UtcOffset::local_offset_at(at).unwrap_or(time::UtcOffset::UTC)
+    })
+}
+
+/// `instant` (RFC 3339 text, or ms since the epoch) at the offset `zone`
+/// gives for it, as `yyyy-mm-dd hh:mm ±hh:mm`; the text as given when it
+/// does not parse.
+fn local_time(instant: &Value, zone: &impl Fn(time::OffsetDateTime) -> time::UtcOffset) -> String {
+    let at = match instant {
+        Value::String(text) => {
+            time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339).ok()
+        }
+        Value::Number(ms) => ms
+            .as_u64()
+            .and_then(|ms| i128::from(ms).checked_mul(1_000_000))
+            .and_then(|ns| time::OffsetDateTime::from_unix_timestamp_nanos(ns).ok()),
+        _ => None,
+    };
+    let Some(at) = at else {
+        return instant.as_str().unwrap_or("-").to_string();
+    };
+    let local = at.to_offset(zone(at));
+    let (hours, minutes, _) = local.offset().as_hms();
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02} {}{:02}:{:02}",
+        local.year(),
+        u8::from(local.month()),
+        local.day(),
+        local.hour(),
+        local.minute(),
+        if hours < 0 || minutes < 0 { '-' } else { '+' },
+        hours.unsigned_abs(),
+        minutes.unsigned_abs()
+    )
+}
+
+fn render_directory_at(
+    view: &Value,
+    zone: impl Fn(time::OffsetDateTime) -> time::UtcOffset,
+) -> String {
+    let text = |value: &Value| value.as_str().unwrap_or("-").to_string();
+    let list = |value: &Value| value.as_array().cloned().unwrap_or_default();
+    let roles = list(&view["roles"]);
     let mut out = format!("{}: {} role(s)", text(&view["project"]), roles.len());
-    for role in roles {
-        let live = role["live"]
-            .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let holders: Vec<String> = live
+    match view["prime"].as_str() {
+        Some(prime) => {
+            let _ = write!(out, "; prime: {prime}");
+        }
+        None => out.push_str("; no designated prime"),
+    }
+    // F21: a missing prime role document is not a missing prime.
+    if view["prime_document"] == false {
+        out.push_str(" (no prime role document yet)");
+    }
+    for role in &roles {
+        let holders: Vec<String> = list(&role["live"])
             .iter()
             .map(|holder| {
                 let instance = holder["instance"].as_str().filter(|key| !key.is_empty());
                 format!(
-                    "{}{} since {} on {}{}",
+                    "{}{} since {} on {}{}{}",
                     text(&holder["seat"]),
                     instance.map(|key| format!(" ({key})")).unwrap_or_default(),
-                    text(&holder["since"]),
+                    local_time(&holder["since"], &zone),
                     text(&holder["machine"]),
+                    if holder["seat_live"] == false {
+                        ", seat not live"
+                    } else {
+                        ""
+                    },
                     if holder["end_pending"] == true {
                         ", end pending"
                     } else {
@@ -2761,18 +3007,79 @@ fn render_directory(view: &Value) -> String {
                 )
             })
             .collect();
-        let _ = write!(
-            out,
-            "\n  {} ({}, {}): {}",
+        let head = format!(
+            "\n  {} ({}, {}): ",
             text(&role["id"]),
             text(&role["kind"]),
-            text(&role["holders"]),
-            if holders.is_empty() {
-                "no holder".to_string()
-            } else {
-                holders.join("; ")
-            }
+            text(&role["holders"])
         );
+        out.push_str(&head);
+        // F22: one line per holder unless there is exactly one.
+        match holders.as_slice() {
+            _ if role["state"] == "retired" => match role["merged_into"].as_str() {
+                Some(into) => {
+                    let _ = write!(out, "retired, merged into {into}");
+                }
+                None => out.push_str("retired"),
+            },
+            [] => out.push_str("no holder"),
+            [only] => out.push_str(only),
+            many => {
+                let _ = write!(out, "{} holders", many.len());
+                for holder in many {
+                    let _ = write!(out, "\n    {holder}");
+                }
+            }
+        }
+        let merged: Vec<&str> = role["merged_from"]
+            .as_array()
+            .map(|from| from.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        if !merged.is_empty() {
+            let _ = write!(out, "\n    merged from {}", merged.join(", "));
+        }
+        let requests = &role["requests"];
+        if let Some(count) = requests["count"].as_u64() {
+            let _ = write!(
+                out,
+                "\n    requests: {count} waiting, oldest {}",
+                local_time(&requests["oldest_at"], &zone)
+            );
+        }
+        let output = &role["latest_output"];
+        if output.is_object() {
+            let _ = write!(
+                out,
+                "\n    latest output: {} on {}{}{} by {}, {}",
+                text(&output["kind"]),
+                text(&output["subject"]),
+                output["head"]
+                    .as_str()
+                    .map(|head| format!(" at {}", head.chars().take(7).collect::<String>()))
+                    .unwrap_or_default(),
+                output["result"]
+                    .as_str()
+                    .map(|result| format!(" ({result})"))
+                    .unwrap_or_default(),
+                text(&output["writer"]),
+                local_time(&output["at"], &zone)
+            );
+        }
+        let memory = &role["memory"];
+        if let Some(notes) = memory["notes"].as_u64() {
+            match memory["latest"].as_str() {
+                Some(latest) => {
+                    let _ = write!(out, "\n    memory: {notes} note(s), newest {latest}");
+                }
+                None if notes == 0 => out.push_str("\n    memory: no notes"),
+                None => {
+                    let _ = write!(out, "\n    memory: {notes} note(s), none dated");
+                }
+            }
+        }
+        if let Some(call) = role["call_on"].as_str() {
+            let _ = write!(out, "\n    cold, with memory to call on: {call}");
+        }
         let template = &role["template"];
         if template["behind"] == true {
             let _ = write!(
@@ -2786,21 +3093,83 @@ fn render_directory(view: &Value) -> String {
             );
         }
     }
-    if let Some(prompts) = view["prompts"].as_array().filter(|p| !p.is_empty()) {
+    let actions = list(&view["actions"]);
+    if !actions.is_empty() {
+        out.push_str("\n\nNext actions:");
+        for action in &actions {
+            let _ = write!(out, "\n  {}", text(&action["says"]));
+            for command in list(&action["commands"]) {
+                let _ = write!(out, "\n    {}", text(&command));
+            }
+        }
+    }
+    // C28: every recommendation prints the signal it rests on.
+    let recommend = |out: &mut String, item: &Value| {
+        let commands = list(&item["commands"]);
+        let later = list(&item["later"]);
         let _ = write!(
             out,
-            "\n\n{}\nNot yet in this directory:",
+            "\n  {} ({}): {}",
+            text(&item["role"]),
+            text(&item["kind"]),
+            commands
+                .first()
+                .or(later.first())
+                .map_or_else(|| text(&item["command"]), text)
+        );
+        let joint = if item["in_order"] == true {
+            "then"
+        } else {
+            "or"
+        };
+        for command in commands.iter().skip(1) {
+            let _ = write!(out, "\n    {joint}: {}", text(command));
+        }
+        // Verbs not shipped yet: shown, never as runnable (plan 203).
+        for command in later.iter().skip(usize::from(commands.is_empty())) {
+            let _ = write!(out, "\n    or: {}", text(command));
+        }
+        if let Some(detail) = item["detail"].as_str() {
+            let _ = write!(out, "\n    {detail}");
+        }
+        let needed: Vec<String> = list(&item["needed_by"]).iter().map(text).collect();
+        if !needed.is_empty() {
+            let _ = write!(out, "\n    needed by {}", needed.join(", "));
+        }
+        if let Some(note) = item["note"].as_str() {
+            let _ = write!(out, "\n    {note}");
+        }
+        let _ = write!(out, "\n    signal: {}", text(&item["signal"]["says"]));
+    };
+    let prompts = list(&view["prompts"]);
+    if !prompts.is_empty() {
+        let _ = write!(
+            out,
+            "\n\n{}\nRoles to consider adding:",
             text(&view["guidance"])
         );
-        for prompt in prompts {
-            let _ = write!(
-                out,
-                "\n  {} ({}): {}",
-                text(&prompt["role"]),
-                text(&prompt["kind"]),
-                text(&prompt["command"])
-            );
+        for prompt in &prompts {
+            recommend(&mut out, prompt);
         }
+    }
+    let suggested = list(&view["suggestions"]["roles"]);
+    if !suggested.is_empty() {
+        let _ = write!(
+            out,
+            "\n\nSuggested roles not yet here: {}. See each with its command: {}",
+            suggested.iter().map(text).collect::<Vec<_>>().join(", "),
+            text(&view["suggestions"]["command"])
+        );
+    }
+    let reviews = list(&view["reviews"]);
+    if !reviews.is_empty() {
+        out.push_str("\n\nBoundary review (at a wave end, a compact or a PR merge):");
+        for review in &reviews {
+            recommend(&mut out, review);
+        }
+    }
+    if let Some(notice) = view["notice"].as_str() {
+        let _ = write!(out, "\n\n{notice}");
     }
     out
 }
@@ -2863,6 +3232,21 @@ fn render_template_diff(data: &Value) -> String {
 }
 
 /// One memory note for a human: its title line, then the body as written.
+/// `pij directory memory add` in human mode (plan 209, F31).
+fn render_memory_added(role: &str, added: &Value) -> String {
+    let path = added["path"].as_str().unwrap_or_default();
+    let note = path
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(".dd.json");
+    let commit = added["commit"].as_str().unwrap_or_default();
+    format!(
+        "pij directory memory: wrote {role} memory {note} (commit {})",
+        &commit[..commit.len().min(7)]
+    )
+}
+
 fn render_memory_note(note: &Value) -> String {
     if let Some(text) = note["text"].as_str() {
         return text.trim_end().to_string();
@@ -3481,6 +3865,8 @@ impl Command {
             Command::Orchestration { .. } => "pij orchestration",
             Command::Spine { .. } => "pij spine",
             Command::Directory { .. } => "pij directory",
+            Command::Output { .. } => "pij output",
+            Command::Outputs { .. } => "pij outputs",
             Command::Claim { .. } => "pij claim",
             Command::Claims { .. } => "pij claims",
             Command::Delivered { .. } => "pij delivered",
@@ -3506,6 +3892,199 @@ mod tests {
         assert!(
             text.contains("pij directory template-diff qa --project 'my remote'"),
             "{text}"
+        );
+    }
+
+    /// Plan 206: a merged role reads as retired into its target, and the
+    /// target lists what was merged into it.
+    #[test]
+    fn the_view_names_retired_and_merged_roles() {
+        let view = serde_json::json!({
+            "project": "fleet",
+            "pending": [],
+            "roles": [
+                {"id": "qa", "kind": "general", "holders": "one", "live": [],
+                    "state": "retired", "merged_into": "review", "merged_from": []},
+                {"id": "review", "kind": "general", "holders": "many", "live": [],
+                    "state": "active", "merged_into": null, "merged_from": ["qa"]},
+                {"id": "old", "kind": "general", "holders": "one", "live": [],
+                    "state": "retired", "merged_into": null, "merged_from": []},
+            ],
+        });
+        let text = super::render_directory(&view);
+        assert!(
+            text.contains("qa (general, one): retired, merged into review"),
+            "{text}"
+        );
+        assert!(
+            text.contains("review (general, many): no holder\n    merged from qa"),
+            "{text}"
+        );
+        assert!(text.contains("old (general, one): retired"), "{text}");
+    }
+
+    /// Plan 203: the prime, holders one per line for a many-holder role, local
+    /// times with zone, requests, the latest output, memory, the next actions,
+    /// the needed and prime prompts, and the PEC notice.
+    #[test]
+    fn the_directory_view_renders_the_picture_in_local_time() {
+        let view = serde_json::json!({
+            "project": "fleet", "prime": "pij-prime", "prime_document": false, "pending": [],
+            "suggestions": {"roles": ["pm", "pa"], "command": "pij directory --suggest --project fleet"},
+            "roles": [
+                {"id": "reviewer", "kind": "general", "holders": "many",
+                 "live": [
+                    {"seat": "pij-a", "instance": "114", "since": "2026-11-06T03:07:00.000Z", "machine": "m", "seat_live": true},
+                    {"seat": "pij-b", "instance": "115", "since": "2026-11-06T04:00:00Z", "machine": "m", "seat_live": false}
+                 ],
+                 "requests": {"count": 2, "oldest_at": 1_793_934_000_000_u64},
+                 "latest_output": {"kind": "verdict", "subject": "pr:200", "head": "0123456789", "result": "pass", "writer": "pij-a", "at": 1_793_934_000_000_u64},
+                 "memory": {"notes": 3, "latest": "2026-11-05"}},
+                {"id": "pm", "kind": "specialist", "holders": "one",
+                 "live": [{"seat": "pij-c", "instance": "", "since": "2026-11-05T23:30:00Z", "machine": "m", "seat_live": true}],
+                 "requests": null, "latest_output": null, "memory": {"notes": 0, "latest": null}},
+                {"id": "historian", "kind": "specialist", "holders": "one", "live": [],
+                 "memory": {"notes": 12, "latest": "2026-10-01"}, "call_on": "pij send role:historian --body-file x"}
+            ],
+            "actions": [{"role": "pm", "condition": "memory-stale", "says": "pm's last 2 closes left no memory note", "commands": ["pij directory memory add pm --project fleet"]}],
+            "prompts": [
+                {"role": "prime", "kind": "core", "command": "pij directory add prime --from template:prime", "commands": ["pij directory add prime --from template:prime"], "note": "the project's prime is pij-prime; this adds the prime role's document", "signal": {"code": "core", "says": "a core role"}},
+                {"role": "docs-system", "kind": "needed", "needed_by": ["001 s09"], "command": "pij directory add docs-system", "signal": {"code": "step-needs", "says": "a step needs it"}}
+            ],
+            "reviews": [
+                {"role": "reviewer", "kind": "two-domains", "act": "split", "commands": ["pij directory release reviewer/115 pij-a", "pij directory assign reviewer/115 '<seat>'"], "in_order": true, "signal": {"code": "two-domains", "says": "two domains"}},
+                {"role": "dusty", "kind": "idle", "act": "retire", "command": null, "commands": [], "later": ["pij directory retire dusty", "pij directory merge dusty --into '<role>'"], "detail": "dusty is idle", "note": "retire and merge are s15's verbs", "signal": {"code": "mostly-idle", "says": "it would mostly sit idle"}}
+            ],
+            "guidance": "PEC guidance",
+            "notice": "PEC notice",
+        });
+        let ten = time::UtcOffset::from_hms(10, 0, 0).unwrap();
+        let text = super::render_directory_at(&view, |_| ten);
+        let expected = "\
+fleet: 3 role(s); prime: pij-prime (no prime role document yet)
+  reviewer (general, many): 2 holders
+    pij-a (114) since 2026-11-06 13:07 +10:00 on m
+    pij-b (115) since 2026-11-06 14:00 +10:00 on m, seat not live
+    requests: 2 waiting, oldest 2026-11-06 13:00 +10:00
+    latest output: verdict on pr:200 at 0123456 (pass) by pij-a, 2026-11-06 13:00 +10:00
+    memory: 3 note(s), newest 2026-11-05
+  pm (specialist, one): pij-c since 2026-11-06 09:30 +10:00 on m
+    memory: no notes
+  historian (specialist, one): no holder
+    memory: 12 note(s), newest 2026-10-01
+    cold, with memory to call on: pij send role:historian --body-file x
+
+Next actions:
+  pm's last 2 closes left no memory note
+    pij directory memory add pm --project fleet
+
+PEC guidance
+Roles to consider adding:
+  prime (core): pij directory add prime --from template:prime
+    the project's prime is pij-prime; this adds the prime role's document
+    signal: a core role
+  docs-system (needed): pij directory add docs-system
+    needed by 001 s09
+    signal: a step needs it
+
+Suggested roles not yet here: pm, pa. See each with its command: pij directory --suggest --project fleet
+
+Boundary review (at a wave end, a compact or a PR merge):
+  reviewer (two-domains): pij directory release reviewer/115 pij-a
+    then: pij directory assign reviewer/115 '<seat>'
+    signal: two domains
+  dusty (idle): pij directory retire dusty
+    or: pij directory merge dusty --into '<role>'
+    dusty is idle
+    retire and merge are s15's verbs
+    signal: it would mostly sit idle
+
+PEC notice";
+        assert_eq!(text, expected);
+        let behind = super::local_time(&serde_json::json!("2026-11-06T03:07:00Z"), &|_| {
+            time::UtcOffset::from_hms(-3, -30, 0).unwrap()
+        });
+        assert_eq!(behind, "2026-11-05 23:37 -03:30");
+    }
+
+    /// Plan 203: the picture's revive line parses as `pij-rs revive` (the
+    /// daemon's test replays its `pij directory` and `pij send` lines).
+    #[test]
+    fn the_pictures_revive_line_parses_as_native_revive() {
+        let gone = pij_store::Assignment {
+            project: "fleet".into(),
+            role: "qa".into(),
+            instance: String::new(),
+            seat: "pij-gone".into(),
+            harness: None,
+            session: None,
+            machine: None,
+            from: "2026-11-01T00:00:00Z".into(),
+            to: Some("2026-11-02T00:00:00Z".into()),
+            assigned_by: "prime".into(),
+            released_by: None,
+            why: "w".into(),
+            release_why: Some("release".into()),
+            end_pending: false,
+        };
+        let actions = pij_daemon::community::picture::actions(
+            "fleet",
+            "qa",
+            "one",
+            &[&gone],
+            &std::collections::HashSet::new(),
+            &[""],
+            None,
+        );
+        let revive = actions[0]["commands"][0].as_str().unwrap();
+        let words: Vec<&str> = revive.split(' ').collect();
+        assert_eq!(words, ["pij-rs", "revive", "pij-gone"]);
+        match super::Cli::try_parse_from(words)
+            .expect("pij-rs parses it")
+            .command
+        {
+            super::Command::Revive { id, .. } => assert_eq!(id, "pij-gone"),
+            _ => panic!("not revive"),
+        }
+    }
+
+    /// Plan 209, F41: `pij delivered` in human mode prints each edit's command.
+    #[test]
+    fn delivered_prints_the_edits_for_the_docs_pr() {
+        let data = serde_json::json!({
+            "line": "PR #131 delivered 2 addresses; told pij-steady-otter",
+            "edits": [
+                {"address": "a", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-20/delivered_by' '#131'"},
+                {"address": "b", "value": "#131", "command": "ddocs set 'docs/project/prds/001-pij-community.dd.json#requirements/req-21/delivered_by' '#131'"},
+            ],
+            "notes": [],
+        });
+        let text = super::render_claims("delivered", &data);
+        assert!(
+            text.contains("ddocs edits for the PM's next docs PR"),
+            "{text}"
+        );
+        assert!(
+            text.contains("requirements/req-20/delivered_by' '#131'"),
+            "{text}"
+        );
+        assert!(
+            text.contains("requirements/req-21/delivered_by' '#131'"),
+            "{text}"
+        );
+    }
+
+    /// Plan 209, F31: a memory add says what it wrote, not its envelope.
+    #[test]
+    fn a_memory_add_prints_one_line() {
+        let added = serde_json::json!({
+            "path": "community/roles/coder/memory/2026-11-06-shim-stdin.dd.json",
+            "commit": "0123456789abcdef",
+            "paths": [],
+        });
+        assert_eq!(
+            super::render_memory_added("coder", &added),
+            "pij directory memory: wrote coder memory 2026-11-06-shim-stdin (commit 0123456)"
         );
     }
 
@@ -3768,6 +4347,8 @@ mod tests {
                 "orchestration",
                 "spine",
                 "directory",
+                "output",
+                "outputs",
                 "claim",
                 "claims",
                 "delivered",
@@ -4455,5 +5036,152 @@ mod identity_cli_tests {
             adopt_argv(None, "claude", None),
             ["inbox", "register", "--harness", "claude"]
         );
+    }
+}
+
+/// Plan 213: the pij shim hands pij-rs's community verbs to this binary
+/// unchanged. Which verbs is read from clap, never restated.
+#[cfg(test)]
+mod shim_forward_tests {
+    use std::collections::BTreeSet;
+
+    use clap::{CommandFactory, Parser};
+
+    use super::{Cli, Command};
+
+    /// One list from the shim's `harness/scripts/pij-native-verbs.json`.
+    fn shim_list(key: &str) -> Vec<String> {
+        let file: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../harness/scripts/pij-native-verbs.json"
+        ))
+        .expect("pij-native-verbs.json is JSON");
+        serde_json::from_value(file[key].clone()).unwrap_or_else(|_| panic!("a {key} array"))
+    }
+
+    fn listed() -> Vec<String> {
+        shim_list("verbs")
+    }
+
+    /// `--long` options of `command` that take a value; `global` keeps only
+    /// options marked global.
+    fn value_flags(command: &clap::Command, global: bool) -> BTreeSet<String> {
+        command
+            .get_arguments()
+            .filter(|arg| arg.get_action().takes_values() && (!global || arg.is_global_set()))
+            .filter_map(|arg| arg.get_long().map(|long| format!("--{long}")))
+            .collect()
+    }
+
+    fn send_command() -> clap::Command {
+        Cli::command()
+            .find_subcommand("send")
+            .expect("a send subcommand")
+            .clone()
+    }
+
+    /// Review of #147, F001 and N001: the shim reads a flag's value as a value,
+    /// never as the verb or the recipient, because its value-flag tables are
+    /// clap's.
+    #[test]
+    fn the_shims_value_flag_tables_are_claps() {
+        let send = value_flags(&send_command(), false);
+        let listed: BTreeSet<String> = shim_list("send_value_flags").into_iter().collect();
+        assert_eq!(listed, send);
+        let global: BTreeSet<String> = shim_list("global_value_flags").into_iter().collect();
+        assert_eq!(global, value_flags(&Cli::command(), true));
+        for routed in shim_list("routed_send_value_flags") {
+            let long = routed.trim_start_matches("--");
+            assert!(
+                send_command()
+                    .get_arguments()
+                    .all(|arg| arg.get_long() != Some(long)),
+                "{routed} is a pij-rs send flag, so it is not shim-only"
+            );
+        }
+        // Negative control: a new value-taking send flag that the shim's table
+        // lacks is caught.
+        let grown = send_command().arg(clap::Arg::new("priority").long("priority"));
+        assert_ne!(listed, value_flags(&grown, false));
+    }
+
+    /// Verbs that own their grammar and help (clap's help flag disabled) but the
+    /// shim does not forward, and listed verbs that no longer exist or own it.
+    fn gaps(command: &clap::Command, listed: &[String]) -> Vec<String> {
+        let owned: BTreeSet<String> = command
+            .get_subcommands()
+            .filter(|sub| sub.is_disable_help_flag_set())
+            .map(|sub| sub.get_name().to_string())
+            .collect();
+        let listed: BTreeSet<String> = listed.iter().cloned().collect();
+        owned.symmetric_difference(&listed).cloned().collect()
+    }
+
+    #[test]
+    fn the_shim_forwards_exactly_the_verbs_that_own_their_help() {
+        let listed = listed();
+        assert!(listed.contains(&"directory".to_string()), "{listed:?}");
+        assert_eq!(gaps(&Cli::command(), &listed), Vec::<String>::new());
+        // Negative controls: a new verb that owns its help but is not listed,
+        // and a listed verb clap no longer has, both fail.
+        let grown =
+            Cli::command().subcommand(clap::Command::new("requests").disable_help_flag(true));
+        assert_eq!(gaps(&grown, &listed), ["requests"]);
+        let mut stale = listed.clone();
+        stale.push("retired-verb".to_string());
+        assert_eq!(gaps(&Cli::command(), &stale), ["retired-verb"]);
+    }
+
+    /// The shim's own send form reaches pij-rs unchanged (F55): a positional
+    /// recipient and text, the same as --to and --body.
+    #[test]
+    fn send_takes_the_shims_positional_form() {
+        let cli = Cli::try_parse_from([
+            "pij-rs",
+            "send",
+            "role:security/141",
+            "hello",
+            "--reply",
+            "fyi",
+        ])
+        .expect("the positional form parses");
+        let Command::Send {
+            recipient,
+            text,
+            to,
+            body,
+            reply,
+            ..
+        } = cli.command
+        else {
+            panic!("expected send");
+        };
+        assert_eq!(
+            recipient.map(|to| to.seat.as_str().to_string()).as_deref(),
+            Some("role:security/141")
+        );
+        assert_eq!((text.as_deref(), to, body), (Some("hello"), None, None));
+        assert_eq!(reply.as_deref(), Some("fyi"));
+
+        let piped = Cli::try_parse_from(["pij-rs", "send", "pij-peer", "--body-file", "-"])
+            .expect("a positional recipient with a stdin body parses");
+        let Command::Send {
+            recipient,
+            body_file,
+            ..
+        } = piped.command
+        else {
+            panic!("expected send");
+        };
+        assert!(recipient.is_some());
+        assert_eq!(body_file.as_deref(), Some("-"));
+
+        for both in [
+            &["pij-rs", "send", "pij-a", "--to", "pij-b", "--body", "x"][..],
+            &["pij-rs", "send", "pij-a", "hello", "--body", "x"],
+            &["pij-rs", "send", "pij-a", "hello", "--body-file", "-"],
+            &["pij-rs", "send", "--body", "x"],
+        ] {
+            assert!(Cli::try_parse_from(both).is_err(), "{both:?}");
+        }
     }
 }

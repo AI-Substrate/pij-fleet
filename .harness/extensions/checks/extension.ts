@@ -39,6 +39,13 @@ const SENSORS: Sensor[] = [
 			"docs/project and the community skill examples validate clean and their .dd.md are current",
 	},
 	{
+		name: "pij-skill",
+		cmd: "just",
+		args: ["pij-skill-check"],
+		proves:
+			"skills/pij keeps its structure: registry parity, line budgets, verb coverage and doctrine markers",
+	},
+	{
 		name: "typecheck",
 		cmd: "just",
 		args: ["typecheck"],
@@ -101,7 +108,7 @@ const checks: HarnessVerb = {
 		"Run pij's full deterministic gate (the signal inventory) and report a ship/done verdict.",
 	description:
 		'The single "are we done?" gate. Runs every sensor in the engineering-harness signal inventory ' +
-		"(mirrors `just self-check`: local-paths, ddocs, typecheck, lockfile, lint, test, copilot-native, rust, smoke, pij-commit-trailers) as individual " +
+		"(mirrors `just self-check`: local-paths, ddocs, pij-skill, typecheck, lockfile, lint, test, copilot-native, rust, smoke, pij-commit-trailers) as individual " +
 		"stages, reports a per-sensor verdict, and — unlike self-check — runs ALL of them so you see every " +
 		"failure in one pass. Run it before ship and before declaring any non-trivial task done. " +
 		"`--quick` skips heavy sensors (rust, smoke) for a fast static+unit gate.",

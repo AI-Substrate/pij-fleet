@@ -1714,3 +1714,770 @@ async fn community_assignments_record_end_rebuild_and_set_seat_roles_in_one_tran
         "a refused rebuild replaces nothing"
     );
 }
+
+/// Plan 199 (migration 0034): requests sent to a role. A request round-trips
+/// with its reply mode and limit; the queue is per role, takes instance-less
+/// requests for any instance, runs oldest first, and a delivered request
+/// leaves it exactly once.
+#[tokio::test]
+async fn role_requests_queue_per_role_oldest_first_and_deliver_once() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let registry = SqliteRegistry::new(pool.clone(), support::publisher());
+    for id in ["pij-coder", "pij-other", "pij-stranger", "pij-gone"] {
+        registry
+            .put(SeatDescriptor::new(id, Harness::Omp, "/abs/tree"))
+            .await
+            .unwrap();
+    }
+    let store = pij_store::SqliteOrchestration::new(pool);
+    // pij-coder and pij-other hold coder/196; pij-gone held it but is
+    // tombstoned; pij-stranger is live and holds nothing.
+    for seat in ["pij-coder", "pij-other", "pij-gone"] {
+        store
+            .record_assignment_committed(
+                &pij_store::Assignment {
+                    project: "pij".into(),
+                    role: "coder".into(),
+                    instance: "196".into(),
+                    seat: seat.into(),
+                    harness: Some("omp".into()),
+                    session: None,
+                    machine: Some("local".into()),
+                    from: "2026-11-06T00:00:00Z".into(),
+                    to: None,
+                    assigned_by: "pij-pm".into(),
+                    released_by: None,
+                    why: "test".into(),
+                    release_why: None,
+                    end_pending: false,
+                },
+                Some("worker"),
+                1,
+            )
+            .await
+            .unwrap();
+    }
+    registry
+        .tombstone(&SeatId::from("pij-gone"), "test")
+        .await
+        .unwrap();
+    let request = |id: &str, role: &str, instance: &str, at: u64| RoleRequest {
+        id: id.into(),
+        project: "pij".into(),
+        role: role.into(),
+        instance: instance.into(),
+        requester: "pij-asker".into(),
+        body: format!("please {id}"),
+        in_reply_to: None,
+        fyi: false,
+        reply: ReplyMode::Wake,
+        limit_ms: None,
+        state: RequestState::Queued,
+        holder: None,
+        created_at: at,
+        delivered_at: None,
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
+    };
+    let mut fyi = request("r-fyi", "coder", "196", 30);
+    fyi.fyi = true;
+    fyi.reply = ReplyMode::None;
+    fyi.limit_ms = Some(45 * 60_000);
+    fyi.in_reply_to = Some("m-0".into());
+    for row in [
+        request("r-late", "coder", "", 20),
+        request("r-early", "coder", "", 10),
+        fyi.clone(),
+        request("r-other-instance", "coder", "197", 5),
+        request("r-other-role", "reviewer", "", 1),
+    ] {
+        store.record_role_request(&row).await.expect("record");
+    }
+    assert_eq!(
+        store.role_request("r-fyi").await.expect("read"),
+        Some(fyi),
+        "reply, limit, fyi and in_reply_to round-trip"
+    );
+    let duplicate = store
+        .record_role_request(&request("r-late", "coder", "", 99))
+        .await
+        .expect_err("one request per id");
+    assert!(
+        duplicate.to_string().contains("E-RS-ROLE-REQUEST-EXISTS"),
+        "{duplicate}"
+    );
+
+    let ids = |rows: Vec<RoleRequest>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(store
+            .queued_role_requests("pij", "coder", "196")
+            .await
+            .unwrap()),
+        ["r-early", "r-late", "r-fyi"],
+        "instance 196 takes its own and instance-less requests, oldest first"
+    );
+    assert_eq!(
+        ids(store
+            .queued_role_requests("pij", "coder", "")
+            .await
+            .unwrap()),
+        ["r-early", "r-late"],
+        "an instance-less holder takes only instance-less requests"
+    );
+    assert!(
+        store
+            .queued_role_requests("other", "coder", "196")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    assert!(
+        !store
+            .mark_role_request_delivered("r-early", "pij-coder", 39)
+            .await
+            .unwrap(),
+        "only a claimed request can be delivered"
+    );
+    for (id, seat, why) in [
+        (
+            "r-early",
+            "pij-stranger",
+            "a seat that does not hold the role",
+        ),
+        ("r-early", "pij-gone", "a tombstoned holder"),
+        (
+            "r-other-instance",
+            "pij-coder",
+            "a holder of another instance",
+        ),
+    ] {
+        assert!(
+            !store.claim_role_request(id, seat).await.unwrap(),
+            "{why} cannot claim (#129 security S1)"
+        );
+    }
+    assert!(
+        store
+            .claim_role_request("r-early", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .claim_role_request("r-early", "pij-other")
+            .await
+            .unwrap(),
+        "one claim: a second drain skips it"
+    );
+    assert!(
+        !store
+            .mark_role_request_delivered("r-early", "pij-other", 40)
+            .await
+            .unwrap(),
+        "only the claiming holder delivers it"
+    );
+    assert!(
+        store
+            .mark_role_request_delivered("r-early", "pij-coder", 40)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .mark_role_request_delivered("r-early", "pij-coder", 41)
+            .await
+            .unwrap(),
+        "a delivered request is never delivered twice"
+    );
+    assert!(
+        store
+            .claim_role_request("r-late", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .release_role_request_claim("r-late", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store
+            .role_request("r-late")
+            .await
+            .unwrap()
+            .map(|row| (row.state, row.holder)),
+        Some((RequestState::Queued, None)),
+        "a failed dispatch gives the request back to the queue"
+    );
+    assert!(
+        store
+            .claim_role_request("r-fyi", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .abandon_role_request("r-fyi", "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(store.role_request("r-fyi").await.unwrap().is_none());
+    assert!(
+        !store
+            .abandon_role_request("r-late", "pij-coder")
+            .await
+            .unwrap(),
+        "abandon never touches a queued request"
+    );
+    let delivered = store.role_request("r-early").await.unwrap().expect("row");
+    assert_eq!(
+        (
+            delivered.state,
+            delivered.holder.as_deref(),
+            delivered.delivered_at
+        ),
+        (RequestState::Delivered, Some("pij-coder"), Some(40))
+    );
+    assert_eq!(
+        ids(store.all_queued_role_requests().await.unwrap()),
+        ["r-other-role", "r-other-instance", "r-late"]
+    );
+    // Plan 203: the directory view's read is the project's queue, bodiless.
+    let mut elsewhere = request("r-elsewhere", "coder", "", 2);
+    elsewhere.project = "other".into();
+    store.record_role_request(&elsewhere).await.expect("record");
+    let heads = store.queued_role_request_heads("pij").await.unwrap();
+    assert!(heads.iter().all(|row| row.body.is_empty()), "no bodies");
+    assert_eq!(ids(heads), ["r-other-role", "r-other-instance", "r-late"]);
+}
+
+/// Plan 205 (migration 0035): the watchdog round reads only delivered,
+/// limited requests not yet escalated or answered, and each limit stage is
+/// claimed and stamped once.
+#[tokio::test]
+async fn open_limited_role_requests_are_delivered_limited_and_unresolved() {
+    use pij_store::{LimitStage, ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let request =
+        |id: &str, state: RequestState, limit_ms: Option<u64>, delivered_at: u64| RoleRequest {
+            id: id.into(),
+            project: "pij".into(),
+            role: "coder".into(),
+            instance: String::new(),
+            requester: "pij-asker".into(),
+            body: "go".into(),
+            in_reply_to: None,
+            fyi: false,
+            reply: ReplyMode::Wake,
+            limit_ms,
+            state,
+            holder: (state == RequestState::Delivered).then(|| "pij-coder".to_string()),
+            created_at: 1,
+            delivered_at: (state == RequestState::Delivered).then_some(delivered_at),
+            checkin_at: None,
+            escalated_at: None,
+            answered_at: None,
+        };
+    for row in [
+        request("late", RequestState::Delivered, Some(60_000), 20),
+        request("early", RequestState::Delivered, Some(60_000), 10),
+        request("unlimited", RequestState::Delivered, None, 5),
+        request("queued", RequestState::Queued, Some(60_000), 0),
+        request("answered", RequestState::Delivered, Some(60_000), 3),
+        request("escalated", RequestState::Delivered, Some(60_000), 4),
+    ] {
+        store.record_role_request(&row).await.expect("record");
+    }
+    assert!(
+        store
+            .mark_role_request_answered("answered", 30)
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .claim_role_request_limit("escalated", LimitStage::Notice, 31)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        store
+            .finish_role_request_limit("escalated", LimitStage::Notice, 31, 31)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .claim_role_request_limit("escalated", LimitStage::Notice, 32)
+            .await
+            .unwrap()
+            .is_some(),
+        "once"
+    );
+    let ids = |rows: Vec<RoleRequest>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(store.open_limited_role_requests().await.unwrap()),
+        ["early", "late"]
+    );
+
+    assert!(
+        store
+            .claim_role_request_limit("early", LimitStage::CheckIn, 40)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        store
+            .finish_role_request_limit("early", LimitStage::CheckIn, 40, 40)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .claim_role_request_limit("early", LimitStage::CheckIn, 41)
+            .await
+            .unwrap()
+            .is_some(),
+        "one check-in"
+    );
+    let early = store.role_request("early").await.unwrap().expect("row");
+    assert_eq!(
+        (early.checkin_at, early.escalated_at, early.answered_at),
+        (Some(40), None, None)
+    );
+    assert_eq!(
+        ids(store.open_limited_role_requests().await.unwrap()),
+        ["early", "late"],
+        "a checked-in request stays open until escalated or answered"
+    );
+}
+
+/// Plan 200 (migration 0036): outputs are read back by exact head, so a moved
+/// head answers none, and by role, newest first; a path is indexed once.
+#[tokio::test]
+async fn outputs_answer_for_their_exact_head_and_list_by_role() {
+    use pij_store::CommunityOutput;
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let output = |path: &str, kind: &str, head: Option<&str>, at: u64| CommunityOutput {
+        path: path.into(),
+        project: "pij".into(),
+        role: "reviewer".into(),
+        kind: kind.into(),
+        subject: "pr:132".into(),
+        head: head.map(Into::into),
+        result: head.map(|_| "pass".into()),
+        writer: "pij-reviewer".into(),
+        holds_role: true,
+        answers: Some("req-1".into()),
+        commit: "c0ffee".into(),
+        created_at: at,
+    };
+    let verdict = output(
+        "roles/reviewer/outputs/2026-11/a.dd.json",
+        "verdict",
+        Some("aaa"),
+        1,
+    );
+    store.record_output(&verdict).await.unwrap();
+    store
+        .record_output(&output(
+            "roles/reviewer/outputs/2026-11/h.dd.json",
+            "handover",
+            None,
+            2,
+        ))
+        .await
+        .unwrap();
+    store
+        .record_output(&verdict)
+        .await
+        .expect("a path is indexed once");
+
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![verdict.clone()]
+    );
+    assert!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("bbb"))
+            .await
+            .unwrap()
+            .is_empty(),
+        "a moved head answers none"
+    );
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", None)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    let listed = store.outputs_for_role("pij", "reviewer", 10).await.unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["handover", "verdict"]
+    );
+    assert!(
+        store
+            .outputs_for_role("other", "reviewer", 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    // Plan 203: one read gives each role's newest output.
+    let mut pm = verdict.clone();
+    pm.path = "roles/pm/outputs/2026-11/n.dd.json".into();
+    pm.role = "pm".into();
+    pm.subject = "pr:203".into();
+    store.record_output(&pm).await.unwrap();
+    let latest = store.latest_outputs("pij").await.unwrap();
+    assert_eq!(
+        latest
+            .iter()
+            .map(|row| (row.role.as_str(), row.kind.as_str()))
+            .collect::<Vec<_>>(),
+        [("pm", "verdict"), ("reviewer", "handover")]
+    );
+    assert!(store.latest_outputs("other").await.unwrap().is_empty());
+    // Review of #137 (F001): a path is relative to its project's governance
+    // worktree, so another project's output at the same path is its own row.
+    let mut elsewhere = verdict.clone();
+    elsewhere.project = "other".into();
+    elsewhere.commit = "beef".into();
+    store.record_output(&elsewhere).await.unwrap();
+    assert_eq!(
+        store
+            .outputs_for_subject("other", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![elsewhere]
+    );
+    assert_eq!(
+        store
+            .outputs_for_subject("pij", "pr:132", Some("aaa"))
+            .await
+            .unwrap(),
+        vec![verdict],
+        "the first project's row is untouched"
+    );
+}
+
+/// Review of #133 (F001, F002): a limit claim is the one atomic step that
+/// decides a notification. It refuses a request answered after the round's
+/// read, at either stage; it blocks a second attempt while live; a failed
+/// attempt drops it so the next round retries; and one a stopped daemon left
+/// behind is taken again only once its lease runs out.
+#[tokio::test]
+async fn limit_claims_refuse_an_answer_retry_a_failure_and_expire_a_stale_claim() {
+    use pij_store::{
+        LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage, ReplyMode, RequestState, RoleRequest,
+    };
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    for id in ["answered", "checked-answered", "retried"] {
+        store
+            .record_role_request(&RoleRequest {
+                id: id.into(),
+                project: "pij".into(),
+                role: "coder".into(),
+                instance: String::new(),
+                requester: "pij-asker".into(),
+                body: "go".into(),
+                in_reply_to: None,
+                fyi: false,
+                reply: ReplyMode::Wake,
+                limit_ms: Some(60_000),
+                state: RequestState::Delivered,
+                holder: Some("pij-coder".into()),
+                created_at: 1,
+                delivered_at: Some(10),
+                checkin_at: None,
+                escalated_at: None,
+                answered_at: None,
+            })
+            .await
+            .expect("record");
+    }
+    let claim = |id: &'static str, stage, at| {
+        let store = store.clone();
+        async move {
+            store
+                .claim_role_request_limit(id, stage, at)
+                .await
+                .unwrap()
+                .is_some()
+        }
+    };
+
+    // The round read both as open; an answer lands before the claim.
+    assert_eq!(store.open_limited_role_requests().await.unwrap().len(), 3);
+    assert!(claim("checked-answered", LimitStage::CheckIn, 100).await);
+    assert!(
+        store
+            .finish_role_request_limit("checked-answered", LimitStage::CheckIn, 100, 100)
+            .await
+            .unwrap()
+    );
+    for id in ["answered", "checked-answered"] {
+        assert!(store.mark_role_request_answered(id, 150).await.unwrap());
+    }
+    assert!(
+        !claim("answered", LimitStage::CheckIn, 200).await,
+        "check-in"
+    );
+    assert!(!claim("answered", LimitStage::Notice, 200).await, "notice");
+    assert!(!claim("checked-answered", LimitStage::Notice, 200).await);
+
+    // A live claim blocks a second attempt; a failed one is dropped and retried.
+    assert!(claim("retried", LimitStage::CheckIn, 300).await);
+    assert!(
+        store
+            .pin_role_request_limit("retried", 300, "pij-coder")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !claim("retried", LimitStage::CheckIn, 301).await,
+        "live claim"
+    );
+    assert!(
+        !claim("retried", LimitStage::Notice, 301).await,
+        "one at a time"
+    );
+    assert!(
+        store
+            .release_role_request_limit("retried", 300)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store
+            .claim_role_request_limit("retried", LimitStage::CheckIn, 302)
+            .await
+            .unwrap(),
+        Some(LimitClaim { pinned: None }),
+        "a release drops the pin, so the retry resolves afresh"
+    );
+    assert!(
+        store
+            .finish_role_request_limit("retried", LimitStage::CheckIn, 302, 302)
+            .await
+            .unwrap()
+    );
+    assert!(!claim("retried", LimitStage::CheckIn, 303).await, "stamped");
+
+    // A stopped daemon's claim holds until its lease runs out, and hands its
+    // pinned recipient to the attempt that takes it over.
+    assert!(claim("retried", LimitStage::Notice, 400).await);
+    assert!(
+        !store
+            .pin_role_request_limit("retried", 399, "pij-pa-b")
+            .await
+            .unwrap(),
+        "not its claim"
+    );
+    assert!(
+        store
+            .pin_role_request_limit("retried", 400, "pij-pa-a")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !claim(
+            "retried",
+            LimitStage::Notice,
+            400 + LIMIT_CLAIM_LEASE_MS - 1
+        )
+        .await
+    );
+    let retaken = 400 + LIMIT_CLAIM_LEASE_MS;
+    assert_eq!(
+        store
+            .claim_role_request_limit("retried", LimitStage::Notice, retaken)
+            .await
+            .unwrap(),
+        Some(LimitClaim {
+            pinned: Some("pij-pa-a".into())
+        }),
+        "expired"
+    );
+    assert!(
+        !store
+            .finish_role_request_limit("retried", LimitStage::Notice, 400, 401)
+            .await
+            .unwrap(),
+        "the stale attempt no longer owns it"
+    );
+    assert!(
+        store
+            .finish_role_request_limit("retried", LimitStage::Notice, retaken, retaken)
+            .await
+            .unwrap()
+    );
+    let row = store.role_request("retried").await.unwrap().expect("row");
+    assert_eq!(
+        (row.checkin_at, row.escalated_at),
+        (Some(302), Some(retaken))
+    );
+    assert!(store.open_limited_role_requests().await.unwrap().is_empty());
+}
+
+/// Review of #129: a daemon that stopped between a claim and its outcome
+/// leaves requests `delivering`. Boot recovery marks one the delivery path
+/// already took (a ledger row or a held FYI under its msg_id) delivered, puts
+/// any other back on the queue with no holder, and touches nothing else.
+#[tokio::test]
+async fn role_requests_left_delivering_are_recovered_at_boot() {
+    use pij_store::{ReplyMode, RequestState, RoleRequest};
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool.clone());
+    let request = |id: &str, state: RequestState| RoleRequest {
+        id: id.into(),
+        project: "pij".into(),
+        role: "coder".into(),
+        instance: String::new(),
+        requester: "pij-asker".into(),
+        body: format!("please {id}"),
+        in_reply_to: None,
+        fyi: false,
+        reply: ReplyMode::Wake,
+        limit_ms: None,
+        state,
+        holder: (state != RequestState::Queued).then(|| "pij-coder".to_string()),
+        created_at: 1,
+        delivered_at: (state == RequestState::Delivered).then_some(2),
+        checkin_at: None,
+        escalated_at: None,
+        answered_at: None,
+    };
+    for row in [
+        request("crashed", RequestState::Delivering),
+        request("in-ledger", RequestState::Delivering),
+        request("held-fyi", RequestState::Delivering),
+        request("waiting", RequestState::Queued),
+        request("done", RequestState::Delivered),
+    ] {
+        store.record_role_request(&row).await.expect("record");
+    }
+    sqlx::query(
+        "INSERT INTO delivered_messages (recipient, msg_id, origin) \
+         VALUES ('pij-coder', 'in-ledger', 'injected-to-transport'), \
+                ('pij-other', 'crashed', 'injected-to-transport')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO fyis (origin, id, recipient, sender, body, held_at_ms, state) \
+         VALUES ('', 'held-fyi', 'pij-coder', 'pij-asker', 'b', 1, 'pending')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let unsettled = store.unsettled_role_requests().await.unwrap();
+    assert_eq!(
+        unsettled
+            .iter()
+            .map(|row| (row.id.as_str(), row.state, row.body.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("crashed", RequestState::Delivering, ""),
+            ("held-fyi", RequestState::Delivering, ""),
+            ("in-ledger", RequestState::Delivering, ""),
+            ("waiting", RequestState::Queued, ""),
+        ],
+        "the digest sees stuck claims as well as queued requests, without bodies"
+    );
+
+    // Plan 209 (#129's digest scope): a project list reads only its rows;
+    // `waiting`'s project is pij, so another project sees nothing.
+    let mut other = request("elsewhere", RequestState::Queued);
+    other.project = "osk".into();
+    store.record_role_request(&other).await.expect("record");
+    let ids = |rows: Vec<RoleRequest>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(
+        ids(store
+            .unsettled_role_requests_in(Some(&["osk".to_string()]))
+            .await
+            .unwrap()),
+        ["elsewhere"]
+    );
+    assert_eq!(
+        ids(store
+            .unsettled_role_requests_in(Some(&["pij".to_string()]))
+            .await
+            .unwrap()),
+        ["crashed", "held-fyi", "in-ledger", "waiting"]
+    );
+    assert!(
+        store
+            .unsettled_role_requests_in(Some(&[]))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(store.unsettled_role_requests().await.unwrap().len(), 5);
+    sqlx::query("DELETE FROM role_requests WHERE id = 'elsewhere'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        store.recover_delivering_role_requests(50).await.unwrap(),
+        (2, 1)
+    );
+    let state = |id: &'static str| {
+        let store = store.clone();
+        async move {
+            let row = store.role_request(id).await.unwrap().expect("row");
+            (row.state, row.holder, row.delivered_at)
+        }
+    };
+    let delivered = (
+        RequestState::Delivered,
+        Some("pij-coder".to_string()),
+        Some(50),
+    );
+    assert_eq!(state("in-ledger").await, delivered);
+    assert_eq!(state("held-fyi").await, delivered);
+    assert_eq!(
+        state("crashed").await,
+        (RequestState::Queued, None, None),
+        "another seat's ledger row does not count; it is re-queued"
+    );
+    assert_eq!(state("waiting").await, (RequestState::Queued, None, None));
+    assert_eq!(
+        state("done").await,
+        (
+            RequestState::Delivered,
+            Some("pij-coder".to_string()),
+            Some(2)
+        )
+    );
+    assert_eq!(
+        store.recover_delivering_role_requests(60).await.unwrap(),
+        (0, 0),
+        "a second recovery finds nothing"
+    );
+}

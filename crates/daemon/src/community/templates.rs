@@ -12,6 +12,7 @@ use std::fmt::Write as _;
 use serde_json::{Value, json};
 
 use super::Refusal;
+use super::picture::{Move, Recommendation, Signal};
 
 /// The core roles a community is prompted for until each exists (C22).
 pub const CORE: [&str; 5] = ["prime", "pm", "pa", "coder", "reviewer"];
@@ -321,9 +322,9 @@ pub fn parse_version(text: &str) -> Option<u32> {
 /// are `(id, meta.template)`: a role counts for a template when its id or its
 /// template is that name (C22). Each prompt carries a runnable add line that
 /// names the project, so replaying it from another repo's cwd still writes
-/// to this directory (review F001).
-pub fn prompts(project: &str, roles: &[(String, Option<String>)]) -> Vec<Value> {
-    let project = pij_core::directory::shell_word(project);
+/// to this directory (review F001), and the signal it rests on (C28): an
+/// independent judgment for the reviewer and security, else a core role.
+pub fn recommendations(project: &str, roles: &[(String, Option<String>)]) -> Vec<Recommendation> {
     let has = |name: &str| {
         roles
             .iter()
@@ -334,14 +335,38 @@ pub fn prompts(project: &str, roles: &[(String, Option<String>)]) -> Vec<Value> 
         .chain(std::iter::once((SECURITY, "recommended")))
         .filter(|(name, _)| !has(name))
         .map(|(name, kind)| {
-            json!({
-                "role": name,
-                "kind": kind,
-                "command": format!(
-                    "pij directory add {name} --from template:{name} --why \"{kind} role from the {name} template\" --project {project}"
-                ),
-            })
+            let signal = if name == SECURITY || name == "reviewer" {
+                Signal::Independent
+            } else {
+                Signal::Core
+            };
+            Recommendation::new(
+                name,
+                kind,
+                Move::Create,
+                signal,
+                super::picture::command(&[
+                    "pij",
+                    "directory",
+                    "add",
+                    name,
+                    "--from",
+                    &format!("template:{name}"),
+                    "--why",
+                    &format!("{kind} role from the {name} template"),
+                    "--project",
+                    project,
+                ]),
+            )
         })
+        .collect()
+}
+
+/// [`recommendations`] as the view's JSON.
+pub fn prompts(project: &str, roles: &[(String, Option<String>)]) -> Vec<Value> {
+    recommendations(project, roles)
+        .iter()
+        .map(Recommendation::json)
         .collect()
 }
 
@@ -615,7 +640,7 @@ mod tests {
         );
         assert_eq!(
             all[1]["command"],
-            "pij directory add pm --from template:pm --why \"core role from the pm template\" --project fleet"
+            "pij directory add pm --from template:pm --why 'core role from the pm template' --project fleet"
         );
         assert!(
             prompts("my fleet", &[])[0]["command"]

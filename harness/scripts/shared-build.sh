@@ -8,27 +8,51 @@
 # atomic mkdir lock for the whole batch, checks the disk floor, rebuilds the
 # caller's own sources, and always releases.
 #
+# Builds run niced and tests run nice-only (below); a test's wall-clock
+# budgets on real child processes stretch with PIJ_TEST_TIME_SCALE (plan 209,
+# F28; AGENTS.md, resource cost item 5).
+#
 #   PIJ_SHARED_TARGET=<absolute target dir> \
 #     just shared-build [--timeout <minutes>|<seconds>s] -- <cargo args> [--then <cargo args>]...
 #
 # Environment:
 #   PIJ_SHARED_TARGET   required, absolute; exported as CARGO_TARGET_DIR
 #   PIJ_DISK_FLOOR_GB   refuse under this many GiB free on the target's volume (25)
-#   PIJ_ID              seat id for the owner line (falls back to $USER)
+#   PIJ_ID              seat id for the owner line; else $PIJ_SESSION_ID (set in
+#                       every harness seat), else `pij-rs whoami`, else $USER
 #
 # Exit: cargo's status, or 2 usage, 3 disk floor, 4 --timeout, 5 stale lock.
 # A stale lock (its owner pid is gone) is reported with the command that clears
 # it and never cleared here: whether that build is really over is the caller's
 # call, not this script's.
 #
+# Every cargo command runs under `nice -n 19` and, where it exists (macOS),
+# `taskpolicy -b` (background QoS: efficiency cores, throttled IO), so a build
+# can never starve the seats around it. rustc and linkers inherit both. Each
+# wrapper is skipped if absent. (Fleet cost rule, plan 208.)
+#
+# A `cargo test` compiles that way (`cargo test ... --no-run`), then runs the
+# same command under `nice -n 19` alone, which finds the test binaries built
+# and runs them: background QoS slows a test's own child processes past its
+# wall-clock budgets (F63, plan 209). The run step is not compile-free: cargo
+# builds doctests as they run, so they compile there, nice-only. It refuses
+# `--doc --no-run`, so `cargo test --doc` skips the compile step and is one
+# nice-only run (#144 F001).
+#
 # Cost: nothing at rest. Waiting: one df, one mkdir and one sleep per poll
-# (20 s) per waiting caller. Holding: one df per cargo command.
+# (20 s) per waiting caller. Holding: one df per cargo command, plus the nice
+# and taskpolicy launches, each of which execs into the next (one or two
+# launches per cargo command, never per poll); a `cargo test` adds one more
+# cargo and nice for its run step (a `cargo test --doc` is one step).
 
 set -uo pipefail
 
 DF="${PIJ_SHARED_BUILD_DF:-/bin/df}"         # test seam
 MKDIR="${PIJ_SHARED_BUILD_MKDIR:-/bin/mkdir}" # test seam
 POLL="${PIJ_SHARED_BUILD_POLL_SECONDS:-20}"  # test seam
+WHOAMI="${PIJ_SHARED_BUILD_WHOAMI-}"          # test seam; default: pij-rs on PATH
+NICE="${PIJ_SHARED_BUILD_NICE:-/usr/bin/nice}"                   # test seam
+TASKPOLICY="${PIJ_SHARED_BUILD_TASKPOLICY:-/usr/sbin/taskpolicy}" # test seam
 FLOOR_GB="${PIJ_DISK_FLOOR_GB:-25}"
 
 refuse() {
@@ -147,7 +171,22 @@ done
 commands+=("$(printf '%q ' "${current[@]}")")
 
 worktree=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-seat="${PIJ_ID:-${USER:-unknown}}"
+# The owner line names the seat, so waiting seats can tell holders apart
+# (plan 208, F24). whoami is asked at most once per run, never per poll.
+seat_id() {
+	local id="${PIJ_ID:-${PIJ_SESSION_ID:-}}"
+	if [ -z "$id" ]; then
+		local whoami="${WHOAMI:-$(command -v pij-rs 2>/dev/null)}"
+		if [ -n "$whoami" ] && [ -x "$whoami" ]; then
+			id=$("$whoami" whoami --json 2>/dev/null | grep -o '"id":"[^"]*"' | head -n 1 | cut -d '"' -f 4)
+		fi
+	fi
+	case "$id" in
+	"" | *[!A-Za-z0-9._-]*) id="${USER:-unknown}" ;;
+	esac
+	printf '%s' "$id"
+}
+seat=$(seat_id)
 
 held=0
 child=""
@@ -181,14 +220,25 @@ on_signal() {
 	if [ -n "$child" ]; then
 		drain "$child"
 		wait "$child" 2>/dev/null
+		child=""
 	fi
 	release
 	exit "$1"
 }
 
-trap release EXIT
+# Any other exit with cargo running (an untrapped signal such as USR1, which
+# bash still runs this trap for) drains its group before the lock goes (F48).
+on_exit() {
+	[ -z "$child" ] || drain "$child"
+	release
+}
+
+trap on_exit EXIT
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
+# A closed terminal sends HUP: cargo runs in its own group and would otherwise
+# keep building, holding the lock's target, with nothing waiting (F48).
+trap 'on_signal 129' HUP
 
 # Free KiB on the volume holding the target (or its nearest existing parent).
 # Builtins only past the one df: this runs once per poll while waiting.
@@ -273,15 +323,24 @@ for file in "$worktree"/crates/*/src/lib.rs "$worktree"/crates/*/src/main.rs; do
 done
 [ ${#sources[@]} -eq 0 ] || touch "${sources[@]}"
 
-export CARGO_TARGET_DIR="$target"
-export CARGO_INCREMENTAL=0
-for command in "${commands[@]}"; do
-	check_floor
-	eval "set -- $command"
-	# In the background under `wait`, so a signal is handled at once rather
-	# than after cargo finishes; `set -m` gives the job its own process group.
+# Compiling runs niced and in background QoS; running tests runs niced only.
+nice_only=()
+[ -x "$NICE" ] && nice_only+=("$NICE" -n 19)
+wrap=(${nice_only[@]+"${nice_only[@]}"})
+[ -x "$TASKPOLICY" ] && wrap+=("$TASKPOLICY" -b)
+
+# One cargo command under a wrapper, in its own process group, drained after.
+# In the background under `wait`, so a signal is handled at once rather than
+# after cargo finishes; `set -m` gives the job its own process group.
+run_cargo() { # <wrap|nice_only> <cargo args>...
+	local mode=$1 status
+	shift
 	set -m
-	cargo "$@" &
+	if [ "$mode" = wrap ]; then
+		${wrap[@]+"${wrap[@]}"} cargo "$@" &
+	else
+		${nice_only[@]+"${nice_only[@]}"} cargo "$@" &
+	fi
 	child=$!
 	set +m
 	wait "$child"
@@ -289,5 +348,44 @@ for command in "${commands[@]}"; do
 	# Whatever cargo left running in its group must not outlive the hold.
 	drain "$child"
 	child=""
-	[ "$status" -eq 0 ] || exit "$status"
+	return "$status"
+}
+
+# `cargo test <args> [-- <test args>]` compiles as `cargo test <args> --no-run`:
+# the build options without anything after `--`.
+build_only() {
+	local arg
+	for arg in "$@"; do
+		[ "$arg" = "--" ] && break
+		printf '%s\0' "$arg"
+	done
+	printf '%s\0' --no-run
+}
+
+export CARGO_TARGET_DIR="$target"
+export CARGO_INCREMENTAL=0
+for command in "${commands[@]}"; do
+	check_floor
+	eval "set -- $command"
+	runs_tests=0
+	if [ "${1:-}" = test ]; then
+		runs_tests=1
+		for arg in "$@"; do
+			[ "$arg" = "--" ] && break
+			[ "$arg" = "--no-run" ] && runs_tests=0
+			# Doctests compile while they run; there is no --no-run step.
+			[ "$arg" = "--doc" ] && runs_tests=2
+		done
+	fi
+	if [ "$runs_tests" = 2 ]; then
+		run_cargo nice_only "$@" || exit $?
+	elif [ "$runs_tests" = 1 ]; then
+		compile=()
+		while IFS= read -r -d '' arg; do compile+=("$arg"); done < <(build_only "$@")
+		run_cargo wrap "${compile[@]}" || exit $?
+		check_floor
+		run_cargo nice_only "$@" || exit $?
+	else
+		run_cargo wrap "$@" || exit $?
+	fi
 done

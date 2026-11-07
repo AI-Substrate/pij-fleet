@@ -38,6 +38,10 @@ impl Server {
             "-d",
             "-s",
             "work",
+            // A named window is never auto-renamed, so its name cannot move
+            // from printf to sleep between two reads (F27).
+            "-n",
+            "main",
             "-x",
             "120",
             "-y",
@@ -388,7 +392,7 @@ fn a_dead_server_is_a_plain_error_not_a_hang() {
         let started = Instant::now();
         let error = adapter.list_panes().await.expect_err("server is gone");
         assert!(
-            started.elapsed() < Duration::from_secs(5),
+            started.elapsed() < pij_testkit::time::scaled(Duration::from_secs(5)),
             "took {:?}: {error}",
             started.elapsed()
         );

@@ -1,0 +1,179 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "The prime's operating picture and prompts",
+        "slug": "prime-prompts",
+        "ordinal": 203,
+        "complexity": "CS-3",
+        "summary": "Roadmap 001 s09: `pij directory` shows each role's holders, waiting requests, latest output and memory freshness, and prompts the prime with runnable next actions, including needs-based prompts (PEC, C18, C26).",
+        "status": "draft",
+        "mode": "Full",
+        "created": "2026-11-04",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Delivers req-12, req-24 and the s09 part of req-27; req-14's prompts landed in s03. Depends on s05 (waiting requests), s06 (latest outputs) and s07 (memory freshness). Wording is PEC (C26): the prime and humans build whatever community the work needs now and reshape it as the work changes; templates are examples (C18). Ruling C28 (Jordan, 06 Nov) adds how the prime is prompted to grow a PEC: signals for and against a role, a role is not a seat, boundary reviews, and every recommendation naming its signal (ac-0008, req-29)."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Roadmap 001 s09: `pij directory` shows each role's holders, waiting requests, latest output and memory freshness, and prompts the prime with runnable next actions, including needs-based prompts (PEC, C18, C26)."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Anything another roadmap step owns; see roadmap 001."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "Picture. `pij directory` shows, per role: holders, waiting requests (s05), latest output (s06) and memory freshness (s07).",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Prompts (req-12). Each condition prints its runnable command: no live holder with requests waiting; two live holders on a one-holder role; memory not updated across recent closes; a recommended role missing.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Needs (req-24, req-27). A roadmap step's `needs: role:<id>` with no such role shows a prompt to create it from a template or as a new definition; the prime is also prompted to notice a need no role covers, in the PEC wording.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "F21 (low, s03 dogfood): the view names the project's designated prime (the seat the project records as prime), so a missing `prime` role document doesn't read like a missing prime.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "F22 (low, s03 dogfood): view polish. Holder times show local time with zone (the writer's zoned dates come from plan 206's F13), and a many-holder role's row wraps to one line per holder instead of one very long line.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost (AGENTS.md, resource cost is a correctness property). The view reads documents in-process and the store; it launches nothing. No timer or poll.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Growing a PEC (ruling C28, req-29). The prime's prompts teach C28 and make every recommendation name its signal. Signals for a new role: the same system or paths recurring; a finding re-derived; a judgment that must be independent of the author; a seat carrying two domains; a path needing one owner. Signals against: one-off work; overlap with an existing role (extend it instead); nothing worth remembering; mostly idle. A role is not a seat: many cold roles, few live seats. At boundaries (wave end, compact, PR merge), prompt boundary reviews: split overloaded roles, merge or retire idle ones (s15 verbs). Templates stay examples. Each prompt that recommends creating, splitting, merging or retiring a role prints the signal it rests on, and none fires without one.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Docs and states. In this PR: roadmap s09 goes to complete (plan cell docs/plans/203-prime-prompts); req-12 and req-24 go to shipped; req-29 is added to PRD 001 (C28: role recommendations name their signal; a role is not a seat; boundary reviews) and goes to in-progress (s10 finishes it); req-27 goes to in-progress (s10 finishes it); c-orient goes to shipped. docs/how/pij-rs-api.md documents new verbs and refusals; the skill's verb coverage tables carry them; `just ddocs-check` and `ddocs validate` on the project docs pass; the PR body has a `Delivers:` line.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-00cb",
+          "title": "The prime's operating picture and prompts",
+          "state": "unchecked",
+          "brief": "All ACs. One coder. CS-3.",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code to read first: the s04 view (crates/daemon/src/community/, `pij directory`), s03's prompts (plan 194), roadmap docs (needs cells). No migration expected."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "Two lanes edit the same CLI wiring or skill files.",
+          "likelihood": "High",
+          "impact": "Medium",
+          "mitigation": "Rebase onto main before the PR; small diffs at the seam; pm-001 orders merges."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Tests use scratch repos and a private daemon; never the live governance branch or the prod daemon.",
+        "Builds: your own target or `just shared-build`; CARGO_INCREMENTAL=0; -p scoping; stop under 25 GB free.",
+        "No `git add -A`, no `--no-verify`; no node_modules, never symlinked (C25); TS proof is CI on the exact head.",
+        "Shared seams (crates/cli wiring, skills/pij): rebase onto main before the PR and keep edits minimal; don't fork the seam.",
+        "One push per review round; no pushes after the PR is out for verdicts unless a verdict asks."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,251 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Outputs and notification",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Store: migration 0036 community_outputs (role, kind, subject, head, result, writer, holds_role, answers, path, commit, at) and its reads",
+          "phase": "ph-00c8",
+          "state": "checked",
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "notes": "crates/store; indexed by (subject, head) and (role). Number from pm-001: 0036.",
+          "done": "tasks.dd.json#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Output document: build a pij/output ddoc per kind (verdict head/result/notes owed/evidence/link; deliverable, note, handover body) at roles/<id>/outputs/<yyyy-mm>/<slug>.dd.json",
+          "phase": "ph-00c8",
+          "state": "checked",
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "notes": "crates/daemon/src/community/output.rs, pure. writer_holds_role from open_assignments.",
+          "done": "tasks.dd.json#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "pij output <kind> verb: write through the single writer (one commit), record the store fact and pointer, flag a non-holder writer",
+          "phase": "ph-00c8",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "notes": "New /v1/output route (argv+caller), CLI wiring, core help.",
+          "done": "tasks.dd.json#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "pij outputs --subject pr:N --head <sha> and --role <id>: exact-head answers, none when the head moved",
+          "phase": "ph-00c8",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "satisfies_toward": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Notify: --answers <msg_id> marks the request answered (s12 helper) and tells its requester in the stored reply mode; block or failed always wakes (forced, audited if cold, C4); unrequested goes FYI to the nearest seat above; one seat",
+          "phase": "ph-00c8",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "notes": "Uses role_requests (0034) and mark_role_request_answered (0035).",
+          "done": "tasks.dd.json#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Cost receipts: spawn sites, private-daemon spawn deltas per verb, live before reading",
+          "phase": "ph-00c8",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0006"
+        },
+        {
+          "id": "tk-0007",
+          "title": "Docs and states: pij-rs-api.md, skill verb coverage (output, outputs), roadmap s06, req-08, req-10, c-notify",
+          "phase": "ph-00c8",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "tasks.dd.json#done_when/tk-0007"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "A store test records outputs and reads them back by subject and head and by role; a second answer for one request does not re-mark it",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "Each kind builds a document real ddocs accepts as pij/output; a verdict without head or result is refused; a non-holder writer sets writer_holds_role false",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0003",
+            "assertion": "A handover document holds its in-flight body and validates",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0004",
+            "assertion": "In a scratch governance repo, two seats writing outputs at once produce two files in two commits and no conflict",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0005",
+            "assertion": "A pass on head A is listed for head A and none is answered for head B",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          },
+          {
+            "id": "dw-0006",
+            "assertion": "pij outputs --role <id> lists a handover",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0007",
+            "assertion": "A default-mode requester is woken; a --reply fyi requester gets an FYI; a block verdict or failed result wakes an fyi requester; an unrequested output goes FYI to the PM, else the prime; exactly one seat is notified",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0008",
+            "assertion": "spawn_sites.rs passes; private-daemon spawn deltas per verb and a live before reading are in the evidence",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ],
+        "tk-0007": [
+          {
+            "id": "dw-0009",
+            "assertion": "ddocs-check and ddocs validate on docs/project pass; the API doc and skill tables name output and outputs and their refusals; s06 complete, req-08 and req-10 and c-notify shipped",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          }
+        ]
+      }
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": []
+    },
+    {
+      "name": "execution_guardrails",
+      "value": []
+    }
+  ]
+}

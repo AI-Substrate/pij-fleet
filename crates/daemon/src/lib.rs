@@ -575,14 +575,17 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         community::layout::schema_copies(),
         &community::writer::LOCK_RETRY,
     ));
+    // Ruling C6: an assign drains the role's queued requests (plan 199).
+    // It drains through the built services, so it is bound to them below.
+    let role_queue = Arc::new(delivery::role_send::RoleQueueDrain::new());
     let directory = Arc::new(community::directory::DirectoryService::new(
         Arc::clone(&community_writer),
         directory_store,
         Arc::clone(&event_bus),
-        Arc::new(community::directory::NoHook),
+        Arc::clone(&role_queue) as Arc<dyn community::directory::AfterAssign>,
         Arc::clone(&tmux),
     ));
-    Ok(Services {
+    let services = Services {
         registry,
         spine,
         event_bus,
@@ -627,7 +630,9 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         },
         memory_turns: Arc::default(),
         offline: config.is_fully_offline(),
-    })
+    };
+    role_queue.bind(services.clone());
+    Ok(services)
 }
 
 /// Does this config select any adapter that needs the store open?
@@ -1061,6 +1066,10 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
             return Err(error);
         }
     };
+
+    // After the bind is won and before anything is served: no claim can be in
+    // flight, and a boot that lost the bind never touches a live daemon's rows.
+    delivery::role_send::recover_requests(&services).await;
 
     let (governance_shutdown, governance_shutdown_rx) = tokio::sync::oneshot::channel();
     let governance_observer =

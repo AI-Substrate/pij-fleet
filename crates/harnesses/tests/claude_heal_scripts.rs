@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use pij_testkit::time::scaled;
+
 const FAKE_PIJ_RS: &str = r#"#!/bin/sh
 dir=$(dirname "$0")
 case " $* " in
@@ -66,7 +68,7 @@ fn adopts(root: &Path) -> Vec<String> {
 }
 
 fn eventually(what: &str, mut done: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + scaled(Duration::from_secs(10));
     while !done() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
         std::thread::sleep(Duration::from_millis(50));
@@ -96,7 +98,7 @@ fn status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daem
     for _ in 0..3 {
         let (rendered, took) = run(&root, "claude-statusline-pij.sh", &payload);
         assert!(
-            took < Duration::from_secs(2),
+            took < scaled(Duration::from_secs(2)),
             "render waited on the heal: {took:?}"
         );
         assert!(rendered.contains("registering"), "{rendered}");
@@ -113,7 +115,7 @@ fn status_line_fires_one_detached_adopt_per_window_and_hook_outlasts_a_late_daem
     std::fs::remove_file(root.join("bin/adopts")).unwrap();
     let (_, took) = run(&root, "claude-session-start-pij.sh", &payload);
     assert!(
-        took < Duration::from_secs(2),
+        took < scaled(Duration::from_secs(2)),
         "hook held Claude's start: {took:?}"
     );
     std::thread::sleep(Duration::from_millis(1500));
@@ -173,12 +175,13 @@ fn copilot_status_line_hands_the_payload_to_pij_rs_in_one_process() {
             .expect("render");
         let pid = child.id();
         use std::io::Write as _;
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(payload.as_bytes())
-            .unwrap();
+        // With pij-rs missing the script exits without reading stdin, so the
+        // write can race its exit and see EPIPE (F27). That is not a failure:
+        // whether the payload arrived is asserted from the record below.
+        match child.stdin.take().unwrap().write_all(payload.as_bytes()) {
+            Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => {}
+            other => other.unwrap(),
+        }
         let out = String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap();
         (pid, out)
     };
@@ -301,7 +304,7 @@ fn session_start_hook_warns_human_and_model_about_a_double_seat() {
     std::fs::write(&refusal, format!("pij adopt: FAILED — {}\n", double_meta())).unwrap();
     let (stdout, code, took) = hook(&root, "claude-session-start-pij.sh", payload);
     assert_eq!(code, 0, "never blocks Claude's start");
-    assert!(took < Duration::from_secs(2), "{took:?}");
+    assert!(took < scaled(Duration::from_secs(2)), "{took:?}");
     assert_double_warning("SessionStart", &stdout);
 
     std::fs::write(
@@ -391,7 +394,7 @@ fn status_line_shows_a_red_double_segment_and_never_heals_it() {
 
     let (rendered, code, took) = hook(&root, "claude-statusline-pij.sh", &payload);
     assert_eq!(code, 0);
-    assert!(took < Duration::from_secs(2), "{took:?}");
+    assert!(took < scaled(Duration::from_secs(2)), "{took:?}");
     assert!(
         rendered.contains("\x1b[31m⚠ double: pij-different-smelt in %5"),
         "red double segment: {rendered:?}"
@@ -464,7 +467,7 @@ fn status_line_heal_refused_as_a_double_shows_red_and_never_adopts_again() {
     std::fs::write(root.join("state/heal/pane-9.last"), "0\n").unwrap();
     let (second, code, took) = hook(&root, "claude-statusline-pij.sh", &payload);
     assert_eq!(code, 0);
-    assert!(took < Duration::from_secs(2), "{took:?}");
+    assert!(took < scaled(Duration::from_secs(2)), "{took:?}");
     assert!(
         second.contains("\x1b[31m⚠ double: pij-different-smelt in %5"),
         "red double segment from the heal refusal: {second:?}"

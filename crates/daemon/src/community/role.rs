@@ -1,5 +1,6 @@
 //! Build and stamp `pij/role` documents. Pure: no IO, no launches.
 
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use std::path::{Component, Path};
@@ -177,6 +178,94 @@ pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, R
     Ok(document)
 }
 
+/// `meta.state` for a role that is no longer in use (plan 206, req-28).
+pub const RETIRED: &str = "retired";
+
+/// Where a role stands (plan 206): active unless retired, and the role it was
+/// merged into, if any. What the view shows and the send path refuses on.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Standing {
+    /// `active` or `retired`; a role that records no state is active.
+    pub state: String,
+    /// The role a merged role now lives under.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merged_into: Option<String>,
+}
+
+impl Standing {
+    /// Whether the role is retired (a merged role is retired too).
+    pub fn retired(&self) -> bool {
+        self.state == RETIRED
+    }
+}
+
+/// The standing `document`'s meta records.
+pub fn standing(document: &Value) -> Standing {
+    let meta = section(document, "meta");
+    let text = |field: &str| {
+        meta.and_then(|meta| meta[field].as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    Standing {
+        state: text("state").unwrap_or_else(|| "active".to_string()),
+        merged_into: text("merged_into"),
+    }
+}
+
+/// `document` marked retired, and merged into `into` when given.
+///
+/// # Errors
+/// `E-RS-ARG` when the document has no sections array.
+pub fn retire(mut document: Value, into: Option<&str>) -> Result<Value, Refusal> {
+    let Some(sections) = document["sections"].as_array_mut() else {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            "the role document has no sections array",
+        ));
+    };
+    let meta = slot(sections, "meta", json!({}));
+    meta["state"] = json!(RETIRED);
+    if let Some(into) = into {
+        meta["merged_into"] = json!(into);
+    }
+    Ok(document)
+}
+
+/// `document` with `committed`'s `meta.state` and `meta.merged_into` where it
+/// leaves them out, so a whole-document edit never silently un-retires a role
+/// (docs-system verdict on #135, note 3).
+pub fn carry_standing(mut document: Value, committed: &Value) -> Value {
+    let Some(from) = section(committed, "meta").cloned() else {
+        return document;
+    };
+    if let Some(sections) = document["sections"].as_array_mut() {
+        let meta = slot(sections, "meta", json!({}));
+        for field in ["state", "merged_into"] {
+            if meta.get(field).is_none()
+                && let Some(value) = from.get(field)
+            {
+                meta[field] = value.clone();
+            }
+        }
+    }
+    document
+}
+
+/// `document` carrying `committed`'s changelog in place of its own, so a
+/// whole-document edit never rewrites history (plan 206, F20).
+pub fn keep_changelog(mut document: Value, committed: &Value) -> Value {
+    let history = section(committed, "changelog").cloned();
+    if let Some(sections) = document["sections"].as_array_mut() {
+        sections.retain(|section| section["name"] != "changelog");
+        if let Some(history) = history {
+            sections.push(json!({"name": "changelog", "value": history}));
+        }
+    }
+    document
+}
+
 /// The value of section `name`, added with `empty` when the document lacks it.
 fn slot<'a>(sections: &'a mut Vec<Value>, name: &str, empty: Value) -> &'a mut Value {
     let at = match sections.iter().position(|section| section["name"] == name) {
@@ -222,6 +311,15 @@ pub fn stamp(
         }
     }
     check_packet(&document, id)?;
+    let standing = standing(&document);
+    if standing.merged_into.is_some() && !standing.retired() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!(
+                "role {id:?} records meta.merged_into without meta.state retired; a merge writes both (pij directory merge)"
+            ),
+        ));
+    }
     let row = json!({"date": date, "by": by, "why": why});
     let Some(sections) = document["sections"].as_array_mut() else {
         return Err(Refusal::new(
@@ -332,17 +430,6 @@ pub fn to_bytes(document: &Value) -> Vec<u8> {
     bytes
 }
 
-/// Today's date in UTC, `YYYY-MM-DD`, for a changelog row.
-pub fn today() -> String {
-    let now = time::OffsetDateTime::now_utc();
-    format!(
-        "{:04}-{:02}-{:02}",
-        now.year(),
-        u8::from(now.month()),
-        now.day()
-    )
-}
-
 fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
     document["sections"]
         .as_array()?
@@ -354,6 +441,47 @@ fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standing_reads_active_retired_and_merged_and_retire_sets_them() {
+        let active = json!({"sections": [{"name": "meta", "value": {"id": "qa"}}]});
+        assert_eq!(
+            standing(&active),
+            Standing {
+                state: "active".into(),
+                merged_into: None
+            }
+        );
+        assert!(!standing(&active).retired());
+        let retired = retire(active.clone(), None).unwrap();
+        assert!(standing(&retired).retired());
+        assert_eq!(standing(&retired).merged_into, None);
+        let merged = retire(active, Some("security")).unwrap();
+        assert_eq!(
+            standing(&merged),
+            Standing {
+                state: "retired".into(),
+                merged_into: Some("security".into())
+            }
+        );
+        assert!(standing(&json!({})).state == "active", "no meta is active");
+        let committed = retire(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa"}}]}),
+            Some("sec"),
+        )
+        .unwrap();
+        let carried = carry_standing(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa", "title": "Q"}}]}),
+            &committed,
+        );
+        assert_eq!(standing(&carried), standing(&committed));
+        let explicit = carry_standing(
+            json!({"sections": [{"name": "meta", "value": {"id": "qa", "state": "active"}}]}),
+            &committed,
+        );
+        assert_eq!(standing(&explicit).state, "active", "a given state is kept");
+        assert!(retire(json!({}), None).is_err());
+    }
 
     fn fields() -> RoleFields {
         RoleFields {

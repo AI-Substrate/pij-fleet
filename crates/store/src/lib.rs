@@ -15,9 +15,11 @@ pub mod fleet;
 pub mod governance;
 pub mod migrate;
 pub mod orchestration;
+pub mod outputs;
 pub mod queue;
 pub mod registry;
 mod role_assertion;
+pub mod role_requests;
 pub mod spine;
 pub mod status;
 
@@ -28,7 +30,12 @@ pub use migrate::{SCHEMA_VERSION, StorePool, open, require_current_schema, schem
 pub use orchestration::{
     BatonLease, DispatchAck, LeaseClaim, SpawnRecordOutcome, SqliteOrchestration, StreamReservation,
 };
+pub use outputs::{CommunityOutput, OUTPUT_KINDS};
 pub use queue::SqliteQueue;
 pub use registry::SqliteRegistry;
 pub use role_assertion::{Placement, PlacementCommit};
+pub use role_requests::{
+    LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage, ReplyMode, RequestState, RoleRequest,
+    WITHDRAWN_EVENT, Withdrawal,
+};
 pub use spine::SqliteSpine;

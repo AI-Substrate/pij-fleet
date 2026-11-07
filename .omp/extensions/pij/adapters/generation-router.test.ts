@@ -852,6 +852,7 @@ describe("verified ambient native admission bridge", () => {
 				proc_start: callerStart,
 				relay: false,
 				parent: "pij-parent",
+				attempt: "explicit",
 			},
 		]);
 		expect(

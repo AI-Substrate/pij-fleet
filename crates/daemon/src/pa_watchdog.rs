@@ -61,7 +61,7 @@ use pij_core::model::{
     DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
 };
 use pij_core::orchestration::PrimeState;
-use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView};
+use pij_core::pa_digest::{FleetAnomaly, FleetRow, FleetView, QueuedRequest};
 use pij_core::ports::SeatFilter;
 use pij_core::ports::SpineWindow;
 use pij_core::report::CardRecord;
@@ -127,6 +127,9 @@ pub(crate) fn interval_secs(configured: u64) -> Result<u64> {
 /// What one round did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RoundOutcome {
+    /// A role request's time limit sent its holder a check-in, or told the
+    /// PA (else the prime) the check-in went unanswered (plan 205, s12).
+    RequestLimit(crate::delivery::role_send::LimitAction),
     /// The PA's fleet went idle; the digest was handed to delivery.
     Nudged {
         /// The PA.
@@ -258,11 +261,12 @@ async fn audit(
 }
 
 /// The send guard's own verdict for `seat` now. When it is cold, the wake
-/// about to happen is recorded exactly like a forced `pij send`, before it is
-/// sent. Returns the receipt's `cold_check` label.
-async fn audit_cold_wake(
+/// about to happen is recorded exactly like a forced `pij send` from `from`,
+/// before it is sent. Returns the receipt's `cold_check` label.
+pub(crate) async fn audit_cold_wake(
     services: &Services,
     seat: &SeatDescriptor,
+    from: &str,
     msg_id: &str,
     reason: &str,
     now_ms: u64,
@@ -285,7 +289,7 @@ async fn audit_cold_wake(
                 kind: COLD_WAKE_FORCED_KIND.to_string(),
                 seat: Some(seat.id.clone()),
                 payload: json!({
-                    "from": BG_ACTOR,
+                    "from": from,
                     "from_machine": null,
                     "msg_id": msg_id,
                     "reason": reason,
@@ -317,7 +321,7 @@ fn bg_msg(to: &SeatId, body: String, msg_id: String) -> Msg {
 /// Wake a PA through the ordinary delivery path, not held when it is cold:
 /// waking it is the point. A cold wake is audited first, with `reason`.
 /// Returns the delivery outcome word (or error) and the `cold_check` label.
-async fn wake_pa(
+pub(crate) async fn wake_pa(
     services: &Services,
     pa: &SeatDescriptor,
     body: String,
@@ -325,7 +329,7 @@ async fn wake_pa(
     reason: &str,
     now_ms: u64,
 ) -> (String, String) {
-    match audit_cold_wake(services, pa, &msg_id, reason, now_ms).await {
+    match audit_cold_wake(services, pa, BG_ACTOR, &msg_id, reason, now_ms).await {
         Ok(cold_check) => match services.delivery.accept(bg_msg(&pa.id, body, msg_id)).await {
             Ok(receipt) => (outcome_word(&receipt.outcome).to_string(), cold_check),
             Err(cause) => (format!("error: {cause}"), cold_check),
@@ -392,6 +396,13 @@ impl PaWatchdog {
         let mut outcomes = self.optin_round(services, &seats, now_ms).await;
         let stops = self.stops(services, &seats).await;
         outcomes.extend(self.limit_round(services, &seats, &stops, now_ms).await);
+        // Role request time limits ride this round: no timer of their own (s12).
+        outcomes.extend(
+            crate::delivery::role_send::time_limits(services, now_ms)
+                .await
+                .into_iter()
+                .map(RoundOutcome::RequestLimit),
+        );
 
         let pas: Vec<&SeatDescriptor> = seats.iter().filter(|seat| is_watched_pa(seat)).collect();
         // The designated prime is a supervisor whatever its role says: its
@@ -670,7 +681,15 @@ impl PaWatchdog {
                     let local = pij_harnesses::local_clock_text(*resets_at, None)
                         .unwrap_or_else(|| format!("{resets_at} UTC epoch"));
                     let body = wake_body(&stop.limit_type, *resets_at, &local, &stop.seats, late);
-                    match audit_cold_wake(services, seat, &msg_id, LIMIT_RESET_REASON, now_ms).await
+                    match audit_cold_wake(
+                        services,
+                        seat,
+                        BG_ACTOR,
+                        &msg_id,
+                        LIMIT_RESET_REASON,
+                        now_ms,
+                    )
+                    .await
                     {
                         Ok(cold_check) => {
                             let delivery = match services
@@ -950,12 +969,14 @@ impl PaWatchdog {
             })
             .collect::<Vec<_>>();
         let anomalies = stale_cards(services, &rows, now_ms).await;
+        let queued = queued_requests(services, pa, now_ms).await;
         FleetView {
             pa: pa.id.clone(),
             prime: prime.map(|prime| prime.id.clone()),
             scope,
             rows,
             anomalies,
+            queued,
             interval_ms: interval_secs * 1_000,
         }
     }
@@ -1019,6 +1040,118 @@ const fn outcome_word(outcome: &DeliveryOutcome) -> &'static str {
         DeliveryOutcome::Queued { .. } => "queued",
         DeliveryOutcome::Held { .. } => "held",
         DeliveryOutcome::Refused { .. } => "refused",
+    }
+}
+
+/// The projects whose queued requests a PA's digest shows (plan 209, #129's
+/// digest scope): the projects the PA holds a role in; else those its prime
+/// (its parent) holds a role in; else every project, but only when that
+/// parent is the designated prime; else none. `None` means every project.
+pub(crate) fn digest_scope(
+    own: Vec<String>,
+    parent: Vec<String>,
+    parent_is_designated_prime: bool,
+) -> Option<Vec<String>> {
+    if !own.is_empty() {
+        Some(own)
+    } else if !parent.is_empty() {
+        Some(parent)
+    } else if parent_is_designated_prime {
+        None
+    } else {
+        Some(Vec::new())
+    }
+}
+
+/// The projects `seat` holds an open role in, sorted and unique: one indexed
+/// read.
+async fn held_projects(services: &Services, seat: &SeatId) -> Result<Vec<String>, String> {
+    let mut projects: Vec<String> = services
+        .directory
+        .store()
+        .open_assignments(seat.as_str())
+        .await
+        .map_err(|cause| format!("{seat}'s holdings: {cause}"))?
+        .into_iter()
+        .map(|row| row.project)
+        .collect();
+    projects.sort();
+    projects.dedup();
+    Ok(projects)
+}
+
+/// The PA's digest scope ([`digest_scope`]): at most three indexed reads. A
+/// failed read is an error, never "holds nothing": the fallbacks would widen
+/// it, as far as every project under the designated prime (#144 F002).
+async fn queue_scope(
+    services: &Services,
+    pa: &SeatDescriptor,
+) -> Result<Option<Vec<String>>, String> {
+    let own = held_projects(services, &pa.id).await?;
+    let (parent, parent_is_prime) = match (own.is_empty(), pa.parent.as_ref()) {
+        (true, Some(parent)) => {
+            let held = held_projects(services, parent).await?;
+            let prime = held.is_empty()
+                && services
+                    .governance
+                    .store()
+                    .prime()
+                    .await
+                    .map_err(|cause| format!("the designated prime: {cause}"))?
+                    .is_some_and(|prime| {
+                        prime.state == PrimeState::Current && &prime.seat == parent
+                    });
+            (held, prime)
+        }
+        _ => (Vec::new(), false),
+    };
+    Ok(digest_scope(own, parent, parent_is_prime))
+}
+
+/// Requests waiting on a role with no live holder (plan 199), in the PA's
+/// projects ([`queue_scope`]): the scope's reads and one seek per project, per
+/// digest, so the queue rides the round with no timer of its own. A failed
+/// read, of the scope or the requests, reports the queue unavailable and
+/// leaves the list empty rather than holding up the nudge.
+async fn queued_requests(
+    services: &Services,
+    pa: &SeatDescriptor,
+    now_ms: u64,
+) -> Vec<QueuedRequest> {
+    let scope = match queue_scope(services, pa).await {
+        Ok(scope) => scope,
+        Err(cause) => {
+            eprintln!("pa watchdog: queued role requests unavailable: {cause}");
+            return Vec::new();
+        }
+    };
+    match services
+        .governance
+        .store()
+        .unsettled_role_requests_in(scope.as_deref())
+        .await
+    {
+        Ok(requests) => requests
+            .into_iter()
+            .map(|request| QueuedRequest {
+                address: crate::delivery::role_send::RoleAddress {
+                    role: request.role,
+                    instance: request.instance,
+                }
+                .display(),
+                project: request.project,
+                id: request.id,
+                requester: SeatId::from(request.requester.as_str()),
+                waiting_ms: now_ms.saturating_sub(request.created_at),
+                delivering_to: (request.state == pij_store::RequestState::Delivering)
+                    .then(|| request.holder.as_deref().map(SeatId::from))
+                    .flatten(),
+            })
+            .collect(),
+        Err(cause) => {
+            eprintln!("pa watchdog: queued role requests unavailable: {cause}");
+            Vec::new()
+        }
     }
 }
 
