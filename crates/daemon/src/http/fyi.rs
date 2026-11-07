@@ -198,6 +198,13 @@ pub(crate) struct ActivityRequest {
     #[serde(default)]
     native_session: Option<String>,
     state: String,
+    /// The session's current context size, when the runtime knows it (plan
+    /// 217: Copilot's ephemeral `session.usage_info`).
+    #[serde(default)]
+    context_tokens: Option<u64>,
+    /// The model's context window, when the runtime knows it.
+    #[serde(default)]
+    context_window_tokens: Option<u64>,
 }
 
 /// The seat's mechanical state after the publication.
@@ -225,6 +232,7 @@ pub(crate) async fn activity(
             );
         }
     };
+    let session = request.native_session.clone();
     let seat = match bound_seat(
         &state,
         ACTIVITY,
@@ -237,6 +245,14 @@ pub(crate) async fn activity(
         Ok(seat) => seat,
         Err(response) => return *response,
     };
+    if let Some(tokens) = request.context_tokens {
+        state.services.reported_context.record(
+            &seat.id,
+            session.or_else(|| seat.harness_session.clone()),
+            tokens,
+            request.context_window_tokens,
+        );
+    }
     // A targeted state write, never a put of the row read above: a tombstone,
     // role or declaration landing in between must survive (review MEDIUM-2).
     let changed = match state

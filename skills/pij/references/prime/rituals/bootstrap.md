@@ -60,8 +60,12 @@ Inspect the repo; derive these answers, never copy a worked example:
 1. Spawn it with you as parent and the role on the placement call: `pij-rs spawn … --role pa`. For a hand-started seat, run `pij link <pa-id> --role pa`. The role is what arms the daemon's watchdog; nothing else does.
 2. Brief it with [`../pa.md`](../pa.md), filling its slots: your id, exempt seats, and the handover folder. Put repo specifics in the slots; never fork the brief.
 3. Its fleet is every seat in your repository, all worktrees included; the PA sees seats by repository, not by parentage.
-4. Don't give it timers. The watchdog is its only clock: one nudge each time the fleet goes idle, one wake when you start working again after that edge, and one wake when a usage limit that stopped the fleet resets ([PA watchdog](../../../../../docs/how/pa-watchdog.md)).
+4. Don't give it timers. The watchdog is its only clock: one nudge each time the fleet goes idle, one wake when you start working again after that edge, one wake when a usage limit that stopped the fleet resets, and one wake if it takes no turn for 30 minutes while the fleet works ([PA watchdog](../../../../../docs/how/pa-watchdog.md)).
 5. **Prove delivery at the receiving end**: its first nudge arrives the first time the fleet's workers go from someone working to nobody working after the daemon first sees it (PAs and primes never count), and a `watchdog.round` event records each nudge.
+6. **The daemon tells you when the PA is missing or silent** (plan 217; [presence](../../../../../docs/how/pa-watchdog.md#presence-and-large-seats-plan-217)). While your fleet works (you or a worker `working` in the last 20 minutes, two or more workers), you are woken once:
+   - `… with no live PA …` after 20 minutes without one. Revive the named PA (`pij-rs revive <pa>`) or spawn one (`pij-rs spawn --harness omp --role pa`, step 1), then brief it.
+   - `your PA <pa> has taken no turn …` when a dormant-PA wake went unanswered for 10 minutes. Check its pane for a question dialog or a message parked in its composer; revive it; or replace it.
+   - Seats over 600k reach you as one FYI on your next turn, never a wake: `[pij watchdog] over 600k tokens in your fleet …`. Your PA should already be compacting them; with no PA, compact or hand them over yourself.
 
 ## 6. Open intake and govern
 

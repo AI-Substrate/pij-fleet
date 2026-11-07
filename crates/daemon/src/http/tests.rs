@@ -8219,6 +8219,49 @@ async fn a_turn_boundary_never_flushes_even_when_warm() {
     server.abort();
 }
 
+/// Plan 217 AC6: a size posted with a turn boundary fills the card's unknown
+/// size, for the session it came from.
+#[tokio::test]
+async fn a_size_posted_at_a_turn_boundary_reaches_the_state_card() {
+    use pij_core::session_status::{SeatStatus, SessionStatusReply};
+    let queue = Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy"));
+    let spine = Arc::new(FakeSpine::new());
+    let mut services = test_services(
+        Arc::new(FakeRegistry::new().with_seat(cold_seat(pij_core::model::SystemState::Idle))),
+        queue,
+        spine,
+    )
+    .await;
+    services.session_status = Arc::new(crate::reported_context::WithReportedContext::new(
+        Arc::new(pij_testkit::fakes::FakeSessionStatus::new().with_reply(
+            COLD_SESSION,
+            SessionStatusReply::Status(SeatStatus::unknown()),
+        )),
+        Arc::clone(&services.reported_context),
+    ));
+    let (addr, server) = spawn(router_with_config(services, config("key", &[]))).await;
+    let card = || post_json(addr, "/v1/state", serde_json::json!({"id": "pij-cold"}));
+    assert_eq!(
+        card().await.1["data"]["contextUsed"],
+        serde_json::Value::Null
+    );
+    let (status, reply) = post_json(
+        addr,
+        "/v1/activity",
+        serde_json::json!({
+            "seat": "pij-cold",
+            "native_session": COLD_SESSION,
+            "state": "idle",
+            "context_tokens": 640_000,
+            "context_window_tokens": 952_000,
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(card().await.1["data"]["contextUsed"], 640_000);
+    server.abort();
+}
+
 // ---------------------------------------------------------------------------
 // Plan 160: seat size and coldness on `pij state` and `pij list`.
 // ---------------------------------------------------------------------------
