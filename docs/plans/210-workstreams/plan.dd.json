@@ -116,7 +116,7 @@
           "title": "Phase 2: rename, code paths, coverage sensor (coder)",
           "state": "checked",
           "brief": "After phase 1 merges: AC2 git mv roadmaps to workstreams with schema id pij/workstream, every code path that reads docs/project/roadmaps (directory needs fold from #141, delivered, claims, routes) updated in the same PR, AC6 coverage sensor in harness checks and just self-check, AC7 governance role prompts re-pointed with pij directory edit, AC8 cost, AC9 states. Holder: coder (pij-following-marsupial). One PR.",
-          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+          "tasks": "assets/tasks/phase-2/tasks.dd.json#tasks"
         }
       ]
     },
