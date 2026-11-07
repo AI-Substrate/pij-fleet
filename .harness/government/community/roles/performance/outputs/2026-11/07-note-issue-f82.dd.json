@@ -1,0 +1,33 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-07",
+				"kind": "note",
+				"role": "performance",
+				"subject": "issue:F82",
+				"writer": "pij-thorough-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Route fix: replace UDS unconditional ps start checks with fresh in-process incarnation reads; preserve UTC, PID-reuse and record/socket invalidation checks."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "## F82: repeated Claude endpoint discovery, not an idle fleet sweep\n\n**Cause:** healthy Claude message delivery repeatedly resolves the same endpoint, launching `ps` twice per exact-PID discovery. Normal direct delivery resolves it for both `can_deliver` and `deliver`; an FYI carrier adds another admission-time discovery before queueing. The observed window reconciles with **eight successful deliveries to five seats**, including four FYI carriers. It is not evidence of a stuck delivery or a per-tick scan of every Claude seat.\n\nDeployment examined: **acf3646c035ac4816ff56cbf29ea58ff238c6d5b**, daemon **PID 7956**, process start **2026-11-07 18:49:27 +10:00**. Main and daemon incarnation remained unchanged. Ping's build label is `pij-rs 0.1.0`, not an embedded Git SHA; the source-build association follows the deployment record.\n\n### Fresh measurement and independent delivery evidence\n\nTwo ping snapshots: **2026-11-07 18:54:25.297399 to 18:55:25.304801 +10:00**, **60.007256 s** monotonic elapsed.\n\n- `ps.uds-peer-start`: **246 to 286, +40 = 0.666586/s**.\n- Total daemon launches: **469 to 527, +58**. The other deltas were `ddocs.community` +4 and `git.community` +14; every other site was flat.\n- The earlier #141 AFTER window was +54/60.001757 s, about 0.900/s at this same site. Both are traffic observations, not idle baselines.\n\nRead-only SQLite queries selected delivery metadata and outcome fields, never message bodies or Claude credential files. In the exact fresh counter window:\n\n| Recipient | Successful UDS deliveries | FYI-carrier queued admissions | Expected ps budget on healthy exact-PID path |\n|---|---:|---:|---:|\n| `pij-mutual-crane` | 3 | 1 | 14 |\n| `pij-chemical-cicada` | 2 | 1 | 10 |\n| `pij-loyal-alpaca` | 1 | 1 | 6 |\n| `pij-separate-catshark` | 1 | 1 | 6 |\n| `pij-tremendous-nightingale` | 1 | 0 | 4 |\n| **Total** | **8** | **4** | **40** |\n\nThe queued outcomes explicitly said `fyi-ride-along`. Their four jobs, **15681-15684**, were all `done`, **attempt 0**, `deferral_count 0`, `deferral_reason NULL`: normal first-attempt delivery, not retries. Separate later store reads found no pending/running Claude delivery jobs.\n\n`pij-bright-jay` was registered, untombstoned, inbound-enabled, PID **70456**, pane **%7**, but had **no queued or delivered outcome in this window**. Its latest delivery job was already done with attempt 0, well before the window. It is not the observed traffic driver. There were 28 untombstoned Claude seats in the store; the 782 total Claude rows include history and are not a live population.\n\n**Attribution grade:** the counter has no PID/seat/caller tags. The per-seat ps column is inferred from the source budget and independently matched delivery events, not a per-call process trace. Its sum exactly matches the observed +40; no residual needs an idle-poll or stuck-retry explanation.\n\n### Source trace and scaling\n\n`crates/transport/src/uds.rs:124-137,177-212`: exact-PID discovery calls `process_start(pid, false)` to compare the descriptor's local-wall start, then `live_endpoint` calls it again with UTC to compare Claude's record. Each call launches absolute-path `/bin/ps -p <pid> -o lstart=`. `can_deliver` and `deliver` both call `discover` (`223-246`), so a normal delivery pays **four ps launches**.\n\n`crates/daemon/src/delivery/mod.rs:1125-1168`: message admission probes capability before delivering. An FYI carrier first pays that two-ps probe, then selects the durable queue (`1135-1142,1310-1338`). `pointer/worker.rs:301-306,350-352` probes and resolves again when delivering its claimed job. Thus:\n\n**launches = 4 x direct deliveries + 6 x FYI-carrier deliveries**, on the healthy exact-PID path. Here that is **4 x 4 + 6 x 4 = 40**.\n\nPane fallback (`uds.rs:140-175`) enumerates session JSON files but calls the process observer only for records matching the target pane suffix; it does not launch ps for every unrelated Claude record. More matching candidates can increase a discovery's budget.\n\nThe drain's nominal cadence is five seconds (`core/src/config.rs:201`, `daemon/src/lib.rs:990-991,1083-1084`), with application deadline wakes. `DrainWorker::drain_once` (`pointer/worker.rs:182-236`) checks for due jobs before touching transport and handles at most one nonterminal row per recipient per pass. No queued work means no endpoint discovery. A genuinely deferred body can be reoffered on later passes, but these four jobs had no deferrals. The scaling here is **delivery attempts x discoveries x matching records**, not **tick x all Claude seats**. Ordinary liveness/state reads do not call this UDS resolver.\n\n### Proposed fix for the routed plan\n\n**Replace these unconditional ps observations with fresh in-process kernel start reads.** Extract/reuse the existing `KernelStart`/`kernel_start` mechanism in `crates/harnesses/src/proc.rs:123-174` (`proc_bsdinfo.pbi_start_tvsec` on macOS), deriving both UTC-record and local-descriptor comparisons from that start instant. Preserve dead/reused-PID and unknown-observation refusal behavior; any necessary fallback must remain bounded and counted.\n\nDo not cache a successful PID check for an entire session without fresh incarnation validation: a dead/reused PID or changed record/socket must invalidate proof. A bounded parsed-record cache can be keyed/invalidateable by record identity and generation, while the kernel start is freshly rechecked without a launch. Reusing a resolved endpoint within one delivery can additionally avoid duplicate discovery, but eliminating the ps dependency is the primary fix.\n\nNo builds, tests, injected traffic, daemon restart, or source changes were performed. Session receipts retain the counter window and selected job/outcome metadata.\n"
+		}
+	]
+}
