@@ -27,6 +27,19 @@ fn ps_start(pid: u32) -> Option<u64> {
     (!row.is_empty()).then(|| parse_process_start(row).expect("parse a ps row"))
 }
 
+/// `ps` in UTC, the timebase of Claude's `procStart` records.
+fn ps_start_utc(pid: u32) -> Option<u64> {
+    let output = Command::new("/bin/ps")
+        .args(["-o", "lstart=", "-p", &pid.to_string()])
+        .env("LC_ALL", "C")
+        .env("TZ", "UTC")
+        .output()
+        .expect("run /bin/ps");
+    let row = String::from_utf8(output.stdout).expect("UTF-8 ps output");
+    let row = row.trim();
+    (!row.is_empty()).then(|| parse_process_start(row).expect("parse a ps row"))
+}
+
 fn in_process(pid: u32) -> Option<u64> {
     block_on(ProcLiveness::new().proc_start(pid)).expect("probe a pid")
 }
@@ -64,6 +77,18 @@ fn assert_parity() {
         );
     }
     assert!(ps_start(std::process::id()).is_some());
+    // Plan 218: the Claude transport's one reading matches `ps` in both
+    // timebases for this user's live processes, and is absent for a reaped pid.
+    for (what, pid) in [
+        ("this process", std::process::id()),
+        ("a live child", live.id()),
+    ] {
+        let observed = pij_harnesses::proc::observed_start(pid)
+            .unwrap_or_else(|| panic!("{what} (pid {pid}) is readable in-process"));
+        assert_eq!(Some(observed.local), ps_start(pid), "{what} local");
+        assert_eq!(Some(observed.utc), ps_start_utc(pid), "{what} UTC");
+    }
+    assert_eq!(pij_harnesses::proc::observed_start(dead.id()), None);
     let _ = live.kill();
     let _ = live.wait();
     drop(zombie);
