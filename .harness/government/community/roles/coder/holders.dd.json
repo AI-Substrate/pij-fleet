@@ -231,7 +231,10 @@
 					"harness_session": "3c35282f-7df0-4170-98dd-65f3255dded2",
 					"instance_key": "204",
 					"machine": "ops.osk.lan",
+					"release_why": "#136 merged 8e19abc",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-following-marsupial",
+					"to": "2026-11-07T15:41:42.605Z",
 					"why": "revived for #136's final push (s10)"
 				},
 				{
