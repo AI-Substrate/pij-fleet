@@ -43,5 +43,5 @@
 | — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 135 | 2026-11-06T10:59:57.375Z | 2026-11-07T07:29:13.294Z | pij-steady-otter | pij-steady-otter | review #135 (plan 206) | seat died in the 07 Nov reboot; prime: fresh holders |
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 130 | 2026-11-06T12:49:17.301Z | 2026-11-06T12:56:19.954Z | pij-steady-otter | pij-steady-otter | review #130 merge delta | #130 merged (F70 dogfood) |
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 144 | 2026-11-06T13:17:55.108Z | — | pij-steady-otter | — | first verdict on #144 (plan 209) | — |
-| — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 149 | 2026-11-06T13:43:37.380Z | — | pij-steady-otter | — | first verdict on #149 (plan 212) | — |
+| — | pij-pleased-marmot | copilot | 95615f7f-89fc-4639-ac6b-c838fe5e1ac3 | ops.osk.lan | 149 | 2026-11-06T13:43:37.380Z | 2026-11-07T07:29:13.679Z | pij-steady-otter | pij-steady-otter | first verdict on #149 (plan 212) | seat died in the 07 Nov reboot; prime: fresh holders |
 | — | pij-usual-seahorse | copilot | 3e7756cf-b339-46ac-9b12-46d3065045cc | ops.osk.lan | 150 | 2026-11-06T13:58:03.168Z | — | pij-steady-otter | — | ledger PR #150 (F61-F79) | — |

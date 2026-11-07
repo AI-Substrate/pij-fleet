@@ -329,7 +329,10 @@
 					"harness_session": "95615f7f-89fc-4639-ac6b-c838fe5e1ac3",
 					"instance_key": "149",
 					"machine": "ops.osk.lan",
+					"release_why": "seat died in the 07 Nov reboot; prime: fresh holders",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-pleased-marmot",
+					"to": "2026-11-07T07:29:13.679Z",
 					"why": "first verdict on #149 (plan 212)"
 				},
 				{
