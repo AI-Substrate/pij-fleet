@@ -4,11 +4,13 @@
 //! and route pair as machine-public (with the reason), seat-authority (class,
 //! the identities it grants authority by, today's guard) or job-token. This
 //! test asks the ROUTER which pairs it serves, never the JSON: it walks
-//! [`Endpoint::ALL`] under every method and counts a pair as served unless
-//! axum answers 405. It fails on a served pair the inventory lacks, an entry
+//! [`Endpoint::ALL`] under every standard method, HEAD and OPTIONS included
+//! (axum serves HEAD through each GET handler), and counts a pair as served
+//! unless axum answers 405. It fails on a served pair the inventory lacks, an entry
 //! the daemon does not serve, a duplicate, and an entry without a valid
-//! classification. One probe per run (`just route-inventory-check`); nothing
-//! runs per tick.
+//! classification. One probe per run (`just route-inventory-check`): 59 paths
+//! times 7 methods, sequential local calls to an isolated test router, under
+//! a per-call and an overall timeout so a hang fails. Nothing runs per tick.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -25,13 +27,19 @@ const INVENTORY: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../harness/scripts/route-inventory.json"
 );
-const METHODS: [Method; 5] = [
+const METHODS: [Method; 7] = [
     Method::GET,
+    Method::HEAD,
     Method::POST,
     Method::PUT,
     Method::PATCH,
     Method::DELETE,
+    Method::OPTIONS,
 ];
+/// One call may take this long; a stuck handler fails the probe, not the gate.
+const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// The whole enumeration may take this long.
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 const CLASSES: [&str; 9] = [
     "send-as",
     "inbox-claim",
@@ -151,7 +159,10 @@ async fn served_pairs() -> (BTreeSet<Pair>, BTreeSet<Pair>) {
     )
     .await;
     let (addr, server) = spawn(router_with_config(services, config("local-key", &[]))).await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(CALL_TIMEOUT)
+        .build()
+        .expect("client");
     let (mut served, mut job_token) = (BTreeSet::new(), BTreeSet::new());
     for endpoint in Endpoint::ALL {
         let path = endpoint.path();
@@ -186,7 +197,9 @@ async fn every_served_route_is_in_the_inventory_and_classified() {
         .unwrap_or_else(|error| panic!("read {INVENTORY}: {error}"));
     let inventory: Value =
         serde_json::from_str(&raw).unwrap_or_else(|error| panic!("parse {INVENTORY}: {error}"));
-    let (served, job_token) = served_pairs().await;
+    let (served, job_token) = tokio::time::timeout(PROBE_TIMEOUT, served_pairs())
+        .await
+        .unwrap_or_else(|_| panic!("the route probe took longer than {PROBE_TIMEOUT:?}"));
     // A probe that saw nothing would make every entry stale and prove nothing.
     assert!(
         served.len() >= Endpoint::ALL.len(),
@@ -237,6 +250,15 @@ fn a_served_route_missing_from_the_inventory_fails() {
         check(&served, vec![public_route("GET", "/v1/seats")]),
         [
             "POST /v1/seats: served by the daemon but missing from route-inventory.json (classify it)"
+        ]
+    );
+    // axum serves HEAD through a GET handler, effects included, so an
+    // implicit HEAD is a pair of its own.
+    let served = [pair("GET", "/v1/inbox"), pair("HEAD", "/v1/inbox")];
+    assert_eq!(
+        check(&served, vec![seat_route("GET", "/v1/inbox")]),
+        [
+            "HEAD /v1/inbox: served by the daemon but missing from route-inventory.json (classify it)"
         ]
     );
 }

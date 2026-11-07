@@ -26,8 +26,9 @@ failure), so one invocation surfaces every problem:
 8. `copilot-native` — `just copilot-native-test` (see below)
 9. `route-inventory` — `just route-inventory-check` (every (method, path) pair
    the daemon serves, probed through its router, is classified in
-   `harness/scripts/route-inventory.json` and no entry is stale; plan 221, F88)
-   — **heavy**
+   `harness/scripts/route-inventory.json` and no entry is stale; plan 221, F88;
+   niced compile, nice-only run; `rust-check` skips the probe test so it runs
+   once) — **heavy**
 10. `rust` — `just rust-check` (Cargo.lock current, fmt, clippy `-D warnings`,
    workspace tests) — **heavy**
 11. `smoke` — `just smoke` (tmux-driven driver scenarios) — **heavy**
